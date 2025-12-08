@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from typing import Optional
 from models import InvoiceAllocation, load_structure
-from database import get_db, save_invoice as db_save_invoice
+from database import get_db, get_placeholder, save_invoice as db_save_invoice
 
 
 def create_allocations(
@@ -181,11 +181,12 @@ def add_company_with_vat(company: str, vat: str, brands: str = '') -> bool:
     """Add a new company with VAT to the database."""
     conn = get_db()
     cursor = conn.cursor()
+    ph = get_placeholder()
 
     try:
-        cursor.execute('''
+        cursor.execute(f'''
             INSERT INTO companies (company, brands, vat)
-            VALUES (?, ?, ?)
+            VALUES ({ph}, {ph}, {ph})
         ''', (company, brands, vat))
         conn.commit()
         return True
@@ -200,16 +201,17 @@ def update_company_vat(company: str, vat: str, brands: str = None) -> bool:
     """Update VAT for an existing company."""
     conn = get_db()
     cursor = conn.cursor()
+    ph = get_placeholder()
 
     if brands is not None:
-        cursor.execute('''
-            UPDATE companies SET vat = ?, brands = ?
-            WHERE company = ?
+        cursor.execute(f'''
+            UPDATE companies SET vat = {ph}, brands = {ph}
+            WHERE company = {ph}
         ''', (vat, brands, company))
     else:
-        cursor.execute('''
-            UPDATE companies SET vat = ?
-            WHERE company = ?
+        cursor.execute(f'''
+            UPDATE companies SET vat = {ph}
+            WHERE company = {ph}
         ''', (vat, company))
 
     updated = cursor.rowcount > 0
@@ -222,8 +224,9 @@ def delete_company(company: str) -> bool:
     """Delete a company from the database."""
     conn = get_db()
     cursor = conn.cursor()
+    ph = get_placeholder()
 
-    cursor.execute('DELETE FROM companies WHERE company = ?', (company,))
+    cursor.execute(f'DELETE FROM companies WHERE company = {ph}', (company,))
     deleted = cursor.rowcount > 0
 
     conn.commit()
