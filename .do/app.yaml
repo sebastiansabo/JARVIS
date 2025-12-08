@@ -21,16 +21,8 @@ services:
         type: SECRET
         scope: RUN_AND_BUILD_TIME
       - key: DATABASE_URL
-        value: ${mktdb.DATABASE_URL}
-        scope: RUN_TIME
-databases:
-  - name: mktdb
-    version: '17'
-    engine: PG
-    production: true
-    cluster_name: app-be600e52-fbc0-4c5f-8ac3-5e79a750f6be
-    db_name: mktdb
-    db_user: mktdb
+        type: SECRET
+        scope: RUN_AND_BUILD_TIME
 ingress:
   rules:
     - match:
