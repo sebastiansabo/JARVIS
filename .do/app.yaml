@@ -22,17 +22,10 @@ services:
         scope: RUN_AND_BUILD_TIME
       - key: DATABASE_URL
         value: ${mktdb.DATABASE_URL}
-        scope: RUN_AND_BUILD_TIME
-    health_check:
-      http_path: /
-      initial_delay_seconds: 10
-      period_seconds: 30
-      timeout_seconds: 5
-      success_threshold: 1
-      failure_threshold: 3
+        scope: RUN_TIME
 databases:
   - name: mktdb
-    version: '17'
+    version: "17"
     engine: PG
     production: true
     cluster_name: app-be600e52-fbc0-4c5f-8ac3-5e79a750f6be
@@ -43,6 +36,8 @@ ingress:
     - match:
         path:
           prefix: /
+        authority:
+          exact: ""
       component:
         name: bugetare
 alerts:
