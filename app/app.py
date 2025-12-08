@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from flask import Flask, render_template, request, jsonify
 from models import load_structure, get_companies, get_brands_for_company, get_departments_for_company, get_subdepartments, get_manager
 from services import (
-    create_allocations, export_to_template, get_existing_data, save_invoice_to_db,
+    save_invoice_to_db,
     get_companies_with_vat, match_company_by_vat, add_company_with_vat, update_company_vat, delete_company
 )
 from invoice_parser import parse_invoice, parse_invoice_with_template_from_bytes, auto_detect_and_parse, generate_template_from_invoice
@@ -99,22 +99,10 @@ def submit_invoice():
             distributions=data['distributions']
         )
 
-        # Also export to Excel template
-        allocations = create_allocations(
-            supplier=data['supplier'],
-            invoice_template=data.get('invoice_template', ''),
-            invoice_number=data['invoice_number'],
-            invoice_date=data['invoice_date'],
-            invoice_value=float(data['invoice_value']),
-            drive_link=data.get('drive_link', ''),
-            distributions=data['distributions']
-        )
-        export_to_template(allocations)
-
         return jsonify({
             'success': True,
-            'message': f'Successfully saved {len(allocations)} allocation(s)',
-            'allocations': len(allocations),
+            'message': f'Successfully saved {len(data["distributions"])} allocation(s)',
+            'allocations': len(data['distributions']),
             'invoice_id': invoice_id
         })
 
@@ -126,9 +114,8 @@ def submit_invoice():
 
 @app.route('/api/data')
 def get_data():
-    """Get existing data from the template."""
-    data = get_existing_data()
-    return jsonify(data)
+    """Get existing data (returns empty - legacy endpoint)."""
+    return jsonify([])
 
 
 @app.route('/api/parse-invoice', methods=['POST'])
