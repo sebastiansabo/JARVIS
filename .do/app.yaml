@@ -22,7 +22,7 @@ services:
         type: SECRET
       - key: DATABASE_URL
         scope: RUN_TIME
-        value: ${mktdb.DATABASE_URL}
+        type: SECRET
     health_check:
       http_path: /
       initial_delay_seconds: 10
@@ -30,10 +30,3 @@ services:
       timeout_seconds: 5
       success_threshold: 1
       failure_threshold: 3
-
-databases:
-  - name: mktdb
-    engine: PG
-    version: "16"
-    size: db-s-dev-database
-    num_nodes: 1
