@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Local files
+*.db
+*.sqlite
+*.sqlite3
+Invoices/
+*.pdf
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# Test
+tests/
+pytest_cache/
+.coverage
+htmlcov/
+
+# Deployment configs for other platforms
+render.yaml
+Procfile

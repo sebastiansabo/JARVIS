@@ -4,7 +4,9 @@ from datetime import datetime
 from typing import Optional
 from config import BASE_DIR
 
-DATABASE_PATH = os.path.join(BASE_DIR, 'invoices.db')
+# Use DATA_DIR env var for persistent storage (DigitalOcean), fallback to BASE_DIR
+DATA_DIR = os.environ.get('DATA_DIR', BASE_DIR)
+DATABASE_PATH = os.path.join(DATA_DIR, 'invoices.db')
 
 
 def get_db():

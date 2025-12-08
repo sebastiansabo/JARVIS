@@ -1,0 +1,32 @@
+spec_version: 2
+name: bugetare
+
+services:
+  - name: web
+    github:
+      repo: sebastiansabo/Bugetare
+      branch: main
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    routes:
+      - path: /
+    envs:
+      - key: ANTHROPIC_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: GOOGLE_CREDENTIALS_JSON
+        scope: RUN_TIME
+        type: SECRET
+      - key: DATA_DIR
+        scope: RUN_TIME
+        value: /data
+    health_check:
+      http_path: /
+      initial_delay_seconds: 10
+      period_seconds: 30
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
