@@ -22,7 +22,14 @@ services:
         scope: RUN_AND_BUILD_TIME
       - key: DATABASE_URL
         value: ${mktdb.DATABASE_URL}
-        scope: RUN_TIME
+        scope: RUN_AND_BUILD_TIME
+    health_check:
+      http_path: /
+      initial_delay_seconds: 10
+      period_seconds: 30
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
 databases:
   - name: mktdb
     engine: PG
