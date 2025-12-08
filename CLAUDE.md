@@ -56,3 +56,10 @@ docker run -p 8080:8080 -e DATABASE_URL="..." -e ANTHROPIC_API_KEY="..." bugetar
 
 ## Deployment
 Configured via `.do/app.yaml` for DigitalOcean App Platform with auto-deploy on push to main branch.
+
+## MCP Server Setup
+To enable DigitalOcean integration in Claude Code, add the MCP server:
+```bash
+claude mcp add digitalocean -- npx -y @digitalocean/mcp --api-token YOUR_DO_API_TOKEN
+```
+Restart Claude Code after adding to use DO management tools.

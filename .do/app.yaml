@@ -1,32 +1,43 @@
-spec_version: 2
-name: bugetare
-
+name: bug-mkt
+region: fra
+features:
+  - buildpack-stack=ubuntu-22
 services:
-  - name: web
+  - name: bugetare
+    http_port: 8080
+    source_dir: /
+    dockerfile_path: /Dockerfile
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
     github:
       repo: sebastiansabo/Bugetare
       branch: main
       deploy_on_push: true
-    dockerfile_path: Dockerfile
-    http_port: 8080
-    instance_count: 1
-    instance_size_slug: basic-xxs
-    routes:
-      - path: /
     envs:
       - key: ANTHROPIC_API_KEY
-        scope: RUN_TIME
         type: SECRET
+        scope: RUN_AND_BUILD_TIME
       - key: GOOGLE_CREDENTIALS_JSON
-        scope: RUN_TIME
         type: SECRET
+        scope: RUN_AND_BUILD_TIME
       - key: DATABASE_URL
+        value: ${mktdb.DATABASE_URL}
         scope: RUN_TIME
-        type: SECRET
-    health_check:
-      http_path: /
-      initial_delay_seconds: 10
-      period_seconds: 30
-      timeout_seconds: 5
-      success_threshold: 1
-      failure_threshold: 3
+databases:
+  - name: mktdb
+    version: '17'
+    engine: PG
+    production: true
+    cluster_name: app-be600e52-fbc0-4c5f-8ac3-5e79a750f6be
+    db_name: mktdb
+    db_user: mktdb
+ingress:
+  rules:
+    - match:
+        path:
+          prefix: /
+      component:
+        name: bugetare
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
