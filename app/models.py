@@ -1,7 +1,6 @@
-import openpyxl
 from dataclasses import dataclass
 from typing import Optional
-from config import TEMPLATE_PATH
+from database import get_db
 
 
 @dataclass
@@ -51,64 +50,114 @@ class InvoiceAllocation:
 
 
 def load_structure() -> list[DepartmentUnit]:
-    """Load the organizational structure from the Template file."""
-    wb = openpyxl.load_workbook(TEMPLATE_PATH, read_only=True)
-    ws = wb['Structure']
+    """Load the organizational structure from SQLite database."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT company, brand, department, subdepartment, manager, marketing
+        FROM department_structure
+        ORDER BY company, department, subdepartment
+    ''')
 
     units = []
-    for row in ws.iter_rows(min_row=2, values_only=True):  # Skip header
-        if row[0] or row[2]:  # Has company or department
-            unit = DepartmentUnit(
-                company=row[0] or '',
-                brand=row[1],
-                department=row[2] or '',
-                subdepartment=row[3],
-                manager=row[4] or '',
-                marketing=row[5] or ''
-            )
-            units.append(unit)
+    for row in cursor.fetchall():
+        unit = DepartmentUnit(
+            company=row['company'] or '',
+            brand=row['brand'],
+            department=row['department'] or '',
+            subdepartment=row['subdepartment'],
+            manager=row['manager'] or '',
+            marketing=row['marketing'] or ''
+        )
+        units.append(unit)
 
-    wb.close()
+    conn.close()
     return units
 
 
 def get_companies() -> list[str]:
     """Get unique list of companies."""
-    units = load_structure()
-    return sorted(set(u.company for u in units if u.company))
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT DISTINCT company FROM department_structure
+        WHERE company IS NOT NULL AND company != ''
+        ORDER BY company
+    ''')
+
+    companies = [row['company'] for row in cursor.fetchall()]
+    conn.close()
+    return companies
 
 
 def get_brands_for_company(company: str) -> list[str]:
     """Get brands available for a specific company."""
-    units = load_structure()
-    brands = set()
-    for u in units:
-        if u.company == company and u.brand:
-            brands.add(u.brand)
-    return sorted(brands)
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT DISTINCT brand FROM department_structure
+        WHERE company = ? AND brand IS NOT NULL AND brand != ''
+        ORDER BY brand
+    ''', (company,))
+
+    brands = [row['brand'] for row in cursor.fetchall()]
+    conn.close()
+    return brands
 
 
 def get_departments_for_company(company: str) -> list[str]:
     """Get departments available for a specific company."""
-    units = load_structure()
-    return sorted(set(u.department for u in units if u.company == company and u.department))
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT DISTINCT department FROM department_structure
+        WHERE company = ? AND department IS NOT NULL AND department != ''
+        ORDER BY department
+    ''', (company,))
+
+    departments = [row['department'] for row in cursor.fetchall()]
+    conn.close()
+    return departments
 
 
 def get_subdepartments(company: str, department: str) -> list[str]:
     """Get subdepartments for a specific company and department."""
-    units = load_structure()
-    subdepts = set()
-    for u in units:
-        if u.company == company and u.department == department and u.subdepartment:
-            subdepts.add(u.subdepartment)
-    return sorted(subdepts)
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT DISTINCT subdepartment FROM department_structure
+        WHERE company = ? AND department = ? AND subdepartment IS NOT NULL AND subdepartment != ''
+        ORDER BY subdepartment
+    ''', (company, department))
+
+    subdepts = [row['subdepartment'] for row in cursor.fetchall()]
+    conn.close()
+    return subdepts
 
 
 def get_manager(company: str, department: str, subdepartment: Optional[str] = None) -> str:
     """Get the manager for a specific department."""
-    units = load_structure()
-    for u in units:
-        if u.company == company and u.department == department:
-            if subdepartment is None or u.subdepartment == subdepartment:
-                return u.manager
-    return ''
+    conn = get_db()
+    cursor = conn.cursor()
+
+    if subdepartment:
+        cursor.execute('''
+            SELECT manager FROM department_structure
+            WHERE company = ? AND department = ? AND subdepartment = ?
+            LIMIT 1
+        ''', (company, department, subdepartment))
+    else:
+        cursor.execute('''
+            SELECT manager FROM department_structure
+            WHERE company = ? AND department = ?
+            LIMIT 1
+        ''', (company, department))
+
+    row = cursor.fetchone()
+    conn.close()
+    return row['manager'] if row else ''

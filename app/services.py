@@ -1,9 +1,8 @@
-import openpyxl
+import re
 from datetime import datetime
 from typing import Optional
 from models import InvoiceAllocation, load_structure
-from config import TEMPLATE_PATH
-from database import save_invoice as db_save_invoice
+from database import get_db, save_invoice as db_save_invoice
 
 
 def create_allocations(
@@ -103,73 +102,12 @@ def save_invoice_to_db(
     )
 
 
-def export_to_template(allocations: list[InvoiceAllocation], output_path: Optional[str] = None) -> str:
-    """
-    Export allocations to the Template Excel file's Data sheet.
-    Returns the path to the output file.
-    """
-    if output_path is None:
-        output_path = TEMPLATE_PATH
-
-    wb = openpyxl.load_workbook(output_path)
-    ws = wb['Data']
-
-    # Find the next empty row
-    next_row = ws.max_row + 1
-
-    for alloc in allocations:
-        ws.cell(row=next_row, column=1, value=alloc.submission_date)
-        ws.cell(row=next_row, column=2, value=alloc.company)
-        ws.cell(row=next_row, column=3, value=alloc.supplier)
-        ws.cell(row=next_row, column=4, value=alloc.invoice_template)
-        ws.cell(row=next_row, column=5, value=alloc.invoice_number)
-        ws.cell(row=next_row, column=6, value=alloc.invoice_date)
-        ws.cell(row=next_row, column=7, value=alloc.invoice_value)
-        ws.cell(row=next_row, column=8, value=alloc.allocation)
-        ws.cell(row=next_row, column=9, value=alloc.department)
-        ws.cell(row=next_row, column=10, value=alloc.subdepartment or '')
-        ws.cell(row=next_row, column=11, value=alloc.brand or '')
-        ws.cell(row=next_row, column=12, value=alloc.responsible)
-        ws.cell(row=next_row, column=13, value=alloc.drive_link)
-        ws.cell(row=next_row, column=14, value=alloc.reinvoice_to or '')
-        next_row += 1
-
-    wb.save(output_path)
-    wb.close()
-    return output_path
-
-
-def get_existing_data() -> list[dict]:
-    """Read existing data from the Template file."""
-    wb = openpyxl.load_workbook(TEMPLATE_PATH, read_only=True)
-    ws = wb['Data']
-
-    headers = []
-    data = []
-
-    for i, row in enumerate(ws.iter_rows(values_only=True)):
-        if i == 0:
-            headers = [str(h) if h else f'col_{j}' for j, h in enumerate(row)]
-        else:
-            if any(cell is not None for cell in row):
-                row_dict = {}
-                for j, cell in enumerate(row):
-                    if j < len(headers):
-                        row_dict[headers[j]] = cell
-                data.append(row_dict)
-
-    wb.close()
-    return data
-
-
 def normalize_vat(vat: str) -> str:
     """
     Normalize VAT number for comparison.
     Handles various formats: 'RO 225615', 'RO225615', 'CUI 225615', '225615', etc.
     Returns just the numeric part for comparison, plus stores the country code.
     """
-    import re
-
     if not vat:
         return ''
 
@@ -190,43 +128,20 @@ def normalize_vat(vat: str) -> str:
 
 def extract_vat_numbers(vat: str) -> str:
     """Extract just the numeric portion of a VAT number for matching."""
-    import re
     if not vat:
         return ''
     return re.sub(r'[^0-9]', '', str(vat))
 
 
 def get_companies_with_vat() -> list[dict]:
-    """Load companies with VAT numbers from the Comp sheet in Template."""
-    wb = openpyxl.load_workbook(TEMPLATE_PATH, read_only=True)
+    """Load companies with VAT numbers from SQLite database."""
+    conn = get_db()
+    cursor = conn.cursor()
 
-    if 'Comp' not in wb.sheetnames:
-        wb.close()
-        return []
+    cursor.execute('SELECT company, brands, vat FROM companies ORDER BY company')
+    companies = [dict(row) for row in cursor.fetchall()]
 
-    ws = wb['Comp']
-    companies = []
-
-    headers = []
-    for i, row in enumerate(ws.iter_rows(values_only=True)):
-        if i == 0:
-            headers = [str(h).lower() if h else f'col_{j}' for j, h in enumerate(row)]
-        else:
-            if any(cell is not None for cell in row):
-                row_dict = {}
-                for j, cell in enumerate(row):
-                    if j < len(headers):
-                        row_dict[headers[j]] = cell
-
-                company_data = {
-                    'company': row_dict.get('company', ''),
-                    'brands': row_dict.get('brands', ''),
-                    'vat': row_dict.get('vat', '')
-                }
-                if company_data['company']:
-                    companies.append(company_data)
-
-    wb.close()
+    conn.close()
     return companies
 
 
@@ -263,67 +178,54 @@ def match_company_by_vat(invoice_vat: str) -> Optional[dict]:
 
 
 def add_company_with_vat(company: str, vat: str, brands: str = '') -> bool:
-    """Add a new company with VAT to the Comp sheet."""
-    wb = openpyxl.load_workbook(TEMPLATE_PATH)
+    """Add a new company with VAT to the database."""
+    conn = get_db()
+    cursor = conn.cursor()
 
-    if 'Comp' not in wb.sheetnames:
-        ws = wb.create_sheet('Comp')
-        ws.cell(row=1, column=1, value='Company')
-        ws.cell(row=1, column=2, value='Brands')
-        ws.cell(row=1, column=3, value='VAT')
-        next_row = 2
-    else:
-        ws = wb['Comp']
-        next_row = ws.max_row + 1
-
-    ws.cell(row=next_row, column=1, value=company)
-    ws.cell(row=next_row, column=2, value=brands)
-    ws.cell(row=next_row, column=3, value=vat)
-
-    wb.save(TEMPLATE_PATH)
-    wb.close()
-    return True
+    try:
+        cursor.execute('''
+            INSERT INTO companies (company, brands, vat)
+            VALUES (?, ?, ?)
+        ''', (company, brands, vat))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
 
 
 def update_company_vat(company: str, vat: str, brands: str = None) -> bool:
     """Update VAT for an existing company."""
-    wb = openpyxl.load_workbook(TEMPLATE_PATH)
+    conn = get_db()
+    cursor = conn.cursor()
 
-    if 'Comp' not in wb.sheetnames:
-        wb.close()
-        return False
+    if brands is not None:
+        cursor.execute('''
+            UPDATE companies SET vat = ?, brands = ?
+            WHERE company = ?
+        ''', (vat, brands, company))
+    else:
+        cursor.execute('''
+            UPDATE companies SET vat = ?
+            WHERE company = ?
+        ''', (vat, company))
 
-    ws = wb['Comp']
-
-    for row in range(2, ws.max_row + 1):
-        if ws.cell(row=row, column=1).value == company:
-            ws.cell(row=row, column=3, value=vat)
-            if brands is not None:
-                ws.cell(row=row, column=2, value=brands)
-            wb.save(TEMPLATE_PATH)
-            wb.close()
-            return True
-
-    wb.close()
-    return False
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
 
 
 def delete_company(company: str) -> bool:
-    """Delete a company from the Comp sheet."""
-    wb = openpyxl.load_workbook(TEMPLATE_PATH)
+    """Delete a company from the database."""
+    conn = get_db()
+    cursor = conn.cursor()
 
-    if 'Comp' not in wb.sheetnames:
-        wb.close()
-        return False
+    cursor.execute('DELETE FROM companies WHERE company = ?', (company,))
+    deleted = cursor.rowcount > 0
 
-    ws = wb['Comp']
-
-    for row in range(2, ws.max_row + 1):
-        if ws.cell(row=row, column=1).value == company:
-            ws.delete_rows(row)
-            wb.save(TEMPLATE_PATH)
-            wb.close()
-            return True
-
-    wb.close()
-    return False
+    conn.commit()
+    conn.close()
+    return deleted

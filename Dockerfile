@@ -14,7 +14,6 @@ RUN pip install gunicorn
 
 # Copy application code
 COPY app/ ./app/
-COPY Template/ ./Template/
 
 # Create directories
 RUN mkdir -p Invoices

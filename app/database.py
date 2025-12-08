@@ -106,8 +106,96 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # Column already exists
 
+    # Department structure table - organizational hierarchy
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS department_structure (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company TEXT NOT NULL,
+            brand TEXT,
+            department TEXT NOT NULL,
+            subdepartment TEXT,
+            manager TEXT,
+            marketing TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Companies with VAT table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS companies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company TEXT NOT NULL UNIQUE,
+            brands TEXT,
+            vat TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Seed initial data if tables are empty
+    cursor.execute('SELECT COUNT(*) FROM department_structure')
+    if cursor.fetchone()[0] == 0:
+        _seed_department_structure(cursor)
+
+    cursor.execute('SELECT COUNT(*) FROM companies')
+    if cursor.fetchone()[0] == 0:
+        _seed_companies(cursor)
+
     conn.commit()
     conn.close()
+
+
+def _seed_department_structure(cursor):
+    """Seed initial department structure data."""
+    structure_data = [
+        ('Autoworld PLUS S.R.L.', 'Mazda', 'Sales', None, 'Roxana Biris', 'Amanda Gadalean'),
+        ('Autoworld PLUS S.R.L.', 'MG Motor', 'Aftersales', 'Piese si Accesorii', 'Mihai Ploscar', 'Amanda Gadalean'),
+        ('Autoworld PLUS S.R.L.', 'MG Motor', 'Aftersales', 'Reparatii Generale', 'Mihai Ploscar', 'Amanda Gadalean'),
+        ('Autoworld INTERNATIONAL S.R.L.', 'Volkswagen (PKW)', 'Sales', None, 'Ovidiu Ciobanca', 'Raluca Asztalos'),
+        ('Autoworld INTERNATIONAL S.R.L.', 'Volkswagen (PKW)', 'Aftersales', 'Piese si Accesorii', 'Ioan Parocescu', 'Raluca Asztalos'),
+        ('Autoworld INTERNATIONAL S.R.L.', 'Volkswagen (PKW)', 'Aftersales', 'Reparatii Generale', 'Ioan Parocescu', 'Raluca Asztalos'),
+        ('Autoworld INTERNATIONAL S.R.L.', 'Volkswagen Comerciale (LNF)', 'Sales', None, 'Ovidiu Ciobanca', 'Raluca Asztalos'),
+        ('Autoworld INTERNATIONAL S.R.L.', 'Volkswagen Comerciale (LNF)', 'Aftersales', 'Piese si Accesorii', 'Ioan Parocescu', 'Raluca Asztalos'),
+        ('Autoworld INTERNATIONAL S.R.L.', 'Volkswagen Comerciale (LNF)', 'Aftersales', 'Reparatii Generale', 'Ioan Parocescu', 'Raluca Asztalos'),
+        ('Autoworld PREMIUM S.R.L.', 'Audi', 'Sales', None, 'Roger Patrasc', 'George Pop'),
+        ('Autoworld PREMIUM S.R.L.', 'AAP', 'Sales', None, 'Roger Patrasc', 'George Pop'),
+        ('Autoworld PREMIUM S.R.L.', 'Audi', 'Aftersales', 'Piese si Accesorii', 'Calin Duca', 'George Pop'),
+        ('Autoworld PREMIUM S.R.L.', 'Audi', 'Aftersales', 'Reparatii Generale', 'Calin Duca', 'George Pop'),
+        ('Autoworld PRESTIGE S.R.L.', 'Volvo', 'Sales', None, 'Madalina Morutan', 'Amanda Gadalean'),
+        ('Autoworld PRESTIGE S.R.L.', 'Volvo', 'Aftersales', 'Piese si Accesorii', 'Mihai Ploscar', 'Amanda Gadalean'),
+        ('Autoworld PRESTIGE S.R.L.', 'Volvo', 'Aftersales', 'Reparatii Generale', 'Mihai Ploscar', 'Amanda Gadalean'),
+        ('Autoworld NEXT S.R.L.', 'DasWeltAuto', 'Sales', None, 'Ovidiu Bucur', 'Raluca Asztalos'),
+        ('Autoworld NEXT S.R.L.', 'Autoworld.ro', 'Sales', None, 'Ovidiu Bucur', 'Sebastian Sabo'),
+        ('Autoworld ONE S.R.L.', 'Toyota', 'Sales', None, 'Monica Niculae', 'Sebastian Sabo'),
+        ('Autoworld ONE S.R.L.', None, 'Aftersales', 'Piese si Accesorii', 'Ovidiu', 'Sebastian Sabo'),
+        ('Autoworld ONE S.R.L.', None, 'Aftersales', 'Reparatii Generale', 'Ovidiu', 'Sebastian Sabo'),
+        ('AUTOWORLD S.R.L.', None, 'Conducere', None, 'Ioan Mezei', 'Anyone'),
+        ('AUTOWORLD S.R.L.', None, 'Administrativ', None, 'Istvan Papp', 'Anyone'),
+        ('AUTOWORLD S.R.L.', None, 'HR', None, 'Diana Deac', 'Anyone'),
+        ('AUTOWORLD S.R.L.', None, 'Marketing', None, 'Sebastian Sabo', 'Anyone'),
+        ('AUTOWORLD S.R.L.', None, 'Contabilitate', None, 'Claudia Bruslea', 'Anyone'),
+    ]
+    cursor.executemany('''
+        INSERT INTO department_structure (company, brand, department, subdepartment, manager, marketing)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', structure_data)
+
+
+def _seed_companies(cursor):
+    """Seed initial companies with VAT data."""
+    companies_data = [
+        ('Autoworld PLUS S.R.L.', 'Mazda & MG', 'RO 50022994'),
+        ('Autoworld INTERNATIONAL S.R.L.', 'Volkswagen', 'RO 50186890'),
+        ('Autoworld PREMIUM S.R.L.', 'Audi & Audi Approved Plus', 'RO 50188939'),
+        ('Autoworld PRESTIGE S.R.L.', 'Volvo', 'RO 50186920'),
+        ('Autoworld NEXT S.R.L.', 'DasWeltAuto', 'RO 50186814'),
+        ('Autoworld INSURANCE S.R.L.', 'Dep Asigurari - partial', 'RO 48988808'),
+        ('Autoworld ONE S.R.L.', 'Toyota', 'RO 15128629'),
+        ('AUTOWORLD S.R.L.', 'Admin Conta Mkt PLR', 'RO 225615'),
+    ]
+    cursor.executemany('''
+        INSERT INTO companies (company, brands, vat)
+        VALUES (?, ?, ?)
+    ''', companies_data)
 
 
 def save_invoice(
