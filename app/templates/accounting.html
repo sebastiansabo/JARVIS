@@ -984,21 +984,48 @@
                     return value ? `<a href="${value}" target="_blank">${value}</a>` : '-';
                 case 'split':
                     if (Array.isArray(value) && value.length > 0) {
-                        return value.map(s => {
-                            // Show subdepartment if available, otherwise department. Add brand in parentheses if exists.
+                        // Separate regular allocations from reinvoiced ones
+                        const regularAllocs = value.filter(s => !s.reinvoice_to);
+                        const reinvoicedAllocs = value.filter(s => s.reinvoice_to);
+
+                        // Generate unique ID for this collapse section
+                        const collapseId = 'reinvoice-' + Math.random().toString(36).substr(2, 9);
+
+                        let html = regularAllocs.map(s => {
                             const location = s.subdepartment || s.department;
                             const brandPart = s.brand ? ` (${s.brand})` : '';
-                            const borderColor = s.reinvoice_to ? 'border-warning' : 'border-primary';
-                            const reinvoiceLine = s.reinvoice_to
-                                ? `<hr class="my-1 border-warning"><span class="text-warning small"><i class="bi bi-arrow-right"></i> ${s.reinvoice_to}</span>`
-                                : '';
-                            return `<div class="small border-start ${borderColor} ps-2 mb-1">
+                            return `<div class="small border-start border-primary ps-2 mb-1">
                                 <span class="text-muted">${location}${brandPart}</span><br>
                                 <strong>${formatCurrency(s.value)} RON</strong>
                                 <span class="badge bg-secondary">${s.percent}%</span>
-                                ${reinvoiceLine}
                             </div>`;
                         }).join('');
+
+                        // Add collapsible reinvoice section if there are reinvoiced allocations
+                        if (reinvoicedAllocs.length > 0) {
+                            const totalReinvoiced = reinvoicedAllocs.reduce((sum, r) => sum + r.value, 0);
+                            const reinvoiceTargets = [...new Set(reinvoicedAllocs.map(r => r.reinvoice_to))].join(', ');
+
+                            html += `<div class="mt-1">
+                                <a class="text-warning small text-decoration-none" data-bs-toggle="collapse" href="#${collapseId}" role="button" aria-expanded="false">
+                                    <i class="bi bi-plus-circle toggle-icon"></i> Reinvoice: ${formatCurrency(totalReinvoiced)} RON → ${reinvoiceTargets}
+                                </a>
+                                <div class="collapse" id="${collapseId}">
+                                    ${reinvoicedAllocs.map(s => {
+                                        const location = s.subdepartment || s.department;
+                                        const brandPart = s.brand ? ` (${s.brand})` : '';
+                                        return `<div class="small border-start border-warning ps-2 mb-1 mt-1">
+                                            <span class="text-muted">${location}${brandPart}</span><br>
+                                            <strong>${formatCurrency(s.value)} RON</strong>
+                                            <span class="badge bg-secondary">${s.percent}%</span><br>
+                                            <span class="text-warning"><i class="bi bi-arrow-right"></i> ${s.reinvoice_to}</span>
+                                        </div>`;
+                                    }).join('')}
+                                </div>
+                            </div>`;
+                        }
+
+                        return html;
                     }
                     return '-';
                 case 'reinvoice':
