@@ -159,6 +159,18 @@ The `dict_from_row()` function converts Python date objects to ISO format string
 - `allocation_value` - Calculated from invoice_value * allocation_percent
 - `responsible` - Auto-populated from department_structure
 - `reinvoice_to` - Optional company for reinvoicing
+- `reinvoice_department` - Optional department within the reinvoice target company
+- `reinvoice_subdepartment` - Optional subdepartment within the reinvoice target department
+
+### Complex Reinvoice Feature
+Allocations can be marked for reinvoicing to a specific company/department/subdepartment:
+1. Check the "Reinvoice to:" checkbox on an allocation
+2. Select the target company from the first dropdown
+3. The department dropdown populates based on selected company (via `/api/departments/{company}`)
+4. The subdepartment dropdown populates based on selected department (via `/api/subdepartments/{company}/{dept}`)
+5. Reinvoice destination is displayed as: `Company / Department / Subdepartment`
+
+This allows tracking which allocations need to be billed to another entity within the organization.
 
 ## Accounting Dashboard
 

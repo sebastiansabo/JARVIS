@@ -274,8 +274,27 @@
                         <input class="form-check-input reinvoice-check" type="checkbox" id="reinvoice">
                         <label class="form-check-label small" for="reinvoice">Reinvoice to:</label>
                     </div>
-                    <select class="form-select form-select-sm d-inline-block reinvoice-company" style="width: auto; display: none;">
+                </div>
+            </div>
+            <div class="row mt-1 reinvoice-fields" style="display: none;">
+                <div class="col-md-3">
+                    <select class="form-select form-select-sm reinvoice-company">
                         <option value="">Select company...</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select form-select-sm reinvoice-brand">
+                        <option value="">N/A</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select form-select-sm reinvoice-department">
+                        <option value="">Select department...</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <select class="form-select form-select-sm reinvoice-subdepartment">
+                        <option value="">N/A</option>
                     </select>
                 </div>
             </div>
@@ -796,7 +815,11 @@
             const managerDisplay = row.querySelector('.manager-display');
             const removeBtn = row.querySelector('.remove-allocation');
             const reinvoiceCheck = row.querySelector('.reinvoice-check');
+            const reinvoiceFields = row.querySelector('.reinvoice-fields');
             const reinvoiceCompany = row.querySelector('.reinvoice-company');
+            const reinvoiceBrand = row.querySelector('.reinvoice-brand');
+            const reinvoiceDepartment = row.querySelector('.reinvoice-department');
+            const reinvoiceSubdepartment = row.querySelector('.reinvoice-subdepartment');
 
             // Populate reinvoice company dropdown with all companies
             companies.forEach(c => {
@@ -806,13 +829,60 @@
                 reinvoiceCompany.appendChild(opt);
             });
 
-            // Toggle reinvoice company dropdown visibility
+            // Toggle reinvoice fields visibility
             reinvoiceCheck.addEventListener('change', () => {
                 if (reinvoiceCheck.checked) {
-                    reinvoiceCompany.style.display = 'inline-block';
+                    reinvoiceFields.style.display = 'flex';
                 } else {
-                    reinvoiceCompany.style.display = 'none';
+                    reinvoiceFields.style.display = 'none';
                     reinvoiceCompany.value = '';
+                    reinvoiceBrand.innerHTML = '<option value="">N/A</option>';
+                    reinvoiceDepartment.innerHTML = '<option value="">Select department...</option>';
+                    reinvoiceSubdepartment.innerHTML = '<option value="">N/A</option>';
+                }
+            });
+
+            // Update reinvoice brand and department when company changes
+            reinvoiceCompany.addEventListener('change', async () => {
+                const company = reinvoiceCompany.value;
+                reinvoiceBrand.innerHTML = '<option value="">N/A</option>';
+                reinvoiceDepartment.innerHTML = '<option value="">Select department...</option>';
+                reinvoiceSubdepartment.innerHTML = '<option value="">N/A</option>';
+
+                if (company) {
+                    const [brands, depts] = await Promise.all([
+                        fetch(`/api/brands/${encodeURIComponent(company)}`).then(r => r.json()),
+                        fetch(`/api/departments/${encodeURIComponent(company)}`).then(r => r.json())
+                    ]);
+                    brands.forEach(b => {
+                        const opt = document.createElement('option');
+                        opt.value = b;
+                        opt.textContent = b;
+                        reinvoiceBrand.appendChild(opt);
+                    });
+                    depts.forEach(d => {
+                        const opt = document.createElement('option');
+                        opt.value = d;
+                        opt.textContent = d;
+                        reinvoiceDepartment.appendChild(opt);
+                    });
+                }
+            });
+
+            // Update reinvoice subdepartment when department changes
+            reinvoiceDepartment.addEventListener('change', async () => {
+                const company = reinvoiceCompany.value;
+                const dept = reinvoiceDepartment.value;
+                reinvoiceSubdepartment.innerHTML = '<option value="">N/A</option>';
+
+                if (company && dept) {
+                    const subdepts = await fetch(`/api/subdepartments/${encodeURIComponent(company)}/${encodeURIComponent(dept)}`).then(r => r.json());
+                    subdepts.forEach(s => {
+                        const opt = document.createElement('option');
+                        opt.value = s;
+                        opt.textContent = s;
+                        reinvoiceSubdepartment.appendChild(opt);
+                    });
                 }
             });
 
@@ -1053,6 +1123,9 @@
                 const allocation = parseFloat(row.querySelector('.allocation-input').value) / 100;
                 const reinvoiceCheck = row.querySelector('.reinvoice-check').checked;
                 const reinvoiceCompanyVal = row.querySelector('.reinvoice-company').value;
+                const reinvoiceBrandVal = row.querySelector('.reinvoice-brand').value;
+                const reinvoiceDepartmentVal = row.querySelector('.reinvoice-department').value;
+                const reinvoiceSubdepartmentVal = row.querySelector('.reinvoice-subdepartment').value;
 
                 // Check if brand is mandatory (brands exist for this company)
                 const hasBrands = brandSelect.options.length > 1; // More than just "N/A"
@@ -1079,13 +1152,45 @@
                     return;
                 }
 
+                // Check reinvoice fields validation (Brand first, then Department, then Subdepartment)
+                if (reinvoiceCheck && reinvoiceCompanyVal) {
+                    // Check if reinvoice brand is mandatory (brands exist for selected reinvoice company)
+                    const reinvoiceBrandSelect = row.querySelector('.reinvoice-brand');
+                    const hasReinvoiceBrands = reinvoiceBrandSelect.options.length > 1; // More than just "N/A"
+                    if (hasReinvoiceBrands && !reinvoiceBrandVal) {
+                        alert('Please select a reinvoice brand (brands are available for the selected reinvoice company)');
+                        return;
+                    }
+
+                    // Check if reinvoice department is mandatory (departments exist for selected reinvoice company)
+                    const reinvoiceDeptSelect = row.querySelector('.reinvoice-department');
+                    const hasReinvoiceDepts = reinvoiceDeptSelect.options.length > 1; // More than just "Select department..."
+                    if (hasReinvoiceDepts && !reinvoiceDepartmentVal) {
+                        alert('Please select a reinvoice department (departments are available for the selected reinvoice company)');
+                        return;
+                    }
+
+                    // Check if reinvoice subdepartment is mandatory (subdepartments exist for selected reinvoice department)
+                    if (reinvoiceDepartmentVal) {
+                        const reinvoiceSubdeptSelect = row.querySelector('.reinvoice-subdepartment');
+                        const hasReinvoiceSubdepts = reinvoiceSubdeptSelect.options.length > 1; // More than just "N/A"
+                        if (hasReinvoiceSubdepts && !reinvoiceSubdepartmentVal) {
+                            alert('Please select a reinvoice subdepartment (subdepartments are available for the selected reinvoice department)');
+                            return;
+                        }
+                    }
+                }
+
                 distributions.push({
                     company: dedicatedCompany,
                     brand: brand || null,
                     department: dept,
                     subdepartment: subdept || null,
                     allocation,
-                    reinvoice_to: reinvoiceCheck ? reinvoiceCompanyVal : null
+                    reinvoice_to: reinvoiceCheck ? reinvoiceCompanyVal : null,
+                    reinvoice_brand: reinvoiceCheck ? (reinvoiceBrandVal || null) : null,
+                    reinvoice_department: reinvoiceCheck ? (reinvoiceDepartmentVal || null) : null,
+                    reinvoice_subdepartment: reinvoiceCheck ? (reinvoiceSubdepartmentVal || null) : null
                 });
             }
 

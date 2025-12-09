@@ -61,6 +61,9 @@ def init_db():
             allocation_value REAL NOT NULL,
             responsible TEXT,
             reinvoice_to TEXT,
+            reinvoice_brand TEXT,
+            reinvoice_department TEXT,
+            reinvoice_subdepartment TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -123,6 +126,33 @@ def init_db():
     # Add comment column if it doesn't exist (for existing databases)
     try:
         cursor.execute('ALTER TABLE invoices ADD COLUMN comment TEXT')
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
+
+    # Add reinvoice_brand column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE allocations ADD COLUMN reinvoice_brand TEXT')
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
+
+    # Add reinvoice_department column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE allocations ADD COLUMN reinvoice_department TEXT')
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
+
+    # Add reinvoice_subdepartment column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE allocations ADD COLUMN reinvoice_subdepartment TEXT')
         conn.commit()
     except psycopg2.errors.DuplicateColumn:
         conn.rollback()
@@ -249,8 +279,8 @@ def save_invoice(
         for dist in distributions:
             allocation_value = invoice_value * dist['allocation']
             cursor.execute('''
-                INSERT INTO allocations (invoice_id, company, brand, department, subdepartment, allocation_percent, allocation_value, responsible, reinvoice_to)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO allocations (invoice_id, company, brand, department, subdepartment, allocation_percent, allocation_value, responsible, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 invoice_id,
                 dist['company'],
@@ -260,7 +290,10 @@ def save_invoice(
                 dist['allocation'] * 100,
                 allocation_value,
                 dist.get('responsible', ''),
-                dist.get('reinvoice_to')
+                dist.get('reinvoice_to'),
+                dist.get('reinvoice_brand'),
+                dist.get('reinvoice_department'),
+                dist.get('reinvoice_subdepartment')
             ))
 
         conn.commit()
@@ -493,7 +526,10 @@ def get_summary_by_brand(company: Optional[str] = None, start_date: Optional[str
                    'brand', a.brand,
                    'value', a.allocation_value,
                    'percent', ROUND(a.allocation_percent),
-                   'reinvoice_to', a.reinvoice_to
+                   'reinvoice_to', a.reinvoice_to,
+                   'reinvoice_brand', a.reinvoice_brand,
+                   'reinvoice_department', a.reinvoice_department,
+                   'reinvoice_subdepartment', a.reinvoice_subdepartment
                )) as split_values
         FROM allocations a
         JOIN invoices i ON a.invoice_id = i.id
@@ -629,7 +665,10 @@ def update_allocation(
     allocation_percent: float = None,
     allocation_value: float = None,
     responsible: str = None,
-    reinvoice_to: str = None
+    reinvoice_to: str = None,
+    reinvoice_brand: str = None,
+    reinvoice_department: str = None,
+    reinvoice_subdepartment: str = None
 ) -> bool:
     """Update an existing allocation."""
     conn = get_db()
@@ -662,6 +701,15 @@ def update_allocation(
     if reinvoice_to is not None:
         updates.append('reinvoice_to = %s')
         params.append(reinvoice_to)
+    if reinvoice_brand is not None:
+        updates.append('reinvoice_brand = %s')
+        params.append(reinvoice_brand)
+    if reinvoice_department is not None:
+        updates.append('reinvoice_department = %s')
+        params.append(reinvoice_department)
+    if reinvoice_subdepartment is not None:
+        updates.append('reinvoice_subdepartment = %s')
+        params.append(reinvoice_subdepartment)
 
     if not updates:
         conn.close()
@@ -699,7 +747,10 @@ def add_allocation(
     brand: str = None,
     subdepartment: str = None,
     responsible: str = None,
-    reinvoice_to: str = None
+    reinvoice_to: str = None,
+    reinvoice_brand: str = None,
+    reinvoice_department: str = None,
+    reinvoice_subdepartment: str = None
 ) -> int:
     """Add a new allocation to an invoice. Returns allocation ID."""
     conn = get_db()
@@ -708,11 +759,11 @@ def add_allocation(
     try:
         cursor.execute('''
             INSERT INTO allocations (invoice_id, company, brand, department, subdepartment,
-                allocation_percent, allocation_value, responsible, reinvoice_to)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                allocation_percent, allocation_value, responsible, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (invoice_id, company, brand, department, subdepartment,
-              allocation_percent, allocation_value, responsible, reinvoice_to))
+              allocation_percent, allocation_value, responsible, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment))
         allocation_id = cursor.fetchone()['id']
 
         conn.commit()
@@ -752,8 +803,8 @@ def update_invoice_allocations(invoice_id: int, allocations: list[dict]) -> bool
 
             cursor.execute('''
                 INSERT INTO allocations (invoice_id, company, brand, department, subdepartment,
-                    allocation_percent, allocation_value, responsible, reinvoice_to)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    allocation_percent, allocation_value, responsible, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 invoice_id,
                 alloc['company'],
@@ -763,7 +814,10 @@ def update_invoice_allocations(invoice_id: int, allocations: list[dict]) -> bool
                 allocation_percent,
                 allocation_value,
                 alloc.get('responsible'),
-                alloc.get('reinvoice_to')
+                alloc.get('reinvoice_to'),
+                alloc.get('reinvoice_brand'),
+                alloc.get('reinvoice_department'),
+                alloc.get('reinvoice_subdepartment')
             ))
 
         conn.commit()
