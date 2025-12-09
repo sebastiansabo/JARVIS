@@ -11,7 +11,7 @@ from services import (
 from invoice_parser import parse_invoice, parse_invoice_with_template_from_bytes, auto_detect_and_parse, generate_template_from_invoice
 from database import (
     get_all_invoices, get_invoice_with_allocations, search_invoices,
-    get_summary_by_company, get_summary_by_department, delete_invoice,
+    get_summary_by_company, get_summary_by_department, delete_invoice, update_invoice,
     get_all_invoice_templates, get_invoice_template, save_invoice_template,
     update_invoice_template, delete_invoice_template
 )
@@ -275,6 +275,29 @@ def api_db_delete_invoice(invoice_id):
     if delete_invoice(invoice_id):
         return jsonify({'success': True})
     return jsonify({'error': 'Invoice not found'}), 404
+
+
+@app.route('/api/db/invoices/<int:invoice_id>', methods=['PUT'])
+def api_db_update_invoice(invoice_id):
+    """Update an invoice."""
+    data = request.json
+
+    try:
+        updated = update_invoice(
+            invoice_id=invoice_id,
+            supplier=data.get('supplier'),
+            invoice_number=data.get('invoice_number'),
+            invoice_date=data.get('invoice_date'),
+            invoice_value=float(data['invoice_value']) if data.get('invoice_value') is not None else None,
+            currency=data.get('currency'),
+            drive_link=data.get('drive_link'),
+            comment=data.get('comment')
+        )
+        if updated:
+            return jsonify({'success': True})
+        return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/db/search')

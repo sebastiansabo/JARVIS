@@ -60,6 +60,7 @@ def init_db():
                 invoice_value REAL NOT NULL,
                 currency TEXT DEFAULT 'RON',
                 drive_link TEXT,
+                comment TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -133,6 +134,12 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_allocations_company ON allocations(company)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_allocations_department ON allocations(department)')
 
+        # Add comment column to invoices if it doesn't exist (for existing databases)
+        try:
+            cursor.execute('ALTER TABLE invoices ADD COLUMN IF NOT EXISTS comment TEXT')
+        except Exception:
+            pass  # Column might already exist or syntax not supported
+
     else:
         # SQLite table definitions
         cursor.execute('''
@@ -145,6 +152,7 @@ def init_db():
                 invoice_value REAL NOT NULL,
                 currency TEXT DEFAULT 'RON',
                 drive_link TEXT,
+                comment TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(invoice_number)
@@ -171,6 +179,12 @@ def init_db():
         # Add reinvoice_to column if it doesn't exist (for existing databases)
         try:
             cursor.execute('ALTER TABLE allocations ADD COLUMN reinvoice_to TEXT')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        # Add comment column to invoices if it doesn't exist (for existing databases)
+        try:
+            cursor.execute('ALTER TABLE invoices ADD COLUMN comment TEXT')
         except sqlite3.OperationalError:
             pass  # Column already exists
 
@@ -544,6 +558,68 @@ def delete_invoice(invoice_id: int) -> bool:
     conn.commit()
     conn.close()
     return deleted
+
+
+def update_invoice(
+    invoice_id: int,
+    supplier: str = None,
+    invoice_number: str = None,
+    invoice_date: str = None,
+    invoice_value: float = None,
+    currency: str = None,
+    drive_link: str = None,
+    comment: str = None
+) -> bool:
+    """Update an existing invoice."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+    ph = get_placeholder()
+
+    # Build dynamic update query
+    updates = []
+    params = []
+
+    if supplier is not None:
+        updates.append(f'supplier = {ph}')
+        params.append(supplier)
+    if invoice_number is not None:
+        updates.append(f'invoice_number = {ph}')
+        params.append(invoice_number)
+    if invoice_date is not None:
+        updates.append(f'invoice_date = {ph}')
+        params.append(invoice_date)
+    if invoice_value is not None:
+        updates.append(f'invoice_value = {ph}')
+        params.append(invoice_value)
+    if currency is not None:
+        updates.append(f'currency = {ph}')
+        params.append(currency)
+    if drive_link is not None:
+        updates.append(f'drive_link = {ph}')
+        params.append(drive_link)
+    if comment is not None:
+        updates.append(f'comment = {ph}')
+        params.append(comment)
+
+    if not updates:
+        conn.close()
+        return False
+
+    updates.append('updated_at = CURRENT_TIMESTAMP')
+    params.append(invoice_id)
+
+    query = f"UPDATE invoices SET {', '.join(updates)} WHERE id = {ph}"
+
+    try:
+        cursor.execute(query, params)
+        updated = cursor.rowcount > 0
+        conn.commit()
+        return updated
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def search_invoices(query: str) -> list[dict]:

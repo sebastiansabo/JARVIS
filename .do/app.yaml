@@ -33,8 +33,8 @@ databases:
     engine: PG
     production: true
     cluster_name: app-be600e52-fbc0-4c5f-8ac3-5e79a750f6be
-    db_name: mktdb
-    db_user: mktdb
+    db_name: defaultdb
+    db_user: doadmin
 ingress:
   rules:
     - match:
