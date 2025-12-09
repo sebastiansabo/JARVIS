@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional
-from database import get_db
+from database import get_db, get_cursor, get_placeholder, USE_POSTGRES
 
 
 @dataclass
@@ -50,9 +50,9 @@ class InvoiceAllocation:
 
 
 def load_structure() -> list[DepartmentUnit]:
-    """Load the organizational structure from SQLite database."""
+    """Load the organizational structure from database."""
     conn = get_db()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
 
     cursor.execute('''
         SELECT company, brand, department, subdepartment, manager, marketing
@@ -79,7 +79,7 @@ def load_structure() -> list[DepartmentUnit]:
 def get_companies() -> list[str]:
     """Get unique list of companies."""
     conn = get_db()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
 
     cursor.execute('''
         SELECT DISTINCT company FROM department_structure
@@ -95,11 +95,12 @@ def get_companies() -> list[str]:
 def get_brands_for_company(company: str) -> list[str]:
     """Get brands available for a specific company."""
     conn = get_db()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
+    ph = get_placeholder()
 
-    cursor.execute('''
+    cursor.execute(f'''
         SELECT DISTINCT brand FROM department_structure
-        WHERE company = ? AND brand IS NOT NULL AND brand != ''
+        WHERE company = {ph} AND brand IS NOT NULL AND brand != ''
         ORDER BY brand
     ''', (company,))
 
@@ -111,11 +112,12 @@ def get_brands_for_company(company: str) -> list[str]:
 def get_departments_for_company(company: str) -> list[str]:
     """Get departments available for a specific company."""
     conn = get_db()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
+    ph = get_placeholder()
 
-    cursor.execute('''
+    cursor.execute(f'''
         SELECT DISTINCT department FROM department_structure
-        WHERE company = ? AND department IS NOT NULL AND department != ''
+        WHERE company = {ph} AND department IS NOT NULL AND department != ''
         ORDER BY department
     ''', (company,))
 
@@ -127,11 +129,12 @@ def get_departments_for_company(company: str) -> list[str]:
 def get_subdepartments(company: str, department: str) -> list[str]:
     """Get subdepartments for a specific company and department."""
     conn = get_db()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
+    ph = get_placeholder()
 
-    cursor.execute('''
+    cursor.execute(f'''
         SELECT DISTINCT subdepartment FROM department_structure
-        WHERE company = ? AND department = ? AND subdepartment IS NOT NULL AND subdepartment != ''
+        WHERE company = {ph} AND department = {ph} AND subdepartment IS NOT NULL AND subdepartment != ''
         ORDER BY subdepartment
     ''', (company, department))
 
@@ -143,18 +146,19 @@ def get_subdepartments(company: str, department: str) -> list[str]:
 def get_manager(company: str, department: str, subdepartment: Optional[str] = None) -> str:
     """Get the manager for a specific department."""
     conn = get_db()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
+    ph = get_placeholder()
 
     if subdepartment:
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT manager FROM department_structure
-            WHERE company = ? AND department = ? AND subdepartment = ?
+            WHERE company = {ph} AND department = {ph} AND subdepartment = {ph}
             LIMIT 1
         ''', (company, department, subdepartment))
     else:
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT manager FROM department_structure
-            WHERE company = ? AND department = ?
+            WHERE company = {ph} AND department = {ph}
             LIMIT 1
         ''', (company, department))
 
