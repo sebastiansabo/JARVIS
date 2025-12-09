@@ -40,8 +40,6 @@ ingress:
     - match:
         path:
           prefix: /
-        authority:
-          exact: ""
       component:
         name: bugetare
 alerts:
