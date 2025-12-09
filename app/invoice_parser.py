@@ -277,16 +277,6 @@ def apply_template(template: dict, text: str = None) -> dict:
             except Exception:
                 pass
 
-        # Extract customer VAT
-        if template.get('customer_vat_regex'):
-            try:
-                match = re.search(template['customer_vat_regex'], text, re.IGNORECASE)
-                if match:
-                    vat = match.group(1) if match.groups() else match.group(0)
-                    result['customer_vat'] = normalize_vat_number(vat)
-            except Exception:
-                pass
-
         # Extract currency
         if template.get('currency_regex'):
             try:
@@ -295,6 +285,22 @@ def apply_template(template: dict, text: str = None) -> dict:
                     result['currency'] = (match.group(1) if match.groups() else match.group(0)).upper()
             except Exception:
                 pass
+
+    # Extract customer VAT using regex (for all template types when regex is provided)
+    if text and template.get('customer_vat_regex') and not result.get('customer_vat'):
+        try:
+            match = re.search(template['customer_vat_regex'], text, re.IGNORECASE | re.DOTALL)
+            if match:
+                # Get the first non-None group
+                vat = None
+                for g in match.groups():
+                    if g:
+                        vat = g
+                        break
+                if vat:
+                    result['customer_vat'] = normalize_vat_number(vat)
+        except Exception:
+            pass
 
     return result
 
@@ -766,7 +772,7 @@ Return ONLY a valid JSON object with these exact keys:
     "template_type": "fixed",
     "supplier": "Supplier/vendor company name",
     "supplier_vat": "Supplier VAT number normalized (e.g., RO12345678, IE9692928F)",
-    "customer_vat": "Customer VAT number if visible, normalized (e.g., RO50186814)",
+    "customer_vat_regex": "Python regex pattern with capture group to extract customer VAT from the text",
     "currency": "RON/EUR/USD",
     "description": "Brief description of what this template is for",
     "invoice_number_regex": "Python regex pattern with capture group to extract invoice number from the text",
@@ -788,10 +794,16 @@ CRITICAL REGEX GUIDELINES:
 EXAMPLES OF GOOD PATTERNS:
 - Invoice number "Factura 2026/1200126972": Factura\\s+(\\d+/\\d+)
 - Invoice number "Seria CPY nr. 15562": Seria\\s+([A-Z]+)\\s+nr\\.?\\s*(\\d+)
-- Date "Data factura: 05.09.2025": Data factura:\\s*(\\d{{2}}\\.\\d{{2}}\\.\\d{{4}})
+- Invoice number "FBADS-416-105093174": Factura\\s+nr\\.?\\s*(FBADS-\\d+-\\d+)
+- Date "Data factura: 05.09.2025": Data\\s+factura:\\s*(\\d{{2}}\\.\\d{{2}}\\.\\d{{4}})
 - Date "22 nov. 2025": (\\d{{1,2}}\\s+\\w{{3}}\\.?\\s*,?\\s*\\d{{4}})
+- Date "Data emiterii: 31/10/2025": Data\\s+emiterii:\\s*(\\d{{2}}/\\d{{2}}/\\d{{4}})
 - Value "Total 2.758,91 RON": Total\\s+([\\d.,]+)\\s*(?:RON|EUR)?
 - Value "Efectuată 874,90 RON": Efectuat[aă]?\\s*([\\d.,]+)\\s*RON
+- Value "TOTAL PLATA 3 600.99 Lei": TOTAL\\s+PLATA\\s+([\\d\\s.,]+)\\s*Lei
+- Customer VAT "CIF: RO50022994": CIF:\\s*(RO\\d+)
+- Customer VAT "C.I.F.: RO50022994": C\\.I\\.F\\.:\\s*(RO\\d+)
+- Customer VAT "VAT: RO50186814": VAT:\\s*(RO\\d+)
 
 Return ONLY the JSON, no other text."""
         })
@@ -834,7 +846,7 @@ Return ONLY the JSON, no other text."""
                 'template_type': 'fixed',
                 'supplier': None,
                 'supplier_vat': None,
-                'customer_vat': None,
+                'customer_vat_regex': None,
                 'currency': 'RON',
                 'description': None,
                 'invoice_number_regex': None,

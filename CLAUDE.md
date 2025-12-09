@@ -28,7 +28,7 @@ app/
 ### Local Development
 ```bash
 source venv/bin/activate
-cd app && python app.py
+DATABASE_URL='postgresql://sebastiansabo@localhost:5432/defaultdb' PORT=5001 python app/app.py
 ```
 
 ### Database
@@ -43,7 +43,7 @@ docker run -p 8080:8080 -e DATABASE_URL="..." -e ANTHROPIC_API_KEY="..." bugetar
 
 ## Environment Variables
 - `DATABASE_URL` - PostgreSQL connection string (required)
-- `ANTHROPIC_API_KEY` - Claude API key for invoice parsing
+- `ANTHROPIC_API_KEY` - Claude API key for invoice parsing (stored in ~/.zshrc)
 - `GOOGLE_CREDENTIALS_JSON` - Google Drive API credentials
 
 ## Database Schema
@@ -56,9 +56,76 @@ docker run -p 8080:8080 -e DATABASE_URL="..." -e ANTHROPIC_API_KEY="..." bugetar
 ## Deployment
 Configured via `.do/app.yaml` for DigitalOcean App Platform with auto-deploy on push to main branch.
 
+## Invoice Parsing System
+
+### Two Parsing Modes
+1. **AI Parsing** (default fallback): Uses Claude claude-sonnet-4-20250514 vision to extract invoice data from PDFs/images
+2. **Template-based Parsing**: Uses regex patterns for faster, consistent extraction from known suppliers
+
+### Template Structure (`invoice_templates` table)
+Templates define how to extract data from invoices:
+- `name` - Template identifier (e.g., "Meta", "Google Ads")
+- `template_type` - "fixed" (static supplier info) or "format" (extract supplier via regex)
+- `supplier` / `supplier_vat` - Fixed supplier information
+- `customer_vat` - Fixed customer VAT (optional)
+- `customer_vat_regex` - Regex to extract customer VAT from invoice text
+- `invoice_number_regex` - Regex to extract invoice number
+- `invoice_date_regex` - Regex to extract invoice date
+- `invoice_value_regex` - Regex to extract total value
+- `currency` / `currency_regex` - Currency info
+
+### Parsing Flow (`invoice_parser.py`)
+
+**When template is explicitly selected** (user picks from dropdown):
+1. `parse_invoice_with_template_from_bytes()` is called
+2. Text extracted from PDF using PyPDF2
+3. `apply_template()` sets fixed values + extracts customer_vat via regex
+4. Invoice number, date, value extracted using template regex patterns
+5. **NO AI is used** - pure regex parsing
+
+**When no template selected** (auto-detect mode):
+1. `auto_detect_and_parse()` is called
+2. Text extracted from PDF
+3. Searches for matching template by supplier VAT in text
+4. **If template found** → uses `parse_with_template()` (regex only, no AI)
+5. **If NO template found** → falls back to `parse_invoice()` (AI parsing with Claude)
+
+**AI is ONLY used as fallback** when:
+- No template explicitly selected AND
+- No matching template auto-detected by supplier VAT
+
+### Key Functions
+- `apply_template(template, text)` - Apply template values, extract customer_vat via regex
+- `parse_with_template(file_path, template)` - Full template-based parsing
+- `parse_invoice(file_path)` - AI-based parsing using Claude vision
+- `auto_detect_and_parse()` - Auto-detects template by supplier VAT, falls back to AI
+
+### Regex Pattern Requirements
+- Patterns MUST have capture groups `()` to extract values
+- Multiple groups are concatenated (e.g., series + number)
+- First non-None group is used when multiple alternations exist
+
+### Current Templates (in database)
+1. **Meta** (ID 1) - Facebook/Instagram ads invoices
+   - `invoice_number_regex`: `(FBADS-\d+-\d+)|ID\s+tranzac[tț]ie\s+(\d+-\d+)`
+   - `invoice_date_regex`: `(\d{1,2}\s+\w{3}\.?\s*\d{4})`
+   - `invoice_value_regex`: `Efectuat[aă]?\s*([\d.,]+)\s*(?:RON|EUR|USD)?`
+   - `customer_vat_regex`: `VAT[:\s]*([A-Z]{2}[\s]?\d+)|S\.C\..*?VAT[:\s]*([A-Z]{2}[\s]?\d+)`
+
+2. **Dreamstime** (ID 2) - Stock photo invoices
+3. **Google Ads** (ID 3) - Google advertising invoices
+
+### Company VAT Matching
+When customer_vat is extracted, it's matched against `companies` table to auto-select company in UI.
+
 ## MCP Server Setup
 To enable DigitalOcean integration in Claude Code, add the MCP server:
 ```bash
 claude mcp add digitalocean -- npx -y @digitalocean/mcp --api-token YOUR_DO_API_TOKEN
 ```
 Restart Claude Code after adding to use DO management tools.
+
+## Recent Changes
+- Simplified database.py to PostgreSQL-only (removed SQLite)
+- Added customer_vat_regex extraction for all template types (not just "format")
+- Fixed Meta template invoice_number_regex to include capture groups
