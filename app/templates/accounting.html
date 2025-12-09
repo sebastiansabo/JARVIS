@@ -322,6 +322,7 @@
                                     <option value="date">Date</option>
                                     <option value="link">Link (clickable)</option>
                                     <option value="split">Split (allocation breakdown)</option>
+                                    <option value="reinvoice">Reinvoice (detailed breakdown)</option>
                                 </select>
                             </div>
                             <button class="btn btn-success" id="addCustomColumnBtn">
@@ -499,7 +500,7 @@
             { id: 'department', name: 'Department', source: 'allocation.department', format: 'text', visible: false, custom: false },
             { id: 'brand', name: 'Brand', source: 'allocation.brand', format: 'text', visible: false, custom: false },
             { id: 'responsible', name: 'Responsible', source: 'allocation.responsible', format: 'text', visible: false, custom: false },
-            { id: 'reinvoice_to', name: 'Reinvoice To', source: 'computed.reinvoice_list', format: 'text', visible: false, custom: false },
+            { id: 'reinvoice_to', name: 'Reinvoice To', source: 'computed.reinvoice_list', format: 'reinvoice', visible: false, custom: false },
             { id: 'split_values', name: 'Split Values', source: 'computed.split_values', format: 'split', visible: false, custom: false },
             { id: 'comment', name: 'Comment', source: 'invoice.comment', format: 'text', visible: false, custom: false },
             { id: 'actions', name: 'Actions', source: 'special.actions', format: 'special', visible: true, custom: false },
@@ -944,16 +945,24 @@
                         return allocations.map(a => ({
                             company: a.company,
                             department: a.department,
+                            subdepartment: a.subdepartment,
+                            brand: a.brand,
                             percent: a.allocation_percent,
                             value: a.allocation_value,
                             reinvoice_to: a.reinvoice_to
                         }));
                     case 'reinvoice_list':
-                        // Get unique reinvoice targets from all allocations
-                        const reinvoiceTargets = allocations
+                        // Get allocations with reinvoice_to, including value/dept details
+                        const reinvoiceAllocations = allocations
                             .filter(a => a.reinvoice_to)
-                            .map(a => a.reinvoice_to);
-                        return [...new Set(reinvoiceTargets)].join(', ') || null;
+                            .map(a => ({
+                                value: a.allocation_value,
+                                percent: a.allocation_percent,
+                                department: a.department,
+                                brand: a.brand,
+                                reinvoice_to: a.reinvoice_to
+                            }));
+                        return reinvoiceAllocations.length > 0 ? reinvoiceAllocations : null;
                     default:
                         return '-';
                 }
@@ -975,11 +984,31 @@
                     return value ? `<a href="${value}" target="_blank">${value}</a>` : '-';
                 case 'split':
                     if (Array.isArray(value) && value.length > 0) {
-                        return value.map(s =>
-                            `<div class="small border-start border-primary ps-2 mb-1">
-                                <span class="text-muted">${s.company}</span><br>
+                        return value.map(s => {
+                            // Show subdepartment if available, otherwise department. Add brand in parentheses if exists.
+                            const location = s.subdepartment || s.department;
+                            const brandPart = s.brand ? ` (${s.brand})` : '';
+                            const borderColor = s.reinvoice_to ? 'border-warning' : 'border-primary';
+                            const reinvoiceLine = s.reinvoice_to
+                                ? `<hr class="my-1 border-warning"><span class="text-warning small"><i class="bi bi-arrow-right"></i> ${s.reinvoice_to}</span>`
+                                : '';
+                            return `<div class="small border-start ${borderColor} ps-2 mb-1">
+                                <span class="text-muted">${location}${brandPart}</span><br>
                                 <strong>${formatCurrency(s.value)} RON</strong>
                                 <span class="badge bg-secondary">${s.percent}%</span>
+                                ${reinvoiceLine}
+                            </div>`;
+                        }).join('');
+                    }
+                    return '-';
+                case 'reinvoice':
+                    if (Array.isArray(value) && value.length > 0) {
+                        return value.map(r =>
+                            `<div class="small border-start border-warning ps-2 mb-1">
+                                <span class="text-muted">${r.department}${r.brand ? ' (' + r.brand + ')' : ''}</span><br>
+                                <strong>${formatCurrency(r.value)} RON</strong>
+                                <span class="badge bg-secondary">${r.percent}%</span><br>
+                                <span class="text-warning"><i class="bi bi-arrow-right"></i> ${r.reinvoice_to}</span>
                             </div>`
                         ).join('');
                     }
