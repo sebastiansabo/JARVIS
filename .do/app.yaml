@@ -2,10 +2,6 @@ name: bug-mkt
 region: fra
 features:
   - buildpack-stack=ubuntu-22
-envs:
-  - key: DATABASE_URL
-    scope: RUN_AND_BUILD_TIME
-    value: ${mktdb.DATABASE_URL}
 services:
   - name: bugetare
     http_port: 8080
@@ -25,16 +21,8 @@ services:
         type: SECRET
         scope: RUN_AND_BUILD_TIME
       - key: DATABASE_URL
-        value: ${mktdb.DATABASE_URL}
+        type: SECRET
         scope: RUN_TIME
-databases:
-  - name: mktdb
-    version: "17"
-    engine: PG
-    production: true
-    cluster_name: app-be600e52-fbc0-4c5f-8ac3-5e79a750f6be
-    db_name: defaultdb
-    db_user: doadmin
 ingress:
   rules:
     - match:
