@@ -581,7 +581,7 @@
                                 <li>Supplier VAT: ${data.supplier_vat || '-'}</li>
                                 <li>Customer VAT: ${data.customer_vat || '-'}</li>
                                 <li>Invoice #: ${data.invoice_number || '-'}</li>
-                                <li>Date: ${data.invoice_date || '-'}</li>
+                                <li>Date: ${formatDateRomanian(data.invoice_date)}</li>
                                 <li>Value: ${data.invoice_value || '-'} ${data.currency || ''}</li>
                             </ul>
                             <small class="text-muted mt-2 d-block">Form fields have been pre-filled with AI results.</small>
@@ -698,6 +698,21 @@
                         <i class="bi bi-x-circle"></i> Error: ${e.message}
                     </div>
                 `;
+            }
+        }
+
+        function formatDateRomanian(dateStr) {
+            if (!dateStr) return '-';
+            const months = ['ian', 'feb', 'mar', 'apr', 'mai', 'iun', 'iul', 'aug', 'sep', 'oct', 'noi', 'dec'];
+            try {
+                const date = new Date(dateStr);
+                if (isNaN(date.getTime())) return dateStr;
+                const day = date.getDate();
+                const month = months[date.getMonth()];
+                const year = date.getFullYear();
+                return `${day} ${month}. ${year}`;
+            } catch (e) {
+                return dateStr;
             }
         }
 

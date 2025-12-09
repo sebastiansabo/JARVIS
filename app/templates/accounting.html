@@ -954,7 +954,7 @@
                 case 'percent':
                     return value + '%';
                 case 'date':
-                    return value || '-';
+                    return formatDateRomanian(value) || '-';
                 case 'link':
                     return value ? `<a href="${value}" target="_blank">${value}</a>` : '-';
                 case 'split':
@@ -1099,7 +1099,7 @@
                             <table class="table table-sm">
                                 <tr><th>Supplier</th><td>${invoice.supplier}</td></tr>
                                 <tr><th>Invoice #</th><td><code>${invoice.invoice_number}</code></td></tr>
-                                <tr><th>Date</th><td>${invoice.invoice_date}</td></tr>
+                                <tr><th>Date</th><td>${formatDateRomanian(invoice.invoice_date)}</td></tr>
                                 <tr><th>Total Value</th><td><strong>${formatCurrency(invoice.invoice_value)} ${invoice.currency || 'RON'}</strong></td></tr>
                                 <tr><th>Template</th><td>${invoice.invoice_template || '-'}</td></tr>
                                 <tr><th>Created</th><td>${invoice.created_at}</td></tr>
@@ -1567,6 +1567,21 @@
 
         function formatCurrency(value) {
             return new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
+        }
+
+        function formatDateRomanian(dateStr) {
+            if (!dateStr) return '-';
+            const months = ['ian', 'feb', 'mar', 'apr', 'mai', 'iun', 'iul', 'aug', 'sep', 'oct', 'noi', 'dec'];
+            try {
+                const date = new Date(dateStr);
+                if (isNaN(date.getTime())) return dateStr;
+                const day = date.getDate();
+                const month = months[date.getMonth()];
+                const year = date.getFullYear();
+                return `${day} ${month}. ${year}`;
+            } catch (e) {
+                return dateStr;
+            }
         }
     </script>
 </body>
