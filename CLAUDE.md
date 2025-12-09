@@ -5,7 +5,7 @@ Flask-based web application for managing invoice allocations across companies, b
 
 ## Tech Stack
 - **Backend**: Flask + Gunicorn
-- **Database**: PostgreSQL (production) / SQLite (local development)
+- **Database**: PostgreSQL (required)
 - **AI**: Anthropic Claude API for invoice parsing
 - **Storage**: Google Drive integration for invoice uploads
 - **Deployment**: DigitalOcean App Platform via Docker
@@ -14,7 +14,7 @@ Flask-based web application for managing invoice allocations across companies, b
 ```
 app/
 ├── app.py           # Main Flask application and routes
-├── database.py      # Database operations (PostgreSQL/SQLite dual support)
+├── database.py      # Database operations (PostgreSQL)
 ├── models.py        # Data models and structure loading
 ├── services.py      # Business logic for allocations
 ├── invoice_parser.py # AI-powered invoice parsing with Claude
@@ -32,8 +32,7 @@ cd app && python app.py
 ```
 
 ### Database
-- PostgreSQL connection via `DATABASE_URL` environment variable
-- Falls back to SQLite (`invoices.db`) when `DATABASE_URL` not set
+- PostgreSQL connection via `DATABASE_URL` environment variable (required)
 - Tables auto-initialize on first run with seed data
 
 ### Docker Build
@@ -43,7 +42,7 @@ docker run -p 8080:8080 -e DATABASE_URL="..." -e ANTHROPIC_API_KEY="..." bugetar
 ```
 
 ## Environment Variables
-- `DATABASE_URL` - PostgreSQL connection string (required for production)
+- `DATABASE_URL` - PostgreSQL connection string (required)
 - `ANTHROPIC_API_KEY` - Claude API key for invoice parsing
 - `GOOGLE_CREDENTIALS_JSON` - Google Drive API credentials
 

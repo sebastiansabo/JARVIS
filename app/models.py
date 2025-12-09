@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional
-from database import get_db, get_cursor, get_placeholder, USE_POSTGRES
+from database import get_db, get_cursor, get_placeholder
 
 
 @dataclass
