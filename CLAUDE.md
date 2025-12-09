@@ -160,6 +160,31 @@ The `dict_from_row()` function converts Python date objects to ISO format string
 - `responsible` - Auto-populated from department_structure
 - `reinvoice_to` - Optional company for reinvoicing
 
+## Accounting Dashboard
+
+### Tab Views
+The accounting dashboard (`/accounting`) provides multiple views:
+1. **Invoices** - List of all invoices with configurable columns
+2. **By Company** - Summary grouped by company
+3. **By Department** - Summary grouped by department
+4. **By Brand** - Summary grouped by brand (Linie de business)
+
+### Collapsible Split Values
+The Split Values column displays allocation details in a collapsible format:
+- Summary line shows: `X allocations • Y RON`
+- Yellow `(→)` indicator appears if any allocations have reinvoice targets
+- Click +/- icon to expand/collapse allocation details
+- Each allocation shows department, brand, value, percentage, and reinvoice target
+
+### Column Configuration
+Each tab has its own column configuration stored in localStorage:
+- `accountingColumnConfig` - Invoices tab
+- `companyColumnConfig` - By Company tab
+- `departmentColumnConfig` - By Department tab
+- `brandColumnConfig` - By Brand tab
+
+Use "Configure Columns" button to show/hide and reorder columns.
+
 ## Recent Changes
 - Simplified database.py to PostgreSQL-only (removed SQLite)
 - Added customer_vat_regex extraction for all template types (not just "format")
@@ -168,3 +193,5 @@ The `dict_from_row()` function converts Python date objects to ISO format string
 - Fixed date serialization in API responses (was returning HTTP date format instead of ISO)
 - Updated edit allocation modal to use single "Dedicated Company" dropdown (consistent with invoice input)
 - Added smart split redistribution when adding/removing allocations in edit mode
+- Added collapsible Split Values column with +/- toggle and allocation summary
+- Added "By Brand" (Linie de business) tab view with Invoice #, Value, Split Values columns
