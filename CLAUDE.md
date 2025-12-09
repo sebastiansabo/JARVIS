@@ -125,7 +125,46 @@ claude mcp add digitalocean -- npx -y @digitalocean/mcp --api-token YOUR_DO_API_
 ```
 Restart Claude Code after adding to use DO management tools.
 
+## Date Handling
+
+### Date Format Standards
+- **Storage**: ISO format `YYYY-MM-DD` in PostgreSQL DATE columns
+- **Display**: Romanian format `DD.MM.YYYY` using `formatDateRomanian()` in JavaScript
+
+### Date Parsing (`invoice_parser.py`)
+The `parse_romanian_date()` function handles multiple date formats:
+- **Romanian**: `'22 nov. 2025'`, `'22 noiembrie 2025'`
+- **English**: `'Nov 21, 2025'`, `'November 1, 2025'`
+- **Numeric**: `'22.11.2025'`, `'22/11/2025'`, `'22-11-2025'`
+- **ISO**: `'2025-11-22'`
+
+All formats are converted to ISO `YYYY-MM-DD` for database storage.
+
+### Date Serialization (`database.py`)
+The `dict_from_row()` function converts Python date objects to ISO format strings for JSON API responses. This ensures HTML date inputs receive proper `YYYY-MM-DD` values.
+
+## Allocation Rules
+
+### Single Company Constraint
+- Each invoice is allocated to a **single company** (via "Dedicated To (Company)" dropdown)
+- Allocations can be split across multiple departments/brands **within that company**
+- The edit allocation modal enforces the same constraint as the invoice input form
+
+### Allocation Fields
+- `company` - Company receiving the allocation (same for all rows)
+- `brand` - Optional brand within the company
+- `department` - Required department
+- `subdepartment` - Optional subdepartment
+- `allocation_percent` - Percentage (must sum to 100%)
+- `allocation_value` - Calculated from invoice_value * allocation_percent
+- `responsible` - Auto-populated from department_structure
+- `reinvoice_to` - Optional company for reinvoicing
+
 ## Recent Changes
 - Simplified database.py to PostgreSQL-only (removed SQLite)
 - Added customer_vat_regex extraction for all template types (not just "format")
 - Fixed Meta template invoice_number_regex to include capture groups
+- Fixed English date format parsing (e.g., 'Nov 21, 2025' from Shopify/Google invoices)
+- Fixed date serialization in API responses (was returning HTTP date format instead of ISO)
+- Updated edit allocation modal to use single "Dedicated Company" dropdown (consistent with invoice input)
+- Added smart split redistribution when adding/removing allocations in edit mode

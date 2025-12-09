@@ -311,35 +311,69 @@ def apply_template(template: dict, text: str = None) -> dict:
 
 def parse_romanian_date(date_str: str) -> str:
     """
-    Parse Romanian date formats and convert to YYYY-MM-DD.
-    Handles formats like: '22 nov. 2025', '22 noiembrie 2025', '22.11.2025', '22/11/2025'
+    Parse various date formats and convert to YYYY-MM-DD.
+    Handles formats like:
+    - Romanian: '22 nov. 2025', '22 noiembrie 2025'
+    - English: 'Nov 21, 2025', 'November 1, 2025'
+    - Numeric: '22.11.2025', '22/11/2025', '22-11-2025'
+    - ISO: '2025-11-22'
     """
-    # Romanian month names
-    ro_months = {
-        'ian': '01', 'ianuarie': '01', 'jan': '01',
+    # Month names (Romanian and English)
+    months = {
+        # Romanian
+        'ian': '01', 'ianuarie': '01',
         'feb': '02', 'februarie': '02',
         'mar': '03', 'martie': '03',
         'apr': '04', 'aprilie': '04',
-        'mai': '05', 'may': '05',
-        'iun': '06', 'iunie': '06', 'jun': '06',
-        'iul': '07', 'iulie': '07', 'jul': '07',
+        'mai': '05',
+        'iun': '06', 'iunie': '06',
+        'iul': '07', 'iulie': '07',
         'aug': '08', 'august': '08',
         'sep': '09', 'septembrie': '09', 'sept': '09',
         'oct': '10', 'octombrie': '10',
-        'noi': '11', 'nov': '11', 'noiembrie': '11',
+        'noi': '11', 'noiembrie': '11',
         'dec': '12', 'decembrie': '12',
+        # English
+        'jan': '01', 'january': '01',
+        'february': '02',
+        'march': '03',
+        'april': '04',
+        'may': '05',
+        'jun': '06', 'june': '06',
+        'jul': '07', 'july': '07',
+        'august': '08',
+        'september': '09',
+        'october': '10',
+        'nov': '11', 'november': '11',
+        'december': '12',
     }
 
     date_str = date_str.strip()
 
-    # Try Romanian month format: "22 nov. 2025" or "22 noiembrie 2025"
+    # Try YYYY-MM-DD (already correct format) - check first
+    iso_match = re.match(r'(\d{4})-(\d{2})-(\d{2})', date_str)
+    if iso_match:
+        return date_str
+
+    # Try English format: "Nov 21, 2025" or "November 1, 2025"
+    en_match = re.match(r'(\w+)\s+(\d{1,2}),?\s*(\d{4})', date_str)
+    if en_match:
+        month_str = en_match.group(1).lower().rstrip('.')
+        day = en_match.group(2).zfill(2)
+        year = en_match.group(3)
+
+        month = months.get(month_str)
+        if month:
+            return f"{year}-{month}-{day}"
+
+    # Try Romanian/European format: "22 nov. 2025" or "22 noiembrie 2025"
     ro_match = re.match(r'(\d{1,2})\s+(\w+)\.?\s*,?\s*(\d{4})', date_str)
     if ro_match:
         day = ro_match.group(1).zfill(2)
         month_str = ro_match.group(2).lower().rstrip('.')
         year = ro_match.group(3)
 
-        month = ro_months.get(month_str)
+        month = months.get(month_str)
         if month:
             return f"{year}-{month}-{day}"
 
@@ -350,11 +384,6 @@ def parse_romanian_date(date_str: str) -> str:
         month = numeric_match.group(2).zfill(2)
         year = numeric_match.group(3)
         return f"{year}-{month}-{day}"
-
-    # Try YYYY-MM-DD (already correct format)
-    iso_match = re.match(r'(\d{4})-(\d{2})-(\d{2})', date_str)
-    if iso_match:
-        return date_str
 
     return date_str  # Return as-is if can't parse
 

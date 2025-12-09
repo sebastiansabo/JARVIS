@@ -203,10 +203,21 @@ def _seed_companies(cursor):
 
 
 def dict_from_row(row):
-    """Convert a database row to a dictionary."""
+    """Convert a database row to a dictionary with proper date serialization."""
     if row is None:
         return None
-    return dict(row)
+    result = dict(row)
+    # Convert date/datetime objects to ISO format strings for JSON serialization
+    for key, value in result.items():
+        if hasattr(value, 'isoformat'):
+            # For date objects, just return YYYY-MM-DD
+            if hasattr(value, 'hour'):
+                # datetime object - keep full ISO format
+                result[key] = value.isoformat()
+            else:
+                # date object - just YYYY-MM-DD
+                result[key] = value.isoformat()
+    return result
 
 
 def save_invoice(

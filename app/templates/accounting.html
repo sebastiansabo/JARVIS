@@ -451,6 +451,14 @@
                             <i class="bi bi-pie-chart"></i> Cost Allocations
                             <span class="badge bg-secondary ms-2" id="allocationTotalBadge">0%</span>
                         </h6>
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Dedicated To (Company) *</label>
+                                <select class="form-select" id="editDedicatedCompany" required>
+                                    <option value="">Select company...</option>
+                                </select>
+                            </div>
+                        </div>
                         <div id="allocationsContainer">
                             <!-- Allocation rows will be rendered here -->
                         </div>
@@ -1176,6 +1184,21 @@
             document.getElementById('editDriveLink').value = invoice.drive_link || '';
             document.getElementById('editComment').value = invoice.comment || '';
 
+            // Populate dedicated company dropdown
+            const companies = getUniqueCompanies();
+            const dedicatedCompanySelect = document.getElementById('editDedicatedCompany');
+            dedicatedCompanySelect.innerHTML = '<option value="">Select company...</option>' +
+                companies.map(c => `<option value="${c}">${c}</option>`).join('');
+
+            // Set dedicated company from first allocation (all should be same company)
+            const firstAllocationCompany = invoice.allocations && invoice.allocations.length > 0
+                ? invoice.allocations[0].company
+                : '';
+            dedicatedCompanySelect.value = firstAllocationCompany;
+
+            // Add change event listener for dedicated company
+            dedicatedCompanySelect.onchange = onDedicatedCompanyChange;
+
             // Load allocations
             editAllocations = (invoice.allocations || []).map(a => ({...a}));
             renderEditAllocations();
@@ -1191,6 +1214,13 @@
             if (!invoiceId) return;
 
             const invoiceValue = parseFloat(document.getElementById('editInvoiceValue').value) || 0;
+            const dedicatedCompany = document.getElementById('editDedicatedCompany').value;
+
+            // Validate dedicated company
+            if (!dedicatedCompany) {
+                alert('Please select a company');
+                return;
+            }
 
             // Validate allocations
             const totalPercent = editAllocations.reduce((sum, a) => sum + (parseFloat(a.allocation_percent) || 0), 0);
@@ -1199,9 +1229,18 @@
                 return;
             }
 
-            // Calculate allocation values based on percentages
+            // Validate all allocations have a department
+            for (const alloc of editAllocations) {
+                if (!alloc.department) {
+                    alert('Please select a department for all allocations');
+                    return;
+                }
+            }
+
+            // Calculate allocation values and set company for all allocations
             const allocationsWithValues = editAllocations.map(a => ({
                 ...a,
+                company: dedicatedCompany,  // Use dedicated company for all
                 allocation_percent: parseFloat(a.allocation_percent) || 0,
                 allocation_value: (invoiceValue * (parseFloat(a.allocation_percent) || 0)) / 100
             }));
@@ -1293,11 +1332,14 @@
             const container = document.getElementById('allocationsContainer');
             const invoiceValue = parseFloat(document.getElementById('editInvoiceValue').value) || 0;
             const companies = getUniqueCompanies();
+            const dedicatedCompany = document.getElementById('editDedicatedCompany').value;
+
+            // Get departments/brands for the dedicated company
+            const departments = getDepartmentsForCompany(dedicatedCompany);
+            const brands = getBrandsForCompany(dedicatedCompany);
 
             container.innerHTML = editAllocations.map((alloc, idx) => {
-                const departments = getDepartmentsForCompany(alloc.company);
-                const subdepartments = getSubdepartmentsForDept(alloc.company, alloc.department);
-                const brands = getBrandsForCompany(alloc.company);
+                const subdepartments = getSubdepartmentsForDept(dedicatedCompany, alloc.department);
                 const allocValue = (invoiceValue * (parseFloat(alloc.allocation_percent) || 0)) / 100;
 
                 return `
@@ -1306,11 +1348,11 @@
                             <i class="bi bi-trash"></i>
                         </button>
                         <div class="row">
-                            <div class="col-md-3 mb-2">
-                                <label class="form-label">Company</label>
-                                <select class="form-select alloc-company" data-idx="${idx}" onchange="onAllocationCompanyChange(${idx})">
-                                    <option value="">Select...</option>
-                                    ${companies.map(c => `<option value="${c}" ${c === alloc.company ? 'selected' : ''}>${c}</option>`).join('')}
+                            <div class="col-md-2 mb-2">
+                                <label class="form-label">Brand</label>
+                                <select class="form-select alloc-brand" data-idx="${idx}" onchange="onAllocationFieldChange(${idx})">
+                                    <option value="">N/A</option>
+                                    ${brands.map(b => `<option value="${b}" ${b === alloc.brand ? 'selected' : ''}>${b}</option>`).join('')}
                                 </select>
                             </div>
                             <div class="col-md-2 mb-2">
@@ -1323,15 +1365,8 @@
                             <div class="col-md-2 mb-2">
                                 <label class="form-label">Subdepartment</label>
                                 <select class="form-select alloc-subdepartment" data-idx="${idx}" onchange="onAllocationFieldChange(${idx})">
-                                    <option value="">None</option>
+                                    <option value="">N/A</option>
                                     ${subdepartments.map(s => `<option value="${s}" ${s === alloc.subdepartment ? 'selected' : ''}>${s}</option>`).join('')}
-                                </select>
-                            </div>
-                            <div class="col-md-2 mb-2">
-                                <label class="form-label">Brand</label>
-                                <select class="form-select alloc-brand" data-idx="${idx}" onchange="onAllocationFieldChange(${idx})">
-                                    <option value="">None</option>
-                                    ${brands.map(b => `<option value="${b}" ${b === alloc.brand ? 'selected' : ''}>${b}</option>`).join('')}
                                 </select>
                             </div>
                             <div class="col-md-2 mb-2">
@@ -1343,7 +1378,7 @@
                                     <span class="input-group-text">%</span>
                                 </div>
                             </div>
-                            <div class="col-md-2 mb-2">
+                            <div class="col-md-3 mb-2">
                                 <label class="form-label">Value</label>
                                 <div class="input-group input-group-sm">
                                     <input type="number" class="form-control alloc-value" data-idx="${idx}"
@@ -1354,15 +1389,18 @@
                             </div>
                         </div>
                         <div class="row">
-                            <div class="col-md-4 mb-2">
-                                <label class="form-label">Responsible</label>
-                                <input type="text" class="form-control alloc-responsible" data-idx="${idx}"
-                                       value="${alloc.responsible || ''}" onchange="onAllocationFieldChange(${idx})">
+                            <div class="col-md-6 mb-2">
+                                <small class="text-muted">Manager: ${alloc.responsible || '--'}</small>
                             </div>
-                            <div class="col-md-4 mb-2">
-                                <label class="form-label">Reinvoice To</label>
-                                <select class="form-select alloc-reinvoice" data-idx="${idx}" onchange="onAllocationFieldChange(${idx})">
-                                    <option value="">None</option>
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input alloc-reinvoice-check" type="checkbox" data-idx="${idx}"
+                                           ${alloc.reinvoice_to ? 'checked' : ''} onchange="onReinvoiceCheckChange(${idx})">
+                                    <label class="form-check-label small">Reinvoice to:</label>
+                                </div>
+                                <select class="form-select form-select-sm d-inline-block alloc-reinvoice" data-idx="${idx}"
+                                        style="width: auto; ${alloc.reinvoice_to ? '' : 'display: none;'}" onchange="onAllocationFieldChange(${idx})">
+                                    <option value="">Select company...</option>
                                     ${companies.map(c => `<option value="${c}" ${c === alloc.reinvoice_to ? 'selected' : ''}>${c}</option>`).join('')}
                                 </select>
                             </div>
@@ -1383,41 +1421,53 @@
             badge.className = Math.abs(totalPercent - 100) < 0.01 ? 'badge bg-success ms-2' : 'badge bg-danger ms-2';
         }
 
-        function onAllocationCompanyChange(idx) {
-            const company = document.querySelector(`.alloc-company[data-idx="${idx}"]`).value;
-            editAllocations[idx].company = company;
-            editAllocations[idx].department = '';
-            editAllocations[idx].subdepartment = '';
-            editAllocations[idx].brand = '';
-            editAllocations[idx].responsible = '';
+        function onDedicatedCompanyChange() {
+            // Reset all allocations when company changes
+            const company = document.getElementById('editDedicatedCompany').value;
+            editAllocations.forEach(alloc => {
+                alloc.company = company;
+                alloc.department = '';
+                alloc.subdepartment = '';
+                alloc.brand = '';
+                alloc.responsible = '';
+            });
             renderEditAllocations();
         }
 
         function onAllocationDeptChange(idx) {
-            const company = editAllocations[idx].company;
+            const company = document.getElementById('editDedicatedCompany').value;
             const department = document.querySelector(`.alloc-department[data-idx="${idx}"]`).value;
-            const subdepartment = document.querySelector(`.alloc-subdepartment[data-idx="${idx}"]`).value;
 
             editAllocations[idx].department = department;
             editAllocations[idx].subdepartment = '';
-            editAllocations[idx].responsible = getResponsible(company, department, subdepartment);
+            editAllocations[idx].responsible = getResponsible(company, department, null);
             renderEditAllocations();
         }
 
         function onAllocationFieldChange(idx) {
             const row = document.querySelector(`.allocation-edit-row[data-idx="${idx}"]`);
+            const company = document.getElementById('editDedicatedCompany').value;
+
             editAllocations[idx].subdepartment = row.querySelector('.alloc-subdepartment').value || null;
             editAllocations[idx].brand = row.querySelector('.alloc-brand').value || null;
-            editAllocations[idx].responsible = row.querySelector('.alloc-responsible').value || null;
             editAllocations[idx].reinvoice_to = row.querySelector('.alloc-reinvoice').value || null;
 
             // Update responsible based on company/dept/subdept
-            const company = editAllocations[idx].company;
             const department = editAllocations[idx].department;
             const subdepartment = editAllocations[idx].subdepartment;
-            if (company && department && !editAllocations[idx].responsible) {
-                editAllocations[idx].responsible = getResponsible(company, department, subdepartment);
-                row.querySelector('.alloc-responsible').value = editAllocations[idx].responsible;
+            editAllocations[idx].responsible = getResponsible(company, department, subdepartment);
+        }
+
+        function onReinvoiceCheckChange(idx) {
+            const checked = document.querySelector(`.alloc-reinvoice-check[data-idx="${idx}"]`).checked;
+            const select = document.querySelector(`.alloc-reinvoice[data-idx="${idx}"]`);
+
+            if (checked) {
+                select.style.display = '';
+            } else {
+                select.style.display = 'none';
+                select.value = '';
+                editAllocations[idx].reinvoice_to = null;
             }
         }
 
@@ -1518,8 +1568,13 @@
         }
 
         function addNewAllocation() {
+            const dedicatedCompany = document.getElementById('editDedicatedCompany').value;
+            if (!dedicatedCompany) {
+                alert('Please select a company first');
+                return;
+            }
             editAllocations.push({
-                company: '',
+                company: dedicatedCompany,
                 brand: null,
                 department: '',
                 subdepartment: null,
