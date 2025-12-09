@@ -308,6 +308,7 @@
                                         <option value="computed.allocation_count">Allocation Count</option>
                                         <option value="computed.companies_list">Companies (comma-sep)</option>
                                         <option value="computed.departments_list">Departments (comma-sep)</option>
+                                        <option value="computed.reinvoice_list">Reinvoice To (all allocations)</option>
                                         <option value="computed.split_values">Split Values (all allocations)</option>
                                     </optgroup>
                                 </select>
@@ -498,7 +499,7 @@
             { id: 'department', name: 'Department', source: 'allocation.department', format: 'text', visible: false, custom: false },
             { id: 'brand', name: 'Brand', source: 'allocation.brand', format: 'text', visible: false, custom: false },
             { id: 'responsible', name: 'Responsible', source: 'allocation.responsible', format: 'text', visible: false, custom: false },
-            { id: 'reinvoice_to', name: 'Reinvoice To', source: 'allocation.reinvoice_to', format: 'text', visible: false, custom: false },
+            { id: 'reinvoice_to', name: 'Reinvoice To', source: 'computed.reinvoice_list', format: 'text', visible: false, custom: false },
             { id: 'split_values', name: 'Split Values', source: 'computed.split_values', format: 'split', visible: false, custom: false },
             { id: 'comment', name: 'Comment', source: 'invoice.comment', format: 'text', visible: false, custom: false },
             { id: 'actions', name: 'Actions', source: 'special.actions', format: 'special', visible: true, custom: false },
@@ -944,8 +945,15 @@
                             company: a.company,
                             department: a.department,
                             percent: a.allocation_percent,
-                            value: a.allocation_value
+                            value: a.allocation_value,
+                            reinvoice_to: a.reinvoice_to
                         }));
+                    case 'reinvoice_list':
+                        // Get unique reinvoice targets from all allocations
+                        const reinvoiceTargets = allocations
+                            .filter(a => a.reinvoice_to)
+                            .map(a => a.reinvoice_to);
+                        return [...new Set(reinvoiceTargets)].join(', ') || null;
                     default:
                         return '-';
                 }
