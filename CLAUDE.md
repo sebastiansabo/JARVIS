@@ -280,3 +280,5 @@ The "Total Value" card on the accounting dashboard has a EUR/RON toggle switch:
 - Added notification toggle to Edit Invoice modal (default OFF, only sends if validation passes)
 - Reinvoice department managers now receive allocation notifications
 - Email templates now include reinvoice details (company/department/subdepartment)
+- Changed Google Drive folder structure to Year/Month/Company/InvoiceNo
+- Email templates translated to Romanian with separate Alocare and Refacturare sections

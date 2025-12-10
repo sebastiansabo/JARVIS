@@ -1866,13 +1866,15 @@
                 return;
             }
 
-            const supplier = document.getElementById('editSupplier').value || 'Unknown';
             const invoiceDate = document.getElementById('editInvoiceDate').value || '';
+            const company = document.getElementById('editDedicatedCompany').value || 'Unknown Company';
+            const invoiceNumber = document.getElementById('editInvoiceNumber').value || 'Unknown Invoice';
 
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('supplier', supplier);
             formData.append('invoice_date', invoiceDate);
+            formData.append('company', company);
+            formData.append('invoice_number', invoiceNumber);
 
             const btn = document.getElementById('uploadEditFileBtn');
             const originalText = btn.innerHTML;

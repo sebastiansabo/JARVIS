@@ -527,7 +527,7 @@ def api_drive_status():
 @app.route('/api/drive/upload', methods=['POST'])
 @login_required
 def api_drive_upload():
-    """Upload invoice to Google Drive organized by Year/Supplier."""
+    """Upload invoice to Google Drive organized by Year/Month/Company/InvoiceNo."""
     if not DRIVE_ENABLED:
         return jsonify({'success': False, 'error': 'Google Drive not configured'}), 400
 
@@ -535,8 +535,9 @@ def api_drive_upload():
         return jsonify({'success': False, 'error': 'No file uploaded'}), 400
 
     file = request.files['file']
-    supplier = request.form.get('supplier', 'Unknown')
     invoice_date = request.form.get('invoice_date', '')
+    company = request.form.get('company', 'Unknown Company')
+    invoice_number = request.form.get('invoice_number', 'Unknown Invoice')
 
     if file.filename == '':
         return jsonify({'success': False, 'error': 'No file selected'}), 400
@@ -557,8 +558,9 @@ def api_drive_upload():
         drive_link = upload_invoice_to_drive(
             file_bytes=file_bytes,
             filename=file.filename,
-            supplier=supplier,
             invoice_date=invoice_date,
+            company=company,
+            invoice_number=invoice_number,
             mime_type=mime_type
         )
 

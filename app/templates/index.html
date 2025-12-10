@@ -1020,12 +1020,13 @@
             updateTotalAllocation();
         }
 
-        async function uploadToDrive(file, supplier, invoiceDate) {
+        async function uploadToDrive(file, invoiceDate, company, invoiceNumber) {
             // Upload file to Google Drive
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('supplier', supplier);
             formData.append('invoice_date', invoiceDate);
+            formData.append('company', company);
+            formData.append('invoice_number', invoiceNumber);
 
             const res = await fetch('/api/drive/upload', { method: 'POST', body: formData });
             return await res.json();
@@ -1191,7 +1192,7 @@
                     // This prevents creating Drive folders for duplicate invoices
                     if (uploadedFile && !driveLink) {
                         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Uploading to Drive...';
-                        const uploadResult = await uploadToDrive(uploadedFile, supplier, invoiceDate);
+                        const uploadResult = await uploadToDrive(uploadedFile, invoiceDate, dedicatedCompany, invoiceNumber);
                         if (uploadResult.success) {
                             driveLink = uploadResult.drive_link;
                             document.getElementById('driveLink').value = driveLink;

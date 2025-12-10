@@ -151,15 +151,16 @@ def find_or_create_folder(service, folder_name: str, parent_id: str, supports_al
 def upload_invoice_to_drive(
     file_bytes: bytes,
     filename: str,
-    supplier: str,
     invoice_date: str,
+    company: str,
+    invoice_number: str,
     mime_type: str = 'application/pdf'
 ) -> str:
     """
-    Upload invoice to Google Drive organized by Year/Month/Supplier.
+    Upload invoice to Google Drive organized by Year/Month/Company/InvoiceNo.
     Returns the file's web view link.
 
-    Structure: Root Folder / Year / Month / Supplier / filename
+    Structure: Root Folder / Year / Month / Company / InvoiceNo / filename
     """
     service = get_drive_service()
 
@@ -173,20 +174,26 @@ def upload_invoice_to_drive(
         year = str(now.year)
         month = f"{now.month:02d}"
 
-    # Clean supplier name for folder (remove special characters)
-    clean_supplier = ''.join(c for c in supplier if c.isalnum() or c in ' -_').strip()
-    if not clean_supplier:
-        clean_supplier = 'Unknown Supplier'
+    # Clean company name for folder (remove special characters)
+    clean_company = ''.join(c for c in company if c.isalnum() or c in ' -_').strip()
+    if not clean_company:
+        clean_company = 'Unknown Company'
 
-    # Create folder structure: Root / Year / Month / Supplier
+    # Clean invoice number for folder (remove special characters that aren't allowed in folder names)
+    clean_invoice_no = ''.join(c for c in invoice_number if c.isalnum() or c in ' -_').strip()
+    if not clean_invoice_no:
+        clean_invoice_no = 'Unknown Invoice'
+
+    # Create folder structure: Root / Year / Month / Company / InvoiceNo
     year_folder_id = find_or_create_folder(service, year, ROOT_FOLDER_ID)
     month_folder_id = find_or_create_folder(service, month, year_folder_id)
-    supplier_folder_id = find_or_create_folder(service, clean_supplier, month_folder_id)
+    company_folder_id = find_or_create_folder(service, clean_company, month_folder_id)
+    invoice_folder_id = find_or_create_folder(service, clean_invoice_no, company_folder_id)
 
     # Upload the file
     file_metadata = {
         'name': filename,
-        'parents': [supplier_folder_id]
+        'parents': [invoice_folder_id]
     }
 
     media = MediaIoBaseUpload(

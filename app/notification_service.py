@@ -157,89 +157,117 @@ def create_allocation_email_html(
     reinvoice_department = allocation.get('reinvoice_department', '')
     reinvoice_subdepartment = allocation.get('reinvoice_subdepartment', '')
 
-    location = f"{company}"
-    if brand:
-        location += f" / {brand}"
-    location += f" / {department}"
+    # Build subdepartment row if exists
+    subdepartment_html = ""
     if subdepartment:
-        location += f" / {subdepartment}"
-
-    # Build reinvoice location string
-    reinvoice_location = ""
-    if reinvoice_to:
-        reinvoice_location = reinvoice_to
-        if reinvoice_brand:
-            reinvoice_location += f" / {reinvoice_brand}"
-        if reinvoice_department:
-            reinvoice_location += f" / {reinvoice_department}"
-        if reinvoice_subdepartment:
-            reinvoice_location += f" / {reinvoice_subdepartment}"
-
-    # Build reinvoice HTML section
-    reinvoice_html = ""
-    if reinvoice_to:
-        reinvoice_html = f"""
-            <tr style="background-color: #fff3cd;">
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Reinvoice To</td>
-                <td style="padding: 10px; border: 1px solid #ddd; color: #856404;">
-                    <strong>{reinvoice_location}</strong>
-                </td>
+        subdepartment_html = f"""
+            <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Subdepartament</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{subdepartment}</td>
             </tr>"""
+
+    # Build brand row if exists
+    brand_html = ""
+    if brand:
+        brand_html = f"""
+            <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Linie de business</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{brand}</td>
+            </tr>"""
+
+    # Build reinvoice section as separate table
+    reinvoice_section_html = ""
+    if reinvoice_to:
+        reinvoice_brand_row = ""
+        if reinvoice_brand:
+            reinvoice_brand_row = f"""
+            <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Linie de business</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{reinvoice_brand}</td>
+            </tr>"""
+        reinvoice_dept_row = ""
+        if reinvoice_department:
+            reinvoice_dept_row = f"""
+            <tr style="background-color: #fff3cd;">
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Departament</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{reinvoice_department}</td>
+            </tr>"""
+        reinvoice_subdept_row = ""
+        if reinvoice_subdepartment:
+            reinvoice_subdept_row = f"""
+            <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Subdepartament</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{reinvoice_subdepartment}</td>
+            </tr>"""
+
+        reinvoice_section_html = f"""
+        <h3 style="color: #856404;">Refacturare</h3>
+
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0; border: 2px solid #ffc107;">
+            <tr style="background-color: #fff3cd;">
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Companie</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{reinvoice_to}</td>
+            </tr>{reinvoice_brand_row}{reinvoice_dept_row}{reinvoice_subdept_row}
+        </table>"""
 
     return f"""
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">
-            New Invoice Allocation
+            O noua bugetare MKT
         </h2>
 
-        <p>Hello {responsable_name},</p>
+        <p>Buna ziua {responsable_name},</p>
 
-        <p>An invoice has been allocated to your department:</p>
+        <p>O factura a fost alocata departamentului dumneavoastra:</p>
 
         <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
             <tr style="background-color: #f5f5f5;">
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Invoice Number</td>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Numar factura</td>
                 <td style="padding: 10px; border: 1px solid #ddd;">{invoice_number}</td>
             </tr>
             <tr>
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Supplier</td>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Furnizor</td>
                 <td style="padding: 10px; border: 1px solid #ddd;">{supplier}</td>
             </tr>
             <tr style="background-color: #f5f5f5;">
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Invoice Date</td>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Data factura</td>
                 <td style="padding: 10px; border: 1px solid #ddd;">{invoice_date}</td>
             </tr>
             <tr>
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Total Value</td>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Valoare totala</td>
                 <td style="padding: 10px; border: 1px solid #ddd;">{format_currency(invoice_value, currency)}</td>
             </tr>
         </table>
 
-        <h3 style="color: #333;">Your Allocation</h3>
+        <h3 style="color: #333;">Alocare</h3>
 
         <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
             <tr style="background-color: #e8f5e9;">
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Location</td>
-                <td style="padding: 10px; border: 1px solid #ddd;">{location}</td>
-            </tr>
-            <tr>
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Allocation %</td>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Companie</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{company}</td>
+            </tr>{brand_html}
+            <tr style="background-color: #e8f5e9;">
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Departament</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{department}</td>
+            </tr>{subdepartment_html}
+            <tr style="background-color: #e8f5e9;">
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Procent alocare</td>
                 <td style="padding: 10px; border: 1px solid #ddd;">{allocation_percent}%</td>
             </tr>
-            <tr style="background-color: #e8f5e9;">
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Allocation Value</td>
+            <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Valoare alocata</td>
                 <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; color: #4CAF50;">
                     {format_currency(allocation_value, currency)}
                 </td>
-            </tr>{reinvoice_html}
-        </table>
+            </tr>
+        </table>{reinvoice_section_html}
 
         <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
 
         <p style="color: #666; font-size: 12px;">
-            This is an automated notification from the Bugetare system.<br>
-            Please do not reply to this email.
+            Aceasta este o notificare automata din sistemul Bugetare.<br>
+            Va rugam sa nu raspundeti la acest email.
         </p>
     </body>
     </html>
@@ -271,46 +299,49 @@ def create_allocation_email_text(
     reinvoice_department = allocation.get('reinvoice_department', '')
     reinvoice_subdepartment = allocation.get('reinvoice_subdepartment', '')
 
-    location = f"{company}"
+    # Build brand line if exists
+    brand_line = ""
     if brand:
-        location += f" / {brand}"
-    location += f" / {department}"
-    if subdepartment:
-        location += f" / {subdepartment}"
+        brand_line = f"\n- Linie de business: {brand}"
 
-    # Build reinvoice location string
-    reinvoice_line = ""
+    # Build subdepartment line if exists
+    subdepartment_line = ""
+    if subdepartment:
+        subdepartment_line = f"\n- Subdepartament: {subdepartment}"
+
+    # Build reinvoice section
+    reinvoice_section = ""
     if reinvoice_to:
-        reinvoice_location = reinvoice_to
+        reinvoice_section = f"\n\nRefacturare:\n- Companie: {reinvoice_to}"
         if reinvoice_brand:
-            reinvoice_location += f" / {reinvoice_brand}"
+            reinvoice_section += f"\n- Linie de business: {reinvoice_brand}"
         if reinvoice_department:
-            reinvoice_location += f" / {reinvoice_department}"
+            reinvoice_section += f"\n- Departament: {reinvoice_department}"
         if reinvoice_subdepartment:
-            reinvoice_location += f" / {reinvoice_subdepartment}"
-        reinvoice_line = f"\n- Reinvoice To: {reinvoice_location}"
+            reinvoice_section += f"\n- Subdepartament: {reinvoice_subdepartment}"
 
     return f"""
-New Invoice Allocation
+O noua bugetare MKT
 
-Hello {responsable_name},
+Buna ziua {responsable_name},
 
-An invoice has been allocated to your department:
+O factura a fost alocata departamentului dumneavoastra:
 
-Invoice Details:
-- Invoice Number: {invoice_number}
-- Supplier: {supplier}
-- Invoice Date: {invoice_date}
-- Total Value: {format_currency(invoice_value, currency)}
+Detalii factura:
+- Numar factura: {invoice_number}
+- Furnizor: {supplier}
+- Data factura: {invoice_date}
+- Valoare totala: {format_currency(invoice_value, currency)}
 
-Your Allocation:
-- Location: {location}
-- Allocation %: {allocation_percent}%
-- Allocation Value: {format_currency(allocation_value, currency)}{reinvoice_line}
+Alocare:
+- Companie: {company}{brand_line}
+- Departament: {department}{subdepartment_line}
+- Procent alocare: {allocation_percent}%
+- Valoare alocata: {format_currency(allocation_value, currency)}{reinvoice_section}
 
 ---
-This is an automated notification from the Bugetare system.
-Please do not reply to this email.
+Aceasta este o notificare automata din sistemul Bugetare.
+Va rugam sa nu raspundeti la acest email.
 """
 
 
@@ -395,7 +426,7 @@ def notify_allocation(invoice_data: dict, allocation: dict) -> list[dict]:
         if not responsable_email:
             continue
 
-        subject = f"New Invoice Allocation - {invoice_data.get('invoice_number', 'Invoice')}"
+        subject = f"O noua bugetare MKT - {invoice_data.get('invoice_number', 'Factura')}"
         html_body = create_allocation_email_html(responsable_name, invoice_data, allocation)
         text_body = create_allocation_email_text(responsable_name, invoice_data, allocation)
 
