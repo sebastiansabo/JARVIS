@@ -676,6 +676,65 @@ def extract_vat_numbers_from_text(text: str) -> list[str]:
     return vat_numbers
 
 
+def extract_customer_vat_from_text(text: str, supplier_vat: str = None) -> Optional[str]:
+    """
+    Extract customer VAT from invoice text using regex patterns.
+    This is used as a fallback when AI doesn't extract customer_vat.
+
+    Args:
+        text: Extracted text from the invoice
+        supplier_vat: Optional supplier VAT to exclude from results
+
+    Returns:
+        Normalized customer VAT or None if not found
+    """
+    if not text:
+        return None
+
+    # Customer VAT patterns - look for VAT numbers near customer/buyer indicators
+    # These patterns prioritize customer-related VAT numbers
+    customer_patterns = [
+        # Romanian customer patterns
+        r'(?:client|cumparator|buyer|bill\s*to|factura\s*pentru)[^A-Z]*?(?:CUI|CIF|VAT)[:\s]*([A-Z]{0,2}[\s]?\d{6,12})',
+        r'(?:client|cumparator|buyer|bill\s*to)[^A-Z]*?([A-Z]{2}\d{6,12})',
+        # Generic labeled VAT patterns (customer section)
+        r'C\.?I\.?F\.?[:\s]*([A-Z]{0,2}[\s]?\d{6,12})',  # C.I.F.: RO50186814
+        r'CUI[:\s]*([A-Z]{0,2}[\s]?\d{6,12})',  # CUI: RO50186814
+        r'(?:VAT|TVA)[^A-Z]*?[:\s]+([A-Z]{2}[\s]?\d{6,12})',  # VAT: RO50186814
+        r'Cod\s+fiscal[:\s]*([A-Z]{0,2}[\s]?\d{6,12})',  # Cod fiscal: RO50186814
+        # Direct RO VAT pattern (common in Romanian invoices)
+        r'\b(RO\d{6,10})\b',  # Direct RO12345678 pattern
+    ]
+
+    # Normalize supplier VAT for comparison
+    normalized_supplier_vat = normalize_vat_number(supplier_vat) if supplier_vat else None
+
+    found_vats = []
+    for pattern in customer_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE | re.DOTALL)
+        for match in matches:
+            normalized = normalize_vat_number(match)
+            if normalized and normalized not in found_vats:
+                # Skip if this is the supplier VAT
+                if normalized_supplier_vat and normalized == normalized_supplier_vat:
+                    continue
+                # Skip if it's just the numbers matching supplier
+                if normalized_supplier_vat:
+                    supplier_numbers = re.sub(r'[^0-9]', '', normalized_supplier_vat)
+                    vat_numbers = re.sub(r'[^0-9]', '', normalized)
+                    if supplier_numbers and vat_numbers and supplier_numbers == vat_numbers:
+                        continue
+                found_vats.append(normalized)
+
+    # Return the first valid customer VAT found
+    # Prefer VATs that start with RO (Romanian customers)
+    for vat in found_vats:
+        if vat.startswith('RO'):
+            return vat
+
+    return found_vats[0] if found_vats else None
+
+
 def find_matching_template(text: str, templates: list[dict]) -> Optional[dict]:
     """
     Find a template that matches the invoice based on supplier VAT.
@@ -938,6 +997,15 @@ def auto_detect_and_parse(file_bytes: bytes, filename: str, templates: list[dict
             result = parse_invoice(tmp_path, api_key)
             result['auto_detected_template'] = None
             result['auto_detected_template_id'] = None
+
+            # Fallback: If AI didn't extract customer_vat, try regex extraction
+            if not result.get('customer_vat') and text:
+                supplier_vat = result.get('supplier_vat')
+                fallback_customer_vat = extract_customer_vat_from_text(text, supplier_vat)
+                if fallback_customer_vat:
+                    result['customer_vat'] = fallback_customer_vat
+                    result['customer_vat_source'] = 'regex_fallback'
+
             return result
     finally:
         os.unlink(tmp_path)
