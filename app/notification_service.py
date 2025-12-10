@@ -300,9 +300,19 @@ def notify_allocation(invoice_data: dict, allocation: dict) -> list[dict]:
 
     # Calculate allocation_percent and allocation_value if not provided
     # Frontend sends 'allocation' as decimal (0.5 = 50%), template expects 'allocation_percent' (50)
-    allocation_decimal = float(allocation.get('allocation', 0) or allocation.get('allocation_percent', 0) / 100 if allocation.get('allocation_percent') else 0)
+    allocation_decimal = allocation.get('allocation')
+    if allocation_decimal is None or allocation_decimal == 0:
+        # Try to get from allocation_percent if available
+        pct = allocation.get('allocation_percent', 0)
+        allocation_decimal = float(pct) / 100 if pct else 0
+    else:
+        allocation_decimal = float(allocation_decimal)
+
+    # Set allocation_percent (e.g., 50 for 50%)
     if not allocation.get('allocation_percent'):
         allocation['allocation_percent'] = round(allocation_decimal * 100, 2)
+
+    # Set allocation_value (calculated from invoice_value * decimal)
     if not allocation.get('allocation_value'):
         allocation['allocation_value'] = round(invoice_value * allocation_decimal, 2)
 
