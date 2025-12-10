@@ -137,6 +137,7 @@
                     <label class="form-label small mb-0">Quick</label>
                     <select class="form-select form-select-sm" id="quickFilter" onchange="setQuickFilter(this.value)">
                         <option value="">--</option>
+                        <option value="today">Today</option>
                         <option value="week">Week</option>
                         <option value="month">Month</option>
                         <option value="quarter">Quarter</option>
@@ -1121,7 +1122,12 @@
             const endDate = document.getElementById('endDate');
             const today = new Date();
 
-            if (period === 'week') {
+            if (period === 'today') {
+                // Set both start and end to today
+                const todayStr = today.toISOString().split('T')[0];
+                startDate.value = todayStr;
+                endDate.value = todayStr;
+            } else if (period === 'week') {
                 // Get current day of week (0 = Sunday, 1 = Monday, etc.)
                 const dayOfWeek = today.getDay();
                 // Calculate Monday of current week (week starts on Monday)

@@ -1265,26 +1265,12 @@
             try {
                 let driveLink = document.getElementById('driveLink').value;
 
-                // Upload to Google Drive if file was uploaded and no drive link exists
-                if (uploadedFile && !driveLink) {
-                    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Uploading to Drive...';
-                    const uploadResult = await uploadToDrive(uploadedFile, supplier, invoiceDate);
-                    if (uploadResult.success) {
-                        driveLink = uploadResult.drive_link;
-                        document.getElementById('driveLink').value = driveLink;
-                    } else if (!uploadResult.need_auth) {
-                        console.warn('Drive upload failed:', uploadResult.error);
-                        // Continue without drive link
-                    }
-                }
-
-                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
-
                 // Get conversion values if available
                 const valueRon = document.getElementById('valueRon').value;
                 const valueEur = document.getElementById('valueEur').value;
                 const exchangeRate = document.getElementById('exchangeRate').value;
 
+                // First save to database (without drive link if not yet uploaded)
                 const res = await fetch('/api/submit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1304,6 +1290,25 @@
 
                 const result = await res.json();
                 if (result.success) {
+                    // Only upload to Drive AFTER successful database save
+                    // This prevents creating Drive folders for duplicate invoices
+                    if (uploadedFile && !driveLink) {
+                        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Uploading to Drive...';
+                        const uploadResult = await uploadToDrive(uploadedFile, supplier, invoiceDate);
+                        if (uploadResult.success) {
+                            driveLink = uploadResult.drive_link;
+                            document.getElementById('driveLink').value = driveLink;
+                            // Update the invoice with the drive link
+                            await fetch(`/api/invoices/${result.invoice_id}/drive-link`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ drive_link: driveLink })
+                            });
+                        } else if (!uploadResult.need_auth) {
+                            console.warn('Drive upload failed:', uploadResult.error);
+                        }
+                    }
+
                     alert('Successfully saved ' + result.allocations + ' allocation(s)!' + (driveLink ? '\nUploaded to Drive!' : ''));
                     // Reset form
                     document.getElementById('invoiceForm').reset();

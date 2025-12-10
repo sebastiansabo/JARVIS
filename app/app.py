@@ -627,6 +627,24 @@ def api_db_update_allocations(invoice_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/invoices/<int:invoice_id>/drive-link', methods=['PUT'])
+def api_update_invoice_drive_link(invoice_id):
+    """Update only the drive_link for an invoice (used after successful Drive upload)."""
+    data = request.json
+    drive_link = data.get('drive_link')
+
+    if not drive_link:
+        return jsonify({'success': False, 'error': 'drive_link is required'}), 400
+
+    try:
+        updated = update_invoice(invoice_id=invoice_id, drive_link=drive_link)
+        if updated:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Invoice not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/db/search')
 def api_db_search():
     """Search invoices by supplier or invoice number."""
