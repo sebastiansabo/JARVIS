@@ -274,3 +274,5 @@ The "Total Value" card on the accounting dashboard has a EUR/RON toggle switch:
 - Added email notification system with Office365 SMTP support
 - Fixed notification_service.py to use correct settings keys (from_email, smtp_tls)
 - Fixed allocation value calculation in notification emails (was showing 0.00)
+- Added flask-login to requirements.txt for production deployment
+- Synced local database to DigitalOcean production
