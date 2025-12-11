@@ -291,3 +291,5 @@ The "Total Value" card on the accounting dashboard has a EUR/RON toggle switch:
 - Changed Google Drive folder structure to Year/Month/Company/InvoiceNo
 - Email templates translated to Romanian with separate Alocare and Refacturare sections
 - Added lock button to allocation rows (prevents locked allocations from being redistributed when adding/modifying other allocations)
+- Hidden empty Brand/Subdepartment columns in allocation forms (only shows when options exist)
+- Moved currency label into Value field label (e.g., "Value (RON)") for wider input field

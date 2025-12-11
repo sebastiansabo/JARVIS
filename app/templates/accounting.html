@@ -2128,13 +2128,10 @@
                                 </div>
                             </div>
                             <div class="col-md-3 mb-2">
-                                <label class="form-label">Value</label>
-                                <div class="input-group input-group-sm">
-                                    <input type="number" class="form-control alloc-value" data-idx="${idx}"
-                                           value="${allocValue.toFixed(2)}" min="0" step="0.01"
-                                           onchange="onAllocationValueChange(${idx})" onkeyup="onAllocationValueChange(${idx})">
-                                    <span class="input-group-text">${document.getElementById('editCurrency').value}</span>
-                                </div>
+                                <label class="form-label">Value (${document.getElementById('editCurrency').value})</label>
+                                <input type="number" class="form-control form-control-sm alloc-value" data-idx="${idx}"
+                                       value="${allocValue.toFixed(2)}" min="0" step="0.01"
+                                       onchange="onAllocationValueChange(${idx})" onkeyup="onAllocationValueChange(${idx})">
                             </div>
                         </div>
                         <div class="row">
