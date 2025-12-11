@@ -25,17 +25,41 @@ def _get_pool():
     """Get or create the connection pool (lazy initialization)."""
     global _connection_pool
     if _connection_pool is None:
+        # Add keepalive options to prevent connections from being dropped
+        # by the server after idle timeout
         _connection_pool = pool.ThreadedConnectionPool(
             minconn=2,
             maxconn=50,
-            dsn=DATABASE_URL
+            dsn=DATABASE_URL,
+            keepalives=1,           # Enable keepalives
+            keepalives_idle=30,     # Seconds before sending keepalive
+            keepalives_interval=10, # Seconds between keepalives
+            keepalives_count=5      # Failed keepalives before disconnect
         )
     return _connection_pool
 
 
 def get_db():
-    """Get PostgreSQL database connection from pool."""
-    return _get_pool().getconn()
+    """Get PostgreSQL database connection from pool.
+
+    Validates connection health before returning. If connection is stale
+    (closed by server), it's discarded and a fresh one is obtained.
+    """
+    conn = _get_pool().getconn()
+
+    # Check if connection is still alive
+    try:
+        # Use a lightweight query to test connection
+        conn.cursor().execute('SELECT 1')
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        # Connection is dead - close it and get a fresh one
+        try:
+            _get_pool().putconn(conn, close=True)
+        except Exception:
+            pass
+        conn = _get_pool().getconn()
+
+    return conn
 
 
 def release_db(conn):
