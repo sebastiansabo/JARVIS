@@ -170,7 +170,7 @@ When working with multiple allocations (3+), percentages automatically redistrib
 2. Icon changes to locked state (🔒) with yellow background
 3. Locked allocations maintain their percentage during redistribution
 4. Unlocked rows receive the remaining percentage (100% - locked total)
-5. Lock state is preserved in form cache across page reloads
+5. **Lock state is persisted to database** - when viewing/editing invoices, locked allocations remain locked
 
 ### Complex Reinvoice Feature
 Allocations can be marked for reinvoicing to a specific company/department/subdepartment:
@@ -294,3 +294,4 @@ The "Total Value" card on the accounting dashboard has a EUR/RON toggle switch:
 - Hidden empty Brand/Subdepartment columns in allocation forms (only shows when options exist)
 - Moved currency label into Value field label (e.g., "Value (RON)") for wider input field
 - Fixed single-row allocation value editing (percentage now updates when editing value field on single allocation row)
+- Lock state now persisted to database (locked allocations stay locked when viewing/editing invoices)
