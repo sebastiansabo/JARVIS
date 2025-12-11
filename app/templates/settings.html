@@ -201,6 +201,11 @@
                     <i class="bi bi-card-list"></i> VAT Registry
                 </button>
             </li>
+            <li class="nav-item">
+                <button class="nav-link" id="activity-logs-tab" data-bs-toggle="tab" data-bs-target="#activity-logs" type="button">
+                    <i class="bi bi-clock-history"></i> Activity Logs
+                </button>
+            </li>
         </ul>
 
         <div class="tab-content">
@@ -483,6 +488,75 @@
                                     <i class="bi bi-plus"></i> Add
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity Logs Tab -->
+            <div class="tab-pane fade" id="activity-logs">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-clock-history"></i> Activity Logs</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            <i class="bi bi-info-circle"></i> View user activity logs including logins, logouts, and application actions.
+                        </p>
+                        <!-- Filters -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-2">
+                                <select class="form-select form-select-sm" id="logFilterUser">
+                                    <option value="">All Users</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <select class="form-select form-select-sm" id="logFilterEventType">
+                                    <option value="">All Event Types</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <input type="date" class="form-control form-control-sm" id="logFilterStartDate" placeholder="Start Date">
+                            </div>
+                            <div class="col-md-2">
+                                <input type="date" class="form-control form-control-sm" id="logFilterEndDate" placeholder="End Date">
+                            </div>
+                            <div class="col-md-2">
+                                <button class="btn btn-sm btn-primary w-100" onclick="loadActivityLogs()">
+                                    <i class="bi bi-search"></i> Filter
+                                </button>
+                            </div>
+                            <div class="col-md-2">
+                                <button class="btn btn-sm btn-outline-secondary w-100" onclick="clearActivityLogFilters()">
+                                    <i class="bi bi-x-circle"></i> Clear
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Logs Table -->
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm" id="activityLogsTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 150px;">Timestamp</th>
+                                        <th style="width: 150px;">User</th>
+                                        <th style="width: 120px;">Event Type</th>
+                                        <th>Description</th>
+                                        <th style="width: 120px;">IP Address</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="activityLogsTableBody"></tbody>
+                            </table>
+                        </div>
+                        <div id="noActivityLogsMessage" class="text-center text-muted py-4" style="display: none;">
+                            <i class="bi bi-clock-history display-4"></i>
+                            <p class="mt-2">No activity logs found.</p>
+                        </div>
+                        <!-- Pagination -->
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <div class="text-muted small" id="activityLogsPaginationInfo">Showing 0 events</div>
+                            <nav>
+                                <ul class="pagination pagination-sm mb-0" id="activityLogsPagination"></ul>
+                            </nav>
                         </div>
                     </div>
                 </div>
@@ -1833,6 +1907,220 @@
                 alert('Failed to update company');
             }
         }
+
+        // ========== ACTIVITY LOGS ==========
+
+        let activityLogs = [];
+        let activityLogsPage = 1;
+        let activityLogsPageSize = 50;
+        let activityLogsTotalCount = 0;
+        let eventTypes = [];
+
+        async function loadActivityLogs() {
+            const userId = document.getElementById('logFilterUser').value;
+            const eventType = document.getElementById('logFilterEventType').value;
+            const startDate = document.getElementById('logFilterStartDate').value;
+            const endDate = document.getElementById('logFilterEndDate').value;
+
+            const params = new URLSearchParams();
+            params.append('limit', activityLogsPageSize);
+            params.append('offset', (activityLogsPage - 1) * activityLogsPageSize);
+            if (userId) params.append('user_id', userId);
+            if (eventType) params.append('event_type', eventType);
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+
+            try {
+                const res = await fetch(`/api/events?${params.toString()}`);
+                if (!res.ok) {
+                    if (res.status === 403) {
+                        showToast('Permission denied. Admin access required.', 'danger');
+                        return;
+                    }
+                    throw new Error('Failed to load activity logs');
+                }
+                const data = await res.json();
+                // API returns array directly, not wrapped in {events: [...]}
+                activityLogs = Array.isArray(data) ? data : (data.events || []);
+                activityLogsTotalCount = activityLogs.length;
+                renderActivityLogs();
+            } catch (error) {
+                console.error('Error loading activity logs:', error);
+                showToast('Failed to load activity logs', 'danger');
+            }
+        }
+
+        async function loadEventTypes() {
+            try {
+                const res = await fetch('/api/events/types');
+                if (res.ok) {
+                    eventTypes = await res.json();
+                    populateEventTypeFilter();
+                }
+            } catch (error) {
+                console.error('Error loading event types:', error);
+            }
+        }
+
+        function populateEventTypeFilter() {
+            const select = document.getElementById('logFilterEventType');
+            select.innerHTML = '<option value="">All Event Types</option>' +
+                eventTypes.map(type => `<option value="${escapeHtml(type)}">${formatEventType(escapeHtml(type))}</option>`).join('');
+        }
+
+        function populateUserFilterForLogs() {
+            const select = document.getElementById('logFilterUser');
+            select.innerHTML = '<option value="">All Users</option>' +
+                users.map(u => `<option value="${u.id}">${escapeHtml(u.name)} (${escapeHtml(u.email)})</option>`).join('');
+        }
+
+        function formatEventType(type) {
+            // Convert snake_case to Title Case
+            return type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+        }
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return '-';
+            const date = new Date(timestamp);
+            return date.toLocaleString('ro-RO', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        function getEventTypeBadgeClass(type) {
+            const typeMap = {
+                'login': 'bg-success',
+                'logout': 'bg-secondary',
+                'login_failed': 'bg-danger',
+                'password_changed': 'bg-warning text-dark',
+                'admin_password_reset': 'bg-warning text-dark',
+                'bulk_password_set': 'bg-warning text-dark',
+                'invoice_created': 'bg-primary',
+                'invoice_updated': 'bg-info',
+                'invoice_deleted': 'bg-danger',
+                'invoice_restored': 'bg-success',
+                'invoice_permanently_deleted': 'bg-dark',
+                'allocations_updated': 'bg-info'
+            };
+            return typeMap[type] || 'bg-secondary';
+        }
+
+        function renderActivityLogs() {
+            const tbody = document.getElementById('activityLogsTableBody');
+            const noLogsMsg = document.getElementById('noActivityLogsMessage');
+            const table = document.getElementById('activityLogsTable');
+
+            if (activityLogs.length === 0) {
+                tbody.innerHTML = '';
+                noLogsMsg.style.display = 'block';
+                table.style.display = 'none';
+                document.getElementById('activityLogsPaginationInfo').textContent = 'Showing 0 events';
+                document.getElementById('activityLogsPagination').innerHTML = '';
+                return;
+            }
+
+            noLogsMsg.style.display = 'none';
+            table.style.display = 'table';
+
+            tbody.innerHTML = activityLogs.map(log => `
+                <tr>
+                    <td class="small">${formatTimestamp(log.created_at)}</td>
+                    <td>
+                        <strong>${escapeHtml(log.user_email || 'Unknown')}</strong>
+                    </td>
+                    <td>
+                        <span class="badge ${getEventTypeBadgeClass(log.event_type)}">${formatEventType(log.event_type)}</span>
+                    </td>
+                    <td class="small">${escapeHtml(log.event_description || '-')}</td>
+                    <td class="small text-muted">${escapeHtml(log.ip_address || '-')}</td>
+                </tr>
+            `).join('');
+
+            // Update pagination info
+            const start = (activityLogsPage - 1) * activityLogsPageSize + 1;
+            const end = Math.min(activityLogsPage * activityLogsPageSize, activityLogsTotalCount);
+            document.getElementById('activityLogsPaginationInfo').textContent =
+                `Showing ${start}-${end} of ${activityLogsTotalCount} events`;
+
+            // Render pagination
+            renderActivityLogsPagination();
+        }
+
+        function renderActivityLogsPagination() {
+            const totalPages = Math.ceil(activityLogsTotalCount / activityLogsPageSize);
+            const pagination = document.getElementById('activityLogsPagination');
+
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+
+            // Previous button
+            html += `<li class="page-item ${activityLogsPage === 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="goToActivityLogsPage(${activityLogsPage - 1}); return false;">&laquo;</a>
+            </li>`;
+
+            // Page numbers (show max 5 pages around current)
+            const startPage = Math.max(1, activityLogsPage - 2);
+            const endPage = Math.min(totalPages, activityLogsPage + 2);
+
+            if (startPage > 1) {
+                html += `<li class="page-item"><a class="page-link" href="#" onclick="goToActivityLogsPage(1); return false;">1</a></li>`;
+                if (startPage > 2) {
+                    html += `<li class="page-item disabled"><a class="page-link">...</a></li>`;
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<li class="page-item ${i === activityLogsPage ? 'active' : ''}">
+                    <a class="page-link" href="#" onclick="goToActivityLogsPage(${i}); return false;">${i}</a>
+                </li>`;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    html += `<li class="page-item disabled"><a class="page-link">...</a></li>`;
+                }
+                html += `<li class="page-item"><a class="page-link" href="#" onclick="goToActivityLogsPage(${totalPages}); return false;">${totalPages}</a></li>`;
+            }
+
+            // Next button
+            html += `<li class="page-item ${activityLogsPage === totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="goToActivityLogsPage(${activityLogsPage + 1}); return false;">&raquo;</a>
+            </li>`;
+
+            pagination.innerHTML = html;
+        }
+
+        function goToActivityLogsPage(page) {
+            const totalPages = Math.ceil(activityLogsTotalCount / activityLogsPageSize);
+            if (page < 1 || page > totalPages) return;
+            activityLogsPage = page;
+            loadActivityLogs();
+        }
+
+        function clearActivityLogFilters() {
+            document.getElementById('logFilterUser').value = '';
+            document.getElementById('logFilterEventType').value = '';
+            document.getElementById('logFilterStartDate').value = '';
+            document.getElementById('logFilterEndDate').value = '';
+            activityLogsPage = 1;
+            loadActivityLogs();
+        }
+
+        // Load activity logs when tab is shown
+        document.getElementById('activity-logs-tab').addEventListener('shown.bs.tab', function() {
+            populateUserFilterForLogs();
+            loadEventTypes();
+            loadActivityLogs();
+        });
 
         // ========== UTILS ==========
 

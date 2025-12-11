@@ -29,6 +29,31 @@
         .total-allocation.valid { color: #198754; }
         .total-allocation.invalid { color: #dc3545; }
         .existing-invoices { max-height: 200px; overflow-y: auto; }
+        .attachments-zone {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .attachments-zone:hover {
+            background: #e9ecef !important;
+        }
+        .attachment-item {
+            display: inline-flex;
+            align-items: center;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 2px 8px;
+            margin: 2px;
+            font-size: 0.85em;
+        }
+        .attachment-item .remove-attachment {
+            margin-left: 6px;
+            color: #dc3545;
+            cursor: pointer;
+        }
+        .attachment-item .remove-attachment:hover {
+            color: #a71d2a;
+        }
     </style>
 </head>
 <body>
@@ -81,6 +106,22 @@
                             <p class="mb-0 mt-2">Drag & drop invoice here or click to upload</p>
                             <small class="text-muted">Supports PDF, JPG, PNG</small>
                             <input type="file" id="fileInput" class="d-none" accept=".pdf,.jpg,.jpeg,.png">
+                        </div>
+
+                        <!-- Attachments Upload -->
+                        <div class="mb-3">
+                            <label class="form-label small">
+                                <i class="bi bi-paperclip"></i> Attachments (optional)
+                            </label>
+                            <div class="attachments-zone p-2 border rounded bg-light" id="attachmentsZone">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <small class="text-muted">
+                                        <i class="bi bi-plus-circle"></i> Add files to upload with invoice
+                                    </small>
+                                    <input type="file" id="attachmentsInput" class="d-none" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.xls,.xlsx,.txt">
+                                </div>
+                                <div id="attachmentsList" class="mt-2"></div>
+                            </div>
                         </div>
 
                         <!-- Template Selector -->
@@ -299,6 +340,7 @@
         let companiesWithVat = []; // Companies with VAT from Comp sheet
         let invoiceTemplates = []; // Invoice parsing templates
         let uploadedFile = null; // Store uploaded file reference
+        let attachmentFiles = []; // Store attachment files
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
@@ -469,6 +511,51 @@
 
             // Currency change - update labels
             document.getElementById('currency').addEventListener('change', updateTotalAllocation);
+
+            // Attachments handling
+            const attachmentsZone = document.getElementById('attachmentsZone');
+            const attachmentsInput = document.getElementById('attachmentsInput');
+
+            attachmentsZone.addEventListener('click', (e) => {
+                if (!e.target.classList.contains('remove-attachment')) {
+                    attachmentsInput.click();
+                }
+            });
+
+            attachmentsInput.addEventListener('change', () => {
+                if (attachmentsInput.files.length) {
+                    const maxSize = 5 * 1024 * 1024; // 5MB
+                    let skippedFiles = [];
+                    for (let file of attachmentsInput.files) {
+                        if (file.size > maxSize) {
+                            skippedFiles.push(file.name);
+                        } else {
+                            attachmentFiles.push(file);
+                        }
+                    }
+                    if (skippedFiles.length > 0) {
+                        alert(`Files exceeding 5MB were skipped:\n${skippedFiles.join('\n')}`);
+                    }
+                    renderAttachmentsList();
+                    attachmentsInput.value = ''; // Clear input so same file can be re-added
+                }
+            });
+        }
+
+        function renderAttachmentsList() {
+            const container = document.getElementById('attachmentsList');
+            container.innerHTML = attachmentFiles.map((file, idx) => `
+                <span class="attachment-item">
+                    <i class="bi bi-file-earmark me-1"></i>
+                    ${file.name}
+                    <i class="bi bi-x-circle remove-attachment" data-idx="${idx}" onclick="removeAttachment(${idx})"></i>
+                </span>
+            `).join('');
+        }
+
+        function removeAttachment(idx) {
+            attachmentFiles.splice(idx, 1);
+            renderAttachmentsList();
         }
 
         async function onDedicatedCompanyChange() {
@@ -1130,6 +1217,16 @@
             return await res.json();
         }
 
+        async function uploadAttachment(file, driveLink) {
+            // Upload attachment to the same Drive folder as the invoice
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('drive_link', driveLink);
+
+            const res = await fetch('/api/drive/upload-attachment', { method: 'POST', body: formData });
+            return await res.json();
+        }
+
         async function submitDistribution() {
             // Validate form
             const supplier = document.getElementById('supplier').value;
@@ -1289,6 +1386,7 @@
                 if (result.success) {
                     // Only upload to Drive AFTER successful database save
                     // This prevents creating Drive folders for duplicate invoices
+                    let attachmentsUploaded = 0;
                     if (uploadedFile && !driveLink) {
                         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Uploading to Drive...';
                         const uploadResult = await uploadToDrive(uploadedFile, invoiceDate, dedicatedCompany, invoiceNumber);
@@ -1301,12 +1399,32 @@
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ drive_link: driveLink })
                             });
+
+                            // Upload attachments to the same folder as the invoice
+                            if (attachmentFiles.length > 0 && driveLink) {
+                                const totalAttachments = attachmentFiles.length;
+                                for (let i = 0; i < attachmentFiles.length; i++) {
+                                    const attachFile = attachmentFiles[i];
+                                    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Uploading attachment ${i + 1}/${totalAttachments}...`;
+                                    const attachResult = await uploadAttachment(attachFile, driveLink);
+                                    if (attachResult.success) {
+                                        attachmentsUploaded++;
+                                        // Show compression info if image was compressed
+                                        if (attachResult.compression && attachResult.compression.saved_percent > 0) {
+                                            console.log(`${attachFile.name}: compressed ${attachResult.compression.saved_percent}% (saved ${Math.round(attachResult.compression.saved_bytes / 1024)}KB)`);
+                                        }
+                                    }
+                                }
+                            }
                         } else if (!uploadResult.need_auth) {
                             console.warn('Drive upload failed:', uploadResult.error);
                         }
                     }
 
-                    alert('Successfully saved ' + result.allocations + ' allocation(s)!' + (driveLink ? '\nUploaded to Drive!' : ''));
+                    let successMsg = 'Successfully saved ' + result.allocations + ' allocation(s)!';
+                    if (driveLink) successMsg += '\nUploaded to Drive!';
+                    if (attachmentsUploaded > 0) successMsg += `\n${attachmentsUploaded} attachment(s) uploaded.`;
+                    alert(successMsg);
                     // Reset form
                     document.getElementById('invoiceForm').reset();
                     document.getElementById('matchedCompany').value = '';
@@ -1330,6 +1448,9 @@
                         <input type="file" id="fileInput" class="d-none" accept=".pdf,.jpg,.jpeg,.png">
                     `;
                     setupFileInput();
+                    // Reset attachments
+                    attachmentFiles = [];
+                    document.getElementById('attachmentsList').innerHTML = '';
                 } else {
                     alert('Error: ' + result.error);
                 }

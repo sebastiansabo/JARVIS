@@ -34,12 +34,18 @@ from database import (
 
 # Google Drive integration (optional)
 try:
-    from drive_service import upload_invoice_to_drive, check_drive_auth, delete_file_from_drive, delete_files_from_drive
+    from drive_service import (
+        upload_invoice_to_drive, check_drive_auth, delete_file_from_drive, delete_files_from_drive,
+        get_folder_id_from_file_link, get_folder_link_from_file, upload_attachment_to_folder
+    )
     DRIVE_ENABLED = True
 except ImportError:
     DRIVE_ENABLED = False
     delete_file_from_drive = None
     delete_files_from_drive = None
+    get_folder_id_from_file_link = None
+    get_folder_link_from_file = None
+    upload_attachment_to_folder = None
 
 # Currency conversion (BNR rates)
 try:
@@ -58,6 +64,14 @@ try:
     NOTIFICATIONS_ENABLED = True
 except ImportError:
     NOTIFICATIONS_ENABLED = False
+
+# Image compression (TinyPNG)
+try:
+    from image_compressor import compress_if_image
+    IMAGE_COMPRESSION_ENABLED = True
+except ImportError:
+    IMAGE_COMPRESSION_ENABLED = False
+    compress_if_image = None
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -392,6 +406,11 @@ def submit_invoice():
             results = notify_invoice_allocations(invoice_data, data['distributions'])
             notifications_sent = sum(1 for r in results if r.get('success'))
 
+        # Log the invoice creation
+        log_event('invoice_created',
+                  f'Created invoice {data["invoice_number"]} from {data["supplier"]}',
+                  entity_type='invoice', entity_id=invoice_id)
+
         return jsonify({
             'success': True,
             'message': f'Successfully saved {len(data["distributions"])} allocation(s)',
@@ -567,6 +586,87 @@ def api_drive_upload():
         return jsonify({'success': True, 'drive_link': drive_link})
     except FileNotFoundError as e:
         return jsonify({'success': False, 'error': str(e), 'need_auth': True}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/drive/upload-attachment', methods=['POST'])
+@login_required
+def api_drive_upload_attachment():
+    """Upload an attachment to the same Drive folder as an existing invoice file."""
+    if not DRIVE_ENABLED:
+        return jsonify({'success': False, 'error': 'Google Drive not configured'}), 400
+
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    drive_link = request.form.get('drive_link', '')
+
+    if file.filename == '':
+        return jsonify({'success': False, 'error': 'No file selected'}), 400
+
+    if not drive_link:
+        return jsonify({'success': False, 'error': 'drive_link is required'}), 400
+
+    # Check file size (5MB limit)
+    file.seek(0, 2)  # Seek to end
+    file_size = file.tell()
+    file.seek(0)  # Reset to beginning
+    if file_size > 5 * 1024 * 1024:
+        return jsonify({'success': False, 'error': 'File size exceeds 5MB limit'}), 400
+
+    try:
+        # Get the folder ID from the invoice's drive link
+        folder_id = get_folder_id_from_file_link(drive_link)
+        if not folder_id:
+            return jsonify({'success': False, 'error': 'Could not determine folder from drive link'}), 400
+
+        file_bytes = file.read()
+        mime_type = file.content_type or 'application/octet-stream'
+        compression_stats = None
+
+        # Compress images using TinyPNG if enabled
+        if IMAGE_COMPRESSION_ENABLED and compress_if_image:
+            file_bytes, compression_stats = compress_if_image(file_bytes, file.filename, mime_type)
+
+        # Upload attachment to the same folder
+        attachment_link = upload_attachment_to_folder(
+            file_bytes=file_bytes,
+            filename=file.filename,
+            folder_id=folder_id,
+            mime_type=mime_type
+        )
+
+        if attachment_link:
+            result = {'success': True, 'attachment_link': attachment_link}
+            if compression_stats:
+                result['compression'] = compression_stats
+            return jsonify(result)
+        else:
+            return jsonify({'success': False, 'error': 'Failed to upload attachment'}), 500
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/drive/folder-link', methods=['GET'])
+@login_required
+def api_drive_folder_link():
+    """Get the Google Drive folder link from a file's drive link."""
+    if not DRIVE_ENABLED:
+        return jsonify({'success': False, 'error': 'Google Drive not configured'}), 400
+
+    drive_link = request.args.get('drive_link', '')
+    if not drive_link:
+        return jsonify({'success': False, 'error': 'drive_link is required'}), 400
+
+    try:
+        folder_link = get_folder_link_from_file(drive_link)
+        if folder_link:
+            return jsonify({'success': True, 'folder_link': folder_link})
+        else:
+            return jsonify({'success': False, 'error': 'Could not determine folder'}), 404
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -802,6 +902,8 @@ def api_db_invoice_detail(invoice_id):
 def api_db_delete_invoice(invoice_id):
     """Soft delete an invoice (move to bin)."""
     if delete_invoice(invoice_id):
+        log_event('invoice_deleted', f'Moved invoice ID {invoice_id} to bin',
+                  entity_type='invoice', entity_id=invoice_id)
         return jsonify({'success': True})
     return jsonify({'error': 'Invoice not found'}), 404
 
@@ -811,6 +913,8 @@ def api_db_delete_invoice(invoice_id):
 def api_db_restore_invoice(invoice_id):
     """Restore a soft-deleted invoice from the bin."""
     if restore_invoice(invoice_id):
+        log_event('invoice_restored', f'Restored invoice ID {invoice_id} from bin',
+                  entity_type='invoice', entity_id=invoice_id)
         return jsonify({'success': True})
     return jsonify({'error': 'Invoice not found in bin'}), 404
 
@@ -827,6 +931,8 @@ def api_db_permanently_delete_invoice(invoice_id):
         drive_deleted = False
         if drive_link and DRIVE_ENABLED and delete_file_from_drive:
             drive_deleted = delete_file_from_drive(drive_link)
+        log_event('invoice_permanently_deleted', f'Permanently deleted invoice ID {invoice_id}',
+                  entity_type='invoice', entity_id=invoice_id)
         return jsonify({'success': True, 'drive_deleted': drive_deleted})
     return jsonify({'error': 'Invoice not found'}), 404
 
@@ -903,6 +1009,8 @@ def api_db_update_invoice(invoice_id):
             comment=data.get('comment')
         )
         if updated:
+            log_event('invoice_updated', f'Updated invoice ID {invoice_id}',
+                      entity_type='invoice', entity_id=invoice_id)
             return jsonify({'success': True})
         return jsonify({'error': 'Invoice not found or no changes made'}), 404
     except Exception as e:
@@ -944,6 +1052,8 @@ def api_db_update_allocations(invoice_id):
                 results = notify_invoice_allocations(invoice_data, allocations)
                 notifications_sent = sum(1 for r in results if r.get('success'))
 
+        log_event('allocations_updated', f'Updated allocations for invoice ID {invoice_id}',
+                  entity_type='invoice', entity_id=invoice_id)
         return jsonify({'success': True, 'notifications_sent': notifications_sent})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

@@ -1579,9 +1579,17 @@
                     return '-';
                 case 'special':
                     if (col.source === 'special.actions') {
-                        return `<button class="btn btn-sm btn-outline-primary" onclick="showInvoiceDetail(${inv.id})">
-                            <i class="bi bi-eye"></i> View
-                        </button>`;
+                        let folderIcon = '';
+                        if (inv.drive_link) {
+                            folderIcon = `<button class="btn btn-sm btn-outline-secondary ms-1" onclick="openDriveFolder('${inv.drive_link.replace(/'/g, "\\'")}')" title="Open folder in Drive">
+                                <i class="bi bi-folder"></i>
+                            </button>`;
+                        }
+                        return `<div class="d-flex">
+                            <button class="btn btn-sm btn-outline-primary" onclick="showInvoiceDetail(${inv.id})">
+                                <i class="bi bi-eye"></i> View
+                            </button>${folderIcon}
+                        </div>`;
                     } else if (col.source === 'special.drive') {
                         if (inv.drive_link) {
                             return `<a href="${inv.drive_link}" target="_blank" class="btn btn-sm btn-outline-success" title="Open in Google Drive">
@@ -1728,6 +1736,21 @@
                 }).join('');
                 return `<tr>${cells}</tr>`;
             }).join('');
+        }
+
+        async function openDriveFolder(driveLink) {
+            try {
+                const res = await fetch(`/api/drive/folder-link?drive_link=${encodeURIComponent(driveLink)}`);
+                const data = await res.json();
+                if (data.success && data.folder_link) {
+                    window.open(data.folder_link, '_blank');
+                } else {
+                    alert('Could not find folder for this file');
+                }
+            } catch (err) {
+                console.error('Error fetching folder link:', err);
+                alert('Error fetching folder link');
+            }
         }
 
         async function showInvoiceDetail(id) {

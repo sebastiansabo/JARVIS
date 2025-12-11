@@ -14,13 +14,14 @@ The system serves a multi-company structure:
 - **Subdepartments**: Specialized teams within departments
 
 ### Core Workflow
-1. **Invoice Upload**: User uploads a vendor invoice (PDF/image)
+1. **Invoice Upload**: User uploads a vendor invoice (PDF/image) + optional attachments
 2. **AI Parsing**: Claude extracts invoice data (supplier, amount, date, VAT)
 3. **Company Matching**: Customer VAT is matched to internal companies
 4. **Cost Allocation**: Invoice cost is split across departments (percentages must sum to 100%)
 5. **Reinvoicing**: Allocations can be flagged for internal reinvoicing to other entities
 6. **Notifications**: Department managers receive email alerts for new allocations
-7. **Drive Storage**: Invoices are archived in Google Drive with Year/Month/Company/Invoice structure
+7. **Drive Storage**: Invoices + attachments are archived in Google Drive with Year/Month/Company/Invoice structure
+8. **Image Compression**: Attachment images (PNG/JPEG) are compressed via TinyPNG before upload
 
 ## Key Concepts
 
@@ -53,6 +54,7 @@ app/
 ├── services.py         # Business logic
 ├── invoice_parser.py   # Claude AI + regex template parsing
 ├── drive_service.py    # Google Drive OAuth integration
+├── image_compressor.py # TinyPNG image compression
 ├── currency_converter.py # BNR exchange rates (EUR/RON)
 ├── notification_service.py # SMTP email notifications
 └── config.py           # Configuration paths
@@ -79,6 +81,7 @@ templates/
 - `responsables` - Department managers for notifications
 - `notification_log` - Email delivery tracking
 - `notification_settings` - SMTP configuration
+- `user_events` - Activity audit log (login, invoice CRUD, password changes)
 
 ## Key Features
 
@@ -92,6 +95,13 @@ templates/
 - Converts all invoices to RON and EUR
 - Stores original currency + both converted values
 
+### Invoice Attachments
+- Upload additional files (images, PDFs, docs) with invoices
+- Max 5MB per file
+- Attachments stored in same Drive folder as main invoice
+- Folder icon in Accounting list opens invoice's Drive folder
+- Images (PNG/JPEG) automatically compressed via TinyPNG API
+
 ### Smart Allocation Redistribution
 - Adding new allocation rows redistributes percentages
 - **Lock Feature**: Lock icon prevents allocation from being redistributed
@@ -103,6 +113,13 @@ templates/
 - HTML + plain text format
 - Global CC option
 - Separate sections for allocation and reinvoice details
+
+### Activity Logs (Admin-only)
+Audit trail for user actions in the Settings → Activity Logs tab:
+- **Event Types**: login, logout, login_failed, password_changed, invoice_created, invoice_updated, invoice_deleted, invoice_restored, invoice_permanently_deleted, allocations_updated
+- **Filterable**: By user, event type, and date range
+- **Tracks**: User email, IP address, user agent, timestamp, description
+- **API Endpoints**: `/api/events`, `/api/events/types`
 
 ## Deployment
 
@@ -131,6 +148,10 @@ DATABASE_URL='postgresql://user@localhost:5432/defaultdb' PORT=5001 python app/a
 - `POST /api/parse-invoice` - AI parse uploaded file
 - `POST /api/parse-with-template` - Parse using specific template
 
+### Attachments
+- `POST /api/drive/upload-attachment` - Upload attachment to invoice's Drive folder
+- `GET /api/drive/folder-link` - Get Drive folder URL from file link
+
 ### Structure
 - `GET /api/companies` - List companies
 - `GET /api/structure` - Full department hierarchy
@@ -140,11 +161,16 @@ DATABASE_URL='postgresql://user@localhost:5432/defaultdb' PORT=5001 python app/a
 ### Settings
 - `GET/POST /api/notification-settings` - SMTP configuration
 - `GET/POST/PUT/DELETE /api/responsables` - Manager management
+- `GET /api/events` - Activity logs with filters (user, type, date_from, date_to)
+- `GET /api/events/types` - List of distinct event types
 
 ## User Roles
 
-Currently single-tier authentication (all authenticated users have full access).
-Future: Role-based access (admin, viewer, department manager).
+Role-based access via `can_access_settings` permission:
+- **Admin users** (`can_access_settings=true`): Full access including Settings page and Activity Logs
+- **Regular users** (`can_access_settings=false`): Can add/view invoices but cannot access Settings
+
+Future: Additional roles like viewer, department manager.
 
 ## Localization
 

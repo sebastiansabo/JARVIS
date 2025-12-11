@@ -284,3 +284,93 @@ def delete_files_from_drive(drive_links: list[str]) -> int:
         if link and delete_file_from_drive(link):
             deleted_count += 1
     return deleted_count
+
+
+def get_folder_id_from_file_link(drive_link: str) -> str | None:
+    """Get the parent folder ID from a file's Drive link.
+
+    Returns the folder ID or None if not found.
+    """
+    file_id = extract_file_id_from_link(drive_link)
+    if not file_id:
+        return None
+
+    try:
+        service = get_drive_service()
+        file = service.files().get(fileId=file_id, fields='parents', supportsAllDrives=True).execute()
+        parents = file.get('parents', [])
+        return parents[0] if parents else None
+    except Exception as e:
+        print(f"Error getting folder ID: {e}")
+        return None
+
+
+def get_folder_link_from_file(drive_link: str) -> str | None:
+    """Get the Google Drive folder link from a file's link.
+
+    Returns the folder URL or None if not found.
+    """
+    folder_id = get_folder_id_from_file_link(drive_link)
+    if folder_id:
+        return f"https://drive.google.com/drive/folders/{folder_id}"
+    return None
+
+
+def upload_attachment_to_folder(
+    file_bytes: bytes,
+    filename: str,
+    folder_id: str,
+    mime_type: str = None
+) -> str | None:
+    """Upload an attachment file to a specific Google Drive folder.
+
+    Args:
+        file_bytes: The file content as bytes
+        filename: Name for the file
+        folder_id: The Google Drive folder ID to upload to
+        mime_type: Optional MIME type (auto-detected if not provided)
+
+    Returns the file's web view link or None on error.
+    """
+    if not mime_type:
+        # Auto-detect mime type based on extension
+        ext = filename.lower().split('.')[-1] if '.' in filename else ''
+        mime_map = {
+            'pdf': 'application/pdf',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xls': 'application/vnd.ms-excel',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'txt': 'text/plain',
+        }
+        mime_type = mime_map.get(ext, 'application/octet-stream')
+
+    try:
+        service = get_drive_service()
+
+        file_metadata = {
+            'name': filename,
+            'parents': [folder_id]
+        }
+
+        media = MediaIoBaseUpload(
+            io.BytesIO(file_bytes),
+            mimetype=mime_type,
+            resumable=True
+        )
+
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id, webViewLink',
+            supportsAllDrives=True
+        ).execute()
+
+        return file.get('webViewLink', f"https://drive.google.com/file/d/{file['id']}/view")
+    except Exception as e:
+        print(f"Error uploading attachment: {e}")
+        return None

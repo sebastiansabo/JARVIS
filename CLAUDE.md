@@ -19,7 +19,9 @@ app/
 ├── services.py         # Business logic for allocations
 ├── invoice_parser.py   # AI-powered invoice parsing with Claude
 ├── drive_service.py    # Google Drive integration
+├── image_compressor.py # TinyPNG image compression for attachments
 ├── currency_converter.py # BNR exchange rate fetching and conversion
+├── notification_service.py # SMTP email notifications
 ├── config.py           # Configuration settings
 └── templates/          # Jinja2 HTML templates
 ```
@@ -47,6 +49,7 @@ docker run -p 8080:8080 -e DATABASE_URL="..." -e ANTHROPIC_API_KEY="..." bugetar
 - `ANTHROPIC_API_KEY` - Claude API key for invoice parsing (stored in ~/.zshrc)
 - `GOOGLE_CREDENTIALS_JSON` - Google Drive API credentials (service account)
 - `GOOGLE_OAUTH_TOKEN` - Base64-encoded OAuth token for Google Drive (production)
+- `TINYPNG_API_KEY` - TinyPNG API key for image compression (optional, has default)
 
 ## Database Schema
 - `invoices` - Invoice header records
@@ -54,6 +57,8 @@ docker run -p 8080:8080 -e DATABASE_URL="..." -e ANTHROPIC_API_KEY="..." bugetar
 - `invoice_templates` - AI parsing templates per supplier
 - `department_structure` - Company/department hierarchy
 - `companies` - Company VAT registry for matching
+- `users` - Application users with bcrypt passwords and role permissions
+- `user_events` - Activity log for user actions (login, invoice operations)
 
 ## Deployment
 Configured via `.do/app.yaml` for DigitalOcean App Platform with auto-deploy on push to main branch.
@@ -231,6 +236,22 @@ Drive upload happens **after allocation confirmation** (not during parsing):
 
 This ensures only confirmed invoices are uploaded to Drive.
 
+### Invoice Attachments
+Users can upload additional files (images, PDFs, documents) with invoices:
+1. On the Invoice Input page, click "Add files to upload with invoice" section
+2. Select multiple files (max 5MB each)
+3. Attachments are uploaded to the same Google Drive folder as the main invoice
+4. Images (PNG, JPEG) are automatically compressed via TinyPNG API before upload
+5. Progress indicator shows "Uploading attachment X/Y..." during upload
+6. In Accounting list, a folder icon appears next to "View" for invoices with Drive files
+
+### Image Compression (`image_compressor.py`)
+Automatic image compression using TinyPNG API:
+- Compresses PNG and JPEG images before Drive upload
+- Reduces file size by 40-70% typically
+- Falls back to original if compression fails
+- Returns compression stats (original_size, compressed_size, saved_percent)
+
 ## Currency Conversion
 
 ### BNR Exchange Rates (`currency_converter.py`)
@@ -295,3 +316,10 @@ The "Total Value" card on the accounting dashboard has a EUR/RON toggle switch:
 - Moved currency label into Value field label (e.g., "Value (RON)") for wider input field
 - Fixed single-row allocation value editing (percentage now updates when editing value field on single allocation row)
 - Lock state now persisted to database (locked allocations stay locked when viewing/editing invoices)
+- Added Activity Logs tab to Settings page (admin-only) with filters for user, event type, date range
+- Added event logging for invoice operations: invoice_created, invoice_updated, invoice_deleted, invoice_restored, invoice_permanently_deleted, allocations_updated
+- Added invoice attachments feature: upload additional files (images, PDFs, docs) with invoices
+- Added TinyPNG image compression for attachments (reduces file size before Drive upload)
+- Added folder icon in Accounting list to open invoice's Google Drive folder
+- Added upload progress indicator showing "Uploading attachment X/Y..."
+- Added `/api/drive/upload-attachment` and `/api/drive/folder-link` API endpoints
