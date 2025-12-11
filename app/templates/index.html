@@ -221,36 +221,36 @@
     <template id="allocationTemplate">
         <div class="allocation-row">
             <div class="row align-items-end">
-                <div class="col-md-2 mb-2">
+                <div class="col-6 col-md-2 mb-2">
                     <label class="form-label small">Brand</label>
                     <select class="form-select form-select-sm brand-select">
                         <option value="">N/A</option>
                     </select>
                 </div>
-                <div class="col-md-2 mb-2">
+                <div class="col-6 col-md-2 mb-2">
                     <label class="form-label small">Department</label>
                     <select class="form-select form-select-sm department-select" required>
                         <option value="">Select...</option>
                     </select>
                 </div>
-                <div class="col-md-2 mb-2">
+                <div class="col-6 col-md-2 mb-2">
                     <label class="form-label small">Subdepartment</label>
                     <select class="form-select form-select-sm subdepartment-select">
                         <option value="">N/A</option>
                     </select>
                 </div>
-                <div class="col-md-2 mb-2">
+                <div class="col-4 col-md-2 mb-2">
                     <label class="form-label small">Allocation %</label>
                     <input type="number" class="form-control form-control-sm allocation-input" min="0" max="100" step="0.01" value="100" required>
                 </div>
-                <div class="col-md-3 mb-2">
+                <div class="col-6 col-md-2 mb-2">
                     <label class="form-label small">Value</label>
                     <div class="input-group input-group-sm">
                         <input type="number" class="form-control form-control-sm allocation-value-input" min="0" step="0.01" value="0">
                         <span class="input-group-text currency-label">RON</span>
                     </div>
                 </div>
-                <div class="col-md-1 mb-2 d-flex gap-1">
+                <div class="col-2 col-md-2 mb-2 d-flex gap-1 align-items-end justify-content-end">
                     <button type="button" class="btn btn-outline-secondary btn-sm lock-allocation" title="Lock this allocation">
                         <i class="bi bi-unlock"></i>
                     </button>
@@ -650,16 +650,24 @@
             deptSelect.addEventListener('change', async () => {
                 const company = document.getElementById('dedicatedCompany').value;
                 const dept = deptSelect.value;
+                const subdeptCol = subdeptSelect.closest('[class*="col-"]');
                 subdeptSelect.innerHTML = '<option value="">N/A</option>';
 
                 if (company && dept) {
                     const subdepts = await fetch(`/api/subdepartments/${encodeURIComponent(company)}/${encodeURIComponent(dept)}`).then(r => r.json());
-                    subdepts.forEach(s => {
-                        const opt = document.createElement('option');
-                        opt.value = s;
-                        opt.textContent = s;
-                        subdeptSelect.appendChild(opt);
-                    });
+                    if (subdepts.length > 0) {
+                        subdeptCol.style.display = '';
+                        subdepts.forEach(s => {
+                            const opt = document.createElement('option');
+                            opt.value = s;
+                            opt.textContent = s;
+                            subdeptSelect.appendChild(opt);
+                        });
+                    } else {
+                        subdeptCol.style.display = 'none';
+                    }
+                } else {
+                    subdeptCol.style.display = 'none';
                 }
                 updateManager();
                 saveFormToCache();
@@ -929,6 +937,8 @@
             const deptSelect = row.querySelector('.department-select');
             const subdeptSelect = row.querySelector('.subdepartment-select');
             const managerDisplay = row.querySelector('.manager-display');
+            const brandCol = brandSelect.closest('[class*="col-"]');
+            const subdeptCol = subdeptSelect.closest('[class*="col-"]');
 
             brandSelect.innerHTML = '<option value="">N/A</option>';
             deptSelect.innerHTML = '<option value="">Select...</option>';
@@ -940,18 +950,33 @@
                     fetch(`/api/brands/${encodeURIComponent(company)}`).then(r => r.json()),
                     fetch(`/api/departments/${encodeURIComponent(company)}`).then(r => r.json())
                 ]);
-                brands.forEach(b => {
-                    const opt = document.createElement('option');
-                    opt.value = b;
-                    opt.textContent = b;
-                    brandSelect.appendChild(opt);
-                });
+
+                // Hide/show brand column based on whether brands exist
+                if (brands.length > 0) {
+                    brandCol.style.display = '';
+                    brands.forEach(b => {
+                        const opt = document.createElement('option');
+                        opt.value = b;
+                        opt.textContent = b;
+                        brandSelect.appendChild(opt);
+                    });
+                } else {
+                    brandCol.style.display = 'none';
+                }
+
                 depts.forEach(d => {
                     const opt = document.createElement('option');
                     opt.value = d;
                     opt.textContent = d;
                     deptSelect.appendChild(opt);
                 });
+
+                // Initially hide subdepartment until a department is selected
+                subdeptCol.style.display = 'none';
+            } else {
+                // No company selected - show all columns
+                brandCol.style.display = '';
+                subdeptCol.style.display = '';
             }
         }
 
@@ -1273,38 +1298,60 @@
 
             // Populate brands and departments based on dedicated company
             const company = document.getElementById('dedicatedCompany').value;
+            const brandCol = brandSelect.closest('[class*="col-"]');
+            const subdeptCol = subdeptSelect.closest('[class*="col-"]');
+
             if (company) {
                 const [brands, depts] = await Promise.all([
                     fetch(`/api/brands/${encodeURIComponent(company)}`).then(r => r.json()),
                     fetch(`/api/departments/${encodeURIComponent(company)}`).then(r => r.json())
                 ]);
-                brands.forEach(b => {
-                    const opt = document.createElement('option');
-                    opt.value = b;
-                    opt.textContent = b;
-                    brandSelect.appendChild(opt);
-                });
+
+                // Hide/show brand column based on whether brands exist
+                if (brands.length > 0) {
+                    brandCol.style.display = '';
+                    brands.forEach(b => {
+                        const opt = document.createElement('option');
+                        opt.value = b;
+                        opt.textContent = b;
+                        brandSelect.appendChild(opt);
+                    });
+                } else {
+                    brandCol.style.display = 'none';
+                }
+
                 depts.forEach(d => {
                     const opt = document.createElement('option');
                     opt.value = d;
                     opt.textContent = d;
                     deptSelect.appendChild(opt);
                 });
+
+                // Initially hide subdepartment until a department is selected
+                subdeptCol.style.display = 'none';
             }
 
             deptSelect.addEventListener('change', async () => {
                 const company = document.getElementById('dedicatedCompany').value;
                 const dept = deptSelect.value;
+                const subdeptCol = subdeptSelect.closest('[class*="col-"]');
                 subdeptSelect.innerHTML = '<option value="">N/A</option>';
 
                 if (company && dept) {
                     const subdepts = await fetch(`/api/subdepartments/${encodeURIComponent(company)}/${encodeURIComponent(dept)}`).then(r => r.json());
-                    subdepts.forEach(s => {
-                        const opt = document.createElement('option');
-                        opt.value = s;
-                        opt.textContent = s;
-                        subdeptSelect.appendChild(opt);
-                    });
+                    if (subdepts.length > 0) {
+                        subdeptCol.style.display = '';
+                        subdepts.forEach(s => {
+                            const opt = document.createElement('option');
+                            opt.value = s;
+                            opt.textContent = s;
+                            subdeptSelect.appendChild(opt);
+                        });
+                    } else {
+                        subdeptCol.style.display = 'none';
+                    }
+                } else {
+                    subdeptCol.style.display = 'none';
                 }
                 updateManager();
                 saveFormToCache();

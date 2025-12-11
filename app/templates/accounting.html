@@ -2084,9 +2084,11 @@
             // Get departments/brands for the dedicated company
             const departments = getDepartmentsForCompany(dedicatedCompany);
             const brands = getBrandsForCompany(dedicatedCompany);
+            const hasBrands = brands.length > 0;
 
             container.innerHTML = editAllocations.map((alloc, idx) => {
                 const subdepartments = getSubdepartmentsForDept(dedicatedCompany, alloc.department);
+                const hasSubdepts = subdepartments.length > 0;
                 const allocValue = (invoiceValue * (parseFloat(alloc.allocation_percent) || 0)) / 100;
 
                 return `
@@ -2095,7 +2097,7 @@
                             <i class="bi bi-trash"></i>
                         </button>
                         <div class="row">
-                            <div class="col-md-2 mb-2">
+                            <div class="col-md-2 mb-2" ${hasBrands ? '' : 'style="display: none;"'}>
                                 <label class="form-label">Brand</label>
                                 <select class="form-select alloc-brand" data-idx="${idx}" onchange="onAllocationFieldChange(${idx})">
                                     <option value="">N/A</option>
@@ -2109,7 +2111,7 @@
                                     ${departments.map(d => `<option value="${d}" ${d === alloc.department ? 'selected' : ''}>${d}</option>`).join('')}
                                 </select>
                             </div>
-                            <div class="col-md-2 mb-2">
+                            <div class="col-md-2 mb-2" ${hasSubdepts ? '' : 'style="display: none;"'}>
                                 <label class="form-label">Subdepartment</label>
                                 <select class="form-select alloc-subdepartment" data-idx="${idx}" onchange="onAllocationFieldChange(${idx})">
                                     <option value="">N/A</option>
