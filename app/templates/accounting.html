@@ -1844,8 +1844,8 @@
             // Add change event listener for dedicated company
             dedicatedCompanySelect.onchange = onDedicatedCompanyChange;
 
-            // Load allocations
-            editAllocations = (invoice.allocations || []).map(a => ({...a}));
+            // Load allocations (initialize locked property to false)
+            editAllocations = (invoice.allocations || []).map(a => ({...a, locked: false}));
             renderEditAllocations();
 
             // Close the detail modal and open the edit modal
@@ -2093,6 +2093,11 @@
 
                 return `
                     <div class="allocation-edit-row position-relative" data-idx="${idx}">
+                        <div class="position-absolute" style="top: 5px; right: 40px;">
+                            <button type="button" class="btn btn-sm btn-outline-secondary lock-allocation-btn" onclick="toggleAllocationLock(${idx})" title="${alloc.locked ? 'Unlock this allocation' : 'Lock this allocation'}">
+                                <i class="bi ${alloc.locked ? 'bi-lock-fill' : 'bi-unlock'}"></i>
+                            </button>
+                        </div>
                         <button type="button" class="btn btn-sm btn-outline-danger delete-allocation-btn" onclick="deleteAllocation(${idx})" ${editAllocations.length <= 1 ? 'disabled' : ''}>
                             <i class="bi bi-trash"></i>
                         </button>
@@ -2438,17 +2443,48 @@
             return result;
         }
 
-        // Apply smart split to all allocations
+        // Toggle lock state for an allocation
+        function toggleAllocationLock(idx) {
+            editAllocations[idx].locked = !editAllocations[idx].locked;
+            renderEditAllocations();
+        }
+
+        // Apply smart split to all allocations (respecting locked allocations)
         function applySmartSplit() {
             const count = editAllocations.length;
             if (count === 0) return;
 
             const invoiceValue = parseFloat(document.getElementById('editInvoiceValue').value) || 0;
-            const percentages = getSmartSplitEdit(count);
 
-            editAllocations.forEach((alloc, idx) => {
-                alloc.allocation_percent = percentages[idx];
-                alloc.allocation_value = (invoiceValue * percentages[idx]) / 100;
+            // Separate locked and unlocked allocations
+            const lockedAllocs = editAllocations.filter(a => a.locked);
+            const unlockedAllocs = editAllocations.filter(a => !a.locked);
+
+            // Calculate total locked percentage
+            let lockedPercent = 0;
+            lockedAllocs.forEach(alloc => {
+                lockedPercent += parseFloat(alloc.allocation_percent) || 0;
+            });
+
+            // Distribute remaining percentage among unlocked allocations
+            const remainingPercent = Math.max(0, 100 - lockedPercent);
+            const unlockedCount = unlockedAllocs.length;
+
+            if (unlockedCount > 0) {
+                let percentages = getSmartSplitEdit(unlockedCount);
+                // Scale percentages to fit remaining percent
+                const scaleFactor = remainingPercent / 100;
+                percentages = percentages.map(p => p * scaleFactor);
+
+                unlockedAllocs.forEach((alloc, idx) => {
+                    alloc.allocation_percent = percentages[idx];
+                    alloc.allocation_value = (invoiceValue * percentages[idx]) / 100;
+                });
+            }
+
+            // Update locked allocation values (in case invoice value changed)
+            lockedAllocs.forEach(alloc => {
+                alloc.allocation_value = (invoiceValue * (parseFloat(alloc.allocation_percent) || 0)) / 100;
             });
 
             renderEditAllocations();
@@ -2471,7 +2507,8 @@
                 reinvoice_to: null,
                 reinvoice_brand: null,
                 reinvoice_department: null,
-                reinvoice_subdepartment: null
+                reinvoice_subdepartment: null,
+                locked: false
             });
             applySmartSplit(); // Redistribute with smart split when adding
         }
