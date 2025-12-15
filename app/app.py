@@ -142,7 +142,7 @@ def log_event(event_type, description=None, entity_type=None, entity_id=None, de
 def login():
     """Login page and form handler."""
     if current_user.is_authenticated:
-        return redirect(url_for('index'))
+        return redirect(url_for('accounting'))
 
     if request.method == 'POST':
         email = request.form.get('email', '').strip()
@@ -160,7 +160,7 @@ def login():
             log_event('login', f'User {email} logged in')
 
             next_page = request.args.get('next')
-            return redirect(next_page or url_for('index'))
+            return redirect(next_page or url_for('accounting'))
         else:
             log_event('login_failed', f'Failed login attempt for {email}')
             flash('Invalid email or password.', 'error')
@@ -311,7 +311,17 @@ def api_get_event_types():
 @app.route('/')
 @login_required
 def index():
-    """Main page with invoice distribution form."""
+    """Redirect to accounting dashboard (default view)."""
+    return redirect(url_for('accounting'))
+
+
+@app.route('/add-invoice')
+@login_required
+def add_invoice():
+    """Invoice distribution form page."""
+    if not current_user.can_add_invoices:
+        flash('You do not have permission to add invoices.', 'error')
+        return redirect(url_for('accounting'))
     return render_template('index.html')
 
 
@@ -374,6 +384,9 @@ def api_manager():
 @login_required
 def submit_invoice():
     """Submit an invoice with its cost distribution."""
+    if not current_user.can_add_invoices:
+        return jsonify({'success': False, 'error': 'You do not have permission to add invoices'}), 403
+
     data = request.json
 
     try:
@@ -679,6 +692,9 @@ def api_drive_folder_link():
 @login_required
 def accounting():
     """Accounting dashboard for viewing all allocations."""
+    if not current_user.can_access_accounting:
+        flash('You do not have permission to access the accounting dashboard.', 'error')
+        return redirect(url_for('add_invoice'))
     return render_template('accounting.html')
 
 
@@ -688,6 +704,10 @@ def accounting():
 @login_required
 def connectors():
     """Connectors page for managing external integrations."""
+    if not current_user.can_access_connectors:
+        flash('You do not have permission to access connectors.', 'error')
+        return redirect(url_for('accounting'))
+
     from database import get_all_connectors, get_connector_by_type, get_connector_sync_logs
 
     all_connectors = get_all_connectors()
@@ -922,6 +942,8 @@ def api_db_invoice_detail(invoice_id):
 @login_required
 def api_db_delete_invoice(invoice_id):
     """Soft delete an invoice (move to bin)."""
+    if not current_user.can_delete_invoices:
+        return jsonify({'success': False, 'error': 'You do not have permission to delete invoices'}), 403
     if delete_invoice(invoice_id):
         log_event('invoice_deleted', f'Moved invoice ID {invoice_id} to bin',
                   entity_type='invoice', entity_id=invoice_id)
@@ -933,6 +955,8 @@ def api_db_delete_invoice(invoice_id):
 @login_required
 def api_db_restore_invoice(invoice_id):
     """Restore a soft-deleted invoice from the bin."""
+    if not current_user.can_delete_invoices:
+        return jsonify({'success': False, 'error': 'You do not have permission to restore invoices'}), 403
     if restore_invoice(invoice_id):
         log_event('invoice_restored', f'Restored invoice ID {invoice_id} from bin',
                   entity_type='invoice', entity_id=invoice_id)
@@ -944,6 +968,8 @@ def api_db_restore_invoice(invoice_id):
 @login_required
 def api_db_permanently_delete_invoice(invoice_id):
     """Permanently delete an invoice (cannot be restored). Also deletes from Google Drive."""
+    if not current_user.can_delete_invoices:
+        return jsonify({'success': False, 'error': 'You do not have permission to delete invoices'}), 403
     # Get drive_link before deleting the invoice
     drive_link = get_invoice_drive_link(invoice_id)
 
@@ -962,6 +988,8 @@ def api_db_permanently_delete_invoice(invoice_id):
 @login_required
 def api_db_bulk_delete_invoices():
     """Soft delete multiple invoices."""
+    if not current_user.can_delete_invoices:
+        return jsonify({'success': False, 'error': 'You do not have permission to delete invoices'}), 403
     data = request.json
     invoice_ids = data.get('invoice_ids', [])
     if not invoice_ids:
@@ -974,6 +1002,8 @@ def api_db_bulk_delete_invoices():
 @login_required
 def api_db_bulk_restore_invoices():
     """Restore multiple soft-deleted invoices."""
+    if not current_user.can_delete_invoices:
+        return jsonify({'success': False, 'error': 'You do not have permission to restore invoices'}), 403
     data = request.json
     invoice_ids = data.get('invoice_ids', [])
     if not invoice_ids:
@@ -986,6 +1016,8 @@ def api_db_bulk_restore_invoices():
 @login_required
 def api_db_bulk_permanently_delete_invoices():
     """Permanently delete multiple invoices (cannot be restored). Also deletes from Google Drive."""
+    if not current_user.can_delete_invoices:
+        return jsonify({'success': False, 'error': 'You do not have permission to delete invoices'}), 403
     data = request.json
     invoice_ids = data.get('invoice_ids', [])
     if not invoice_ids:
@@ -1019,6 +1051,13 @@ def api_db_update_invoice(invoice_id):
     data = request.json
 
     try:
+        # Get current invoice data to track status changes
+        current_invoice = get_invoice_with_allocations(invoice_id)
+        old_status = current_invoice.get('status') if current_invoice else None
+        old_payment_status = current_invoice.get('payment_status') if current_invoice else None
+        new_status = data.get('status')
+        new_payment_status = data.get('payment_status')
+
         updated = update_invoice(
             invoice_id=invoice_id,
             supplier=data.get('supplier'),
@@ -1028,10 +1067,23 @@ def api_db_update_invoice(invoice_id):
             currency=data.get('currency'),
             drive_link=data.get('drive_link'),
             comment=data.get('comment'),
-            status=data.get('status'),
-            payment_status=data.get('payment_status')
+            status=new_status,
+            payment_status=new_payment_status
         )
         if updated:
+            # Log status change if it occurred
+            if new_status is not None and old_status != new_status:
+                log_event('status_changed',
+                          f'Invoice #{current_invoice.get("invoice_number", invoice_id)} status changed from "{old_status}" to "{new_status}"',
+                          entity_type='invoice', entity_id=invoice_id,
+                          details={'old_status': old_status, 'new_status': new_status})
+            # Log payment status change if it occurred
+            if new_payment_status is not None and old_payment_status != new_payment_status:
+                log_event('payment_status_changed',
+                          f'Invoice #{current_invoice.get("invoice_number", invoice_id)} payment status changed from "{old_payment_status}" to "{new_payment_status}"',
+                          entity_type='invoice', entity_id=invoice_id,
+                          details={'old_payment_status': old_payment_status, 'new_payment_status': new_payment_status})
+            # Log general update
             log_event('invoice_updated', f'Updated invoice ID {invoice_id}',
                       entity_type='invoice', entity_id=invoice_id)
             return jsonify({'success': True})
@@ -1253,6 +1305,9 @@ def api_match_vat(vat):
 @login_required
 def templates_page():
     """Invoice templates management page."""
+    if not current_user.can_access_templates:
+        flash('You do not have permission to access invoice templates.', 'error')
+        return redirect(url_for('accounting'))
     return render_template('templates.html')
 
 
@@ -1395,6 +1450,9 @@ def api_generate_template():
 @login_required
 def settings():
     """Settings page for managing users and permissions."""
+    if not current_user.can_access_settings:
+        flash('You do not have permission to access settings.', 'error')
+        return redirect(url_for('accounting'))
     return render_template('settings.html')
 
 
