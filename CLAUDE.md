@@ -177,15 +177,31 @@ When working with multiple allocations (3+), percentages automatically redistrib
 4. Unlocked rows receive the remaining percentage (100% - locked total)
 5. **Lock state is persisted to database** - when viewing/editing invoices, locked allocations remain locked
 
-### Complex Reinvoice Feature
-Allocations can be marked for reinvoicing to a specific company/department/subdepartment:
+### Multi-Destination Reinvoice Feature
+Allocations can be marked for reinvoicing to multiple companies/departments:
 1. Check the "Reinvoice to:" checkbox on an allocation
-2. Select the target company from the first dropdown
-3. The department dropdown populates based on selected company (via `/api/departments/{company}`)
-4. The subdepartment dropdown populates based on selected department (via `/api/subdepartments/{company}/{dept}`)
-5. Reinvoice destination is displayed as: `Company / Department / Subdepartment`
+2. First reinvoice line appears with 100% of allocation value
+3. Click "+ Add Reinvoice Line" to add more destinations
+4. Each line has: Company, Brand (if applicable), Department, Subdepartment dropdowns
+5. Value and percentage fields are bidirectionally synced
+6. Total reinvoice percentage cannot exceed 100%
 
-This allows tracking which allocations need to be billed to another entity within the organization.
+#### Reinvoice Line Lock Feature
+To prevent a reinvoice line's values from changing when adding more lines:
+1. Click the lock icon (🔓) next to the reinvoice line
+2. Icon changes to locked state (🔒) with yellow background
+3. Locked lines maintain their percentage/value during redistribution
+4. When adding a new line, only unlocked lines share the remaining percentage
+5. Example: Lock a line at 100%, add new line → locked line stays 100%, new line gets 0%
+
+#### Reinvoice Line Comments
+Each reinvoice line can have an optional comment:
+1. Click the chat icon (💬) next to the reinvoice line
+2. Enter comment in the prompt dialog
+3. If comment exists, button turns blue and shows comment on hover
+4. Comments are included in the `reinvoice_destinations` array when saving
+
+This allows tracking which allocations need to be billed to multiple entities within the organization.
 
 ## Accounting Dashboard
 
@@ -330,3 +346,7 @@ The "Total Value" card on the accounting dashboard has a EUR/RON toggle switch:
   - Payment Status dropdown on Add Invoice page
   - Payment Status column in Accounting dashboard table (inline dropdown)
   - Payment Status row in Invoice Details modal (editable dropdown)
+- Added multi-destination reinvoice feature: reinvoice to multiple companies/departments per allocation
+- Added lock button to reinvoice lines: locked lines maintain their values when adding new lines
+- Added comment button to reinvoice lines: add optional comments to each reinvoice destination
+- Fixed `const` to `let` bug in addReinvoiceLine for locked line redistribution

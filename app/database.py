@@ -597,6 +597,43 @@ def init_db():
     except Exception:
         conn.rollback()
 
+    # Create reinvoice_destinations table for multi-destination reinvoicing
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS reinvoice_destinations (
+            id SERIAL PRIMARY KEY,
+            allocation_id INTEGER NOT NULL REFERENCES allocations(id) ON DELETE CASCADE,
+            company TEXT NOT NULL,
+            brand TEXT,
+            department TEXT,
+            subdepartment TEXT,
+            percentage REAL NOT NULL,
+            value REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+
+    # Create index for reinvoice_destinations
+    try:
+        cursor.execute('CREATE INDEX idx_reinvoice_dest_allocation ON reinvoice_destinations(allocation_id)')
+        conn.commit()
+    except psycopg2.errors.DuplicateTable:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
+
+    # Migrate existing single reinvoice data to new table (if not already migrated)
+    cursor.execute('''
+        INSERT INTO reinvoice_destinations (allocation_id, company, brand, department, subdepartment, percentage, value)
+        SELECT id, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment, 100.0, allocation_value
+        FROM allocations
+        WHERE reinvoice_to IS NOT NULL AND reinvoice_to != ''
+        AND NOT EXISTS (
+            SELECT 1 FROM reinvoice_destinations rd WHERE rd.allocation_id = allocations.id
+        )
+    ''')
+    conn.commit()
+
     # Seed initial data if tables are empty
     cursor.execute('SELECT COUNT(*) FROM department_structure')
     result = cursor.fetchone()
@@ -724,6 +761,7 @@ def save_invoice(
             cursor.execute('''
                 INSERT INTO allocations (invoice_id, company, brand, department, subdepartment, allocation_percent, allocation_value, responsible, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment, locked)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
             ''', (
                 invoice_id,
                 dist['company'],
@@ -739,6 +777,25 @@ def save_invoice(
                 dist.get('reinvoice_subdepartment'),
                 dist.get('locked', False)
             ))
+            allocation_id = cursor.fetchone()['id']
+
+            # Insert reinvoice destinations if provided
+            reinvoice_dests = dist.get('reinvoice_destinations', [])
+            for rd in reinvoice_dests:
+                rd_value = allocation_value * (rd['percentage'] / 100)
+                cursor.execute('''
+                    INSERT INTO reinvoice_destinations
+                    (allocation_id, company, brand, department, subdepartment, percentage, value)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    allocation_id,
+                    rd['company'],
+                    rd.get('brand'),
+                    rd.get('department'),
+                    rd.get('subdepartment'),
+                    rd['percentage'],
+                    rd_value
+                ))
 
         conn.commit()
         return invoice_id
@@ -819,7 +876,7 @@ def get_all_invoices(limit: int = 100, offset: int = 0, company: Optional[str] =
 
 
 def get_invoice_with_allocations(invoice_id: int) -> Optional[dict]:
-    """Get invoice with all its allocations."""
+    """Get invoice with all its allocations and their reinvoice destinations."""
     conn = get_db()
     cursor = get_cursor(conn)
 
@@ -833,7 +890,18 @@ def get_invoice_with_allocations(invoice_id: int) -> Optional[dict]:
     invoice = dict_from_row(invoice)
 
     cursor.execute('SELECT * FROM allocations WHERE invoice_id = %s', (invoice_id,))
-    invoice['allocations'] = [dict_from_row(row) for row in cursor.fetchall()]
+    allocations = [dict_from_row(row) for row in cursor.fetchall()]
+
+    # Fetch reinvoice destinations for each allocation
+    for alloc in allocations:
+        cursor.execute('''
+            SELECT id, company, brand, department, subdepartment, percentage, value
+            FROM reinvoice_destinations
+            WHERE allocation_id = %s
+        ''', (alloc['id'],))
+        alloc['reinvoice_destinations'] = [dict_from_row(row) for row in cursor.fetchall()]
+
+    invoice['allocations'] = allocations
 
     release_db(conn)
     return invoice
@@ -918,7 +986,21 @@ def get_invoices_with_allocations(limit: int = 100, offset: int = 0, company: Op
                             'reinvoice_department', a.reinvoice_department,
                             'reinvoice_subdepartment', a.reinvoice_subdepartment,
                             'locked', a.locked,
-                            'comment', a.comment
+                            'comment', a.comment,
+                            'reinvoice_destinations', COALESCE(
+                                (SELECT json_agg(
+                                    json_build_object(
+                                        'id', rd.id,
+                                        'company', rd.company,
+                                        'brand', rd.brand,
+                                        'department', rd.department,
+                                        'subdepartment', rd.subdepartment,
+                                        'percentage', rd.percentage,
+                                        'value', rd.value
+                                    )
+                                ) FROM reinvoice_destinations rd WHERE rd.allocation_id = a.id),
+                                '[]'::json
+                            )
                         )
                     ) FILTER (WHERE a.id IS NOT NULL),
                     '[]'::json
@@ -958,7 +1040,21 @@ def get_invoices_with_allocations(limit: int = 100, offset: int = 0, company: Op
                             'reinvoice_department', a.reinvoice_department,
                             'reinvoice_subdepartment', a.reinvoice_subdepartment,
                             'locked', a.locked,
-                            'comment', a.comment
+                            'comment', a.comment,
+                            'reinvoice_destinations', COALESCE(
+                                (SELECT json_agg(
+                                    json_build_object(
+                                        'id', rd.id,
+                                        'company', rd.company,
+                                        'brand', rd.brand,
+                                        'department', rd.department,
+                                        'subdepartment', rd.subdepartment,
+                                        'percentage', rd.percentage,
+                                        'value', rd.value
+                                    )
+                                ) FROM reinvoice_destinations rd WHERE rd.allocation_id = a.id),
+                                '[]'::json
+                            )
                         )
                     ) FILTER (WHERE a.id IS NOT NULL),
                     '[]'::json
@@ -1592,6 +1688,7 @@ def update_invoice_allocations(invoice_id: int, allocations: list[dict]) -> bool
                 INSERT INTO allocations (invoice_id, company, brand, department, subdepartment,
                     allocation_percent, allocation_value, responsible, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment, locked, comment)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
             ''', (
                 invoice_id,
                 alloc['company'],
@@ -1608,10 +1705,118 @@ def update_invoice_allocations(invoice_id: int, allocations: list[dict]) -> bool
                 alloc.get('locked', False),
                 alloc.get('comment')
             ))
+            allocation_id = cursor.fetchone()['id']
+
+            # Insert reinvoice destinations if provided
+            reinvoice_dests = alloc.get('reinvoice_destinations', [])
+            for rd in reinvoice_dests:
+                rd_value = allocation_value * (rd['percentage'] / 100)
+                cursor.execute('''
+                    INSERT INTO reinvoice_destinations
+                    (allocation_id, company, brand, department, subdepartment, percentage, value)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    allocation_id,
+                    rd['company'],
+                    rd.get('brand'),
+                    rd.get('department'),
+                    rd.get('subdepartment'),
+                    rd['percentage'],
+                    rd_value
+                ))
 
         conn.commit()
         return True
     except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        release_db(conn)
+
+
+# ============== REINVOICE DESTINATIONS FUNCTIONS ==============
+
+def get_reinvoice_destinations(allocation_id: int) -> list[dict]:
+    """Get all reinvoice destinations for an allocation."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+    cursor.execute('''
+        SELECT * FROM reinvoice_destinations WHERE allocation_id = %s ORDER BY id
+    ''', (allocation_id,))
+    results = [dict_from_row(row) for row in cursor.fetchall()]
+    release_db(conn)
+    return results
+
+
+def save_reinvoice_destinations(allocation_id: int, destinations: list[dict], allocation_value: float = None) -> bool:
+    """
+    Replace all reinvoice destinations for an allocation.
+    If allocation_value is provided, calculates each destination's value from its percentage.
+    """
+    conn = get_db()
+    cursor = get_cursor(conn)
+    try:
+        # Delete existing destinations
+        cursor.execute('DELETE FROM reinvoice_destinations WHERE allocation_id = %s', (allocation_id,))
+
+        # Insert new destinations
+        for dest in destinations:
+            dest_value = None
+            if allocation_value is not None and dest.get('percentage'):
+                dest_value = allocation_value * (dest['percentage'] / 100)
+            cursor.execute('''
+                INSERT INTO reinvoice_destinations
+                (allocation_id, company, brand, department, subdepartment, percentage, value)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                allocation_id,
+                dest['company'],
+                dest.get('brand'),
+                dest.get('department'),
+                dest.get('subdepartment'),
+                dest['percentage'],
+                dest_value or dest.get('value')
+            ))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        release_db(conn)
+
+
+def save_reinvoice_destinations_batch(allocation_destinations: list[tuple[int, list[dict], float]]) -> bool:
+    """
+    Save reinvoice destinations for multiple allocations in a single transaction.
+    Each tuple is (allocation_id, destinations_list, allocation_value).
+    """
+    conn = get_db()
+    cursor = get_cursor(conn)
+    try:
+        for allocation_id, destinations, allocation_value in allocation_destinations:
+            # Delete existing destinations
+            cursor.execute('DELETE FROM reinvoice_destinations WHERE allocation_id = %s', (allocation_id,))
+
+            # Insert new destinations
+            for dest in destinations:
+                dest_value = allocation_value * (dest['percentage'] / 100) if allocation_value else dest.get('value')
+                cursor.execute('''
+                    INSERT INTO reinvoice_destinations
+                    (allocation_id, company, brand, department, subdepartment, percentage, value)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    allocation_id,
+                    dest['company'],
+                    dest.get('brand'),
+                    dest.get('department'),
+                    dest.get('subdepartment'),
+                    dest['percentage'],
+                    dest_value
+                ))
+        conn.commit()
+        return True
+    except Exception:
         conn.rollback()
         raise
     finally:

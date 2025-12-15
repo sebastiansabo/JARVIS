@@ -40,9 +40,54 @@
         .status-row-new > td { background-color: rgba(13, 110, 253, 0.1) !important; }  /* Blue 10% */
         .status-row-processed > td { background-color: rgba(25, 135, 84, 0.1) !important; }  /* Green 10% */
         .status-row-incomplete > td { background-color: rgba(220, 53, 69, 0.1) !important; }  /* Red 10% */
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            flex-direction: column;
+        }
+        .loading-overlay.show {
+            display: flex;
+        }
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #198754;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        .loading-text {
+            margin-top: 15px;
+            color: #333;
+            font-size: 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Override text-warning to magenta for reinvoice indicators */
+        .text-warning {
+            --bs-text-opacity: 1;
+            color: rgb(255, 7, 244) !important;
+        }
     </style>
 </head>
 <body>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading...</div>
+    </div>
+
     <nav class="navbar navbar-dark bg-success mb-4">
         <div class="container">
             <span class="navbar-brand mb-0 h1">
@@ -738,6 +783,25 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Loading overlay helpers
+        let loadingCount = 0;
+        function showLoading(message = 'Loading...') {
+            loadingCount++;
+            const overlay = document.getElementById('loadingOverlay');
+            const text = overlay.querySelector('.loading-text');
+            text.textContent = message;
+            overlay.classList.add('show');
+        }
+        function hideLoading() {
+            loadingCount = Math.max(0, loadingCount - 1);
+            if (loadingCount === 0) {
+                document.getElementById('loadingOverlay').classList.remove('show');
+            }
+        }
+        function setLoadingText(message) {
+            document.querySelector('#loadingOverlay .loading-text').textContent = message;
+        }
+
         let allInvoices = [];
         let invoicesWithAllocations = {}; // Cache for full invoice data
         let currentInvoiceId = null;
@@ -810,10 +874,15 @@
         let departmentColumnConfig = [];
         let brandColumnConfig = [];
 
-        document.addEventListener('DOMContentLoaded', () => {
-            loadColumnConfig();
-            loadData();
-            setupEventListeners();
+        document.addEventListener('DOMContentLoaded', async () => {
+            showLoading('Loading dashboard...');
+            try {
+                loadColumnConfig();
+                await loadData();
+                setupEventListeners();
+            } finally {
+                hideLoading();
+            }
         });
 
         function loadColumnConfig() {
@@ -1179,12 +1248,17 @@
 
         // Apply filters without reloading filter dropdowns (to avoid infinite loop)
         async function applyFiltersOnly() {
-            await Promise.all([
-                loadInvoices(),
-                loadCompanySummary(),
-                loadDepartmentSummary(),
-                loadBrandSummary()
-            ]);
+            showLoading('Applying filters...');
+            try {
+                await Promise.all([
+                    loadInvoices(),
+                    loadCompanySummary(),
+                    loadDepartmentSummary(),
+                    loadBrandSummary()
+                ]);
+            } finally {
+                hideLoading();
+            }
         }
 
         function debounce(func, wait) {
@@ -1511,18 +1585,22 @@
                             percent: a.allocation_percent,
                             value: a.allocation_value,
                             reinvoice_to: a.reinvoice_to,
+                            reinvoice_destinations: a.reinvoice_destinations || [],
                             comment: a.comment
                         }));
                     case 'reinvoice_list':
-                        // Get allocations with reinvoice_to, including value/dept details
+                        // Get allocations with reinvoice (new multi-destination or legacy single)
                         const reinvoiceAllocations = allocations
-                            .filter(a => a.reinvoice_to)
+                            .filter(a => (a.reinvoice_destinations && a.reinvoice_destinations.length > 0) || a.reinvoice_to)
                             .map(a => ({
                                 value: a.allocation_value,
                                 percent: a.allocation_percent,
                                 department: a.department,
                                 brand: a.brand,
-                                reinvoice_to: a.reinvoice_to
+                                reinvoice_to: a.reinvoice_to,
+                                reinvoice_department: a.reinvoice_department,
+                                reinvoice_subdepartment: a.reinvoice_subdepartment,
+                                reinvoice_destinations: a.reinvoice_destinations || []
                             }));
                         return reinvoiceAllocations.length > 0 ? reinvoiceAllocations : null;
                     default:
@@ -1565,15 +1643,36 @@
                     return value ? `<a href="${value}" target="_blank">${value}</a>` : '-';
                 case 'split':
                     if (Array.isArray(value) && value.length > 0) {
+                        // Helper to check if allocation has reinvoice destinations
+                        const hasReinvoice = (s) => (s.reinvoice_destinations && s.reinvoice_destinations.length > 0) || s.reinvoice_to;
+
+                        // Helper to format reinvoice display for an allocation
+                        const formatReinvoiceDisplay = (s) => {
+                            if (s.reinvoice_destinations && s.reinvoice_destinations.length > 0) {
+                                // New multi-destination format
+                                if (s.reinvoice_destinations.length === 1) {
+                                    const dest = s.reinvoice_destinations[0];
+                                    let destStr = dest.company;
+                                    if (dest.department) destStr += ` / ${dest.department}`;
+                                    return `<br><span class="text-warning"><i class="bi bi-arrow-right"></i> ${destStr} (${dest.percentage}%)</span>`;
+                                }
+                                // Multiple destinations - show count
+                                const totalPct = s.reinvoice_destinations.reduce((sum, d) => sum + d.percentage, 0);
+                                return `<br><span class="text-warning"><i class="bi bi-arrow-right"></i> ${s.reinvoice_destinations.length} destinations (${totalPct.toFixed(0)}%)</span>`;
+                            } else if (s.reinvoice_to) {
+                                // Legacy single destination
+                                return `<br><span class="text-warning"><i class="bi bi-arrow-right"></i> ${s.reinvoice_to}</span>`;
+                            }
+                            return '';
+                        };
+
                         // Single allocation - show inline (no collapse)
                         if (value.length === 1) {
                             const s = value[0];
                             const location = s.subdepartment || s.department;
                             const brandPart = s.brand ? ` (${s.brand})` : '';
-                            const borderColor = s.reinvoice_to ? 'border-warning' : 'border-primary';
-                            const reinvoiceLine = s.reinvoice_to
-                                ? `<br><span class="text-warning"><i class="bi bi-arrow-right"></i> ${s.reinvoice_to}</span>`
-                                : '';
+                            const borderColor = hasReinvoice(s) ? 'border-warning' : 'border-primary';
+                            const reinvoiceLine = formatReinvoiceDisplay(s);
                             const commentIcon = s.id ? `<a href="#" class="allocation-comment-btn ms-1 ${s.comment ? 'text-info' : 'text-muted'}" data-allocation-id="${s.id}" data-department="${location}" data-brand="${s.brand || ''}" data-value="${s.value}" data-percent="${s.percent}" data-comment="${(s.comment || '').replace(/"/g, '&quot;')}" title="${s.comment ? 'View/Edit comment' : 'Add comment'}"><i class="bi bi-chat-text${s.comment ? '-fill' : ''}"></i></a>` : '';
                             return `<div class="small border-start ${borderColor} ps-2">
                                 <span class="text-muted">${location}${brandPart}</span>${commentIcon}<br>
@@ -1587,7 +1686,7 @@
 
                         // Calculate summary
                         const totalValue = value.reduce((sum, s) => sum + s.value, 0);
-                        const reinvoicedAllocs = value.filter(s => s.reinvoice_to);
+                        const reinvoicedAllocs = value.filter(s => hasReinvoice(s));
                         const allocsWithComments = value.filter(s => s.comment);
 
                         // Build summary text
@@ -1604,10 +1703,8 @@
                         const allocDetails = value.map(s => {
                             const location = s.subdepartment || s.department;
                             const brandPart = s.brand ? ` (${s.brand})` : '';
-                            const borderColor = s.reinvoice_to ? 'border-warning' : 'border-primary';
-                            const reinvoiceLine = s.reinvoice_to
-                                ? `<br><span class="text-warning"><i class="bi bi-arrow-right"></i> ${s.reinvoice_to}</span>`
-                                : '';
+                            const borderColor = hasReinvoice(s) ? 'border-warning' : 'border-primary';
+                            const reinvoiceLine = formatReinvoiceDisplay(s);
                             const commentIcon = s.id ? `<a href="#" class="allocation-comment-btn ms-1 ${s.comment ? 'text-info' : 'text-muted'}" data-allocation-id="${s.id}" data-department="${location}" data-brand="${s.brand || ''}" data-value="${s.value}" data-percent="${s.percent}" data-comment="${(s.comment || '').replace(/"/g, '&quot;')}" title="${s.comment ? 'View/Edit comment' : 'Add comment'}"><i class="bi bi-chat-text${s.comment ? '-fill' : ''}"></i></a>` : '';
                             return `<div class="small border-start ${borderColor} ps-2 mb-1">
                                 <span class="text-muted">${location}${brandPart}</span>${commentIcon}<br>
@@ -1628,8 +1725,17 @@
                     return '-';
                 case 'reinvoice':
                     if (Array.isArray(value) && value.length > 0) {
-                        // Helper function to format reinvoice destination
-                        const formatReinvoiceDest = (r) => {
+                        // Helper to format a single reinvoice_destination
+                        const formatMultiDest = (dest) => {
+                            let str = dest.company;
+                            if (dest.brand) str += ` (${dest.brand})`;
+                            if (dest.department) str += ` / ${dest.department}`;
+                            if (dest.subdepartment) str += ` / ${dest.subdepartment}`;
+                            return `${str} <span class="badge bg-warning text-dark">${dest.percentage}%</span>`;
+                        };
+
+                        // Helper to format legacy single destination
+                        const formatLegacyDest = (r) => {
                             let dest = r.reinvoice_to || '-';
                             if (r.reinvoice_department) {
                                 dest += ` / ${r.reinvoice_department}`;
@@ -1638,6 +1744,18 @@
                                 }
                             }
                             return dest;
+                        };
+
+                        // Helper to render all destinations for an allocation
+                        const renderDestinations = (r) => {
+                            if (r.reinvoice_destinations && r.reinvoice_destinations.length > 0) {
+                                return r.reinvoice_destinations.map(dest =>
+                                    `<span class="text-warning"><i class="bi bi-arrow-right"></i> ${formatMultiDest(dest)}</span>`
+                                ).join('<br>');
+                            } else if (r.reinvoice_to) {
+                                return `<span class="text-warning"><i class="bi bi-arrow-right"></i> ${formatLegacyDest(r)}</span>`;
+                            }
+                            return '';
                         };
 
                         const reinvCurrency = inv.currency || 'RON';
@@ -1649,7 +1767,7 @@
                                 <span class="text-muted">${r.department}${r.brand ? ' (' + r.brand + ')' : ''}</span><br>
                                 <strong>${formatCurrency(r.value)} ${reinvCurrency}</strong>
                                 <span class="badge bg-secondary">${r.percent}%</span><br>
-                                <span class="text-warning"><i class="bi bi-arrow-right"></i> ${formatReinvoiceDest(r)}</span>
+                                ${renderDestinations(r)}
                             </div>`;
                         }
 
@@ -1663,7 +1781,7 @@
                                 <span class="text-muted">${r.department}${r.brand ? ' (' + r.brand + ')' : ''}</span><br>
                                 <strong>${formatCurrency(r.value)} ${reinvCurrency}</strong>
                                 <span class="badge bg-secondary">${r.percent}%</span><br>
-                                <span class="text-warning"><i class="bi bi-arrow-right"></i> ${formatReinvoiceDest(r)}</span>
+                                ${renderDestinations(r)}
                             </div>`
                         ).join('');
 
@@ -1989,7 +2107,9 @@
                                     </div>
                                     <div class="fw-bold text-success">${formatCurrency(a.allocation_value)} ${invoice.currency || 'RON'}</div>
                                     <div class="small">Responsible: ${a.responsible || '-'}</div>
-                                    ${a.reinvoice_to ? `<div class="small text-warning"><i class="bi bi-arrow-right"></i> Reinvoice to: ${a.reinvoice_to}${a.reinvoice_department ? ' / ' + a.reinvoice_department : ''}${a.reinvoice_subdepartment ? ' / ' + a.reinvoice_subdepartment : ''}</div>` : ''}
+                                    ${(a.reinvoice_destinations && a.reinvoice_destinations.length > 0) ?
+                                        a.reinvoice_destinations.map(rd => `<div class="small text-warning"><i class="bi bi-arrow-right"></i> Reinvoice to: ${rd.company}${rd.brand ? ' (' + rd.brand + ')' : ''}${rd.department ? ' / ' + rd.department : ''}${rd.subdepartment ? ' / ' + rd.subdepartment : ''} <span class="badge bg-warning text-dark">${rd.percentage}%</span></div>`).join('')
+                                        : (a.reinvoice_to ? `<div class="small text-warning"><i class="bi bi-arrow-right"></i> Reinvoice to: ${a.reinvoice_to}${a.reinvoice_brand ? ' (' + a.reinvoice_brand + ')' : ''}${a.reinvoice_department ? ' / ' + a.reinvoice_department : ''}${a.reinvoice_subdepartment ? ' / ' + a.reinvoice_subdepartment : ''}</div>` : '')}
                                 </div>
                             `).join('')}
                         </div>
@@ -2157,7 +2277,7 @@
                 return;
             }
 
-            // Validate all allocations have a department
+            // Validate all allocations have a department and validate reinvoice destinations
             for (let idx = 0; idx < editAllocations.length; idx++) {
                 const alloc = editAllocations[idx];
                 if (!alloc.department) {
@@ -2165,48 +2285,32 @@
                     return;
                 }
 
-                // Validate reinvoice fields if reinvoice is set (Brand first, then Department, then Subdepartment)
-                if (alloc.reinvoice_to) {
-                    // Check if reinvoice brand is mandatory (brands exist for selected reinvoice company)
-                    const reinvoiceBrandSelect = document.querySelector(`.alloc-reinvoice-brand[data-idx="${idx}"]`);
-                    if (reinvoiceBrandSelect) {
-                        const hasReinvoiceBrands = reinvoiceBrandSelect.options.length > 1; // More than just "N/A"
-                        if (hasReinvoiceBrands && !alloc.reinvoice_brand) {
-                            alert('Please select a reinvoice brand (brands are available for the selected reinvoice company)');
-                            return;
-                        }
-                    }
+                // Get reinvoice destinations from the DOM
+                const reinvoiceDestinations = getEditReinvoiceDestinations(idx);
 
-                    // Check if reinvoice department is mandatory (departments exist for selected reinvoice company)
-                    const reinvoiceDeptSelect = document.querySelector(`.alloc-reinvoice-dept[data-idx="${idx}"]`);
-                    if (reinvoiceDeptSelect) {
-                        const hasReinvoiceDepts = reinvoiceDeptSelect.options.length > 1; // More than just "Select department..."
-                        if (hasReinvoiceDepts && !alloc.reinvoice_department) {
-                            alert('Please select a reinvoice department (departments are available for the selected reinvoice company)');
-                            return;
-                        }
+                // Validate reinvoice total percentage if any destinations exist
+                if (reinvoiceDestinations.length > 0) {
+                    const totalReinvoicePercent = reinvoiceDestinations.reduce((sum, d) => sum + d.percentage, 0);
+                    if (totalReinvoicePercent > 100) {
+                        alert(`Allocation #${idx + 1}: Reinvoice total percentage (${totalReinvoicePercent.toFixed(2)}%) cannot exceed 100%`);
+                        return;
                     }
-
-                    // Check if reinvoice subdepartment is mandatory (subdepartments exist for selected reinvoice department)
-                    if (alloc.reinvoice_department) {
-                        const reinvoiceSubdeptSelect = document.querySelector(`.alloc-reinvoice-subdept[data-idx="${idx}"]`);
-                        if (reinvoiceSubdeptSelect) {
-                            const hasReinvoiceSubdepts = reinvoiceSubdeptSelect.options.length > 1; // More than just "N/A"
-                            if (hasReinvoiceSubdepts && !alloc.reinvoice_subdepartment) {
-                                alert('Please select a reinvoice subdepartment (subdepartments are available for the selected reinvoice department)');
-                                return;
-                            }
-                        }
+                    // Check that all destinations have a company selected
+                    const invalidDest = reinvoiceDestinations.find(d => !d.company);
+                    if (invalidDest) {
+                        alert(`Allocation #${idx + 1}: All reinvoice destinations must have a company selected`);
+                        return;
                     }
                 }
             }
 
             // Calculate allocation values and set company for all allocations
-            const allocationsWithValues = editAllocations.map(a => ({
+            const allocationsWithValues = editAllocations.map((a, idx) => ({
                 ...a,
                 company: dedicatedCompany,  // Use dedicated company for all
                 allocation_percent: parseFloat(a.allocation_percent) || 0,
-                allocation_value: (invoiceValue * (parseFloat(a.allocation_percent) || 0)) / 100
+                allocation_value: (invoiceValue * (parseFloat(a.allocation_percent) || 0)) / 100,
+                reinvoice_destinations: getEditReinvoiceDestinations(idx)
             }));
 
             const data = {
@@ -2369,32 +2473,20 @@
                             <div class="col-md-6 mb-2">
                                 <div class="form-check form-check-inline">
                                     <input class="form-check-input alloc-reinvoice-check" type="checkbox" data-idx="${idx}"
-                                           ${alloc.reinvoice_to ? 'checked' : ''} onchange="onReinvoiceCheckChange(${idx})">
+                                           ${(alloc.reinvoice_destinations && alloc.reinvoice_destinations.length > 0) ? 'checked' : ''} onchange="onReinvoiceCheckChange(${idx})">
                                     <label class="form-check-label small">Reinvoice to:</label>
+                                    <span class="reinvoice-total-badge badge bg-secondary ms-2" data-idx="${idx}" style="display: ${(alloc.reinvoice_destinations && alloc.reinvoice_destinations.length > 0) ? '' : 'none'};">0%</span>
                                 </div>
                             </div>
                         </div>
-                        <div class="row reinvoice-fields-row" data-idx="${idx}" style="${alloc.reinvoice_to ? '' : 'display: none;'}">
-                            <div class="col-md-3 mb-2">
-                                <select class="form-select form-select-sm alloc-reinvoice" data-idx="${idx}" onchange="onReinvoiceCompanyChange(${idx})">
-                                    <option value="">Select company...</option>
-                                    ${companies.map(c => `<option value="${c}" ${c === alloc.reinvoice_to ? 'selected' : ''}>${c}</option>`).join('')}
-                                </select>
-                            </div>
-                            <div class="col-md-2 mb-2">
-                                <select class="form-select form-select-sm alloc-reinvoice-brand" data-idx="${idx}" onchange="onReinvoiceBrandChange(${idx})">
-                                    <option value="">N/A</option>
-                                </select>
-                            </div>
-                            <div class="col-md-3 mb-2">
-                                <select class="form-select form-select-sm alloc-reinvoice-dept" data-idx="${idx}" onchange="onReinvoiceDeptChange(${idx})">
-                                    <option value="">Select department...</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4 mb-2">
-                                <select class="form-select form-select-sm alloc-reinvoice-subdept" data-idx="${idx}" onchange="onAllocationFieldChange(${idx})">
-                                    <option value="">N/A</option>
-                                </select>
+                        <div class="reinvoice-section" data-idx="${idx}" style="display: ${(alloc.reinvoice_destinations && alloc.reinvoice_destinations.length > 0) ? '' : 'none'};">
+                            <div class="reinvoice-lines-container" data-idx="${idx}"></div>
+                            <div class="row mt-1">
+                                <div class="col-12">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm add-reinvoice-line-btn" data-idx="${idx}" onclick="addEditReinvoiceLine(${idx}, true)">
+                                        <i class="bi bi-plus"></i> Add Reinvoice Line
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2403,58 +2495,259 @@
 
             updateAllocationTotalBadge();
 
-            // Populate reinvoice dept/subdept dropdowns for allocations with existing reinvoice data
-            initializeReinvoiceDropdowns();
+            // Initialize reinvoice lines for allocations with existing reinvoice destinations
+            initializeReinvoiceLines();
         }
 
-        async function initializeReinvoiceDropdowns() {
+        async function initializeReinvoiceLines() {
             for (let idx = 0; idx < editAllocations.length; idx++) {
                 const alloc = editAllocations[idx];
-                if (alloc.reinvoice_to) {
-                    const brandSelect = document.querySelector(`.alloc-reinvoice-brand[data-idx="${idx}"]`);
-                    const deptSelect = document.querySelector(`.alloc-reinvoice-dept[data-idx="${idx}"]`);
-                    const subdeptSelect = document.querySelector(`.alloc-reinvoice-subdept[data-idx="${idx}"]`);
-
-                    // Fetch brands and departments in parallel
-                    const [brands, depts] = await Promise.all([
-                        fetch(`/api/brands/${encodeURIComponent(alloc.reinvoice_to)}`).then(r => r.json()),
-                        fetch(`/api/departments/${encodeURIComponent(alloc.reinvoice_to)}`).then(r => r.json())
-                    ]);
-
-                    // Populate brands
-                    brandSelect.innerHTML = '<option value="">N/A</option>';
-                    brands.forEach(b => {
-                        const opt = document.createElement('option');
-                        opt.value = b;
-                        opt.textContent = b;
-                        if (b === alloc.reinvoice_brand) opt.selected = true;
-                        brandSelect.appendChild(opt);
-                    });
-
-                    // Populate departments
-                    deptSelect.innerHTML = '<option value="">Select department...</option>';
-                    depts.forEach(d => {
-                        const opt = document.createElement('option');
-                        opt.value = d;
-                        opt.textContent = d;
-                        if (d === alloc.reinvoice_department) opt.selected = true;
-                        deptSelect.appendChild(opt);
-                    });
-
-                    // Fetch and populate subdepartments if department is set
-                    if (alloc.reinvoice_department) {
-                        const subdepts = await fetch(`/api/subdepartments/${encodeURIComponent(alloc.reinvoice_to)}/${encodeURIComponent(alloc.reinvoice_department)}`).then(r => r.json());
-                        subdeptSelect.innerHTML = '<option value="">N/A</option>';
-                        subdepts.forEach(s => {
-                            const opt = document.createElement('option');
-                            opt.value = s;
-                            opt.textContent = s;
-                            if (s === alloc.reinvoice_subdepartment) opt.selected = true;
-                            subdeptSelect.appendChild(opt);
-                        });
+                // Support both new reinvoice_destinations array and legacy single reinvoice fields
+                if (alloc.reinvoice_destinations && alloc.reinvoice_destinations.length > 0) {
+                    // New multi-destination format
+                    for (const dest of alloc.reinvoice_destinations) {
+                        await addEditReinvoiceLine(idx, false, dest);
                     }
+                } else if (alloc.reinvoice_to) {
+                    // Legacy single destination - migrate to new format
+                    const legacyDest = {
+                        company: alloc.reinvoice_to,
+                        brand: alloc.reinvoice_brand,
+                        department: alloc.reinvoice_department,
+                        subdepartment: alloc.reinvoice_subdepartment,
+                        percentage: 100
+                    };
+                    editAllocations[idx].reinvoice_destinations = [legacyDest];
+                    await addEditReinvoiceLine(idx, false, legacyDest);
+                }
+                updateEditReinvoiceTotalBadge(idx);
+            }
+        }
+
+        async function addEditReinvoiceLine(allocIdx, redistribute = false, existingData = null) {
+            const container = document.querySelector(`.reinvoice-lines-container[data-idx="${allocIdx}"]`);
+            if (!container) return;
+
+            // Get companies list
+            const companies = getUniqueCompanies();
+
+            const lineCount = container.children.length;
+            let newPercentage = existingData ? existingData.percentage : 100;
+
+            // If redistributing, update all existing lines to equal percentage
+            if (redistribute && lineCount > 0) {
+                newPercentage = 100 / (lineCount + 1);
+                container.querySelectorAll('.reinvoice-percent').forEach(input => {
+                    input.value = newPercentage.toFixed(2);
+                });
+            }
+
+            const lineId = `reinvoice-line-${allocIdx}-${Date.now()}`;
+            const line = document.createElement('div');
+            line.className = 'reinvoice-line row mb-1 align-items-center';
+            line.id = lineId;
+
+            line.innerHTML = `
+                <div class="col-md-2">
+                    <select class="form-select form-select-sm reinvoice-company" onchange="onEditReinvoiceCompanyChange('${lineId}', ${allocIdx})">
+                        <option value="">Company...</option>
+                        ${companies.map(c => `<option value="${c}" ${existingData && c === existingData.company ? 'selected' : ''}>${c}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select form-select-sm reinvoice-brand">
+                        <option value="">Brand...</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select form-select-sm reinvoice-dept" onchange="onEditReinvoiceDeptChange('${lineId}', ${allocIdx})">
+                        <option value="">Dept...</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select form-select-sm reinvoice-subdept" onchange="updateEditReinvoiceTotalBadge(${allocIdx})">
+                        <option value="">N/A</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <div class="input-group input-group-sm">
+                        <input type="number" class="form-control reinvoice-percent" value="${newPercentage.toFixed(2)}"
+                               min="0" max="100" step="0.01" onchange="updateEditReinvoiceTotalBadge(${allocIdx})">
+                        <span class="input-group-text">%</span>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeEditReinvoiceLine('${lineId}', ${allocIdx})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            `;
+
+            container.appendChild(line);
+
+            // Populate brands, departments and subdepartments if existing data
+            if (existingData && existingData.company) {
+                const brandSelect = line.querySelector('.reinvoice-brand');
+                const deptSelect = line.querySelector('.reinvoice-dept');
+                const subdeptSelect = line.querySelector('.reinvoice-subdept');
+
+                const [brands, depts] = await Promise.all([
+                    fetch(`/api/brands/${encodeURIComponent(existingData.company)}`).then(r => r.json()),
+                    fetch(`/api/departments/${encodeURIComponent(existingData.company)}`).then(r => r.json())
+                ]);
+
+                brandSelect.innerHTML = '<option value="">Brand...</option>';
+                brands.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b;
+                    opt.textContent = b;
+                    if (b === existingData.brand) opt.selected = true;
+                    brandSelect.appendChild(opt);
+                });
+
+                deptSelect.innerHTML = '<option value="">Dept...</option>';
+                depts.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d;
+                    opt.textContent = d;
+                    if (d === existingData.department) opt.selected = true;
+                    deptSelect.appendChild(opt);
+                });
+
+                if (existingData.department) {
+                    const subdepts = await fetch(`/api/subdepartments/${encodeURIComponent(existingData.company)}/${encodeURIComponent(existingData.department)}`).then(r => r.json());
+                    subdeptSelect.innerHTML = '<option value="">N/A</option>';
+                    subdepts.forEach(s => {
+                        const opt = document.createElement('option');
+                        opt.value = s;
+                        opt.textContent = s;
+                        if (s === existingData.subdepartment) opt.selected = true;
+                        subdeptSelect.appendChild(opt);
+                    });
                 }
             }
+
+            updateEditReinvoiceTotalBadge(allocIdx);
+        }
+
+        function removeEditReinvoiceLine(lineId, allocIdx) {
+            const line = document.getElementById(lineId);
+            if (line) {
+                line.remove();
+            }
+
+            // If no lines left, uncheck the reinvoice checkbox
+            const container = document.querySelector(`.reinvoice-lines-container[data-idx="${allocIdx}"]`);
+            if (container && container.children.length === 0) {
+                const checkbox = document.querySelector(`.alloc-reinvoice-check[data-idx="${allocIdx}"]`);
+                if (checkbox) checkbox.checked = false;
+                const section = document.querySelector(`.reinvoice-section[data-idx="${allocIdx}"]`);
+                if (section) section.style.display = 'none';
+                const badge = document.querySelector(`.reinvoice-total-badge[data-idx="${allocIdx}"]`);
+                if (badge) badge.style.display = 'none';
+            }
+
+            updateEditReinvoiceTotalBadge(allocIdx);
+        }
+
+        async function onEditReinvoiceCompanyChange(lineId, allocIdx) {
+            const line = document.getElementById(lineId);
+            if (!line) return;
+
+            const company = line.querySelector('.reinvoice-company').value;
+            const brandSelect = line.querySelector('.reinvoice-brand');
+            const deptSelect = line.querySelector('.reinvoice-dept');
+            const subdeptSelect = line.querySelector('.reinvoice-subdept');
+
+            brandSelect.innerHTML = '<option value="">Brand...</option>';
+            deptSelect.innerHTML = '<option value="">Dept...</option>';
+            subdeptSelect.innerHTML = '<option value="">N/A</option>';
+
+            if (company) {
+                const [brands, depts] = await Promise.all([
+                    fetch(`/api/brands/${encodeURIComponent(company)}`).then(r => r.json()),
+                    fetch(`/api/departments/${encodeURIComponent(company)}`).then(r => r.json())
+                ]);
+
+                brands.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b;
+                    opt.textContent = b;
+                    brandSelect.appendChild(opt);
+                });
+
+                depts.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d;
+                    opt.textContent = d;
+                    deptSelect.appendChild(opt);
+                });
+            }
+
+            updateEditReinvoiceTotalBadge(allocIdx);
+        }
+
+        async function onEditReinvoiceDeptChange(lineId, allocIdx) {
+            const line = document.getElementById(lineId);
+            if (!line) return;
+
+            const company = line.querySelector('.reinvoice-company').value;
+            const department = line.querySelector('.reinvoice-dept').value;
+            const subdeptSelect = line.querySelector('.reinvoice-subdept');
+
+            subdeptSelect.innerHTML = '<option value="">N/A</option>';
+
+            if (company && department) {
+                const subdepts = await fetch(`/api/subdepartments/${encodeURIComponent(company)}/${encodeURIComponent(department)}`).then(r => r.json());
+                subdepts.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s;
+                    opt.textContent = s;
+                    subdeptSelect.appendChild(opt);
+                });
+            }
+
+            updateEditReinvoiceTotalBadge(allocIdx);
+        }
+
+        function updateEditReinvoiceTotalBadge(allocIdx) {
+            const container = document.querySelector(`.reinvoice-lines-container[data-idx="${allocIdx}"]`);
+            const badge = document.querySelector(`.reinvoice-total-badge[data-idx="${allocIdx}"]`);
+            if (!container || !badge) return;
+
+            let total = 0;
+            container.querySelectorAll('.reinvoice-percent').forEach(input => {
+                total += parseFloat(input.value) || 0;
+            });
+
+            badge.textContent = `${total.toFixed(1)}%`;
+            badge.className = total <= 100 ? 'reinvoice-total-badge badge bg-success ms-2' : 'reinvoice-total-badge badge bg-danger ms-2';
+        }
+
+        function getEditReinvoiceDestinations(allocIdx) {
+            const container = document.querySelector(`.reinvoice-lines-container[data-idx="${allocIdx}"]`);
+            const destinations = [];
+            if (!container) return destinations;
+
+            container.querySelectorAll('.reinvoice-line').forEach(line => {
+                const company = line.querySelector('.reinvoice-company').value;
+                const brand = line.querySelector('.reinvoice-brand').value;
+                const department = line.querySelector('.reinvoice-dept').value;
+                const subdepartment = line.querySelector('.reinvoice-subdept').value;
+                const percentage = parseFloat(line.querySelector('.reinvoice-percent').value) || 0;
+
+                if (company && percentage > 0) {
+                    destinations.push({
+                        company,
+                        brand: brand || null,
+                        department: department || null,
+                        subdepartment: subdepartment || null,
+                        percentage
+                    });
+                }
+            });
+
+            return destinations;
         }
 
         function updateAllocationTotalBadge() {
@@ -2496,10 +2789,6 @@
 
             editAllocations[idx].subdepartment = row.querySelector('.alloc-subdepartment').value || null;
             editAllocations[idx].brand = row.querySelector('.alloc-brand').value || null;
-            editAllocations[idx].reinvoice_to = row.querySelector('.alloc-reinvoice').value || null;
-            editAllocations[idx].reinvoice_brand = row.querySelector('.alloc-reinvoice-brand').value || null;
-            editAllocations[idx].reinvoice_department = row.querySelector('.alloc-reinvoice-dept').value || null;
-            editAllocations[idx].reinvoice_subdepartment = row.querySelector('.alloc-reinvoice-subdept').value || null;
 
             // Update responsible based on company/dept/subdept
             const department = editAllocations[idx].department;
@@ -2509,81 +2798,25 @@
 
         function onReinvoiceCheckChange(idx) {
             const checked = document.querySelector(`.alloc-reinvoice-check[data-idx="${idx}"]`).checked;
-            const fieldsRow = document.querySelector(`.reinvoice-fields-row[data-idx="${idx}"]`);
+            const section = document.querySelector(`.reinvoice-section[data-idx="${idx}"]`);
+            const badge = document.querySelector(`.reinvoice-total-badge[data-idx="${idx}"]`);
+            const container = document.querySelector(`.reinvoice-lines-container[data-idx="${idx}"]`);
 
             if (checked) {
-                fieldsRow.style.display = '';
+                section.style.display = '';
+                badge.style.display = '';
+                // Add first line if none exist
+                if (container && container.children.length === 0) {
+                    addEditReinvoiceLine(idx, false);
+                }
             } else {
-                fieldsRow.style.display = 'none';
-                document.querySelector(`.alloc-reinvoice[data-idx="${idx}"]`).value = '';
-                document.querySelector(`.alloc-reinvoice-brand[data-idx="${idx}"]`).innerHTML = '<option value="">N/A</option>';
-                document.querySelector(`.alloc-reinvoice-dept[data-idx="${idx}"]`).innerHTML = '<option value="">Select department...</option>';
-                document.querySelector(`.alloc-reinvoice-subdept[data-idx="${idx}"]`).innerHTML = '<option value="">N/A</option>';
-                editAllocations[idx].reinvoice_to = null;
-                editAllocations[idx].reinvoice_brand = null;
-                editAllocations[idx].reinvoice_department = null;
-                editAllocations[idx].reinvoice_subdepartment = null;
-            }
-        }
-
-        async function onReinvoiceCompanyChange(idx) {
-            const company = document.querySelector(`.alloc-reinvoice[data-idx="${idx}"]`).value;
-            const brandSelect = document.querySelector(`.alloc-reinvoice-brand[data-idx="${idx}"]`);
-            const deptSelect = document.querySelector(`.alloc-reinvoice-dept[data-idx="${idx}"]`);
-            const subdeptSelect = document.querySelector(`.alloc-reinvoice-subdept[data-idx="${idx}"]`);
-
-            editAllocations[idx].reinvoice_to = company || null;
-            editAllocations[idx].reinvoice_brand = null;
-            editAllocations[idx].reinvoice_department = null;
-            editAllocations[idx].reinvoice_subdepartment = null;
-
-            brandSelect.innerHTML = '<option value="">N/A</option>';
-            deptSelect.innerHTML = '<option value="">Select department...</option>';
-            subdeptSelect.innerHTML = '<option value="">N/A</option>';
-
-            if (company) {
-                const [brands, depts] = await Promise.all([
-                    fetch(`/api/brands/${encodeURIComponent(company)}`).then(r => r.json()),
-                    fetch(`/api/departments/${encodeURIComponent(company)}`).then(r => r.json())
-                ]);
-                brands.forEach(b => {
-                    const opt = document.createElement('option');
-                    opt.value = b;
-                    opt.textContent = b;
-                    brandSelect.appendChild(opt);
-                });
-                depts.forEach(d => {
-                    const opt = document.createElement('option');
-                    opt.value = d;
-                    opt.textContent = d;
-                    deptSelect.appendChild(opt);
-                });
-            }
-        }
-
-        function onReinvoiceBrandChange(idx) {
-            const brand = document.querySelector(`.alloc-reinvoice-brand[data-idx="${idx}"]`).value;
-            editAllocations[idx].reinvoice_brand = brand || null;
-        }
-
-        async function onReinvoiceDeptChange(idx) {
-            const company = document.querySelector(`.alloc-reinvoice[data-idx="${idx}"]`).value;
-            const department = document.querySelector(`.alloc-reinvoice-dept[data-idx="${idx}"]`).value;
-            const subdeptSelect = document.querySelector(`.alloc-reinvoice-subdept[data-idx="${idx}"]`);
-
-            editAllocations[idx].reinvoice_department = department || null;
-            editAllocations[idx].reinvoice_subdepartment = null;
-
-            subdeptSelect.innerHTML = '<option value="">N/A</option>';
-
-            if (company && department) {
-                const subdepts = await fetch(`/api/subdepartments/${encodeURIComponent(company)}/${encodeURIComponent(department)}`).then(r => r.json());
-                subdepts.forEach(s => {
-                    const opt = document.createElement('option');
-                    opt.value = s;
-                    opt.textContent = s;
-                    subdeptSelect.appendChild(opt);
-                });
+                section.style.display = 'none';
+                badge.style.display = 'none';
+                // Clear all reinvoice lines
+                if (container) {
+                    container.innerHTML = '';
+                }
+                editAllocations[idx].reinvoice_destinations = [];
             }
         }
 
@@ -2760,10 +2993,7 @@
                 allocation_percent: 0,
                 allocation_value: 0,
                 responsible: '',
-                reinvoice_to: null,
-                reinvoice_brand: null,
-                reinvoice_department: null,
-                reinvoice_subdepartment: null,
+                reinvoice_destinations: [],
                 locked: false,
                 comment: null
             });
