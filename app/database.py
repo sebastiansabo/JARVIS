@@ -172,6 +172,16 @@ def init_db():
         END $$;
     ''')
 
+    # Add payment_status column if it doesn't exist (migration)
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'invoices' AND column_name = 'payment_status') THEN
+                ALTER TABLE invoices ADD COLUMN payment_status TEXT DEFAULT 'not_paid';
+            END IF;
+        END $$;
+    ''')
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS allocations (
             id SERIAL PRIMARY KEY,
@@ -663,7 +673,8 @@ def save_invoice(
     value_ron: float = None,
     value_eur: float = None,
     exchange_rate: float = None,
-    comment: str = None
+    comment: str = None,
+    payment_status: str = 'not_paid'
 ) -> int:
     """
     Save invoice and its allocations to database.
@@ -674,10 +685,10 @@ def save_invoice(
 
     try:
         cursor.execute('''
-            INSERT INTO invoices (supplier, invoice_template, invoice_number, invoice_date, invoice_value, currency, drive_link, value_ron, value_eur, exchange_rate, comment)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO invoices (supplier, invoice_template, invoice_number, invoice_date, invoice_value, currency, drive_link, value_ron, value_eur, exchange_rate, comment, payment_status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
-        ''', (supplier, invoice_template, invoice_number, invoice_date, invoice_value, currency, drive_link, value_ron, value_eur, exchange_rate, comment))
+        ''', (supplier, invoice_template, invoice_number, invoice_date, invoice_value, currency, drive_link, value_ron, value_eur, exchange_rate, comment, payment_status))
         invoice_id = cursor.fetchone()['id']
 
         # Insert allocations
@@ -1123,7 +1134,8 @@ def update_invoice(
     currency: str = None,
     drive_link: str = None,
     comment: str = None,
-    status: str = None
+    status: str = None,
+    payment_status: str = None
 ) -> bool:
     """Update an existing invoice."""
     conn = get_db()
@@ -1157,6 +1169,9 @@ def update_invoice(
     if status is not None:
         updates.append('status = %s')
         params.append(status)
+    if payment_status is not None:
+        updates.append('payment_status = %s')
+        params.append(payment_status)
 
     if not updates:
         release_db(conn)

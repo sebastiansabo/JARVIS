@@ -7,13 +7,12 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, f
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from models import load_structure, get_companies, get_brands_for_company, get_departments_for_company, get_subdepartments, get_manager
 from services import (
-    save_invoice_to_db,
     get_companies_with_vat, match_company_by_vat, add_company_with_vat, update_company_vat, delete_company
 )
 from invoice_parser import parse_invoice, parse_invoice_with_template_from_bytes, auto_detect_and_parse, generate_template_from_invoice
 from database import (
     get_all_invoices, get_invoice_with_allocations, search_invoices,
-    get_summary_by_company, get_summary_by_department, get_summary_by_brand, delete_invoice, update_invoice,
+    get_summary_by_company, get_summary_by_department, get_summary_by_brand, delete_invoice, update_invoice, save_invoice,
     update_invoice_allocations,
     get_all_invoice_templates, get_invoice_template, save_invoice_template,
     update_invoice_template, delete_invoice_template,
@@ -379,7 +378,7 @@ def submit_invoice():
 
     try:
         # Save to database
-        invoice_id = save_invoice_to_db(
+        invoice_id = save_invoice(
             supplier=data['supplier'],
             invoice_template=data.get('invoice_template', ''),
             invoice_number=data['invoice_number'],
@@ -391,7 +390,8 @@ def submit_invoice():
             value_ron=data.get('value_ron'),
             value_eur=data.get('value_eur'),
             exchange_rate=data.get('exchange_rate'),
-            comment=data.get('comment', '')
+            comment=data.get('comment', ''),
+            payment_status=data.get('payment_status', 'not_paid')
         )
 
         # Send email notifications to responsables
@@ -1009,7 +1009,8 @@ def api_db_update_invoice(invoice_id):
             currency=data.get('currency'),
             drive_link=data.get('drive_link'),
             comment=data.get('comment'),
-            status=data.get('status')
+            status=data.get('status'),
+            payment_status=data.get('payment_status')
         )
         if updated:
             log_event('invoice_updated', f'Updated invoice ID {invoice_id}',

@@ -216,6 +216,13 @@
                                 <label class="form-label">Notes</label>
                                 <textarea class="form-control" id="invoiceNotes" rows="2" placeholder="Optional notes about this invoice"></textarea>
                             </div>
+                            <div class="mb-3">
+                                <label class="form-label">Payment Status</label>
+                                <select class="form-select" id="paymentStatus">
+                                    <option value="not_paid">Not Paid</option>
+                                    <option value="paid">Paid</option>
+                                </select>
+                            </div>
                             <input type="hidden" id="driveLink">
                             <input type="hidden" id="valueRon">
                             <input type="hidden" id="valueEur">
@@ -1384,6 +1391,9 @@
                 // Get notes
                 const invoiceNotes = document.getElementById('invoiceNotes').value || '';
 
+                // Get payment status
+                const paymentStatus = document.getElementById('paymentStatus').value;
+
                 // First save to database (without drive link if not yet uploaded)
                 const res = await fetch('/api/submit', {
                     method: 'POST',
@@ -1399,7 +1409,8 @@
                         value_ron: valueRon ? parseFloat(valueRon) : null,
                         value_eur: valueEur ? parseFloat(valueEur) : null,
                         exchange_rate: exchangeRate ? parseFloat(exchangeRate) : null,
-                        comment: invoiceNotes
+                        comment: invoiceNotes,
+                        payment_status: paymentStatus
                     })
                 });
 

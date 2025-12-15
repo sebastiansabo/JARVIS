@@ -12,6 +12,10 @@ TINYPNG_API_KEY = os.environ.get('TINYPNG_API_KEY', 'cCDyLc85M6nYCKPBLFxC0qHhmb2
 # Supported image types for compression
 COMPRESSIBLE_TYPES = {'image/png', 'image/jpeg', 'image/jpg'}
 
+# Minimum file size for TinyPNG compression (500KB)
+# Files under this size are not compressed to save API calls
+MIN_SIZE_FOR_COMPRESSION = 500 * 1024  # 500KB in bytes
+
 
 def is_compressible_image(mime_type: str) -> bool:
     """Check if the file type can be compressed by TinyPNG."""
@@ -95,7 +99,7 @@ def compress_image(file_bytes: bytes, filename: str = None) -> tuple[bytes, dict
 
 def compress_if_image(file_bytes: bytes, filename: str, mime_type: str) -> tuple[bytes, dict | None]:
     """
-    Compress the file if it's a compressible image, otherwise return as-is.
+    Compress the file if it's a compressible image and over 500KB, otherwise return as-is.
 
     Args:
         file_bytes: File content
@@ -104,8 +108,12 @@ def compress_if_image(file_bytes: bytes, filename: str, mime_type: str) -> tuple
 
     Returns:
         Tuple of (file_bytes, stats_or_none)
-        stats is None if file was not compressed (not an image)
+        stats is None if file was not compressed (not an image or under 500KB)
     """
     if is_compressible_image(mime_type):
+        file_size = len(file_bytes)
+        if file_size < MIN_SIZE_FOR_COMPRESSION:
+            print(f"Skipping TinyPNG for {filename or 'image'}: {file_size} bytes is under 500KB threshold")
+            return file_bytes, None
         return compress_image(file_bytes, filename)
     return file_bytes, None

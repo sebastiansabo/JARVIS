@@ -639,7 +639,14 @@
                             </div>
                         </div>
                         <div class="row">
-                            <div class="col-md-12 mb-3">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Payment Status</label>
+                                <select class="form-select" id="editPaymentStatus">
+                                    <option value="not_paid">Not Paid</option>
+                                    <option value="paid">Paid</option>
+                                </select>
+                            </div>
+                            <div class="col-md-8 mb-3">
                                 <label class="form-label">Upload Invoice File</label>
                                 <div class="input-group">
                                     <input type="file" class="form-control" id="editInvoiceFile" accept=".pdf,.jpg,.jpeg,.png">
@@ -742,6 +749,7 @@
             { id: 'select', name: '', source: 'special.select', format: 'special', visible: true, custom: false },
             { id: 'id', name: 'ID', source: 'invoice.id', format: 'text', visible: true, custom: false },
             { id: 'status', name: 'Status', source: 'invoice.status', format: 'status', visible: true, custom: false },
+            { id: 'payment_status', name: 'Payment', source: 'invoice.payment_status', format: 'payment_status', visible: true, custom: false },
             { id: 'date', name: 'Date', source: 'invoice.invoice_date', format: 'date', visible: true, custom: false },
             { id: 'supplier', name: 'Supplier', source: 'invoice.supplier', format: 'text', visible: true, custom: false },
             { id: 'invoice_number', name: 'Invoice #', source: 'invoice.invoice_number', format: 'text', visible: true, custom: false },
@@ -806,6 +814,17 @@
                 // Ensure select column exists (for migration from old configs)
                 if (!columnConfig.find(c => c.id === 'select')) {
                     columnConfig.unshift({ id: 'select', name: '', source: 'special.select', format: 'special', visible: true, custom: false });
+                }
+                // Ensure payment_status column exists (for migration from old configs)
+                if (!columnConfig.find(c => c.id === 'payment_status')) {
+                    // Insert after status column
+                    const statusIdx = columnConfig.findIndex(c => c.id === 'status');
+                    const paymentCol = { id: 'payment_status', name: 'Payment', source: 'invoice.payment_status', format: 'payment_status', visible: true, custom: false };
+                    if (statusIdx >= 0) {
+                        columnConfig.splice(statusIdx + 1, 0, paymentCol);
+                    } else {
+                        columnConfig.push(paymentCol);
+                    }
                 }
             } else {
                 columnConfig = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
@@ -1521,6 +1540,15 @@
                         <option value="processed" ${currentStatus === 'processed' ? 'selected' : ''}>Processed</option>
                         <option value="incomplete" ${currentStatus === 'incomplete' ? 'selected' : ''}>Incomplete</option>
                     </select>`;
+                case 'payment_status':
+                    const currentPaymentStatus = value || 'not_paid';
+                    return `<select class="form-select form-select-sm payment-status-dropdown"
+                                data-invoice-id="${inv.id}"
+                                onchange="updatePaymentStatus(${inv.id}, this.value)"
+                                style="width: auto; min-width: 100px; padding: 2px 24px 2px 8px; font-size: 0.8em;">
+                        <option value="not_paid" ${currentPaymentStatus === 'not_paid' ? 'selected' : ''}>Not Paid</option>
+                        <option value="paid" ${currentPaymentStatus === 'paid' ? 'selected' : ''}>Paid</option>
+                    </select>`;
                 case 'link':
                     return value ? `<a href="${value}" target="_blank">${value}</a>` : '-';
                 case 'split':
@@ -1853,6 +1881,34 @@
             }
         }
 
+        async function updatePaymentStatus(invoiceId, newStatus) {
+            try {
+                const res = await fetch(`/api/db/invoices/${invoiceId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ payment_status: newStatus })
+                });
+                const result = await res.json();
+                if (!result.success && result.error) {
+                    console.error('Failed to update payment status:', result.error);
+                    alert('Error updating payment status: ' + result.error);
+                    return;
+                }
+                // Update local cache
+                if (invoicesWithAllocations[invoiceId]) {
+                    invoicesWithAllocations[invoiceId].payment_status = newStatus;
+                }
+                // Update allInvoices array as well
+                const invInList = allInvoices.find(i => i.id === invoiceId);
+                if (invInList) {
+                    invInList.payment_status = newStatus;
+                }
+            } catch (e) {
+                console.error('Error updating payment status:', e);
+                alert('Error updating payment status');
+            }
+        }
+
         async function showInvoiceDetail(id) {
             currentInvoiceId = id;
             const modal = new bootstrap.Modal(document.getElementById('invoiceModal'));
@@ -1877,6 +1933,15 @@
                         <option value="incomplete" ${currentStatus === 'incomplete' ? 'selected' : ''}>Incomplete</option>
                     </select>`;
 
+                const currentPaymentStatus = invoice.payment_status || 'not_paid';
+                const paymentStatusDropdown = `
+                    <select class="form-select form-select-sm" id="modalPaymentStatusDropdown"
+                            onchange="updatePaymentStatus(${invoice.id}, this.value)"
+                            style="width: auto; min-width: 120px;">
+                        <option value="not_paid" ${currentPaymentStatus === 'not_paid' ? 'selected' : ''}>Not Paid</option>
+                        <option value="paid" ${currentPaymentStatus === 'paid' ? 'selected' : ''}>Paid</option>
+                    </select>`;
+
                 const driveButtons = invoice.drive_link
                     ? `<a href="${invoice.drive_link}" target="_blank" class="btn btn-sm btn-outline-success me-1"><i class="bi bi-cloud"></i> View on Drive</a><button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDriveFolder('${invoice.drive_link}')" title="Open Folder"><i class="bi bi-folder2-open"></i></button>`
                     : '<span class="text-muted">Not uploaded</span>';
@@ -1887,6 +1952,7 @@
                             <h6>Invoice Information</h6>
                             <table class="table table-sm">
                                 <tr><th>Status</th><td>${statusDropdown}</td></tr>
+                                <tr><th>Payment</th><td>${paymentStatusDropdown}</td></tr>
                                 <tr><th>Supplier</th><td>${invoice.supplier}</td></tr>
                                 <tr><th>Invoice #</th><td><code>${invoice.invoice_number}</code></td></tr>
                                 <tr><th>Date</th><td>${formatDateRomanian(invoice.invoice_date)}</td></tr>
@@ -1967,6 +2033,7 @@
             document.getElementById('editDriveLink').value = invoice.drive_link || '';
             document.getElementById('editComment').value = invoice.comment || '';
             document.getElementById('editStatus').value = invoice.status || 'new';
+            document.getElementById('editPaymentStatus').value = invoice.payment_status || 'not_paid';
 
             // Populate dedicated company dropdown
             const companies = getUniqueCompanies();
@@ -2138,7 +2205,8 @@
                 currency: document.getElementById('editCurrency').value,
                 drive_link: document.getElementById('editDriveLink').value,
                 comment: document.getElementById('editComment').value,
-                status: document.getElementById('editStatus').value
+                status: document.getElementById('editStatus').value,
+                payment_status: document.getElementById('editPaymentStatus').value
             };
 
             try {

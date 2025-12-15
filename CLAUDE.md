@@ -326,3 +326,7 @@ The "Total Value" card on the accounting dashboard has a EUR/RON toggle switch:
 - Added allocation comment feature: comment button on each allocation row in Add Invoice and Edit Invoice
 - Added `PUT /api/allocations/<id>/comment` endpoint for updating allocation comments directly
 - Fixed DocumentFragment closure bug in index.html allocation comment button click handler
+- Added Payment Status feature: track invoice payment status (Paid/Not Paid)
+  - Payment Status dropdown on Add Invoice page
+  - Payment Status column in Accounting dashboard table (inline dropdown)
+  - Payment Status row in Invoice Details modal (editable dropdown)
