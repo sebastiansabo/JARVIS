@@ -296,6 +296,33 @@
                                 </tbody>
                             </table>
                         </div>
+                        <!-- Pagination Controls -->
+                        <div class="d-flex justify-content-between align-items-center mt-3" id="paginationControls">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="text-muted">Rows per page:</span>
+                                <select class="form-select form-select-sm" style="width: auto;" id="pageSize" onchange="changePageSize()">
+                                    <option value="25">25</option>
+                                    <option value="50" selected>50</option>
+                                    <option value="100">100</option>
+                                    <option value="0">All</option>
+                                </select>
+                                <span class="text-muted ms-3" id="paginationInfo">Showing 1-50 of 100</span>
+                            </div>
+                            <nav>
+                                <ul class="pagination pagination-sm mb-0">
+                                    <li class="page-item" id="prevPageItem">
+                                        <a class="page-link" href="#" onclick="goToPage(currentPage - 1); return false;">
+                                            <i class="bi bi-chevron-left"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item" id="nextPageItem">
+                                        <a class="page-link" href="#" onclick="goToPage(currentPage + 1); return false;">
+                                            <i class="bi bi-chevron-right"></i>
+                                        </a>
+                                    </li>
+                                </ul>
+                            </nav>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -825,6 +852,10 @@
         let allInvoices = [];
         let invoicesWithAllocations = {}; // Cache for full invoice data
         let currentInvoiceId = null;
+
+        // Pagination state
+        let currentPage = 1;
+        let pageSize = parseInt(localStorage.getItem('accountingPageSize') || '50');
         let organizationalStructure = []; // Cache for company/department structure
         let editAllocations = []; // Current allocations being edited
 
@@ -898,12 +929,22 @@
             showLoading('Loading dashboard...');
             try {
                 loadColumnConfig();
+                initPagination();
                 await loadData();
                 setupEventListeners();
             } finally {
                 hideLoading();
             }
         });
+
+        function initPagination() {
+            // Initialize page size from localStorage
+            const savedPageSize = localStorage.getItem('accountingPageSize');
+            if (savedPageSize) {
+                pageSize = parseInt(savedPageSize);
+            }
+            document.getElementById('pageSize').value = pageSize.toString();
+        }
 
         function loadColumnConfig() {
             // Invoice columns
@@ -1364,6 +1405,9 @@
 
         async function loadInvoices() {
             try {
+                // Reset to first page when loading new data
+                currentPage = 1;
+
                 // Build URL with filter parameters
                 const params = new URLSearchParams();
                 const company = document.getElementById('companyFilter').value;
@@ -1868,12 +1912,26 @@
                 return `<th>${col.name}</th>`;
             }).join('');
 
+            // Calculate pagination
+            const totalItems = invoices.length;
+            const effectivePageSize = pageSize === 0 ? totalItems : pageSize;
+            const totalPages = Math.ceil(totalItems / effectivePageSize) || 1;
+
+            // Ensure current page is valid
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            const startIndex = (currentPage - 1) * effectivePageSize;
+            const endIndex = pageSize === 0 ? totalItems : Math.min(startIndex + effectivePageSize, totalItems);
+            const paginatedInvoices = invoices.slice(startIndex, endIndex);
+
             if (invoices.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="${visibleCols.length}" class="text-center text-muted">No invoices found</td></tr>`;
+                updatePaginationUI(0, 0, 0, 1);
                 return;
             }
 
-            tbody.innerHTML = invoices.map(inv => {
+            tbody.innerHTML = paginatedInvoices.map(inv => {
                 const cells = visibleCols.map(col => {
                     if (col.id === 'select') {
                         const checked = selectedInvoices.has(inv.id) ? 'checked' : '';
@@ -1888,8 +1946,53 @@
                 return `<tr class="${statusClass}">${cells}</tr>`;
             }).join('');
 
+            // Update pagination UI
+            updatePaginationUI(startIndex + 1, endIndex, totalItems, totalPages);
+
             // Update selection UI
             updateSelectionUI();
+        }
+
+        function updatePaginationUI(start, end, total, totalPages) {
+            const infoEl = document.getElementById('paginationInfo');
+            const prevItem = document.getElementById('prevPageItem');
+            const nextItem = document.getElementById('nextPageItem');
+            const pageSizeSelect = document.getElementById('pageSize');
+
+            // Update info text
+            if (total === 0) {
+                infoEl.textContent = 'No invoices';
+            } else if (pageSize === 0) {
+                infoEl.textContent = `Showing all ${total} invoices`;
+            } else {
+                infoEl.textContent = `Showing ${start}-${end} of ${total}`;
+            }
+
+            // Update prev/next buttons
+            prevItem.classList.toggle('disabled', currentPage <= 1);
+            nextItem.classList.toggle('disabled', currentPage >= totalPages);
+
+            // Sync page size dropdown with state
+            pageSizeSelect.value = pageSize.toString();
+        }
+
+        function goToPage(page) {
+            const totalItems = allInvoices.length;
+            const effectivePageSize = pageSize === 0 ? totalItems : pageSize;
+            const totalPages = Math.ceil(totalItems / effectivePageSize) || 1;
+
+            if (page < 1 || page > totalPages) return;
+
+            currentPage = page;
+            renderInvoicesTable(allInvoices);
+        }
+
+        function changePageSize() {
+            const newSize = parseInt(document.getElementById('pageSize').value);
+            pageSize = newSize;
+            localStorage.setItem('accountingPageSize', newSize.toString());
+            currentPage = 1; // Reset to first page
+            renderInvoicesTable(allInvoices);
         }
 
         function renderCompanyTable(data) {
