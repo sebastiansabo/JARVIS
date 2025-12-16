@@ -365,6 +365,13 @@ def add_invoice():
     return render_template('index.html')
 
 
+@app.route('/guide')
+@login_required
+def user_guide():
+    """User guide and documentation page."""
+    return render_template('guide.html')
+
+
 @app.route('/api/structure')
 @login_required
 def get_structure():
