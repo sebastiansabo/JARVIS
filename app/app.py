@@ -29,7 +29,8 @@ from database import (
     update_department_structure, delete_department_structure, get_unique_departments, get_unique_brands,
     authenticate_user, set_user_password, update_user_last_login, set_default_password_for_users,
     log_user_event, get_user_events, get_event_types,
-    update_allocation_comment
+    update_allocation_comment,
+    get_vat_rates, add_vat_rate, update_vat_rate, delete_vat_rate
 )
 
 # Google Drive integration (optional)
@@ -406,7 +407,10 @@ def submit_invoice():
             value_eur=data.get('value_eur'),
             exchange_rate=data.get('exchange_rate'),
             comment=data.get('comment', ''),
-            payment_status=data.get('payment_status', 'not_paid')
+            payment_status=data.get('payment_status', 'not_paid'),
+            subtract_vat=data.get('subtract_vat', False),
+            vat_rate=data.get('vat_rate'),
+            net_value=data.get('net_value')
         )
 
         # Send email notifications to responsables
@@ -1073,7 +1077,10 @@ def api_db_update_invoice(invoice_id):
             drive_link=data.get('drive_link'),
             comment=data.get('comment'),
             status=new_status,
-            payment_status=new_payment_status
+            payment_status=new_payment_status,
+            subtract_vat=data.get('subtract_vat'),
+            vat_rate=float(data['vat_rate']) if data.get('vat_rate') else None,
+            net_value=float(data['net_value']) if data.get('net_value') else None
         )
         if updated:
             # Log status change if it occurred
@@ -1713,6 +1720,66 @@ def api_delete_responsable(responsable_id):
     if delete_responsable(responsable_id):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Responsable not found'}), 404
+
+
+# VAT Rates API endpoints
+@app.route('/api/vat-rates', methods=['GET'])
+def api_get_vat_rates():
+    """Get all VAT rates."""
+    active_only = request.args.get('active_only', 'false').lower() == 'true'
+    rates = get_vat_rates(active_only=active_only)
+    return jsonify(rates)
+
+
+@app.route('/api/vat-rates', methods=['POST'])
+def api_create_vat_rate():
+    """Create a new VAT rate."""
+    data = request.get_json()
+
+    name = data.get('name', '').strip()
+    rate = data.get('rate')
+
+    if not name or rate is None:
+        return jsonify({'error': 'Name and rate are required'}), 400
+
+    try:
+        rate_id = add_vat_rate(
+            name=name,
+            rate=float(rate),
+            is_default=data.get('is_default', False),
+            is_active=data.get('is_active', True)
+        )
+        return jsonify({'success': True, 'id': rate_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vat-rates/<int:rate_id>', methods=['PUT'])
+def api_update_vat_rate(rate_id):
+    """Update a VAT rate."""
+    data = request.get_json()
+
+    try:
+        updated = update_vat_rate(
+            rate_id=rate_id,
+            name=data.get('name'),
+            rate=float(data['rate']) if data.get('rate') is not None else None,
+            is_default=data.get('is_default'),
+            is_active=data.get('is_active')
+        )
+        if updated:
+            return jsonify({'success': True})
+        return jsonify({'success': False, 'error': 'VAT rate not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vat-rates/<int:rate_id>', methods=['DELETE'])
+def api_delete_vat_rate(rate_id):
+    """Delete a VAT rate."""
+    if delete_vat_rate(rate_id):
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'VAT rate not found'}), 404
 
 
 # Notification Settings API endpoints

@@ -243,6 +243,30 @@
                                     </select>
                                 </div>
                             </div>
+                            <!-- VAT Subtraction -->
+                            <div class="row mb-3">
+                                <div class="col-md-4">
+                                    <div class="form-check mt-2">
+                                        <input class="form-check-input" type="checkbox" id="subtractVat">
+                                        <label class="form-check-label" for="subtractVat">
+                                            <i class="bi bi-percent"></i> Subtract VAT
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4" id="vatRateCol" style="display: none;">
+                                    <label class="form-label small">VAT Rate</label>
+                                    <select class="form-select form-select-sm" id="vatRateSelect">
+                                        <option value="">Select VAT rate...</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4" id="netValueCol" style="display: none;">
+                                    <label class="form-label small">Net Value (without VAT)</label>
+                                    <input type="text" class="form-control form-control-sm" id="netValueDisplay" readonly>
+                                </div>
+                            </div>
+                            <input type="hidden" id="netValue">
+                            <input type="hidden" id="vatRateId">
+
                             <!-- Currency Conversion Display -->
                             <div class="row mb-3" id="conversionDisplay" style="display: none;">
                                 <div class="col-12">
@@ -410,6 +434,7 @@
         let structure = [];
         let companiesWithVat = []; // Companies with VAT from Comp sheet
         let invoiceTemplates = []; // Invoice parsing templates
+        let vatRates = []; // VAT rates from settings
         let uploadedFile = null; // Store uploaded file reference
         let attachmentFiles = []; // Store attachment files
 
@@ -420,6 +445,7 @@
                 await loadStructure();
                 await loadCompaniesWithVat();
                 await loadInvoiceTemplates();
+                await loadVatRates();
                 addAllocationRow();
                 setupEventListeners();
             } finally {
@@ -458,6 +484,98 @@
             } catch (e) {
                 console.error('Error loading templates:', e);
             }
+        }
+
+        async function loadVatRates() {
+            try {
+                const res = await fetch('/api/vat-rates?active_only=true');
+                vatRates = await res.json();
+                renderVatRateSelect();
+            } catch (e) {
+                console.error('Error loading VAT rates:', e);
+            }
+        }
+
+        function renderVatRateSelect() {
+            const select = document.getElementById('vatRateSelect');
+            select.innerHTML = '<option value="">Select VAT rate...</option>';
+
+            // Find and pre-select the default rate
+            let defaultRateId = null;
+            vatRates.forEach(rate => {
+                const opt = document.createElement('option');
+                opt.value = rate.id;
+                opt.textContent = `${rate.name} (${rate.rate}%)`;
+                opt.dataset.rate = rate.rate;
+                select.appendChild(opt);
+                if (rate.is_default) {
+                    defaultRateId = rate.id;
+                }
+            });
+
+            // Pre-select default rate if exists
+            if (defaultRateId) {
+                select.value = defaultRateId;
+            }
+        }
+
+        function onSubtractVatChange() {
+            const subtractVat = document.getElementById('subtractVat').checked;
+            const vatRateCol = document.getElementById('vatRateCol');
+            const netValueCol = document.getElementById('netValueCol');
+
+            if (subtractVat) {
+                vatRateCol.style.display = '';
+                netValueCol.style.display = '';
+                calculateNetValue();
+            } else {
+                vatRateCol.style.display = 'none';
+                netValueCol.style.display = 'none';
+                document.getElementById('netValue').value = '';
+                document.getElementById('netValueDisplay').value = '';
+                document.getElementById('vatRateId').value = '';
+            }
+            updateAllocationValues();
+        }
+
+        function onVatRateChange() {
+            calculateNetValue();
+            updateAllocationValues();
+        }
+
+        function calculateNetValue() {
+            const subtractVat = document.getElementById('subtractVat').checked;
+            const vatRateSelect = document.getElementById('vatRateSelect');
+            const invoiceValue = parseFloat(document.getElementById('invoiceValue').value) || 0;
+            const currency = document.getElementById('currency').value || 'RON';
+
+            if (!subtractVat || !vatRateSelect.value) {
+                document.getElementById('netValue').value = '';
+                document.getElementById('netValueDisplay').value = '';
+                document.getElementById('vatRateId').value = '';
+                return;
+            }
+
+            const selectedOption = vatRateSelect.options[vatRateSelect.selectedIndex];
+            const vatRate = parseFloat(selectedOption.dataset.rate) || 0;
+
+            // Calculate net value: gross / (1 + rate/100)
+            const netValue = invoiceValue / (1 + vatRate / 100);
+
+            document.getElementById('netValue').value = netValue.toFixed(2);
+            document.getElementById('vatRateId').value = vatRateSelect.value;
+            document.getElementById('netValueDisplay').value = `${formatCurrency(netValue)} ${currency}`;
+        }
+
+        // Helper to get the effective value for allocation calculations
+        function getEffectiveInvoiceValue() {
+            const subtractVat = document.getElementById('subtractVat').checked;
+            const netValue = parseFloat(document.getElementById('netValue').value);
+
+            if (subtractVat && netValue > 0) {
+                return netValue;
+            }
+            return parseFloat(document.getElementById('invoiceValue').value) || 0;
         }
 
         function renderTemplateSelect() {
@@ -587,6 +705,10 @@
 
             // Currency change - update labels
             document.getElementById('currency').addEventListener('change', updateTotalAllocation);
+
+            // VAT subtraction handlers
+            document.getElementById('subtractVat').addEventListener('change', onSubtractVatChange);
+            document.getElementById('vatRateSelect').addEventListener('change', onVatRateChange);
 
             // Attachments handling
             const attachmentsZone = document.getElementById('attachmentsZone');
@@ -1443,13 +1565,17 @@
         }
 
         function updateAllocationValues() {
-            const invoiceValue = parseFloat(document.getElementById('invoiceValue').value) || 0;
+            // Recalculate net value if VAT subtraction is enabled
+            calculateNetValue();
+
+            // Use effective value (net if VAT subtraction enabled, gross otherwise)
+            const effectiveValue = getEffectiveInvoiceValue();
             const rows = document.querySelectorAll('.allocation-row');
             rows.forEach(row => {
                 const percentInput = row.querySelector('.allocation-input');
                 const valueInput = row.querySelector('.allocation-value-input');
                 const percent = parseFloat(percentInput.value) || 0;
-                valueInput.value = ((invoiceValue * percent) / 100).toFixed(2);
+                valueInput.value = ((effectiveValue * percent) / 100).toFixed(2);
             });
             updateTotalAllocation();
         }
@@ -1467,7 +1593,8 @@
             const count = rows.length;
             if (count === 0) return;
 
-            const invoiceValue = parseFloat(document.getElementById('invoiceValue').value) || 0;
+            // Use effective value (net if VAT subtraction enabled)
+            const effectiveValue = getEffectiveInvoiceValue();
 
             // Separate locked and unlocked rows
             const lockedRows = rows.filter(r => isRowLocked(r));
@@ -1493,7 +1620,7 @@
                     const percentInput = row.querySelector('.allocation-input');
                     const valueInput = row.querySelector('.allocation-value-input');
                     percentInput.value = percentages[idx].toFixed(2);
-                    valueInput.value = ((invoiceValue * percentages[idx]) / 100).toFixed(2);
+                    valueInput.value = ((effectiveValue * percentages[idx]) / 100).toFixed(2);
                 });
             }
             updateTotalAllocation();
@@ -1522,7 +1649,8 @@
             const rows = Array.from(document.querySelectorAll('.allocation-row'));
             const count = rows.length;
 
-            const invoiceValue = parseFloat(document.getElementById('invoiceValue').value) || 0;
+            // Use effective value (net if VAT subtraction enabled)
+            const effectiveValue = getEffectiveInvoiceValue();
             const changedPercentInput = changedRow.querySelector('.allocation-input');
             const changedValueInput = changedRow.querySelector('.allocation-value-input');
 
@@ -1530,10 +1658,10 @@
             let changedPercent;
             if (changeType === 'percent') {
                 changedPercent = parseFloat(changedPercentInput.value) || 0;
-                changedValueInput.value = ((invoiceValue * changedPercent) / 100).toFixed(2);
+                changedValueInput.value = ((effectiveValue * changedPercent) / 100).toFixed(2);
             } else {
                 const changedValue = parseFloat(changedValueInput.value) || 0;
-                changedPercent = invoiceValue > 0 ? (changedValue / invoiceValue) * 100 : 0;
+                changedPercent = effectiveValue > 0 ? (changedValue / effectiveValue) * 100 : 0;
                 changedPercentInput.value = changedPercent.toFixed(2);
             }
 
@@ -1719,6 +1847,11 @@
                 // Get payment status
                 const paymentStatus = document.getElementById('paymentStatus').value;
 
+                // Get VAT subtraction settings
+                const subtractVat = document.getElementById('subtractVat').checked;
+                const vatRateId = document.getElementById('vatRateId').value;
+                const netValue = document.getElementById('netValue').value;
+
                 // First save to database (without drive link if not yet uploaded)
                 const res = await fetch('/api/submit', {
                     method: 'POST',
@@ -1735,7 +1868,10 @@
                         value_eur: valueEur ? parseFloat(valueEur) : null,
                         exchange_rate: exchangeRate ? parseFloat(exchangeRate) : null,
                         comment: invoiceNotes,
-                        payment_status: paymentStatus
+                        payment_status: paymentStatus,
+                        subtract_vat: subtractVat,
+                        vat_rate_id: vatRateId ? parseInt(vatRateId) : null,
+                        net_value: netValue ? parseFloat(netValue) : null
                     })
                 });
 
@@ -1794,6 +1930,13 @@
                     document.getElementById('valueRon').value = '';
                     document.getElementById('valueEur').value = '';
                     document.getElementById('exchangeRate').value = '';
+                    // Reset VAT subtraction fields
+                    document.getElementById('subtractVat').checked = false;
+                    document.getElementById('vatRateCol').style.display = 'none';
+                    document.getElementById('netValueCol').style.display = 'none';
+                    document.getElementById('netValue').value = '';
+                    document.getElementById('netValueDisplay').value = '';
+                    document.getElementById('vatRateId').value = '';
                     addAllocationRow();
                     // Reset file input area
                     uploadedFile = null;

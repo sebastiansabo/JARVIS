@@ -210,6 +210,11 @@
                 </button>
             </li>
             <li class="nav-item">
+                <button class="nav-link" id="vat-rates-tab" data-bs-toggle="tab" data-bs-target="#vat-rates" type="button">
+                    <i class="bi bi-percent"></i> VAT Rates
+                </button>
+            </li>
+            <li class="nav-item">
                 <button class="nav-link" id="activity-logs-tab" data-bs-toggle="tab" data-bs-target="#activity-logs" type="button">
                     <i class="bi bi-clock-history"></i> Activity Logs
                 </button>
@@ -495,6 +500,68 @@
                             <div class="col-md-2">
                                 <button class="btn btn-primary w-100" id="addCompanyVatBtn">
                                     <i class="bi bi-plus"></i> Add
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VAT Rates Tab -->
+            <div class="tab-pane fade" id="vat-rates">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-percent"></i> VAT Rates Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            <i class="bi bi-info-circle"></i> Configure VAT rates for invoice processing. When adding invoices, you can optionally subtract VAT from the invoice value for allocation calculations.
+                        </p>
+                        <div class="table-responsive mb-3">
+                            <table class="table table-hover" id="vatRatesTable">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Rate (%)</th>
+                                        <th>Default</th>
+                                        <th>Active</th>
+                                        <th style="width: 100px;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="vatRatesTableBody"></tbody>
+                            </table>
+                        </div>
+                        <div id="noVatRatesMessage" class="text-center text-muted py-4" style="display: none;">
+                            <i class="bi bi-percent display-4"></i>
+                            <p class="mt-2">No VAT rates configured. Add a VAT rate below.</p>
+                        </div>
+                        <hr>
+                        <h6><i class="bi bi-plus-circle"></i> Add New VAT Rate</h6>
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <input type="text" class="form-control" id="newVatRateName" placeholder="Name (e.g., Standard VAT)">
+                            </div>
+                            <div class="col-md-2">
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="newVatRateValue" placeholder="Rate" step="0.01" min="0" max="100">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" id="newVatRateDefault">
+                                    <label class="form-check-label" for="newVatRateDefault">Default</label>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" id="newVatRateActive" checked>
+                                    <label class="form-check-label" for="newVatRateActive">Active</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-primary w-100" id="addVatRateBtn">
+                                    <i class="bi bi-plus"></i> Add VAT Rate
                                 </button>
                             </div>
                         </div>
@@ -921,6 +988,46 @@
         </div>
     </div>
 
+    <!-- Edit VAT Rate Modal -->
+    <div class="modal fade" id="editVatRateModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Edit VAT Rate</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editVatRateId">
+                    <div class="mb-3">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editVatRateName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Rate (%) <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="editVatRateValue" step="0.01" min="0" max="100" required>
+                            <span class="input-group-text">%</span>
+                        </div>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="editVatRateDefault">
+                        <label class="form-check-label" for="editVatRateDefault">Default VAT rate</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="editVatRateActive">
+                        <label class="form-check-label" for="editVatRateActive">Active</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveEditedVatRate()">
+                        <i class="bi bi-check-lg"></i> Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let users = [];
@@ -930,11 +1037,13 @@
         let deleteType = null;
         let deleteId = null;
         let companiesWithVat = [];
+        let vatRates = [];
 
         const userModal = new bootstrap.Modal(document.getElementById('userModal'));
         const roleModal = new bootstrap.Modal(document.getElementById('roleModal'));
         const responsableModal = new bootstrap.Modal(document.getElementById('responsableModal'));
         const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        const editVatRateModal = new bootstrap.Modal(document.getElementById('editVatRateModal'));
 
         document.addEventListener('DOMContentLoaded', () => {
             loadRoles();
@@ -943,9 +1052,12 @@
             loadNotificationSettings();
             loadCompaniesWithVat();  // Load VAT registry first (needed for department structure modal)
             loadDepartmentStructures();
+            loadVatRates();
 
             // Event listener for Add Company VAT button
             document.getElementById('addCompanyVatBtn').addEventListener('click', addNewCompanyVat);
+            // Event listener for Add VAT Rate button
+            document.getElementById('addVatRateBtn').addEventListener('click', addNewVatRate);
         });
 
         // ========== DATA LOADING ==========
@@ -1253,6 +1365,7 @@
                 if (deleteType === 'user') url = `/api/users/${deleteId}`;
                 else if (deleteType === 'role') url = `/api/roles/${deleteId}`;
                 else if (deleteType === 'responsable') url = `/api/responsables/${deleteId}`;
+                else if (deleteType === 'vat_rate') url = `/api/vat-rates/${deleteId}`;
                 const res = await fetch(url, { method: 'DELETE' });
                 const result = await res.json();
 
@@ -1261,6 +1374,7 @@
                     if (deleteType === 'user') loadUsers();
                     else if (deleteType === 'role') loadRoles();
                     else if (deleteType === 'responsable') loadResponsables();
+                    else if (deleteType === 'vat_rate') loadVatRates();
                 } else {
                     alert(result.error || 'Failed to delete');
                 }
@@ -2140,6 +2254,173 @@
             loadEventTypes();
             loadActivityLogs();
         });
+
+        // ========== VAT RATES ==========
+
+        async function loadVatRates() {
+            try {
+                const res = await fetch('/api/vat-rates');
+                vatRates = await res.json();
+                renderVatRates();
+            } catch (error) {
+                console.error('Error loading VAT rates:', error);
+            }
+        }
+
+        function renderVatRates() {
+            const tbody = document.getElementById('vatRatesTableBody');
+            const noVatRatesMsg = document.getElementById('noVatRatesMessage');
+
+            if (vatRates.length === 0) {
+                tbody.innerHTML = '';
+                noVatRatesMsg.style.display = 'block';
+                return;
+            }
+
+            noVatRatesMsg.style.display = 'none';
+            tbody.innerHTML = vatRates.map(rate => `
+                <tr>
+                    <td>${escapeHtml(rate.name)}</td>
+                    <td>${rate.rate}%</td>
+                    <td>
+                        ${rate.is_default
+                            ? '<span class="badge bg-primary"><i class="bi bi-check-circle"></i> Default</span>'
+                            : '<span class="text-muted">-</span>'}
+                    </td>
+                    <td>
+                        ${rate.is_active
+                            ? '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Active</span>'
+                            : '<span class="badge bg-secondary"><i class="bi bi-x-circle"></i> Inactive</span>'}
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editVatRate(${rate.id})" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteVatRateConfirm(${rate.id}, '${escapeHtml(rate.name)}')" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function addNewVatRate() {
+            const name = document.getElementById('newVatRateName').value.trim();
+            const rate = document.getElementById('newVatRateValue').value;
+            const isDefault = document.getElementById('newVatRateDefault').checked;
+            const isActive = document.getElementById('newVatRateActive').checked;
+
+            if (!name || !rate) {
+                showToast('Please fill in Name and Rate', 'warning');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/vat-rates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        rate: parseFloat(rate),
+                        is_default: isDefault,
+                        is_active: isActive
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showToast('VAT rate added successfully', 'success');
+                    // Clear form
+                    document.getElementById('newVatRateName').value = '';
+                    document.getElementById('newVatRateValue').value = '';
+                    document.getElementById('newVatRateDefault').checked = false;
+                    document.getElementById('newVatRateActive').checked = true;
+                    loadVatRates();
+                } else {
+                    showToast(data.error || 'Failed to add VAT rate', 'danger');
+                }
+            } catch (error) {
+                console.error('Error adding VAT rate:', error);
+                showToast('Failed to add VAT rate', 'danger');
+            }
+        }
+
+        function editVatRate(rateId) {
+            const rate = vatRates.find(r => r.id === rateId);
+            if (!rate) return;
+
+            document.getElementById('editVatRateId').value = rate.id;
+            document.getElementById('editVatRateName').value = rate.name;
+            document.getElementById('editVatRateValue').value = rate.rate;
+            document.getElementById('editVatRateDefault').checked = rate.is_default;
+            document.getElementById('editVatRateActive').checked = rate.is_active;
+
+            editVatRateModal.show();
+        }
+
+        async function saveEditedVatRate() {
+            const rateId = document.getElementById('editVatRateId').value;
+            const name = document.getElementById('editVatRateName').value.trim();
+            const rate = document.getElementById('editVatRateValue').value;
+            const isDefault = document.getElementById('editVatRateDefault').checked;
+            const isActive = document.getElementById('editVatRateActive').checked;
+
+            if (!name || !rate) {
+                showToast('Please fill in Name and Rate', 'warning');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/vat-rates/${rateId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        rate: parseFloat(rate),
+                        is_default: isDefault,
+                        is_active: isActive
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showToast('VAT rate updated successfully', 'success');
+                    editVatRateModal.hide();
+                    loadVatRates();
+                } else {
+                    showToast(data.error || 'Failed to update VAT rate', 'danger');
+                }
+            } catch (error) {
+                console.error('Error updating VAT rate:', error);
+                showToast('Failed to update VAT rate', 'danger');
+            }
+        }
+
+        function deleteVatRateConfirm(rateId, rateName) {
+            deleteType = 'vat_rate';
+            deleteId = rateId;
+            document.getElementById('deleteItemName').textContent = `VAT Rate: ${rateName}`;
+            deleteModal.show();
+        }
+
+        async function deleteVatRateById(rateId) {
+            try {
+                const res = await fetch(`/api/vat-rates/${rateId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showToast('VAT rate deleted successfully', 'success');
+                    loadVatRates();
+                } else {
+                    showToast(data.error || 'Failed to delete VAT rate', 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting VAT rate:', error);
+                showToast('Failed to delete VAT rate', 'danger');
+            }
+        }
 
         // ========== UTILS ==========
 

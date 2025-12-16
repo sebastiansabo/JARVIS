@@ -701,7 +701,27 @@
                                     <option value="paid">Paid</option>
                                 </select>
                             </div>
-                            <div class="col-md-8 mb-3">
+                            <div class="col-md-2 mb-3">
+                                <label class="form-label">VAT Subtract</label>
+                                <div class="form-check mt-2">
+                                    <input class="form-check-input" type="checkbox" id="editSubtractVat">
+                                    <label class="form-check-label" for="editSubtractVat">Subtract VAT</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3" id="editVatRateCol" style="display: none;">
+                                <label class="form-label">VAT Rate</label>
+                                <select class="form-select" id="editVatRateId">
+                                    <option value="">Select rate...</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3 mb-3" id="editNetValueCol" style="display: none;">
+                                <label class="form-label">Net Value</label>
+                                <input type="text" class="form-control" id="editNetValueDisplay" readonly>
+                                <input type="hidden" id="editNetValue">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12 mb-3">
                                 <label class="form-label">Upload Invoice File</label>
                                 <div class="input-group">
                                     <input type="file" class="form-control" id="editInvoiceFile" accept=".pdf,.jpg,.jpeg,.png">
@@ -1192,6 +1212,14 @@
             document.getElementById('saveInvoiceBtn').addEventListener('click', handleSaveInvoice);
             document.getElementById('uploadEditFileBtn').addEventListener('click', handleEditFileUpload);
             document.getElementById('addAllocationBtn').addEventListener('click', addNewAllocation);
+            document.getElementById('editSubtractVat').addEventListener('change', onEditSubtractVatChange);
+            document.getElementById('editVatRateId').addEventListener('change', calculateEditNetValue);
+            document.getElementById('editInvoiceValue').addEventListener('input', () => {
+                if (document.getElementById('editSubtractVat').checked) calculateEditNetValue();
+            });
+            document.getElementById('editCurrency').addEventListener('change', () => {
+                if (document.getElementById('editSubtractVat').checked) calculateEditNetValue();
+            });
             document.getElementById('addCustomColumnBtn').addEventListener('click', addCustomColumn);
             document.getElementById('resetColumnsBtn').addEventListener('click', () => {
                 if (confirm('Reset all columns to default? This will remove custom columns.')) {
@@ -2167,6 +2195,40 @@
             document.getElementById('editStatus').value = invoice.status || 'new';
             document.getElementById('editPaymentStatus').value = invoice.payment_status || 'not_paid';
 
+            // Initialize VAT subtraction fields
+            await loadEditVatRates();
+            const subtractVatCheckbox = document.getElementById('editSubtractVat');
+            const vatRateSelect = document.getElementById('editVatRateId');
+            const netValueDisplay = document.getElementById('editNetValueDisplay');
+            const netValueHidden = document.getElementById('editNetValue');
+            const vatRateCol = document.getElementById('editVatRateCol');
+            const netValueCol = document.getElementById('editNetValueCol');
+
+            subtractVatCheckbox.checked = invoice.subtract_vat || false;
+            if (invoice.subtract_vat) {
+                vatRateCol.style.display = '';
+                netValueCol.style.display = '';
+                if (invoice.vat_rate) {
+                    // Find matching VAT rate option by rate value
+                    for (let opt of vatRateSelect.options) {
+                        if (opt.dataset.rate == invoice.vat_rate) {
+                            vatRateSelect.value = opt.value;
+                            break;
+                        }
+                    }
+                }
+                if (invoice.net_value) {
+                    netValueHidden.value = invoice.net_value;
+                    netValueDisplay.value = formatNumber(invoice.net_value) + ' ' + (invoice.currency || 'RON');
+                }
+            } else {
+                vatRateCol.style.display = 'none';
+                netValueCol.style.display = 'none';
+                vatRateSelect.value = '';
+                netValueHidden.value = '';
+                netValueDisplay.value = '';
+            }
+
             // Populate dedicated company dropdown
             const companies = getUniqueCompanies();
             const dedicatedCompanySelect = document.getElementById('editDedicatedCompany');
@@ -2304,12 +2366,22 @@
                 }
             }
 
+            // Get VAT fields for allocation value calculation
+            const subtractVat = document.getElementById('editSubtractVat').checked;
+            const vatRateSelect = document.getElementById('editVatRateId');
+            const selectedVatOption = vatRateSelect.options[vatRateSelect.selectedIndex];
+            const vatRate = subtractVat && selectedVatOption && selectedVatOption.dataset.rate ? parseFloat(selectedVatOption.dataset.rate) : null;
+            const netValue = subtractVat ? parseFloat(document.getElementById('editNetValue').value) || null : null;
+
+            // Use net value for allocation calculations if VAT subtraction is enabled
+            const effectiveValue = subtractVat && netValue ? netValue : invoiceValue;
+
             // Calculate allocation values and set company for all allocations
             const allocationsWithValues = editAllocations.map((a, idx) => ({
                 ...a,
                 company: dedicatedCompany,  // Use dedicated company for all
                 allocation_percent: parseFloat(a.allocation_percent) || 0,
-                allocation_value: (invoiceValue * (parseFloat(a.allocation_percent) || 0)) / 100,
+                allocation_value: (effectiveValue * (parseFloat(a.allocation_percent) || 0)) / 100,
                 reinvoice_destinations: getEditReinvoiceDestinations(idx)
             }));
 
@@ -2322,7 +2394,10 @@
                 drive_link: document.getElementById('editDriveLink').value,
                 comment: document.getElementById('editComment').value,
                 status: document.getElementById('editStatus').value,
-                payment_status: document.getElementById('editPaymentStatus').value
+                payment_status: document.getElementById('editPaymentStatus').value,
+                subtract_vat: subtractVat,
+                vat_rate: vatRate,
+                net_value: netValue
             };
 
             try {
@@ -3112,6 +3187,96 @@
             } catch (e) {
                 return dateStr;
             }
+        }
+
+        function formatNumber(num) {
+            if (num == null || isNaN(num)) return '0.00';
+            return parseFloat(num).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        // ================= EDIT VAT FUNCTIONS =================
+
+        let editVatRatesCache = null;
+
+        async function loadEditVatRates() {
+            if (editVatRatesCache) {
+                populateEditVatRateDropdown(editVatRatesCache);
+                return;
+            }
+            try {
+                const res = await fetch('/api/vat-rates?active_only=true');
+                editVatRatesCache = await res.json();
+                populateEditVatRateDropdown(editVatRatesCache);
+            } catch (e) {
+                console.error('Error loading VAT rates:', e);
+            }
+        }
+
+        function populateEditVatRateDropdown(rates) {
+            const select = document.getElementById('editVatRateId');
+            select.innerHTML = '<option value="">Select rate...</option>' +
+                rates.map(r => `<option value="${r.id}" data-rate="${r.rate}">${r.name} (${r.rate}%)</option>`).join('');
+        }
+
+        // Helper function to get the base value for allocations (net value if VAT enabled, gross otherwise)
+        function getEditBaseValue() {
+            const subtractVat = document.getElementById('editSubtractVat').checked;
+            const netValue = parseFloat(document.getElementById('editNetValue').value) || 0;
+            const grossValue = parseFloat(document.getElementById('editInvoiceValue').value) || 0;
+            return subtractVat && netValue > 0 ? netValue : grossValue;
+        }
+
+        // Recalculate all allocation values based on current base value
+        function recalcAllEditAllocationValues() {
+            const baseValue = getEditBaseValue();
+            const currency = document.getElementById('editCurrency').value || 'RON';
+
+            editAllocations.forEach((alloc, idx) => {
+                const percent = parseFloat(alloc.allocation_percent) || 0;
+                alloc.allocation_value = (baseValue * percent) / 100;
+
+                // Update UI
+                const vInput = document.querySelector(`.alloc-value[data-idx="${idx}"]`);
+                if (vInput) vInput.value = alloc.allocation_value.toFixed(2);
+            });
+
+            updateAllocationTotalBadge();
+        }
+
+        function calculateEditNetValue() {
+            const grossValue = parseFloat(document.getElementById('editInvoiceValue').value) || 0;
+            const vatRateSelect = document.getElementById('editVatRateId');
+            const selectedOption = vatRateSelect.options[vatRateSelect.selectedIndex];
+            const vatRate = selectedOption && selectedOption.dataset.rate ? parseFloat(selectedOption.dataset.rate) : 0;
+            const currency = document.getElementById('editCurrency').value || 'RON';
+
+            if (vatRate > 0) {
+                const netValue = grossValue / (1 + vatRate / 100);
+                document.getElementById('editNetValue').value = netValue.toFixed(2);
+                document.getElementById('editNetValueDisplay').value = formatNumber(netValue) + ' ' + currency;
+            } else {
+                document.getElementById('editNetValue').value = '';
+                document.getElementById('editNetValueDisplay').value = '';
+            }
+
+            // Recalculate allocation values based on new net value
+            recalcAllEditAllocationValues();
+        }
+
+        function onEditSubtractVatChange() {
+            const checked = document.getElementById('editSubtractVat').checked;
+            document.getElementById('editVatRateCol').style.display = checked ? '' : 'none';
+            document.getElementById('editNetValueCol').style.display = checked ? '' : 'none';
+            if (!checked) {
+                document.getElementById('editVatRateId').value = '';
+                document.getElementById('editNetValue').value = '';
+                document.getElementById('editNetValueDisplay').value = '';
+            } else {
+                calculateEditNetValue();
+            }
+
+            // Recalculate allocation values when VAT is toggled
+            recalcAllEditAllocationValues();
         }
 
         // ================= SORTING FUNCTIONS =================

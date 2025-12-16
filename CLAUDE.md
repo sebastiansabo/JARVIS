@@ -52,13 +52,14 @@ docker run -p 8080:8080 -e DATABASE_URL="..." -e ANTHROPIC_API_KEY="..." bugetar
 - `TINYPNG_API_KEY` - TinyPNG API key for image compression (optional, has default)
 
 ## Database Schema
-- `invoices` - Invoice header records
+- `invoices` - Invoice header records (includes subtract_vat, vat_rate_id, net_value)
 - `allocations` - Department allocation splits
 - `invoice_templates` - AI parsing templates per supplier
 - `department_structure` - Company/department hierarchy
 - `companies` - Company VAT registry for matching
 - `users` - Application users with bcrypt passwords and role permissions
 - `user_events` - Activity log for user actions (login, invoice operations)
+- `vat_rates` - VAT rate definitions (id, name, rate)
 
 ## Deployment
 Configured via `.do/app.yaml` for DigitalOcean App Platform with auto-deploy on push to main branch.
@@ -163,11 +164,30 @@ The `dict_from_row()` function converts Python date objects to ISO format string
 - `department` - Required department
 - `subdepartment` - Optional subdepartment
 - `allocation_percent` - Percentage (must sum to 100%)
-- `allocation_value` - Calculated from invoice_value * allocation_percent
+- `allocation_value` - Calculated from invoice_value * allocation_percent (or net_value if VAT subtracted)
 - `responsible` - Auto-populated from department_structure
 - `reinvoice_to` - Optional company for reinvoicing
 - `reinvoice_department` - Optional department within the reinvoice target company
 - `reinvoice_subdepartment` - Optional subdepartment within the reinvoice target department
+
+### VAT Subtraction Feature
+For invoices where VAT should be excluded from allocation values:
+1. Check the "Subtract VAT" checkbox on the invoice form
+2. Select a VAT rate from the dropdown (19%, 9%, 5%, 0%)
+3. Net Value is automatically calculated: `Invoice Value / (1 + VAT_Rate/100)`
+4. Allocation values are calculated from the **net value** instead of gross value
+5. Both Add Invoice page and Edit Invoice modal support VAT subtraction
+6. VAT rates are managed in Settings → VAT Rates tab
+
+**Database fields:**
+- `subtract_vat` (BOOLEAN) - Whether VAT subtraction is enabled
+- `vat_rate_id` (INTEGER) - Foreign key to `vat_rates` table
+- `net_value` (REAL) - Calculated net value after VAT subtraction
+
+**VAT Rates table (`vat_rates`):**
+- `id` - Primary key
+- `name` - Display name (e.g., "19%")
+- `rate` - Decimal rate (e.g., 19.0)
 
 ### Lock Allocation Feature
 When working with multiple allocations (3+), percentages automatically redistribute when adding or modifying rows. To prevent specific allocations from being affected:
@@ -350,3 +370,9 @@ The "Total Value" card on the accounting dashboard has a EUR/RON toggle switch:
 - Added lock button to reinvoice lines: locked lines maintain their values when adding new lines
 - Added comment button to reinvoice lines: add optional comments to each reinvoice destination
 - Fixed `const` to `let` bug in addReinvoiceLine for locked line redistribution
+- Added VAT subtraction feature: subtract VAT from invoice value to calculate net value for allocations
+  - Checkbox + VAT rate dropdown on Add Invoice page and Edit Invoice modal
+  - Net value automatically calculated: Invoice Value / (1 + VAT_Rate/100)
+  - Allocation values use net value when VAT subtraction is enabled
+  - VAT rates managed in Settings → VAT Rates tab (seeded with 19%, 9%, 5%, 0%)
+- Fixed Edit Invoice modal allocation values not updating when VAT is toggled

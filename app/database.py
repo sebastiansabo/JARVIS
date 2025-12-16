@@ -440,6 +440,30 @@ def init_db():
         )
     ''')
 
+    # VAT rates table - configurable VAT percentages
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS vat_rates (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            rate REAL NOT NULL,
+            is_default BOOLEAN DEFAULT FALSE,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Insert default VAT rates (Romanian standard rates) only if table is empty
+    cursor.execute('SELECT COUNT(*) as cnt FROM vat_rates')
+    if cursor.fetchone()['cnt'] == 0:
+        cursor.execute('''
+            INSERT INTO vat_rates (name, rate, is_default, is_active)
+            VALUES
+                ('19%', 19.0, TRUE, TRUE),
+                ('9%', 9.0, FALSE, TRUE),
+                ('5%', 5.0, FALSE, TRUE),
+                ('0%', 0.0, FALSE, TRUE)
+        ''')
+
     # Create indexes for invoice queries (most frequently accessed)
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(invoice_date)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoices_date_desc ON invoices(invoice_date DESC)')
@@ -551,6 +575,32 @@ def init_db():
     # Create index for soft delete queries
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoices_deleted_at ON invoices(deleted_at)')
     conn.commit()
+
+    # Add vat_rate column if it doesn't exist (for VAT subtraction feature)
+    try:
+        cursor.execute('ALTER TABLE invoices ADD COLUMN vat_rate REAL')
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
+
+    # Add subtract_vat and net_value columns for VAT subtraction feature
+    try:
+        cursor.execute('ALTER TABLE invoices ADD COLUMN subtract_vat BOOLEAN DEFAULT FALSE')
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
+
+    try:
+        cursor.execute('ALTER TABLE invoices ADD COLUMN net_value REAL')
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
 
     # Add role_id column to users table if it doesn't exist (migration from old schema)
     try:
@@ -738,7 +788,10 @@ def save_invoice(
     value_eur: float = None,
     exchange_rate: float = None,
     comment: str = None,
-    payment_status: str = 'not_paid'
+    payment_status: str = 'not_paid',
+    subtract_vat: bool = False,
+    vat_rate: float = None,
+    net_value: float = None
 ) -> int:
     """
     Save invoice and its allocations to database.
@@ -749,10 +802,10 @@ def save_invoice(
 
     try:
         cursor.execute('''
-            INSERT INTO invoices (supplier, invoice_template, invoice_number, invoice_date, invoice_value, currency, drive_link, value_ron, value_eur, exchange_rate, comment, payment_status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO invoices (supplier, invoice_template, invoice_number, invoice_date, invoice_value, currency, drive_link, value_ron, value_eur, exchange_rate, comment, payment_status, subtract_vat, vat_rate, net_value)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
-        ''', (supplier, invoice_template, invoice_number, invoice_date, invoice_value, currency, drive_link, value_ron, value_eur, exchange_rate, comment, payment_status))
+        ''', (supplier, invoice_template, invoice_number, invoice_date, invoice_value, currency, drive_link, value_ron, value_eur, exchange_rate, comment, payment_status, subtract_vat, vat_rate, net_value))
         invoice_id = cursor.fetchone()['id']
 
         # Insert allocations
@@ -1064,7 +1117,7 @@ def get_invoices_with_allocations(limit: int = 100, offset: int = 0, company: Op
             GROUP BY pi.id, pi.supplier, pi.invoice_template, pi.invoice_number, pi.invoice_date,
                      pi.invoice_value, pi.currency, pi.value_ron, pi.value_eur, pi.exchange_rate,
                      pi.drive_link, pi.comment, pi.status, pi.payment_status, pi.deleted_at,
-                     pi.created_at, pi.updated_at
+                     pi.created_at, pi.updated_at, pi.subtract_vat, pi.vat_rate, pi.net_value
             ORDER BY pi.created_at DESC
         '''
 
@@ -1406,7 +1459,10 @@ def update_invoice(
     drive_link: str = None,
     comment: str = None,
     status: str = None,
-    payment_status: str = None
+    payment_status: str = None,
+    subtract_vat: bool = None,
+    vat_rate: float = None,
+    net_value: float = None
 ) -> bool:
     """Update an existing invoice."""
     conn = get_db()
@@ -1443,6 +1499,23 @@ def update_invoice(
     if payment_status is not None:
         updates.append('payment_status = %s')
         params.append(payment_status)
+    if subtract_vat is not None:
+        updates.append('subtract_vat = %s')
+        params.append(subtract_vat)
+    if vat_rate is not None:
+        updates.append('vat_rate = %s')
+        params.append(vat_rate)
+    elif subtract_vat is False:
+        # Clear vat_rate when disabling VAT subtraction
+        updates.append('vat_rate = %s')
+        params.append(None)
+    if net_value is not None:
+        updates.append('net_value = %s')
+        params.append(net_value)
+    elif subtract_vat is False:
+        # Clear net_value when disabling VAT subtraction
+        updates.append('net_value = %s')
+        params.append(None)
 
     if not updates:
         release_db(conn)
@@ -2412,7 +2485,7 @@ def get_user(user_id: int) -> Optional[dict]:
 
     cursor.execute('''
         SELECT u.*, r.name as role_name, r.description as role_description,
-               r.can_add_invoices, r.can_delete_invoices, r.can_view_invoices,
+               r.can_add_invoices, r.can_edit_invoices, r.can_delete_invoices, r.can_view_invoices,
                r.can_access_accounting, r.can_access_settings, r.can_access_connectors,
                r.can_access_templates
         FROM users u
@@ -2432,7 +2505,7 @@ def get_user_by_email(email: str) -> Optional[dict]:
 
     cursor.execute('''
         SELECT u.*, r.name as role_name, r.description as role_description,
-               r.can_add_invoices, r.can_delete_invoices, r.can_view_invoices,
+               r.can_add_invoices, r.can_edit_invoices, r.can_delete_invoices, r.can_view_invoices,
                r.can_access_accounting, r.can_access_settings, r.can_access_connectors,
                r.can_access_templates
         FROM users u
@@ -2931,6 +3004,120 @@ def delete_company(company_id: int) -> bool:
     release_db(conn)
     if deleted:
         clear_companies_vat_cache()
+    return deleted
+
+
+# ============== VAT Rates CRUD ==============
+
+def get_vat_rates(active_only: bool = False) -> list[dict]:
+    """Get all VAT rates, optionally filtering for active only."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    if active_only:
+        cursor.execute('''
+            SELECT id, name, rate, is_default, is_active, created_at
+            FROM vat_rates
+            WHERE is_active = TRUE
+            ORDER BY rate DESC
+        ''')
+    else:
+        cursor.execute('''
+            SELECT id, name, rate, is_default, is_active, created_at
+            FROM vat_rates
+            ORDER BY rate DESC
+        ''')
+
+    results = [dict_from_row(row) for row in cursor.fetchall()]
+    release_db(conn)
+    return results
+
+
+def add_vat_rate(name: str, rate: float, is_default: bool = False, is_active: bool = True) -> int:
+    """Add a new VAT rate. Returns the new rate ID."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    try:
+        # If setting as default, clear other defaults first
+        if is_default:
+            cursor.execute('UPDATE vat_rates SET is_default = FALSE WHERE is_default = TRUE')
+
+        cursor.execute('''
+            INSERT INTO vat_rates (name, rate, is_default, is_active)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+        ''', (name, rate, is_default, is_active))
+
+        rate_id = cursor.fetchone()[0]
+        conn.commit()
+        return rate_id
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        release_db(conn)
+
+
+def update_vat_rate(rate_id: int, name: str = None, rate: float = None,
+                   is_default: bool = None, is_active: bool = None) -> bool:
+    """Update a VAT rate."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    updates = []
+    params = []
+
+    if name is not None:
+        updates.append('name = %s')
+        params.append(name)
+    if rate is not None:
+        updates.append('rate = %s')
+        params.append(rate)
+    if is_default is not None:
+        updates.append('is_default = %s')
+        params.append(is_default)
+    if is_active is not None:
+        updates.append('is_active = %s')
+        params.append(is_active)
+
+    if not updates:
+        release_db(conn)
+        return False
+
+    params.append(rate_id)
+
+    try:
+        # If setting as default, clear other defaults first
+        if is_default:
+            cursor.execute('UPDATE vat_rates SET is_default = FALSE WHERE is_default = TRUE')
+
+        cursor.execute(f'''
+            UPDATE vat_rates
+            SET {', '.join(updates)}
+            WHERE id = %s
+        ''', params)
+
+        updated = cursor.rowcount > 0
+        conn.commit()
+        return updated
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        release_db(conn)
+
+
+def delete_vat_rate(rate_id: int) -> bool:
+    """Delete a VAT rate."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    cursor.execute('DELETE FROM vat_rates WHERE id = %s', (rate_id,))
+    deleted = cursor.rowcount > 0
+
+    conn.commit()
+    release_db(conn)
     return deleted
 
 

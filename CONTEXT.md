@@ -28,9 +28,16 @@ The system serves a multi-company structure:
 ### Allocation
 An allocation splits an invoice cost to a specific department:
 - **Allocation Percent**: The percentage of the invoice assigned (e.g., 50%)
-- **Allocation Value**: The monetary amount (calculated from invoice value × percent)
+- **Allocation Value**: The monetary amount (calculated from invoice value × percent, or net value if VAT subtracted)
 - **Locked**: Locked allocations don't change during redistribution
 - **Comment**: Optional text comment for notes about the allocation
+
+### VAT Subtraction
+For invoices where allocations should be based on net value (excluding VAT):
+- **Subtract VAT**: Checkbox to enable VAT subtraction
+- **VAT Rate**: Dropdown with configurable rates (default: 19%, 9%, 5%, 0%)
+- **Net Value**: Automatically calculated as Invoice Value / (1 + VAT_Rate/100)
+- When enabled, allocation values use net value instead of gross invoice value
 
 ### Reinvoicing
 Internal billing between entities:
@@ -73,7 +80,7 @@ templates/
 ```
 
 ### Database Schema (PostgreSQL)
-- `invoices` - Invoice records with supplier, dates, amounts, currency
+- `invoices` - Invoice records with supplier, dates, amounts, currency, VAT fields
 - `allocations` - Cost splits per invoice (company, dept, percent, value, locked)
 - `invoice_templates` - Regex patterns for automated parsing
 - `department_structure` - Organizational hierarchy
@@ -83,6 +90,7 @@ templates/
 - `notification_log` - Email delivery tracking
 - `notification_settings` - SMTP configuration
 - `user_events` - Activity audit log (login, invoice CRUD, password changes)
+- `vat_rates` - VAT rate definitions (id, name, rate)
 
 ## Key Features
 
