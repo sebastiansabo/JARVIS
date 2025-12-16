@@ -528,6 +528,7 @@
                                         <option value="invoice.invoice_number">Invoice Number</option>
                                         <option value="invoice.invoice_date">Invoice Date</option>
                                         <option value="invoice.invoice_value">Invoice Value</option>
+                                        <option value="invoice.net_value">Net Value</option>
                                         <option value="invoice.currency">Currency</option>
                                         <option value="invoice.invoice_template">Template</option>
                                         <option value="invoice.drive_link">Drive Link</option>
@@ -880,6 +881,7 @@
             { id: 'supplier', name: 'Supplier', source: 'invoice.supplier', format: 'text', visible: true, custom: false },
             { id: 'invoice_number', name: 'Invoice #', source: 'invoice.invoice_number', format: 'text', visible: true, custom: false },
             { id: 'value', name: 'Value', source: 'invoice.invoice_value', format: 'currency', visible: true, custom: false },
+            { id: 'net_value', name: 'Net Value', source: 'invoice.net_value', format: 'currency', visible: false, custom: false },
             { id: 'currency', name: 'Currency', source: 'invoice.currency', format: 'text', visible: false, custom: false },
             { id: 'template', name: 'Template', source: 'invoice.invoice_template', format: 'text', visible: true, custom: false },
             { id: 'company', name: 'Company', source: 'allocation.company', format: 'text', visible: false, custom: false },
@@ -965,6 +967,17 @@
                         columnConfig.splice(statusIdx + 1, 0, paymentCol);
                     } else {
                         columnConfig.push(paymentCol);
+                    }
+                }
+                // Ensure net_value column exists (for migration from old configs)
+                if (!columnConfig.find(c => c.id === 'net_value')) {
+                    // Insert after value column
+                    const valueIdx = columnConfig.findIndex(c => c.id === 'value');
+                    const netValueCol = { id: 'net_value', name: 'Net Value', source: 'invoice.net_value', format: 'currency', visible: false, custom: false };
+                    if (valueIdx >= 0) {
+                        columnConfig.splice(valueIdx + 1, 0, netValueCol);
+                    } else {
+                        columnConfig.push(netValueCol);
                     }
                 }
             } else {

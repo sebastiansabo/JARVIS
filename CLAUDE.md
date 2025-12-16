@@ -386,3 +386,5 @@ The "Total Value" card on the accounting dashboard has a EUR/RON toggle switch:
 - Added ETag headers for JSON API responses (304 Not Modified support)
 - Added Cache-Control headers for static pages and API endpoints
 - Added "Clear Form" button on New Invoice page to reset all form fields and state
+- Added Net Value column to Accounting dashboard (show/hide via Configure Columns)
+- Updated New Invoice page to full-width layout matching Accounting page (container-fluid)
