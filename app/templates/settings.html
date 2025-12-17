@@ -754,6 +754,15 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">CC Email</label>
+                                    <input type="email" class="form-control" id="dsCcEmail" placeholder="department-cc@example.com">
+                                    <small class="text-muted">Optional. Will be CC'd on all allocation notifications for this department.</small>
+                                </div>
+                            </div>
+                        </div>
                     </form>
                 </div>
                 <div class="modal-footer">
@@ -1681,6 +1690,7 @@
             document.getElementById('departmentStructureModalTitle').textContent = 'Add Department Structure';
             document.getElementById('departmentStructureForm').reset();
             document.getElementById('departmentStructureId').value = '';
+            document.getElementById('dsCcEmail').value = '';
             selectedManagerIds = [];
             selectedMarketingIds = [];
             renderPills('manager');
@@ -1699,6 +1709,7 @@
             document.getElementById('dsBrand').value = ds.brand || '';
             document.getElementById('dsDepartment').value = ds.department || '';
             document.getElementById('dsSubdepartment').value = ds.subdepartment || '';
+            document.getElementById('dsCcEmail').value = ds.cc_email || '';
             selectedManagerIds = ds.manager_ids || [];
             selectedMarketingIds = ds.marketing_ids || [];
             renderPills('manager');
@@ -1858,7 +1869,8 @@
                 department: department,
                 subdepartment: document.getElementById('dsSubdepartment').value.trim() || null,
                 manager_ids: managerIds.length > 0 ? managerIds : null,
-                marketing_ids: marketingIds.length > 0 ? marketingIds : null
+                marketing_ids: marketingIds.length > 0 ? marketingIds : null,
+                cc_email: document.getElementById('dsCcEmail').value.trim() || null
             };
 
             try {

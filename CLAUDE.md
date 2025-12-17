@@ -313,6 +313,10 @@ The "Total Value" card on the accounting dashboard has a EUR/RON toggle switch:
 - Uses BNR exchange rates from invoice dates
 
 ## Recent Changes
+- Added department CC email feature: each department can have a CC email that receives all allocation notifications for that department
+  - CC Email field in Department Structure modal (Settings → Department Structure)
+  - Combined with global CC: both global and department CC emails receive notifications
+  - Notifications use exact department matching (not partial LIKE matching)
 - Added GOOGLE_OAUTH_TOKEN env var support with base64 encoding for production
 - Added missing `requests` package to requirements.txt (for BNR currency converter)
 - Added BNR currency converter module for automatic EUR/RON conversion

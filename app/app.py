@@ -2014,7 +2014,8 @@ def api_create_department_structure():
         marketing=data.get('marketing'),
         responsable_id=data.get('responsable_id'),
         manager_ids=data.get('manager_ids'),
-        marketing_ids=data.get('marketing_ids')
+        marketing_ids=data.get('marketing_ids'),
+        cc_email=data.get('cc_email')
     )
     return jsonify({'success': True, 'id': structure_id})
 
@@ -2045,7 +2046,8 @@ def api_update_department_structure(structure_id):
         marketing=data.get('marketing'),
         responsable_id=data.get('responsable_id'),
         manager_ids=data.get('manager_ids'),
-        marketing_ids=data.get('marketing_ids')
+        marketing_ids=data.get('marketing_ids'),
+        cc_email=data.get('cc_email')
     )
     if success:
         return jsonify({'success': True})

@@ -13,6 +13,7 @@ from database import (
     get_all_responsables,
     log_notification,
     update_notification_status,
+    get_department_cc_email,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,10 +44,18 @@ def send_email(
     to_email: str,
     subject: str,
     html_body: str,
-    text_body: Optional[str] = None
+    text_body: Optional[str] = None,
+    department_cc: Optional[str] = None
 ) -> tuple[bool, str]:
     """
     Send an email using configured SMTP settings.
+
+    Args:
+        to_email: Recipient email address
+        subject: Email subject
+        html_body: HTML email content
+        text_body: Optional plain text email content
+        department_cc: Optional department-specific CC email address
 
     Returns:
         tuple: (success: bool, error_message: str)
@@ -65,19 +74,27 @@ def send_email(
         msg['From'] = f"{config['from_name']} <{config['from_email']}>" if config['from_name'] else config['from_email']
         msg['To'] = to_email
 
-        # Add global CC if configured
+        # Build CC list from global CC and department CC
+        cc_addresses = []
         global_cc = config.get('global_cc', '').strip()
         if global_cc:
-            msg['Cc'] = global_cc
+            cc_addresses.append(global_cc)
+        if department_cc and department_cc.strip():
+            dept_cc = department_cc.strip()
+            # Avoid duplicate if department CC is same as global CC
+            if dept_cc not in cc_addresses:
+                cc_addresses.append(dept_cc)
+
+        if cc_addresses:
+            msg['Cc'] = ', '.join(cc_addresses)
 
         if text_body:
             msg.attach(MIMEText(text_body, 'plain'))
         msg.attach(MIMEText(html_body, 'html'))
 
-        # Build recipient list (To + CC)
+        # Build recipient list (To + all CCs)
         recipients = [to_email]
-        if global_cc:
-            recipients.append(global_cc)
+        recipients.extend(cc_addresses)
 
         if config['use_tls']:
             context = ssl.create_default_context()
@@ -92,6 +109,7 @@ def send_email(
                     server.login(config['username'], config['password'])
                 server.sendmail(config['from_email'], recipients, msg.as_string())
 
+        logger.info(f"Email sent to {to_email}, CC: {cc_addresses if cc_addresses else 'none'}")
         return True, ""
 
     except smtplib.SMTPAuthenticationError as e:
@@ -400,6 +418,11 @@ def notify_allocation(invoice_data: dict, allocation: dict) -> list[dict]:
     invoice_id = invoice_data.get('id')
     invoice_value = float(invoice_data.get('invoice_value', 0) or 0)
 
+    # Look up department CC email
+    company = allocation.get('company', '')
+    department = allocation.get('department', '')
+    department_cc = get_department_cc_email(company, department) if company and department else None
+
     # Calculate allocation_percent and allocation_value if not provided
     # Frontend sends 'allocation' as decimal (0.5 = 50%), template expects 'allocation_percent' (50)
     allocation_decimal = allocation.get('allocation')
@@ -440,8 +463,8 @@ def notify_allocation(invoice_data: dict, allocation: dict) -> list[dict]:
             status='pending'
         )
 
-        # Send the email
-        success, error_message = send_email(responsable_email, subject, html_body, text_body)
+        # Send the email with department CC if configured
+        success, error_message = send_email(responsable_email, subject, html_body, text_body, department_cc)
 
         # Update notification status
         if success:

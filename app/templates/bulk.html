@@ -357,38 +357,69 @@
                         {% if current_user.can_add_invoices %}
                         <!-- Bulk Distribute Tab -->
                         <div class="tab-pane fade" id="distribute" role="tabpanel">
-                            <!-- Mode Toggle -->
-                            <div class="distribute-mode-toggle">
-                                <button type="button" class="btn btn-outline-primary active" id="modeInvoices" onclick="setDistributeMode('invoices')">
-                                    <i class="bi bi-receipt"></i> By Invoice
-                                </button>
-                                <button type="button" class="btn btn-outline-primary" id="modeCampaigns" onclick="setDistributeMode('campaigns')">
-                                    <i class="bi bi-megaphone"></i> By Campaign
-                                </button>
+                            <!-- Help Text -->
+                            <div class="alert alert-secondary mb-3">
+                                <i class="bi bi-info-circle"></i>
+                                <strong>How to use:</strong> Select an invoice to see its campaigns. Configure allocations for each campaign,
+                                then click <strong>"Transfer to New Invoice"</strong> to open the full allocation form with reinvoicing options.
                             </div>
 
-                            <!-- Progress Summary -->
-                            <div class="alert alert-info d-flex justify-content-between align-items-center mb-3" id="distributeProgress">
-                                <span>
-                                    <i class="bi bi-info-circle"></i>
-                                    <span id="allocatedCount">0</span> / <span id="totalItemsCount">0</span> items allocated
-                                </span>
-                                <span class="fw-bold" id="allocatedValue">0.00 RON</span>
-                            </div>
-
-                            <!-- Items List -->
-                            <div id="distributeItemsList" style="max-height: 600px; overflow-y: auto;"></div>
-
-                            <!-- Bulk Save Section -->
-                            <div class="bulk-save-section">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <span class="text-muted">Ready to save:</span>
-                                        <strong id="readyToSaveCount">0</strong> invoices
+                            <!-- Invoice Selection and Campaign View -->
+                            <div class="row">
+                                <!-- Left: Invoice List -->
+                                <div class="col-md-5">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-light">
+                                            <strong><i class="bi bi-receipt"></i> Invoices</strong>
+                                            <span class="badge bg-primary ms-2" id="invoiceCountBadge">0</span>
+                                        </div>
+                                        <div class="card-body p-0" style="max-height: 500px; overflow-y: auto;">
+                                            <div class="list-group list-group-flush" id="invoiceSelectList">
+                                                <!-- Invoices will be populated here -->
+                                            </div>
+                                        </div>
                                     </div>
-                                    <button type="button" class="btn btn-success btn-lg" id="bulkSaveBtn" onclick="bulkSaveAllocations()" disabled>
-                                        <i class="bi bi-check-circle"></i> Save All to Accounting
-                                    </button>
+                                </div>
+
+                                <!-- Right: Campaign Details -->
+                                <div class="col-md-7">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <strong><i class="bi bi-megaphone"></i> Campaigns</strong>
+                                                <span class="badge bg-success ms-2" id="campaignCountBadge">0</span>
+                                            </div>
+                                            <button type="button" class="btn btn-primary btn-sm" id="transferBtn" onclick="transferToNewInvoice()" disabled>
+                                                <i class="bi bi-box-arrow-up-right"></i> Transfer to New Invoice
+                                            </button>
+                                        </div>
+                                        <div class="card-body" id="campaignDetailsPanel">
+                                            <div class="text-center text-muted py-5">
+                                                <i class="bi bi-arrow-left fs-1"></i>
+                                                <p class="mt-2">Select an invoice to view campaigns</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Selected Invoice Summary -->
+                            <div class="card mt-3" id="selectedInvoiceSummary" style="display: none;">
+                                <div class="card-body">
+                                    <div class="row align-items-center">
+                                        <div class="col-md-6">
+                                            <h6 class="mb-1" id="selectedInvoiceTitle">-</h6>
+                                            <small class="text-muted" id="selectedInvoiceSubtitle">-</small>
+                                        </div>
+                                        <div class="col-md-3 text-center">
+                                            <small class="text-muted">Invoice Value</small>
+                                            <div class="fw-bold text-success" id="selectedInvoiceValue">-</div>
+                                        </div>
+                                        <div class="col-md-3 text-center">
+                                            <small class="text-muted">Campaigns Total</small>
+                                            <div class="fw-bold" id="selectedCampaignsTotal">-</div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -647,9 +678,9 @@
         }
 
         // ============== Bulk Distribute Functionality ==============
-        let distributeMode = 'invoices';
+        let selectedInvoiceIndex = null;
+        let campaignAllocations = {}; // Store allocations by campaign key: {company, brand, department, subdepartment}
         let structureData = null;
-        let allocations = {}; // Store allocations by item key
 
         // Load organizational structure
         async function loadStructure() {
@@ -664,477 +695,240 @@
             }
         }
 
-        function setDistributeMode(mode) {
-            distributeMode = mode;
-            document.getElementById('modeInvoices').classList.toggle('active', mode === 'invoices');
-            document.getElementById('modeCampaigns').classList.toggle('active', mode === 'campaigns');
-            renderDistributeItems();
+        function renderInvoiceList() {
+            if (!reportData?.invoices) return;
+
+            const list = document.getElementById('invoiceSelectList');
+            const invoices = reportData.invoices;
+
+            document.getElementById('invoiceCountBadge').textContent = invoices.length;
+
+            list.innerHTML = invoices.map((inv, idx) => {
+                const hasCampaigns = inv.campaigns && Object.keys(inv.campaigns).length > 0;
+                const campaignCount = hasCampaigns ? Object.keys(inv.campaigns).length : 0;
+                const isSelected = selectedInvoiceIndex === idx;
+
+                return `
+                    <a href="#" class="list-group-item list-group-item-action ${isSelected ? 'active' : ''}"
+                       onclick="selectInvoice(${idx}); return false;">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>${inv.invoice_number || 'Invoice ' + (idx + 1)}</strong>
+                                <br><small class="${isSelected ? 'text-white-50' : 'text-muted'}">${inv.supplier || 'Unknown'}</small>
+                            </div>
+                            <div class="text-end">
+                                <span class="fw-bold">${formatNumber(inv.invoice_value || 0)}</span>
+                                <br>
+                                ${hasCampaigns
+                                    ? `<span class="badge ${isSelected ? 'bg-light text-primary' : 'bg-success'}">${campaignCount} campaigns</span>`
+                                    : `<span class="badge ${isSelected ? 'bg-light text-secondary' : 'bg-secondary'}">No campaigns</span>`
+                                }
+                            </div>
+                        </div>
+                    </a>
+                `;
+            }).join('');
         }
 
-        function renderDistributeItems() {
-            if (!reportData) return;
+        async function selectInvoice(idx) {
+            selectedInvoiceIndex = idx;
+            const inv = reportData.invoices[idx];
 
-            const container = document.getElementById('distributeItemsList');
-            let items = [];
+            // Update invoice list selection
+            renderInvoiceList();
 
-            if (distributeMode === 'invoices') {
-                items = reportData.invoices.map((inv, idx) => ({
-                    key: `inv_${idx}`,
-                    type: 'invoice',
-                    title: inv.invoice_number || `Invoice ${idx + 1}`,
-                    subtitle: `${inv.supplier || 'Unknown'} • ${formatDate(inv.invoice_date)}`,
-                    value: inv.invoice_value || 0,
-                    currency: inv.currency || 'RON',
-                    data: inv
-                }));
-            } else {
-                // By Campaign mode
-                const campaigns = Object.entries(reportData.by_campaign || {});
-                items = campaigns.map(([name, value], idx) => ({
-                    key: `camp_${idx}`,
-                    type: 'campaign',
-                    title: name,
-                    subtitle: `Campaign total`,
-                    value: value,
-                    currency: reportData.currency || 'RON',
-                    data: { campaign: name, value: value }
-                }));
+            // Update summary panel
+            document.getElementById('selectedInvoiceSummary').style.display = 'block';
+            document.getElementById('selectedInvoiceTitle').textContent = inv.invoice_number || 'Invoice ' + (idx + 1);
+            document.getElementById('selectedInvoiceSubtitle').textContent =
+                `${inv.supplier || 'Unknown'} • ${formatDate(inv.invoice_date)}`;
+            document.getElementById('selectedInvoiceValue').textContent =
+                formatNumber(inv.invoice_value || 0) + ' ' + (inv.currency || 'RON');
+
+            // Calculate campaigns total
+            const campaigns = inv.campaigns || {};
+            const campaignTotal = Object.values(campaigns).reduce((sum, val) => sum + val, 0);
+            document.getElementById('selectedCampaignsTotal').textContent =
+                formatNumber(campaignTotal) + ' ' + (inv.currency || 'RON');
+
+            // Render campaign details
+            await renderCampaignDetails(inv, idx);
+
+            // Enable transfer button
+            document.getElementById('transferBtn').disabled = false;
+        }
+
+        async function renderCampaignDetails(inv, invoiceIdx) {
+            await loadStructure();
+            const panel = document.getElementById('campaignDetailsPanel');
+            const campaigns = inv.campaigns || {};
+            const campaignEntries = Object.entries(campaigns);
+
+            document.getElementById('campaignCountBadge').textContent = campaignEntries.length;
+
+            if (campaignEntries.length === 0) {
+                panel.innerHTML = `
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-info-circle fs-1"></i>
+                        <p class="mt-2">No campaigns found in this invoice.</p>
+                        <p class="small">You can still transfer this invoice to New Invoice page for allocation.</p>
+                    </div>
+                `;
+                return;
             }
 
-            document.getElementById('totalItemsCount').textContent = items.length;
-
-            container.innerHTML = items.map(item => `
-                <div class="distribute-item ${allocations[item.key] ? 'allocated' : ''}" data-key="${item.key}">
-                    <div class="item-header">
-                        <div>
-                            <strong>${item.title}</strong>
-                            <br><small class="text-muted">${item.subtitle}</small>
-                        </div>
-                        <div class="text-end">
-                            <span class="item-value">${formatNumber(item.value)} ${item.currency}</span>
-                            <br>
-                            ${allocations[item.key]
-                                ? '<span class="badge bg-success allocation-status-badge"><i class="bi bi-check"></i> Allocated</span>'
-                                : '<span class="badge bg-secondary allocation-status-badge">Not allocated</span>'
-                            }
-                        </div>
-                    </div>
-                    <div class="allocation-form" id="form_${item.key}">
-                        ${renderAllocationForm(item)}
-                    </div>
-                </div>
-            `).join('');
-
-            updateDistributeProgress();
-        }
-
-        function renderAllocationForm(item) {
-            const existing = allocations[item.key];
-            const company = existing?.company || '';
-            const department = existing?.department || '';
-            const brand = existing?.brand || '';
-            const subdepartment = existing?.subdepartment || '';
-
-            return `
-                <div class="row g-2 align-items-end">
-                    <div class="col-md-3">
-                        <label class="form-label small">Company</label>
-                        <select class="form-select form-select-sm company-select"
-                                onchange="onCompanyChange('${item.key}', this.value)"
-                                data-key="${item.key}">
-                            <option value="">Select company...</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2 brand-col" style="display: none;">
-                        <label class="form-label small">Brand</label>
-                        <select class="form-select form-select-sm brand-select"
-                                onchange="onBrandChange('${item.key}', this.value)"
-                                data-key="${item.key}">
-                            <option value="">N/A</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label small">Department</label>
-                        <select class="form-select form-select-sm department-select"
-                                onchange="onDepartmentChange('${item.key}', this.value)"
-                                data-key="${item.key}">
-                            <option value="">Select...</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2 subdept-col" style="display: none;">
-                        <label class="form-label small">Subdepartment</label>
-                        <select class="form-select form-select-sm subdepartment-select"
-                                onchange="onSubdepartmentChange('${item.key}', this.value)"
-                                data-key="${item.key}">
-                            <option value="">N/A</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <button type="button" class="btn btn-sm ${existing ? 'btn-outline-success' : 'btn-primary'} w-100"
-                                onclick="setAllocation('${item.key}')">
-                            <i class="bi bi-${existing ? 'check-circle' : 'plus-circle'}"></i>
-                            ${existing ? 'Update' : 'Allocate'}
-                        </button>
-                    </div>
-                </div>
-                <div class="mt-2">
-                    <small class="text-muted manager-display" id="manager_${item.key}"></small>
-                </div>
-            `;
-        }
-
-        async function initializeAllocationForm(itemKey) {
-            await loadStructure();
-            const form = document.getElementById(`form_${itemKey}`);
-            if (!form) return;
-
-            const companySelect = form.querySelector('.company-select');
             const companies = [...new Set(structureData.map(s => s.company))];
 
-            companySelect.innerHTML = '<option value="">Select company...</option>' +
-                companies.map(c => `<option value="${c}">${c}</option>`).join('');
+            panel.innerHTML = `
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-sm">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>Campaign</th>
+                                <th class="text-end" style="width: 100px;">Value</th>
+                                <th style="width: 150px;">Company</th>
+                                <th style="width: 150px;">Department</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${campaignEntries.map(([name, value], campIdx) => {
+                                const key = `inv_${invoiceIdx}_camp_${campIdx}`;
+                                const existing = campaignAllocations[key] || {};
 
-            // Restore existing allocation if any
-            const existing = allocations[itemKey];
-            if (existing) {
-                companySelect.value = existing.company;
-                await onCompanyChange(itemKey, existing.company, existing);
-            }
-        }
+                                return `
+                                    <tr data-campaign-key="${key}">
+                                        <td>
+                                            <small>${name}</small>
+                                        </td>
+                                        <td class="text-end fw-bold text-success">
+                                            ${formatNumber(value)}
+                                        </td>
+                                        <td>
+                                            <select class="form-select form-select-sm campaign-company-select"
+                                                    data-key="${key}"
+                                                    onchange="onCampaignCompanyChange('${key}', this.value)">
+                                                <option value="">Select...</option>
+                                                ${companies.map(c => `<option value="${c}" ${existing.company === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select class="form-select form-select-sm campaign-department-select"
+                                                    data-key="${key}"
+                                                    onchange="onCampaignDepartmentChange('${key}', this.value)">
+                                                <option value="">Select...</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-3 p-2 bg-light rounded">
+                    <small class="text-muted">
+                        <i class="bi bi-lightbulb"></i> Tip: Pre-select company/department here, then click "Transfer to New Invoice"
+                        to complete the allocation with reinvoicing options.
+                    </small>
+                </div>
+            `;
 
-        async function onCompanyChange(itemKey, company, existing = null) {
-            await loadStructure();
-            const form = document.getElementById(`form_${itemKey}`);
-            if (!form) return;
-
-            const brandSelect = form.querySelector('.brand-select');
-            const deptSelect = form.querySelector('.department-select');
-            const subdeptSelect = form.querySelector('.subdepartment-select');
-            const brandCol = form.querySelector('.brand-col');
-            const subdeptCol = form.querySelector('.subdept-col');
-            const managerDisplay = form.querySelector('.manager-display');
-
-            // Filter structure for this company
-            const companyUnits = structureData.filter(s => s.company === company);
-
-            // Get unique brands
-            const brands = [...new Set(companyUnits.map(s => s.brand).filter(b => b))];
-            brandSelect.innerHTML = '<option value="">N/A</option>' +
-                brands.map(b => `<option value="${b}">${b}</option>`).join('');
-            brandCol.style.display = brands.length > 0 ? '' : 'none';
-
-            // Get unique departments
-            const departments = [...new Set(companyUnits.map(s => s.department))];
-            deptSelect.innerHTML = '<option value="">Select...</option>' +
-                departments.map(d => `<option value="${d}">${d}</option>`).join('');
-
-            // Reset subdepartment
-            subdeptSelect.innerHTML = '<option value="">N/A</option>';
-            subdeptCol.style.display = 'none';
-            managerDisplay.textContent = '';
-
-            // Restore existing values if any
-            if (existing) {
-                if (existing.brand) brandSelect.value = existing.brand;
-                if (existing.department) {
-                    deptSelect.value = existing.department;
-                    await onDepartmentChange(itemKey, existing.department, existing);
-                }
-            }
-        }
-
-        async function onBrandChange(itemKey, brand) {
-            // Brand is optional, just update the allocation
-        }
-
-        async function onDepartmentChange(itemKey, department, existing = null) {
-            const form = document.getElementById(`form_${itemKey}`);
-            if (!form) return;
-
-            const companySelect = form.querySelector('.company-select');
-            const subdeptSelect = form.querySelector('.subdepartment-select');
-            const subdeptCol = form.querySelector('.subdept-col');
-            const managerDisplay = form.querySelector('.manager-display');
-            const company = companySelect.value;
-
-            // Get subdepartments
-            const companyUnits = structureData.filter(s => s.company === company && s.department === department);
-            const subdepts = [...new Set(companyUnits.map(s => s.subdepartment).filter(s => s))];
-
-            subdeptSelect.innerHTML = '<option value="">N/A</option>' +
-                subdepts.map(s => `<option value="${s}">${s}</option>`).join('');
-            subdeptCol.style.display = subdepts.length > 0 ? '' : 'none';
-
-            // Get manager
-            const unit = companyUnits.find(u => !u.subdepartment) || companyUnits[0];
-            if (unit && unit.manager) {
-                managerDisplay.innerHTML = `<i class="bi bi-person"></i> Manager: <strong>${unit.manager}</strong>`;
-            } else {
-                managerDisplay.textContent = '';
-            }
-
-            // Restore existing subdepartment
-            if (existing && existing.subdepartment) {
-                subdeptSelect.value = existing.subdepartment;
-            }
-        }
-
-        async function onSubdepartmentChange(itemKey, subdepartment) {
-            const form = document.getElementById(`form_${itemKey}`);
-            if (!form) return;
-
-            const companySelect = form.querySelector('.company-select');
-            const deptSelect = form.querySelector('.department-select');
-            const managerDisplay = form.querySelector('.manager-display');
-            const company = companySelect.value;
-            const department = deptSelect.value;
-
-            // Get manager for subdepartment
-            const unit = structureData.find(s =>
-                s.company === company &&
-                s.department === department &&
-                s.subdepartment === subdepartment
-            );
-            if (unit && unit.manager) {
-                managerDisplay.innerHTML = `<i class="bi bi-person"></i> Manager: <strong>${unit.manager}</strong>`;
-            }
-        }
-
-        function setAllocation(itemKey) {
-            const form = document.getElementById(`form_${itemKey}`);
-            if (!form) return;
-
-            const company = form.querySelector('.company-select').value;
-            const brand = form.querySelector('.brand-select').value;
-            const department = form.querySelector('.department-select').value;
-            const subdepartment = form.querySelector('.subdepartment-select').value;
-
-            if (!company || !department) {
-                alert('Please select both Company and Department.');
-                return;
-            }
-
-            // Get manager
-            const unit = structureData.find(s =>
-                s.company === company &&
-                s.department === department &&
-                ((!subdepartment && !s.subdepartment) || s.subdepartment === subdepartment)
-            );
-
-            allocations[itemKey] = {
-                company,
-                brand: brand || null,
-                department,
-                subdepartment: subdepartment || null,
-                responsible: unit?.manager || ''
-            };
-
-            // Update UI
-            const itemEl = form.closest('.distribute-item');
-            itemEl.classList.add('allocated');
-            const badge = itemEl.querySelector('.allocation-status-badge');
-            badge.className = 'badge bg-success allocation-status-badge';
-            badge.innerHTML = '<i class="bi bi-check"></i> Allocated';
-
-            const btn = form.querySelector('button');
-            btn.className = 'btn btn-sm btn-outline-success w-100';
-            btn.innerHTML = '<i class="bi bi-check-circle"></i> Update';
-
-            updateDistributeProgress();
-        }
-
-        function updateDistributeProgress() {
-            const allocated = Object.keys(allocations).length;
-            let totalItems = 0;
-            let allocatedValue = 0;
-
-            if (distributeMode === 'invoices' && reportData?.invoices) {
-                totalItems = reportData.invoices.length;
-                reportData.invoices.forEach((inv, idx) => {
-                    if (allocations[`inv_${idx}`]) {
-                        allocatedValue += inv.invoice_value || 0;
-                    }
-                });
-            } else if (reportData?.by_campaign) {
-                totalItems = Object.keys(reportData.by_campaign).length;
-                Object.entries(reportData.by_campaign).forEach(([name, value], idx) => {
-                    if (allocations[`camp_${idx}`]) {
-                        allocatedValue += value;
-                    }
-                });
-            }
-
-            document.getElementById('allocatedCount').textContent = allocated;
-            document.getElementById('totalItemsCount').textContent = totalItems;
-            document.getElementById('allocatedValue').textContent = formatNumber(allocatedValue) + ' ' + (reportData?.currency || 'RON');
-
-            // Count ready to save (only invoices can be saved)
-            let readyToSave = 0;
-            if (reportData?.invoices) {
-                reportData.invoices.forEach((inv, idx) => {
-                    if (allocations[`inv_${idx}`]) {
-                        readyToSave++;
-                    }
-                });
-            }
-            document.getElementById('readyToSaveCount').textContent = readyToSave;
-            document.getElementById('bulkSaveBtn').disabled = readyToSave === 0;
-        }
-
-        async function bulkSaveAllocations() {
-            if (!reportData?.invoices) {
-                alert('No invoices to save.');
-                return;
-            }
-
-            // Collect invoices with allocations (matching index for tracking)
-            const invoicesToSave = [];
-            const invoiceIndices = [];
-            reportData.invoices.forEach((inv, idx) => {
-                const alloc = allocations[`inv_${idx}`];
-                if (alloc) {
-                    // Build distribution matching the /api/submit format (same as New Invoice page)
-                    invoicesToSave.push({
-                        supplier: inv.supplier || 'Unknown',
-                        invoice_template: inv.invoice_type || '',
-                        invoice_number: inv.invoice_number || `BULK-${Date.now()}-${idx}`,
-                        invoice_date: inv.invoice_date || new Date().toISOString().split('T')[0],
-                        invoice_value: inv.invoice_value || 0,
-                        currency: inv.currency || 'RON',
-                        drive_link: '',
-                        // Distributions format matching New Invoice page exactly
-                        distributions: [{
-                            company: alloc.company,
-                            brand: alloc.brand || null,
-                            department: alloc.department,
-                            subdepartment: alloc.subdepartment || null,
-                            allocation: 1.0, // 100% as decimal (0-1)
-                            reinvoice_destinations: [], // No reinvoice for bulk
-                            locked: false,
-                            comment: null
-                        }],
-                        // Additional fields matching /api/submit
-                        value_ron: null,
-                        value_eur: null,
-                        exchange_rate: null,
-                        comment: '',
-                        payment_status: 'not_paid',
-                        subtract_vat: false,
-                        vat_rate: null,
-                        net_value: null
-                    });
-                    invoiceIndices.push(idx);
+            // Initialize department dropdowns for existing allocations
+            campaignEntries.forEach((_, campIdx) => {
+                const key = `inv_${invoiceIdx}_camp_${campIdx}`;
+                const existing = campaignAllocations[key];
+                if (existing?.company) {
+                    populateDepartmentDropdown(key, existing.company, existing.department);
                 }
             });
+        }
 
-            if (invoicesToSave.length === 0) {
-                alert('No invoices with allocations to save.');
+        function onCampaignCompanyChange(key, company) {
+            if (!campaignAllocations[key]) {
+                campaignAllocations[key] = {};
+            }
+            campaignAllocations[key].company = company;
+            campaignAllocations[key].department = null;
+
+            populateDepartmentDropdown(key, company, null);
+        }
+
+        function populateDepartmentDropdown(key, company, selectedDept) {
+            const row = document.querySelector(`tr[data-campaign-key="${key}"]`);
+            if (!row) return;
+
+            const deptSelect = row.querySelector('.campaign-department-select');
+            const companyUnits = structureData.filter(s => s.company === company);
+            const departments = [...new Set(companyUnits.map(s => s.department))];
+
+            deptSelect.innerHTML = '<option value="">Select...</option>' +
+                departments.map(d => `<option value="${d}" ${selectedDept === d ? 'selected' : ''}>${d}</option>`).join('');
+        }
+
+        function onCampaignDepartmentChange(key, department) {
+            if (!campaignAllocations[key]) {
+                campaignAllocations[key] = {};
+            }
+            campaignAllocations[key].department = department;
+        }
+
+        function transferToNewInvoice() {
+            if (selectedInvoiceIndex === null) {
+                alert('Please select an invoice first.');
                 return;
             }
 
-            const loadingOverlay = document.getElementById('loadingOverlay');
-            loadingOverlay.querySelector('.progress-text').textContent = `Saving ${invoicesToSave.length} invoices...`;
-            loadingOverlay.classList.add('show');
+            const inv = reportData.invoices[selectedInvoiceIndex];
+            const campaigns = inv.campaigns || {};
+            const campaignEntries = Object.entries(campaigns);
 
-            let savedCount = 0;
-            const savedIndices = [];
-            const errors = [];
+            // Build transfer data
+            const transferData = {
+                // Invoice header data
+                supplier: inv.supplier || '',
+                invoice_number: inv.invoice_number || '',
+                invoice_date: inv.invoice_date || '',
+                invoice_value: inv.invoice_value || 0,
+                currency: inv.currency || 'RON',
+                customer_vat: inv.customer_vat || '',
 
-            try {
-                // Submit each invoice using the same /api/submit endpoint as New Invoice page
-                for (let i = 0; i < invoicesToSave.length; i++) {
-                    const inv = invoicesToSave[i];
-                    const originalIdx = invoiceIndices[i];
+                // Campaign allocations (if any configured)
+                campaigns: campaignEntries.map(([name, value], campIdx) => {
+                    const key = `inv_${selectedInvoiceIndex}_camp_${campIdx}`;
+                    const alloc = campaignAllocations[key] || {};
+                    return {
+                        name: name,
+                        value: value,
+                        company: alloc.company || '',
+                        department: alloc.department || ''
+                    };
+                })
+            };
 
-                    loadingOverlay.querySelector('.progress-text').textContent =
-                        `Saving invoice ${i + 1} of ${invoicesToSave.length}...`;
+            // Store in sessionStorage for the New Invoice page to read
+            sessionStorage.setItem('bulkTransferData', JSON.stringify(transferData));
 
-                    try {
-                        const response = await fetch('/api/submit', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(inv)
-                        });
-
-                        const result = await response.json();
-
-                        if (result.success) {
-                            savedCount++;
-                            savedIndices.push(originalIdx);
-                        } else {
-                            errors.push({
-                                invoice: inv.invoice_number,
-                                error: result.error || 'Unknown error'
-                            });
-                        }
-                    } catch (e) {
-                        errors.push({
-                            invoice: inv.invoice_number,
-                            error: e.message
-                        });
-                    }
-                }
-
-                // Show results
-                if (savedCount > 0) {
-                    let message = `Successfully saved ${savedCount} invoice(s) to accounting!`;
-                    if (errors.length > 0) {
-                        message += `\n\n${errors.length} invoice(s) failed:`;
-                        errors.forEach(e => {
-                            message += `\n- ${e.invoice}: ${e.error}`;
-                        });
-                    }
-                    alert(message);
-
-                    // Clear saved allocations
-                    savedIndices.forEach(idx => {
-                        delete allocations[`inv_${idx}`];
-                    });
-
-                    // Update UI
-                    renderDistributeItems();
-
-                    // Initialize forms for remaining items
-                    setTimeout(() => {
-                        const items = document.querySelectorAll('.distribute-item');
-                        items.forEach(item => {
-                            const key = item.dataset.key;
-                            initializeAllocationForm(key);
-                        });
-                    }, 100);
-                } else {
-                    let message = 'No invoices were saved.';
-                    if (errors.length > 0) {
-                        message += '\n\nErrors:';
-                        errors.forEach(e => {
-                            message += `\n- ${e.invoice}: ${e.error}`;
-                        });
-                    }
-                    alert(message);
-                }
-            } catch (error) {
-                alert('Error: ' + error.message);
-            } finally {
-                loadingOverlay.querySelector('.progress-text').textContent = 'Processing invoices...';
-                loadingOverlay.classList.remove('show');
-            }
+            // Open New Invoice page in new window/tab
+            window.open('/add-invoice?fromBulk=1', '_blank');
         }
 
-        // Initialize forms when Bulk Distribute tab is shown
+        // Initialize distribute tab when shown
         document.addEventListener('DOMContentLoaded', function() {
             const distributeTab = document.getElementById('distribute-tab');
             if (distributeTab) {
                 distributeTab.addEventListener('shown.bs.tab', function() {
                     if (reportData) {
-                        renderDistributeItems();
-                        // Initialize company dropdowns for all items
-                        setTimeout(() => {
-                            const items = document.querySelectorAll('.distribute-item');
-                            items.forEach(item => {
-                                const key = item.dataset.key;
-                                initializeAllocationForm(key);
-                            });
-                        }, 100);
+                        renderInvoiceList();
+                        // Reset selection
+                        selectedInvoiceIndex = null;
+                        document.getElementById('campaignDetailsPanel').innerHTML = `
+                            <div class="text-center text-muted py-5">
+                                <i class="bi bi-arrow-left fs-1"></i>
+                                <p class="mt-2">Select an invoice to view campaigns</p>
+                            </div>
+                        `;
+                        document.getElementById('selectedInvoiceSummary').style.display = 'none';
+                        document.getElementById('transferBtn').disabled = true;
+                        document.getElementById('campaignCountBadge').textContent = '0';
                     }
                 });
             }

@@ -459,10 +459,186 @@
                 await loadVatRates();
                 addAllocationRow();
                 setupEventListeners();
+
+                // Check for bulk transfer data from Bulk Processor
+                await checkBulkTransferData();
             } finally {
                 hideLoading();
             }
         });
+
+        // Handle bulk transfer data from Bulk Processor page
+        async function checkBulkTransferData() {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('fromBulk') !== '1') return;
+
+            const transferDataStr = sessionStorage.getItem('bulkTransferData');
+            if (!transferDataStr) return;
+
+            try {
+                const data = JSON.parse(transferDataStr);
+                // Clear the data to prevent re-loading on refresh
+                sessionStorage.removeItem('bulkTransferData');
+
+                // Show notification
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'alert alert-info alert-dismissible fade show mb-3';
+                alertDiv.innerHTML = `
+                    <i class="bi bi-info-circle"></i>
+                    <strong>Bulk Transfer:</strong> Invoice data loaded from Bulk Processor.
+                    ${data.campaigns?.length ? `<br><small>${data.campaigns.length} campaign(s) available for allocation.</small>` : ''}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                document.querySelector('.container-fluid').insertBefore(alertDiv, document.querySelector('.container-fluid').firstChild);
+
+                // Populate invoice header fields
+                if (data.supplier) {
+                    document.getElementById('supplier').value = data.supplier;
+                }
+                if (data.invoice_number) {
+                    document.getElementById('invoiceNumber').value = data.invoice_number;
+                }
+                if (data.invoice_date) {
+                    // Convert date to YYYY-MM-DD format if needed
+                    let dateValue = data.invoice_date;
+                    if (dateValue && !dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                        // Try to parse various date formats
+                        const parsed = new Date(dateValue);
+                        if (!isNaN(parsed)) {
+                            dateValue = parsed.toISOString().split('T')[0];
+                        }
+                    }
+                    document.getElementById('invoiceDate').value = dateValue;
+                }
+                if (data.invoice_value) {
+                    document.getElementById('invoiceValue').value = data.invoice_value;
+                }
+                if (data.currency) {
+                    document.getElementById('currency').value = data.currency;
+                    // Update currency label
+                    const currencyLabel = document.querySelector('label[for="invoiceValue"]');
+                    if (currencyLabel) {
+                        currencyLabel.textContent = `Value (${data.currency})`;
+                    }
+                }
+
+                // Try to match customer VAT to company
+                if (data.customer_vat) {
+                    document.getElementById('matchedCompany').value = data.customer_vat;
+                    // Try to find matching company
+                    const matchedCompany = companiesWithVat.find(c =>
+                        c.vat && c.vat.replace(/\s/g, '') === data.customer_vat.replace(/\s/g, '')
+                    );
+                    if (matchedCompany) {
+                        document.getElementById('dedicatedCompany').value = matchedCompany.name;
+                        await updateAllocationsForCompany(matchedCompany.name);
+                    }
+                }
+
+                // Handle campaign allocations if provided
+                if (data.campaigns && data.campaigns.length > 0) {
+                    await populateCampaignAllocations(data);
+                }
+
+            } catch (e) {
+                console.error('Error loading bulk transfer data:', e);
+            }
+        }
+
+        async function populateCampaignAllocations(data) {
+            const container = document.getElementById('allocationsContainer');
+            const invoiceValue = data.invoice_value || 0;
+
+            // Clear existing allocation rows
+            container.innerHTML = '';
+
+            // If we have campaigns, create an allocation row for each
+            // Group by company if different allocations
+            const campaignsWithAlloc = data.campaigns.filter(c => c.company && c.department);
+            const campaignsWithoutAlloc = data.campaigns.filter(c => !c.company || !c.department);
+
+            if (campaignsWithAlloc.length > 0) {
+                // Calculate total for percentage calculation
+                const totalCampaignValue = data.campaigns.reduce((sum, c) => sum + (c.value || 0), 0);
+
+                // Create allocation row for each campaign with allocation
+                for (const campaign of campaignsWithAlloc) {
+                    await addAllocationRow();
+                    const rows = container.querySelectorAll('.allocation-row');
+                    const row = rows[rows.length - 1];
+
+                    // Set company
+                    const dedicatedCompanyVal = document.getElementById('dedicatedCompany').value;
+                    if (!dedicatedCompanyVal && campaign.company) {
+                        document.getElementById('dedicatedCompany').value = campaign.company;
+                        await updateAllocationsForCompany(campaign.company);
+                    }
+
+                    // Wait for dropdowns to populate
+                    await new Promise(resolve => setTimeout(resolve, 100));
+
+                    // Set department
+                    const deptSelect = row.querySelector('.department-select');
+                    if (deptSelect && campaign.department) {
+                        deptSelect.value = campaign.department;
+                        // Trigger change to load subdepartments and manager
+                        deptSelect.dispatchEvent(new Event('change'));
+                    }
+
+                    // Set allocation percentage based on campaign value
+                    const allocPercent = totalCampaignValue > 0 ? (campaign.value / invoiceValue) * 100 : 100;
+                    const allocInput = row.querySelector('.allocation-input');
+                    if (allocInput) {
+                        allocInput.value = allocPercent.toFixed(2);
+                    }
+
+                    // Set allocation value
+                    const allocValueInput = row.querySelector('.allocation-value-input');
+                    if (allocValueInput) {
+                        allocValueInput.value = campaign.value.toFixed(2);
+                    }
+
+                    // Add comment with campaign name
+                    const commentInput = row.querySelector('.allocation-comment');
+                    if (commentInput) {
+                        commentInput.value = campaign.name;
+                    }
+                }
+
+                // If there are campaigns without allocation, add them as one row
+                if (campaignsWithoutAlloc.length > 0) {
+                    const unallocValue = campaignsWithoutAlloc.reduce((sum, c) => sum + (c.value || 0), 0);
+                    if (unallocValue > 0) {
+                        await addAllocationRow();
+                        const rows = container.querySelectorAll('.allocation-row');
+                        const row = rows[rows.length - 1];
+
+                        const allocPercent = (unallocValue / invoiceValue) * 100;
+                        const allocInput = row.querySelector('.allocation-input');
+                        if (allocInput) {
+                            allocInput.value = allocPercent.toFixed(2);
+                        }
+
+                        const allocValueInput = row.querySelector('.allocation-value-input');
+                        if (allocValueInput) {
+                            allocValueInput.value = unallocValue.toFixed(2);
+                        }
+
+                        // Add comment listing unallocated campaigns
+                        const commentInput = row.querySelector('.allocation-comment');
+                        if (commentInput) {
+                            commentInput.value = campaignsWithoutAlloc.map(c => c.name).join(', ');
+                        }
+                    }
+                }
+            } else {
+                // No pre-configured allocations, just add one row
+                await addAllocationRow();
+            }
+
+            // Recalculate totals
+            updateAllocationValues();
+        }
 
         async function loadStructure() {
             const [companiesRes, structureRes] = await Promise.all([

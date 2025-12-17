@@ -258,7 +258,7 @@ def init_db():
         )
     ''')
 
-    # Add manager_ids and marketing_ids columns if they don't exist
+    # Add manager_ids, marketing_ids, and cc_email columns if they don't exist
     cursor.execute('''
         DO $$
         BEGIN
@@ -269,6 +269,10 @@ def init_db():
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                           WHERE table_name = 'department_structure' AND column_name = 'marketing_ids') THEN
                 ALTER TABLE department_structure ADD COLUMN marketing_ids INTEGER[];
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'department_structure' AND column_name = 'cc_email') THEN
+                ALTER TABLE department_structure ADD COLUMN cc_email TEXT;
             END IF;
         END $$;
     ''')
@@ -3165,16 +3169,17 @@ def get_department_structure(structure_id: int) -> Optional[dict]:
 def save_department_structure(company: str, department: str, brand: str = None,
                                subdepartment: str = None, manager: str = None,
                                marketing: str = None, responsable_id: int = None,
-                               manager_ids: list = None, marketing_ids: list = None) -> int:
+                               manager_ids: list = None, marketing_ids: list = None,
+                               cc_email: str = None) -> int:
     """Create a new department structure entry."""
     conn = get_db()
     cursor = get_cursor(conn)
 
     cursor.execute('''
-        INSERT INTO department_structure (company, brand, department, subdepartment, manager, marketing, responsable_id, manager_ids, marketing_ids)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO department_structure (company, brand, department, subdepartment, manager, marketing, responsable_id, manager_ids, marketing_ids, cc_email)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
-    ''', (company, brand, department, subdepartment, manager, marketing, responsable_id, manager_ids, marketing_ids))
+    ''', (company, brand, department, subdepartment, manager, marketing, responsable_id, manager_ids, marketing_ids, cc_email))
 
     structure_id = cursor.fetchone()['id']
     conn.commit()
@@ -3185,7 +3190,8 @@ def save_department_structure(company: str, department: str, brand: str = None,
 def update_department_structure(structure_id: int, company: str = None, department: str = None,
                                  brand: str = None, subdepartment: str = None, manager: str = None,
                                  marketing: str = None, responsable_id: int = None,
-                                 manager_ids: list = None, marketing_ids: list = None) -> bool:
+                                 manager_ids: list = None, marketing_ids: list = None,
+                                 cc_email: str = None) -> bool:
     """Update a department structure entry."""
     conn = get_db()
     cursor = get_cursor(conn)
@@ -3220,6 +3226,9 @@ def update_department_structure(structure_id: int, company: str = None, departme
     if marketing_ids is not None:
         updates.append('marketing_ids = %s')
         params.append(marketing_ids if marketing_ids else None)
+    if cc_email is not None:
+        updates.append('cc_email = %s')
+        params.append(cc_email if cc_email else None)
 
     if not updates:
         release_db(conn)
@@ -3250,6 +3259,22 @@ def delete_department_structure(structure_id: int) -> bool:
     conn.commit()
     release_db(conn)
     return deleted
+
+
+def get_department_cc_email(company: str, department: str) -> Optional[str]:
+    """Get the CC email for a specific department in a company."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    cursor.execute('''
+        SELECT cc_email FROM department_structure
+        WHERE company = %s AND department = %s AND cc_email IS NOT NULL AND cc_email != ''
+        LIMIT 1
+    ''', (company, department))
+
+    row = cursor.fetchone()
+    release_db(conn)
+    return row['cc_email'] if row else None
 
 
 def get_unique_departments() -> list[str]:
