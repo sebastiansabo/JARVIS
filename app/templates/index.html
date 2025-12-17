@@ -543,6 +543,18 @@
                     await populateCampaignAllocations(data);
                 }
 
+                // Handle file data - load into uploader
+                if (data.file_data && data.file_name) {
+                    try {
+                        // Convert base64 data URL to File object
+                        const fileBlob = await (await fetch(data.file_data)).blob();
+                        uploadedFile = new File([fileBlob], data.file_name, { type: 'application/pdf' });
+                        updateDropZoneText(data.file_name);
+                    } catch (fileError) {
+                        console.warn('Could not load file from bulk transfer:', fileError);
+                    }
+                }
+
             } catch (e) {
                 console.error('Error loading bulk transfer data:', e);
             }

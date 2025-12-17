@@ -1528,7 +1528,7 @@
             return isValid;
         }
 
-        function transferToNewInvoice() {
+        async function transferToNewInvoice() {
             if (selectedInvoiceIndex === null) {
                 alert('Please select an invoice first.');
                 return;
@@ -1541,59 +1541,96 @@
                 return;
             }
 
-            const inv = reportData.invoices[selectedInvoiceIndex];
-            const campaigns = inv.campaigns || {};
-            const campaignEntries = Object.entries(campaigns);
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            loadingOverlay.querySelector('.progress-text').textContent = 'Preparing transfer...';
+            loadingOverlay.classList.add('show');
 
-            // Build transfer data with full allocation details
-            const transferData = {
-                // Invoice header data
-                supplier: inv.supplier || '',
-                invoice_number: inv.invoice_number || '',
-                invoice_date: inv.invoice_date || '',
-                invoice_value: inv.invoice_value || 0,
-                currency: inv.currency || 'RON',
-                customer_vat: inv.customer_vat || '',
+            try {
+                const inv = reportData.invoices[selectedInvoiceIndex];
+                const campaigns = inv.campaigns || {};
+                const campaignEntries = Object.entries(campaigns);
 
-                // Campaign allocations with all fields
-                campaigns: campaignEntries.map(([name, value], campIdx) => {
-                    const key = `inv_${selectedInvoiceIndex}_camp_${campIdx}`;
-                    const alloc = campaignAllocations[key] || {};
+                // Find the matching file from uploadedFiles by filename
+                let fileData = null;
+                let fileName = inv.filename || '';
+                if (fileName && uploadedFiles.length > 0) {
+                    const matchingFile = uploadedFiles.find(f => f.name === fileName);
+                    if (matchingFile) {
+                        // Convert file to base64
+                        fileData = await fileToBase64(matchingFile);
+                    }
+                }
 
-                    // Get values from inputs
-                    const percentInput = document.querySelector(`.campaign-percent-input[data-key="${key}"]`);
-                    const valueInput = document.querySelector(`.campaign-value-input[data-key="${key}"]`);
-                    const companySelect = document.querySelector(`.campaign-company-select[data-key="${key}"]`);
-                    const brandSelect = document.querySelector(`.campaign-brand-select[data-key="${key}"]`);
-                    const deptSelect = document.querySelector(`.campaign-department-select[data-key="${key}"]`);
-                    const subdeptSelect = document.querySelector(`.campaign-subdept-select[data-key="${key}"]`);
-                    const reinvoiceCheck = document.querySelector(`.campaign-reinvoice-check[data-key="${key}"]`);
-                    const commentInput = document.querySelector(`.campaign-comment-input[data-key="${key}"]`);
-                    const item = document.querySelector(`.distribute-item[data-campaign-key="${key}"]`);
-                    const isLocked = item?.classList.contains('locked') || false;
+                // Build transfer data with full allocation details
+                const transferData = {
+                    // Invoice header data
+                    supplier: inv.supplier || '',
+                    supplier_vat: inv.supplier_vat || '',
+                    invoice_number: inv.invoice_number || '',
+                    invoice_date: inv.invoice_date || '',
+                    invoice_value: inv.invoice_value || 0,
+                    currency: inv.currency || 'RON',
+                    customer_vat: inv.customer_vat || '',
 
-                    return {
-                        name: name,
-                        original_value: value,
-                        allocation_percent: parseFloat(percentInput?.value) || 0,
-                        allocation_value: parseFloat(valueInput?.value) || 0,
-                        company: companySelect?.value || '',
-                        brand: brandSelect?.value || '',
-                        department: deptSelect?.value || '',
-                        subdepartment: subdeptSelect?.value || '',
-                        locked: isLocked,
-                        comment: commentInput?.value || '',
-                        reinvoice: reinvoiceCheck?.checked || false,
-                        reinvoice_destinations: getReinvoiceDestinations(key)
-                    };
-                })
-            };
+                    // File data for uploader
+                    file_name: fileName,
+                    file_data: fileData,
 
-            // Store in sessionStorage for the New Invoice page to read
-            sessionStorage.setItem('bulkTransferData', JSON.stringify(transferData));
+                    // Campaign allocations with all fields
+                    campaigns: campaignEntries.map(([name, value], campIdx) => {
+                        const key = `inv_${selectedInvoiceIndex}_camp_${campIdx}`;
+                        const alloc = campaignAllocations[key] || {};
 
-            // Open New Invoice page in new window/tab
-            window.open('/add-invoice?fromBulk=1', '_blank');
+                        // Get values from inputs
+                        const percentInput = document.querySelector(`.campaign-percent-input[data-key="${key}"]`);
+                        const valueInput = document.querySelector(`.campaign-value-input[data-key="${key}"]`);
+                        const companySelect = document.querySelector(`.campaign-company-select[data-key="${key}"]`);
+                        const brandSelect = document.querySelector(`.campaign-brand-select[data-key="${key}"]`);
+                        const deptSelect = document.querySelector(`.campaign-department-select[data-key="${key}"]`);
+                        const subdeptSelect = document.querySelector(`.campaign-subdept-select[data-key="${key}"]`);
+                        const reinvoiceCheck = document.querySelector(`.campaign-reinvoice-check[data-key="${key}"]`);
+                        const commentInput = document.querySelector(`.campaign-comment-input[data-key="${key}"]`);
+                        const item = document.querySelector(`.distribute-item[data-campaign-key="${key}"]`);
+                        const isLocked = item?.classList.contains('locked') || false;
+
+                        return {
+                            name: name,
+                            original_value: value,
+                            allocation_percent: parseFloat(percentInput?.value) || 0,
+                            allocation_value: parseFloat(valueInput?.value) || 0,
+                            company: companySelect?.value || '',
+                            brand: brandSelect?.value || '',
+                            department: deptSelect?.value || '',
+                            subdepartment: subdeptSelect?.value || '',
+                            locked: isLocked,
+                            comment: commentInput?.value || '',
+                            reinvoice: reinvoiceCheck?.checked || false,
+                            reinvoice_destinations: getReinvoiceDestinations(key)
+                        };
+                    })
+                };
+
+                // Store in sessionStorage for the New Invoice page to read
+                sessionStorage.setItem('bulkTransferData', JSON.stringify(transferData));
+
+                // Open New Invoice page in new window/tab
+                window.open('/add-invoice?fromBulk=1', '_blank');
+            } catch (error) {
+                alert('Error preparing transfer: ' + error.message);
+            } finally {
+                loadingOverlay.querySelector('.progress-text').textContent = 'Processing invoices...';
+                loadingOverlay.classList.remove('show');
+            }
+        }
+
+        // Helper function to convert File to base64
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
         }
 
         // Initialize distribute tab when shown
