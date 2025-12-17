@@ -357,23 +357,16 @@
                         {% if current_user.can_add_invoices %}
                         <!-- Bulk Distribute Tab -->
                         <div class="tab-pane fade" id="distribute" role="tabpanel">
-                            <!-- Help Text -->
-                            <div class="alert alert-secondary mb-3">
-                                <i class="bi bi-info-circle"></i>
-                                <strong>How to use:</strong> Select an invoice to see its campaigns. Configure allocations for each campaign,
-                                then click <strong>"Transfer to New Invoice"</strong> to open the full allocation form with reinvoicing options.
-                            </div>
-
-                            <!-- Invoice Selection and Campaign View -->
+                            <!-- Invoice Selection and Campaign Allocation -->
                             <div class="row">
                                 <!-- Left: Invoice List -->
-                                <div class="col-md-5">
+                                <div class="col-md-4">
                                     <div class="card h-100">
                                         <div class="card-header bg-light">
                                             <strong><i class="bi bi-receipt"></i> Invoices</strong>
                                             <span class="badge bg-primary ms-2" id="invoiceCountBadge">0</span>
                                         </div>
-                                        <div class="card-body p-0" style="max-height: 500px; overflow-y: auto;">
+                                        <div class="card-body p-0" style="max-height: 600px; overflow-y: auto;">
                                             <div class="list-group list-group-flush" id="invoiceSelectList">
                                                 <!-- Invoices will be populated here -->
                                             </div>
@@ -381,22 +374,23 @@
                                     </div>
                                 </div>
 
-                                <!-- Right: Campaign Details -->
-                                <div class="col-md-7">
+                                <!-- Right: Campaign Allocation Forms -->
+                                <div class="col-md-8">
                                     <div class="card h-100">
                                         <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                             <div>
-                                                <strong><i class="bi bi-megaphone"></i> Campaigns</strong>
+                                                <strong><i class="bi bi-pie-chart"></i> Cost Distribution</strong>
                                                 <span class="badge bg-success ms-2" id="campaignCountBadge">0</span>
+                                                <span class="badge ms-2" id="allocationStatusBadge" style="display:none;">0%</span>
                                             </div>
                                             <button type="button" class="btn btn-primary btn-sm" id="transferBtn" onclick="transferToNewInvoice()" disabled>
                                                 <i class="bi bi-box-arrow-up-right"></i> Transfer to New Invoice
                                             </button>
                                         </div>
-                                        <div class="card-body" id="campaignDetailsPanel">
+                                        <div class="card-body p-2" id="campaignDetailsPanel" style="max-height: 550px; overflow-y: auto;">
                                             <div class="text-center text-muted py-5">
                                                 <i class="bi bi-arrow-left fs-1"></i>
-                                                <p class="mt-2">Select an invoice to view campaigns</p>
+                                                <p class="mt-2">Select an invoice to configure allocations</p>
                                             </div>
                                         </div>
                                     </div>
@@ -405,19 +399,27 @@
 
                             <!-- Selected Invoice Summary -->
                             <div class="card mt-3" id="selectedInvoiceSummary" style="display: none;">
-                                <div class="card-body">
+                                <div class="card-body py-2">
                                     <div class="row align-items-center">
-                                        <div class="col-md-6">
-                                            <h6 class="mb-1" id="selectedInvoiceTitle">-</h6>
+                                        <div class="col-md-4">
+                                            <h6 class="mb-0" id="selectedInvoiceTitle">-</h6>
                                             <small class="text-muted" id="selectedInvoiceSubtitle">-</small>
                                         </div>
-                                        <div class="col-md-3 text-center">
+                                        <div class="col-md-2 text-center">
                                             <small class="text-muted">Invoice Value</small>
                                             <div class="fw-bold text-success" id="selectedInvoiceValue">-</div>
                                         </div>
-                                        <div class="col-md-3 text-center">
-                                            <small class="text-muted">Campaigns Total</small>
-                                            <div class="fw-bold" id="selectedCampaignsTotal">-</div>
+                                        <div class="col-md-2 text-center">
+                                            <small class="text-muted">Allocated</small>
+                                            <div class="fw-bold" id="selectedAllocatedTotal">-</div>
+                                        </div>
+                                        <div class="col-md-2 text-center">
+                                            <small class="text-muted">Total %</small>
+                                            <div class="fw-bold" id="selectedTotalPercent">-</div>
+                                        </div>
+                                        <div class="col-md-2 text-center">
+                                            <small class="text-muted">Validation</small>
+                                            <div id="validationStatus">-</div>
                                         </div>
                                     </div>
                                 </div>
@@ -745,17 +747,8 @@
             document.getElementById('selectedInvoiceValue').textContent =
                 formatNumber(inv.invoice_value || 0) + ' ' + (inv.currency || 'RON');
 
-            // Calculate campaigns total
-            const campaigns = inv.campaigns || {};
-            const campaignTotal = Object.values(campaigns).reduce((sum, val) => sum + val, 0);
-            document.getElementById('selectedCampaignsTotal').textContent =
-                formatNumber(campaignTotal) + ' ' + (inv.currency || 'RON');
-
-            // Render campaign details
+            // Render campaign details (this will update allocation summary)
             await renderCampaignDetails(inv, idx);
-
-            // Enable transfer button
-            document.getElementById('transferBtn').disabled = false;
         }
 
         async function renderCampaignDetails(inv, invoiceIdx) {
@@ -763,6 +756,7 @@
             const panel = document.getElementById('campaignDetailsPanel');
             const campaigns = inv.campaigns || {};
             const campaignEntries = Object.entries(campaigns);
+            const invoiceValue = inv.invoice_value || 0;
 
             document.getElementById('campaignCountBadge').textContent = campaignEntries.length;
 
@@ -774,72 +768,215 @@
                         <p class="small">You can still transfer this invoice to New Invoice page for allocation.</p>
                     </div>
                 `;
+                updateAllocationSummary();
                 return;
             }
 
             const companies = [...new Set(structureData.map(s => s.company))];
 
-            panel.innerHTML = `
-                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
-                    <table class="table table-sm">
-                        <thead class="table-light sticky-top">
-                            <tr>
-                                <th>Campaign</th>
-                                <th class="text-end" style="width: 100px;">Value</th>
-                                <th style="width: 150px;">Company</th>
-                                <th style="width: 150px;">Department</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${campaignEntries.map(([name, value], campIdx) => {
-                                const key = `inv_${invoiceIdx}_camp_${campIdx}`;
-                                const existing = campaignAllocations[key] || {};
+            // Build allocation rows for each campaign
+            panel.innerHTML = campaignEntries.map(([name, value], campIdx) => {
+                const key = `inv_${invoiceIdx}_camp_${campIdx}`;
+                const existing = campaignAllocations[key] || {};
+                const allocPercent = existing.allocation_percent ?? ((value / invoiceValue) * 100);
+                const allocValue = existing.allocation_value ?? value;
 
-                                return `
-                                    <tr data-campaign-key="${key}">
-                                        <td>
-                                            <small>${name}</small>
-                                        </td>
-                                        <td class="text-end fw-bold text-success">
-                                            ${formatNumber(value)}
-                                        </td>
-                                        <td>
-                                            <select class="form-select form-select-sm campaign-company-select"
-                                                    data-key="${key}"
-                                                    onchange="onCampaignCompanyChange('${key}', this.value)">
-                                                <option value="">Select...</option>
-                                                ${companies.map(c => `<option value="${c}" ${existing.company === c ? 'selected' : ''}>${c}</option>`).join('')}
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <select class="form-select form-select-sm campaign-department-select"
-                                                    data-key="${key}"
-                                                    onchange="onCampaignDepartmentChange('${key}', this.value)">
-                                                <option value="">Select...</option>
-                                            </select>
-                                        </td>
-                                    </tr>
-                                `;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                <div class="mt-3 p-2 bg-light rounded">
-                    <small class="text-muted">
-                        <i class="bi bi-lightbulb"></i> Tip: Pre-select company/department here, then click "Transfer to New Invoice"
-                        to complete the allocation with reinvoicing options.
-                    </small>
-                </div>
-            `;
+                return `
+                    <div class="distribute-item" data-campaign-key="${key}" data-campaign-name="${name}" data-campaign-value="${value}">
+                        <div class="item-header">
+                            <div>
+                                <strong class="text-primary">${name}</strong>
+                                <span class="badge bg-light text-dark ms-2">${formatNumber(value)} ${inv.currency || 'RON'}</span>
+                            </div>
+                        </div>
+                        <div class="allocation-form">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-3">
+                                    <label class="form-label small mb-1">Company *</label>
+                                    <select class="form-select form-select-sm campaign-company-select" data-key="${key}">
+                                        <option value="">Select...</option>
+                                        ${companies.map(c => `<option value="${c}" ${existing.company === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">Brand</label>
+                                    <select class="form-select form-select-sm campaign-brand-select" data-key="${key}">
+                                        <option value="">N/A</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">Department *</label>
+                                    <select class="form-select form-select-sm campaign-department-select" data-key="${key}">
+                                        <option value="">Select...</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">Subdepartment</label>
+                                    <select class="form-select form-select-sm campaign-subdept-select" data-key="${key}">
+                                        <option value="">N/A</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-1">
+                                    <label class="form-label small mb-1">%</label>
+                                    <input type="number" class="form-control form-control-sm campaign-percent-input"
+                                           data-key="${key}" value="${allocPercent.toFixed(2)}" step="0.01" min="0" max="100">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">Value</label>
+                                    <input type="number" class="form-control form-control-sm campaign-value-input"
+                                           data-key="${key}" value="${allocValue.toFixed(2)}" step="0.01" min="0">
+                                </div>
+                            </div>
+                            <div class="row g-2 mt-1">
+                                <div class="col-md-4">
+                                    <small class="text-muted campaign-manager-display" data-key="${key}">Manager: --</small>
+                                </div>
+                                <div class="col-md-8">
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input campaign-reinvoice-check" type="checkbox"
+                                               data-key="${key}" ${existing.reinvoice ? 'checked' : ''}>
+                                        <label class="form-check-label small">Reinvoice to:</label>
+                                    </div>
+                                    <div class="reinvoice-section d-inline-flex gap-2" data-key="${key}" style="${existing.reinvoice ? '' : 'display:none !important;'}">
+                                        <select class="form-select form-select-sm reinvoice-company-select" data-key="${key}" style="width: 150px;">
+                                            <option value="">Company...</option>
+                                            ${companies.map(c => `<option value="${c}" ${existing.reinvoice_company === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                        </select>
+                                        <select class="form-select form-select-sm reinvoice-dept-select" data-key="${key}" style="width: 130px;">
+                                            <option value="">Dept...</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
-            // Initialize department dropdowns for existing allocations
+            // Add event listeners for all campaign allocation controls
+            attachCampaignEventListeners(invoiceIdx, campaignEntries, invoiceValue);
+
+            // Initialize dropdowns for existing allocations
             campaignEntries.forEach((_, campIdx) => {
                 const key = `inv_${invoiceIdx}_camp_${campIdx}`;
                 const existing = campaignAllocations[key];
                 if (existing?.company) {
-                    populateDepartmentDropdown(key, existing.company, existing.department);
+                    populateCampaignDropdowns(key, existing.company, existing);
                 }
             });
+
+            updateAllocationSummary();
+        }
+
+        function attachCampaignEventListeners(invoiceIdx, campaignEntries, invoiceValue) {
+            // Company change
+            document.querySelectorAll('.campaign-company-select').forEach(select => {
+                select.addEventListener('change', function() {
+                    const key = this.dataset.key;
+                    onCampaignCompanyChange(key, this.value);
+                });
+            });
+
+            // Department change
+            document.querySelectorAll('.campaign-department-select').forEach(select => {
+                select.addEventListener('change', function() {
+                    const key = this.dataset.key;
+                    onCampaignDepartmentChange(key, this.value);
+                });
+            });
+
+            // Brand change
+            document.querySelectorAll('.campaign-brand-select').forEach(select => {
+                select.addEventListener('change', function() {
+                    const key = this.dataset.key;
+                    onCampaignFieldChange(key, 'brand', this.value);
+                });
+            });
+
+            // Subdepartment change
+            document.querySelectorAll('.campaign-subdept-select').forEach(select => {
+                select.addEventListener('change', function() {
+                    const key = this.dataset.key;
+                    onCampaignFieldChange(key, 'subdepartment', this.value);
+                });
+            });
+
+            // Percent input change
+            document.querySelectorAll('.campaign-percent-input').forEach(input => {
+                input.addEventListener('input', function() {
+                    const key = this.dataset.key;
+                    const percent = parseFloat(this.value) || 0;
+                    const newValue = (invoiceValue * percent) / 100;
+
+                    const valueInput = document.querySelector(`.campaign-value-input[data-key="${key}"]`);
+                    if (valueInput) valueInput.value = newValue.toFixed(2);
+
+                    onCampaignFieldChange(key, 'allocation_percent', percent);
+                    onCampaignFieldChange(key, 'allocation_value', newValue);
+                    updateAllocationSummary();
+                });
+            });
+
+            // Value input change
+            document.querySelectorAll('.campaign-value-input').forEach(input => {
+                input.addEventListener('input', function() {
+                    const key = this.dataset.key;
+                    const value = parseFloat(this.value) || 0;
+                    const percent = invoiceValue > 0 ? (value / invoiceValue) * 100 : 0;
+
+                    const percentInput = document.querySelector(`.campaign-percent-input[data-key="${key}"]`);
+                    if (percentInput) percentInput.value = percent.toFixed(2);
+
+                    onCampaignFieldChange(key, 'allocation_value', value);
+                    onCampaignFieldChange(key, 'allocation_percent', percent);
+                    updateAllocationSummary();
+                });
+            });
+
+            // Reinvoice checkbox
+            document.querySelectorAll('.campaign-reinvoice-check').forEach(check => {
+                check.addEventListener('change', function() {
+                    const key = this.dataset.key;
+                    const section = document.querySelector(`.reinvoice-section[data-key="${key}"]`);
+                    section.style.display = this.checked ? 'inline-flex' : 'none';
+                    onCampaignFieldChange(key, 'reinvoice', this.checked);
+                });
+            });
+
+            // Reinvoice company change
+            document.querySelectorAll('.reinvoice-company-select').forEach(select => {
+                select.addEventListener('change', function() {
+                    const key = this.dataset.key;
+                    populateReinvoiceDeptDropdown(key, this.value);
+                    onCampaignFieldChange(key, 'reinvoice_company', this.value);
+                });
+            });
+
+            // Reinvoice dept change
+            document.querySelectorAll('.reinvoice-dept-select').forEach(select => {
+                select.addEventListener('change', function() {
+                    const key = this.dataset.key;
+                    onCampaignFieldChange(key, 'reinvoice_department', this.value);
+                });
+            });
+        }
+
+        function onCampaignFieldChange(key, field, value) {
+            if (!campaignAllocations[key]) {
+                campaignAllocations[key] = {};
+            }
+            campaignAllocations[key][field] = value;
+        }
+
+        function populateReinvoiceDeptDropdown(key, company) {
+            const deptSelect = document.querySelector(`.reinvoice-dept-select[data-key="${key}"]`);
+            if (!deptSelect) return;
+
+            const companyUnits = structureData.filter(s => s.company === company);
+            const departments = [...new Set(companyUnits.map(s => s.department))];
+
+            deptSelect.innerHTML = '<option value="">Dept...</option>' +
+                departments.map(d => `<option value="${d}">${d}</option>`).join('');
         }
 
         function onCampaignCompanyChange(key, company) {
@@ -848,20 +985,40 @@
             }
             campaignAllocations[key].company = company;
             campaignAllocations[key].department = null;
+            campaignAllocations[key].brand = null;
+            campaignAllocations[key].subdepartment = null;
 
-            populateDepartmentDropdown(key, company, null);
+            populateCampaignDropdowns(key, company, null);
+            updateAllocationSummary();
         }
 
-        function populateDepartmentDropdown(key, company, selectedDept) {
-            const row = document.querySelector(`tr[data-campaign-key="${key}"]`);
-            if (!row) return;
+        function populateCampaignDropdowns(key, company, existing) {
+            const item = document.querySelector(`.distribute-item[data-campaign-key="${key}"]`);
+            if (!item) return;
 
-            const deptSelect = row.querySelector('.campaign-department-select');
             const companyUnits = structureData.filter(s => s.company === company);
-            const departments = [...new Set(companyUnits.map(s => s.department))];
 
+            // Brands
+            const brandSelect = item.querySelector('.campaign-brand-select');
+            const brands = [...new Set(companyUnits.map(s => s.brand).filter(b => b))];
+            brandSelect.innerHTML = '<option value="">N/A</option>' +
+                brands.map(b => `<option value="${b}" ${existing?.brand === b ? 'selected' : ''}>${b}</option>`).join('');
+
+            // Departments
+            const deptSelect = item.querySelector('.campaign-department-select');
+            const departments = [...new Set(companyUnits.map(s => s.department))];
             deptSelect.innerHTML = '<option value="">Select...</option>' +
-                departments.map(d => `<option value="${d}" ${selectedDept === d ? 'selected' : ''}>${d}</option>`).join('');
+                departments.map(d => `<option value="${d}" ${existing?.department === d ? 'selected' : ''}>${d}</option>`).join('');
+
+            // Subdepartments (initialize empty, will populate on dept change)
+            const subdeptSelect = item.querySelector('.campaign-subdept-select');
+            subdeptSelect.innerHTML = '<option value="">N/A</option>';
+
+            // If existing department, populate subdepartments
+            if (existing?.department) {
+                populateCampaignSubdepts(key, company, existing.department, existing.subdepartment);
+                updateCampaignManager(key, company, existing.department);
+            }
         }
 
         function onCampaignDepartmentChange(key, department) {
@@ -869,6 +1026,104 @@
                 campaignAllocations[key] = {};
             }
             campaignAllocations[key].department = department;
+            campaignAllocations[key].subdepartment = null;
+
+            const company = campaignAllocations[key].company;
+            populateCampaignSubdepts(key, company, department, null);
+            updateCampaignManager(key, company, department);
+            updateAllocationSummary();
+        }
+
+        function populateCampaignSubdepts(key, company, department, selectedSubdept) {
+            const item = document.querySelector(`.distribute-item[data-campaign-key="${key}"]`);
+            if (!item) return;
+
+            const subdeptSelect = item.querySelector('.campaign-subdept-select');
+            const deptUnits = structureData.filter(s => s.company === company && s.department === department);
+            const subdepts = [...new Set(deptUnits.map(s => s.subdepartment).filter(s => s))];
+
+            subdeptSelect.innerHTML = '<option value="">N/A</option>' +
+                subdepts.map(s => `<option value="${s}" ${selectedSubdept === s ? 'selected' : ''}>${s}</option>`).join('');
+        }
+
+        function updateCampaignManager(key, company, department) {
+            const item = document.querySelector(`.distribute-item[data-campaign-key="${key}"]`);
+            if (!item) return;
+
+            const managerDisplay = item.querySelector('.campaign-manager-display');
+            const deptUnit = structureData.find(s => s.company === company && s.department === department);
+            const manager = deptUnit?.responsible || '--';
+            managerDisplay.textContent = `Manager: ${manager}`;
+        }
+
+        function updateAllocationSummary() {
+            if (selectedInvoiceIndex === null || !reportData) return;
+
+            const inv = reportData.invoices[selectedInvoiceIndex];
+            const invoiceValue = inv.invoice_value || 0;
+            const campaigns = inv.campaigns || {};
+            const campaignEntries = Object.entries(campaigns);
+
+            let totalAllocValue = 0;
+            let totalPercent = 0;
+            let allDepartmentsSelected = true;
+            let validationErrors = [];
+
+            campaignEntries.forEach((_, campIdx) => {
+                const key = `inv_${selectedInvoiceIndex}_camp_${campIdx}`;
+                const alloc = campaignAllocations[key] || {};
+
+                // Get values from inputs (if rendered)
+                const percentInput = document.querySelector(`.campaign-percent-input[data-key="${key}"]`);
+                const valueInput = document.querySelector(`.campaign-value-input[data-key="${key}"]`);
+
+                const percent = percentInput ? parseFloat(percentInput.value) || 0 : (alloc.allocation_percent || 0);
+                const value = valueInput ? parseFloat(valueInput.value) || 0 : (alloc.allocation_value || 0);
+
+                totalPercent += percent;
+                totalAllocValue += value;
+
+                // Check if department is selected
+                const companySelect = document.querySelector(`.campaign-company-select[data-key="${key}"]`);
+                const deptSelect = document.querySelector(`.campaign-department-select[data-key="${key}"]`);
+
+                if (!companySelect?.value || !deptSelect?.value) {
+                    allDepartmentsSelected = false;
+                }
+            });
+
+            // Update summary display
+            document.getElementById('selectedAllocatedTotal').textContent = formatNumber(totalAllocValue) + ' ' + (inv.currency || 'RON');
+            document.getElementById('selectedTotalPercent').textContent = totalPercent.toFixed(2) + '%';
+
+            // Validation status
+            const validationDiv = document.getElementById('validationStatus');
+            const isValid = Math.abs(totalPercent - 100) < 0.01 && allDepartmentsSelected;
+
+            if (isValid) {
+                validationDiv.innerHTML = '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Ready</span>';
+            } else {
+                let errors = [];
+                if (Math.abs(totalPercent - 100) >= 0.01) {
+                    errors.push(`${totalPercent.toFixed(2)}% ≠ 100%`);
+                }
+                if (!allDepartmentsSelected) {
+                    errors.push('Missing depts');
+                }
+                validationDiv.innerHTML = `<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> ${errors.join(', ')}</span>`;
+            }
+
+            // Update transfer button state
+            const transferBtn = document.getElementById('transferBtn');
+            transferBtn.disabled = !isValid;
+
+            // Update status badge
+            const statusBadge = document.getElementById('allocationStatusBadge');
+            statusBadge.style.display = 'inline';
+            statusBadge.textContent = totalPercent.toFixed(0) + '%';
+            statusBadge.className = `badge ms-2 ${isValid ? 'bg-success' : 'bg-warning text-dark'}`;
+
+            return isValid;
         }
 
         function transferToNewInvoice() {
@@ -877,11 +1132,18 @@
                 return;
             }
 
+            // Validate before transfer
+            const isValid = updateAllocationSummary();
+            if (!isValid) {
+                alert('Please complete all allocations:\n- All campaigns must have Company and Department selected\n- Total allocation must equal 100%');
+                return;
+            }
+
             const inv = reportData.invoices[selectedInvoiceIndex];
             const campaigns = inv.campaigns || {};
             const campaignEntries = Object.entries(campaigns);
 
-            // Build transfer data
+            // Build transfer data with full allocation details
             const transferData = {
                 // Invoice header data
                 supplier: inv.supplier || '',
@@ -891,15 +1153,34 @@
                 currency: inv.currency || 'RON',
                 customer_vat: inv.customer_vat || '',
 
-                // Campaign allocations (if any configured)
+                // Campaign allocations with all fields
                 campaigns: campaignEntries.map(([name, value], campIdx) => {
                     const key = `inv_${selectedInvoiceIndex}_camp_${campIdx}`;
                     const alloc = campaignAllocations[key] || {};
+
+                    // Get values from inputs
+                    const percentInput = document.querySelector(`.campaign-percent-input[data-key="${key}"]`);
+                    const valueInput = document.querySelector(`.campaign-value-input[data-key="${key}"]`);
+                    const companySelect = document.querySelector(`.campaign-company-select[data-key="${key}"]`);
+                    const brandSelect = document.querySelector(`.campaign-brand-select[data-key="${key}"]`);
+                    const deptSelect = document.querySelector(`.campaign-department-select[data-key="${key}"]`);
+                    const subdeptSelect = document.querySelector(`.campaign-subdept-select[data-key="${key}"]`);
+                    const reinvoiceCheck = document.querySelector(`.campaign-reinvoice-check[data-key="${key}"]`);
+                    const reinvoiceCompany = document.querySelector(`.reinvoice-company-select[data-key="${key}"]`);
+                    const reinvoiceDept = document.querySelector(`.reinvoice-dept-select[data-key="${key}"]`);
+
                     return {
                         name: name,
-                        value: value,
-                        company: alloc.company || '',
-                        department: alloc.department || ''
+                        original_value: value,
+                        allocation_percent: parseFloat(percentInput?.value) || 0,
+                        allocation_value: parseFloat(valueInput?.value) || 0,
+                        company: companySelect?.value || '',
+                        brand: brandSelect?.value || '',
+                        department: deptSelect?.value || '',
+                        subdepartment: subdeptSelect?.value || '',
+                        reinvoice: reinvoiceCheck?.checked || false,
+                        reinvoice_company: reinvoiceCompany?.value || '',
+                        reinvoice_department: reinvoiceDept?.value || ''
                     };
                 })
             };
@@ -923,12 +1204,13 @@
                         document.getElementById('campaignDetailsPanel').innerHTML = `
                             <div class="text-center text-muted py-5">
                                 <i class="bi bi-arrow-left fs-1"></i>
-                                <p class="mt-2">Select an invoice to view campaigns</p>
+                                <p class="mt-2">Select an invoice to configure allocations</p>
                             </div>
                         `;
                         document.getElementById('selectedInvoiceSummary').style.display = 'none';
                         document.getElementById('transferBtn').disabled = true;
                         document.getElementById('campaignCountBadge').textContent = '0';
+                        document.getElementById('allocationStatusBadge').style.display = 'none';
                     }
                 });
             }

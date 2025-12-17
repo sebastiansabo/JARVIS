@@ -530,8 +530,11 @@
                         c.vat && c.vat.replace(/\s/g, '') === data.customer_vat.replace(/\s/g, '')
                     );
                     if (matchedCompany) {
-                        document.getElementById('dedicatedCompany').value = matchedCompany.name;
-                        await updateAllocationsForCompany(matchedCompany.name);
+                        const dedicatedCompanySelect = document.getElementById('dedicatedCompany');
+                        dedicatedCompanySelect.value = matchedCompany.name;
+                        // Trigger change to load departments for this company
+                        dedicatedCompanySelect.dispatchEvent(new Event('change'));
+                        await new Promise(resolve => setTimeout(resolve, 200));
                     }
                 }
 
@@ -552,30 +555,34 @@
             // Clear existing allocation rows
             container.innerHTML = '';
 
-            // If we have campaigns, create an allocation row for each
-            // Group by company if different allocations
+            // Filter campaigns with full allocations
             const campaignsWithAlloc = data.campaigns.filter(c => c.company && c.department);
             const campaignsWithoutAlloc = data.campaigns.filter(c => !c.company || !c.department);
 
             if (campaignsWithAlloc.length > 0) {
-                // Calculate total for percentage calculation
-                const totalCampaignValue = data.campaigns.reduce((sum, c) => sum + (c.value || 0), 0);
-
                 // Create allocation row for each campaign with allocation
                 for (const campaign of campaignsWithAlloc) {
                     await addAllocationRow();
                     const rows = container.querySelectorAll('.allocation-row');
                     const row = rows[rows.length - 1];
 
-                    // Set company
-                    const dedicatedCompanyVal = document.getElementById('dedicatedCompany').value;
-                    if (!dedicatedCompanyVal && campaign.company) {
-                        document.getElementById('dedicatedCompany').value = campaign.company;
-                        await updateAllocationsForCompany(campaign.company);
+                    // Set company (only on first campaign)
+                    const dedicatedCompanySelect = document.getElementById('dedicatedCompany');
+                    if (!dedicatedCompanySelect.value && campaign.company) {
+                        dedicatedCompanySelect.value = campaign.company;
+                        // Trigger change to load departments/brands for this company
+                        dedicatedCompanySelect.dispatchEvent(new Event('change'));
+                        await new Promise(resolve => setTimeout(resolve, 200));
                     }
 
                     // Wait for dropdowns to populate
                     await new Promise(resolve => setTimeout(resolve, 100));
+
+                    // Set brand if provided
+                    const brandSelect = row.querySelector('.brand-select');
+                    if (brandSelect && campaign.brand) {
+                        brandSelect.value = campaign.brand;
+                    }
 
                     // Set department
                     const deptSelect = row.querySelector('.department-select');
@@ -583,19 +590,27 @@
                         deptSelect.value = campaign.department;
                         // Trigger change to load subdepartments and manager
                         deptSelect.dispatchEvent(new Event('change'));
+                        await new Promise(resolve => setTimeout(resolve, 100));
                     }
 
-                    // Set allocation percentage based on campaign value
-                    const allocPercent = totalCampaignValue > 0 ? (campaign.value / invoiceValue) * 100 : 100;
+                    // Set subdepartment if provided
+                    const subdeptSelect = row.querySelector('.subdepartment-select');
+                    if (subdeptSelect && campaign.subdepartment) {
+                        subdeptSelect.value = campaign.subdepartment;
+                    }
+
+                    // Set allocation percentage (use transfer value if provided)
                     const allocInput = row.querySelector('.allocation-input');
                     if (allocInput) {
+                        const allocPercent = campaign.allocation_percent || ((campaign.allocation_value || campaign.original_value || 0) / invoiceValue * 100);
                         allocInput.value = allocPercent.toFixed(2);
                     }
 
                     // Set allocation value
                     const allocValueInput = row.querySelector('.allocation-value-input');
                     if (allocValueInput) {
-                        allocValueInput.value = campaign.value.toFixed(2);
+                        const allocValue = campaign.allocation_value || campaign.original_value || 0;
+                        allocValueInput.value = allocValue.toFixed(2);
                     }
 
                     // Add comment with campaign name
@@ -603,11 +618,34 @@
                     if (commentInput) {
                         commentInput.value = campaign.name;
                     }
+
+                    // Handle reinvoice if configured
+                    if (campaign.reinvoice && campaign.reinvoice_company) {
+                        const reinvoiceCheck = row.querySelector('.reinvoice-check');
+                        if (reinvoiceCheck) {
+                            reinvoiceCheck.checked = true;
+                            reinvoiceCheck.dispatchEvent(new Event('change'));
+                            await new Promise(resolve => setTimeout(resolve, 100));
+
+                            // Set reinvoice company and department
+                            const reinvoiceCompanySelect = row.querySelector('.reinvoice-company-select');
+                            if (reinvoiceCompanySelect && campaign.reinvoice_company) {
+                                reinvoiceCompanySelect.value = campaign.reinvoice_company;
+                                reinvoiceCompanySelect.dispatchEvent(new Event('change'));
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                            }
+
+                            const reinvoiceDeptSelect = row.querySelector('.reinvoice-dept-select');
+                            if (reinvoiceDeptSelect && campaign.reinvoice_department) {
+                                reinvoiceDeptSelect.value = campaign.reinvoice_department;
+                            }
+                        }
+                    }
                 }
 
                 // If there are campaigns without allocation, add them as one row
                 if (campaignsWithoutAlloc.length > 0) {
-                    const unallocValue = campaignsWithoutAlloc.reduce((sum, c) => sum + (c.value || 0), 0);
+                    const unallocValue = campaignsWithoutAlloc.reduce((sum, c) => sum + (c.original_value || c.allocation_value || 0), 0);
                     if (unallocValue > 0) {
                         await addAllocationRow();
                         const rows = container.querySelectorAll('.allocation-row');
