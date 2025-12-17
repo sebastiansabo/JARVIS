@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk Invoice Processor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background: #f5f5f5; }
+        .card { box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .drag-drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 60px 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .drag-drop-zone:hover, .drag-drop-zone.dragover {
+            border-color: #0d6efd;
+            background: #f0f7ff;
+        }
+        .file-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            margin-bottom: 4px;
+        }
+        .file-item .file-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .file-item .remove-file {
+            color: #dc3545;
+            cursor: pointer;
+            margin-left: 8px;
+        }
+        .file-item .remove-file:hover {
+            color: #a71d2a;
+        }
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .summary-card .display-4 {
+            font-weight: 700;
+        }
+        .campaign-row {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 10px 15px;
+            margin-bottom: 6px;
+        }
+        .campaign-row:hover {
+            background: #e9ecef;
+        }
+        .invoice-table th {
+            position: sticky;
+            top: 0;
+            background: #fff;
+            z-index: 10;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            flex-direction: column;
+        }
+        .loading-overlay.show {
+            display: flex;
+        }
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #0d6efd;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .progress-text {
+            margin-top: 15px;
+            color: #333;
+        }
+        .tab-content { padding-top: 20px; }
+        .nav-tabs .nav-link.active {
+            font-weight: 600;
+        }
+        /* Bulk Distribute styles */
+        .distribute-item {
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 12px;
+        }
+        .distribute-item.allocated {
+            border-color: #198754;
+            background: #f8fff9;
+        }
+        .distribute-item .item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .distribute-item .item-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #198754;
+        }
+        .distribute-item .allocation-form {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 10px;
+        }
+        .distribute-mode-toggle {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .distribute-mode-toggle .btn {
+            flex: 1;
+        }
+        .distribute-mode-toggle .btn.active {
+            font-weight: 600;
+        }
+        .bulk-save-section {
+            position: sticky;
+            bottom: 0;
+            background: #fff;
+            padding: 15px;
+            border-top: 2px solid #dee2e6;
+            margin-top: 20px;
+        }
+        .allocation-status-badge {
+            font-size: 0.75rem;
+            padding: 4px 8px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="progress-text">Processing invoices...</div>
+    </div>
+
+    <nav class="navbar navbar-dark bg-primary mb-4">
+        <div class="container-fluid px-4">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-stack"></i> Bulk Invoice Processor
+            </span>
+            <div class="d-flex align-items-center">
+                {% if current_user.can_add_invoices %}
+                <a href="/" class="btn btn-outline-light btn-sm me-2">
+                    <i class="bi bi-plus-circle"></i> New Invoice
+                </a>
+                {% endif %}
+                {% if current_user.can_access_accounting %}
+                <a href="/accounting" class="btn btn-outline-light btn-sm me-2">
+                    <i class="bi bi-calculator"></i> Accounting
+                </a>
+                {% endif %}
+                {% if current_user.can_access_settings %}
+                <a href="/settings" class="btn btn-outline-light btn-sm me-2">
+                    <i class="bi bi-gear"></i> Settings
+                </a>
+                {% endif %}
+                <div class="dropdown">
+                    <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-person-circle"></i> {{ current_user.name }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                        <li><span class="dropdown-item-text text-muted small">{{ current_user.email }}</span></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="/guide"><i class="bi bi-book"></i> User Guide</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4">
+        <!-- Upload Section -->
+        <div class="row mb-4" id="uploadSection">
+            <div class="col-lg-8 mx-auto">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-cloud-upload"></i> Upload Invoices</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="drag-drop-zone mb-3" id="dropZone">
+                            <i class="bi bi-file-earmark-pdf fs-1 text-muted"></i>
+                            <p class="mb-1 mt-2 fs-5">Drag & drop PDF invoices here</p>
+                            <p class="mb-0 text-muted">or click to select files</p>
+                            <small class="text-muted">Supports multiple PDF files</small>
+                            <input type="file" id="fileInput" class="d-none" accept=".pdf" multiple>
+                        </div>
+
+                        <!-- File List -->
+                        <div id="fileListContainer" class="mb-3" style="display: none;">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <strong><span id="fileCount">0</span> files selected</strong>
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearFiles()">
+                                    <i class="bi bi-x-circle"></i> Clear All
+                                </button>
+                            </div>
+                            <div class="file-list" id="fileList"></div>
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-primary flex-grow-1" id="processBtn" onclick="processInvoices()" disabled>
+                                <i class="bi bi-cpu"></i> Process Invoices
+                            </button>
+                            <button type="button" class="btn btn-success" id="exportBtn" onclick="exportToExcel()" disabled>
+                                <i class="bi bi-file-earmark-excel"></i> Export Excel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section (hidden until processing) -->
+        <div id="resultsSection" style="display: none;">
+            <!-- Summary Cards -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card summary-card h-100">
+                        <div class="card-body text-center">
+                            <h6 class="text-white-50">Total Invoices</h6>
+                            <div class="display-4" id="totalCount">0</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card summary-card h-100">
+                        <div class="card-body text-center">
+                            <h6 class="text-white-50">Total Value</h6>
+                            <div class="display-4" id="totalValue">0</div>
+                            <small id="totalCurrency">RON</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card summary-card h-100">
+                        <div class="card-body text-center">
+                            <h6 class="text-white-50">Suppliers</h6>
+                            <div class="display-4" id="supplierCount">0</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card summary-card h-100">
+                        <div class="card-body text-center">
+                            <h6 class="text-white-50">Campaigns</h6>
+                            <div class="display-4" id="campaignCount">0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabs for different views -->
+            <div class="card">
+                <div class="card-header">
+                    <ul class="nav nav-tabs card-header-tabs" id="resultTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="invoices-tab" data-bs-toggle="tab" data-bs-target="#invoices" type="button" role="tab">
+                                <i class="bi bi-receipt"></i> Invoices
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="campaigns-tab" data-bs-toggle="tab" data-bs-target="#campaigns" type="button" role="tab">
+                                <i class="bi bi-megaphone"></i> By Campaign
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="monthly-tab" data-bs-toggle="tab" data-bs-target="#monthly" type="button" role="tab">
+                                <i class="bi bi-calendar3"></i> Monthly
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="suppliers-tab" data-bs-toggle="tab" data-bs-target="#suppliers" type="button" role="tab">
+                                <i class="bi bi-building"></i> By Supplier
+                            </button>
+                        </li>
+                        {% if current_user.can_add_invoices %}
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="distribute-tab" data-bs-toggle="tab" data-bs-target="#distribute" type="button" role="tab">
+                                <i class="bi bi-diagram-3"></i> Bulk Distribute
+                            </button>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </div>
+                <div class="card-body">
+                    <div class="tab-content" id="resultTabsContent">
+                        <!-- Invoices Tab -->
+                        <div class="tab-pane fade show active" id="invoices" role="tabpanel">
+                            <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                                <table class="table table-hover invoice-table">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Date</th>
+                                            <th>Invoice Number</th>
+                                            <th>Supplier</th>
+                                            <th class="text-end">Value</th>
+                                            <th>File</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="invoicesTableBody">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Campaigns Tab -->
+                        <div class="tab-pane fade" id="campaigns" role="tabpanel">
+                            <div id="campaignsList"></div>
+                        </div>
+
+                        <!-- Monthly Tab -->
+                        <div class="tab-pane fade" id="monthly" role="tabpanel">
+                            <div id="monthlyList"></div>
+                        </div>
+
+                        <!-- Suppliers Tab -->
+                        <div class="tab-pane fade" id="suppliers" role="tabpanel">
+                            <div id="suppliersList"></div>
+                        </div>
+
+                        {% if current_user.can_add_invoices %}
+                        <!-- Bulk Distribute Tab -->
+                        <div class="tab-pane fade" id="distribute" role="tabpanel">
+                            <!-- Mode Toggle -->
+                            <div class="distribute-mode-toggle">
+                                <button type="button" class="btn btn-outline-primary active" id="modeInvoices" onclick="setDistributeMode('invoices')">
+                                    <i class="bi bi-receipt"></i> By Invoice
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" id="modeCampaigns" onclick="setDistributeMode('campaigns')">
+                                    <i class="bi bi-megaphone"></i> By Campaign
+                                </button>
+                            </div>
+
+                            <!-- Progress Summary -->
+                            <div class="alert alert-info d-flex justify-content-between align-items-center mb-3" id="distributeProgress">
+                                <span>
+                                    <i class="bi bi-info-circle"></i>
+                                    <span id="allocatedCount">0</span> / <span id="totalItemsCount">0</span> items allocated
+                                </span>
+                                <span class="fw-bold" id="allocatedValue">0.00 RON</span>
+                            </div>
+
+                            <!-- Items List -->
+                            <div id="distributeItemsList" style="max-height: 600px; overflow-y: auto;"></div>
+
+                            <!-- Bulk Save Section -->
+                            <div class="bulk-save-section">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="text-muted">Ready to save:</span>
+                                        <strong id="readyToSaveCount">0</strong> invoices
+                                    </div>
+                                    <button type="button" class="btn btn-success btn-lg" id="bulkSaveBtn" onclick="bulkSaveAllocations()" disabled>
+                                        <i class="bi bi-check-circle"></i> Save All to Accounting
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Store uploaded files
+        let uploadedFiles = [];
+        let reportData = null;
+
+        // File upload handling
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        function handleFiles(files) {
+            for (const file of files) {
+                if (file.type === 'application/pdf' && !uploadedFiles.some(f => f.name === file.name)) {
+                    uploadedFiles.push(file);
+                }
+            }
+            updateFileList();
+        }
+
+        function updateFileList() {
+            const container = document.getElementById('fileListContainer');
+            const list = document.getElementById('fileList');
+            const count = document.getElementById('fileCount');
+            const processBtn = document.getElementById('processBtn');
+
+            if (uploadedFiles.length > 0) {
+                container.style.display = 'block';
+                count.textContent = uploadedFiles.length;
+                processBtn.disabled = false;
+
+                list.innerHTML = uploadedFiles.map((file, idx) => `
+                    <div class="file-item">
+                        <i class="bi bi-file-earmark-pdf text-danger me-2"></i>
+                        <span class="file-name">${file.name}</span>
+                        <span class="text-muted small">${formatFileSize(file.size)}</span>
+                        <span class="remove-file" onclick="removeFile(${idx})">
+                            <i class="bi bi-x-circle"></i>
+                        </span>
+                    </div>
+                `).join('');
+            } else {
+                container.style.display = 'none';
+                processBtn.disabled = true;
+            }
+        }
+
+        function removeFile(index) {
+            uploadedFiles.splice(index, 1);
+            updateFileList();
+        }
+
+        function clearFiles() {
+            uploadedFiles = [];
+            updateFileList();
+            document.getElementById('resultsSection').style.display = 'none';
+            document.getElementById('exportBtn').disabled = true;
+            reportData = null;
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function formatNumber(num) {
+            return new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            // Handle various date formats
+            try {
+                const date = new Date(dateStr);
+                if (!isNaN(date)) {
+                    return date.toLocaleDateString('ro-RO');
+                }
+            } catch (e) {}
+            return dateStr;
+        }
+
+        async function processInvoices() {
+            if (uploadedFiles.length === 0) return;
+
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            loadingOverlay.classList.add('show');
+
+            const formData = new FormData();
+            uploadedFiles.forEach(file => {
+                formData.append('files[]', file);
+            });
+
+            try {
+                const response = await fetch('/api/bulk/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    reportData = data.report;
+                    displayResults(data.report);
+                    document.getElementById('exportBtn').disabled = false;
+                } else {
+                    alert('Error processing invoices: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                loadingOverlay.classList.remove('show');
+            }
+        }
+
+        function displayResults(report) {
+            document.getElementById('resultsSection').style.display = 'block';
+
+            // Update summary cards
+            document.getElementById('totalCount').textContent = report.count;
+            document.getElementById('totalValue').textContent = formatNumber(report.total);
+            document.getElementById('totalCurrency').textContent = report.currency;
+            document.getElementById('supplierCount').textContent = Object.keys(report.by_supplier || {}).length;
+            document.getElementById('campaignCount').textContent = Object.keys(report.by_campaign || {}).length;
+
+            // Invoices table
+            const tbody = document.getElementById('invoicesTableBody');
+            tbody.innerHTML = report.invoices.map((inv, idx) => `
+                <tr>
+                    <td>${idx + 1}</td>
+                    <td>${formatDate(inv.invoice_date)}</td>
+                    <td><code>${inv.invoice_number || '-'}</code></td>
+                    <td>${inv.supplier || '-'}</td>
+                    <td class="text-end fw-bold">${formatNumber(inv.invoice_value || 0)} ${inv.currency || 'RON'}</td>
+                    <td><small class="text-muted">${inv.filename}</small></td>
+                </tr>
+            `).join('');
+
+            // Campaigns list
+            const campaignsList = document.getElementById('campaignsList');
+            const campaigns = Object.entries(report.by_campaign || {}).sort((a, b) => b[1] - a[1]);
+            if (campaigns.length > 0) {
+                campaignsList.innerHTML = campaigns.map(([name, value]) => `
+                    <div class="campaign-row d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-megaphone text-primary me-2"></i>${name}</span>
+                        <span class="fw-bold">${formatNumber(value)} ${report.currency}</span>
+                    </div>
+                `).join('');
+            } else {
+                campaignsList.innerHTML = '<p class="text-muted">No campaign data found in invoices.</p>';
+            }
+
+            // Monthly list
+            const monthlyList = document.getElementById('monthlyList');
+            const months = Object.entries(report.by_month || {}).sort((a, b) => a[0].localeCompare(b[0]));
+            monthlyList.innerHTML = months.map(([month, data]) => {
+                const date = new Date(month + '-01');
+                const monthName = date.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' });
+                return `
+                    <div class="campaign-row d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-calendar3 text-primary me-2"></i>${monthName}</span>
+                        <div>
+                            <span class="badge bg-secondary me-2">${data.count} invoices</span>
+                            <span class="fw-bold">${formatNumber(data.total)} ${report.currency}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Suppliers list
+            const suppliersList = document.getElementById('suppliersList');
+            const suppliers = Object.entries(report.by_supplier || {}).sort((a, b) => b[1].total - a[1].total);
+            suppliersList.innerHTML = suppliers.map(([name, data]) => `
+                <div class="campaign-row d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-building text-primary me-2"></i>${name}</span>
+                    <div>
+                        <span class="badge bg-secondary me-2">${data.count} invoices</span>
+                        <span class="fw-bold">${formatNumber(data.total)} ${report.currency}</span>
+                    </div>
+                </div>
+            `).join('');
+
+            // Scroll to results
+            document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function exportToExcel() {
+            if (!reportData) {
+                alert('No data to export. Please process invoices first.');
+                return;
+            }
+
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            loadingOverlay.querySelector('.progress-text').textContent = 'Generating Excel report...';
+            loadingOverlay.classList.add('show');
+
+            try {
+                const response = await fetch('/api/bulk/export-json', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ report: reportData })
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Invoice_Report_${new Date().toISOString().slice(0,10)}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                } else {
+                    const data = await response.json();
+                    alert('Error exporting: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                loadingOverlay.querySelector('.progress-text').textContent = 'Processing invoices...';
+                loadingOverlay.classList.remove('show');
+            }
+        }
+
+        // ============== Bulk Distribute Functionality ==============
+        let distributeMode = 'invoices';
+        let structureData = null;
+        let allocations = {}; // Store allocations by item key
+
+        // Load organizational structure
+        async function loadStructure() {
+            if (structureData) return structureData;
+            try {
+                const response = await fetch('/api/structure');
+                structureData = await response.json();
+                return structureData;
+            } catch (e) {
+                console.error('Failed to load structure:', e);
+                return [];
+            }
+        }
+
+        function setDistributeMode(mode) {
+            distributeMode = mode;
+            document.getElementById('modeInvoices').classList.toggle('active', mode === 'invoices');
+            document.getElementById('modeCampaigns').classList.toggle('active', mode === 'campaigns');
+            renderDistributeItems();
+        }
+
+        function renderDistributeItems() {
+            if (!reportData) return;
+
+            const container = document.getElementById('distributeItemsList');
+            let items = [];
+
+            if (distributeMode === 'invoices') {
+                items = reportData.invoices.map((inv, idx) => ({
+                    key: `inv_${idx}`,
+                    type: 'invoice',
+                    title: inv.invoice_number || `Invoice ${idx + 1}`,
+                    subtitle: `${inv.supplier || 'Unknown'} • ${formatDate(inv.invoice_date)}`,
+                    value: inv.invoice_value || 0,
+                    currency: inv.currency || 'RON',
+                    data: inv
+                }));
+            } else {
+                // By Campaign mode
+                const campaigns = Object.entries(reportData.by_campaign || {});
+                items = campaigns.map(([name, value], idx) => ({
+                    key: `camp_${idx}`,
+                    type: 'campaign',
+                    title: name,
+                    subtitle: `Campaign total`,
+                    value: value,
+                    currency: reportData.currency || 'RON',
+                    data: { campaign: name, value: value }
+                }));
+            }
+
+            document.getElementById('totalItemsCount').textContent = items.length;
+
+            container.innerHTML = items.map(item => `
+                <div class="distribute-item ${allocations[item.key] ? 'allocated' : ''}" data-key="${item.key}">
+                    <div class="item-header">
+                        <div>
+                            <strong>${item.title}</strong>
+                            <br><small class="text-muted">${item.subtitle}</small>
+                        </div>
+                        <div class="text-end">
+                            <span class="item-value">${formatNumber(item.value)} ${item.currency}</span>
+                            <br>
+                            ${allocations[item.key]
+                                ? '<span class="badge bg-success allocation-status-badge"><i class="bi bi-check"></i> Allocated</span>'
+                                : '<span class="badge bg-secondary allocation-status-badge">Not allocated</span>'
+                            }
+                        </div>
+                    </div>
+                    <div class="allocation-form" id="form_${item.key}">
+                        ${renderAllocationForm(item)}
+                    </div>
+                </div>
+            `).join('');
+
+            updateDistributeProgress();
+        }
+
+        function renderAllocationForm(item) {
+            const existing = allocations[item.key];
+            const company = existing?.company || '';
+            const department = existing?.department || '';
+            const brand = existing?.brand || '';
+            const subdepartment = existing?.subdepartment || '';
+
+            return `
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small">Company</label>
+                        <select class="form-select form-select-sm company-select"
+                                onchange="onCompanyChange('${item.key}', this.value)"
+                                data-key="${item.key}">
+                            <option value="">Select company...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 brand-col" style="display: none;">
+                        <label class="form-label small">Brand</label>
+                        <select class="form-select form-select-sm brand-select"
+                                onchange="onBrandChange('${item.key}', this.value)"
+                                data-key="${item.key}">
+                            <option value="">N/A</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Department</label>
+                        <select class="form-select form-select-sm department-select"
+                                onchange="onDepartmentChange('${item.key}', this.value)"
+                                data-key="${item.key}">
+                            <option value="">Select...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 subdept-col" style="display: none;">
+                        <label class="form-label small">Subdepartment</label>
+                        <select class="form-select form-select-sm subdepartment-select"
+                                onchange="onSubdepartmentChange('${item.key}', this.value)"
+                                data-key="${item.key}">
+                            <option value="">N/A</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="button" class="btn btn-sm ${existing ? 'btn-outline-success' : 'btn-primary'} w-100"
+                                onclick="setAllocation('${item.key}')">
+                            <i class="bi bi-${existing ? 'check-circle' : 'plus-circle'}"></i>
+                            ${existing ? 'Update' : 'Allocate'}
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <small class="text-muted manager-display" id="manager_${item.key}"></small>
+                </div>
+            `;
+        }
+
+        async function initializeAllocationForm(itemKey) {
+            await loadStructure();
+            const form = document.getElementById(`form_${itemKey}`);
+            if (!form) return;
+
+            const companySelect = form.querySelector('.company-select');
+            const companies = [...new Set(structureData.map(s => s.company))];
+
+            companySelect.innerHTML = '<option value="">Select company...</option>' +
+                companies.map(c => `<option value="${c}">${c}</option>`).join('');
+
+            // Restore existing allocation if any
+            const existing = allocations[itemKey];
+            if (existing) {
+                companySelect.value = existing.company;
+                await onCompanyChange(itemKey, existing.company, existing);
+            }
+        }
+
+        async function onCompanyChange(itemKey, company, existing = null) {
+            await loadStructure();
+            const form = document.getElementById(`form_${itemKey}`);
+            if (!form) return;
+
+            const brandSelect = form.querySelector('.brand-select');
+            const deptSelect = form.querySelector('.department-select');
+            const subdeptSelect = form.querySelector('.subdepartment-select');
+            const brandCol = form.querySelector('.brand-col');
+            const subdeptCol = form.querySelector('.subdept-col');
+            const managerDisplay = form.querySelector('.manager-display');
+
+            // Filter structure for this company
+            const companyUnits = structureData.filter(s => s.company === company);
+
+            // Get unique brands
+            const brands = [...new Set(companyUnits.map(s => s.brand).filter(b => b))];
+            brandSelect.innerHTML = '<option value="">N/A</option>' +
+                brands.map(b => `<option value="${b}">${b}</option>`).join('');
+            brandCol.style.display = brands.length > 0 ? '' : 'none';
+
+            // Get unique departments
+            const departments = [...new Set(companyUnits.map(s => s.department))];
+            deptSelect.innerHTML = '<option value="">Select...</option>' +
+                departments.map(d => `<option value="${d}">${d}</option>`).join('');
+
+            // Reset subdepartment
+            subdeptSelect.innerHTML = '<option value="">N/A</option>';
+            subdeptCol.style.display = 'none';
+            managerDisplay.textContent = '';
+
+            // Restore existing values if any
+            if (existing) {
+                if (existing.brand) brandSelect.value = existing.brand;
+                if (existing.department) {
+                    deptSelect.value = existing.department;
+                    await onDepartmentChange(itemKey, existing.department, existing);
+                }
+            }
+        }
+
+        async function onBrandChange(itemKey, brand) {
+            // Brand is optional, just update the allocation
+        }
+
+        async function onDepartmentChange(itemKey, department, existing = null) {
+            const form = document.getElementById(`form_${itemKey}`);
+            if (!form) return;
+
+            const companySelect = form.querySelector('.company-select');
+            const subdeptSelect = form.querySelector('.subdepartment-select');
+            const subdeptCol = form.querySelector('.subdept-col');
+            const managerDisplay = form.querySelector('.manager-display');
+            const company = companySelect.value;
+
+            // Get subdepartments
+            const companyUnits = structureData.filter(s => s.company === company && s.department === department);
+            const subdepts = [...new Set(companyUnits.map(s => s.subdepartment).filter(s => s))];
+
+            subdeptSelect.innerHTML = '<option value="">N/A</option>' +
+                subdepts.map(s => `<option value="${s}">${s}</option>`).join('');
+            subdeptCol.style.display = subdepts.length > 0 ? '' : 'none';
+
+            // Get manager
+            const unit = companyUnits.find(u => !u.subdepartment) || companyUnits[0];
+            if (unit && unit.manager) {
+                managerDisplay.innerHTML = `<i class="bi bi-person"></i> Manager: <strong>${unit.manager}</strong>`;
+            } else {
+                managerDisplay.textContent = '';
+            }
+
+            // Restore existing subdepartment
+            if (existing && existing.subdepartment) {
+                subdeptSelect.value = existing.subdepartment;
+            }
+        }
+
+        async function onSubdepartmentChange(itemKey, subdepartment) {
+            const form = document.getElementById(`form_${itemKey}`);
+            if (!form) return;
+
+            const companySelect = form.querySelector('.company-select');
+            const deptSelect = form.querySelector('.department-select');
+            const managerDisplay = form.querySelector('.manager-display');
+            const company = companySelect.value;
+            const department = deptSelect.value;
+
+            // Get manager for subdepartment
+            const unit = structureData.find(s =>
+                s.company === company &&
+                s.department === department &&
+                s.subdepartment === subdepartment
+            );
+            if (unit && unit.manager) {
+                managerDisplay.innerHTML = `<i class="bi bi-person"></i> Manager: <strong>${unit.manager}</strong>`;
+            }
+        }
+
+        function setAllocation(itemKey) {
+            const form = document.getElementById(`form_${itemKey}`);
+            if (!form) return;
+
+            const company = form.querySelector('.company-select').value;
+            const brand = form.querySelector('.brand-select').value;
+            const department = form.querySelector('.department-select').value;
+            const subdepartment = form.querySelector('.subdepartment-select').value;
+
+            if (!company || !department) {
+                alert('Please select both Company and Department.');
+                return;
+            }
+
+            // Get manager
+            const unit = structureData.find(s =>
+                s.company === company &&
+                s.department === department &&
+                ((!subdepartment && !s.subdepartment) || s.subdepartment === subdepartment)
+            );
+
+            allocations[itemKey] = {
+                company,
+                brand: brand || null,
+                department,
+                subdepartment: subdepartment || null,
+                responsible: unit?.manager || ''
+            };
+
+            // Update UI
+            const itemEl = form.closest('.distribute-item');
+            itemEl.classList.add('allocated');
+            const badge = itemEl.querySelector('.allocation-status-badge');
+            badge.className = 'badge bg-success allocation-status-badge';
+            badge.innerHTML = '<i class="bi bi-check"></i> Allocated';
+
+            const btn = form.querySelector('button');
+            btn.className = 'btn btn-sm btn-outline-success w-100';
+            btn.innerHTML = '<i class="bi bi-check-circle"></i> Update';
+
+            updateDistributeProgress();
+        }
+
+        function updateDistributeProgress() {
+            const allocated = Object.keys(allocations).length;
+            let totalItems = 0;
+            let allocatedValue = 0;
+
+            if (distributeMode === 'invoices' && reportData?.invoices) {
+                totalItems = reportData.invoices.length;
+                reportData.invoices.forEach((inv, idx) => {
+                    if (allocations[`inv_${idx}`]) {
+                        allocatedValue += inv.invoice_value || 0;
+                    }
+                });
+            } else if (reportData?.by_campaign) {
+                totalItems = Object.keys(reportData.by_campaign).length;
+                Object.entries(reportData.by_campaign).forEach(([name, value], idx) => {
+                    if (allocations[`camp_${idx}`]) {
+                        allocatedValue += value;
+                    }
+                });
+            }
+
+            document.getElementById('allocatedCount').textContent = allocated;
+            document.getElementById('totalItemsCount').textContent = totalItems;
+            document.getElementById('allocatedValue').textContent = formatNumber(allocatedValue) + ' ' + (reportData?.currency || 'RON');
+
+            // Count ready to save (only invoices can be saved)
+            let readyToSave = 0;
+            if (reportData?.invoices) {
+                reportData.invoices.forEach((inv, idx) => {
+                    if (allocations[`inv_${idx}`]) {
+                        readyToSave++;
+                    }
+                });
+            }
+            document.getElementById('readyToSaveCount').textContent = readyToSave;
+            document.getElementById('bulkSaveBtn').disabled = readyToSave === 0;
+        }
+
+        async function bulkSaveAllocations() {
+            if (!reportData?.invoices) {
+                alert('No invoices to save.');
+                return;
+            }
+
+            // Collect invoices with allocations (matching index for tracking)
+            const invoicesToSave = [];
+            const invoiceIndices = [];
+            reportData.invoices.forEach((inv, idx) => {
+                const alloc = allocations[`inv_${idx}`];
+                if (alloc) {
+                    // Build distribution matching the /api/submit format (same as New Invoice page)
+                    invoicesToSave.push({
+                        supplier: inv.supplier || 'Unknown',
+                        invoice_template: inv.invoice_type || '',
+                        invoice_number: inv.invoice_number || `BULK-${Date.now()}-${idx}`,
+                        invoice_date: inv.invoice_date || new Date().toISOString().split('T')[0],
+                        invoice_value: inv.invoice_value || 0,
+                        currency: inv.currency || 'RON',
+                        drive_link: '',
+                        // Distributions format matching New Invoice page exactly
+                        distributions: [{
+                            company: alloc.company,
+                            brand: alloc.brand || null,
+                            department: alloc.department,
+                            subdepartment: alloc.subdepartment || null,
+                            allocation: 1.0, // 100% as decimal (0-1)
+                            reinvoice_destinations: [], // No reinvoice for bulk
+                            locked: false,
+                            comment: null
+                        }],
+                        // Additional fields matching /api/submit
+                        value_ron: null,
+                        value_eur: null,
+                        exchange_rate: null,
+                        comment: '',
+                        payment_status: 'not_paid',
+                        subtract_vat: false,
+                        vat_rate: null,
+                        net_value: null
+                    });
+                    invoiceIndices.push(idx);
+                }
+            });
+
+            if (invoicesToSave.length === 0) {
+                alert('No invoices with allocations to save.');
+                return;
+            }
+
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            loadingOverlay.querySelector('.progress-text').textContent = `Saving ${invoicesToSave.length} invoices...`;
+            loadingOverlay.classList.add('show');
+
+            let savedCount = 0;
+            const savedIndices = [];
+            const errors = [];
+
+            try {
+                // Submit each invoice using the same /api/submit endpoint as New Invoice page
+                for (let i = 0; i < invoicesToSave.length; i++) {
+                    const inv = invoicesToSave[i];
+                    const originalIdx = invoiceIndices[i];
+
+                    loadingOverlay.querySelector('.progress-text').textContent =
+                        `Saving invoice ${i + 1} of ${invoicesToSave.length}...`;
+
+                    try {
+                        const response = await fetch('/api/submit', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(inv)
+                        });
+
+                        const result = await response.json();
+
+                        if (result.success) {
+                            savedCount++;
+                            savedIndices.push(originalIdx);
+                        } else {
+                            errors.push({
+                                invoice: inv.invoice_number,
+                                error: result.error || 'Unknown error'
+                            });
+                        }
+                    } catch (e) {
+                        errors.push({
+                            invoice: inv.invoice_number,
+                            error: e.message
+                        });
+                    }
+                }
+
+                // Show results
+                if (savedCount > 0) {
+                    let message = `Successfully saved ${savedCount} invoice(s) to accounting!`;
+                    if (errors.length > 0) {
+                        message += `\n\n${errors.length} invoice(s) failed:`;
+                        errors.forEach(e => {
+                            message += `\n- ${e.invoice}: ${e.error}`;
+                        });
+                    }
+                    alert(message);
+
+                    // Clear saved allocations
+                    savedIndices.forEach(idx => {
+                        delete allocations[`inv_${idx}`];
+                    });
+
+                    // Update UI
+                    renderDistributeItems();
+
+                    // Initialize forms for remaining items
+                    setTimeout(() => {
+                        const items = document.querySelectorAll('.distribute-item');
+                        items.forEach(item => {
+                            const key = item.dataset.key;
+                            initializeAllocationForm(key);
+                        });
+                    }, 100);
+                } else {
+                    let message = 'No invoices were saved.';
+                    if (errors.length > 0) {
+                        message += '\n\nErrors:';
+                        errors.forEach(e => {
+                            message += `\n- ${e.invoice}: ${e.error}`;
+                        });
+                    }
+                    alert(message);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                loadingOverlay.querySelector('.progress-text').textContent = 'Processing invoices...';
+                loadingOverlay.classList.remove('show');
+            }
+        }
+
+        // Initialize forms when Bulk Distribute tab is shown
+        document.addEventListener('DOMContentLoaded', function() {
+            const distributeTab = document.getElementById('distribute-tab');
+            if (distributeTab) {
+                distributeTab.addEventListener('shown.bs.tab', function() {
+                    if (reportData) {
+                        renderDistributeItems();
+                        // Initialize company dropdowns for all items
+                        setTimeout(() => {
+                            const items = document.querySelectorAll('.distribute-item');
+                            items.forEach(item => {
+                                const key = item.dataset.key;
+                                initializeAllocationForm(key);
+                            });
+                        }, 100);
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

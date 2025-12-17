@@ -109,6 +109,11 @@
                     <i class="bi bi-plus-circle"></i> New Invoice
                 </a>
                 {% endif %}
+                {% if current_user.can_view_invoices %}
+                <a href="/bulk" class="btn btn-outline-light btn-sm me-2">
+                    <i class="bi bi-stack"></i> Bulk
+                </a>
+                {% endif %}
                 <div class="dropdown">
                     <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                         <i class="bi bi-person-circle"></i> {{ current_user.name }}

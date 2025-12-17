@@ -3,7 +3,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, Response
 from flask_compress import Compress
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from models import load_structure, get_companies, get_brands_for_company, get_departments_for_company, get_subdepartments, get_manager
@@ -2075,6 +2075,150 @@ def api_get_unique_brands():
     company = request.args.get('company', '')
     brands = get_unique_brands(company)
     return jsonify(brands)
+
+
+# ============================================================================
+# Bulk Invoice Processor
+# ============================================================================
+
+@app.route('/bulk')
+@login_required
+def bulk_processor():
+    """Bulk invoice processor page for uploading and analyzing multiple invoices."""
+    if not current_user.can_view_invoices:
+        flash('You do not have permission to access the bulk processor.', 'error')
+        return redirect(url_for('add_invoice'))
+    return render_template('bulk.html')
+
+
+@app.route('/api/bulk/process', methods=['POST'])
+@login_required
+def api_bulk_process():
+    """Process multiple uploaded invoices and return summary."""
+    from bulk_processor import process_bulk_invoices
+
+    if 'files[]' not in request.files:
+        return jsonify({'success': False, 'error': 'No files uploaded'}), 400
+
+    files = request.files.getlist('files[]')
+    if not files or all(f.filename == '' for f in files):
+        return jsonify({'success': False, 'error': 'No files selected'}), 400
+
+    # Collect file data
+    file_data = []
+    for f in files:
+        if f.filename and f.filename.lower().endswith('.pdf'):
+            file_bytes = f.read()
+            file_data.append((file_bytes, f.filename))
+
+    if not file_data:
+        return jsonify({'success': False, 'error': 'No valid PDF files found'}), 400
+
+    try:
+        report = process_bulk_invoices(file_data)
+        return jsonify({
+            'success': True,
+            'report': {
+                'invoices': [{
+                    'filename': inv.get('filename'),
+                    'invoice_number': inv.get('invoice_number'),
+                    'invoice_date': inv.get('invoice_date'),
+                    'invoice_value': inv.get('invoice_value'),
+                    'currency': inv.get('currency'),
+                    'supplier': inv.get('supplier'),
+                    'customer_vat': inv.get('customer_vat'),
+                    'customer_name': inv.get('customer_name'),
+                    'invoice_type': inv.get('invoice_type'),
+                    'campaigns': inv.get('campaigns', {})
+                } for inv in report.get('invoices', [])],
+                'total': report.get('total', 0),
+                'count': report.get('count', 0),
+                'currency': report.get('currency', 'RON'),
+                'by_month': report.get('by_month', {}),
+                'by_campaign': report.get('by_campaign', {}),
+                'by_supplier': report.get('by_supplier', {})
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/bulk/export', methods=['POST'])
+@login_required
+def api_bulk_export():
+    """Export bulk processing results to Excel."""
+    from bulk_processor import generate_excel_report, process_bulk_invoices
+
+    if 'files[]' not in request.files:
+        return jsonify({'success': False, 'error': 'No files uploaded'}), 400
+
+    files = request.files.getlist('files[]')
+    if not files or all(f.filename == '' for f in files):
+        return jsonify({'success': False, 'error': 'No files selected'}), 400
+
+    # Collect file data
+    file_data = []
+    for f in files:
+        if f.filename and f.filename.lower().endswith('.pdf'):
+            file_bytes = f.read()
+            file_data.append((file_bytes, f.filename))
+
+    if not file_data:
+        return jsonify({'success': False, 'error': 'No valid PDF files found'}), 400
+
+    try:
+        report = process_bulk_invoices(file_data)
+        excel_bytes = generate_excel_report(report)
+
+        # Generate filename with timestamp
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'Invoice_Report_{timestamp}.xlsx'
+
+        return Response(
+            excel_bytes,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={'Content-Disposition': f'attachment; filename={filename}'}
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/bulk/export-json', methods=['POST'])
+@login_required
+def api_bulk_export_json():
+    """Export bulk processing results from JSON data to Excel."""
+    from bulk_processor import generate_excel_report
+    from datetime import datetime as dt
+
+    data = request.get_json()
+    if not data or 'report' not in data:
+        return jsonify({'success': False, 'error': 'No report data provided'}), 400
+
+    try:
+        # Reconstruct report data with date objects for Excel
+        report = data['report']
+
+        # Parse date strings back to datetime objects for invoices
+        for inv in report.get('invoices', []):
+            if inv.get('invoice_date'):
+                try:
+                    inv['date_parsed'] = dt.strptime(inv['invoice_date'].split('T')[0], '%Y-%m-%d')
+                except:
+                    inv['date_parsed'] = None
+
+        excel_bytes = generate_excel_report(report)
+
+        timestamp = dt.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'Invoice_Report_{timestamp}.xlsx'
+
+        return Response(
+            excel_bytes,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={'Content-Disposition': f'attachment; filename={filename}'}
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 if __name__ == '__main__':

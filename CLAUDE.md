@@ -18,6 +18,7 @@ app/
 ├── models.py           # Data models and structure loading
 ├── services.py         # Business logic for allocations
 ├── invoice_parser.py   # AI-powered invoice parsing with Claude
+├── bulk_processor.py   # Bulk invoice processing and Excel report generation
 ├── drive_service.py    # Google Drive integration
 ├── image_compressor.py # TinyPNG image compression for attachments
 ├── currency_converter.py # BNR exchange rate fetching and conversion
@@ -388,3 +389,17 @@ The "Total Value" card on the accounting dashboard has a EUR/RON toggle switch:
 - Added "Clear Form" button on New Invoice page to reset all form fields and state
 - Added Net Value column to Accounting dashboard (show/hide via Configure Columns)
 - Updated New Invoice page to full-width layout matching Accounting page (container-fluid)
+- Added Bulk Invoice Processor (`/bulk`) for analyzing multiple invoices at once
+  - Upload multiple PDF invoices via drag-and-drop
+  - Automatic invoice type detection (Meta, Google Ads, generic)
+  - Campaign-level cost extraction for Meta/Facebook Ads invoices
+  - Summary views: by invoice, by campaign, by month, by supplier
+  - Excel export with multiple sheets (Summary, Monthly, Campaigns, Suppliers, Campaign Matrix)
+  - Navigation links added to New Invoice and Accounting pages
+- Added Bulk Distribute feature to Bulk Invoice Processor
+  - New "Bulk Distribute" tab allows allocating processed invoices to company departments
+  - Two modes: "By Invoice" (allocate each invoice) or "By Campaign" (view campaign totals)
+  - Each line has company/brand/department/subdepartment dropdowns with manager display
+  - Progress tracking shows allocated items count and value
+  - "Save All to Accounting" button saves all allocated invoices to database
+  - Uses the same `/api/submit` endpoint as New Invoice page (same validation, notifications, logging)

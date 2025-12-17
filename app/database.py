@@ -2659,14 +2659,17 @@ def get_responsable(responsable_id: int) -> Optional[dict]:
 
 
 def get_responsables_by_department(department: str) -> list[dict]:
-    """Get responsables assigned to a specific department."""
+    """Get responsables assigned to a specific department (exact match)."""
     conn = get_db()
     cursor = get_cursor(conn)
 
+    # Use exact match instead of LIKE to avoid partial matches
+    # e.g., "Marketing" should only match responsables with departments = "Marketing"
+    # not "Marketing Aftersales" or "Director Marketing"
     cursor.execute('''
         SELECT * FROM responsables
-        WHERE departments LIKE %s AND is_active = TRUE AND notify_on_allocation = TRUE
-    ''', (f'%{department}%',))
+        WHERE departments = %s AND is_active = TRUE AND notify_on_allocation = TRUE
+    ''', (department,))
 
     results = [dict_from_row(row) for row in cursor.fetchall()]
     release_db(conn)
