@@ -364,6 +364,9 @@ The `process_invoices()` function returns:
 ```
 
 ## Recent Changes
+- Fixed missing `can_edit_invoices` permission in role create/update API endpoints
+  - Both POST and PUT `/api/roles` now properly handle the edit permission
+  - All 8 role permissions are now consistent across database, API, and frontend
 - Added invoice list caching (60s TTL) for faster accounting page loads
   - Cache key includes all query parameters (limit, offset, filters)
   - Automatic invalidation on invoice CRUD operations
