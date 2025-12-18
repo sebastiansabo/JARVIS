@@ -34,6 +34,14 @@ _responsables_cache = {
     'ttl': 300
 }
 
+# In-memory cache for invoice list (shorter TTL since data changes more frequently)
+_invoices_cache = {
+    'data': None,
+    'timestamp': 0,
+    'ttl': 60,  # 1 minute TTL
+    'key': None  # Cache key based on query params
+}
+
 
 def _is_cache_valid(cache_entry: dict) -> bool:
     """Check if a cache entry is still valid."""
@@ -58,6 +66,13 @@ def clear_responsables_cache():
     """Clear the responsables cache. Call this after responsable updates."""
     global _responsables_cache
     _responsables_cache = {'data': None, 'timestamp': 0, 'ttl': 300}
+
+
+def clear_invoices_cache():
+    """Clear the invoices cache. Call this after invoice CRUD operations."""
+    global _invoices_cache
+    _invoices_cache = {'data': None, 'timestamp': 0, 'ttl': 60, 'key': None}
+
 
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is required. Set it to your PostgreSQL connection string.")
@@ -879,6 +894,7 @@ def save_invoice(
                 ))
 
         conn.commit()
+        clear_invoices_cache()  # Invalidate cache on new invoice
         return invoice_id
 
     except Exception as e:
@@ -997,7 +1013,18 @@ def get_invoices_with_allocations(limit: int = 100, offset: int = 0, company: Op
     Uses PostgreSQL JSON aggregation to fetch invoices and allocations together,
     avoiding N+1 query problems. This is much faster than fetching invoices
     then making separate queries for each invoice's allocations.
+
+    Results are cached for 60 seconds to reduce database load on repeated page views.
     """
+    global _invoices_cache
+
+    # Build cache key from all parameters
+    cache_key = f"{limit}:{offset}:{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{include_deleted}"
+
+    # Check cache
+    if _is_cache_valid(_invoices_cache) and _invoices_cache.get('key') == cache_key:
+        return _invoices_cache['data']
+
     conn = get_db()
     cursor = get_cursor(conn)
 
@@ -1161,6 +1188,12 @@ def get_invoices_with_allocations(limit: int = 100, offset: int = 0, company: Op
         invoices.append(invoice)
 
     release_db(conn)
+
+    # Cache the results
+    _invoices_cache['data'] = invoices
+    _invoices_cache['timestamp'] = time.time()
+    _invoices_cache['key'] = cache_key
+
     return invoices
 
 
@@ -1356,6 +1389,8 @@ def delete_invoice(invoice_id: int) -> bool:
 
     conn.commit()
     release_db(conn)
+    if deleted:
+        clear_invoices_cache()
     return deleted
 
 
@@ -1369,6 +1404,8 @@ def restore_invoice(invoice_id: int) -> bool:
 
     conn.commit()
     release_db(conn)
+    if restored:
+        clear_invoices_cache()
     return restored
 
 
@@ -1406,6 +1443,8 @@ def permanently_delete_invoice(invoice_id: int) -> bool:
 
     conn.commit()
     release_db(conn)
+    if deleted:
+        clear_invoices_cache()
     return deleted
 
 
@@ -1423,6 +1462,8 @@ def bulk_soft_delete_invoices(invoice_ids: list[int]) -> int:
 
     conn.commit()
     release_db(conn)
+    if deleted_count > 0:
+        clear_invoices_cache()
     return deleted_count
 
 
@@ -1440,6 +1481,8 @@ def bulk_restore_invoices(invoice_ids: list[int]) -> int:
 
     conn.commit()
     release_db(conn)
+    if restored_count > 0:
+        clear_invoices_cache()
     return restored_count
 
 
@@ -1457,6 +1500,8 @@ def bulk_permanently_delete_invoices(invoice_ids: list[int]) -> int:
 
     conn.commit()
     release_db(conn)
+    if deleted_count > 0:
+        clear_invoices_cache()
     return deleted_count
 
 
@@ -1558,6 +1603,8 @@ def update_invoice(
         cursor.execute(query, params)
         updated = cursor.rowcount > 0
         conn.commit()
+        if updated:
+            clear_invoices_cache()
         return updated
     except Exception as e:
         conn.rollback()
@@ -1827,6 +1874,7 @@ def update_invoice_allocations(invoice_id: int, allocations: list[dict]) -> bool
                 ))
 
         conn.commit()
+        clear_invoices_cache()  # Allocations changed
         return True
     except Exception as e:
         conn.rollback()

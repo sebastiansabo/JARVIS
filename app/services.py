@@ -24,10 +24,10 @@ def create_allocations(
         - subdepartment: str (optional)
         - allocation: float (percentage as decimal, e.g., 0.5 for 50%)
     """
-    # Validate allocations sum to 1 (100%)
+    # Validate allocations sum to 1 (100%) - allow 0.1% tolerance for floating-point errors
     total_allocation = sum(d['allocation'] for d in distributions)
     if abs(total_allocation - 1.0) > 0.001:
-        raise ValueError(f"Allocations must sum to 100%, got {total_allocation * 100}%")
+        raise ValueError(f"Allocations must sum to 100%, got {round(total_allocation * 100, 2)}%")
 
     structure = load_structure()
     allocations = []
@@ -79,10 +79,10 @@ def save_invoice_to_db(
     comment: str = None
 ) -> int:
     """Save invoice and allocations to database. Returns invoice ID."""
-    # Validate allocations sum to 1 (100%)
+    # Validate allocations sum to 1 (100%) - allow 0.1% tolerance for floating-point errors
     total_allocation = sum(d['allocation'] for d in distributions)
     if abs(total_allocation - 1.0) > 0.001:
-        raise ValueError(f"Allocations must sum to 100%, got {total_allocation * 100}%")
+        raise ValueError(f"Allocations must sum to 100%, got {round(total_allocation * 100, 2)}%")
 
     # Add responsible person to each distribution
     structure = load_structure()
