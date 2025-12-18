@@ -466,3 +466,9 @@ The `process_invoices()` function returns:
   - Pattern detection: item name on one line, date range + value on next line
   - Skip keywords filter out metadata (Afișări, Meta Platforms, Dublin, etc.)
   - Returns both `items` and `campaigns` keys for frontend compatibility
+- Added automatic retry for cold start network errors in Bulk Distribute
+  - `fetchWithRetry()` function with 2 retries and exponential backoff (1s, 2s delay)
+  - Applied to `/api/submit` call for saving invoices
+  - Applied to `/api/drive/upload` call for Drive upload
+  - Applied to `/api/invoices/{id}/drive-link` PUT call for saving drive link
+  - Fixes "Load failed" errors on first save attempt after cold start
