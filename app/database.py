@@ -1253,7 +1253,7 @@ def get_summary_by_company(start_date: Optional[str] = None, end_date: Optional[
     cursor = get_cursor(conn)
 
     query = '''
-        SELECT a.company, SUM(a.allocation_value) as total_value, COUNT(DISTINCT a.invoice_id) as invoice_count
+        SELECT a.company, i.currency, SUM(a.allocation_value) as total_value, COUNT(DISTINCT a.invoice_id) as invoice_count
         FROM allocations a
         JOIN invoices i ON a.invoice_id = i.id
     '''
@@ -1279,7 +1279,7 @@ def get_summary_by_company(start_date: Optional[str] = None, end_date: Optional[
     if conditions:
         query += ' WHERE ' + ' AND '.join(conditions)
 
-    query += ' GROUP BY a.company ORDER BY total_value DESC'
+    query += ' GROUP BY a.company, i.currency ORDER BY total_value DESC'
 
     cursor.execute(query, params)
     results = [dict_from_row(row) for row in cursor.fetchall()]
@@ -1295,7 +1295,7 @@ def get_summary_by_department(company: Optional[str] = None, start_date: Optiona
     cursor = get_cursor(conn)
 
     query = '''
-        SELECT a.company, a.department, a.subdepartment, SUM(a.allocation_value) as total_value, COUNT(DISTINCT a.invoice_id) as invoice_count
+        SELECT a.company, a.department, a.subdepartment, i.currency, SUM(a.allocation_value) as total_value, COUNT(DISTINCT a.invoice_id) as invoice_count
         FROM allocations a
         JOIN invoices i ON a.invoice_id = i.id
     '''
@@ -1324,7 +1324,7 @@ def get_summary_by_department(company: Optional[str] = None, start_date: Optiona
     if conditions:
         query += ' WHERE ' + ' AND '.join(conditions)
 
-    query += ' GROUP BY a.company, a.department, a.subdepartment ORDER BY total_value DESC'
+    query += ' GROUP BY a.company, a.department, a.subdepartment, i.currency ORDER BY total_value DESC'
 
     cursor.execute(query, params)
     results = [dict_from_row(row) for row in cursor.fetchall()]
@@ -1341,6 +1341,7 @@ def get_summary_by_brand(company: Optional[str] = None, start_date: Optional[str
 
     query = '''
         SELECT a.brand,
+               i.currency,
                SUM(a.allocation_value) as total_value,
                COUNT(DISTINCT a.invoice_id) as invoice_count,
                STRING_AGG(DISTINCT i.invoice_number, ', ') as invoice_numbers,
@@ -1353,7 +1354,8 @@ def get_summary_by_brand(company: Optional[str] = None, start_date: Optional[str
                    'reinvoice_to', a.reinvoice_to,
                    'reinvoice_brand', a.reinvoice_brand,
                    'reinvoice_department', a.reinvoice_department,
-                   'reinvoice_subdepartment', a.reinvoice_subdepartment
+                   'reinvoice_subdepartment', a.reinvoice_subdepartment,
+                   'currency', i.currency
                )) as split_values
         FROM allocations a
         JOIN invoices i ON a.invoice_id = i.id
@@ -1383,7 +1385,7 @@ def get_summary_by_brand(company: Optional[str] = None, start_date: Optional[str
     if conditions:
         query += ' WHERE ' + ' AND '.join(conditions)
 
-    query += ' GROUP BY a.brand ORDER BY total_value DESC'
+    query += ' GROUP BY a.brand, i.currency ORDER BY total_value DESC'
 
     cursor.execute(query, params)
     results = [dict_from_row(row) for row in cursor.fetchall()]

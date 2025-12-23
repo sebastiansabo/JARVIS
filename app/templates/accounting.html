@@ -2161,7 +2161,7 @@
                 const cells = visibleCols.map(col => {
                     let value = row[col.source];
                     if (col.format === 'currency') {
-                        return `<td>${formatCurrency(value)} RON</td>`;
+                        return `<td>${formatCurrency(value)} ${row.currency || 'RON'}</td>`;
                     } else if (col.id === 'company') {
                         return `<td><strong>${value}</strong></td>`;
                     }
@@ -2191,7 +2191,7 @@
                 const cells = visibleCols.map(col => {
                     let value = row[col.source];
                     if (col.format === 'currency') {
-                        return `<td>${formatCurrency(value)} RON</td>`;
+                        return `<td>${formatCurrency(value)} ${row.currency || 'RON'}</td>`;
                     } else if (col.id === 'department') {
                         return `<td><strong>${value}</strong></td>`;
                     }
@@ -2221,12 +2221,12 @@
                 const cells = visibleCols.map(col => {
                     let value = row[col.source];
                     if (col.format === 'currency') {
-                        return `<td>${formatCurrency(value)} RON</td>`;
+                        return `<td>${formatCurrency(value)} ${row.currency || 'RON'}</td>`;
                     } else if (col.id === 'brand') {
                         return `<td><strong>${value || '(No Brand)'}</strong></td>`;
                     } else if (col.format === 'split') {
                         // Use the same split formatting as the Invoices table
-                        return `<td>${formatColumnValue(value, col, {})}</td>`;
+                        return `<td>${formatColumnValue(value, col, {currency: row.currency})}</td>`;
                     }
                     return `<td>${value || '-'}</td>`;
                 }).join('');

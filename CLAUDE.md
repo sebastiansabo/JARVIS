@@ -524,6 +524,11 @@ The `process_invoices()` function returns:
   - Feature temporarily disabled due to Google's security measures (passkeys, 2FA)
   - All connector routes return "Coming Soon" or redirect to accounting
   - API endpoints return 503 status with "feature coming soon" message
+- Fixed dynamic currency display in summary tables (By Company, By Department, By Brand)
+  - Summary queries now include currency grouping to show correct currency per row
+  - Rows are grouped by entity + currency (e.g., same company appears twice if it has RON and EUR invoices)
+  - Replaced hardcoded "RON" with dynamic `row.currency` in all three summary table render functions
+  - Split values in By Brand table now also pass currency to formatColumnValue()
 
 ## Connector Infrastructure (DISABLED)
 
