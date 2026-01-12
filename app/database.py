@@ -42,6 +42,15 @@ _invoices_cache = {
     'key': None  # Cache key based on query params
 }
 
+# In-memory cache for summary queries (By Company, By Department, By Brand tabs)
+# Uses dict to store multiple cached results with different filter combinations
+_summary_cache = {
+    'company': {},     # key -> {'data': [...], 'timestamp': ...}
+    'department': {},
+    'brand': {},
+    'ttl': 60  # 1 minute TTL
+}
+
 
 def _is_cache_valid(cache_entry: dict) -> bool:
     """Check if a cache entry is still valid."""
@@ -69,9 +78,17 @@ def clear_responsables_cache():
 
 
 def clear_invoices_cache():
-    """Clear the invoices cache. Call this after invoice CRUD operations."""
-    global _invoices_cache
+    """Clear the invoices and summary caches. Call this after invoice CRUD operations."""
+    global _invoices_cache, _summary_cache
     _invoices_cache = {'data': None, 'timestamp': 0, 'ttl': 60, 'key': None}
+    # Also clear summary cache since summaries depend on invoice/allocation data
+    _summary_cache = {'company': {}, 'department': {}, 'brand': {}, 'ttl': 60}
+
+
+def clear_summary_cache():
+    """Clear the summary cache only. Call this for summary-specific invalidation."""
+    global _summary_cache
+    _summary_cache = {'company': {}, 'department': {}, 'brand': {}, 'ttl': 60}
 
 
 if not DATABASE_URL:
@@ -696,14 +713,9 @@ def init_db():
     ''')
     conn.commit()
 
-    # Create index for reinvoice_destinations
-    try:
-        cursor.execute('CREATE INDEX idx_reinvoice_dest_allocation ON reinvoice_destinations(allocation_id)')
-        conn.commit()
-    except psycopg2.errors.DuplicateTable:
-        conn.rollback()
-    except Exception:
-        conn.rollback()
+    # Create index for reinvoice_destinations (using IF NOT EXISTS for reliability)
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_reinvoice_dest_allocation ON reinvoice_destinations(allocation_id)')
+    conn.commit()
 
     # Migrate existing single reinvoice data to new table (if not already migrated)
     cursor.execute('''
@@ -985,7 +997,10 @@ def get_all_invoices(limit: int = 100, offset: int = 0, company: Optional[str] =
 
 
 def get_invoice_with_allocations(invoice_id: int) -> Optional[dict]:
-    """Get invoice with all its allocations and their reinvoice destinations."""
+    """Get invoice with all its allocations and their reinvoice destinations.
+
+    Optimized to use batch query for reinvoice_destinations instead of N+1 queries.
+    """
     conn = get_db()
     cursor = get_cursor(conn)
 
@@ -1001,14 +1016,28 @@ def get_invoice_with_allocations(invoice_id: int) -> Optional[dict]:
     cursor.execute('SELECT * FROM allocations WHERE invoice_id = %s', (invoice_id,))
     allocations = [dict_from_row(row) for row in cursor.fetchall()]
 
-    # Fetch reinvoice destinations for each allocation
-    for alloc in allocations:
-        cursor.execute('''
-            SELECT id, company, brand, department, subdepartment, percentage, value
+    # Batch fetch all reinvoice destinations for this invoice's allocations (single query)
+    allocation_ids = [alloc['id'] for alloc in allocations]
+    reinvoice_map = {}  # allocation_id -> list of destinations
+
+    if allocation_ids:
+        placeholders = ','.join(['%s'] * len(allocation_ids))
+        cursor.execute(f'''
+            SELECT id, allocation_id, company, brand, department, subdepartment, percentage, value
             FROM reinvoice_destinations
-            WHERE allocation_id = %s
-        ''', (alloc['id'],))
-        alloc['reinvoice_destinations'] = [dict_from_row(row) for row in cursor.fetchall()]
+            WHERE allocation_id IN ({placeholders})
+        ''', allocation_ids)
+
+        for row in cursor.fetchall():
+            rd = dict_from_row(row)
+            alloc_id = rd.pop('allocation_id')
+            if alloc_id not in reinvoice_map:
+                reinvoice_map[alloc_id] = []
+            reinvoice_map[alloc_id].append(rd)
+
+    # Assign reinvoice destinations to their allocations
+    for alloc in allocations:
+        alloc['reinvoice_destinations'] = reinvoice_map.get(alloc['id'], [])
 
     invoice['allocations'] = allocations
 
@@ -1248,7 +1277,20 @@ def get_allocations_by_department(company: str, department: str) -> list[dict]:
 def get_summary_by_company(start_date: Optional[str] = None, end_date: Optional[str] = None,
                           department: Optional[str] = None, subdepartment: Optional[str] = None,
                           brand: Optional[str] = None) -> list[dict]:
-    """Get total allocation values grouped by company."""
+    """Get total allocation values grouped by company.
+
+    Results are cached for 60 seconds to reduce DB load on dashboard tab switches.
+    """
+    global _summary_cache
+
+    # Build cache key from parameters
+    cache_key = f"{start_date}:{end_date}:{department}:{subdepartment}:{brand}"
+    cache_entry = _summary_cache['company'].get(cache_key)
+
+    # Check cache
+    if cache_entry and (time.time() - cache_entry['timestamp']) < _summary_cache['ttl']:
+        return cache_entry['data']
+
     conn = get_db()
     cursor = get_cursor(conn)
 
@@ -1284,13 +1326,30 @@ def get_summary_by_company(start_date: Optional[str] = None, end_date: Optional[
     cursor.execute(query, params)
     results = [dict_from_row(row) for row in cursor.fetchall()]
     release_db(conn)
+
+    # Cache results
+    _summary_cache['company'][cache_key] = {'data': results, 'timestamp': time.time()}
+
     return results
 
 
 def get_summary_by_department(company: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None,
                               department: Optional[str] = None, subdepartment: Optional[str] = None,
                               brand: Optional[str] = None) -> list[dict]:
-    """Get total allocation values grouped by department."""
+    """Get total allocation values grouped by department.
+
+    Results are cached for 60 seconds to reduce DB load on dashboard tab switches.
+    """
+    global _summary_cache
+
+    # Build cache key from parameters
+    cache_key = f"{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}"
+    cache_entry = _summary_cache['department'].get(cache_key)
+
+    # Check cache
+    if cache_entry and (time.time() - cache_entry['timestamp']) < _summary_cache['ttl']:
+        return cache_entry['data']
+
     conn = get_db()
     cursor = get_cursor(conn)
 
@@ -1329,13 +1388,30 @@ def get_summary_by_department(company: Optional[str] = None, start_date: Optiona
     cursor.execute(query, params)
     results = [dict_from_row(row) for row in cursor.fetchall()]
     release_db(conn)
+
+    # Cache results
+    _summary_cache['department'][cache_key] = {'data': results, 'timestamp': time.time()}
+
     return results
 
 
 def get_summary_by_brand(company: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None,
                          department: Optional[str] = None, subdepartment: Optional[str] = None,
                          brand: Optional[str] = None) -> list[dict]:
-    """Get total allocation values grouped by brand (Linie de business) with invoice details."""
+    """Get total allocation values grouped by brand (Linie de business) with invoice details.
+
+    Results are cached for 60 seconds to reduce DB load on dashboard tab switches.
+    """
+    global _summary_cache
+
+    # Build cache key from parameters
+    cache_key = f"{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}"
+    cache_entry = _summary_cache['brand'].get(cache_key)
+
+    # Check cache
+    if cache_entry and (time.time() - cache_entry['timestamp']) < _summary_cache['ttl']:
+        return cache_entry['data']
+
     conn = get_db()
     cursor = get_cursor(conn)
 
@@ -1390,6 +1466,10 @@ def get_summary_by_brand(company: Optional[str] = None, start_date: Optional[str
     cursor.execute(query, params)
     results = [dict_from_row(row) for row in cursor.fetchall()]
     release_db(conn)
+
+    # Cache results
+    _summary_cache['brand'][cache_key] = {'data': results, 'timestamp': time.time()}
+
     return results
 
 

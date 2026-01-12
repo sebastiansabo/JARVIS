@@ -393,6 +393,11 @@ The `process_invoices()` function returns:
 ```
 
 ## Recent Changes
+- Performance optimizations for Invoice Details modal and Dashboard tabs
+  - Fixed N+1 query in `get_invoice_with_allocations()` - now batch fetches reinvoice_destinations in single query
+  - Added summary query caching (60s TTL) for By Company, By Department, By Brand tabs
+  - Summary cache automatically invalidated when invoices/allocations change
+  - Fixed `idx_reinvoice_dest_allocation` index creation to use IF NOT EXISTS
 - Added admin-configurable default column configuration for Accounting dashboard
   - "Set as Default for All" button in Configure Columns modal (visible to admins only)
   - Admins can set default column arrangements for all tabs (Invoices, By Company, By Department, By Brand)
