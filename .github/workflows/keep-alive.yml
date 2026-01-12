@@ -1,0 +1,33 @@
+name: Keep Server Alive
+
+on:
+  schedule:
+    # Ping every 5 minutes during business hours (6 AM - 10 PM Romania time / UTC+2)
+    - cron: '*/5 4-20 * * 1-5'  # Weekdays
+    - cron: '*/10 6-18 * * 0,6' # Weekends (less frequent)
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  ping-staging:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Staging Health
+        run: |
+          response=$(curl -s -w "%{http_code}" -o /tmp/health.json "https://mkt-app-922ou.ondigitalocean.app/health")
+          echo "Staging: HTTP $response"
+          cat /tmp/health.json
+          if [ "$response" != "200" ]; then
+            echo "Warning: Staging returned $response"
+          fi
+
+  ping-production:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Production Health
+        run: |
+          response=$(curl -s -w "%{http_code}" -o /tmp/health.json "https://bugetare-mkt-t6fk7.ondigitalocean.app/health")
+          echo "Production: HTTP $response"
+          cat /tmp/health.json
+          if [ "$response" != "200" ]; then
+            echo "Warning: Production returned $response"
+          fi
