@@ -175,6 +175,53 @@ def release_db(conn):
         _connection_pool.putconn(conn)
 
 
+def refresh_connection_pool():
+    """Refresh all connections in the pool to ensure they're healthy.
+
+    Call this after heavy operations (file uploads, bulk processing) to
+    prevent stale connections. Gets and releases multiple connections
+    to cycle through the pool and validate each one.
+    """
+    global _connection_pool
+    if _connection_pool is None:
+        return
+
+    # Get and release connections to validate them
+    # This forces the pool to check each connection's health
+    connections = []
+    try:
+        for _ in range(POOL_MIN_CONN):
+            try:
+                conn = get_db()  # get_db validates the connection
+                connections.append(conn)
+            except Exception:
+                pass
+    finally:
+        for conn in connections:
+            try:
+                release_db(conn)
+            except Exception:
+                pass
+
+
+def ping_db():
+    """Ping the database to keep connections alive.
+
+    Returns True if successful, False otherwise.
+    Use this for health checks or keep-alive operations.
+    """
+    try:
+        conn = get_db()
+        try:
+            with conn.cursor() as cur:
+                cur.execute('SELECT 1')
+            return True
+        finally:
+            release_db(conn)
+    except Exception:
+        return False
+
+
 @contextmanager
 def get_db_connection():
     """Context manager for database connections - auto-releases to pool."""

@@ -32,7 +32,8 @@ from database import (
     authenticate_user, set_user_password, update_user_last_login, set_default_password_for_users,
     log_user_event, get_user_events, get_event_types,
     update_allocation_comment,
-    get_vat_rates, add_vat_rate, update_vat_rate, delete_vat_rate
+    get_vat_rates, add_vat_rate, update_vat_rate, delete_vat_rate,
+    refresh_connection_pool, ping_db
 )
 
 # Google Drive integration (optional)
@@ -377,7 +378,7 @@ def health_check():
     This endpoint is lightweight and doesn't require authentication.
     Use an external service (UptimeRobot, Pingdom) to ping every 5 minutes.
     """
-    return jsonify({'status': 'ok', 'service': 'bugetare', 'version': '2025-01-12-conn-fix2'})
+    return jsonify({'status': 'ok', 'service': 'bugetare', 'version': '2025-01-12-conn-refresh'})
 
 
 # ============== Main Routes ==============
@@ -510,6 +511,9 @@ def submit_invoice():
                   f'Created invoice {data["invoice_number"]} from {data["supplier"]}',
                   entity_type='invoice', entity_id=invoice_id)
 
+        # Refresh connection pool after heavy operation to keep connections fresh
+        refresh_connection_pool()
+
         return jsonify({
             'success': True,
             'message': f'Successfully saved {len(data["distributions"])} allocation(s)',
@@ -587,6 +591,8 @@ def api_parse_invoice():
             result['value_eur'] = None
             result['exchange_rate'] = None
 
+        # Refresh connection pool after parsing operation
+        refresh_connection_pool()
         return jsonify({'success': True, 'data': result})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -682,6 +688,8 @@ def api_drive_upload():
             mime_type=mime_type
         )
 
+        # Refresh connection pool after Drive upload
+        refresh_connection_pool()
         return jsonify({'success': True, 'drive_link': drive_link})
     except FileNotFoundError as e:
         return jsonify({'success': False, 'error': str(e), 'need_auth': True}), 400
@@ -738,6 +746,8 @@ def api_drive_upload_attachment():
         )
 
         if attachment_link:
+            # Refresh connection pool after attachment upload
+            refresh_connection_pool()
             result = {'success': True, 'attachment_link': attachment_link}
             if compression_stats:
                 result['compression'] = compression_stats
@@ -2072,6 +2082,8 @@ def api_bulk_process():
 
     try:
         report = process_bulk_invoices(file_data)
+        # Refresh connection pool after bulk processing
+        refresh_connection_pool()
         return jsonify({
             'success': True,
             'report': {
