@@ -1,0 +1,33 @@
+name: Sync Production DB to Staging
+
+on:
+  schedule:
+    # Run at midnight UTC every day
+    - cron: '0 0 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  sync-database:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Sync Production to Staging
+        env:
+          PROD_DB_URL: ${{ secrets.PROD_DATABASE_URL }}
+          STAGING_DB_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          echo "Dumping production database..."
+          pg_dump "$PROD_DB_URL" --no-owner --no-acl > /tmp/prod_backup.sql
+
+          echo "Clearing staging database..."
+          psql "$STAGING_DB_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO doadmin; GRANT ALL ON SCHEMA public TO public;"
+
+          echo "Restoring to staging..."
+          psql "$STAGING_DB_URL" < /tmp/prod_backup.sql
+
+          echo "Sync complete!"
