@@ -441,6 +441,21 @@
             document.querySelector('#loadingOverlay .loading-text').textContent = message;
         }
 
+        // Retry fetch for cold start resilience
+        async function fetchWithRetry(url, options = {}, retries = 2, delay = 1500) {
+            for (let i = 0; i <= retries; i++) {
+                try {
+                    const res = await fetch(url, options);
+                    return res;
+                } catch (e) {
+                    if (i === retries) throw e;
+                    console.log(`Fetch failed, retrying in ${delay}ms... (attempt ${i + 1}/${retries})`);
+                    await new Promise(r => setTimeout(r, delay));
+                    delay *= 1.5; // Exponential backoff
+                }
+            }
+        }
+
         let companies = [];
         let structure = [];
         let companiesWithVat = []; // Companies with VAT from Comp sheet
@@ -1242,7 +1257,7 @@
                     formData.append('template_id', templateId);
                 }
 
-                const res = await fetch('/api/parse-invoice', { method: 'POST', body: formData });
+                const res = await fetchWithRetry('/api/parse-invoice', { method: 'POST', body: formData });
                 const result = await res.json();
 
                 if (result.success) {
@@ -2029,7 +2044,7 @@
             formData.append('company', company);
             formData.append('invoice_number', invoiceNumber);
 
-            const res = await fetch('/api/drive/upload', { method: 'POST', body: formData });
+            const res = await fetchWithRetry('/api/drive/upload', { method: 'POST', body: formData });
             return await res.json();
         }
 
@@ -2039,7 +2054,7 @@
             formData.append('file', file);
             formData.append('drive_link', driveLink);
 
-            const res = await fetch('/api/drive/upload-attachment', { method: 'POST', body: formData });
+            const res = await fetchWithRetry('/api/drive/upload-attachment', { method: 'POST', body: formData });
             return await res.json();
         }
 
@@ -2172,7 +2187,7 @@
                 const netValue = document.getElementById('netValue').value;
 
                 // First save to database (without drive link if not yet uploaded)
-                const res = await fetch('/api/submit', {
+                const res = await fetchWithRetry('/api/submit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
