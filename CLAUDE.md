@@ -1,5 +1,30 @@
 # Bugetare - Invoice Budget Allocation System
 
+## ⚠️ IMPORTANT: Branch Workflow
+
+**DEFAULT BRANCH: `staging`** - All development work happens here first.
+
+| Branch | Purpose | Deploy Target | Push Policy |
+|--------|---------|---------------|-------------|
+| `staging` | Development & testing | bugetare-staging app | Direct push OK |
+| `main` | Production | bugetare app | **REQUIRES DOUBLE CONFIRMATION** |
+
+### Workflow:
+1. Work on `staging` branch
+2. Test on staging app (bugetare-staging)
+3. When ready for production: **Ask user for explicit confirmation TWICE before merging to main**
+
+```bash
+# Normal development
+git checkout staging
+git push origin staging
+
+# Production deploy (REQUIRES DOUBLE CONFIRMATION)
+git checkout main
+git merge staging
+git push origin main
+```
+
 ## Project Overview
 Flask-based web application for managing invoice allocations across companies, brands, and departments. Features AI-powered invoice parsing using Claude API.
 
