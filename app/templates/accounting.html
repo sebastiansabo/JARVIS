@@ -248,10 +248,10 @@
                     <select class="form-select form-select-sm" id="quickFilter" onchange="setQuickFilter(this.value)">
                         <option value="">--</option>
                         <option value="today">Today</option>
-                        <option value="week">Week</option>
-                        <option value="month">Month</option>
-                        <option value="quarter">Quarter</option>
-                        <option value="year">Year</option>
+                        <option value="week">This Week</option>
+                        <option value="month">This Month</option>
+                        <option value="quarter">This Quarter</option>
+                        <option value="year">This Year</option>
                     </select>
                 </div>
                 <div class="col-auto d-flex align-items-end">
@@ -1641,9 +1641,17 @@
             const endDate = document.getElementById('endDate');
             const today = new Date();
 
+            // Helper to format date as YYYY-MM-DD in local timezone
+            const formatDate = (d) => {
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            };
+
             if (period === 'today') {
                 // Set both start and end to today
-                const todayStr = today.toISOString().split('T')[0];
+                const todayStr = formatDate(today);
                 startDate.value = todayStr;
                 endDate.value = todayStr;
             } else if (period === 'week') {
@@ -1655,15 +1663,15 @@
                 // Calculate Sunday of current week
                 const sunday = new Date(monday);
                 sunday.setDate(monday.getDate() + 6);
-                startDate.value = monday.toISOString().split('T')[0];
-                endDate.value = sunday.toISOString().split('T')[0];
+                startDate.value = formatDate(monday);
+                endDate.value = formatDate(sunday);
             } else if (period === 'month') {
                 // First day of current month
                 const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
                 // Last day of current month
                 const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-                startDate.value = firstDay.toISOString().split('T')[0];
-                endDate.value = lastDay.toISOString().split('T')[0];
+                startDate.value = formatDate(firstDay);
+                endDate.value = formatDate(lastDay);
             } else if (period === 'quarter') {
                 // Determine current quarter (0-3)
                 const quarter = Math.floor(today.getMonth() / 3);
@@ -1671,15 +1679,15 @@
                 const firstDay = new Date(today.getFullYear(), quarter * 3, 1);
                 // Last day of quarter
                 const lastDay = new Date(today.getFullYear(), quarter * 3 + 3, 0);
-                startDate.value = firstDay.toISOString().split('T')[0];
-                endDate.value = lastDay.toISOString().split('T')[0];
+                startDate.value = formatDate(firstDay);
+                endDate.value = formatDate(lastDay);
             } else if (period === 'year') {
                 // First day of current year
                 const firstDay = new Date(today.getFullYear(), 0, 1);
                 // Last day of current year
                 const lastDay = new Date(today.getFullYear(), 11, 31);
-                startDate.value = firstDay.toISOString().split('T')[0];
-                endDate.value = lastDay.toISOString().split('T')[0];
+                startDate.value = formatDate(firstDay);
+                endDate.value = formatDate(lastDay);
             }
 
             // Auto-apply filters
