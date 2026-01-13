@@ -378,9 +378,17 @@
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-building"></i> By Company</span>
-                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#companyColumnConfigModal">
-                            <i class="bi bi-gear"></i> Configure Columns
-                        </button>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="btn-group btn-group-sm" role="group" id="companyCurrencyToggle">
+                                <input type="radio" class="btn-check" name="companyCurrency" id="companyCurrencyRON" value="RON" checked>
+                                <label class="btn btn-outline-primary" for="companyCurrencyRON">RON</label>
+                                <input type="radio" class="btn-check" name="companyCurrency" id="companyCurrencyEUR" value="EUR">
+                                <label class="btn btn-outline-primary" for="companyCurrencyEUR">EUR</label>
+                            </div>
+                            <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#companyColumnConfigModal">
+                                <i class="bi bi-gear"></i> Configure Columns
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
@@ -406,9 +414,17 @@
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-diagram-3"></i> By Department</span>
-                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#departmentColumnConfigModal">
-                            <i class="bi bi-gear"></i> Configure Columns
-                        </button>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="btn-group btn-group-sm" role="group" id="departmentCurrencyToggle">
+                                <input type="radio" class="btn-check" name="departmentCurrency" id="departmentCurrencyRON" value="RON" checked>
+                                <label class="btn btn-outline-primary" for="departmentCurrencyRON">RON</label>
+                                <input type="radio" class="btn-check" name="departmentCurrency" id="departmentCurrencyEUR" value="EUR">
+                                <label class="btn btn-outline-primary" for="departmentCurrencyEUR">EUR</label>
+                            </div>
+                            <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#departmentColumnConfigModal">
+                                <i class="bi bi-gear"></i> Configure Columns
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
@@ -434,9 +450,17 @@
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-tag"></i> By Brand (Linie de business)</span>
-                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#brandColumnConfigModal">
-                            <i class="bi bi-gear"></i> Configure Columns
-                        </button>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="btn-group btn-group-sm" role="group" id="brandCurrencyToggle">
+                                <input type="radio" class="btn-check" name="brandCurrency" id="brandCurrencyRON" value="RON" checked>
+                                <label class="btn btn-outline-primary" for="brandCurrencyRON">RON</label>
+                                <input type="radio" class="btn-check" name="brandCurrency" id="brandCurrencyEUR" value="EUR">
+                                <label class="btn btn-outline-primary" for="brandCurrencyEUR">EUR</label>
+                            </div>
+                            <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#brandColumnConfigModal">
+                                <i class="bi bi-gear"></i> Configure Columns
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
@@ -975,7 +999,8 @@
             { id: 'company', name: 'Company', source: 'company', format: 'text', visible: true },
             { id: 'total_value', name: 'Total Value', source: 'total_value', format: 'currency', visible: true },
             { id: 'invoice_count', name: 'Invoice Count', source: 'invoice_count', format: 'text', visible: true },
-            { id: 'avg_value', name: 'Avg per Invoice', source: 'avg_value', format: 'currency', visible: true }
+            { id: 'avg_value', name: 'Avg per Invoice', source: 'avg_value', format: 'currency', visible: true },
+            { id: 'avg_exchange_rate', name: 'Avg Rate', source: 'avg_exchange_rate', format: 'rate', visible: true }
         ];
 
         // Default column configuration for Department view
@@ -985,7 +1010,8 @@
             { id: 'subdepartment', name: 'Subdepartment', source: 'subdepartment', format: 'text', visible: true },
             { id: 'total_value', name: 'Total Value', source: 'total_value', format: 'currency', visible: true },
             { id: 'invoice_count', name: 'Invoice Count', source: 'invoice_count', format: 'text', visible: true },
-            { id: 'avg_value', name: 'Avg per Invoice', source: 'avg_value', format: 'currency', visible: false }
+            { id: 'avg_value', name: 'Avg per Invoice', source: 'avg_value', format: 'currency', visible: false },
+            { id: 'avg_exchange_rate', name: 'Avg Rate', source: 'avg_exchange_rate', format: 'rate', visible: true }
         ];
 
         const DEFAULT_BRAND_COLUMNS = [
@@ -994,12 +1020,21 @@
             { id: 'total_value', name: 'Value', source: 'total_value', format: 'currency', visible: true },
             { id: 'split_values', name: 'Split Values', source: 'split_values', format: 'split', visible: true },
             { id: 'invoice_count', name: 'Invoice Count', source: 'invoice_count', format: 'text', visible: true },
-            { id: 'avg_value', name: 'Avg per Invoice', source: 'avg_value', format: 'currency', visible: false }
+            { id: 'avg_value', name: 'Avg per Invoice', source: 'avg_value', format: 'currency', visible: false },
+            { id: 'avg_exchange_rate', name: 'Avg Rate', source: 'avg_exchange_rate', format: 'rate', visible: true }
         ];
 
         let companyColumnConfig = [];
         let departmentColumnConfig = [];
         let brandColumnConfig = [];
+
+        // Currency toggle state and data cache for all summary tabs
+        let companyCurrency = localStorage.getItem('companySummaryCurrency') || 'RON';
+        let companyData = [];
+        let departmentCurrency = localStorage.getItem('departmentSummaryCurrency') || 'RON';
+        let departmentData = [];
+        let brandCurrency = localStorage.getItem('brandSummaryCurrency') || 'RON';
+        let brandData = [];
 
         document.addEventListener('DOMContentLoaded', async () => {
             showLoading('Loading dashboard...');
@@ -1007,12 +1042,32 @@
                 restoreSummaryState();
                 await loadColumnConfig();
                 initPagination();
+                initCurrencyToggles();
                 await loadData();
                 setupEventListeners();
             } finally {
                 hideLoading();
             }
         });
+
+        function initCurrencyToggles() {
+            // Set the radio button state from localStorage for all tabs
+            if (companyCurrency === 'EUR') {
+                document.getElementById('companyCurrencyEUR').checked = true;
+            } else {
+                document.getElementById('companyCurrencyRON').checked = true;
+            }
+            if (departmentCurrency === 'EUR') {
+                document.getElementById('departmentCurrencyEUR').checked = true;
+            } else {
+                document.getElementById('departmentCurrencyRON').checked = true;
+            }
+            if (brandCurrency === 'EUR') {
+                document.getElementById('brandCurrencyEUR').checked = true;
+            } else {
+                document.getElementById('brandCurrencyRON').checked = true;
+            }
+        }
 
         function initPagination() {
             // Initialize page size from localStorage
@@ -1485,6 +1540,33 @@
                 updateTotalValueDisplay(e.target.checked);
             });
 
+            // Currency toggle for By Company tab
+            document.querySelectorAll('input[name="companyCurrency"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    companyCurrency = e.target.value;
+                    localStorage.setItem('companySummaryCurrency', companyCurrency);
+                    renderCompanyTable(companyData);
+                });
+            });
+
+            // Currency toggle for By Department tab
+            document.querySelectorAll('input[name="departmentCurrency"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    departmentCurrency = e.target.value;
+                    localStorage.setItem('departmentSummaryCurrency', departmentCurrency);
+                    renderDepartmentTable(departmentData);
+                });
+            });
+
+            // Currency toggle for By Brand tab
+            document.querySelectorAll('input[name="brandCurrency"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    brandCurrency = e.target.value;
+                    localStorage.setItem('brandSummaryCurrency', brandCurrency);
+                    renderBrandTable(brandData);
+                });
+            });
+
             // Tab change listeners
             document.querySelectorAll('#mainTabs .nav-link').forEach(tab => {
                 tab.addEventListener('shown.bs.tab', loadData);
@@ -1762,8 +1844,8 @@
 
             try {
                 const res = await fetch(`/api/db/summary/company?${params}`);
-                const data = await res.json();
-                renderCompanyTable(data);
+                companyData = await res.json();
+                renderCompanyTable(companyData);
             } catch (e) {
                 console.error('Error loading company summary:', e);
             }
@@ -1786,8 +1868,8 @@
 
             try {
                 const res = await fetch(`/api/db/summary/department?${params}`);
-                const data = await res.json();
-                renderDepartmentTable(data);
+                departmentData = await res.json();
+                renderDepartmentTable(departmentData);
             } catch (e) {
                 console.error('Error loading department summary:', e);
             }
@@ -1810,8 +1892,8 @@
 
             try {
                 const res = await fetch(`/api/db/summary/brand?${params}`);
-                const data = await res.json();
-                renderBrandTable(data);
+                brandData = await res.json();
+                renderBrandTable(brandData);
             } catch (e) {
                 console.error('Error loading brand summary:', e);
             }
@@ -1921,6 +2003,13 @@
                     return value ? `<a href="${value}" target="_blank">${value}</a>` : '-';
                 case 'split':
                     if (Array.isArray(value) && value.length > 0) {
+                        // Helper to get the correct value based on currency toggle
+                        const getValueForCurrency = (s, cur) => {
+                            if (cur === 'EUR' && s.value_eur !== undefined) return s.value_eur;
+                            if (cur === 'RON' && s.value_ron !== undefined) return s.value_ron;
+                            return s.value; // fallback to original value
+                        };
+
                         // Helper to check if allocation has reinvoice destinations
                         const hasReinvoice = (s) => (s.reinvoice_destinations && s.reinvoice_destinations.length > 0) || s.reinvoice_to;
 
@@ -1944,17 +2033,21 @@
                             return '';
                         };
 
+                        // Determine currency to use (toggle currency takes precedence)
+                        const displayCurrency = inv.useCurrency || inv.currency || 'RON';
+
                         // Single allocation - show inline (no collapse)
                         if (value.length === 1) {
                             const s = value[0];
+                            const displayValue = getValueForCurrency(s, displayCurrency);
                             const location = s.subdepartment || s.department;
                             const brandPart = s.brand ? ` (${s.brand})` : '';
                             const borderColor = hasReinvoice(s) ? 'border-warning' : 'border-primary';
                             const reinvoiceLine = formatReinvoiceDisplay(s);
-                            const commentIcon = s.id ? `<a href="#" class="allocation-comment-btn ms-1 ${s.comment ? 'text-info' : 'text-muted'}" data-allocation-id="${s.id}" data-department="${location}" data-brand="${s.brand || ''}" data-value="${s.value}" data-percent="${s.percent}" data-comment="${(s.comment || '').replace(/"/g, '&quot;')}" title="${s.comment ? 'View/Edit comment' : 'Add comment'}"><i class="bi bi-chat-text${s.comment ? '-fill' : ''}"></i></a>` : '';
+                            const commentIcon = s.id ? `<a href="#" class="allocation-comment-btn ms-1 ${s.comment ? 'text-info' : 'text-muted'}" data-allocation-id="${s.id}" data-department="${location}" data-brand="${s.brand || ''}" data-value="${displayValue}" data-percent="${s.percent}" data-comment="${(s.comment || '').replace(/"/g, '&quot;')}" title="${s.comment ? 'View/Edit comment' : 'Add comment'}"><i class="bi bi-chat-text${s.comment ? '-fill' : ''}"></i></a>` : '';
                             return `<div class="small border-start ${borderColor} ps-2">
                                 <span class="text-muted">${location}${brandPart}</span>${commentIcon}<br>
-                                <strong>${formatCurrency(s.value)} ${inv.currency || 'RON'}</strong>
+                                <strong>${formatCurrency(displayValue)} ${displayCurrency}</strong>
                                 <span class="badge bg-secondary">${s.percent}%</span>${reinvoiceLine}
                             </div>`;
                         }
@@ -1962,13 +2055,13 @@
                         // Multiple allocations - collapsible
                         const collapseId = 'split-' + Math.random().toString(36).substr(2, 9);
 
-                        // Calculate summary
-                        const totalValue = value.reduce((sum, s) => sum + s.value, 0);
+                        // Calculate summary using correct currency values
+                        const totalValue = value.reduce((sum, s) => sum + getValueForCurrency(s, displayCurrency), 0);
                         const reinvoicedAllocs = value.filter(s => hasReinvoice(s));
                         const allocsWithComments = value.filter(s => s.comment);
 
                         // Build summary text
-                        const currency = inv.currency || 'RON';
+                        const currency = displayCurrency;
                         let summaryText = `${value.length} allocations • ${formatCurrency(totalValue)} ${currency}`;
                         if (reinvoicedAllocs.length > 0) {
                             summaryText += ` <span class="text-warning">(→)</span>`;
@@ -1979,14 +2072,15 @@
 
                         // Build allocation details
                         const allocDetails = value.map(s => {
+                            const displayValue = getValueForCurrency(s, displayCurrency);
                             const location = s.subdepartment || s.department;
                             const brandPart = s.brand ? ` (${s.brand})` : '';
                             const borderColor = hasReinvoice(s) ? 'border-warning' : 'border-primary';
                             const reinvoiceLine = formatReinvoiceDisplay(s);
-                            const commentIcon = s.id ? `<a href="#" class="allocation-comment-btn ms-1 ${s.comment ? 'text-info' : 'text-muted'}" data-allocation-id="${s.id}" data-department="${location}" data-brand="${s.brand || ''}" data-value="${s.value}" data-percent="${s.percent}" data-comment="${(s.comment || '').replace(/"/g, '&quot;')}" title="${s.comment ? 'View/Edit comment' : 'Add comment'}"><i class="bi bi-chat-text${s.comment ? '-fill' : ''}"></i></a>` : '';
+                            const commentIcon = s.id ? `<a href="#" class="allocation-comment-btn ms-1 ${s.comment ? 'text-info' : 'text-muted'}" data-allocation-id="${s.id}" data-department="${location}" data-brand="${s.brand || ''}" data-value="${displayValue}" data-percent="${s.percent}" data-comment="${(s.comment || '').replace(/"/g, '&quot;')}" title="${s.comment ? 'View/Edit comment' : 'Add comment'}"><i class="bi bi-chat-text${s.comment ? '-fill' : ''}"></i></a>` : '';
                             return `<div class="small border-start ${borderColor} ps-2 mb-1">
                                 <span class="text-muted">${location}${brandPart}</span>${commentIcon}<br>
-                                <strong>${formatCurrency(s.value)} ${currency}</strong>
+                                <strong>${formatCurrency(displayValue)} ${currency}</strong>
                                 <span class="badge bg-secondary">${s.percent}%</span>${reinvoiceLine}
                             </div>`;
                         }).join('');
@@ -2205,9 +2299,15 @@
             const thead = document.getElementById('companyTableHead').querySelector('tr');
             const tbody = document.getElementById('companyTable');
             const visibleCols = companyColumnConfig.filter(c => c.visible);
+            const currency = companyCurrency;
 
-            // Render header
-            thead.innerHTML = visibleCols.map(col => `<th>${col.name}</th>`).join('');
+            // Render header with currency indicator for value columns
+            thead.innerHTML = visibleCols.map(col => {
+                if (col.format === 'currency') {
+                    return `<th>${col.name} (${currency})</th>`;
+                }
+                return `<th>${col.name}</th>`;
+            }).join('');
 
             if (data.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="${visibleCols.length}" class="text-center text-muted">No data</td></tr>`;
@@ -2215,17 +2315,22 @@
             }
 
             tbody.innerHTML = data.map(row => {
-                // Add computed avg_value
-                row.avg_value = row.total_value / row.invoice_count;
+                // Use RON or EUR value based on toggle
+                const totalValue = currency === 'EUR' ? row.total_value_eur : row.total_value_ron;
+                // Add computed avg_value based on selected currency
+                const avgValue = totalValue / row.invoice_count;
 
                 const cells = visibleCols.map(col => {
-                    let value = row[col.source];
-                    if (col.format === 'currency') {
-                        return `<td>${formatCurrency(value)} ${row.currency || 'RON'}</td>`;
+                    if (col.id === 'total_value') {
+                        return `<td>${formatCurrency(totalValue)} ${currency}</td>`;
+                    } else if (col.id === 'avg_value') {
+                        return `<td>${formatCurrency(avgValue)} ${currency}</td>`;
+                    } else if (col.id === 'avg_exchange_rate') {
+                        return `<td>${row.avg_exchange_rate ? row.avg_exchange_rate.toFixed(4) : '-'}</td>`;
                     } else if (col.id === 'company') {
-                        return `<td><strong>${value}</strong></td>`;
+                        return `<td><strong>${row.company}</strong></td>`;
                     }
-                    return `<td>${value || '-'}</td>`;
+                    return `<td>${row[col.source] || '-'}</td>`;
                 }).join('');
                 return `<tr>${cells}</tr>`;
             }).join('');
@@ -2235,9 +2340,15 @@
             const thead = document.getElementById('departmentTableHead').querySelector('tr');
             const tbody = document.getElementById('departmentTable');
             const visibleCols = departmentColumnConfig.filter(c => c.visible);
+            const currency = departmentCurrency;
 
-            // Render header
-            thead.innerHTML = visibleCols.map(col => `<th>${col.name}</th>`).join('');
+            // Render header with currency indicator for value columns
+            thead.innerHTML = visibleCols.map(col => {
+                if (col.format === 'currency') {
+                    return `<th>${col.name} (${currency})</th>`;
+                }
+                return `<th>${col.name}</th>`;
+            }).join('');
 
             if (data.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="${visibleCols.length}" class="text-center text-muted">No data</td></tr>`;
@@ -2245,17 +2356,22 @@
             }
 
             tbody.innerHTML = data.map(row => {
-                // Add computed avg_value
-                row.avg_value = row.total_value / row.invoice_count;
+                // Use RON or EUR value based on toggle
+                const totalValue = currency === 'EUR' ? row.total_value_eur : row.total_value_ron;
+                // Add computed avg_value based on selected currency
+                const avgValue = totalValue / row.invoice_count;
 
                 const cells = visibleCols.map(col => {
-                    let value = row[col.source];
-                    if (col.format === 'currency') {
-                        return `<td>${formatCurrency(value)} ${row.currency || 'RON'}</td>`;
+                    if (col.id === 'total_value') {
+                        return `<td>${formatCurrency(totalValue)} ${currency}</td>`;
+                    } else if (col.id === 'avg_value') {
+                        return `<td>${formatCurrency(avgValue)} ${currency}</td>`;
+                    } else if (col.id === 'avg_exchange_rate') {
+                        return `<td>${row.avg_exchange_rate ? row.avg_exchange_rate.toFixed(4) : '-'}</td>`;
                     } else if (col.id === 'department') {
-                        return `<td><strong>${value}</strong></td>`;
+                        return `<td><strong>${row[col.source]}</strong></td>`;
                     }
-                    return `<td>${value || '-'}</td>`;
+                    return `<td>${row[col.source] || '-'}</td>`;
                 }).join('');
                 return `<tr>${cells}</tr>`;
             }).join('');
@@ -2265,9 +2381,15 @@
             const thead = document.getElementById('brandTableHead').querySelector('tr');
             const tbody = document.getElementById('brandTable');
             const visibleCols = brandColumnConfig.filter(c => c.visible);
+            const currency = brandCurrency;
 
-            // Render header
-            thead.innerHTML = visibleCols.map(col => `<th>${col.name}</th>`).join('');
+            // Render header with currency indicator for value columns
+            thead.innerHTML = visibleCols.map(col => {
+                if (col.format === 'currency') {
+                    return `<th>${col.name} (${currency})</th>`;
+                }
+                return `<th>${col.name}</th>`;
+            }).join('');
 
             if (data.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="${visibleCols.length}" class="text-center text-muted">No data</td></tr>`;
@@ -2275,20 +2397,25 @@
             }
 
             tbody.innerHTML = data.map(row => {
-                // Add computed avg_value
-                row.avg_value = row.total_value / row.invoice_count;
+                // Use RON or EUR value based on toggle
+                const totalValue = currency === 'EUR' ? row.total_value_eur : row.total_value_ron;
+                // Add computed avg_value based on selected currency
+                const avgValue = totalValue / row.invoice_count;
 
                 const cells = visibleCols.map(col => {
-                    let value = row[col.source];
-                    if (col.format === 'currency') {
-                        return `<td>${formatCurrency(value)} ${row.currency || 'RON'}</td>`;
+                    if (col.id === 'total_value') {
+                        return `<td>${formatCurrency(totalValue)} ${currency}</td>`;
+                    } else if (col.id === 'avg_value') {
+                        return `<td>${formatCurrency(avgValue)} ${currency}</td>`;
+                    } else if (col.id === 'avg_exchange_rate') {
+                        return `<td>${row.avg_exchange_rate ? row.avg_exchange_rate.toFixed(4) : '-'}</td>`;
                     } else if (col.id === 'brand') {
-                        return `<td><strong>${value || '(No Brand)'}</strong></td>`;
+                        return `<td><strong>${row[col.source] || '(No Brand)'}</strong></td>`;
                     } else if (col.format === 'split') {
-                        // Use the same split formatting as the Invoices table
-                        return `<td>${formatColumnValue(value, col, {currency: row.currency})}</td>`;
+                        // Use the same split formatting as the Invoices table, pass selected currency
+                        return `<td>${formatColumnValue(row[col.source], col, {currency: currency, useCurrency: currency})}</td>`;
                     }
-                    return `<td>${value || '-'}</td>`;
+                    return `<td>${row[col.source] || '-'}</td>`;
                 }).join('');
                 return `<tr>${cells}</tr>`;
             }).join('');

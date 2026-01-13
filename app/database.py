@@ -1347,6 +1347,7 @@ def get_summary_by_company(start_date: Optional[str] = None, end_date: Optional[
                           brand: Optional[str] = None) -> list[dict]:
     """Get total allocation values grouped by company.
 
+    Returns totals in both RON and EUR for currency toggle support.
     Results are cached for 60 seconds to reduce DB load on dashboard tab switches.
     """
     global _summary_cache
@@ -1363,8 +1364,18 @@ def get_summary_by_company(start_date: Optional[str] = None, end_date: Optional[
     try:
         cursor = get_cursor(conn)
 
+        # Calculate allocation values in RON and EUR based on invoice conversion rates
         query = '''
-            SELECT a.company, i.currency, SUM(a.allocation_value) as total_value, COUNT(DISTINCT a.invoice_id) as invoice_count
+            SELECT
+                a.company,
+                SUM(CASE WHEN i.invoice_value > 0 AND i.value_ron IS NOT NULL
+                    THEN a.allocation_value * i.value_ron / i.invoice_value
+                    ELSE a.allocation_value END) as total_value_ron,
+                SUM(CASE WHEN i.invoice_value > 0 AND i.value_eur IS NOT NULL
+                    THEN a.allocation_value * i.value_eur / i.invoice_value
+                    ELSE a.allocation_value / COALESCE(i.exchange_rate, 5.0) END) as total_value_eur,
+                COUNT(DISTINCT a.invoice_id) as invoice_count,
+                AVG(COALESCE(i.exchange_rate, 5.0)) as avg_exchange_rate
             FROM allocations a
             JOIN invoices i ON a.invoice_id = i.id
         '''
@@ -1390,7 +1401,7 @@ def get_summary_by_company(start_date: Optional[str] = None, end_date: Optional[
         if conditions:
             query += ' WHERE ' + ' AND '.join(conditions)
 
-        query += ' GROUP BY a.company, i.currency ORDER BY total_value DESC'
+        query += ' GROUP BY a.company ORDER BY total_value_ron DESC'
 
         cursor.execute(query, params)
         results = [dict_from_row(row) for row in cursor.fetchall()]
@@ -1424,8 +1435,20 @@ def get_summary_by_department(company: Optional[str] = None, start_date: Optiona
     try:
         cursor = get_cursor(conn)
 
+        # Calculate allocation values in RON and EUR based on invoice conversion rates
         query = '''
-            SELECT a.company, a.department, a.subdepartment, i.currency, SUM(a.allocation_value) as total_value, COUNT(DISTINCT a.invoice_id) as invoice_count
+            SELECT
+                a.company,
+                a.department,
+                a.subdepartment,
+                SUM(CASE WHEN i.invoice_value > 0 AND i.value_ron IS NOT NULL
+                    THEN a.allocation_value * i.value_ron / i.invoice_value
+                    ELSE a.allocation_value END) as total_value_ron,
+                SUM(CASE WHEN i.invoice_value > 0 AND i.value_eur IS NOT NULL
+                    THEN a.allocation_value * i.value_eur / i.invoice_value
+                    ELSE a.allocation_value / COALESCE(i.exchange_rate, 5.0) END) as total_value_eur,
+                COUNT(DISTINCT a.invoice_id) as invoice_count,
+                AVG(COALESCE(i.exchange_rate, 5.0)) as avg_exchange_rate
             FROM allocations a
             JOIN invoices i ON a.invoice_id = i.id
         '''
@@ -1454,7 +1477,7 @@ def get_summary_by_department(company: Optional[str] = None, start_date: Optiona
         if conditions:
             query += ' WHERE ' + ' AND '.join(conditions)
 
-        query += ' GROUP BY a.company, a.department, a.subdepartment, i.currency ORDER BY total_value DESC'
+        query += ' GROUP BY a.company, a.department, a.subdepartment ORDER BY total_value_ron DESC'
 
         cursor.execute(query, params)
         results = [dict_from_row(row) for row in cursor.fetchall()]
@@ -1488,17 +1511,29 @@ def get_summary_by_brand(company: Optional[str] = None, start_date: Optional[str
     try:
         cursor = get_cursor(conn)
 
+        # Calculate allocation values in RON and EUR based on invoice conversion rates
         query = '''
             SELECT a.brand,
-                   i.currency,
-                   SUM(a.allocation_value) as total_value,
+                   SUM(CASE WHEN i.invoice_value > 0 AND i.value_ron IS NOT NULL
+                       THEN a.allocation_value * i.value_ron / i.invoice_value
+                       ELSE a.allocation_value END) as total_value_ron,
+                   SUM(CASE WHEN i.invoice_value > 0 AND i.value_eur IS NOT NULL
+                       THEN a.allocation_value * i.value_eur / i.invoice_value
+                       ELSE a.allocation_value / COALESCE(i.exchange_rate, 5.0) END) as total_value_eur,
                    COUNT(DISTINCT a.invoice_id) as invoice_count,
+                   AVG(COALESCE(i.exchange_rate, 5.0)) as avg_exchange_rate,
                    STRING_AGG(DISTINCT i.invoice_number, ', ') as invoice_numbers,
                    JSON_AGG(JSON_BUILD_OBJECT(
                        'department', a.department,
                        'subdepartment', a.subdepartment,
                        'brand', a.brand,
                        'value', a.allocation_value,
+                       'value_ron', CASE WHEN i.invoice_value > 0 AND i.value_ron IS NOT NULL
+                           THEN a.allocation_value * i.value_ron / i.invoice_value
+                           ELSE a.allocation_value END,
+                       'value_eur', CASE WHEN i.invoice_value > 0 AND i.value_eur IS NOT NULL
+                           THEN a.allocation_value * i.value_eur / i.invoice_value
+                           ELSE a.allocation_value / COALESCE(i.exchange_rate, 5.0) END,
                        'percent', ROUND(a.allocation_percent),
                        'reinvoice_to', a.reinvoice_to,
                        'reinvoice_brand', a.reinvoice_brand,
@@ -1534,7 +1569,7 @@ def get_summary_by_brand(company: Optional[str] = None, start_date: Optional[str
         if conditions:
             query += ' WHERE ' + ' AND '.join(conditions)
 
-        query += ' GROUP BY a.brand, i.currency ORDER BY total_value DESC'
+        query += ' GROUP BY a.brand ORDER BY total_value_ron DESC'
 
         cursor.execute(query, params)
         results = [dict_from_row(row) for row in cursor.fetchall()]
