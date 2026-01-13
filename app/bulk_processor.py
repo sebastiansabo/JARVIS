@@ -274,6 +274,90 @@ def parse_google_ads_invoice(text: str) -> dict:
     return result
 
 
+def parse_tiktok_invoice(text: str) -> dict:
+    """
+    Parse TikTok advertising invoice from extracted text.
+
+    TikTok invoices have:
+    - Invoice number: BDUK20253368656 format
+    - Supplier: TikTok Information Technologies UK Limited
+    - VAT: GB485763736
+    - Date format: "15, September, 2025"
+    - Consumption Details table with campaign info
+
+    Returns dict with invoice details and campaign/items breakdown.
+    """
+    result = {
+        'supplier': 'TikTok Information Technologies UK Limited',
+        'supplier_vat': 'GB485763736',
+        'currency': 'RON',
+        'items': {}
+    }
+
+    # Extract invoice number - format: BDUK20253368656
+    invoice_match = re.search(r'Invoice\s*#\s*([A-Z]{2,}UK?\d+)', text, re.IGNORECASE)
+    if invoice_match:
+        result['invoice_number'] = invoice_match.group(1)
+    else:
+        # Try alternate pattern in Consumption Details section
+        alt_match = re.search(r'Invoice\s+Number:\s*([A-Z]{2,}UK?\d+)', text, re.IGNORECASE)
+        if alt_match:
+            result['invoice_number'] = alt_match.group(1)
+
+    # Extract date - format: "15, September, 2025" or "Invoice Date 15, September, 2025"
+    date_match = re.search(r'Invoice\s+Date\s+(\d{1,2}),?\s*(\w+),?\s*(\d{4})', text, re.IGNORECASE)
+    if date_match:
+        day, month, year = date_match.groups()
+        result['invoice_date'] = f"{day} {month} {year}"
+        result['date_parsed'] = parse_english_date(f"{month} {day}, {year}")
+
+    # Extract customer VAT - format: RO50186814
+    vat_match = re.search(r'VAT\s+number\s+(RO\d+)', text, re.IGNORECASE)
+    if vat_match:
+        result['customer_vat'] = vat_match.group(1)
+    else:
+        # Try alternate pattern
+        alt_vat = re.search(r'(RO\d{6,})', text)
+        if alt_vat:
+            result['customer_vat'] = alt_vat.group(1)
+
+    # Extract total value - format: "Total 22.00" or "Total in RON 22.00"
+    value_patterns = [
+        r'Total\s+in\s+RON\s+([\d.,]+)',
+        r'Total\s+([\d.,]+)\s*$',
+        r'Total\s+([\d.,]+)',
+    ]
+    for pattern in value_patterns:
+        value_match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+        if value_match:
+            result['invoice_value'] = parse_value(value_match.group(1))
+            break
+
+    # Extract currency from text
+    currency_match = re.search(r'Amount\s+in\s+(RON|EUR|USD)', text, re.IGNORECASE)
+    if currency_match:
+        result['currency'] = currency_match.group(1).upper()
+
+    # Extract campaign/consumption details from page 2
+    # Format: Campaign ID | Campaign Name | ... | Total Consumption in RON
+    # Example: 1843317419438178 | Traffic 20250915112154 | ... | 22.00
+    campaign_pattern = re.search(
+        r'(\d{15,})\s+([A-Za-z_\s]+\d*)\s+(?:RO|EU|US)?\s*(?:\d{4}-\d{2}-\d{2}\s*~\s*\d{4}-\d{2}-\d{2})?\s*([\d.,]+)',
+        text
+    )
+    if campaign_pattern:
+        campaign_id = campaign_pattern.group(1)
+        campaign_name = campaign_pattern.group(2).strip()
+        campaign_value = parse_value(campaign_pattern.group(3))
+        if campaign_name and campaign_value:
+            result['items'][f"{campaign_name} ({campaign_id})"] = campaign_value
+
+    # Also support 'campaigns' alias for frontend compatibility
+    result['campaigns'] = result['items']
+
+    return result
+
+
 def parse_anthropic_invoice(text: str) -> dict:
     """
     Parse Anthropic (Claude API) invoice from extracted text.
@@ -405,6 +489,8 @@ def detect_invoice_type(text: str) -> str:
         return 'anthropic'
     elif 'dreamstime' in text_lower:
         return 'dreamstime'
+    elif 'tiktok' in text_lower:
+        return 'tiktok'
     elif 'ro efactura' in text_lower or 'efactura' in text_lower or 'nr. factura' in text_lower:
         return 'efactura'
     else:
@@ -525,6 +611,8 @@ def parse_invoice_auto(text: str, filename: str = '') -> dict:
         result = parse_meta_invoice(text)
     elif invoice_type == 'google_ads':
         result = parse_google_ads_invoice(text)
+    elif invoice_type == 'tiktok':
+        result = parse_tiktok_invoice(text)
     elif invoice_type == 'efactura':
         result = parse_efactura_invoice(text)
     else:
@@ -538,7 +626,7 @@ def parse_invoice_auto(text: str, filename: str = '') -> dict:
     needs_ai = (
         not result.get('invoice_number') or
         not result.get('invoice_value') or
-        (not result.get('items') and invoice_type not in ['meta', 'google_ads', 'efactura'])
+        (not result.get('items') and invoice_type not in ['meta', 'google_ads', 'tiktok', 'efactura'])
     )
 
     if needs_ai and AI_ENABLED:
