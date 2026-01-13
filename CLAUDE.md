@@ -392,12 +392,13 @@ The `process_invoices()` function returns:
 }
 ```
 
-## Recent Changes
-- Added Invoice Status and Payment Status filters to Accounting dashboard
-  - Status filter: New / Processed / Incomplete
-  - Payment filter: Not Paid / Paid
-  - Filters work with existing company, department, brand, date range filters
-  - Backend support in `get_invoices_with_allocations()` and `get_all_invoices()`
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
+
+## Disabled Features
+
+Connector infrastructure (Google Ads, Anthropic invoice fetching) is disabled due to authentication challenges. Files `google_ads_connector.py` and `anthropic_connector.py` remain for future use.
 - Summary cards improvements
   - Hidden by default (toggle to show, preference persists in localStorage)
   - Summary values now reflect filtered data (invoices, value, companies, departments)
