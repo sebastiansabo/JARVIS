@@ -776,6 +776,32 @@ def init_db():
     ''')
     conn.commit()
 
+    # Migration: Fix invoices with subtract_vat=true but vat_rate=null
+    # Calculate the implied VAT rate from invoice_value and net_value, then match to closest standard rate
+    cursor.execute('''
+        SELECT id, invoice_value, net_value
+        FROM invoices
+        WHERE subtract_vat = true AND vat_rate IS NULL AND net_value IS NOT NULL AND net_value > 0
+    ''')
+    invoices_to_fix = cursor.fetchall()
+
+    if invoices_to_fix:
+        # Get available VAT rates
+        cursor.execute('SELECT rate FROM vat_rates WHERE is_active = true ORDER BY rate DESC')
+        available_rates = [row['rate'] for row in cursor.fetchall()]
+
+        for inv in invoices_to_fix:
+            # Calculate implied VAT rate: vat_rate = (invoice_value / net_value - 1) * 100
+            implied_rate = (inv['invoice_value'] / inv['net_value'] - 1) * 100
+
+            # Find closest matching rate
+            closest_rate = min(available_rates, key=lambda r: abs(r - implied_rate))
+
+            # Update invoice with matched rate
+            cursor.execute('UPDATE invoices SET vat_rate = %s WHERE id = %s', (closest_rate, inv['id']))
+
+        conn.commit()
+
     # Seed initial data if tables are empty
     cursor.execute('SELECT COUNT(*) FROM department_structure')
     result = cursor.fetchone()
