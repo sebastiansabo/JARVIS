@@ -2189,7 +2189,10 @@
 
                 // Get VAT subtraction settings
                 const subtractVat = document.getElementById('subtractVat').checked;
-                const vatRateId = document.getElementById('vatRateId').value;
+                const vatRateSelect = document.getElementById('vatRateSelect');
+                const vatRateSelectedOption = vatRateSelect.options[vatRateSelect.selectedIndex];
+                const vatRate = subtractVat && vatRateSelectedOption && vatRateSelectedOption.dataset.rate
+                    ? parseFloat(vatRateSelectedOption.dataset.rate) : null;
                 const netValue = document.getElementById('netValue').value;
 
                 // First save to database (without drive link if not yet uploaded)
@@ -2210,7 +2213,7 @@
                         comment: invoiceNotes,
                         payment_status: paymentStatus,
                         subtract_vat: subtractVat,
-                        vat_rate_id: vatRateId ? parseInt(vatRateId) : null,
+                        vat_rate: vatRate,
                         net_value: netValue ? parseFloat(netValue) : null
                     })
                 });
@@ -2270,6 +2273,7 @@
                     document.getElementById('valueRon').value = '';
                     document.getElementById('valueEur').value = '';
                     document.getElementById('exchangeRate').value = '';
+                    document.getElementById('driveLink').value = '';
                     // Reset VAT subtraction fields
                     document.getElementById('subtractVat').checked = false;
                     document.getElementById('vatRateCol').style.display = 'none';
