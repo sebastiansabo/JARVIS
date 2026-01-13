@@ -23,6 +23,14 @@ The system serves a multi-company structure:
 7. **Drive Storage**: Invoices + attachments are archived in Google Drive with Year/Month/Company/Invoice structure
 8. **Image Compression**: Attachment images (PNG/JPEG) are compressed via TinyPNG before upload
 
+### Bulk Processing Workflow (`/bulk`)
+1. **Multi-Upload**: Drag-and-drop multiple PDF invoices
+2. **Auto-Detection**: System detects invoice type (Meta, Google Ads, eFactura, generic)
+3. **Item Extraction**: Line items/campaigns extracted from invoices
+4. **Summary Views**: By invoice, by item/campaign, by month, by supplier
+5. **Bulk Distribute**: Allocate all processed invoices to departments in one batch
+6. **Excel Export**: Multi-sheet report with all breakdowns
+
 ## Key Concepts
 
 ### Allocation
@@ -59,7 +67,7 @@ app/
 ├── app.py              # Flask routes, API endpoints
 ├── database.py         # PostgreSQL operations, migrations
 ├── models.py           # Data models (DepartmentUnit, InvoiceAllocation)
-├── services.py         # Business logic
+├── services.py         # Company VAT matching utilities
 ├── invoice_parser.py   # Claude AI + regex template parsing
 ├── drive_service.py    # Google Drive OAuth integration
 ├── image_compressor.py # TinyPNG image compression
