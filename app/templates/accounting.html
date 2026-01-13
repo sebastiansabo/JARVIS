@@ -40,6 +40,7 @@
         .status-row-new > td { background-color: rgba(13, 110, 253, 0.1) !important; }  /* Blue 10% */
         .status-row-processed > td { background-color: rgba(25, 135, 84, 0.1) !important; }  /* Green 10% */
         .status-row-incomplete > td { background-color: rgba(220, 53, 69, 0.1) !important; }  /* Red 10% */
+        .status-row-eronata > td { background-color: rgba(255, 0, 0, 0.35) !important; }  /* Bright Red 35% */
         /* Loading overlay */
         .loading-overlay {
             position: fixed;
@@ -220,6 +221,7 @@
                         <option value="new">New</option>
                         <option value="processed">Processed</option>
                         <option value="incomplete">Incomplete</option>
+                        <option value="eronata">Eronata</option>
                     </select>
                 </div>
                 <div class="col-auto">
@@ -1886,6 +1888,7 @@
                         <option value="new" ${currentStatus === 'new' ? 'selected' : ''}>New</option>
                         <option value="processed" ${currentStatus === 'processed' ? 'selected' : ''}>Processed</option>
                         <option value="incomplete" ${currentStatus === 'incomplete' ? 'selected' : ''}>Incomplete</option>
+                        <option value="eronata" ${currentStatus === 'eronata' ? 'selected' : ''}>Eronata</option>
                     </select>`;
                 case 'payment_status':
                     const currentPaymentStatus = value || 'not_paid';
@@ -2316,7 +2319,7 @@
                     const row = dropdown.closest('tr');
                     if (row) {
                         // Remove existing status classes
-                        row.classList.remove('status-row-new', 'status-row-processed', 'status-row-incomplete');
+                        row.classList.remove('status-row-new', 'status-row-processed', 'status-row-incomplete', 'status-row-eronata');
                         // Add new status class (lowercase for CSS matching)
                         row.classList.add(`status-row-${newStatus.toLowerCase()}`);
                     }
@@ -2377,6 +2380,7 @@
                         <option value="new" ${currentStatus === 'new' ? 'selected' : ''}>New</option>
                         <option value="processed" ${currentStatus === 'processed' ? 'selected' : ''}>Processed</option>
                         <option value="incomplete" ${currentStatus === 'incomplete' ? 'selected' : ''}>Incomplete</option>
+                        <option value="eronata" ${currentStatus === 'eronata' ? 'selected' : ''}>Eronata</option>
                     </select>`;
 
                 const currentPaymentStatus = invoice.payment_status || 'not_paid';
@@ -2403,7 +2407,9 @@
                                 <tr><th>Invoice #</th><td><code>${invoice.invoice_number}</code></td></tr>
                                 <tr><th>Date</th><td>${formatDateRomanian(invoice.invoice_date)}</td></tr>
                                 <tr><th>Total Value</th><td><strong>${formatCurrency(invoice.invoice_value)} ${invoice.currency || 'RON'}</strong></td></tr>
-                                <tr><th>Template</th><td>${invoice.invoice_template || '-'}</td></tr>
+                                ${invoice.subtract_vat && invoice.net_value ? `
+                                <tr><th>VAT (${invoice.vat_rate ? invoice.vat_rate + '%' : ''})</th><td>${formatCurrency(invoice.invoice_value - invoice.net_value)} ${invoice.currency || 'RON'}</td></tr>
+                                <tr><th>Net Value (excl. VAT)</th><td><strong>${formatCurrency(invoice.net_value)} ${invoice.currency || 'RON'}</strong></td></tr>` : ''}
                                 <tr><th>Created</th><td>${invoice.created_at}</td></tr>
                                 ${invoice.comment ? `<tr><th>Notes</th><td><em>${invoice.comment}</em></td></tr>` : ''}
                                 <tr><th>Invoice File</th><td>${driveButtons}</td></tr>
@@ -2428,6 +2434,12 @@
                                         : (a.reinvoice_to ? `<div class="small text-warning"><i class="bi bi-arrow-right"></i> Reinvoice to: ${a.reinvoice_to}${a.reinvoice_brand ? ' (' + a.reinvoice_brand + ')' : ''}${a.reinvoice_department ? ' / ' + a.reinvoice_department : ''}${a.reinvoice_subdepartment ? ' / ' + a.reinvoice_subdepartment : ''}</div>` : '')}
                                 </div>
                             `).join('')}
+                            <div class="border-top mt-3 pt-2">
+                                <div class="d-flex justify-content-between fw-bold">
+                                    <span>Total (${invoice.allocations.length} allocation${invoice.allocations.length !== 1 ? 's' : ''})${invoice.subtract_vat ? ' <small class="text-muted fw-normal">excl. VAT</small>' : ''}</span>
+                                    <span class="text-success">${formatCurrency(invoice.allocations.reduce((sum, a) => sum + (a.allocation_value || 0), 0))} ${invoice.currency || 'RON'}</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -2753,11 +2765,12 @@
                 .sort();
         }
 
-        function getResponsible(company, department, subdepartment) {
+        function getResponsible(company, department, subdepartment, brand) {
             const match = organizationalStructure.find(s =>
                 s.company === company &&
                 s.department === department &&
-                (!subdepartment || s.subdepartment === subdepartment)
+                (!subdepartment || s.subdepartment === subdepartment) &&
+                (!brand || s.brand === brand)
             );
             return match ? match.manager : '';
         }
@@ -3139,10 +3152,11 @@
         function onAllocationDeptChange(idx) {
             const company = document.getElementById('editDedicatedCompany').value;
             const department = document.querySelector(`.alloc-department[data-idx="${idx}"]`).value;
+            const brand = editAllocations[idx].brand;
 
             editAllocations[idx].department = department;
             editAllocations[idx].subdepartment = '';
-            editAllocations[idx].responsible = getResponsible(company, department, null);
+            editAllocations[idx].responsible = getResponsible(company, department, null, brand);
             renderEditAllocations();
         }
 
@@ -3153,10 +3167,11 @@
             editAllocations[idx].subdepartment = row.querySelector('.alloc-subdepartment').value || null;
             editAllocations[idx].brand = row.querySelector('.alloc-brand').value || null;
 
-            // Update responsible based on company/dept/subdept
+            // Update responsible based on company/dept/subdept/brand
             const department = editAllocations[idx].department;
             const subdepartment = editAllocations[idx].subdepartment;
-            editAllocations[idx].responsible = getResponsible(company, department, subdepartment);
+            const brand = editAllocations[idx].brand;
+            editAllocations[idx].responsible = getResponsible(company, department, subdepartment, brand);
         }
 
         function onReinvoiceCheckChange(idx) {

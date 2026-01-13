@@ -1804,14 +1804,17 @@
             });
 
             subdeptSelect.addEventListener('change', updateManager);
+            brandSelect.addEventListener('change', updateManager);
 
             async function updateManager() {
                 const company = document.getElementById('dedicatedCompany').value;
+                const brand = brandSelect.value;
                 const dept = deptSelect.value;
                 const subdept = subdeptSelect.value;
 
                 if (company && dept) {
                     const params = new URLSearchParams({ company, department: dept });
+                    if (brand) params.append('brand', brand);
                     if (subdept) params.append('subdepartment', subdept);
                     const res = await fetch(`/api/manager?${params}`);
                     const data = await res.json();

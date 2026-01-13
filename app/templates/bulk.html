@@ -1209,7 +1209,7 @@
                 // Update subdepartment if department is set
                 if (patternAlloc.department) {
                     populateCampaignSubdepts(key, pattern.company, patternAlloc.department, patternAlloc.subdepartment);
-                    updateCampaignManager(key, pattern.company, patternAlloc.department);
+                    updateCampaignManager(key, pattern.company, patternAlloc.department, patternAlloc.brand);
                 }
 
                 // Handle reinvoice section
@@ -2442,7 +2442,7 @@
             // If existing department, populate subdepartments
             else if (existing?.department) {
                 populateCampaignSubdepts(key, company, existing.department, existing.subdepartment);
-                updateCampaignManager(key, company, existing.department);
+                updateCampaignManager(key, company, existing.department, existing?.brand);
             }
         }
 
@@ -2455,8 +2455,9 @@
 
             // Use master company instead of per-campaign company
             const company = selectedMasterCompany;
+            const brand = campaignAllocations[key]?.brand;
             populateCampaignSubdepts(key, company, department, null);
-            updateCampaignManager(key, company, department);
+            updateCampaignManager(key, company, department, brand);
             updateAllocationSummary();
         }
 
@@ -2486,12 +2487,17 @@
             }
         }
 
-        function updateCampaignManager(key, company, department) {
+        function updateCampaignManager(key, company, department, brand = null) {
             const item = document.querySelector(`.distribute-item[data-campaign-key="${key}"]`);
             if (!item) return;
 
             const managerDisplay = item.querySelector('.campaign-manager-display');
-            const deptUnit = structureData.find(s => s.company === company && s.department === department);
+            // Find matching structure entry, including brand if provided
+            const deptUnit = structureData.find(s =>
+                s.company === company &&
+                s.department === department &&
+                (!brand || s.brand === brand)
+            );
             const manager = deptUnit?.responsible || '--';
             managerDisplay.textContent = `Manager: ${manager}`;
         }

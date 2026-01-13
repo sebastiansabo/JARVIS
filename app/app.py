@@ -455,11 +455,12 @@ def api_subdepartments(company, department):
 @app.route('/api/manager')
 @login_required
 def api_manager():
-    """Get manager for a department."""
+    """Get manager for a department, optionally filtered by brand."""
     company = request.args.get('company')
     department = request.args.get('department')
     subdepartment = request.args.get('subdepartment')
-    return jsonify({'manager': get_manager(company, department, subdepartment)})
+    brand = request.args.get('brand')
+    return jsonify({'manager': get_manager(company, department, subdepartment, brand)})
 
 
 @app.route('/api/submit', methods=['POST'])

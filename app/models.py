@@ -240,25 +240,41 @@ def get_subdepartments(company: str, department: str) -> list[str]:
     return subdepts
 
 
-def get_manager(company: str, department: str, subdepartment: Optional[str] = None) -> str:
-    """Get the manager for a specific department."""
+def get_manager(company: str, department: str, subdepartment: Optional[str] = None, brand: Optional[str] = None) -> str:
+    """Get the manager for a specific department, optionally filtered by brand.
+
+    Uses manager_ids array joined with responsables table to get manager names.
+    """
     conn = get_db()
     cursor = get_cursor(conn)
-    ph = get_placeholder()
+
+    # Build query with optional brand and subdepartment filters
+    conditions = ["ds.company = %s", "ds.department = %s"]
+    params = [company, department]
+
+    if brand:
+        conditions.append("ds.brand = %s")
+        params.append(brand)
 
     if subdepartment:
-        cursor.execute(f'''
-            SELECT manager FROM department_structure
-            WHERE company = {ph} AND department = {ph} AND subdepartment = {ph}
-            LIMIT 1
-        ''', (company, department, subdepartment))
-    else:
-        cursor.execute(f'''
-            SELECT manager FROM department_structure
-            WHERE company = {ph} AND department = {ph}
-            LIMIT 1
-        ''', (company, department))
+        conditions.append("ds.subdepartment = %s")
+        params.append(subdepartment)
+
+    # Query manager_ids and join with responsables to get names
+    query = f'''
+        SELECT COALESCE(
+            (SELECT string_agg(r.name, ', ')
+             FROM unnest(ds.manager_ids) AS mid
+             JOIN responsables r ON r.id = mid),
+            ds.manager,
+            ''
+        ) AS manager_name
+        FROM department_structure ds
+        WHERE {' AND '.join(conditions)}
+        LIMIT 1
+    '''
+    cursor.execute(query, tuple(params))
 
     row = cursor.fetchone()
     release_db(conn)
-    return row['manager'] if row else ''
+    return row['manager_name'] if row and row['manager_name'] else ''

@@ -901,28 +901,44 @@ def save_invoice(
         invoice_id = cursor.fetchone()['id']
 
         # Insert allocations
+        # Use net_value for allocation calculations if VAT subtraction is enabled
+        base_value = net_value if subtract_vat and net_value else invoice_value
         for dist in distributions:
-            allocation_value = invoice_value * dist['allocation']
+            allocation_value = base_value * dist['allocation']
 
             # Look up the responsible (manager) from department_structure if not provided
             responsible = dist.get('responsible', '')
             if not responsible and dist['company'] and dist['department']:
+                # Build query with optional brand and subdepartment filters
+                conditions = ['ds.company = %s', 'ds.department = %s']
+                params = [dist['company'], dist['department']]
+
+                brand = dist.get('brand')
+                if brand:
+                    conditions.append('ds.brand = %s')
+                    params.append(brand)
+
                 subdept = dist.get('subdepartment')
                 if subdept:
-                    cursor.execute('''
-                        SELECT manager FROM department_structure
-                        WHERE company = %s AND department = %s AND subdepartment = %s
-                        LIMIT 1
-                    ''', (dist['company'], dist['department'], subdept))
-                else:
-                    cursor.execute('''
-                        SELECT manager FROM department_structure
-                        WHERE company = %s AND department = %s
-                        LIMIT 1
-                    ''', (dist['company'], dist['department']))
+                    conditions.append('ds.subdepartment = %s')
+                    params.append(subdept)
+
+                # Use manager_ids joined with responsables to get manager names
+                cursor.execute(f'''
+                    SELECT COALESCE(
+                        (SELECT string_agg(r.name, ', ')
+                         FROM unnest(ds.manager_ids) AS mid
+                         JOIN responsables r ON r.id = mid),
+                        ds.manager,
+                        ''
+                    ) AS manager_name
+                    FROM department_structure ds
+                    WHERE {' AND '.join(conditions)}
+                    LIMIT 1
+                ''', tuple(params))
                 row = cursor.fetchone()
-                if row and row['manager']:
-                    responsible = row['manager']
+                if row and row['manager_name']:
+                    responsible = row['manager_name']
 
             cursor.execute('''
                 INSERT INTO allocations (invoice_id, company, brand, department, subdepartment, allocation_percent, allocation_value, responsible, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment, locked, comment)
@@ -1985,11 +2001,13 @@ def update_invoice_allocations(invoice_id: int, allocations: list[dict]) -> bool
 
     try:
         # Get invoice value to calculate allocation values
-        cursor.execute('SELECT invoice_value FROM invoices WHERE id = %s', (invoice_id,))
+        cursor.execute('SELECT invoice_value, subtract_vat, net_value FROM invoices WHERE id = %s', (invoice_id,))
         result = cursor.fetchone()
         if not result:
             raise ValueError(f"Invoice {invoice_id} not found")
         invoice_value = result['invoice_value']
+        # Use net_value if VAT subtraction is enabled
+        base_value = result['net_value'] if result['subtract_vat'] and result['net_value'] else invoice_value
 
         # Delete existing allocations
         cursor.execute('DELETE FROM allocations WHERE invoice_id = %s', (invoice_id,))
@@ -1997,8 +2015,8 @@ def update_invoice_allocations(invoice_id: int, allocations: list[dict]) -> bool
         # Insert new allocations
         for alloc in allocations:
             allocation_percent = alloc['allocation_percent']
-            # Calculate value from percent if not provided
-            allocation_value = alloc.get('allocation_value') or (invoice_value * allocation_percent / 100)
+            # Calculate value from percent if not provided (use base_value which is net_value when VAT subtraction enabled)
+            allocation_value = alloc.get('allocation_value') or (base_value * allocation_percent / 100)
 
             cursor.execute('''
                 INSERT INTO allocations (invoice_id, company, brand, department, subdepartment,
