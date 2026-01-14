@@ -3966,47 +3966,60 @@
         function updateSummaryCards() {
             document.getElementById('totalInvoices').textContent = allInvoices.length;
 
-            // Calculate totals in both currencies
-            // For RON: sum all values, converting EUR to RON where needed
-            // For EUR: sum all values, converting RON to EUR where needed
+            // Calculate totals from ALLOCATION values (not invoice gross values)
+            // Allocation values use net_value when VAT subtraction is enabled
+            // This ensures consistency with summary tables
             summaryTotalRon = 0;
             summaryTotalEur = 0;
 
-            allInvoices.forEach(inv => {
-                const value = inv.invoice_value || 0;
-                const currency = (inv.currency || 'RON').toUpperCase();
+            // Count unique companies and departments
+            const uniqueCompanies = new Set();
+            const uniqueDepartments = new Set();
 
-                if (inv.value_ron && inv.value_eur) {
-                    // Use pre-calculated values if available
-                    summaryTotalRon += inv.value_ron;
-                    summaryTotalEur += inv.value_eur;
-                } else if (currency === 'EUR') {
-                    // EUR invoice without pre-calculated values
-                    summaryTotalEur += value;
-                    summaryTotalRon += value * currentEurRate;
+            allInvoices.forEach(inv => {
+                const invoiceValue = inv.invoice_value || 0;
+                const exchangeRate = inv.exchange_rate || currentEurRate;
+
+                // Sum allocation values and convert to RON/EUR
+                if (inv.allocations && inv.allocations.length > 0) {
+                    inv.allocations.forEach(alloc => {
+                        const allocValue = alloc.allocation_value || 0;
+                        // Convert allocation value to RON and EUR using invoice's conversion ratios
+                        if (invoiceValue > 0 && inv.value_ron) {
+                            summaryTotalRon += allocValue * inv.value_ron / invoiceValue;
+                        } else {
+                            summaryTotalRon += allocValue;
+                        }
+                        if (invoiceValue > 0 && inv.value_eur) {
+                            summaryTotalEur += allocValue * inv.value_eur / invoiceValue;
+                        } else {
+                            summaryTotalEur += allocValue / exchangeRate;
+                        }
+                        // Track unique companies/departments
+                        if (alloc.company) uniqueCompanies.add(alloc.company);
+                        if (alloc.department) uniqueDepartments.add(alloc.department);
+                    });
                 } else {
-                    // RON invoice without pre-calculated values
-                    summaryTotalRon += value;
-                    summaryTotalEur += value / currentEurRate;
+                    // Fallback for invoices without allocations - use invoice values
+                    if (inv.value_ron && inv.value_eur) {
+                        summaryTotalRon += inv.value_ron;
+                        summaryTotalEur += inv.value_eur;
+                    } else {
+                        const currency = (inv.currency || 'RON').toUpperCase();
+                        if (currency === 'EUR') {
+                            summaryTotalEur += invoiceValue;
+                            summaryTotalRon += invoiceValue * exchangeRate;
+                        } else {
+                            summaryTotalRon += invoiceValue;
+                            summaryTotalEur += invoiceValue / exchangeRate;
+                        }
+                    }
                 }
             });
 
             // Display based on toggle state
             const showEur = document.getElementById('currencyToggle').checked;
             updateTotalValueDisplay(showEur);
-
-            // Count unique companies and departments from filtered invoices
-            const uniqueCompanies = new Set();
-            const uniqueDepartments = new Set();
-
-            allInvoices.forEach(inv => {
-                if (inv.allocations) {
-                    inv.allocations.forEach(alloc => {
-                        if (alloc.company) uniqueCompanies.add(alloc.company);
-                        if (alloc.department) uniqueDepartments.add(alloc.department);
-                    });
-                }
-            });
 
             document.getElementById('totalCompanies').textContent = uniqueCompanies.size;
             document.getElementById('totalDepartments').textContent = uniqueDepartments.size;
