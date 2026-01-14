@@ -2563,16 +2563,16 @@
                 return `<tr>${cells}</tr>`;
             }).join('');
 
-            // Add summary row
+            // Add summary row (invoice_count sum is not meaningful - invoices split across companies count multiple times)
             const summaryRow = visibleCols.map(col => {
                 if (col.id === 'company') {
                     return `<td><strong>TOTAL (${data.length} companies)</strong></td>`;
                 } else if (col.id === 'total_value') {
                     return `<td><strong>${formatCurrency(totalValueSum)} ${currency}</strong></td>`;
                 } else if (col.id === 'invoice_count') {
-                    return `<td><strong>${totalInvoices}</strong></td>`;
+                    return `<td><strong>-</strong></td>`;
                 } else if (col.id === 'avg_value') {
-                    return `<td><strong>${formatCurrency(totalValueSum / totalInvoices)} ${currency}</strong></td>`;
+                    return `<td><strong>-</strong></td>`;
                 }
                 return `<td></td>`;
             }).join('');
@@ -2627,16 +2627,16 @@
                 return `<tr>${cells}</tr>`;
             }).join('');
 
-            // Add summary row
+            // Add summary row (invoice_count sum is not meaningful - invoices split across departments count multiple times)
             const summaryRow = visibleCols.map(col => {
                 if (col.id === 'department') {
                     return `<td><strong>TOTAL (${data.length} departments)</strong></td>`;
                 } else if (col.id === 'total_value') {
                     return `<td><strong>${formatCurrency(totalValueSum)} ${currency}</strong></td>`;
                 } else if (col.id === 'invoice_count') {
-                    return `<td><strong>${totalInvoices}</strong></td>`;
+                    return `<td><strong>-</strong></td>`;
                 } else if (col.id === 'avg_value') {
-                    return `<td><strong>${formatCurrency(totalValueSum / totalInvoices)} ${currency}</strong></td>`;
+                    return `<td><strong>-</strong></td>`;
                 }
                 return `<td></td>`;
             }).join('');
@@ -2694,16 +2694,16 @@
                 return `<tr>${cells}</tr>`;
             }).join('');
 
-            // Add summary row
+            // Add summary row (invoice_count sum is not meaningful - invoices split across brands count multiple times)
             const summaryRow = visibleCols.map(col => {
                 if (col.id === 'brand') {
                     return `<td><strong>TOTAL (${data.length} brands)</strong></td>`;
                 } else if (col.id === 'total_value') {
                     return `<td><strong>${formatCurrency(totalValueSum)} ${currency}</strong></td>`;
                 } else if (col.id === 'invoice_count') {
-                    return `<td><strong>${totalInvoices}</strong></td>`;
+                    return `<td><strong>-</strong></td>`;
                 } else if (col.id === 'avg_value') {
-                    return `<td><strong>${formatCurrency(totalValueSum / totalInvoices)} ${currency}</strong></td>`;
+                    return `<td><strong>-</strong></td>`;
                 }
                 return `<td></td>`;
             }).join('');
@@ -2758,16 +2758,16 @@
                 return `<tr>${cells}</tr>`;
             }).join('');
 
-            // Add summary row
+            // Add summary row (invoice_count sum is not meaningful - invoices split across suppliers count multiple times)
             const summaryRow = visibleCols.map(col => {
                 if (col.id === 'supplier') {
                     return `<td><strong>TOTAL (${data.length} suppliers)</strong></td>`;
                 } else if (col.id === 'total_value') {
                     return `<td><strong>${formatCurrency(totalValueSum)} ${currency}</strong></td>`;
                 } else if (col.id === 'invoice_count') {
-                    return `<td><strong>${totalInvoices}</strong></td>`;
+                    return `<td><strong>-</strong></td>`;
                 } else if (col.id === 'avg_value') {
-                    return `<td><strong>${formatCurrency(totalValueSum / totalInvoices)} ${currency}</strong></td>`;
+                    return `<td><strong>-</strong></td>`;
                 }
                 return `<td></td>`;
             }).join('');
