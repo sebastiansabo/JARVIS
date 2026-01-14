@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2025-01-14
+- Added "By Supplier" tab to Accounting dashboard (cost summary per supplier)
 - TikTok invoice template support in bulk processor
 - Clickable sort arrows on Date and Value columns in Accounting dashboard
 - Sort options: Date (Newest/Oldest), Value (Highest/Lowest)

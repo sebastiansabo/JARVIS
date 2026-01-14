@@ -14,7 +14,7 @@ from services import (
 from invoice_parser import parse_invoice, parse_invoice_with_template_from_bytes, auto_detect_and_parse, generate_template_from_invoice, match_campaigns_with_ai
 from database import (
     get_all_invoices, get_invoice_with_allocations, get_invoices_with_allocations, search_invoices,
-    get_summary_by_company, get_summary_by_department, get_summary_by_brand, delete_invoice, update_invoice, save_invoice,
+    get_summary_by_company, get_summary_by_department, get_summary_by_brand, get_summary_by_supplier, delete_invoice, update_invoice, save_invoice,
     update_invoice_allocations,
     get_all_invoice_templates, get_invoice_template, save_invoice_template,
     update_invoice_template, delete_invoice_template,
@@ -1255,6 +1255,20 @@ def api_db_summary_brand():
     subdepartment = request.args.get('subdepartment')
     brand = request.args.get('brand')
     summary = get_summary_by_brand(company, start_date, end_date, department, subdepartment, brand)
+    return jsonify(summary)
+
+
+@app.route('/api/db/summary/supplier')
+@login_required
+def api_db_summary_supplier():
+    """Get summary grouped by supplier."""
+    company = request.args.get('company')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    department = request.args.get('department')
+    subdepartment = request.args.get('subdepartment')
+    brand = request.args.get('brand')
+    summary = get_summary_by_supplier(company, start_date, end_date, department, subdepartment, brand)
     return jsonify(summary)
 
 

@@ -48,6 +48,7 @@ _summary_cache = {
     'company': {},     # key -> {'data': [...], 'timestamp': ...}
     'department': {},
     'brand': {},
+    'supplier': {},
     'ttl': 60  # 1 minute TTL
 }
 
@@ -85,13 +86,13 @@ def clear_invoices_cache():
     global _invoices_cache, _summary_cache
     _invoices_cache = {'data': None, 'timestamp': 0, 'ttl': 60, 'key': None}
     # Also clear summary cache since summaries depend on invoice/allocation data
-    _summary_cache = {'company': {}, 'department': {}, 'brand': {}, 'ttl': 60}
+    _summary_cache = {'company': {}, 'department': {}, 'brand': {}, 'supplier': {}, 'ttl': 60}
 
 
 def clear_summary_cache():
     """Clear the summary cache only. Call this for summary-specific invalidation."""
     global _summary_cache
-    _summary_cache = {'company': {}, 'department': {}, 'brand': {}, 'ttl': 60}
+    _summary_cache = {'company': {}, 'department': {}, 'brand': {}, 'supplier': {}, 'ttl': 60}
 
 
 def _enforce_summary_cache_limit(cache_type: str):
@@ -1649,6 +1650,78 @@ def get_summary_by_brand(company: Optional[str] = None, start_date: Optional[str
         # Cache results and enforce size limit
         _summary_cache['brand'][cache_key] = {'data': results, 'timestamp': time.time()}
         _enforce_summary_cache_limit('brand')
+
+        return results
+    finally:
+        release_db(conn)
+
+
+def get_summary_by_supplier(company: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None,
+                            department: Optional[str] = None, subdepartment: Optional[str] = None,
+                            brand: Optional[str] = None) -> list[dict]:
+    """Get invoice values grouped by supplier.
+
+    Results are cached for 60 seconds to reduce DB load on dashboard tab switches.
+    """
+    global _summary_cache
+
+    # Build cache key from parameters
+    cache_key = f"{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}"
+    cache_entry = _summary_cache['supplier'].get(cache_key)
+
+    # Check cache
+    if cache_entry and (time.time() - cache_entry['timestamp']) < _summary_cache['ttl']:
+        return cache_entry['data']
+
+    conn = get_db()
+    try:
+        cursor = get_cursor(conn)
+
+        # Group invoices by supplier, with RON and EUR totals
+        query = '''
+            SELECT
+                i.supplier,
+                SUM(COALESCE(i.value_ron, i.invoice_value)) as total_value_ron,
+                SUM(COALESCE(i.value_eur, i.invoice_value / COALESCE(i.exchange_rate, 5.0))) as total_value_eur,
+                COUNT(DISTINCT i.id) as invoice_count,
+                AVG(COALESCE(i.exchange_rate, 5.0)) as avg_exchange_rate
+            FROM invoices i
+            LEFT JOIN allocations a ON i.id = a.invoice_id
+            WHERE i.deleted_at IS NULL
+        '''
+        params = []
+        conditions = []
+
+        if company:
+            conditions.append('a.company = %s')
+            params.append(company)
+        if start_date:
+            conditions.append('i.invoice_date >= %s')
+            params.append(start_date)
+        if end_date:
+            conditions.append('i.invoice_date <= %s')
+            params.append(end_date)
+        if department:
+            conditions.append('a.department = %s')
+            params.append(department)
+        if subdepartment:
+            conditions.append('a.subdepartment = %s')
+            params.append(subdepartment)
+        if brand:
+            conditions.append('a.brand = %s')
+            params.append(brand)
+
+        if conditions:
+            query += ' AND ' + ' AND '.join(conditions)
+
+        query += ' GROUP BY i.supplier ORDER BY total_value_ron DESC'
+
+        cursor.execute(query, params)
+        results = [dict_from_row(row) for row in cursor.fetchall()]
+
+        # Cache results and enforce size limit
+        _summary_cache['supplier'][cache_key] = {'data': results, 'timestamp': time.time()}
+        _enforce_summary_cache_limit('supplier')
 
         return results
     finally:

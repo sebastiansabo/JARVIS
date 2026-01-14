@@ -298,6 +298,11 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#supplierTab">
+                    <i class="bi bi-shop"></i> By Supplier
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link" data-bs-toggle="tab" href="#binTab" onclick="loadBinData()">
                     <i class="bi bi-trash3"></i> Bin <span id="binCount" class="bin-badge" style="display: none;">0</span>
                 </a>
@@ -477,6 +482,42 @@
                                 <tbody id="brandTable">
                                     <tr>
                                         <td colspan="3" class="text-center">Loading...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- By Supplier Tab -->
+            <div class="tab-pane fade" id="supplierTab">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-shop"></i> By Supplier</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="btn-group btn-group-sm" role="group" id="supplierCurrencyToggle">
+                                <input type="radio" class="btn-check" name="supplierCurrency" id="supplierCurrencyRON" value="RON" checked>
+                                <label class="btn btn-outline-primary" for="supplierCurrencyRON">RON</label>
+                                <input type="radio" class="btn-check" name="supplierCurrency" id="supplierCurrencyEUR" value="EUR">
+                                <label class="btn btn-outline-primary" for="supplierCurrencyEUR">EUR</label>
+                            </div>
+                            <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#supplierColumnConfigModal">
+                                <i class="bi bi-gear"></i> Configure Columns
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="supplierDataTable">
+                                <thead class="table-light" id="supplierTableHead">
+                                    <tr>
+                                        <!-- Dynamic columns will be rendered here -->
+                                    </tr>
+                                </thead>
+                                <tbody id="supplierTable">
+                                    <tr>
+                                        <td colspan="5" class="text-center">Loading...</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -763,6 +804,39 @@
         </div>
     </div>
 
+    <!-- Supplier Column Configuration Modal -->
+    <div class="modal fade" id="supplierColumnConfigModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear"></i> Configure Supplier Table Columns</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Toggle columns visibility.</p>
+                    <div id="supplierColumnList" class="border rounded">
+                        <!-- Column items will be rendered here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <div class="me-auto">
+                        {% if current_user.can_access_settings %}
+                        <button type="button" class="btn btn-outline-success" id="setDefaultSupplierColumnsBtn" title="Set current configuration as default for all users">
+                            <i class="bi bi-people"></i> Set as Default for All
+                        </button>
+                        {% endif %}
+                    </div>
+                    <button type="button" class="btn btn-outline-warning" id="resetSupplierColumnsBtn">
+                        <i class="bi bi-arrow-counterclockwise"></i> Reset to Default
+                    </button>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">
+                        <i class="bi bi-check"></i> Done
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Edit Invoice Modal -->
     <div class="modal fade" id="editInvoiceModal" tabindex="-1">
         <div class="modal-dialog modal-xl">
@@ -1028,9 +1102,18 @@
             { id: 'avg_exchange_rate', name: 'Avg Rate', source: 'avg_exchange_rate', format: 'rate', visible: true }
         ];
 
+        const DEFAULT_SUPPLIER_COLUMNS = [
+            { id: 'supplier', name: 'Supplier', source: 'supplier', format: 'text', visible: true },
+            { id: 'total_value', name: 'Total Value', source: 'total_value', format: 'currency', visible: true },
+            { id: 'invoice_count', name: 'Invoice Count', source: 'invoice_count', format: 'text', visible: true },
+            { id: 'avg_value', name: 'Avg per Invoice', source: 'avg_value', format: 'currency', visible: true },
+            { id: 'avg_exchange_rate', name: 'Avg Rate', source: 'avg_exchange_rate', format: 'rate', visible: true }
+        ];
+
         let companyColumnConfig = [];
         let departmentColumnConfig = [];
         let brandColumnConfig = [];
+        let supplierColumnConfig = [];
 
         // Currency toggle state and data cache for all summary tabs
         let companyCurrency = localStorage.getItem('companySummaryCurrency') || 'RON';
@@ -1039,6 +1122,8 @@
         let departmentData = [];
         let brandCurrency = localStorage.getItem('brandSummaryCurrency') || 'RON';
         let brandData = [];
+        let supplierCurrency = localStorage.getItem('supplierSummaryCurrency') || 'RON';
+        let supplierData = [];
 
         document.addEventListener('DOMContentLoaded', async () => {
             showLoading('Loading dashboard...');
@@ -1070,6 +1155,11 @@
                 document.getElementById('brandCurrencyEUR').checked = true;
             } else {
                 document.getElementById('brandCurrencyRON').checked = true;
+            }
+            if (supplierCurrency === 'EUR') {
+                document.getElementById('supplierCurrencyEUR').checked = true;
+            } else {
+                document.getElementById('supplierCurrencyRON').checked = true;
             }
         }
 
@@ -1158,6 +1248,17 @@
                 brandColumnConfig = JSON.parse(JSON.stringify(DEFAULT_BRAND_COLUMNS));
             }
             renderBrandColumnList();
+
+            // Supplier columns: localStorage > serverDefault > hardcoded DEFAULT
+            const savedSupplier = localStorage.getItem('supplierColumnConfig');
+            if (savedSupplier) {
+                supplierColumnConfig = JSON.parse(savedSupplier);
+            } else if (serverDefaultColumns.supplier) {
+                supplierColumnConfig = JSON.parse(JSON.stringify(serverDefaultColumns.supplier));
+            } else {
+                supplierColumnConfig = JSON.parse(JSON.stringify(DEFAULT_SUPPLIER_COLUMNS));
+            }
+            renderSupplierColumnList();
         }
 
         function saveColumnConfig() {
@@ -1178,6 +1279,11 @@
         function saveBrandColumnConfig() {
             localStorage.setItem('brandColumnConfig', JSON.stringify(brandColumnConfig));
             loadBrandSummary();
+        }
+
+        function saveSupplierColumnConfig() {
+            localStorage.setItem('supplierColumnConfig', JSON.stringify(supplierColumnConfig));
+            loadSupplierSummary();
         }
 
         function resetColumnConfig() {
@@ -1216,13 +1322,23 @@
             renderBrandColumnList();
         }
 
+        function resetSupplierColumnConfig() {
+            // Use server default if available, otherwise hardcoded DEFAULT
+            supplierColumnConfig = serverDefaultColumns.supplier
+                ? JSON.parse(JSON.stringify(serverDefaultColumns.supplier))
+                : JSON.parse(JSON.stringify(DEFAULT_SUPPLIER_COLUMNS));
+            saveSupplierColumnConfig();
+            renderSupplierColumnList();
+        }
+
         // Set current column configuration as server default for all users
         async function setDefaultColumns(tab) {
             const configMap = {
                 'accounting': columnConfig,
                 'company': companyColumnConfig,
                 'department': departmentColumnConfig,
-                'brand': brandColumnConfig
+                'brand': brandColumnConfig,
+                'supplier': supplierColumnConfig
             };
             const config = configMap[tab];
             if (!config) return;
@@ -1434,6 +1550,32 @@
             setupDragAndDrop(container, brandColumnConfig, saveBrandColumnConfig, renderBrandColumnList);
         }
 
+        function renderSupplierColumnList() {
+            const container = document.getElementById('supplierColumnList');
+            container.innerHTML = supplierColumnConfig.map((col, idx) => `
+                <div class="column-list-item ${col.visible ? '' : 'disabled'}" data-idx="${idx}" draggable="true">
+                    <i class="bi bi-grip-vertical drag-handle"></i>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input supplier-column-toggle" type="checkbox" ${col.visible ? 'checked' : ''} data-idx="${idx}">
+                    </div>
+                    <span class="flex-grow-1">${col.name}</span>
+                    <small class="text-muted">${col.source}</small>
+                </div>
+            `).join('');
+
+            container.querySelectorAll('.supplier-column-toggle').forEach(toggle => {
+                toggle.addEventListener('change', (e) => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    supplierColumnConfig[idx].visible = e.target.checked;
+                    saveSupplierColumnConfig();
+                    renderSupplierColumnList();
+                });
+            });
+
+            // Add drag-and-drop functionality
+            setupDragAndDrop(container, supplierColumnConfig, saveSupplierColumnConfig, renderSupplierColumnList);
+        }
+
         function addCustomColumn() {
             const name = document.getElementById('newColumnName').value.trim();
             const source = document.getElementById('newColumnSource').value;
@@ -1520,6 +1662,11 @@
                     resetBrandColumnConfig();
                 }
             });
+            document.getElementById('resetSupplierColumnsBtn').addEventListener('click', () => {
+                if (confirm('Reset supplier columns to default?')) {
+                    resetSupplierColumnConfig();
+                }
+            });
 
             // Set as Default buttons (admin only)
             const setDefaultColumnsBtn = document.getElementById('setDefaultColumnsBtn');
@@ -1537,6 +1684,10 @@
             const setDefaultBrandColumnsBtn = document.getElementById('setDefaultBrandColumnsBtn');
             if (setDefaultBrandColumnsBtn) {
                 setDefaultBrandColumnsBtn.addEventListener('click', () => setDefaultColumns('brand'));
+            }
+            const setDefaultSupplierColumnsBtn = document.getElementById('setDefaultSupplierColumnsBtn');
+            if (setDefaultSupplierColumnsBtn) {
+                setDefaultSupplierColumnsBtn.addEventListener('click', () => setDefaultColumns('supplier'));
             }
 
             // Currency toggle for summary card
@@ -1568,6 +1719,15 @@
                     brandCurrency = e.target.value;
                     localStorage.setItem('brandSummaryCurrency', brandCurrency);
                     renderBrandTable(brandData);
+                });
+            });
+
+            // Currency toggle for By Supplier tab
+            document.querySelectorAll('input[name="supplierCurrency"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    supplierCurrency = e.target.value;
+                    localStorage.setItem('supplierSummaryCurrency', supplierCurrency);
+                    renderSupplierTable(supplierData);
                 });
             });
 
@@ -1629,6 +1789,7 @@
                 loadCompanySummary(),
                 loadDepartmentSummary(),
                 loadBrandSummary(),
+                loadSupplierSummary(),
                 loadCompanyFilter(),
                 loadDepartmentFilter(),
                 loadBrandFilter()
@@ -1908,6 +2069,30 @@
                 renderBrandTable(brandData);
             } catch (e) {
                 console.error('Error loading brand summary:', e);
+            }
+        }
+
+        async function loadSupplierSummary() {
+            const company = document.getElementById('companyFilter').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const department = document.getElementById('departmentFilter').value;
+            const subdepartment = document.getElementById('subdepartmentFilter').value;
+            const brand = document.getElementById('brandFilter').value;
+            const params = new URLSearchParams();
+            if (company) params.append('company', company);
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            if (department) params.append('department', department);
+            if (subdepartment) params.append('subdepartment', subdepartment);
+            if (brand) params.append('brand', brand);
+
+            try {
+                const res = await fetch(`/api/db/summary/supplier?${params}`);
+                supplierData = await res.json();
+                renderSupplierTable(supplierData);
+            } catch (e) {
+                console.error('Error loading supplier summary:', e);
             }
         }
 
@@ -2448,6 +2633,47 @@
                     } else if (col.format === 'split') {
                         // Use the same split formatting as the Invoices table, pass selected currency
                         return `<td>${formatColumnValue(row[col.source], col, {currency: currency, useCurrency: currency})}</td>`;
+                    }
+                    return `<td>${row[col.source] || '-'}</td>`;
+                }).join('');
+                return `<tr>${cells}</tr>`;
+            }).join('');
+        }
+
+        function renderSupplierTable(data) {
+            const thead = document.getElementById('supplierTableHead').querySelector('tr');
+            const tbody = document.getElementById('supplierTable');
+            const visibleCols = supplierColumnConfig.filter(c => c.visible);
+            const currency = supplierCurrency;
+
+            // Render header with currency indicator for value columns
+            thead.innerHTML = visibleCols.map(col => {
+                if (col.format === 'currency') {
+                    return `<th>${col.name} (${currency})</th>`;
+                }
+                return `<th>${col.name}</th>`;
+            }).join('');
+
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="${visibleCols.length}" class="text-center text-muted">No data</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = data.map(row => {
+                // Use RON or EUR value based on toggle
+                const totalValue = currency === 'EUR' ? row.total_value_eur : row.total_value_ron;
+                // Add computed avg_value based on selected currency
+                const avgValue = totalValue / row.invoice_count;
+
+                const cells = visibleCols.map(col => {
+                    if (col.id === 'total_value') {
+                        return `<td>${formatCurrency(totalValue)} ${currency}</td>`;
+                    } else if (col.id === 'avg_value') {
+                        return `<td>${formatCurrency(avgValue)} ${currency}</td>`;
+                    } else if (col.id === 'avg_exchange_rate') {
+                        return `<td>${row.avg_exchange_rate ? row.avg_exchange_rate.toFixed(4) : '-'}</td>`;
+                    } else if (col.id === 'supplier') {
+                        return `<td><strong>${row[col.source] || '(Unknown)'}</strong></td>`;
                     }
                     return `<td>${row[col.source] || '-'}</td>`;
                 }).join('');
