@@ -927,7 +927,7 @@ def api_db_invoices():
     - start_date, end_date: Filter by invoice date range
     - include_allocations: If "true", returns invoices with allocations embedded (optimized single query)
     """
-    limit = request.args.get('limit', 100, type=int)
+    limit = request.args.get('limit', 10000, type=int)  # High default to return all invoices
     offset = request.args.get('offset', 0, type=int)
     company = request.args.get('company')
     department = request.args.get('department')

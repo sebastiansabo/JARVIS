@@ -153,7 +153,7 @@
         </div>
         <!-- Summary Cards -->
         <div class="row mb-3 d-none" id="summaryCards">
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <div class="card summary-card bg-primary text-white">
                     <div class="card-body py-2">
                         <h6 class="card-title small mb-1"><i class="bi bi-receipt"></i> Total Invoices</h6>
@@ -161,11 +161,27 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <div class="card summary-card bg-info text-white">
+                    <div class="card-body py-2">
+                        <h6 class="card-title small mb-1"><i class="bi bi-building"></i> Companies</h6>
+                        <h4 id="totalCompanies" class="mb-0">0</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card summary-card bg-warning text-dark">
+                    <div class="card-body py-2">
+                        <h6 class="card-title small mb-1"><i class="bi bi-diagram-3"></i> Departments</h6>
+                        <h4 id="totalDepartments" class="mb-0">0</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
                 <div class="card summary-card bg-success text-white">
                     <div class="card-body py-2">
                         <div class="d-flex justify-content-between align-items-center">
-                            <h6 class="card-title small mb-0"><i class="bi bi-currency-exchange"></i> Total Value</h6>
+                            <h6 class="card-title small mb-0"><i class="bi bi-cash-stack"></i> Net Value</h6>
                             <div class="form-check form-switch mb-0">
                                 <input class="form-check-input" type="checkbox" id="currencyToggle" style="cursor: pointer; transform: scale(0.8);">
                                 <label class="form-check-label small" for="currencyToggle" id="currencyToggleLabel" style="cursor: pointer; font-size: 0.7rem;">EUR</label>
@@ -175,19 +191,19 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card summary-card bg-info text-white">
+            <div class="col-md-2">
+                <div class="card summary-card bg-danger text-white">
                     <div class="card-body py-2">
-                        <h6 class="card-title small mb-1"><i class="bi bi-building"></i> Companies</h6>
-                        <h4 id="totalCompanies" class="mb-0">0</h4>
+                        <h6 class="card-title small mb-1"><i class="bi bi-percent"></i> VAT Value</h6>
+                        <h4 id="vatValue" class="mb-0">0 RON</h4>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card summary-card bg-warning text-dark">
+            <div class="col-md-2">
+                <div class="card summary-card bg-secondary text-white">
                     <div class="card-body py-2">
-                        <h6 class="card-title small mb-1"><i class="bi bi-diagram-3"></i> Departments</h6>
-                        <h4 id="totalDepartments" class="mb-0">0</h4>
+                        <h6 class="card-title small mb-1"><i class="bi bi-currency-exchange"></i> Gross Value</h6>
+                        <h4 id="grossValue" class="mb-0">0 RON</h4>
                     </div>
                 </div>
             </div>
@@ -4066,6 +4082,10 @@
             summaryTotalRon = 0;
             summaryTotalEur = 0;
 
+            // Calculate Gross and VAT totals directly from invoice fields
+            let grossTotalRon = 0;
+            let vatTotalRon = 0;
+
             // Count unique companies and departments
             const uniqueCompanies = new Set();
             const uniqueDepartments = new Set();
@@ -4073,6 +4093,17 @@
             allInvoices.forEach(inv => {
                 const invoiceValue = inv.invoice_value || 0;
                 const exchangeRate = inv.exchange_rate || currentEurRate;
+
+                // Gross Value = value_ron (already converted to RON in database)
+                grossTotalRon += inv.value_ron || invoiceValue;
+
+                // VAT Value = (invoice_value - net_value) converted to RON
+                if (inv.subtract_vat && inv.net_value && invoiceValue > 0) {
+                    const vatInOriginalCurrency = invoiceValue - inv.net_value;
+                    // Convert to RON using same ratio as value_ron
+                    const conversionRatio = (inv.value_ron || invoiceValue) / invoiceValue;
+                    vatTotalRon += vatInOriginalCurrency * conversionRatio;
+                }
 
                 // Sum allocation values and convert to RON/EUR
                 if (inv.allocations && inv.allocations.length > 0) {
@@ -4114,6 +4145,10 @@
             // Display based on toggle state
             const showEur = document.getElementById('currencyToggle').checked;
             updateTotalValueDisplay(showEur);
+
+            // Display Gross and VAT values
+            document.getElementById('grossValue').textContent = formatCurrency(grossTotalRon) + ' RON';
+            document.getElementById('vatValue').textContent = formatCurrency(vatTotalRon) + ' RON';
 
             document.getElementById('totalCompanies').textContent = uniqueCompanies.size;
             document.getElementById('totalDepartments').textContent = uniqueDepartments.size;
