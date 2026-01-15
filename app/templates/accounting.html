@@ -1884,14 +1884,14 @@
                 if (endDate) params.append('end_date', endDate);
 
                 // Check if we need allocation data for any visible column
-                const needsAllocations = columnConfig.some(col =>
+                const needsAllocationsForColumns = columnConfig.some(col =>
                     col.visible && (col.source.startsWith('allocation.') || col.source.startsWith('computed.'))
                 );
 
-                // Use optimized endpoint that fetches allocations in single query if needed
-                if (needsAllocations) {
-                    params.append('include_allocations', 'true');
-                }
+                // ALWAYS fetch allocations - summary cards need them for correct value calculation
+                // Even if no allocation columns are visible, we need allocation_value for totals
+                params.append('include_allocations', 'true');
+                const needsAllocations = true;
 
                 const url = '/api/db/invoices' + (params.toString() ? '?' + params.toString() : '');
                 const res = await fetch(url);
@@ -2563,16 +2563,25 @@
                 return `<tr>${cells}</tr>`;
             }).join('');
 
-            // Add summary row (invoice_count sum is not meaningful - invoices split across companies count multiple times)
+            // Calculate weighted average exchange rate
+            let totalWeightedRate = 0;
+            data.forEach(row => {
+                totalWeightedRate += (row.avg_exchange_rate || 0) * (row.invoice_count || 0);
+            });
+            const avgExchangeRate = totalInvoices > 0 ? totalWeightedRate / totalInvoices : 0;
+
+            // Add summary row
             const summaryRow = visibleCols.map(col => {
                 if (col.id === 'company') {
                     return `<td><strong>TOTAL (${data.length} companies)</strong></td>`;
                 } else if (col.id === 'total_value') {
                     return `<td><strong>${formatCurrency(totalValueSum)} ${currency}</strong></td>`;
                 } else if (col.id === 'invoice_count') {
-                    return `<td><strong>-</strong></td>`;
+                    return `<td><strong>${totalInvoices}</strong></td>`;
                 } else if (col.id === 'avg_value') {
-                    return `<td><strong>-</strong></td>`;
+                    return `<td><strong>${totalInvoices > 0 ? formatCurrency(totalValueSum / totalInvoices) : '-'} ${currency}</strong></td>`;
+                } else if (col.id === 'avg_exchange_rate') {
+                    return `<td><strong>${avgExchangeRate > 0 ? avgExchangeRate.toFixed(4) : '-'}</strong></td>`;
                 }
                 return `<td></td>`;
             }).join('');
@@ -2627,16 +2636,25 @@
                 return `<tr>${cells}</tr>`;
             }).join('');
 
-            // Add summary row (invoice_count sum is not meaningful - invoices split across departments count multiple times)
+            // Calculate weighted average exchange rate
+            let totalWeightedRate = 0;
+            data.forEach(row => {
+                totalWeightedRate += (row.avg_exchange_rate || 0) * (row.invoice_count || 0);
+            });
+            const avgExchangeRate = totalInvoices > 0 ? totalWeightedRate / totalInvoices : 0;
+
+            // Add summary row
             const summaryRow = visibleCols.map(col => {
                 if (col.id === 'department') {
                     return `<td><strong>TOTAL (${data.length} departments)</strong></td>`;
                 } else if (col.id === 'total_value') {
                     return `<td><strong>${formatCurrency(totalValueSum)} ${currency}</strong></td>`;
                 } else if (col.id === 'invoice_count') {
-                    return `<td><strong>-</strong></td>`;
+                    return `<td><strong>${totalInvoices}</strong></td>`;
                 } else if (col.id === 'avg_value') {
-                    return `<td><strong>-</strong></td>`;
+                    return `<td><strong>${totalInvoices > 0 ? formatCurrency(totalValueSum / totalInvoices) : '-'} ${currency}</strong></td>`;
+                } else if (col.id === 'avg_exchange_rate') {
+                    return `<td><strong>${avgExchangeRate > 0 ? avgExchangeRate.toFixed(4) : '-'}</strong></td>`;
                 }
                 return `<td></td>`;
             }).join('');
@@ -2694,16 +2712,25 @@
                 return `<tr>${cells}</tr>`;
             }).join('');
 
-            // Add summary row (invoice_count sum is not meaningful - invoices split across brands count multiple times)
+            // Calculate weighted average exchange rate
+            let totalWeightedRate = 0;
+            data.forEach(row => {
+                totalWeightedRate += (row.avg_exchange_rate || 0) * (row.invoice_count || 0);
+            });
+            const avgExchangeRate = totalInvoices > 0 ? totalWeightedRate / totalInvoices : 0;
+
+            // Add summary row
             const summaryRow = visibleCols.map(col => {
                 if (col.id === 'brand') {
                     return `<td><strong>TOTAL (${data.length} brands)</strong></td>`;
                 } else if (col.id === 'total_value') {
                     return `<td><strong>${formatCurrency(totalValueSum)} ${currency}</strong></td>`;
                 } else if (col.id === 'invoice_count') {
-                    return `<td><strong>-</strong></td>`;
+                    return `<td><strong>${totalInvoices}</strong></td>`;
                 } else if (col.id === 'avg_value') {
-                    return `<td><strong>-</strong></td>`;
+                    return `<td><strong>${totalInvoices > 0 ? formatCurrency(totalValueSum / totalInvoices) : '-'} ${currency}</strong></td>`;
+                } else if (col.id === 'avg_exchange_rate') {
+                    return `<td><strong>${avgExchangeRate > 0 ? avgExchangeRate.toFixed(4) : '-'}</strong></td>`;
                 }
                 return `<td></td>`;
             }).join('');
@@ -2758,16 +2785,25 @@
                 return `<tr>${cells}</tr>`;
             }).join('');
 
-            // Add summary row (invoice_count sum is not meaningful - invoices split across suppliers count multiple times)
+            // Calculate weighted average exchange rate
+            let totalWeightedRate = 0;
+            data.forEach(row => {
+                totalWeightedRate += (row.avg_exchange_rate || 0) * (row.invoice_count || 0);
+            });
+            const avgExchangeRate = totalInvoices > 0 ? totalWeightedRate / totalInvoices : 0;
+
+            // Add summary row
             const summaryRow = visibleCols.map(col => {
                 if (col.id === 'supplier') {
                     return `<td><strong>TOTAL (${data.length} suppliers)</strong></td>`;
                 } else if (col.id === 'total_value') {
                     return `<td><strong>${formatCurrency(totalValueSum)} ${currency}</strong></td>`;
                 } else if (col.id === 'invoice_count') {
-                    return `<td><strong>-</strong></td>`;
+                    return `<td><strong>${totalInvoices}</strong></td>`;
                 } else if (col.id === 'avg_value') {
-                    return `<td><strong>-</strong></td>`;
+                    return `<td><strong>${totalInvoices > 0 ? formatCurrency(totalValueSum / totalInvoices) : '-'} ${currency}</strong></td>`;
+                } else if (col.id === 'avg_exchange_rate') {
+                    return `<td><strong>${avgExchangeRate > 0 ? avgExchangeRate.toFixed(4) : '-'}</strong></td>`;
                 }
                 return `<td></td>`;
             }).join('');
