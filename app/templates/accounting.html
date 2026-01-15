@@ -96,7 +96,7 @@
             </a>
             <span class="navbar-text text-white me-auto ms-3">
                 <i class="bi bi-calculator"></i> Accounting
-                <span class="badge bg-light text-success ms-2" id="onlineUsersIndicator" title="Online users" style="cursor: pointer; font-size: 0.7rem;">
+                <span class="badge bg-light text-success ms-2" id="onlineUsersIndicator" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" title="Loading..." style="cursor: pointer; font-size: 0.7rem;">
                     <i class="bi bi-circle-fill text-success" style="font-size: 0.4rem;"></i> <span id="onlineUsersCount">-</span> online
                 </span>
             </span>
@@ -1166,6 +1166,8 @@
             }
         }
 
+        let onlineUsersTooltip = null;
+
         async function updateOnlineUsersCount() {
             try {
                 const res = await fetch('/api/online-users');
@@ -1174,10 +1176,20 @@
                 const indicatorEl = document.getElementById('onlineUsersIndicator');
                 if (countEl) {
                     countEl.textContent = data.count;
-                    // Update tooltip with user names
-                    if (indicatorEl && data.users && data.users.length > 0) {
-                        const names = data.users.map(u => u.name).join(', ');
-                        indicatorEl.title = 'Online: ' + names;
+                    // Update Bootstrap tooltip with user names
+                    if (indicatorEl && data.users) {
+                        // Initialize tooltip if not already done
+                        if (!onlineUsersTooltip) {
+                            onlineUsersTooltip = new bootstrap.Tooltip(indicatorEl);
+                        }
+                        // Build tooltip content with user names on separate lines
+                        let tooltipContent = '<strong>Online Users:</strong>';
+                        if (data.users.length > 0) {
+                            tooltipContent += '<br>' + data.users.map(u => u.name).join('<br>');
+                        } else {
+                            tooltipContent += '<br><em>No users online</em>';
+                        }
+                        indicatorEl.setAttribute('data-bs-original-title', tooltipContent);
                     }
                 }
             } catch (e) {
