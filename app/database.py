@@ -1664,8 +1664,8 @@ def get_summary_by_supplier(company: Optional[str] = None, start_date: Optional[
                             brand: Optional[str] = None) -> list[dict]:
     """Get allocation values grouped by supplier.
 
-    Uses allocation values (not invoice values) so filters by company/department/brand
-    correctly show only the portion of invoices allocated to those entities.
+    Uses allocation values (like other summary functions) so VAT subtraction is accounted for.
+    Each invoice has exactly one supplier, so invoice_count per supplier is accurate.
     Results are cached for 60 seconds to reduce DB load on dashboard tab switches.
     """
     global _summary_cache
@@ -1682,8 +1682,8 @@ def get_summary_by_supplier(company: Optional[str] = None, start_date: Optional[
     try:
         cursor = get_cursor(conn)
 
-        # Calculate allocation values in RON and EUR based on invoice conversion rates
-        # Same pattern as get_summary_by_company but grouped by supplier
+        # Use allocation values (same as other summaries) so VAT subtraction is accounted for
+        # Group by supplier - each invoice has exactly one supplier
         query = '''
             SELECT
                 i.supplier,
