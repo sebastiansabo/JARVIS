@@ -394,8 +394,8 @@ def api_heartbeat():
 @app.route('/api/online-users')
 @login_required
 def api_online_users():
-    """Get count and list of currently online users (active in last 5 minutes)."""
-    result = get_online_users_count(minutes=5)
+    """Get count and list of currently online users (active in last 3 minutes)."""
+    result = get_online_users_count(minutes=3)
     return jsonify(result)
 
 
