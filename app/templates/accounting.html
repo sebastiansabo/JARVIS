@@ -1146,11 +1146,11 @@
         // Online users tracking
         let onlineUsersInterval = null;
 
-        function initOnlineUsersTracking() {
-            // Send initial heartbeat
-            sendHeartbeat();
-            // Update online users count immediately
-            updateOnlineUsersCount();
+        async function initOnlineUsersTracking() {
+            // Send initial heartbeat and wait for it to complete
+            await sendHeartbeat();
+            // Update online users count immediately after heartbeat
+            await updateOnlineUsersCount();
 
             // Send heartbeat every 60 seconds
             setInterval(sendHeartbeat, 60000);
