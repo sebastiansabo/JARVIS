@@ -1,4 +1,4 @@
-# Bugetare - Invoice Budget Allocation System
+# J.A.R.V.I.S. - Enterprise Platform
 
 ## ⚠️ IMPORTANT: Branch Workflow
 
@@ -26,7 +26,10 @@ git push origin main
 ```
 
 ## Project Overview
-Flask-based web application for managing invoice allocations across companies, brands, and departments. Features AI-powered invoice parsing using Claude API.
+J.A.R.V.I.S. is a modular enterprise platform with multiple sections:
+- **Accounting** → Bugetare (Invoice Budget Allocation)
+- **HR** → Events (Employee Event Bonus Management)
+- **Future**: AFS, Sales, etc.
 
 ## Tech Stack
 - **Backend**: Flask + Gunicorn
@@ -37,30 +40,109 @@ Flask-based web application for managing invoice allocations across companies, b
 
 ## Project Structure
 ```
-app/
-├── app.py              # Main Flask application and routes
-├── database.py         # Database operations (PostgreSQL)
-├── models.py           # Data models and structure loading
-├── services.py         # Company VAT matching utilities
-├── invoice_parser.py   # AI-powered invoice parsing with Claude
-├── bulk_processor.py   # Bulk invoice processing and Excel report generation
-├── drive_service.py    # Google Drive integration
-├── image_compressor.py # TinyPNG image compression for attachments
-├── currency_converter.py # BNR exchange rate fetching and conversion
-├── notification_service.py # SMTP email notifications
-├── google_ads_connector.py # Google Ads invoice fetching (DISABLED)
-├── anthropic_connector.py  # Anthropic billing invoice fetching (DISABLED)
-├── config.py           # Configuration settings
-└── templates/          # Jinja2 HTML templates
-    └── buffer.html     # Invoice buffer page (DISABLED)
+jarvis/                           # Main application folder
+├── app.py                        # Main Flask application
+├── database.py                   # Database operations (PostgreSQL)
+├── models.py                     # Data models and structure loading
+├── services.py                   # Company VAT matching utilities
+│
+├── core/                         # Core Platform (shared across sections)
+│   ├── __init__.py
+│   ├── database.py               # Base DB connection pool
+│   ├── config.py                 # Configuration settings
+│   ├── auth/                     # Authentication module
+│   │   ├── __init__.py
+│   │   ├── models.py             # User model (Flask-Login)
+│   │   └── routes.py             # Login/logout routes
+│   ├── services/                 # Shared services
+│   │   ├── drive_service.py      # Google Drive integration
+│   │   ├── notification_service.py # SMTP email notifications
+│   │   ├── image_compressor.py   # TinyPNG compression
+│   │   └── currency_converter.py # BNR exchange rates
+│   ├── settings/                 # Platform settings
+│   │   ├── __init__.py
+│   │   └── routes.py             # Settings routes
+│   └── utils/
+│       └── logging_config.py     # Structured logging
+│
+├── accounting/                   # Accounting Section
+│   ├── __init__.py               # Section blueprint
+│   └── bugetare/                 # Bugetare App
+│       ├── __init__.py           # App blueprint
+│       ├── routes.py             # Invoice routes
+│       ├── invoice_parser.py     # AI invoice parsing
+│       └── bulk_processor.py     # Bulk processing
+│
+├── hr/                           # HR Section
+│   ├── __init__.py               # Section blueprint
+│   └── events/                   # Events App
+│       ├── __init__.py           # App blueprint
+│       ├── routes.py             # HR routes
+│       └── database.py           # HR database functions
+│
+├── static/                       # Static assets
+│   ├── css/
+│   ├── js/
+│   └── img/
+│
+└── templates/                    # Jinja2 templates
+    ├── core/                     # Core templates
+    │   ├── login.html
+    │   ├── settings.html
+    │   ├── apps.html
+    │   └── guide.html
+    ├── accounting/
+    │   └── bugetare/
+    │       ├── index.html        # Add Invoice
+    │       ├── accounting.html   # Dashboard
+    │       ├── templates.html    # Template management
+    │       └── bulk.html         # Bulk processing
+    └── hr/
+        └── events/
+            ├── event_bonuses.html
+            ├── events.html
+            └── employees.html
 ```
+
+## URL Structure
+| URL | Section | App | Page |
+|-----|---------|-----|------|
+| `/` | Core | - | Apps landing |
+| `/login` | Core | Auth | Login |
+| `/settings` | Core | Settings | Platform settings |
+| `/add-invoice` | Accounting | Bugetare | Add invoice |
+| `/accounting` | Accounting | Bugetare | Dashboard |
+| `/templates` | Accounting | Bugetare | Templates |
+| `/bulk` | Accounting | Bugetare | Bulk processor |
+| `/hr/events/` | HR | Events | Event bonuses |
+| `/hr/events/events` | HR | Events | Events list |
+| `/hr/events/employees` | HR | Events | Employees |
+
+## HR Module API Routes
+
+The HR Events module uses nested blueprints with the following API structure:
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET/POST | `/hr/events/api/employees` | List/create employees |
+| GET/PUT/DELETE | `/hr/events/api/employees/<id>` | Get/update/delete employee |
+| GET | `/hr/events/api/employees/search?q=` | Search employees |
+| GET/POST | `/hr/events/api/events` | List/create events |
+| GET/PUT/DELETE | `/hr/events/api/events/<id>` | Get/update/delete event |
+| GET/POST | `/hr/events/api/event-bonuses` | List/create bonuses |
+| POST | `/hr/events/api/event-bonuses/bulk` | Bulk create bonuses |
+| GET/PUT/DELETE | `/hr/events/api/event-bonuses/<id>` | Get/update/delete bonus |
+| GET | `/hr/events/api/export` | Export bonuses to Excel |
+| GET | `/hr/events/api/structure/brands/<company>` | Get brands for company |
+
+**Important**: HR templates use direct API paths (e.g., `/hr/events/api/employees/1`) rather than `url_for()` + relative paths to avoid nested URL issues with Flask blueprints.
 
 ## Key Commands
 
 ### Local Development
 ```bash
 source venv/bin/activate
-DATABASE_URL='postgresql://sebastiansabo@localhost:5432/defaultdb' PORT=5001 python app/app.py
+DATABASE_URL='postgresql://sebastiansabo@localhost:5432/defaultdb' PORT=5001 python jarvis/app.py
 ```
 
 ### Database

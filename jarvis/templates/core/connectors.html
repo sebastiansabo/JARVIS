@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. - Connectors</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/jarvis-icon.svg') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/jarvis-dark-theme.css') }}" rel="stylesheet">
+    <style>
+        .card { box-shadow: var(--card-shadow); }
+        .connector-card { transition: transform 0.2s; }
+        .connector-card:hover { transform: translateY(-2px); }
+        .connector-icon { font-size: 2.5rem; }
+        .status-badge { font-size: 0.8em; }
+        .sync-log { font-size: 0.85em; }
+        .sync-log-item { border-left: 3px solid #dee2e6; padding-left: 10px; margin-bottom: 8px; }
+        .sync-log-item.success { border-left-color: #198754; }
+        .sync-log-item.error { border-left-color: #dc3545; }
+        .sync-log-item.running { border-left-color: #0d6efd; }
+        .connector-unavailable { opacity: 0.6; }
+        .coming-soon-badge { font-size: 0.7em; }
+    </style>
+</head>
+<body>
+    <!-- Loading overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading...</div>
+    </div>
+
+    <nav class="navbar navbar-dark bg-primary mb-4">
+        <div class="container">
+            <a class="navbar-brand mb-0 h1" href="/" id="navbarLogo">
+                <span class="navbar-logo-icon"></span> J.A.R.V.I.S.
+            </a>
+            <span class="navbar-text text-white me-auto ms-3">
+                <i class="bi bi-plug"></i> Connectors
+            </span>
+            <div class="d-flex align-items-center">
+                <!-- Theme Toggle -->
+                <div class="theme-switch">
+                    <i class="bi bi-sun-fill"></i>
+                    <input type="checkbox" id="themeToggle" title="Toggle Dark/Light Theme">
+                    <i class="bi bi-moon-fill"></i>
+                </div>
+                {% if current_user.can_access_settings %}
+                <a href="/settings" class="btn btn-outline-light btn-sm me-2">
+                    <i class="bi bi-gear"></i> Settings
+                </a>
+                {% endif %}
+                {% if current_user.can_access_accounting %}
+                <a href="/accounting" class="btn btn-outline-light btn-sm me-2">
+                    <i class="bi bi-calculator"></i> Accounting
+                </a>
+                {% endif %}
+                {% if current_user.can_add_invoices %}
+                <a href="/add-invoice" class="btn btn-outline-light btn-sm me-2">
+                    <i class="bi bi-plus-circle"></i> New Invoice
+                </a>
+                {% endif %}
+                <div class="dropdown">
+                    <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-person-circle"></i> {{ current_user.name }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                        <li><span class="dropdown-item-text text-muted small">{{ current_user.email }}</span></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#changePasswordModal"><i class="bi bi-key"></i> Change Password</a></li>
+                        <li><a class="dropdown-item" href="/guide"><i class="bi bi-book"></i> User Guide</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Info Banner -->
+        <div class="alert alert-info mb-4">
+            <i class="bi bi-info-circle"></i>
+            <strong>Connectors</strong> allow you to automatically import invoices from external services like Google Ads and Meta (Facebook) advertising platforms.
+        </div>
+
+        <!-- Available Connectors -->
+        <h5 class="mb-3"><i class="bi bi-collection"></i> Available Integrations</h5>
+
+        <div class="row g-4 mb-5">
+            <!-- Google Ads Connector - Multi-account support -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card connector-card h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="connector-icon text-danger me-3">
+                                <i class="bi bi-google"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title mb-0">Google Ads</h5>
+                                <small class="text-muted">Advertising invoices</small>
+                            </div>
+                            {% if google_ads_connectors and google_ads_connectors|length > 0 %}
+                            <span class="badge bg-success ms-auto"><i class="bi bi-check-circle"></i> {{ google_ads_connectors|length }} Connected</span>
+                            {% endif %}
+                        </div>
+
+                        {% if google_ads_connectors and google_ads_connectors|length > 0 %}
+                            <!-- List of connected accounts -->
+                            <div class="mb-3">
+                                {% for conn in google_ads_connectors %}
+                                <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+                                    <div>
+                                        <strong>{{ conn.name }}</strong>
+                                        <small class="text-muted d-block">{{ conn.config.account_id if conn.config else '' }}</small>
+                                    </div>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-danger btn-sm" onclick="disconnectConnector({{ conn.id }})" title="Disconnect">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button class="btn btn-success btn-sm" onclick="window.location.href='/buffer'">
+                                    <i class="bi bi-inbox"></i> Go to Buffer
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm" onclick="showConnectModal('google_ads')">
+                                    <i class="bi bi-plus-circle"></i> Add Account
+                                </button>
+                            </div>
+                        {% else %}
+                            <p class="text-muted small mb-3">
+                                Connect your Google Ads accounts to fetch invoices via browser automation.
+                                Multiple accounts can be added.
+                            </p>
+                            <button class="btn btn-outline-primary" onclick="showConnectModal('google_ads')">
+                                <i class="bi bi-link-45deg"></i> Connect
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Meta (Facebook) Connector -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card connector-card h-100 connector-unavailable">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="connector-icon text-primary me-3">
+                                <i class="bi bi-meta"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title mb-0">
+                                    Meta (Facebook)
+                                    <span class="badge bg-warning text-dark coming-soon-badge">Coming Soon</span>
+                                </h5>
+                                <small class="text-muted">Advertising invoices</small>
+                            </div>
+                        </div>
+
+                        <p class="text-muted small mb-3">
+                            Meta does not provide a public API for invoices.
+                            Future versions may support automated download via browser automation.
+                        </p>
+
+                        <button class="btn btn-outline-secondary" disabled>
+                            <i class="bi bi-hourglass-split"></i> Not Available
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Anthropic (Claude API) Connector -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card connector-card h-100 {% if anthropic_connector %}connector-connected{% endif %}">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="connector-icon me-3" style="color: #d97706;">
+                                <i class="bi bi-robot"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title mb-0">Anthropic (Claude)</h5>
+                                <small class="text-muted">API usage invoices</small>
+                            </div>
+                            {% if anthropic_connector %}
+                            <span class="badge bg-success ms-auto"><i class="bi bi-check-circle"></i> Connected</span>
+                            {% endif %}
+                        </div>
+
+                        <p class="text-muted small mb-3">
+                            Connect to fetch invoices from Anthropic Console via browser automation.
+                        </p>
+
+                        <div class="d-flex gap-2 flex-wrap">
+                            {% if anthropic_connector %}
+                            <button class="btn btn-success btn-sm" onclick="window.location.href='/buffer'">
+                                <i class="bi bi-inbox"></i> Go to Buffer
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm" onclick="disconnectConnector({{ anthropic_connector.id }})">
+                                <i class="bi bi-x-circle"></i> Disconnect
+                            </button>
+                            {% else %}
+                            <button class="btn btn-primary btn-sm" onclick="showConnectModal('anthropic')">
+                                <i class="bi bi-plug"></i> Connect
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Future: More Connectors -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card connector-card h-100 connector-unavailable">
+                    <div class="card-body text-center py-5">
+                        <div class="connector-icon text-muted mb-3">
+                            <i class="bi bi-plus-circle-dotted"></i>
+                        </div>
+                        <h5 class="card-title text-muted">More Coming Soon</h5>
+                        <p class="text-muted small">
+                            LinkedIn Ads, TikTok Ads, and more integrations planned.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Connected Connectors with Sync History -->
+        {% if connectors %}
+        <h5 class="mb-3"><i class="bi bi-clock-history"></i> Sync History</h5>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <ul class="nav nav-tabs" id="connectorTabs" role="tablist">
+                    {% for connector in connectors %}
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link {% if loop.first %}active{% endif %}"
+                                id="tab-{{ connector.id }}"
+                                data-bs-toggle="tab"
+                                data-bs-target="#logs-{{ connector.id }}"
+                                type="button">
+                            {{ connector.name }}
+                        </button>
+                    </li>
+                    {% endfor %}
+                </ul>
+
+                <div class="tab-content pt-3" id="connectorTabContent">
+                    {% for connector in connectors %}
+                    <div class="tab-pane fade {% if loop.first %}show active{% endif %}"
+                         id="logs-{{ connector.id }}"
+                         role="tabpanel">
+
+                        <div id="syncLogs-{{ connector.id }}" class="sync-log">
+                            {% if connector.sync_logs %}
+                                {% for log in connector.sync_logs %}
+                                <div class="sync-log-item {{ log.status }}">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <strong>{{ log.sync_type | title }}</strong>
+                                            <span class="badge {% if log.status == 'success' %}bg-success{% elif log.status == 'error' %}bg-danger{% else %}bg-info{% endif %} ms-2">
+                                                {{ log.status }}
+                                            </span>
+                                        </div>
+                                        <small class="text-muted">{{ log.created_at.strftime('%d.%m.%Y %H:%M') }}</small>
+                                    </div>
+                                    {% if log.invoices_found > 0 or log.invoices_imported > 0 %}
+                                    <small class="text-muted">
+                                        Found: {{ log.invoices_found }} | Imported: {{ log.invoices_imported }}
+                                    </small>
+                                    {% endif %}
+                                    {% if log.error_message %}
+                                    <div class="text-danger small mt-1">{{ log.error_message }}</div>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <p class="text-muted">No sync history yet. Click "Sync Now" to fetch invoices.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Connect Modal -->
+    <div class="modal fade" id="connectModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-link-45deg"></i> Connect <span id="connectModalTitle"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="connectForm">
+                        <input type="hidden" id="connectorType" name="connector_type">
+
+                        <!-- Google Ads specific fields -->
+                        <div id="googleAdsFields" style="display: none;">
+                            <div class="alert alert-info small">
+                                <i class="bi bi-info-circle"></i>
+                                <strong>Browser Automation:</strong>
+                                <p class="mb-0 mt-1">
+                                    This connector uses browser automation to fetch invoices from Google Ads.
+                                    Your Google account credentials are used to log in and download invoices.
+                                </p>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Account Name</label>
+                                <input type="text" class="form-control" name="name" placeholder="e.g., Autoworld.ro" required>
+                                <small class="text-muted">A friendly name to identify this account</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Google Email</label>
+                                <input type="email" class="form-control" name="google_email"
+                                       placeholder="your-email@gmail.com" required>
+                                <small class="text-muted">Your Google account email</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Google Password</label>
+                                <input type="password" class="form-control" name="google_password" required>
+                                <small class="text-muted">Your Google account password</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Account ID (Optional)</label>
+                                <input type="text" class="form-control" name="account_id"
+                                       placeholder="320-749-2288">
+                                <small class="text-muted">Google Ads account ID - leave blank to select during sync</small>
+                            </div>
+
+                            <div class="alert alert-warning small mt-3">
+                                <i class="bi bi-shield-lock"></i>
+                                <strong>Security Note:</strong>
+                                <ul class="mb-0 mt-1">
+                                    <li>Credentials are encrypted before storage</li>
+                                    <li>Browser automation runs in a visible window</li>
+                                    <li>You may need to complete 2FA during first sync</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Anthropic specific fields -->
+                        <div id="anthropicFields" style="display: none;">
+                            <div class="alert alert-info small">
+                                <i class="bi bi-info-circle"></i>
+                                <strong>Note:</strong>
+                                <p class="mb-0 mt-1">
+                                    This connector uses browser automation to fetch invoices from the Anthropic Console.
+                                    Your credentials are stored securely and used only to access the billing page.
+                                </p>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Connector Name</label>
+                                <input type="text" class="form-control" id="anthropicName" name="anthropic_name" value="Anthropic (Claude)" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Console Email</label>
+                                <input type="email" class="form-control" id="anthropicEmail" name="anthropic_email"
+                                       placeholder="your-email@example.com" required>
+                                <small class="text-muted">Your Anthropic Console login email</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Console Password</label>
+                                <input type="password" class="form-control" id="anthropicPassword" name="anthropic_password" required>
+                                <small class="text-muted">Your Anthropic Console password</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Max Invoices to Fetch</label>
+                                <input type="number" class="form-control" id="anthropicMaxInvoices" name="max_invoices"
+                                       value="12" min="1" max="50">
+                                <small class="text-muted">Maximum number of invoices to retrieve per sync</small>
+                            </div>
+
+                            <div class="alert alert-warning small mt-3">
+                                <i class="bi bi-shield-lock"></i>
+                                <strong>Security:</strong>
+                                <ul class="mb-0 mt-1">
+                                    <li>Credentials are encrypted before storage</li>
+                                    <li>Browser automation runs in headless mode</li>
+                                    <li>No data is shared with third parties</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveConnector()">
+                        <i class="bi bi-check-lg"></i> Connect
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configure Modal -->
+    <div class="modal fade" id="configureModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-gear"></i> Configure Connector
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="configureForm">
+                        <input type="hidden" id="configureConnectorId" name="connector_id">
+
+                        <div class="mb-3">
+                            <label class="form-label">Connector Name</label>
+                            <input type="text" class="form-control" id="configureName" name="name" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Customer ID</label>
+                            <input type="text" class="form-control" id="configureCustomerId" name="customer_id">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Developer Token</label>
+                            <input type="password" class="form-control" id="configureDeveloperToken" name="developer_token"
+                                   placeholder="Leave blank to keep existing">
+                        </div>
+
+                        <hr>
+                        <p class="text-muted small">Leave credential fields blank to keep existing values.</p>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="updateConnector()">
+                        <i class="bi bi-check-lg"></i> Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Anthropic Upload Modal -->
+    <div class="modal fade" id="anthropicUploadModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-upload" style="color: #d97706;"></i> Upload Anthropic Invoices
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info small">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>How to get your invoices:</strong>
+                        <ol class="mb-0 mt-2">
+                            <li>Go to <a href="https://console.anthropic.com/settings/billing" target="_blank">console.anthropic.com/settings/billing</a></li>
+                            <li>Find the Invoice History section</li>
+                            <li>Download your invoices as PDF</li>
+                            <li>Upload them here to parse and import</li>
+                        </ol>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Select Invoice PDF(s)</label>
+                        <input type="file" class="form-control" id="anthropicInvoiceFiles"
+                               accept=".pdf" multiple>
+                        <small class="text-muted">You can select multiple PDF files</small>
+                    </div>
+
+                    <div id="anthropicUploadPreview" class="mb-3" style="display: none;">
+                        <label class="form-label">Selected Files:</label>
+                        <ul id="anthropicFileList" class="list-group list-group-flush small"></ul>
+                    </div>
+
+                    <div id="anthropicParseResults" style="display: none;">
+                        <hr>
+                        <h6><i class="bi bi-check-circle text-success"></i> Parsed Invoices</h6>
+                        <div id="anthropicParsedList"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="anthropicParseBtn" onclick="parseAnthropicInvoices()">
+                        <i class="bi bi-cpu"></i> Parse Invoices
+                    </button>
+                    <button type="button" class="btn btn-success" id="anthropicSendToBulkBtn"
+                            onclick="sendAnthropicToBulk()" style="display: none;">
+                        <i class="bi bi-arrow-right-circle"></i> Send to Bulk Distribution
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const connectModal = new bootstrap.Modal(document.getElementById('connectModal'));
+        const configureModal = new bootstrap.Modal(document.getElementById('configureModal'));
+        const anthropicUploadModal = new bootstrap.Modal(document.getElementById('anthropicUploadModal'));
+
+        // Store parsed invoices for sending to bulk
+        let parsedAnthropicInvoices = [];
+
+        // Loading overlay helpers
+        function showLoading(message = 'Loading...') {
+            const overlay = document.getElementById('loadingOverlay');
+            const text = overlay.querySelector('.loading-text');
+            text.textContent = message;
+            overlay.classList.add('show');
+        }
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.remove('show');
+        }
+
+        function showConnectModal(connectorType) {
+            document.getElementById('connectorType').value = connectorType;
+
+            // Hide all connector-specific fields
+            document.getElementById('googleAdsFields').style.display = 'none';
+            document.getElementById('anthropicFields').style.display = 'none';
+
+            // Show appropriate fields
+            if (connectorType === 'google_ads') {
+                document.getElementById('connectModalTitle').textContent = 'Google Ads';
+                document.getElementById('googleAdsFields').style.display = 'block';
+            } else if (connectorType === 'anthropic') {
+                document.getElementById('connectModalTitle').textContent = 'Anthropic (Claude)';
+                document.getElementById('anthropicFields').style.display = 'block';
+            }
+
+            connectModal.show();
+        }
+
+        async function saveConnector() {
+            const form = document.getElementById('connectForm');
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+
+            try {
+                const response = await fetch('/api/connectors', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    connectModal.hide();
+                    location.reload();
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + (error.error || 'Failed to save connector'));
+                }
+            } catch (err) {
+                alert('Error connecting: ' + err.message);
+            }
+        }
+
+        function configureConnector(connectorId, connectorType) {
+            document.getElementById('configureConnectorId').value = connectorId;
+
+            // Fetch current config
+            fetch(`/api/connectors/${connectorId}`)
+                .then(r => r.json())
+                .then(connector => {
+                    document.getElementById('configureName').value = connector.name || '';
+                    document.getElementById('configureCustomerId').value = connector.config?.customer_id || '';
+                    configureModal.show();
+                });
+        }
+
+        async function updateConnector() {
+            const form = document.getElementById('configureForm');
+            const formData = new FormData(form);
+            const connectorId = formData.get('connector_id');
+            const data = Object.fromEntries(formData.entries());
+
+            try {
+                const response = await fetch(`/api/connectors/${connectorId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    configureModal.hide();
+                    location.reload();
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + (error.error || 'Failed to update connector'));
+                }
+            } catch (err) {
+                alert('Error updating: ' + err.message);
+            }
+        }
+
+        async function syncConnector(connectorId) {
+            if (!confirm('Start syncing invoices from this connector?')) return;
+
+            showLoading('Syncing invoices...');
+            try {
+                const response = await fetch(`/api/connectors/${connectorId}/sync`, {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+                hideLoading();
+
+                if (response.ok) {
+                    alert(`Sync complete!\nFound: ${result.invoices_found}\nImported: ${result.invoices_imported}`);
+                    location.reload();
+                } else {
+                    alert('Sync failed: ' + (result.error || 'Unknown error'));
+                    location.reload();
+                }
+            } catch (err) {
+                hideLoading();
+                alert('Error syncing: ' + err.message);
+            }
+        }
+
+        async function disconnectConnector(connectorId) {
+            if (!confirm('Are you sure you want to disconnect this connector? This will remove all configuration.')) return;
+
+            try {
+                const response = await fetch(`/api/connectors/${connectorId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + (error.error || 'Failed to disconnect'));
+                }
+            } catch (err) {
+                alert('Error disconnecting: ' + err.message);
+            }
+        }
+
+        // ============ Anthropic Upload Functions ============
+
+        function showAnthropicUploadModal() {
+            // Reset the modal state
+            document.getElementById('anthropicInvoiceFiles').value = '';
+            document.getElementById('anthropicUploadPreview').style.display = 'none';
+            document.getElementById('anthropicParseResults').style.display = 'none';
+            document.getElementById('anthropicParseBtn').style.display = 'inline-block';
+            document.getElementById('anthropicSendToBulkBtn').style.display = 'none';
+            parsedAnthropicInvoices = [];
+
+            anthropicUploadModal.show();
+        }
+
+        // File input change handler
+        document.getElementById('anthropicInvoiceFiles').addEventListener('change', function(e) {
+            const files = e.target.files;
+            const preview = document.getElementById('anthropicUploadPreview');
+            const fileList = document.getElementById('anthropicFileList');
+
+            if (files.length > 0) {
+                fileList.innerHTML = '';
+                for (const file of files) {
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                    li.innerHTML = `
+                        <span><i class="bi bi-file-earmark-pdf text-danger"></i> ${file.name}</span>
+                        <span class="badge bg-secondary">${(file.size / 1024).toFixed(1)} KB</span>
+                    `;
+                    fileList.appendChild(li);
+                }
+                preview.style.display = 'block';
+            } else {
+                preview.style.display = 'none';
+            }
+        });
+
+        async function parseAnthropicInvoices() {
+            const fileInput = document.getElementById('anthropicInvoiceFiles');
+            const files = fileInput.files;
+
+            if (files.length === 0) {
+                alert('Please select at least one invoice PDF file.');
+                return;
+            }
+
+            showLoading('Parsing invoices...');
+
+            try {
+                const formData = new FormData();
+                for (const file of files) {
+                    formData.append('files', file);
+                }
+                formData.append('invoice_type', 'anthropic');
+
+                const response = await fetch('/api/connectors/anthropic/parse', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                hideLoading();
+
+                if (response.ok && result.invoices && result.invoices.length > 0) {
+                    parsedAnthropicInvoices = result.invoices;
+                    displayParsedInvoices(result.invoices);
+                    document.getElementById('anthropicParseBtn').style.display = 'none';
+                    document.getElementById('anthropicSendToBulkBtn').style.display = 'inline-block';
+                } else {
+                    alert('Error parsing invoices: ' + (result.error || 'No invoices could be parsed'));
+                }
+            } catch (err) {
+                hideLoading();
+                alert('Error: ' + err.message);
+            }
+        }
+
+        function displayParsedInvoices(invoices) {
+            const container = document.getElementById('anthropicParsedList');
+            container.innerHTML = '';
+
+            for (const inv of invoices) {
+                const card = document.createElement('div');
+                card.className = 'card mb-2';
+                card.innerHTML = `
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>${inv.invoice_number || 'Unknown'}</strong>
+                                <span class="text-muted ms-2">${inv.invoice_date || ''}</span>
+                            </div>
+                            <div>
+                                <span class="badge bg-primary">${inv.currency || 'USD'} ${(inv.invoice_value || 0).toFixed(2)}</span>
+                            </div>
+                        </div>
+                        ${inv.items && Object.keys(inv.items).length > 0 ? `
+                        <div class="small text-muted mt-1">
+                            ${Object.entries(inv.items).map(([k, v]) => `${k}: $${v.toFixed(2)}`).join(' | ')}
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+                container.appendChild(card);
+            }
+
+            document.getElementById('anthropicParseResults').style.display = 'block';
+        }
+
+        function sendAnthropicToBulk() {
+            if (parsedAnthropicInvoices.length === 0) {
+                alert('No parsed invoices to send.');
+                return;
+            }
+
+            // Store in sessionStorage and redirect to bulk page
+            sessionStorage.setItem('anthropicInvoices', JSON.stringify(parsedAnthropicInvoices));
+            window.location.href = '/bulk?source=anthropic';
+        }
+    </script>
+    <script src="/static/js/theme.js"></script>
+</body>
+</html>

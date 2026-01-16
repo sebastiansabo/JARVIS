@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. - HR Employees</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/jarvis-icon.svg') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand mb-0 h1" href="/" id="navbarLogo">
+                <span class="navbar-logo-icon"></span> J.A.R.V.I.S.
+            </a>
+            <span class="navbar-text text-white me-auto ms-3">
+                <i class="bi bi-person-badge"></i> HR - Employees
+            </span>
+            <div class="d-flex align-items-center gap-2">
+                <!-- Theme Toggle -->
+                <div class="theme-switch">
+                    <i class="bi bi-sun-fill"></i>
+                    <input type="checkbox" id="themeToggle" title="Toggle Dark/Light Theme">
+                    <i class="bi bi-moon-fill"></i>
+                </div>
+                <a href="{{ url_for('hr.events.event_bonuses') }}" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-gift"></i> Event Bonuses
+                </a>
+                <a href="{{ url_for('hr.events.events') }}" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-calendar-event"></i> Events
+                </a>
+                <div class="dropdown">
+                    <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-person-circle"></i> {{ current_user.name }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4">
+        <div class="hr-table-container">
+            <div class="hr-filter-bar d-flex justify-content-between align-items-center">
+                <div class="d-flex gap-2 align-items-center">
+                    <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Search employees..." style="width: 250px;">
+                    <div class="form-check form-check-inline ms-2">
+                        <input type="checkbox" id="showInactive" class="form-check-input">
+                        <label class="form-check-label text-white-50" for="showInactive">Show Inactive</label>
+                    </div>
+                </div>
+                <button id="btnAddEmployee" class="btn btn-hr btn-sm" data-bs-toggle="modal" data-bs-target="#employeeModal">
+                    <i class="bi bi-plus-lg"></i> Add Employee
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Department</th>
+                            <th>Brand</th>
+                            <th>Company</th>
+                            <th>Linked User</th>
+                            <th>Status</th>
+                            <th style="width: 100px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="employeesTable">
+                        {% for emp in employees %}
+                        <tr data-id="{{ emp.id }}" class="{% if not emp.is_active %}table-secondary{% endif %}">
+                            <td><strong>{{ emp.name }}</strong></td>
+                            <td>{{ emp.department or '-' }}</td>
+                            <td>{{ emp.brand or '-' }}</td>
+                            <td>{{ emp.company or '-' }}</td>
+                            <td>
+                                {% if emp.user_id %}
+                                <span class="badge bg-info">ID: {{ emp.user_id }}</span>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if emp.is_active %}
+                                <span class="status-active"><i class="bi bi-check-circle-fill"></i> Active</span>
+                                {% else %}
+                                <span class="status-inactive"><i class="bi bi-x-circle-fill"></i> Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary btn-edit" data-id="{{ emp.id }}" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger btn-delete" data-id="{{ emp.id }}" title="Deactivate">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">
+                                No employees found. Click "Add Employee" to create one.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Employee Modal -->
+    <div class="modal fade" id="employeeModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-badge"></i> <span id="employeeModalTitle">Add Employee</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="employeeForm">
+                        <input type="hidden" id="employeeId">
+                        <div class="mb-3">
+                            <label class="form-label">Name *</label>
+                            <input type="text" id="employeeName" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Company</label>
+                            <select id="employeeCompany" class="form-select">
+                                <option value="">Select Company</option>
+                                {% for company in companies %}
+                                <option value="{{ company }}">{{ company }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Brand</label>
+                            <select id="employeeBrand" class="form-select">
+                                <option value="">Select Brand</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Department</label>
+                            <select id="employeeDepartment" class="form-select">
+                                <option value="">Select Department</option>
+                                <option value="Sales">Sales</option>
+                                <option value="Aftersales">Aftersales</option>
+                                <option value="Marketing">Marketing</option>
+                                <option value="MKT">MKT</option>
+                                <option value="Logistica">Logistica</option>
+                                <option value="HR">HR</option>
+                                <option value="Contabilitate">Contabilitate</option>
+                                <option value="Administrativ">Administrativ</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Link to Jarvis User</label>
+                            <select id="employeeUserId" class="form-select">
+                                <option value="">No Link</option>
+                                {% for user in users %}
+                                <option value="{{ user.id }}">{{ user.name }} ({{ user.email }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-check" id="activeCheckContainer" style="display: none;">
+                            <input type="checkbox" id="employeeIsActive" class="form-check-input" checked>
+                            <label class="form-check-label" for="employeeIsActive">Active</label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" id="btnSaveEmployee" class="btn btn-hr">Save Employee</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const employeeModal = new bootstrap.Modal(document.getElementById('employeeModal'));
+        let editingEmployeeId = null;
+
+        // Search filter
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            document.querySelectorAll('#employeesTable tr').forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(query) ? '' : 'none';
+            });
+        });
+
+        // Show inactive toggle
+        document.getElementById('showInactive').addEventListener('change', (e) => {
+            document.querySelectorAll('#employeesTable tr.table-secondary').forEach(row => {
+                row.style.display = e.target.checked ? '' : 'none';
+            });
+        });
+
+        // Add employee button
+        document.getElementById('btnAddEmployee').addEventListener('click', () => {
+            editingEmployeeId = null;
+            document.getElementById('employeeModalTitle').textContent = 'Add Employee';
+            document.getElementById('employeeForm').reset();
+            document.getElementById('activeCheckContainer').style.display = 'none';
+        });
+
+        // Edit buttons
+        document.querySelectorAll('.btn-edit').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                editingEmployeeId = btn.dataset.id;
+                document.getElementById('employeeModalTitle').textContent = 'Edit Employee';
+
+                const resp = await fetch(`/hr/events/api/employees/${editingEmployeeId}`);
+                const emp = await resp.json();
+
+                document.getElementById('employeeName').value = emp.name;
+                document.getElementById('employeeCompany').value = emp.company || '';
+                document.getElementById('employeeBrand').value = emp.brand || '';
+                document.getElementById('employeeDepartment').value = emp.department || '';
+                document.getElementById('employeeUserId').value = emp.user_id || '';
+                document.getElementById('employeeIsActive').checked = emp.is_active;
+                document.getElementById('activeCheckContainer').style.display = 'block';
+
+                employeeModal.show();
+            });
+        });
+
+        // Save employee
+        document.getElementById('btnSaveEmployee').addEventListener('click', async () => {
+            const data = {
+                name: document.getElementById('employeeName').value,
+                company: document.getElementById('employeeCompany').value || null,
+                brand: document.getElementById('employeeBrand').value || null,
+                department: document.getElementById('employeeDepartment').value || null,
+                user_id: document.getElementById('employeeUserId').value || null,
+                is_active: document.getElementById('employeeIsActive').checked
+            };
+
+            if (!data.name) {
+                alert('Name is required');
+                return;
+            }
+
+            const url = editingEmployeeId
+                ? `/hr/events/api/employees/${editingEmployeeId}`
+                : '/hr/events/api/employees';
+            const method = editingEmployeeId ? 'PUT' : 'POST';
+
+            const resp = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (resp.ok) {
+                employeeModal.hide();
+                window.location.reload();
+            } else {
+                alert('Error saving employee');
+            }
+        });
+
+        // Delete (deactivate) buttons
+        document.querySelectorAll('.btn-delete').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (!confirm('Deactivate this employee?')) return;
+
+                const resp = await fetch(`/hr/events/api/employees/${btn.dataset.id}`, {
+                    method: 'DELETE'
+                });
+
+                if (resp.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Error deactivating employee');
+                }
+            });
+        });
+
+        // Company change - load brands
+        document.getElementById('employeeCompany').addEventListener('change', async (e) => {
+            const company = e.target.value;
+            const brandSelect = document.getElementById('employeeBrand');
+            brandSelect.innerHTML = '<option value="">Select Brand</option>';
+
+            if (company) {
+                const resp = await fetch(`/hr/events/api/structure/brands/${encodeURIComponent(company)}`);
+                const brands = await resp.json();
+                brands.forEach(b => {
+                    if (b) brandSelect.innerHTML += `<option value="${b}">${b}</option>`;
+                });
+            }
+        });
+    </script>
+    <script src="/static/js/theme.js"></script>
+</body>
+</html>

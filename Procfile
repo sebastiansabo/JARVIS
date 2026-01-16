@@ -1,1 +1,1 @@
-web: cd app && gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120
+web: cd jarvis && gunicorn app:app --bind 0.0.0.0:$PORT --workers 3 --threads 3 --worker-class gthread --timeout 120 --graceful-timeout 30 --keep-alive 5

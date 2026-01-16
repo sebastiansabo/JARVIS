@@ -1,0 +1,3540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. - System Settings</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/jarvis-icon.svg') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet">
+</head>
+<body>
+    <!-- Loading overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading...</div>
+    </div>
+
+    <nav class="navbar navbar-dark bg-primary mb-4">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand mb-0 h1" href="/" id="navbarLogo">
+                <span class="navbar-logo-icon"></span> J.A.R.V.I.S.
+            </a>
+            <span class="navbar-text text-white me-auto ms-3">
+                <i class="bi bi-gear"></i> Settings
+            </span>
+            <div class="d-flex align-items-center">
+                <!-- Theme Toggle -->
+                <div class="theme-switch">
+                    <i class="bi bi-sun-fill"></i>
+                    <input type="checkbox" id="themeToggle" title="Toggle Dark/Light Theme">
+                    <i class="bi bi-moon-fill"></i>
+                </div>
+                <div class="dropdown">
+                    <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-person-circle"></i> {{ current_user.name }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                        <li><span class="dropdown-item-text text-muted small">{{ current_user.email }}</span></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#changePasswordModal"><i class="bi bi-key"></i> Change Password</a></li>
+                        <li><a class="dropdown-item" href="/guide"><i class="bi bi-book"></i> User Guide</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4">
+        <!-- Summary Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="bi bi-people"></i> Total Users</h6>
+                        <h2 id="totalUsers">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="bi bi-person-check"></i> Active Users</h6>
+                        <h2 id="activeUsers">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-dark">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="bi bi-shield"></i> Roles Defined</h6>
+                        <h2 id="totalRoles">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="bi bi-person-badge"></i> Responsables</h6>
+                        <h2 id="totalResponsables">0</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs for Users, Roles, Responsables, and Notifications -->
+        <ul class="nav nav-tabs" id="settingsTabs">
+            <li class="nav-item">
+                <button class="nav-link active" id="users-tab" data-bs-toggle="tab" data-bs-target="#users" type="button">
+                    <i class="bi bi-people-fill"></i> Users
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="roles-tab" data-bs-toggle="tab" data-bs-target="#roles" type="button">
+                    <i class="bi bi-shield-lock"></i> Roles
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="responsables-tab" data-bs-toggle="tab" data-bs-target="#responsables" type="button">
+                    <i class="bi bi-person-badge"></i> Responsables
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="notifications-tab" data-bs-toggle="tab" data-bs-target="#notifications" type="button">
+                    <i class="bi bi-envelope"></i> Notifications
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="company-config-tab" data-bs-toggle="tab" data-bs-target="#company-config" type="button">
+                    <i class="bi bi-building"></i> Company Configuration
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="vat-registry-tab" data-bs-toggle="tab" data-bs-target="#vat-registry" type="button">
+                    <i class="bi bi-card-list"></i> VAT Registry
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="vat-rates-tab" data-bs-toggle="tab" data-bs-target="#vat-rates" type="button">
+                    <i class="bi bi-percent"></i> VAT Rates
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="dropdown-options-tab" data-bs-toggle="tab" data-bs-target="#dropdown-options" type="button">
+                    <i class="bi bi-list-ul"></i> Dropdown Options
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="activity-logs-tab" data-bs-toggle="tab" data-bs-target="#activity-logs" type="button">
+                    <i class="bi bi-clock-history"></i> Activity Logs
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="theme-tab" data-bs-toggle="tab" data-bs-target="#theme-settings" type="button">
+                    <i class="bi bi-palette"></i> Theme
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content">
+            <!-- Users Tab -->
+            <div class="tab-pane fade show active" id="users">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Users</h5>
+                        <button class="btn btn-primary btn-sm" onclick="showAddUserModal()">
+                            <i class="bi bi-person-plus"></i> Add User
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="usersTable">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Phone</th>
+                                        <th>Role</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="usersTableBody">
+                                    <tr class="loading-placeholder"><td colspan="5" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading users...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="noUsersMessage" class="text-center text-muted py-4" style="display: none;">
+                            <i class="bi bi-people display-4"></i>
+                            <p class="mt-2">No users found. Click "Add User" to create one.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Roles Tab -->
+            <div class="tab-pane fade" id="roles">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-shield-lock"></i> Access Permissions</h5>
+                        <div>
+                            <button class="btn btn-outline-secondary btn-sm me-2" onclick="showAddRoleModal()">
+                                <i class="bi bi-shield-plus"></i> Add Role
+                            </button>
+                            <button class="btn btn-primary btn-sm" onclick="saveAllPermissions()">
+                                <i class="bi bi-check-lg"></i> Save Changes
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="row g-0" style="min-height: 500px;">
+                            <!-- Module Sidebar -->
+                            <div class="col-md-2 border-end" style="background: var(--bg-table-header);">
+                                <div class="p-2">
+                                    <input type="text" class="form-control form-control-sm mb-2" id="moduleSearch" placeholder="Search modules...">
+                                </div>
+                                <div class="list-group list-group-flush" id="moduleSidebar">
+                                    <!-- Modules loaded dynamically -->
+                                </div>
+                            </div>
+                            <!-- Permission Matrix -->
+                            <div class="col-md-10">
+                                <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                                    <table class="table table-bordered table-sm mb-0" id="permissionMatrix">
+                                        <thead class="sticky-top" style="background: var(--bg-table-header); z-index: 10;">
+                                            <tr id="matrixHeaderRow">
+                                                <th style="min-width: 200px; position: sticky; left: 0; background: var(--bg-table-header); z-index: 11;">
+                                                    Permission
+                                                </th>
+                                                <!-- Role columns loaded dynamically -->
+                                            </tr>
+                                        </thead>
+                                        <tbody id="matrixBody">
+                                            <tr class="loading-placeholder"><td colspan="5" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading permissions...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Responsables Tab -->
+            <div class="tab-pane fade" id="responsables">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Invoice Responsables</h5>
+                        <button class="btn btn-primary btn-sm" onclick="showAddResponsableModal()">
+                            <i class="bi bi-person-plus"></i> Add Responsable
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            <i class="bi bi-info-circle"></i> Responsables receive email notifications when invoices are allocated to their departments.
+                        </p>
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="responsablesTable">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Phone</th>
+                                        <th>Departments</th>
+                                        <th class="text-center">Notify</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="responsablesTableBody">
+                                    <tr class="loading-placeholder"><td colspan="4" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading responsables...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="noResponsablesMessage" class="text-center text-muted py-4" style="display: none;">
+                            <i class="bi bi-person-badge display-4"></i>
+                            <p class="mt-2">No responsables found. Click "Add Responsable" to create one.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notifications Tab -->
+            <div class="tab-pane fade" id="notifications">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-envelope-gear"></i> Email Notification Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="notificationSettingsForm">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card mb-3">
+                                        <div class="card-header bg-light">
+                                            <small class="text-muted">SMTP Server Configuration</small>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="mb-3">
+                                                <label class="form-label">SMTP Host</label>
+                                                <input type="text" class="form-control" id="smtpHost" placeholder="smtp.gmail.com">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">SMTP Port</label>
+                                                <input type="number" class="form-control" id="smtpPort" placeholder="587">
+                                            </div>
+                                            <div class="form-check form-switch mb-3">
+                                                <input class="form-check-input" type="checkbox" id="smtpTls" checked>
+                                                <label class="form-check-label" for="smtpTls">Use TLS</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card mb-3">
+                                        <div class="card-header bg-light">
+                                            <small class="text-muted">Authentication</small>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="mb-3">
+                                                <label class="form-label">SMTP Username</label>
+                                                <input type="text" class="form-control" id="smtpUsername" placeholder="your-email@gmail.com">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">SMTP Password</label>
+                                                <input type="password" class="form-control" id="smtpPassword" placeholder="App password or SMTP password">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">From Email</label>
+                                                <input type="email" class="form-control" id="fromEmail" placeholder="noreply@yourcompany.com">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">From Name</label>
+                                                <input type="text" class="form-control" id="fromName" placeholder="Invoice System">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-12">
+                                    <div class="card mb-3">
+                                        <div class="card-header bg-light">
+                                            <small class="text-muted">Notification Preferences</small>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="form-check form-switch mb-3">
+                                                <input class="form-check-input" type="checkbox" id="notifyOnAllocation" checked>
+                                                <label class="form-check-label" for="notifyOnAllocation">
+                                                    Send email when invoice is allocated to a department
+                                                </label>
+                                            </div>
+                                            <div class="mb-2">
+                                                <label class="form-label">Global CC Address</label>
+                                                <input type="email" class="form-control" id="globalCc" placeholder="cc@yourcompany.com">
+                                                <small class="text-muted">All notification emails will be copied to this address</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-primary" onclick="saveNotificationSettings()">
+                                    <i class="bi bi-check-lg"></i> Save Settings
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="testEmailSettings()">
+                                    <i class="bi bi-send"></i> Send Test Email
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Company Configuration Tab -->
+            <div class="tab-pane fade" id="company-config">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-building"></i> Department Structure Configuration</h5>
+                        <button class="btn btn-primary btn-sm" onclick="showAddDepartmentStructureModal()">
+                            <i class="bi bi-plus-circle"></i> Add Department
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            <i class="bi bi-info-circle"></i> Configure the company structure used for invoice allocation. Each entry represents a department allocation option.
+                        </p>
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="departmentStructuresTable">
+                                <thead>
+                                    <tr>
+                                        <th>Company</th>
+                                        <th>Brand</th>
+                                        <th>Department</th>
+                                        <th>Subdepartment</th>
+                                        <th>Manager</th>
+                                        <th>Marketing</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="departmentStructuresTableBody">
+                                    <tr class="loading-placeholder"><td colspan="7" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading structures...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="noDepartmentStructuresMessage" class="text-center text-muted py-4" style="display: none;">
+                            <i class="bi bi-building display-4"></i>
+                            <p class="mt-2">No department structures found. Click "Add Department" to create one.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VAT Registry Tab -->
+            <div class="tab-pane fade" id="vat-registry">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-card-list"></i> My Companies (VAT Registry)</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            <i class="bi bi-info-circle"></i> Register your company VAT numbers for automatic matching when parsing invoices. The Customer VAT from invoices will be matched against this registry.
+                        </p>
+                        <div class="table-responsive mb-3">
+                            <table class="table table-hover" id="companiesVatTable">
+                                <thead>
+                                    <tr>
+                                        <th>Company</th>
+                                        <th>Brands</th>
+                                        <th>VAT Number</th>
+                                        <th style="width: 100px;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="companiesVatTableBody">
+                                    <tr class="loading-placeholder"><td colspan="4" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading companies...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="noCompaniesVatMessage" class="text-center text-muted py-4" style="display: none;">
+                            <i class="bi bi-card-list display-4"></i>
+                            <p class="mt-2">No companies registered. Add a company below.</p>
+                        </div>
+                        <hr>
+                        <h6><i class="bi bi-plus-circle"></i> Add New Company</h6>
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <input type="text" class="form-control" id="newCompanyName" placeholder="Company Name">
+                            </div>
+                            <div class="col-md-3">
+                                <input type="text" class="form-control" id="newCompanyBrands" placeholder="Brands (optional)">
+                            </div>
+                            <div class="col-md-3">
+                                <input type="text" class="form-control" id="newCompanyVat" placeholder="VAT Number">
+                            </div>
+                            <div class="col-md-2">
+                                <button class="btn btn-primary w-100" id="addCompanyVatBtn">
+                                    <i class="bi bi-plus"></i> Add
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VAT Rates Tab -->
+            <div class="tab-pane fade" id="vat-rates">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-percent"></i> VAT Rates Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            <i class="bi bi-info-circle"></i> Configure VAT rates for invoice processing. When adding invoices, you can optionally subtract VAT from the invoice value for allocation calculations.
+                        </p>
+                        <div class="table-responsive mb-3">
+                            <table class="table table-hover" id="vatRatesTable">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Rate (%)</th>
+                                        <th>Default</th>
+                                        <th>Active</th>
+                                        <th style="width: 100px;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="vatRatesTableBody">
+                                    <tr class="loading-placeholder"><td colspan="4" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading VAT rates...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="noVatRatesMessage" class="text-center text-muted py-4" style="display: none;">
+                            <i class="bi bi-percent display-4"></i>
+                            <p class="mt-2">No VAT rates configured. Add a VAT rate below.</p>
+                        </div>
+                        <hr>
+                        <h6><i class="bi bi-plus-circle"></i> Add New VAT Rate</h6>
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <input type="text" class="form-control" id="newVatRateName" placeholder="Name (e.g., Standard VAT)">
+                            </div>
+                            <div class="col-md-2">
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="newVatRateValue" placeholder="Rate" step="0.01" min="0" max="100">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" id="newVatRateDefault">
+                                    <label class="form-check-label" for="newVatRateDefault">Default</label>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" id="newVatRateActive" checked>
+                                    <label class="form-check-label" for="newVatRateActive">Active</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-primary w-100" id="addVatRateBtn">
+                                    <i class="bi bi-plus"></i> Add VAT Rate
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dropdown Options Tab -->
+            <div class="tab-pane fade" id="dropdown-options">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-list-ul"></i> Dropdown Options</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            <i class="bi bi-info-circle"></i> Configure the dropdown options used in the accounting module (Invoice Status, Payment Status).
+                        </p>
+
+                        <!-- Invoice Status Options -->
+                        <div class="mb-4">
+                            <h6 class="border-bottom pb-2 mb-3"><i class="bi bi-tag"></i> Invoice Status Options</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover" id="invoiceStatusTable">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Value</th>
+                                            <th>Label</th>
+                                            <th>Color</th>
+                                            <th>Order</th>
+                                            <th>Active</th>
+                                            <th width="100">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="row g-2 mt-2">
+                                <div class="col-md-2">
+                                    <input type="text" class="form-control form-control-sm" id="newInvoiceStatusValue" placeholder="Value (e.g., pending)">
+                                </div>
+                                <div class="col-md-2">
+                                    <input type="text" class="form-control form-control-sm" id="newInvoiceStatusLabel" placeholder="Label (e.g., Pending)">
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="input-group input-group-sm">
+                                        <input type="color" class="form-control form-control-color" id="newInvoiceStatusColor" value="#0d6efd" title="Choose color">
+                                        <input type="text" class="form-control" id="newInvoiceStatusColorText" value="#0d6efd" placeholder="#hex">
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <input type="number" class="form-control form-control-sm" id="newInvoiceStatusOrder" placeholder="Order" value="0">
+                                </div>
+                                <div class="col-md-2">
+                                    <button class="btn btn-primary btn-sm w-100" onclick="addDropdownOption('invoice_status')">
+                                        <i class="bi bi-plus"></i> Add
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Payment Status Options -->
+                        <div class="mb-4">
+                            <h6 class="border-bottom pb-2 mb-3"><i class="bi bi-credit-card"></i> Payment Status Options</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover" id="paymentStatusTable">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Value</th>
+                                            <th>Label</th>
+                                            <th>Color</th>
+                                            <th>Order</th>
+                                            <th>Active</th>
+                                            <th width="100">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="row g-2 mt-2">
+                                <div class="col-md-2">
+                                    <input type="text" class="form-control form-control-sm" id="newPaymentStatusValue" placeholder="Value (e.g., partial)">
+                                </div>
+                                <div class="col-md-2">
+                                    <input type="text" class="form-control form-control-sm" id="newPaymentStatusLabel" placeholder="Label (e.g., Partial)">
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="input-group input-group-sm">
+                                        <input type="color" class="form-control form-control-color" id="newPaymentStatusColor" value="#0d6efd" title="Choose color">
+                                        <input type="text" class="form-control" id="newPaymentStatusColorText" value="#0d6efd" placeholder="#hex">
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <input type="number" class="form-control form-control-sm" id="newPaymentStatusOrder" placeholder="Order" value="0">
+                                </div>
+                                <div class="col-md-2">
+                                    <button class="btn btn-primary btn-sm w-100" onclick="addDropdownOption('payment_status')">
+                                        <i class="bi bi-plus"></i> Add
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity Logs Tab -->
+            <div class="tab-pane fade" id="activity-logs">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-clock-history"></i> Activity Logs</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            <i class="bi bi-info-circle"></i> View user activity logs including logins, logouts, and application actions.
+                        </p>
+                        <!-- Filters -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-2">
+                                <select class="form-select form-select-sm" id="logFilterUser">
+                                    <option value="">All Users</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <select class="form-select form-select-sm" id="logFilterEventType">
+                                    <option value="">All Event Types</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <input type="date" class="form-control form-control-sm" id="logFilterStartDate" placeholder="Start Date">
+                            </div>
+                            <div class="col-md-2">
+                                <input type="date" class="form-control form-control-sm" id="logFilterEndDate" placeholder="End Date">
+                            </div>
+                            <div class="col-md-2">
+                                <button class="btn btn-sm btn-primary w-100" onclick="loadActivityLogs()">
+                                    <i class="bi bi-search"></i> Filter
+                                </button>
+                            </div>
+                            <div class="col-md-2">
+                                <button class="btn btn-sm btn-outline-secondary w-100" onclick="clearActivityLogFilters()">
+                                    <i class="bi bi-x-circle"></i> Clear
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Logs Table -->
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm" id="activityLogsTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 150px;">Timestamp</th>
+                                        <th style="width: 150px;">User</th>
+                                        <th style="width: 120px;">Event Type</th>
+                                        <th>Description</th>
+                                        <th style="width: 120px;">IP Address</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="activityLogsTableBody"></tbody>
+                            </table>
+                        </div>
+                        <div id="noActivityLogsMessage" class="text-center text-muted py-4" style="display: none;">
+                            <i class="bi bi-clock-history display-4"></i>
+                            <p class="mt-2">No activity logs found.</p>
+                        </div>
+                        <!-- Pagination -->
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <div class="text-muted small" id="activityLogsPaginationInfo">Showing 0 events</div>
+                            <nav>
+                                <ul class="pagination pagination-sm mb-0" id="activityLogsPagination"></ul>
+                            </nav>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Theme Settings Tab -->
+            <div class="tab-pane fade" id="theme-settings">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-palette"></i> Theme Settings</h5>
+                        <div>
+                            <button class="btn btn-outline-secondary btn-sm me-2" onclick="resetThemeToDefault()">
+                                <i class="bi bi-arrow-counterclockwise"></i> Reset to Default
+                            </button>
+                            <button class="btn btn-primary btn-sm" onclick="saveThemeSettings()">
+                                <i class="bi bi-check-lg"></i> Save Theme
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-4">
+                            <i class="bi bi-info-circle"></i> Customize the Jarvis platform colors. Changes apply to all users across the application.
+                        </p>
+
+                        <!-- Theme Name -->
+                        <div class="row mb-4">
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Theme Name</label>
+                                <input type="text" class="form-control" id="themeName" placeholder="My Custom Theme">
+                            </div>
+                            <div class="col-md-8 d-flex align-items-end">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input" id="themeIsActive" checked>
+                                    <label class="form-check-label" for="themeIsActive">Active Theme</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Logo Settings -->
+                        <div class="card mb-4">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0"><i class="bi bi-image"></i> Logo Settings</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Logo Type</label>
+                                        <select class="form-select form-select-sm" id="logoType" onchange="updateLogoPreview()">
+                                            <option value="svg" selected>Custom SVG (Microchip)</option>
+                                            <option value="icon">Bootstrap Icon</option>
+                                            <option value="text">Text Only</option>
+                                            <option value="image">Custom Image URL</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3" id="logoSvgGroup">
+                                        <label class="form-label small">SVG Path</label>
+                                        <input type="text" class="form-control form-control-sm" id="logoSvgUrl" value="/static/img/jarvis-icon.svg" placeholder="/static/img/icon.svg" onchange="updateLogoPreview()">
+                                        <small class="text-muted">Path to SVG file</small>
+                                    </div>
+                                    <div class="col-md-3" id="logoIconGroup" style="display: none;">
+                                        <label class="form-label small">Logo Icon</label>
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text"><i class="bi" id="logoIconPreview"></i></span>
+                                            <input type="text" class="form-control" id="logoIcon" value="bi-cpu" placeholder="bi-icon-name" onchange="updateLogoPreview()">
+                                        </div>
+                                        <small class="text-muted">e.g., bi-cpu, bi-grid-3x3-gap-fill</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Logo Text</label>
+                                        <input type="text" class="form-control form-control-sm" id="logoText" value="J.A.R.V.I.S." placeholder="App Name" onchange="updateLogoPreview()">
+                                    </div>
+                                    <div class="col-md-3" id="logoImageGroup" style="display: none;">
+                                        <label class="form-label small">Image URL</label>
+                                        <input type="url" class="form-control form-control-sm" id="logoImageUrl" placeholder="https://..." onchange="updateLogoPreview()">
+                                        <small class="text-muted">Max height: 32px</small>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small">Preview</label>
+                                        <div class="p-2 bg-primary rounded d-inline-block">
+                                            <span class="navbar-brand mb-0 h1 text-white" id="logoPreviewArea">
+                                                <span class="navbar-logo-icon"></span> J.A.R.V.I.S.
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Light Theme Colors -->
+                        <div class="card mb-4">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0"><i class="bi bi-sun"></i> Light Theme Colors</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Background Body</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-bgBody" value="#f5f5f5">
+                                            <input type="text" class="form-control" id="light-bgBody-text" value="#f5f5f5">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Card Background</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-bgCard" value="#ffffff">
+                                            <input type="text" class="form-control" id="light-bgCard-text" value="#ffffff">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Table Header</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-bgTableHeader" value="#f8f9fa">
+                                            <input type="text" class="form-control" id="light-bgTableHeader-text" value="#f8f9fa">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Table Hover</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-bgTableHover" value="#e3f2fd">
+                                            <input type="text" class="form-control" id="light-bgTableHover-text" value="#e3f2fd">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Input Background</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-bgInput" value="#ffffff">
+                                            <input type="text" class="form-control" id="light-bgInput-text" value="#ffffff">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Primary Text</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-textPrimary" value="#212529">
+                                            <input type="text" class="form-control" id="light-textPrimary-text" value="#212529">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Secondary Text</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-textSecondary" value="#6c757d">
+                                            <input type="text" class="form-control" id="light-textSecondary-text" value="#6c757d">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Border Color</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-borderColor" value="#dee2e6">
+                                            <input type="text" class="form-control" id="light-borderColor-text" value="#dee2e6">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Accent Primary</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-accentPrimary" value="#0d6efd">
+                                            <input type="text" class="form-control" id="light-accentPrimary-text" value="#0d6efd">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Accent Success</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-accentSuccess" value="#198754">
+                                            <input type="text" class="form-control" id="light-accentSuccess-text" value="#198754">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Accent Warning</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-accentWarning" value="#ffc107">
+                                            <input type="text" class="form-control" id="light-accentWarning-text" value="#ffc107">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Accent Danger</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-accentDanger" value="#dc3545">
+                                            <input type="text" class="form-control" id="light-accentDanger-text" value="#dc3545">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Navbar Background</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="light-navbarBg" value="#6c757d">
+                                            <input type="text" class="form-control" id="light-navbarBg-text" value="#6c757d">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Dark Theme Colors -->
+                        <div class="card mb-4">
+                            <div class="card-header" style="background: #1a1a2e;">
+                                <h6 class="mb-0 text-white"><i class="bi bi-moon"></i> Dark Theme Colors</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Background Body</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-bgBody" value="#1a1a2e">
+                                            <input type="text" class="form-control" id="dark-bgBody-text" value="#1a1a2e">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Card Background</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-bgCard" value="#16213e">
+                                            <input type="text" class="form-control" id="dark-bgCard-text" value="#16213e">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Table Header</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-bgTableHeader" value="#0f3460">
+                                            <input type="text" class="form-control" id="dark-bgTableHeader-text" value="#0f3460">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Table Hover</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-bgTableHover" value="#1f4068">
+                                            <input type="text" class="form-control" id="dark-bgTableHover-text" value="#1f4068">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Input Background</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-bgInput" value="#0f3460">
+                                            <input type="text" class="form-control" id="dark-bgInput-text" value="#0f3460">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Primary Text</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-textPrimary" value="#e4e4e4">
+                                            <input type="text" class="form-control" id="dark-textPrimary-text" value="#e4e4e4">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Secondary Text</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-textSecondary" value="#a0a0a0">
+                                            <input type="text" class="form-control" id="dark-textSecondary-text" value="#a0a0a0">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Border Color</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-borderColor" value="#2d4a6e">
+                                            <input type="text" class="form-control" id="dark-borderColor-text" value="#2d4a6e">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Accent Primary</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-accentPrimary" value="#64b5f6">
+                                            <input type="text" class="form-control" id="dark-accentPrimary-text" value="#64b5f6">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Accent Success</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-accentSuccess" value="#81c784">
+                                            <input type="text" class="form-control" id="dark-accentSuccess-text" value="#81c784">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Accent Warning</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-accentWarning" value="#ffb74d">
+                                            <input type="text" class="form-control" id="dark-accentWarning-text" value="#ffb74d">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Accent Danger</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-accentDanger" value="#ef5350">
+                                            <input type="text" class="form-control" id="dark-accentDanger-text" value="#ef5350">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Navbar Background</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="color" class="form-control form-control-color" id="dark-navbarBg" value="#0f3460">
+                                            <input type="text" class="form-control" id="dark-navbarBg-text" value="#0f3460">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Preview Section -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="bi bi-eye"></i> Live Preview</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="border rounded p-3" id="previewLight" style="background: #f5f5f5;">
+                                            <h6 style="color: #212529;">Light Theme Preview</h6>
+                                            <div class="p-2 mb-2 rounded" style="background: #ffffff; border: 1px solid #dee2e6;">
+                                                <span style="color: #212529;">Card content</span>
+                                                <span class="ms-2" style="color: #6c757d;">Secondary text</span>
+                                            </div>
+                                            <div class="d-flex gap-2">
+                                                <span class="badge" style="background: #0d6efd;">Primary</span>
+                                                <span class="badge" style="background: #198754;">Success</span>
+                                                <span class="badge" style="background: #ffc107; color: #000;">Warning</span>
+                                                <span class="badge" style="background: #dc3545;">Danger</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="border rounded p-3" id="previewDark" style="background: #1a1a2e;">
+                                            <h6 style="color: #e4e4e4;">Dark Theme Preview</h6>
+                                            <div class="p-2 mb-2 rounded" style="background: #16213e; border: 1px solid #2d4a6e;">
+                                                <span style="color: #e4e4e4;">Card content</span>
+                                                <span class="ms-2" style="color: #a0a0a0;">Secondary text</span>
+                                            </div>
+                                            <div class="d-flex gap-2">
+                                                <span class="badge" style="background: #64b5f6; color: #000;">Primary</span>
+                                                <span class="badge" style="background: #81c784; color: #000;">Success</span>
+                                                <span class="badge" style="background: #ffb74d; color: #000;">Warning</span>
+                                                <span class="badge" style="background: #ef5350;">Danger</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit VAT Registry Modal -->
+    <div class="modal fade" id="editVatModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Edit Company</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editVatOriginalCompany">
+                    <div class="mb-3">
+                        <label class="form-label">Company Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editVatCompanyName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Brands</label>
+                        <input type="text" class="form-control" id="editVatBrands" placeholder="Optional">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">VAT Number <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editVatNumber" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveVatEdit()">
+                        <i class="bi bi-check"></i> Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Department Structure Modal -->
+    <div class="modal fade" id="departmentStructureModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="departmentStructureModalTitle">Add Department Structure</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="departmentStructureForm">
+                        <input type="hidden" id="departmentStructureId">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Company <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="dsCompany" required>
+                                        <option value="">Select company...</option>
+                                    </select>
+                                    <small class="text-muted">Companies from VAT Registry</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Brand</label>
+                                    <input type="text" class="form-control" id="dsBrand" list="brandList">
+                                    <datalist id="brandList"></datalist>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Department <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="dsDepartment" required list="departmentList">
+                                    <datalist id="departmentList"></datalist>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Subdepartment</label>
+                                    <input type="text" class="form-control" id="dsSubdepartment">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Manager</label>
+                                    <div class="pills-input-container" id="dsManagerContainer" onclick="focusPillsInput('dsManagerSearch')">
+                                        <div class="pills-area">
+                                            <span id="dsManagerPills"></span>
+                                            <input type="text" class="search-input" id="dsManagerSearch"
+                                                   placeholder="Type to search..."
+                                                   autocomplete="off"
+                                                   onfocus="showPillsDropdown('manager')"
+                                                   oninput="filterPillsDropdown('manager')">
+                                        </div>
+                                        <div class="pills-dropdown" id="dsManagerDropdown"></div>
+                                    </div>
+                                    <small class="text-muted">Search and select responsables as managers.</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Marketing</label>
+                                    <div class="pills-input-container" id="dsMarketingContainer" onclick="focusPillsInput('dsMarketingSearch')">
+                                        <div class="pills-area">
+                                            <span id="dsMarketingPills"></span>
+                                            <input type="text" class="search-input" id="dsMarketingSearch"
+                                                   placeholder="Type to search..."
+                                                   autocomplete="off"
+                                                   onfocus="showPillsDropdown('marketing')"
+                                                   oninput="filterPillsDropdown('marketing')">
+                                        </div>
+                                        <div class="pills-dropdown" id="dsMarketingDropdown"></div>
+                                    </div>
+                                    <small class="text-muted">Search and select responsables for marketing.</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">CC Email</label>
+                                    <input type="email" class="form-control" id="dsCcEmail" placeholder="department-cc@example.com">
+                                    <small class="text-muted">Optional. Will be CC'd on all allocation notifications for this department.</small>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveDepartmentStructure()">
+                        <i class="bi bi-check-lg"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit User Modal -->
+    <div class="modal fade" id="userModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="userModalTitle">Add User</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="userForm">
+                        <input type="hidden" id="userId">
+                        <div class="mb-3">
+                            <label class="form-label">Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="userName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email <span class="text-danger">*</span></label>
+                            <input type="email" class="form-control" id="userEmail" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Phone</label>
+                            <input type="tel" class="form-control" id="userPhone">
+                        </div>
+                        <div class="mb-3" id="passwordField">
+                            <label class="form-label">Password <span class="text-danger" id="passwordRequired">*</span></label>
+                            <input type="password" class="form-control" id="userPassword">
+                            <small class="text-muted" id="passwordHelp">Required for new users</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Role <span class="text-danger">*</span></label>
+                            <select class="form-select" id="userRole" required>
+                                <option value="">Select a role...</option>
+                            </select>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="userActive" checked>
+                            <label class="form-check-label" for="userActive">Active</label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveUser()">
+                        <i class="bi bi-check-lg"></i> Save User
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Role Modal -->
+    <div class="modal fade" id="roleModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="roleModalTitle">Add Role</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="roleForm">
+                        <input type="hidden" id="roleId">
+                        <div class="mb-3">
+                            <label class="form-label">Role Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="roleName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <input type="text" class="form-control" id="roleDescription" placeholder="Optional description">
+                        </div>
+                        <div class="alert alert-info small mb-0">
+                            <i class="bi bi-info-circle"></i> After creating the role, configure its permissions in the Access Permissions matrix.
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveRole()">
+                        <i class="bi bi-check-lg"></i> Save Role
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Responsable Modal -->
+    <div class="modal fade" id="responsableModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="responsableModalTitle">Add Responsable</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="responsableForm">
+                        <input type="hidden" id="responsableId">
+                        <div class="mb-3">
+                            <label class="form-label">Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="responsableName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email <span class="text-danger">*</span></label>
+                            <input type="email" class="form-control" id="responsableEmail" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Phone</label>
+                            <input type="tel" class="form-control" id="responsablePhone">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Departments</label>
+                            <input type="text" class="form-control" id="responsableDepartments" placeholder="e.g., Marketing, Sales, IT (comma-separated)">
+                            <small class="text-muted">List the departments this person is responsible for, separated by commas</small>
+                        </div>
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="responsableNotify" checked>
+                            <label class="form-check-label" for="responsableNotify">Receive notifications on allocation</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="responsableActive" checked>
+                            <label class="form-check-label" for="responsableActive">Active</label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveResponsable()">
+                        <i class="bi bi-check-lg"></i> Save Responsable
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal fade" id="deleteModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle"></i> Confirm Delete</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete <strong id="deleteItemName"></strong>?</p>
+                    <p class="text-muted small">This action cannot be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmDelete()">
+                        <i class="bi bi-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit VAT Rate Modal -->
+    <div class="modal fade" id="editVatRateModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Edit VAT Rate</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editVatRateId">
+                    <div class="mb-3">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editVatRateName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Rate (%) <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="editVatRateValue" step="0.01" min="0" max="100" required>
+                            <span class="input-group-text">%</span>
+                        </div>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="editVatRateDefault">
+                        <label class="form-check-label" for="editVatRateDefault">Default VAT rate</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="editVatRateActive">
+                        <label class="form-check-label" for="editVatRateActive">Active</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveEditedVatRate()">
+                        <i class="bi bi-check-lg"></i> Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let users = [];
+        let roles = [];
+        let responsables = [];
+        let notificationSettings = {};
+        let deleteType = null;
+        let deleteId = null;
+        let companiesWithVat = [];
+        let vatRates = [];
+        let currentTheme = null;
+        let currentThemeId = null;
+
+        // Permission Matrix data
+        let permissionMatrix = { modules: [], roles: [], role_permissions: {} };
+        let selectedModule = null;
+        let pendingPermissionChanges = {}; // {role_id: {perm_id: {scope/granted}}}
+
+        // Theme color fields mapping
+        const themeColorFields = [
+            'bgBody', 'bgCard', 'bgTableHeader', 'bgTableHover', 'bgInput',
+            'textPrimary', 'textSecondary', 'borderColor',
+            'accentPrimary', 'accentSuccess', 'accentWarning', 'accentDanger', 'navbarBg'
+        ];
+
+        // Default theme values
+        const defaultTheme = {
+            light: {
+                bgBody: '#f5f5f5',
+                bgCard: '#ffffff',
+                bgTableHeader: '#f8f9fa',
+                bgTableHover: '#e3f2fd',
+                bgInput: '#ffffff',
+                textPrimary: '#212529',
+                textSecondary: '#6c757d',
+                borderColor: '#dee2e6',
+                accentPrimary: '#0d6efd',
+                accentSuccess: '#198754',
+                accentWarning: '#ffc107',
+                accentDanger: '#dc3545',
+                navbarBg: '#6c757d'
+            },
+            dark: {
+                bgBody: '#1a1a2e',
+                bgCard: '#16213e',
+                bgTableHeader: '#0f3460',
+                bgTableHover: '#1f4068',
+                bgInput: '#0f3460',
+                textPrimary: '#e4e4e4',
+                textSecondary: '#a0a0a0',
+                borderColor: '#2d4a6e',
+                accentPrimary: '#64b5f6',
+                accentSuccess: '#81c784',
+                accentWarning: '#ffb74d',
+                accentDanger: '#ef5350',
+                navbarBg: '#0f3460'
+            },
+            logo: {
+                type: 'svg',
+                svgUrl: '/static/img/jarvis-icon.svg',
+                icon: 'bi-cpu',
+                text: 'J.A.R.V.I.S.',
+                imageUrl: ''
+            }
+        };
+
+        const userModal = new bootstrap.Modal(document.getElementById('userModal'));
+        const roleModal = new bootstrap.Modal(document.getElementById('roleModal'));
+        const responsableModal = new bootstrap.Modal(document.getElementById('responsableModal'));
+        const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        const editVatRateModal = new bootstrap.Modal(document.getElementById('editVatRateModal'));
+
+        // Loading overlay helpers
+        let loadingCount = 0;
+        function showLoading(message = 'Loading...') {
+            loadingCount++;
+            const overlay = document.getElementById('loadingOverlay');
+            const text = overlay.querySelector('.loading-text');
+            text.textContent = message;
+            overlay.classList.add('show');
+        }
+        function hideLoading() {
+            loadingCount = Math.max(0, loadingCount - 1);
+            if (loadingCount === 0) {
+                document.getElementById('loadingOverlay').classList.remove('show');
+            }
+        }
+        function setLoadingMessage(message) {
+            document.querySelector('#loadingOverlay .loading-text').textContent = message;
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            showLoading('Loading settings...');
+            Promise.all([
+                loadRoles(),
+                loadUsers(),
+                loadResponsables(),
+                loadNotificationSettings(),
+                loadCompaniesWithVat(),
+                loadDepartmentStructures(),
+                loadVatRates(),
+                loadDropdownOptions(),
+                loadThemeSettings(),
+                loadPermissionMatrix()
+            ]).finally(() => {
+                hideLoading();
+            });
+
+            // Event listener for Add Company VAT button
+            document.getElementById('addCompanyVatBtn').addEventListener('click', addNewCompanyVat);
+            // Event listener for Add VAT Rate button
+            document.getElementById('addVatRateBtn').addEventListener('click', addNewVatRate);
+            // Initialize theme color picker sync
+            initThemeColorPickers();
+            // Module search filter
+            document.getElementById('moduleSearch')?.addEventListener('input', filterModules);
+        });
+
+        // ========== DATA LOADING ==========
+
+        async function loadUsers() {
+            try {
+                const res = await fetch('/api/users');
+                users = await res.json();
+                renderUsers();
+                updateSummary();
+            } catch (error) {
+                console.error('Error loading users:', error);
+            }
+        }
+
+        async function loadRoles() {
+            try {
+                const res = await fetch('/api/roles');
+                roles = await res.json();
+                renderRoles();
+                populateRoleDropdown();
+                updateSummary();
+            } catch (error) {
+                console.error('Error loading roles:', error);
+            }
+        }
+
+        function updateSummary() {
+            const total = users.length;
+            const active = users.filter(u => u.is_active).length;
+
+            document.getElementById('totalUsers').textContent = total;
+            document.getElementById('activeUsers').textContent = active;
+            document.getElementById('totalRoles').textContent = roles.length;
+            document.getElementById('totalResponsables').textContent = responsables.length;
+        }
+
+        // ========== USERS ==========
+
+        function renderUsers() {
+            const tbody = document.getElementById('usersTableBody');
+            const noUsersMsg = document.getElementById('noUsersMessage');
+
+            if (users.length === 0) {
+                tbody.innerHTML = '';
+                noUsersMsg.style.display = 'block';
+                return;
+            }
+
+            noUsersMsg.style.display = 'none';
+            tbody.innerHTML = users.map(user => `
+                <tr>
+                    <td><strong>${escapeHtml(user.name)}</strong></td>
+                    <td><a href="mailto:${escapeHtml(user.email)}">${escapeHtml(user.email)}</a></td>
+                    <td>${user.phone ? escapeHtml(user.phone) : '<span class="text-muted">-</span>'}</td>
+                    <td>
+                        ${user.role_name
+                            ? `<span class="badge bg-primary role-badge">${escapeHtml(user.role_name)}</span>`
+                            : '<span class="badge bg-secondary role-badge">No Role</span>'}
+                    </td>
+                    <td>
+                        ${user.is_active
+                            ? '<span class="badge bg-success">Active</span>'
+                            : '<span class="badge bg-secondary">Inactive</span>'}
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editUser(${user.id})" title="Edit" aria-label="Edit user">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="showDeleteModal('user', ${user.id}, '${escapeHtml(user.name)}')" title="Delete" aria-label="Delete user">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function populateRoleDropdown() {
+            const select = document.getElementById('userRole');
+            select.innerHTML = '<option value="">Select a role...</option>' +
+                roles.map(r => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('');
+        }
+
+        function showAddUserModal() {
+            document.getElementById('userModalTitle').textContent = 'Add User';
+            document.getElementById('userId').value = '';
+            document.getElementById('userName').value = '';
+            document.getElementById('userEmail').value = '';
+            document.getElementById('userPhone').value = '';
+            document.getElementById('userPassword').value = '';
+            document.getElementById('userRole').value = '';
+            document.getElementById('userActive').checked = true;
+            // Show password as required for new users
+            document.getElementById('passwordRequired').style.display = 'inline';
+            document.getElementById('passwordHelp').textContent = 'Required for new users';
+            userModal.show();
+        }
+
+        function editUser(userId) {
+            const user = users.find(u => u.id === userId);
+            if (!user) return;
+
+            document.getElementById('userModalTitle').textContent = 'Edit User';
+            document.getElementById('userId').value = user.id;
+            document.getElementById('userName').value = user.name;
+            document.getElementById('userEmail').value = user.email;
+            document.getElementById('userPhone').value = user.phone || '';
+            document.getElementById('userPassword').value = '';
+            document.getElementById('userRole').value = user.role_id || '';
+            document.getElementById('userActive').checked = user.is_active;
+            // Password is optional when editing
+            document.getElementById('passwordRequired').style.display = 'none';
+            document.getElementById('passwordHelp').textContent = 'Leave blank to keep current password';
+            userModal.show();
+        }
+
+        async function saveUser() {
+            const userId = document.getElementById('userId').value;
+            const roleId = document.getElementById('userRole').value;
+            const password = document.getElementById('userPassword').value.trim();
+            const userData = {
+                name: document.getElementById('userName').value.trim(),
+                email: document.getElementById('userEmail').value.trim(),
+                phone: document.getElementById('userPhone').value.trim() || null,
+                role_id: roleId ? parseInt(roleId) : null,
+                is_active: document.getElementById('userActive').checked
+            };
+
+            if (!userData.name || !userData.email) {
+                alert('Name and email are required');
+                return;
+            }
+
+            // Password required for new users
+            if (!userId && !password) {
+                alert('Password is required for new users');
+                return;
+            }
+
+            // Include password if provided
+            if (password) {
+                userData.password = password;
+            }
+
+            try {
+                const url = userId ? `/api/users/${userId}` : '/api/users';
+                const method = userId ? 'PUT' : 'POST';
+
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(userData)
+                });
+
+                const result = await res.json();
+
+                if (result.success || result.id) {
+                    userModal.hide();
+                    loadUsers();
+                } else {
+                    alert(result.error || 'Failed to save user');
+                }
+            } catch (error) {
+                console.error('Error saving user:', error);
+                alert('Failed to save user');
+            }
+        }
+
+        // ========== ROLES ==========
+
+        // Module colors for permission badges
+        const moduleColors = {
+            system: 'secondary',
+            invoices: 'primary',
+            accounting: 'success',
+            hr: 'info'
+        };
+
+        // Permission icon mapping
+        const permissionIcons = {
+            'system.settings': 'bi-gear',
+            'system.activity_logs': 'bi-clock-history',
+            'invoices.view': 'bi-eye',
+            'invoices.add': 'bi-plus-circle',
+            'invoices.edit': 'bi-pencil',
+            'invoices.delete': 'bi-trash',
+            'accounting.dashboard': 'bi-calculator',
+            'accounting.export': 'bi-download',
+            'accounting.templates': 'bi-file-earmark-text',
+            'accounting.connectors': 'bi-plug',
+            'hr.access': 'bi-people',
+            'hr.manager': 'bi-person-badge'
+        };
+
+        function renderRoles() {
+            // Old role table rendering is no longer used - replaced by permission matrix
+            // This function now just exists for backward compatibility
+            // Role dropdown population is handled by populateRoleDropdown()
+            return;
+        }
+
+        // Cache for permissions modules
+        let permissionsModules = null;
+
+        async function loadPermissions() {
+            if (permissionsModules) return permissionsModules;
+            try {
+                const res = await fetch('/api/permissions');
+                const data = await res.json();
+                permissionsModules = data.modules || [];
+                return permissionsModules;
+            } catch (error) {
+                console.error('Error loading permissions:', error);
+                return [];
+            }
+        }
+
+        function renderPermissionsModal(selectedPermissions = []) {
+            const container = document.getElementById('permissionsContainer');
+            if (!permissionsModules || permissionsModules.length === 0) {
+                container.innerHTML = '<div class="alert alert-warning">No permissions available</div>';
+                return;
+            }
+
+            const selectedSet = new Set(selectedPermissions.map(p => typeof p === 'string' ? p : p.key));
+
+            // Render accordion for each module
+            container.innerHTML = permissionsModules.map((module, idx) => {
+                const modulePerms = module.permissions || [];
+                const checkedCount = modulePerms.filter(p => selectedSet.has(`${module.key}.${p.permission_key}`)).length;
+
+                return `
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                            <span><i class="bi ${modulePerms[0]?.icon || 'bi-folder'}"></i> ${module.label}</span>
+                            <span class="badge bg-${moduleColors[module.key] || 'secondary'}">${checkedCount}/${modulePerms.length}</span>
+                        </div>
+                        <div class="card-body py-2">
+                            ${modulePerms.map(perm => {
+                                const permKey = `${module.key}.${perm.permission_key}`;
+                                const isChecked = selectedSet.has(permKey);
+                                const isChild = perm.parent_id != null;
+                                return `
+                                <div class="form-check ${isChild ? 'ms-3' : ''} mb-1">
+                                    <input class="form-check-input perm-checkbox" type="checkbox"
+                                        id="perm_${permKey.replace('.', '_')}"
+                                        data-perm-key="${permKey}"
+                                        ${isChecked ? 'checked' : ''}>
+                                    <label class="form-check-label small" for="perm_${permKey.replace('.', '_')}">
+                                        <i class="bi ${perm.icon || 'bi-check'}"></i> ${perm.label}
+                                    </label>
+                                </div>
+                            `}).join('')}
+                        </div>
+                    </div>
+                </div>
+            `}).join('');
+        }
+
+        function showAddRoleModal() {
+            document.getElementById('roleModalTitle').textContent = 'Add Role';
+            document.getElementById('roleId').value = '';
+            document.getElementById('roleName').value = '';
+            document.getElementById('roleDescription').value = '';
+            roleModal.show();
+        }
+
+        function editRole(roleId) {
+            const role = roles.find(r => r.id === roleId);
+            if (!role) return;
+
+            document.getElementById('roleModalTitle').textContent = 'Edit Role';
+            document.getElementById('roleId').value = role.id;
+            document.getElementById('roleName').value = role.name;
+            document.getElementById('roleDescription').value = role.description || '';
+            roleModal.show();
+        }
+
+        async function saveRole() {
+            const roleId = document.getElementById('roleId').value;
+            const name = document.getElementById('roleName').value.trim();
+            const description = document.getElementById('roleDescription').value.trim() || null;
+
+            if (!name) {
+                alert('Role name is required');
+                return;
+            }
+
+            try {
+                const roleData = { name, description };
+                const url = roleId ? `/api/roles/${roleId}` : '/api/roles';
+                const method = roleId ? 'PUT' : 'POST';
+
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(roleData)
+                });
+
+                const result = await res.json();
+
+                if (!result.success && !result.id) {
+                    alert(result.error || 'Failed to save role');
+                    return;
+                }
+
+                roleModal.hide();
+                loadRoles();
+                // Reload permission matrix to include new role column
+                loadPermissionMatrix();
+
+            } catch (error) {
+                console.error('Error saving role:', error);
+                alert('Failed to save role');
+            }
+        }
+
+        // ========== DELETE ==========
+
+        function showDeleteModal(type, id, name) {
+            deleteType = type;
+            deleteId = id;
+            document.getElementById('deleteItemName').textContent = name;
+            deleteModal.show();
+        }
+
+        async function confirmDelete() {
+            if (!deleteType || !deleteId) return;
+
+            try {
+                let url;
+                if (deleteType === 'user') url = `/api/users/${deleteId}`;
+                else if (deleteType === 'role') url = `/api/roles/${deleteId}`;
+                else if (deleteType === 'responsable') url = `/api/responsables/${deleteId}`;
+                else if (deleteType === 'vat_rate') url = `/api/vat-rates/${deleteId}`;
+                const res = await fetch(url, { method: 'DELETE' });
+                const result = await res.json();
+
+                if (result.success) {
+                    deleteModal.hide();
+                    if (deleteType === 'user') loadUsers();
+                    else if (deleteType === 'role') { loadRoles(); loadPermissionMatrix(); }
+                    else if (deleteType === 'responsable') loadResponsables();
+                    else if (deleteType === 'vat_rate') loadVatRates();
+                } else {
+                    alert(result.error || 'Failed to delete');
+                }
+            } catch (error) {
+                console.error('Error deleting:', error);
+                alert('Failed to delete');
+            } finally {
+                deleteType = null;
+                deleteId = null;
+            }
+        }
+
+        // ========== RESPONSABLES ==========
+
+        async function loadResponsables() {
+            try {
+                const res = await fetch('/api/responsables');
+                responsables = await res.json();
+                renderResponsables();
+                updateSummary();
+            } catch (error) {
+                console.error('Error loading responsables:', error);
+            }
+        }
+
+        function renderResponsables() {
+            const tbody = document.getElementById('responsablesTableBody');
+            const noResponsablesMsg = document.getElementById('noResponsablesMessage');
+
+            if (responsables.length === 0) {
+                tbody.innerHTML = '';
+                noResponsablesMsg.style.display = 'block';
+                return;
+            }
+
+            noResponsablesMsg.style.display = 'none';
+            tbody.innerHTML = responsables.map(r => `
+                <tr>
+                    <td><strong>${escapeHtml(r.name)}</strong></td>
+                    <td><a href="mailto:${escapeHtml(r.email)}">${escapeHtml(r.email)}</a></td>
+                    <td>${r.phone ? escapeHtml(r.phone) : '<span class="text-muted">-</span>'}</td>
+                    <td>${r.departments ? escapeHtml(r.departments) : '<span class="text-muted">All</span>'}</td>
+                    <td class="text-center">
+                        ${r.notify_on_allocation
+                            ? '<i class="bi bi-bell-fill text-success"></i>'
+                            : '<i class="bi bi-bell-slash text-muted"></i>'}
+                    </td>
+                    <td>
+                        ${r.is_active
+                            ? '<span class="badge bg-success">Active</span>'
+                            : '<span class="badge bg-secondary">Inactive</span>'}
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editResponsable(${r.id})" title="Edit" aria-label="Edit responsable">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="showDeleteModal('responsable', ${r.id}, '${escapeHtml(r.name)}')" title="Delete" aria-label="Delete responsable">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function showAddResponsableModal() {
+            document.getElementById('responsableModalTitle').textContent = 'Add Responsable';
+            document.getElementById('responsableId').value = '';
+            document.getElementById('responsableName').value = '';
+            document.getElementById('responsableEmail').value = '';
+            document.getElementById('responsablePhone').value = '';
+            document.getElementById('responsableDepartments').value = '';
+            document.getElementById('responsableNotify').checked = true;
+            document.getElementById('responsableActive').checked = true;
+            responsableModal.show();
+        }
+
+        function editResponsable(responsableId) {
+            const r = responsables.find(resp => resp.id === responsableId);
+            if (!r) return;
+
+            document.getElementById('responsableModalTitle').textContent = 'Edit Responsable';
+            document.getElementById('responsableId').value = r.id;
+            document.getElementById('responsableName').value = r.name;
+            document.getElementById('responsableEmail').value = r.email;
+            document.getElementById('responsablePhone').value = r.phone || '';
+            document.getElementById('responsableDepartments').value = r.departments || '';
+            document.getElementById('responsableNotify').checked = r.notify_on_allocation;
+            document.getElementById('responsableActive').checked = r.is_active;
+            responsableModal.show();
+        }
+
+        async function saveResponsable() {
+            const responsableId = document.getElementById('responsableId').value;
+            const responsableData = {
+                name: document.getElementById('responsableName').value.trim(),
+                email: document.getElementById('responsableEmail').value.trim(),
+                phone: document.getElementById('responsablePhone').value.trim() || null,
+                departments: document.getElementById('responsableDepartments').value.trim() || null,
+                notify_on_allocation: document.getElementById('responsableNotify').checked,
+                is_active: document.getElementById('responsableActive').checked
+            };
+
+            if (!responsableData.name || !responsableData.email) {
+                alert('Name and email are required');
+                return;
+            }
+
+            try {
+                const url = responsableId ? `/api/responsables/${responsableId}` : '/api/responsables';
+                const method = responsableId ? 'PUT' : 'POST';
+
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(responsableData)
+                });
+
+                const result = await res.json();
+
+                if (result.success || result.id) {
+                    responsableModal.hide();
+                    loadResponsables();
+                } else {
+                    alert(result.error || 'Failed to save responsable');
+                }
+            } catch (error) {
+                console.error('Error saving responsable:', error);
+                alert('Failed to save responsable');
+            }
+        }
+
+        // ========== NOTIFICATION SETTINGS ==========
+
+        async function loadNotificationSettings() {
+            try {
+                const res = await fetch('/api/notification-settings');
+                const settings = await res.json();
+                // API returns a dictionary directly, no need to transform
+                notificationSettings = settings;
+                populateNotificationSettings();
+            } catch (error) {
+                console.error('Error loading notification settings:', error);
+            }
+        }
+
+        function populateNotificationSettings() {
+            document.getElementById('smtpHost').value = notificationSettings.smtp_host || '';
+            document.getElementById('smtpPort').value = notificationSettings.smtp_port || '';
+            document.getElementById('smtpTls').checked = notificationSettings.smtp_tls !== 'false';
+            document.getElementById('smtpUsername').value = notificationSettings.smtp_username || '';
+            document.getElementById('smtpPassword').value = notificationSettings.smtp_password || '';
+            document.getElementById('fromEmail').value = notificationSettings.from_email || '';
+            document.getElementById('fromName').value = notificationSettings.from_name || '';
+            document.getElementById('notifyOnAllocation').checked = notificationSettings.notify_on_allocation !== 'false';
+            document.getElementById('globalCc').value = notificationSettings.global_cc || '';
+        }
+
+        async function saveNotificationSettings() {
+            const settingsData = {
+                smtp_host: document.getElementById('smtpHost').value.trim(),
+                smtp_port: document.getElementById('smtpPort').value.trim(),
+                smtp_tls: document.getElementById('smtpTls').checked ? 'true' : 'false',
+                smtp_username: document.getElementById('smtpUsername').value.trim(),
+                smtp_password: document.getElementById('smtpPassword').value.trim(),
+                from_email: document.getElementById('fromEmail').value.trim(),
+                from_name: document.getElementById('fromName').value.trim(),
+                notify_on_allocation: document.getElementById('notifyOnAllocation').checked ? 'true' : 'false',
+                global_cc: document.getElementById('globalCc').value.trim()
+            };
+
+            try {
+                const res = await fetch('/api/notification-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settingsData)
+                });
+
+                const result = await res.json();
+
+                if (result.success) {
+                    alert('Notification settings saved successfully!');
+                    loadNotificationSettings();
+                } else {
+                    alert(result.error || 'Failed to save settings');
+                }
+            } catch (error) {
+                console.error('Error saving notification settings:', error);
+                alert('Failed to save settings');
+            }
+        }
+
+        async function testEmailSettings() {
+            const fromEmail = document.getElementById('fromEmail').value;
+            if (!fromEmail) {
+                showToast('Please enter a "From Email" address first', 'warning');
+                return;
+            }
+
+            // Ask for test recipient email
+            const testEmail = prompt('Enter email address to send test email to:', fromEmail);
+            if (!testEmail) {
+                return;
+            }
+
+            try {
+                const btn = document.querySelector('button[onclick="testEmailSettings()"]');
+                const originalText = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending...';
+
+                const response = await fetch('/api/notification-settings/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: testEmail })
+                });
+
+                const result = await response.json();
+
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+
+                if (result.success) {
+                    showToast(`Test email sent to ${testEmail}`, 'success');
+                } else {
+                    showToast(`Failed to send test email: ${result.error}`, 'danger');
+                }
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        // ========== DEPARTMENT STRUCTURE ==========
+
+        let departmentStructuresData = [];
+        let responsablesForDS = [];
+
+        async function loadDepartmentStructures() {
+            try {
+                const [dsRes, respRes] = await Promise.all([
+                    fetch('/api/department-structures'),
+                    fetch('/api/responsables')
+                ]);
+                departmentStructuresData = await dsRes.json();
+                responsablesForDS = await respRes.json();
+                renderDepartmentStructuresTable();
+            } catch (error) {
+                console.error('Error loading department structures:', error);
+            }
+        }
+
+        function renderDepartmentStructuresTable() {
+            const tbody = document.getElementById('departmentStructuresTableBody');
+            const noMsg = document.getElementById('noDepartmentStructuresMessage');
+
+            if (departmentStructuresData.length === 0) {
+                tbody.innerHTML = '';
+                noMsg.style.display = 'block';
+                return;
+            }
+
+            noMsg.style.display = 'none';
+            tbody.innerHTML = departmentStructuresData.map(ds => {
+                // Get manager names from manager_ids
+                const managerNames = (ds.manager_ids || [])
+                    .map(id => responsablesForDS.find(r => r.id === id))
+                    .filter(r => r)
+                    .map(r => r.name)
+                    .join(', ') || '-';
+
+                // Get marketing names from marketing_ids
+                const marketingNames = (ds.marketing_ids || [])
+                    .map(id => responsablesForDS.find(r => r.id === id))
+                    .filter(r => r)
+                    .map(r => r.name)
+                    .join(', ') || '-';
+
+                return `
+                    <tr>
+                        <td>${escapeHtml(ds.company)}</td>
+                        <td>${escapeHtml(ds.brand || '-')}</td>
+                        <td>${escapeHtml(ds.department)}</td>
+                        <td>${escapeHtml(ds.subdepartment || '-')}</td>
+                        <td>${escapeHtml(managerNames)}</td>
+                        <td>${escapeHtml(marketingNames)}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary me-1" onclick="editDepartmentStructure(${ds.id})" title="Edit" aria-label="Edit department structure">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteDepartmentStructure(${ds.id})" title="Delete" aria-label="Delete department structure">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Store selected IDs for manager and marketing
+        let selectedManagerIds = [];
+        let selectedMarketingIds = [];
+
+        function showAddDepartmentStructureModal() {
+            document.getElementById('departmentStructureModalTitle').textContent = 'Add Department Structure';
+            document.getElementById('departmentStructureForm').reset();
+            document.getElementById('departmentStructureId').value = '';
+            document.getElementById('dsCcEmail').value = '';
+            selectedManagerIds = [];
+            selectedMarketingIds = [];
+            renderPills('manager');
+            renderPills('marketing');
+            populateDSDataLists();
+            new bootstrap.Modal(document.getElementById('departmentStructureModal')).show();
+        }
+
+        function editDepartmentStructure(id) {
+            const ds = departmentStructuresData.find(d => d.id === id);
+            if (!ds) return;
+
+            document.getElementById('departmentStructureModalTitle').textContent = 'Edit Department Structure';
+            document.getElementById('departmentStructureId').value = ds.id;
+            document.getElementById('dsCompany').value = ds.company || '';
+            document.getElementById('dsBrand').value = ds.brand || '';
+            document.getElementById('dsDepartment').value = ds.department || '';
+            document.getElementById('dsSubdepartment').value = ds.subdepartment || '';
+            document.getElementById('dsCcEmail').value = ds.cc_email || '';
+            selectedManagerIds = ds.manager_ids || [];
+            selectedMarketingIds = ds.marketing_ids || [];
+            renderPills('manager');
+            renderPills('marketing');
+            populateDSDataLists();
+            new bootstrap.Modal(document.getElementById('departmentStructureModal')).show();
+        }
+
+        function focusPillsInput(inputId) {
+            document.getElementById(inputId).focus();
+        }
+
+        function getSelectedIds(fieldName) {
+            return fieldName === 'manager' ? selectedManagerIds : selectedMarketingIds;
+        }
+
+        function setSelectedIds(fieldName, ids) {
+            if (fieldName === 'manager') {
+                selectedManagerIds = ids;
+            } else {
+                selectedMarketingIds = ids;
+            }
+        }
+
+        function renderPills(fieldName) {
+            const pillsContainer = document.getElementById(`ds${capitalize(fieldName)}Pills`);
+            const selectedIds = getSelectedIds(fieldName);
+            const activeResponsables = responsablesForDS.filter(r => r.is_active);
+
+            pillsContainer.innerHTML = selectedIds.map(id => {
+                const responsable = activeResponsables.find(r => r.id === id);
+                if (!responsable) return '';
+                return `
+                    <span class="pill" data-id="${id}">
+                        ${escapeHtml(responsable.name)}
+                        <span class="remove-pill" onclick="removePill('${fieldName}', ${id})">&times;</span>
+                    </span>
+                `;
+            }).join('');
+        }
+
+        function removePill(fieldName, id) {
+            const selectedIds = getSelectedIds(fieldName);
+            const index = selectedIds.indexOf(id);
+            if (index > -1) {
+                selectedIds.splice(index, 1);
+                setSelectedIds(fieldName, selectedIds);
+                renderPills(fieldName);
+            }
+        }
+
+        function showPillsDropdown(fieldName) {
+            filterPillsDropdown(fieldName);
+            const dropdown = document.getElementById(`ds${capitalize(fieldName)}Dropdown`);
+            dropdown.classList.add('show');
+        }
+
+        function hidePillsDropdown(fieldName) {
+            const dropdown = document.getElementById(`ds${capitalize(fieldName)}Dropdown`);
+            dropdown.classList.remove('show');
+        }
+
+        function filterPillsDropdown(fieldName) {
+            const searchInput = document.getElementById(`ds${capitalize(fieldName)}Search`);
+            const dropdown = document.getElementById(`ds${capitalize(fieldName)}Dropdown`);
+            const searchTerm = searchInput.value.toLowerCase().trim();
+            const selectedIds = getSelectedIds(fieldName);
+            const activeResponsables = responsablesForDS.filter(r => r.is_active);
+
+            // Filter out already selected and match search term
+            const filtered = activeResponsables.filter(r =>
+                !selectedIds.includes(r.id) &&
+                r.name.toLowerCase().includes(searchTerm)
+            );
+
+            if (filtered.length === 0) {
+                dropdown.innerHTML = '<div class="pills-dropdown-empty">No responsables found</div>';
+            } else {
+                dropdown.innerHTML = filtered.map(r => `
+                    <div class="pills-dropdown-item" onclick="selectResponsable('${fieldName}', ${r.id})">
+                        ${escapeHtml(r.name)}
+                    </div>
+                `).join('');
+            }
+
+            dropdown.classList.add('show');
+        }
+
+        function selectResponsable(fieldName, id) {
+            const selectedIds = getSelectedIds(fieldName);
+            if (!selectedIds.includes(id)) {
+                selectedIds.push(id);
+                setSelectedIds(fieldName, selectedIds);
+                renderPills(fieldName);
+            }
+            // Clear search and hide dropdown
+            const searchInput = document.getElementById(`ds${capitalize(fieldName)}Search`);
+            searchInput.value = '';
+            hidePillsDropdown(fieldName);
+        }
+
+        function capitalize(str) {
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function(e) {
+            const managerContainer = document.getElementById('dsManagerContainer');
+            const marketingContainer = document.getElementById('dsMarketingContainer');
+
+            if (managerContainer && !managerContainer.contains(e.target)) {
+                hidePillsDropdown('manager');
+            }
+            if (marketingContainer && !marketingContainer.contains(e.target)) {
+                hidePillsDropdown('marketing');
+            }
+        });
+
+        function populateDSDataLists() {
+            // Populate company select from VAT Registry
+            const companySelect = document.getElementById('dsCompany');
+            const currentValue = companySelect.value;
+            companySelect.innerHTML = '<option value="">Select company...</option>' +
+                companiesWithVat.map(c => `<option value="${escapeHtml(c.company)}">${escapeHtml(c.company)}</option>`).join('');
+            // Restore previous selection if exists
+            if (currentValue) {
+                companySelect.value = currentValue;
+            }
+
+            // Populate brand list from existing department structures
+            const brands = [...new Set(departmentStructuresData.map(d => d.brand).filter(b => b))];
+            const brandList = document.getElementById('brandList');
+            brandList.innerHTML = brands.map(b => `<option value="${escapeHtml(b)}">`).join('');
+
+            // Populate department list from existing department structures
+            const departments = [...new Set(departmentStructuresData.map(d => d.department).filter(d => d))];
+            const departmentList = document.getElementById('departmentList');
+            departmentList.innerHTML = departments.map(d => `<option value="${escapeHtml(d)}">`).join('');
+        }
+
+        async function saveDepartmentStructure() {
+            const id = document.getElementById('departmentStructureId').value;
+            const company = document.getElementById('dsCompany').value.trim();
+            const department = document.getElementById('dsDepartment').value.trim();
+
+            if (!company || !department) {
+                alert('Company and Department are required');
+                return;
+            }
+
+            const managerIds = selectedManagerIds;
+            const marketingIds = selectedMarketingIds;
+
+            const data = {
+                company: company,
+                brand: document.getElementById('dsBrand').value.trim() || null,
+                department: department,
+                subdepartment: document.getElementById('dsSubdepartment').value.trim() || null,
+                manager_ids: managerIds.length > 0 ? managerIds : null,
+                marketing_ids: marketingIds.length > 0 ? marketingIds : null,
+                cc_email: document.getElementById('dsCcEmail').value.trim() || null
+            };
+
+            try {
+                const url = id ? `/api/department-structures/${id}` : '/api/department-structures';
+                const method = id ? 'PUT' : 'POST';
+
+                const res = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await res.json();
+
+                if (result.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('departmentStructureModal')).hide();
+                    loadDepartmentStructures();
+                    showToast(id ? 'Department structure updated' : 'Department structure created', 'success');
+                } else {
+                    alert(result.error || 'Failed to save department structure');
+                }
+            } catch (error) {
+                console.error('Error saving department structure:', error);
+                alert('Failed to save department structure');
+            }
+        }
+
+        async function deleteDepartmentStructure(id) {
+            if (!confirm('Are you sure you want to delete this department structure?')) return;
+
+            try {
+                const res = await fetch(`/api/department-structures/${id}`, { method: 'DELETE' });
+                const result = await res.json();
+
+                if (result.success) {
+                    loadDepartmentStructures();
+                    showToast('Department structure deleted', 'success');
+                } else {
+                    alert(result.error || 'Failed to delete department structure');
+                }
+            } catch (error) {
+                console.error('Error deleting department structure:', error);
+                alert('Failed to delete department structure');
+            }
+        }
+
+        // ========== VAT REGISTRY ==========
+
+        async function loadCompaniesWithVat() {
+            try {
+                const res = await fetch('/api/companies-vat');
+                companiesWithVat = await res.json();
+                renderCompaniesVatTable();
+            } catch (error) {
+                console.error('Error loading companies with VAT:', error);
+            }
+        }
+
+        function renderCompaniesVatTable() {
+            const tbody = document.getElementById('companiesVatTableBody');
+            const noMsg = document.getElementById('noCompaniesVatMessage');
+
+            if (companiesWithVat.length === 0) {
+                tbody.innerHTML = '';
+                noMsg.style.display = 'block';
+                document.getElementById('companiesVatTable').style.display = 'none';
+                return;
+            }
+
+            noMsg.style.display = 'none';
+            document.getElementById('companiesVatTable').style.display = 'table';
+            tbody.innerHTML = companiesWithVat.map(c => `
+                <tr>
+                    <td><strong>${escapeHtml(c.company || '')}</strong></td>
+                    <td>${escapeHtml(c.brands || '-')}</td>
+                    <td><code>${escapeHtml(c.vat || '')}</code></td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editCompanyVat('${escapeHtml(c.company)}')" title="Edit" aria-label="Edit company">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteCompanyVat('${escapeHtml(c.company)}')" title="Delete" aria-label="Delete company">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function addNewCompanyVat() {
+            const name = document.getElementById('newCompanyName').value.trim();
+            const brands = document.getElementById('newCompanyBrands').value.trim();
+            const vat = document.getElementById('newCompanyVat').value.trim();
+
+            if (!name || !vat) {
+                alert('Company name and VAT number are required');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/companies-vat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ company: name, brands, vat })
+                });
+
+                const result = await res.json();
+                if (result.success) {
+                    document.getElementById('newCompanyName').value = '';
+                    document.getElementById('newCompanyBrands').value = '';
+                    document.getElementById('newCompanyVat').value = '';
+                    await loadCompaniesWithVat();
+                    showToast('Company added to VAT registry', 'success');
+                } else {
+                    alert('Error adding company: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Error adding company:', error);
+                alert('Failed to add company');
+            }
+        }
+
+        async function deleteCompanyVat(company) {
+            if (!confirm(`Delete "${company}" from VAT registry?`)) return;
+
+            try {
+                const res = await fetch(`/api/companies-vat/${encodeURIComponent(company)}`, { method: 'DELETE' });
+                const result = await res.json();
+                if (result.success) {
+                    await loadCompaniesWithVat();
+                    showToast('Company removed from VAT registry', 'success');
+                } else {
+                    alert('Error deleting company: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Error deleting company:', error);
+                alert('Failed to delete company');
+            }
+        }
+
+        function editCompanyVat(company) {
+            const c = companiesWithVat.find(item => item.company === company);
+            if (!c) return;
+
+            document.getElementById('editVatOriginalCompany').value = c.company;
+            document.getElementById('editVatCompanyName').value = c.company || '';
+            document.getElementById('editVatBrands').value = c.brands || '';
+            document.getElementById('editVatNumber').value = c.vat || '';
+
+            new bootstrap.Modal(document.getElementById('editVatModal')).show();
+        }
+
+        async function saveVatEdit() {
+            const originalCompany = document.getElementById('editVatOriginalCompany').value;
+            const newCompany = document.getElementById('editVatCompanyName').value.trim();
+            const brands = document.getElementById('editVatBrands').value.trim();
+            const vat = document.getElementById('editVatNumber').value.trim();
+
+            if (!newCompany || !vat) {
+                alert('Company name and VAT number are required');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/companies-vat/${encodeURIComponent(originalCompany)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ company: newCompany, brands, vat })
+                });
+
+                const result = await res.json();
+                if (result.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('editVatModal')).hide();
+                    await loadCompaniesWithVat();
+                    showToast('Company updated successfully', 'success');
+                } else {
+                    alert('Error updating company: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Error updating company:', error);
+                alert('Failed to update company');
+            }
+        }
+
+        // ========== ACTIVITY LOGS ==========
+
+        let activityLogs = [];
+        let activityLogsPage = 1;
+        let activityLogsPageSize = 50;
+        let activityLogsTotalCount = 0;
+        let eventTypes = [];
+
+        async function loadActivityLogs() {
+            const userId = document.getElementById('logFilterUser').value;
+            const eventType = document.getElementById('logFilterEventType').value;
+            const startDate = document.getElementById('logFilterStartDate').value;
+            const endDate = document.getElementById('logFilterEndDate').value;
+
+            const params = new URLSearchParams();
+            params.append('limit', activityLogsPageSize);
+            params.append('offset', (activityLogsPage - 1) * activityLogsPageSize);
+            if (userId) params.append('user_id', userId);
+            if (eventType) params.append('event_type', eventType);
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+
+            try {
+                const res = await fetch(`/api/events?${params.toString()}`);
+                if (!res.ok) {
+                    if (res.status === 403) {
+                        showToast('Permission denied. Admin access required.', 'danger');
+                        return;
+                    }
+                    throw new Error('Failed to load activity logs');
+                }
+                const data = await res.json();
+                // API returns array directly, not wrapped in {events: [...]}
+                activityLogs = Array.isArray(data) ? data : (data.events || []);
+                activityLogsTotalCount = activityLogs.length;
+                renderActivityLogs();
+            } catch (error) {
+                console.error('Error loading activity logs:', error);
+                showToast('Failed to load activity logs', 'danger');
+            }
+        }
+
+        async function loadEventTypes() {
+            try {
+                const res = await fetch('/api/events/types');
+                if (res.ok) {
+                    eventTypes = await res.json();
+                    populateEventTypeFilter();
+                }
+            } catch (error) {
+                console.error('Error loading event types:', error);
+            }
+        }
+
+        function populateEventTypeFilter() {
+            const select = document.getElementById('logFilterEventType');
+            select.innerHTML = '<option value="">All Event Types</option>' +
+                eventTypes.map(type => `<option value="${escapeHtml(type)}">${formatEventType(escapeHtml(type))}</option>`).join('');
+        }
+
+        function populateUserFilterForLogs() {
+            const select = document.getElementById('logFilterUser');
+            select.innerHTML = '<option value="">All Users</option>' +
+                users.map(u => `<option value="${u.id}">${escapeHtml(u.name)} (${escapeHtml(u.email)})</option>`).join('');
+        }
+
+        function formatEventType(type) {
+            // Convert snake_case to Title Case
+            return type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+        }
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return '-';
+            const date = new Date(timestamp);
+            return date.toLocaleString('ro-RO', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        function getEventTypeBadgeClass(type) {
+            const typeMap = {
+                'login': 'bg-success',
+                'logout': 'bg-secondary',
+                'login_failed': 'bg-danger',
+                'password_changed': 'bg-warning text-dark',
+                'admin_password_reset': 'bg-warning text-dark',
+                'bulk_password_set': 'bg-warning text-dark',
+                'invoice_created': 'bg-primary',
+                'invoice_updated': 'bg-info',
+                'invoice_deleted': 'bg-danger',
+                'invoice_restored': 'bg-success',
+                'invoice_permanently_deleted': 'bg-dark',
+                'allocations_updated': 'bg-info'
+            };
+            return typeMap[type] || 'bg-secondary';
+        }
+
+        function renderActivityLogs() {
+            const tbody = document.getElementById('activityLogsTableBody');
+            const noLogsMsg = document.getElementById('noActivityLogsMessage');
+            const table = document.getElementById('activityLogsTable');
+
+            if (activityLogs.length === 0) {
+                tbody.innerHTML = '';
+                noLogsMsg.style.display = 'block';
+                table.style.display = 'none';
+                document.getElementById('activityLogsPaginationInfo').textContent = 'Showing 0 events';
+                document.getElementById('activityLogsPagination').innerHTML = '';
+                return;
+            }
+
+            noLogsMsg.style.display = 'none';
+            table.style.display = 'table';
+
+            tbody.innerHTML = activityLogs.map(log => `
+                <tr>
+                    <td class="small">${formatTimestamp(log.created_at)}</td>
+                    <td>
+                        <strong>${escapeHtml(log.user_email || 'Unknown')}</strong>
+                    </td>
+                    <td>
+                        <span class="badge ${getEventTypeBadgeClass(log.event_type)}">${formatEventType(log.event_type)}</span>
+                    </td>
+                    <td class="small">${escapeHtml(log.event_description || '-')}</td>
+                    <td class="small text-muted">${escapeHtml(log.ip_address || '-')}</td>
+                </tr>
+            `).join('');
+
+            // Update pagination info
+            const start = (activityLogsPage - 1) * activityLogsPageSize + 1;
+            const end = Math.min(activityLogsPage * activityLogsPageSize, activityLogsTotalCount);
+            document.getElementById('activityLogsPaginationInfo').textContent =
+                `Showing ${start}-${end} of ${activityLogsTotalCount} events`;
+
+            // Render pagination
+            renderActivityLogsPagination();
+        }
+
+        function renderActivityLogsPagination() {
+            const totalPages = Math.ceil(activityLogsTotalCount / activityLogsPageSize);
+            const pagination = document.getElementById('activityLogsPagination');
+
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+
+            // Previous button
+            html += `<li class="page-item ${activityLogsPage === 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="goToActivityLogsPage(${activityLogsPage - 1}); return false;">&laquo;</a>
+            </li>`;
+
+            // Page numbers (show max 5 pages around current)
+            const startPage = Math.max(1, activityLogsPage - 2);
+            const endPage = Math.min(totalPages, activityLogsPage + 2);
+
+            if (startPage > 1) {
+                html += `<li class="page-item"><a class="page-link" href="#" onclick="goToActivityLogsPage(1); return false;">1</a></li>`;
+                if (startPage > 2) {
+                    html += `<li class="page-item disabled"><a class="page-link">...</a></li>`;
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<li class="page-item ${i === activityLogsPage ? 'active' : ''}">
+                    <a class="page-link" href="#" onclick="goToActivityLogsPage(${i}); return false;">${i}</a>
+                </li>`;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    html += `<li class="page-item disabled"><a class="page-link">...</a></li>`;
+                }
+                html += `<li class="page-item"><a class="page-link" href="#" onclick="goToActivityLogsPage(${totalPages}); return false;">${totalPages}</a></li>`;
+            }
+
+            // Next button
+            html += `<li class="page-item ${activityLogsPage === totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="goToActivityLogsPage(${activityLogsPage + 1}); return false;">&raquo;</a>
+            </li>`;
+
+            pagination.innerHTML = html;
+        }
+
+        function goToActivityLogsPage(page) {
+            const totalPages = Math.ceil(activityLogsTotalCount / activityLogsPageSize);
+            if (page < 1 || page > totalPages) return;
+            activityLogsPage = page;
+            loadActivityLogs();
+        }
+
+        function clearActivityLogFilters() {
+            document.getElementById('logFilterUser').value = '';
+            document.getElementById('logFilterEventType').value = '';
+            document.getElementById('logFilterStartDate').value = '';
+            document.getElementById('logFilterEndDate').value = '';
+            activityLogsPage = 1;
+            loadActivityLogs();
+        }
+
+        // Load activity logs when tab is shown
+        document.getElementById('activity-logs-tab').addEventListener('shown.bs.tab', function() {
+            populateUserFilterForLogs();
+            loadEventTypes();
+            loadActivityLogs();
+        });
+
+        // ========== VAT RATES ==========
+
+        async function loadVatRates() {
+            try {
+                const res = await fetch('/api/vat-rates');
+                vatRates = await res.json();
+                renderVatRates();
+            } catch (error) {
+                console.error('Error loading VAT rates:', error);
+            }
+        }
+
+        function renderVatRates() {
+            const tbody = document.getElementById('vatRatesTableBody');
+            const noVatRatesMsg = document.getElementById('noVatRatesMessage');
+
+            if (vatRates.length === 0) {
+                tbody.innerHTML = '';
+                noVatRatesMsg.style.display = 'block';
+                return;
+            }
+
+            noVatRatesMsg.style.display = 'none';
+            tbody.innerHTML = vatRates.map(rate => `
+                <tr>
+                    <td>${escapeHtml(rate.name)}</td>
+                    <td>${rate.rate}%</td>
+                    <td>
+                        ${rate.is_default
+                            ? '<span class="badge bg-primary"><i class="bi bi-check-circle"></i> Default</span>'
+                            : '<span class="text-muted">-</span>'}
+                    </td>
+                    <td>
+                        ${rate.is_active
+                            ? '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Active</span>'
+                            : '<span class="badge bg-secondary"><i class="bi bi-x-circle"></i> Inactive</span>'}
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editVatRate(${rate.id})" title="Edit" aria-label="Edit VAT rate">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteVatRateConfirm(${rate.id}, '${escapeHtml(rate.name)}')" title="Delete" aria-label="Delete VAT rate">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function addNewVatRate() {
+            const name = document.getElementById('newVatRateName').value.trim();
+            const rate = document.getElementById('newVatRateValue').value;
+            const isDefault = document.getElementById('newVatRateDefault').checked;
+            const isActive = document.getElementById('newVatRateActive').checked;
+
+            if (!name || !rate) {
+                showToast('Please fill in Name and Rate', 'warning');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/vat-rates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        rate: parseFloat(rate),
+                        is_default: isDefault,
+                        is_active: isActive
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showToast('VAT rate added successfully', 'success');
+                    // Clear form
+                    document.getElementById('newVatRateName').value = '';
+                    document.getElementById('newVatRateValue').value = '';
+                    document.getElementById('newVatRateDefault').checked = false;
+                    document.getElementById('newVatRateActive').checked = true;
+                    loadVatRates();
+                } else {
+                    showToast(data.error || 'Failed to add VAT rate', 'danger');
+                }
+            } catch (error) {
+                console.error('Error adding VAT rate:', error);
+                showToast('Failed to add VAT rate', 'danger');
+            }
+        }
+
+        function editVatRate(rateId) {
+            const rate = vatRates.find(r => r.id === rateId);
+            if (!rate) return;
+
+            document.getElementById('editVatRateId').value = rate.id;
+            document.getElementById('editVatRateName').value = rate.name;
+            document.getElementById('editVatRateValue').value = rate.rate;
+            document.getElementById('editVatRateDefault').checked = rate.is_default;
+            document.getElementById('editVatRateActive').checked = rate.is_active;
+
+            editVatRateModal.show();
+        }
+
+        async function saveEditedVatRate() {
+            const rateId = document.getElementById('editVatRateId').value;
+            const name = document.getElementById('editVatRateName').value.trim();
+            const rate = document.getElementById('editVatRateValue').value;
+            const isDefault = document.getElementById('editVatRateDefault').checked;
+            const isActive = document.getElementById('editVatRateActive').checked;
+
+            if (!name || !rate) {
+                showToast('Please fill in Name and Rate', 'warning');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/vat-rates/${rateId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        rate: parseFloat(rate),
+                        is_default: isDefault,
+                        is_active: isActive
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showToast('VAT rate updated successfully', 'success');
+                    editVatRateModal.hide();
+                    loadVatRates();
+                } else {
+                    showToast(data.error || 'Failed to update VAT rate', 'danger');
+                }
+            } catch (error) {
+                console.error('Error updating VAT rate:', error);
+                showToast('Failed to update VAT rate', 'danger');
+            }
+        }
+
+        function deleteVatRateConfirm(rateId, rateName) {
+            deleteType = 'vat_rate';
+            deleteId = rateId;
+            document.getElementById('deleteItemName').textContent = `VAT Rate: ${rateName}`;
+            deleteModal.show();
+        }
+
+        async function deleteVatRateById(rateId) {
+            try {
+                const res = await fetch(`/api/vat-rates/${rateId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showToast('VAT rate deleted successfully', 'success');
+                    loadVatRates();
+                } else {
+                    showToast(data.error || 'Failed to delete VAT rate', 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting VAT rate:', error);
+                showToast('Failed to delete VAT rate', 'danger');
+            }
+        }
+
+        // ========== DROPDOWN OPTIONS ==========
+
+        async function loadDropdownOptions() {
+            try {
+                const res = await fetch('/api/dropdown-options');
+                const options = await res.json();
+
+                // Group options by type
+                const invoiceStatus = options.filter(o => o.dropdown_type === 'invoice_status');
+                const paymentStatus = options.filter(o => o.dropdown_type === 'payment_status');
+
+                // Render invoice status table
+                const invoiceStatusTbody = document.querySelector('#invoiceStatusTable tbody');
+                invoiceStatusTbody.innerHTML = invoiceStatus.map(opt => `
+                    <tr>
+                        <td><code>${escapeHtml(opt.value)}</code></td>
+                        <td>
+                            <input type="text" class="form-control form-control-sm" value="${escapeHtml(opt.label)}"
+                                   onchange="updateDropdownOption(${opt.id}, 'label', this.value)">
+                        </td>
+                        <td>
+                            <div class="input-group input-group-sm">
+                                <input type="color" class="form-control form-control-color" value="${opt.color || '#0d6efd'}"
+                                       onchange="updateDropdownOption(${opt.id}, 'color', this.value); this.nextElementSibling.value = this.value;">
+                                <input type="text" class="form-control" style="width: 80px" value="${opt.color || '#0d6efd'}"
+                                       onchange="updateDropdownOption(${opt.id}, 'color', this.value); this.previousElementSibling.value = this.value;">
+                            </div>
+                        </td>
+                        <td>
+                            <input type="number" class="form-control form-control-sm" style="width: 70px" value="${opt.sort_order}"
+                                   onchange="updateDropdownOption(${opt.id}, 'sort_order', parseInt(this.value))">
+                        </td>
+                        <td>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" ${opt.is_active ? 'checked' : ''}
+                                       onchange="updateDropdownOption(${opt.id}, 'is_active', this.checked)">
+                            </div>
+                        </td>
+                        <td>
+                            <button class="btn btn-outline-danger btn-sm" onclick="deleteDropdownOption(${opt.id})" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+
+                // Render payment status table
+                const paymentStatusTbody = document.querySelector('#paymentStatusTable tbody');
+                paymentStatusTbody.innerHTML = paymentStatus.map(opt => `
+                    <tr>
+                        <td><code>${escapeHtml(opt.value)}</code></td>
+                        <td>
+                            <input type="text" class="form-control form-control-sm" value="${escapeHtml(opt.label)}"
+                                   onchange="updateDropdownOption(${opt.id}, 'label', this.value)">
+                        </td>
+                        <td>
+                            <div class="input-group input-group-sm">
+                                <input type="color" class="form-control form-control-color" value="${opt.color || '#0d6efd'}"
+                                       onchange="updateDropdownOption(${opt.id}, 'color', this.value); this.nextElementSibling.value = this.value;">
+                                <input type="text" class="form-control" style="width: 80px" value="${opt.color || '#0d6efd'}"
+                                       onchange="updateDropdownOption(${opt.id}, 'color', this.value); this.previousElementSibling.value = this.value;">
+                            </div>
+                        </td>
+                        <td>
+                            <input type="number" class="form-control form-control-sm" style="width: 70px" value="${opt.sort_order}"
+                                   onchange="updateDropdownOption(${opt.id}, 'sort_order', parseInt(this.value))">
+                        </td>
+                        <td>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" ${opt.is_active ? 'checked' : ''}
+                                       onchange="updateDropdownOption(${opt.id}, 'is_active', this.checked)">
+                            </div>
+                        </td>
+                        <td>
+                            <button class="btn btn-outline-danger btn-sm" onclick="deleteDropdownOption(${opt.id})" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+
+            } catch (error) {
+                console.error('Error loading dropdown options:', error);
+                showToast('Failed to load dropdown options', 'danger');
+            }
+        }
+
+        // Sync color picker with text input
+        function syncColorInputs(prefix) {
+            const colorPicker = document.getElementById(`new${prefix}Color`);
+            const colorText = document.getElementById(`new${prefix}ColorText`);
+            if (colorPicker && colorText) {
+                colorPicker.addEventListener('input', () => colorText.value = colorPicker.value);
+                colorText.addEventListener('input', () => colorPicker.value = colorText.value);
+            }
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            syncColorInputs('InvoiceStatus');
+            syncColorInputs('PaymentStatus');
+        });
+
+        async function addDropdownOption(dropdownType) {
+            const prefix = dropdownType === 'invoice_status' ? 'InvoiceStatus' : 'PaymentStatus';
+            const valueInput = document.getElementById(`new${prefix}Value`);
+            const labelInput = document.getElementById(`new${prefix}Label`);
+            const colorInput = document.getElementById(`new${prefix}Color`);
+            const orderInput = document.getElementById(`new${prefix}Order`);
+
+            const value = valueInput.value.trim();
+            const label = labelInput.value.trim();
+            const color = colorInput.value || '#0d6efd';
+            const sortOrder = parseInt(orderInput.value) || 0;
+
+            if (!value || !label) {
+                showToast('Please fill in both Value and Label', 'warning');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/dropdown-options', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        dropdown_type: dropdownType,
+                        value: value,
+                        label: label,
+                        color: color,
+                        sort_order: sortOrder,
+                        is_active: true
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Option added successfully', 'success');
+                    valueInput.value = '';
+                    labelInput.value = '';
+                    colorInput.value = '#0d6efd';
+                    document.getElementById(`new${prefix}ColorText`).value = '#0d6efd';
+                    orderInput.value = '0';
+                    loadDropdownOptions();
+                } else {
+                    showToast(data.error || 'Failed to add option', 'danger');
+                }
+            } catch (error) {
+                console.error('Error adding dropdown option:', error);
+                showToast('Failed to add option', 'danger');
+            }
+        }
+
+        async function updateDropdownOption(optionId, field, value) {
+            try {
+                const res = await fetch(`/api/dropdown-options/${optionId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [field]: value })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Option updated', 'success');
+                    if (field === 'sort_order') {
+                        loadDropdownOptions(); // Reload to reflect new order
+                    }
+                } else {
+                    showToast(data.error || 'Failed to update option', 'danger');
+                    loadDropdownOptions(); // Reload to revert
+                }
+            } catch (error) {
+                console.error('Error updating dropdown option:', error);
+                showToast('Failed to update option', 'danger');
+                loadDropdownOptions();
+            }
+        }
+
+        async function deleteDropdownOption(optionId) {
+            if (!confirm('Are you sure you want to delete this option?')) return;
+
+            try {
+                const res = await fetch(`/api/dropdown-options/${optionId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Option deleted', 'success');
+                    loadDropdownOptions();
+                } else {
+                    showToast(data.error || 'Failed to delete option', 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting dropdown option:', error);
+                showToast('Failed to delete option', 'danger');
+            }
+        }
+
+        // ========== UTILS ==========
+
+        function showToast(message, type = 'info') {
+            // Simple toast notification using Bootstrap alert
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.body.appendChild(alertDiv);
+
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ============== Theme Settings Functions ==============
+
+        async function loadThemeSettings() {
+            try {
+                const res = await fetch('/api/themes/active');
+                const data = await res.json();
+                if (data.theme) {
+                    currentTheme = data.theme;
+                    currentThemeId = data.theme.id;
+                    populateThemeForm(data.theme);
+                } else {
+                    // Use defaults
+                    currentTheme = { theme_name: 'Jarvis Default', settings: defaultTheme, is_active: true };
+                    populateThemeForm(currentTheme);
+                }
+            } catch (err) {
+                console.error('Error loading theme settings:', err);
+                populateThemeForm({ theme_name: 'Jarvis Default', settings: defaultTheme, is_active: true });
+            }
+        }
+
+        function populateThemeForm(theme) {
+            document.getElementById('themeName').value = theme.theme_name || '';
+            document.getElementById('themeIsActive').checked = theme.is_active !== false;
+
+            const settings = theme.settings || defaultTheme;
+
+            // Populate light theme colors
+            themeColorFields.forEach(field => {
+                const value = settings.light?.[field] || defaultTheme.light[field];
+                const colorPicker = document.getElementById(`light-${field}`);
+                const textInput = document.getElementById(`light-${field}-text`);
+                if (colorPicker) colorPicker.value = value;
+                if (textInput) textInput.value = value;
+            });
+
+            // Populate dark theme colors
+            themeColorFields.forEach(field => {
+                const value = settings.dark?.[field] || defaultTheme.dark[field];
+                const colorPicker = document.getElementById(`dark-${field}`);
+                const textInput = document.getElementById(`dark-${field}-text`);
+                if (colorPicker) colorPicker.value = value;
+                if (textInput) textInput.value = value;
+            });
+
+            // Populate logo settings
+            populateLogoForm(settings.logo);
+
+            updateThemePreview();
+        }
+
+        function initThemeColorPickers() {
+            // Sync color picker and text input for all theme fields
+            ['light', 'dark'].forEach(mode => {
+                themeColorFields.forEach(field => {
+                    const colorPicker = document.getElementById(`${mode}-${field}`);
+                    const textInput = document.getElementById(`${mode}-${field}-text`);
+
+                    if (colorPicker && textInput) {
+                        // Color picker changes text input
+                        colorPicker.addEventListener('input', () => {
+                            textInput.value = colorPicker.value;
+                            updateThemePreview();
+                        });
+
+                        // Text input changes color picker
+                        textInput.addEventListener('input', () => {
+                            // Validate hex color
+                            const hex = textInput.value;
+                            if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+                                colorPicker.value = hex;
+                                updateThemePreview();
+                            }
+                        });
+                    }
+                });
+            });
+        }
+
+        function getThemeSettingsFromForm() {
+            const settings = { light: {}, dark: {} };
+
+            ['light', 'dark'].forEach(mode => {
+                themeColorFields.forEach(field => {
+                    const textInput = document.getElementById(`${mode}-${field}-text`);
+                    if (textInput) {
+                        settings[mode][field] = textInput.value;
+                    }
+                });
+            });
+
+            return settings;
+        }
+
+        // Logo preview function
+        function updateLogoPreview() {
+            const logoType = document.getElementById('logoType').value;
+            const logoSvgUrl = document.getElementById('logoSvgUrl').value || '/static/img/jarvis-icon.svg';
+            const logoIcon = document.getElementById('logoIcon').value || 'bi-cpu';
+            const logoText = document.getElementById('logoText').value || 'J.A.R.V.I.S.';
+            const logoImageUrl = document.getElementById('logoImageUrl').value;
+            const previewArea = document.getElementById('logoPreviewArea');
+            const logoSvgGroup = document.getElementById('logoSvgGroup');
+            const logoIconGroup = document.getElementById('logoIconGroup');
+            const logoImageGroup = document.getElementById('logoImageGroup');
+            const logoIconPreview = document.getElementById('logoIconPreview');
+
+            // Show/hide relevant fields
+            if (logoType === 'svg') {
+                logoSvgGroup.style.display = '';
+                logoIconGroup.style.display = 'none';
+                logoImageGroup.style.display = 'none';
+            } else if (logoType === 'icon') {
+                logoSvgGroup.style.display = 'none';
+                logoIconGroup.style.display = '';
+                logoImageGroup.style.display = 'none';
+            } else if (logoType === 'text') {
+                logoSvgGroup.style.display = 'none';
+                logoIconGroup.style.display = 'none';
+                logoImageGroup.style.display = 'none';
+            } else if (logoType === 'image') {
+                logoSvgGroup.style.display = 'none';
+                logoIconGroup.style.display = 'none';
+                logoImageGroup.style.display = '';
+            }
+
+            // Update icon preview
+            logoIconPreview.className = 'bi ' + logoIcon;
+
+            // Update main preview
+            let html = '';
+            if (logoType === 'svg') {
+                html = `<span class="navbar-logo-icon" style="background-image: url('${logoSvgUrl}');"></span> ${logoText}`;
+            } else if (logoType === 'icon') {
+                html = `<i class="bi ${logoIcon}"></i> ${logoText}`;
+            } else if (logoType === 'text') {
+                html = logoText;
+            } else if (logoType === 'image') {
+                html = logoImageUrl ? `<img src="${logoImageUrl}" alt="Logo" style="max-height: 32px; vertical-align: middle;"> ${logoText}` : logoText;
+            }
+            previewArea.innerHTML = html;
+        }
+
+        // Get logo settings from form
+        function getLogoSettingsFromForm() {
+            return {
+                type: document.getElementById('logoType').value,
+                svgUrl: document.getElementById('logoSvgUrl').value || '/static/img/jarvis-icon.svg',
+                icon: document.getElementById('logoIcon').value || 'bi-cpu',
+                text: document.getElementById('logoText').value || 'J.A.R.V.I.S.',
+                imageUrl: document.getElementById('logoImageUrl').value || ''
+            };
+        }
+
+        // Populate logo form from settings
+        function populateLogoForm(logo) {
+            const defaults = defaultTheme.logo;
+            const settings = logo || defaults;
+            document.getElementById('logoType').value = settings.type || defaults.type;
+            document.getElementById('logoSvgUrl').value = settings.svgUrl || defaults.svgUrl;
+            document.getElementById('logoIcon').value = settings.icon || defaults.icon;
+            document.getElementById('logoText').value = settings.text || defaults.text;
+            document.getElementById('logoImageUrl').value = settings.imageUrl || defaults.imageUrl;
+            updateLogoPreview();
+        }
+
+        function updateThemePreview() {
+            const settings = getThemeSettingsFromForm();
+
+            // Update light preview
+            const previewLight = document.getElementById('previewLight');
+            if (previewLight) {
+                previewLight.style.background = settings.light.bgBody;
+                previewLight.querySelector('h6').style.color = settings.light.textPrimary;
+                const lightCard = previewLight.querySelector('div.p-2');
+                if (lightCard) {
+                    lightCard.style.background = settings.light.bgCard;
+                    lightCard.style.borderColor = settings.light.borderColor;
+                    lightCard.querySelector('span:first-child').style.color = settings.light.textPrimary;
+                    lightCard.querySelector('span:last-child').style.color = settings.light.textSecondary;
+                }
+                const lightBadges = previewLight.querySelectorAll('.badge');
+                if (lightBadges.length >= 4) {
+                    lightBadges[0].style.background = settings.light.accentPrimary;
+                    lightBadges[1].style.background = settings.light.accentSuccess;
+                    lightBadges[2].style.background = settings.light.accentWarning;
+                    lightBadges[3].style.background = settings.light.accentDanger;
+                }
+            }
+
+            // Update dark preview
+            const previewDark = document.getElementById('previewDark');
+            if (previewDark) {
+                previewDark.style.background = settings.dark.bgBody;
+                previewDark.querySelector('h6').style.color = settings.dark.textPrimary;
+                const darkCard = previewDark.querySelector('div.p-2');
+                if (darkCard) {
+                    darkCard.style.background = settings.dark.bgCard;
+                    darkCard.style.borderColor = settings.dark.borderColor;
+                    darkCard.querySelector('span:first-child').style.color = settings.dark.textPrimary;
+                    darkCard.querySelector('span:last-child').style.color = settings.dark.textSecondary;
+                }
+                const darkBadges = previewDark.querySelectorAll('.badge');
+                if (darkBadges.length >= 4) {
+                    darkBadges[0].style.background = settings.dark.accentPrimary;
+                    darkBadges[1].style.background = settings.dark.accentSuccess;
+                    darkBadges[2].style.background = settings.dark.accentWarning;
+                    darkBadges[3].style.background = settings.dark.accentDanger;
+                }
+            }
+        }
+
+        async function saveThemeSettings() {
+            const themeName = document.getElementById('themeName').value.trim();
+            const isActive = document.getElementById('themeIsActive').checked;
+            const settings = getThemeSettingsFromForm();
+            const logoSettings = getLogoSettingsFromForm();
+            settings.logo = logoSettings;
+
+            if (!themeName) {
+                alert('Please enter a theme name');
+                return;
+            }
+
+            showLoading('Saving theme...');
+            try {
+                const method = currentThemeId ? 'PUT' : 'POST';
+                const url = currentThemeId ? `/api/themes/${currentThemeId}` : '/api/themes';
+
+                const res = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        theme_name: themeName,
+                        settings: settings,
+                        is_active: isActive
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    currentTheme = data.theme;
+                    currentThemeId = data.theme.id;
+                    alert('Theme saved successfully! Refresh the page to see changes applied.');
+                } else {
+                    alert('Error saving theme: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error('Error saving theme:', err);
+                alert('Error saving theme: ' + err.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function resetThemeToDefault() {
+            if (confirm('Reset theme to default Jarvis colors? This will not save automatically.')) {
+                document.getElementById('themeName').value = 'Jarvis Default';
+                populateThemeForm({ theme_name: 'Jarvis Default', settings: defaultTheme, is_active: true });
+            }
+        }
+
+        // ============== Permission Matrix Functions ==============
+
+        async function loadPermissionMatrix() {
+            try {
+                const res = await fetch('/api/permissions/matrix');
+                const data = await res.json();
+                permissionMatrix = data;
+                pendingPermissionChanges = {};
+                renderModuleSidebar();
+                // Select first module by default
+                if (permissionMatrix.modules.length > 0) {
+                    selectModule(permissionMatrix.modules[0].key);
+                }
+            } catch (err) {
+                console.error('Error loading permission matrix:', err);
+            }
+        }
+
+        function renderModuleSidebar() {
+            const sidebar = document.getElementById('moduleSidebar');
+            if (!sidebar) return;
+
+            sidebar.innerHTML = permissionMatrix.modules.map(mod => `
+                <div class="module-item ${selectedModule === mod.key ? 'active' : ''}"
+                     onclick="selectModule('${mod.key}')"
+                     data-module="${mod.key}">
+                    <i class="bi ${mod.icon || 'bi-folder'}"></i>
+                    ${mod.label}
+                </div>
+            `).join('');
+        }
+
+        function selectModule(moduleKey) {
+            selectedModule = moduleKey;
+            renderModuleSidebar();
+            renderPermissionMatrix();
+        }
+
+        function filterModules() {
+            const search = document.getElementById('moduleSearch')?.value.toLowerCase() || '';
+            document.querySelectorAll('.module-item').forEach(item => {
+                const text = item.textContent.toLowerCase();
+                item.style.display = text.includes(search) ? '' : 'none';
+            });
+        }
+
+        function renderPermissionMatrix() {
+            const headerRow = document.getElementById('matrixHeaderRow');
+            const tbody = document.getElementById('matrixBody');
+            if (!headerRow || !tbody) return;
+
+            const module = permissionMatrix.modules.find(m => m.key === selectedModule);
+            if (!module) return;
+
+            // Build header with roles
+            headerRow.innerHTML = `
+                <th style="min-width: 200px; position: sticky; left: 0; background: var(--bg-table-header); z-index: 11;">
+                    Permission
+                </th>
+                ${permissionMatrix.roles.map(role => `
+                    <th class="role-header text-center">
+                        <div class="d-flex flex-column align-items-center">
+                            <span>${escapeHtml(role.name)}</span>
+                            <small class="text-muted">${escapeHtml(role.description || '')}</small>
+                            <div class="mt-1">
+                                <button class="btn btn-link btn-sm p-0 me-1" onclick="editRole(${role.id})" title="Edit role name" aria-label="Edit role">
+                                    <i class="bi bi-pencil text-primary" style="font-size: 0.75rem;"></i>
+                                </button>
+                                <button class="btn btn-link btn-sm p-0" onclick="showDeleteModal('role', ${role.id}, '${escapeHtml(role.name)}')" title="Delete role" aria-label="Delete role">
+                                    <i class="bi bi-trash text-danger" style="font-size: 0.75rem;"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </th>
+                `).join('')}
+            `;
+
+            // Build body with entities and actions
+            let html = '';
+            module.entities.forEach(entity => {
+                // Entity header row
+                html += `
+                    <tr class="entity-header">
+                        <td colspan="${permissionMatrix.roles.length + 1}">
+                            <i class="bi bi-chevron-down me-2"></i>${entity.label}
+                        </td>
+                    </tr>
+                `;
+
+                // Action rows
+                entity.actions.forEach(action => {
+                    html += `
+                        <tr class="action-row" data-perm-id="${action.id}">
+                            <td>
+                                ${action.label}
+                                ${action.description ? `<small class="text-muted d-block">${escapeHtml(action.description)}</small>` : ''}
+                            </td>
+                            ${permissionMatrix.roles.map(role => {
+                                const rolePerms = permissionMatrix.role_permissions[role.id] || {};
+                                const perm = rolePerms[action.id] || { scope: 'deny', granted: false };
+                                return `<td class="text-center">${renderPermissionControl(role.id, action, perm)}</td>`;
+                            }).join('')}
+                        </tr>
+                    `;
+                });
+            });
+
+            tbody.innerHTML = html;
+        }
+
+        function renderPermissionControl(roleId, action, currentPerm) {
+            if (action.is_scope_based) {
+                // Scope dropdown
+                const scope = currentPerm.scope || 'deny';
+                return `
+                    <select class="scope-select scope-${scope}"
+                            data-role-id="${roleId}"
+                            data-perm-id="${action.id}"
+                            onchange="updatePermission(this, true)">
+                        <option value="deny" ${scope === 'deny' ? 'selected' : ''}>Deny</option>
+                        <option value="own" ${scope === 'own' ? 'selected' : ''}>Own</option>
+                        <option value="department" ${scope === 'department' ? 'selected' : ''}>Dept</option>
+                        <option value="all" ${scope === 'all' ? 'selected' : ''}>All</option>
+                    </select>
+                `;
+            } else {
+                // Toggle switch
+                const granted = currentPerm.granted || false;
+                return `
+                    <input type="checkbox" class="perm-toggle"
+                           data-role-id="${roleId}"
+                           data-perm-id="${action.id}"
+                           ${granted ? 'checked' : ''}
+                           onchange="updatePermission(this, false)">
+                `;
+            }
+        }
+
+        function updatePermission(element, isScopeBased) {
+            const roleId = element.dataset.roleId;
+            const permId = element.dataset.permId;
+
+            if (!pendingPermissionChanges[roleId]) {
+                pendingPermissionChanges[roleId] = {};
+            }
+
+            if (isScopeBased) {
+                const scope = element.value;
+                pendingPermissionChanges[roleId][permId] = { scope };
+                // Update visual class
+                element.className = `scope-select scope-${scope}`;
+            } else {
+                const granted = element.checked;
+                pendingPermissionChanges[roleId][permId] = { granted };
+            }
+
+            // Update in-memory state for re-renders
+            if (!permissionMatrix.role_permissions[roleId]) {
+                permissionMatrix.role_permissions[roleId] = {};
+            }
+            if (isScopeBased) {
+                permissionMatrix.role_permissions[roleId][permId] = {
+                    scope: element.value,
+                    granted: element.value !== 'deny'
+                };
+            } else {
+                permissionMatrix.role_permissions[roleId][permId] = {
+                    scope: element.checked ? 'all' : 'deny',
+                    granted: element.checked
+                };
+            }
+        }
+
+        async function saveAllPermissions() {
+            const roleIds = Object.keys(pendingPermissionChanges);
+            if (roleIds.length === 0) {
+                alert('No changes to save.');
+                return;
+            }
+
+            showLoading('Saving permissions...');
+            try {
+                for (const roleId of roleIds) {
+                    const perms = pendingPermissionChanges[roleId];
+                    await fetch(`/api/roles/${roleId}/permissions/v2`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ permissions: perms })
+                    });
+                }
+
+                pendingPermissionChanges = {};
+                alert('Permissions saved successfully!');
+                // Reload to get fresh data
+                await loadPermissionMatrix();
+            } catch (err) {
+                console.error('Error saving permissions:', err);
+                alert('Error saving permissions: ' + err.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Theme toggle is handled by theme.js with unified localStorage key 'jarvisTheme'
+    </script>
+    <script src="/static/js/theme.js"></script>
+</body>
+</html>

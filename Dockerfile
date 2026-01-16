@@ -13,18 +13,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install gunicorn
 
 # Copy application code
-COPY app/ ./app/
+COPY jarvis/ ./jarvis/
 
 # Create directories
 RUN mkdir -p Invoices
 
-WORKDIR /app/app
+WORKDIR /app/jarvis
 
 # Expose port
 EXPOSE 8080
 
-# Run with gunicorn (2 workers + 2 threads each)
-# Keep workers low due to DigitalOcean DB connection limits (~25 max)
+# Run with gunicorn (3 workers + 3 threads each = 9 concurrent requests)
+# Optimized for 1-10 concurrent users
+# DigitalOcean DB connection limits (~25 max): 3 workers × 12 pool max = 36 theoretical, but pool reuse keeps actual ~15
 # Timeout settings prevent worker hangs after idle periods:
 #   --timeout: Kill worker if no response in 120s
 #   --graceful-timeout: Allow 30s for graceful shutdown
@@ -32,4 +33,4 @@ EXPOSE 8080
 # Worker recycling prevents memory accumulation:
 #   --max-requests: Recycle worker after N requests
 #   --max-requests-jitter: Stagger recycling to avoid simultaneous restarts
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--threads", "2", "--worker-class", "gthread", "--timeout", "120", "--graceful-timeout", "30", "--keep-alive", "5", "--max-requests", "500", "--max-requests-jitter", "50", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "3", "--threads", "3", "--worker-class", "gthread", "--timeout", "120", "--graceful-timeout", "30", "--keep-alive", "5", "--max-requests", "500", "--max-requests-jitter", "50", "app:app"]

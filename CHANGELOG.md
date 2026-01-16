@@ -1,5 +1,35 @@
 # Changelog
 
+## 2025-01-16
+### Architecture Refactoring - J.A.R.V.I.S. Platform
+- **Renamed `app/` folder to `jarvis/`** - reflects platform branding
+- **New modular architecture** with section/app hierarchy:
+  - `jarvis/core/` - Shared platform infrastructure (auth, services, settings, utils)
+  - `jarvis/accounting/bugetare/` - Accounting section with Bugetare app
+  - `jarvis/hr/events/` - HR section with Events app
+- **Moved shared services to `core/services/`**:
+  - drive_service.py (Google Drive integration)
+  - notification_service.py (SMTP email)
+  - image_compressor.py (TinyPNG)
+  - currency_converter.py (BNR rates)
+- **Moved utilities to `core/utils/`**:
+  - logging_config.py (structured logging)
+  - config.py (configuration)
+- **Template reorganization**:
+  - `templates/core/` - Core templates (login, settings, apps, guide)
+  - `templates/accounting/bugetare/` - Accounting templates
+  - `templates/hr/events/` - HR templates
+- **Blueprint hierarchy** for nested section/app routing:
+  - HR section (`/hr`) → Events app (`/hr/events/`)
+- Updated Dockerfile and Procfile for `jarvis/` folder
+- Added color picker for dropdown options (Invoice Status, Payment Status)
+- Fixed theme settings logo to support custom SVG icons
+
+### HR Module Fixes
+- Fixed HR templates API URL construction (use direct `/hr/events/api/...` paths)
+- Fixed HR modal theme styling (removed hardcoded dark mode classes)
+- Fixed summary card text color - white text preserved on colored cards in light theme
+
 ## 2025-01-14
 - Added "By Supplier" tab to Accounting dashboard (cost summary per supplier)
 - Summary total row at bottom of all summary tables (By Company, Department, Brand, Supplier)
