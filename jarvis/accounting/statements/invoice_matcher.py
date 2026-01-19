@@ -511,8 +511,8 @@ def auto_match_transactions(transactions: list, invoices: list, use_ai: bool = T
     unmatched_count = 0
 
     for txn in transactions:
-        # Skip already invoiced transactions
-        if txn.get('status') == 'invoiced' or txn.get('invoice_id'):
+        # Skip already resolved transactions
+        if txn.get('status') == 'resolved' or txn.get('invoice_id'):
             continue
 
         # Skip ignored transactions

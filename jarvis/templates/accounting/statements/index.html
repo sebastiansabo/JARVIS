@@ -10,9 +10,8 @@
     <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet">
     <style>
         .transaction-row.ignored { opacity: 0.5; }
-        .transaction-row.invoiced { background-color: #d1e7dd !important; }  /* Strong green for matched rows */
-        .transaction-row.invoiced td { background-color: #d1e7dd !important; }  /* Override striped table */
-        .transaction-row.matched { background-color: var(--bs-info-bg-subtle); }
+        .transaction-row.resolved { background-color: #d1e7dd !important; }  /* Green for resolved rows */
+        .transaction-row.resolved td { background-color: #d1e7dd !important; }  /* Override striped table */
         .badge-internal { background-color: var(--bs-secondary); }
         .badge-card_purchase { background-color: var(--bs-primary); }
         .badge-refund { background-color: var(--bs-warning); }
@@ -93,6 +92,7 @@
                                     <tr>
                                         <th>Filename</th>
                                         <th>Company</th>
+                                        <th>CUI</th>
                                         <th>Period</th>
                                         <th class="text-center">Total</th>
                                         <th class="text-center">New</th>
@@ -130,26 +130,20 @@
                         </div>
                         <div class="card summary-card">
                             <div class="card-body text-center">
-                                <h6 class="text-muted mb-1">Matched</h6>
-                                <h4 class="text-info" id="matchedCount">0</h4>
+                                <h6 class="text-muted mb-1">Pending</h6>
+                                <h4 class="text-warning"><span id="pendingCount">0</span> <small class="text-muted" id="pendingPct"></small></h4>
                             </div>
                         </div>
                         <div class="card summary-card">
                             <div class="card-body text-center">
-                                <h6 class="text-muted mb-1">Pending</h6>
-                                <h4 class="text-warning" id="pendingCount">0</h4>
+                                <h6 class="text-muted mb-1">Resolved</h6>
+                                <h4 class="text-success"><span id="resolvedCount">0</span> <small class="text-muted" id="resolvedPct"></small></h4>
                             </div>
                         </div>
                         <div class="card summary-card">
                             <div class="card-body text-center">
                                 <h6 class="text-muted mb-1">Ignored</h6>
-                                <h4 class="text-secondary" id="ignoredCount">0</h4>
-                            </div>
-                        </div>
-                        <div class="card summary-card">
-                            <div class="card-body text-center">
-                                <h6 class="text-muted mb-1">Invoiced</h6>
-                                <h4 class="text-success" id="invoicedCount">0</h4>
+                                <h4 class="text-secondary"><span id="ignoredCount">0</span> <small class="text-muted" id="ignoredPct"></small></h4>
                             </div>
                         </div>
                     </div>
@@ -167,9 +161,8 @@
                             <select class="form-select form-select-sm" id="filterStatus" onchange="loadTransactions()">
                                 <option value="">All</option>
                                 <option value="pending">Pending</option>
-                                <option value="matched">Matched</option>
+                                <option value="resolved">Resolved</option>
                                 <option value="ignored">Ignored</option>
-                                <option value="invoiced">Invoiced</option>
                             </select>
                         </div>
                         <div class="col-md-2">
@@ -213,7 +206,7 @@
                         <i class="bi bi-x-lg"></i> Select None
                     </button>
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectMatched()">
-                        <i class="bi bi-check2-circle"></i> Select Matched
+                        <i class="bi bi-check2-circle"></i> Select Resolved
                     </button>
                     <div class="vr"></div>
                     <button type="button" class="btn btn-sm btn-warning" onclick="bulkIgnore()" id="bulkIgnoreBtn" disabled>
@@ -252,6 +245,7 @@
                                         <th style="width: 40px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"></th>
                                         <th>Date</th>
                                         <th>Company</th>
+                                        <th>CUI</th>
                                         <th>Vendor</th>
                                         <th>Supplier</th>
                                         <th>Description</th>
@@ -837,10 +831,24 @@
                     const total = Object.values(s).reduce((acc, v) => acc + v.count, 0);
                     totalTransactions = total;  // Update pagination total
                     document.getElementById('totalCount').textContent = total;
-                    document.getElementById('matchedCount').textContent = s.matched?.count || 0;
-                    document.getElementById('pendingCount').textContent = s.pending?.count || 0;
-                    document.getElementById('ignoredCount').textContent = s.ignored?.count || 0;
-                    document.getElementById('invoicedCount').textContent = s.invoiced?.count || 0;
+
+                    // Helper function to calculate and display percentage
+                    const setPctDisplay = (elementId, count) => {
+                        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                        document.getElementById(elementId).textContent = pct > 0 ? `(${pct}%)` : '';
+                    };
+
+                    const pending = s.pending?.count || 0;
+                    const resolved = s.resolved?.count || 0;
+                    const ignored = s.ignored?.count || 0;
+
+                    document.getElementById('pendingCount').textContent = pending;
+                    document.getElementById('resolvedCount').textContent = resolved;
+                    document.getElementById('ignoredCount').textContent = ignored;
+
+                    setPctDisplay('pendingPct', pending);
+                    setPctDisplay('resolvedPct', resolved);
+                    setPctDisplay('ignoredPct', ignored);
 
                     // Update filter dropdowns
                     updateCompanyFilter(data.summary.by_company);
@@ -942,6 +950,7 @@
                         ${escapeHtml(stmt.filename)}
                     </td>
                     <td>${escapeHtml(stmt.company_name || '-')}</td>
+                    <td>${escapeHtml(stmt.company_cui || '-')}</td>
                     <td>${stmt.period_from ? formatDate(stmt.period_from) + ' - ' + formatDate(stmt.period_to) : '-'}</td>
                     <td class="text-center">
                         <span class="badge bg-primary">${stmt.total_transactions}</span>
@@ -1031,7 +1040,8 @@
                                    ${isSelected ? 'checked' : ''} onchange="toggleSelection(${txn.id})">
                         </td>
                         <td>${formatDate(txn.transaction_date)}</td>
-                        <td title="${txn.company_name}">${txn.company_cui}</td>
+                        <td>${escapeHtml(txn.company_name || '-')}</td>
+                        <td>${txn.company_cui || '-'}</td>
                         <td>${txn.vendor_name || '-'}</td>
                         <td>
                             ${txn.matched_supplier ?
@@ -1055,9 +1065,8 @@
                                     onchange="handleStatusChange(this)"
                                     style="width: 110px; padding: 2px 6px; font-size: 0.75rem;">
                                 <option value="pending" ${txn.status === 'pending' ? 'selected' : ''}>Pending</option>
-                                <option value="matched" ${txn.status === 'matched' ? 'selected' : ''}>Matched</option>
+                                <option value="resolved" ${txn.status === 'resolved' ? 'selected' : ''}>Resolved</option>
                                 <option value="ignored" ${txn.status === 'ignored' ? 'selected' : ''}>Ignored</option>
-                                <option value="invoiced" ${txn.status === 'invoiced' ? 'selected' : ''}>Invoiced</option>
                             </select>
                         </td>
                         <td>
@@ -1112,9 +1121,8 @@
         function getStatusColor(status) {
             const colors = {
                 'pending': 'warning',
-                'matched': 'info',
-                'ignored': 'secondary',
-                'invoiced': 'success'
+                'resolved': 'success',
+                'ignored': 'secondary'
             };
             return colors[status] || 'secondary';
         }
@@ -1269,7 +1277,7 @@
 
         function selectMatched() {
             selectedTransactionIds.clear();
-            transactions.filter(t => t.status === 'matched').forEach(t => selectedTransactionIds.add(t.id));
+            transactions.filter(t => t.status === 'resolved').forEach(t => selectedTransactionIds.add(t.id));
             renderTransactions();
         }
 
@@ -1424,7 +1432,7 @@
                 return;
             }
 
-            if (txn.status === 'invoiced') {
+            if (txn.status === 'resolved') {
                 showToast('This transaction is already linked to an invoice', 'warning');
                 return;
             }
@@ -1638,10 +1646,24 @@
             try {
                 const response = await fetch(`/statements/api/transactions/${transactionId}/accept-match`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin'
                 });
 
-                const data = await response.json();
+                // Try to parse JSON response
+                let data;
+                try {
+                    data = await response.json();
+                } catch (parseError) {
+                    // Not JSON - likely a redirect or error page
+                    console.error('Failed to parse JSON:', response.status, response.url);
+                    if (response.redirected || response.url.includes('login')) {
+                        showToast('Session expired. Please refresh the page and login.', 'error');
+                    } else {
+                        showToast('Server error (status ' + response.status + ')', 'error');
+                    }
+                    return;
+                }
 
                 if (data.success) {
                     showToast('Match accepted!', 'success', 2000);

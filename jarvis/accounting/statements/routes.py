@@ -10,6 +10,20 @@ from flask_login import login_required, current_user
 
 from . import statements_bp
 
+
+def api_login_required(f):
+    """Like @login_required but returns JSON 401 for API endpoints instead of redirecting."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return jsonify({
+                'success': False,
+                'error': 'Authentication required',
+                'details': {'message': 'Please log in to access this resource'}
+            }), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
 # File size limits
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB per file
 MAX_TOTAL_SIZE = 50 * 1024 * 1024  # 50MB total per request
@@ -162,7 +176,7 @@ def mappings_page():
 # ============== UPLOAD & PARSE ==============
 
 @statements_bp.route('/api/upload', methods=['POST'])
-@login_required
+@api_login_required
 def upload_statements():
     """
     Upload and parse bank statement PDF(s).
@@ -348,7 +362,7 @@ def upload_statements():
 # ============== STATEMENT MANAGEMENT ==============
 
 @statements_bp.route('/api/statements', methods=['GET'])
-@login_required
+@api_login_required
 def list_statements():
     """
     List all uploaded statements with pagination.
@@ -382,7 +396,7 @@ def list_statements():
 
 
 @statements_bp.route('/api/statements/<int:statement_id>', methods=['GET'])
-@login_required
+@api_login_required
 def get_statement_detail(statement_id):
     """Get details for a single statement."""
     stmt = get_statement(statement_id)
@@ -401,7 +415,7 @@ def get_statement_detail(statement_id):
 
 
 @statements_bp.route('/api/statements/<int:statement_id>', methods=['DELETE'])
-@login_required
+@api_login_required
 def delete_statement_route(statement_id):
     """Delete a statement and all its transactions."""
     stmt = get_statement(statement_id)
@@ -419,7 +433,7 @@ def delete_statement_route(statement_id):
 # ============== FILTER OPTIONS ==============
 
 @statements_bp.route('/api/filters', methods=['GET'])
-@login_required
+@api_login_required
 def get_filter_options():
     """
     Get available filter options for dropdowns.
@@ -443,7 +457,7 @@ def get_filter_options():
 # ============== TRANSACTIONS ==============
 
 @statements_bp.route('/api/transactions', methods=['GET'])
-@login_required
+@api_login_required
 def list_transactions():
     """
     List transactions with optional filters.
@@ -490,7 +504,7 @@ def list_transactions():
 
 
 @statements_bp.route('/api/transactions/<int:transaction_id>', methods=['GET'])
-@login_required
+@api_login_required
 def get_single_transaction(transaction_id):
     """Get a single transaction by ID."""
     txn = get_transaction(transaction_id)
@@ -507,7 +521,7 @@ def get_single_transaction(transaction_id):
 
 
 @statements_bp.route('/api/transactions/<int:transaction_id>', methods=['PUT'])
-@login_required
+@api_login_required
 def update_single_transaction(transaction_id):
     """
     Update a transaction.
@@ -519,11 +533,11 @@ def update_single_transaction(transaction_id):
         return error
 
     # Validate status if provided
-    if data.get('status') and data['status'] not in ('pending', 'matched', 'ignored', 'invoiced'):
+    if data.get('status') and data['status'] not in ('pending', 'resolved', 'ignored'):
         return jsonify({
             'success': False,
             'error': 'Validation failed',
-            'details': {'status': 'Status must be one of: pending, matched, ignored, invoiced'}
+            'details': {'status': 'Status must be one of: pending, resolved, ignored'}
         }), 422
 
     try:
@@ -551,7 +565,7 @@ def update_single_transaction(transaction_id):
 
 
 @statements_bp.route('/api/transactions/bulk-ignore', methods=['POST'])
-@login_required
+@api_login_required
 @rate_limit_bulk
 def bulk_ignore_transactions():
     """
@@ -609,13 +623,13 @@ def bulk_ignore_transactions():
 
 
 @statements_bp.route('/api/transactions/bulk-status', methods=['POST'])
-@login_required
+@api_login_required
 @rate_limit_bulk
 def bulk_update_transaction_status():
     """
     Bulk update status for transactions.
 
-    Body: { "transaction_ids": [1, 2, 3], "status": "matched" }
+    Body: { "transaction_ids": [1, 2, 3], "status": "resolved" }
 
     Rate limited: 10 requests per minute, max 100 items per request.
     """
@@ -636,8 +650,8 @@ def bulk_update_transaction_status():
         errors['transaction_ids'] = f'Maximum {MAX_BULK_ITEMS} items per request (received {len(ids)})'
     if not status:
         errors['status'] = 'Status is required'
-    elif status not in ('pending', 'matched', 'ignored', 'invoiced'):
-        errors['status'] = 'Status must be one of: pending, matched, ignored, invoiced'
+    elif status not in ('pending', 'resolved', 'ignored'):
+        errors['status'] = 'Status must be one of: pending, resolved, ignored'
 
     if errors:
         return jsonify({
@@ -662,7 +676,7 @@ def bulk_update_transaction_status():
 
 
 @statements_bp.route('/api/summary', methods=['GET'])
-@login_required
+@api_login_required
 def transactions_summary():
     """Get summary statistics for transactions."""
     summary = get_transaction_summary()
@@ -673,7 +687,7 @@ def transactions_summary():
 
 
 @statements_bp.route('/api/export/csv', methods=['GET'])
-@login_required
+@api_login_required
 def export_transactions_csv():
     """
     Export transactions to CSV format.
@@ -740,7 +754,7 @@ def export_transactions_csv():
 # ============== VENDOR MAPPINGS ==============
 
 @statements_bp.route('/api/mappings', methods=['GET'])
-@login_required
+@api_login_required
 def list_mappings():
     """List all vendor mappings."""
     active_only = request.args.get('active_only', 'true').lower() == 'true'
@@ -753,7 +767,7 @@ def list_mappings():
 
 
 @statements_bp.route('/api/mappings', methods=['POST'])
-@login_required
+@api_login_required
 def create_mapping():
     """
     Create a new vendor mapping.
@@ -818,7 +832,7 @@ def create_mapping():
 
 
 @statements_bp.route('/api/mappings/<int:mapping_id>', methods=['GET'])
-@login_required
+@api_login_required
 def get_single_mapping(mapping_id):
     """Get a single vendor mapping by ID."""
     mapping = get_vendor_mapping(mapping_id)
@@ -829,7 +843,7 @@ def get_single_mapping(mapping_id):
 
 
 @statements_bp.route('/api/mappings/<int:mapping_id>', methods=['PUT'])
-@login_required
+@api_login_required
 def update_single_mapping(mapping_id):
     """
     Update a vendor mapping.
@@ -880,7 +894,7 @@ def update_single_mapping(mapping_id):
 
 
 @statements_bp.route('/api/mappings/<int:mapping_id>', methods=['DELETE'])
-@login_required
+@api_login_required
 def delete_single_mapping(mapping_id):
     """Delete a vendor mapping."""
     success = delete_vendor_mapping(mapping_id)
@@ -896,7 +910,7 @@ def delete_single_mapping(mapping_id):
 # ============== INVOICE LINKING ==============
 
 @statements_bp.route('/api/transactions/link-invoice', methods=['POST'])
-@login_required
+@api_login_required
 def link_invoice_to_transaction():
     """
     Link an existing invoice to a bank statement transaction.
@@ -906,7 +920,7 @@ def link_invoice_to_transaction():
         "invoice_id": 456
     }
 
-    This marks the transaction as 'invoiced' and stores the invoice_id reference.
+    This marks the transaction as 'resolved' and stores the invoice_id reference.
     """
     data, error = get_json_or_error()
     if error:
@@ -955,11 +969,11 @@ def link_invoice_to_transaction():
         }), 404
 
     try:
-        # Update transaction with invoice link and set status to invoiced
+        # Update transaction with invoice link and set status to resolved
         success = update_transaction(
             transaction_id,
             invoice_id=invoice_id,
-            status='invoiced'
+            status='resolved'
         )
 
         if success:
@@ -985,12 +999,12 @@ def link_invoice_to_transaction():
 
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/unlink', methods=['POST'])
-@login_required
+@api_login_required
 def unlink_invoice_from_transaction(transaction_id):
     """
     Remove the invoice link from a transaction.
 
-    This sets the invoice_id to NULL and changes status back to 'pending' or 'matched'.
+    This sets the invoice_id to NULL and changes status back to 'pending'.
     """
     txn = get_transaction(transaction_id)
     if not txn:
@@ -1006,8 +1020,8 @@ def unlink_invoice_from_transaction(transaction_id):
         }), 400
 
     try:
-        # Determine new status based on whether it has a matched supplier
-        new_status = 'matched' if txn.get('matched_supplier') else 'pending'
+        # Set status back to pending when unlinking
+        new_status = 'pending'
 
         success = update_transaction(
             transaction_id,
@@ -1040,7 +1054,7 @@ def unlink_invoice_from_transaction(transaction_id):
 # ============== AUTO-MATCH INVOICES ==============
 
 @statements_bp.route('/api/transactions/auto-match', methods=['POST'])
-@login_required
+@api_login_required
 def auto_match_invoices():
     """
     Run automatic invoice matching on pending transactions.
@@ -1068,7 +1082,7 @@ def auto_match_invoices():
         bulk_update_transaction_matches
     )
 
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     transaction_ids = data.get('transaction_ids')
     use_ai = data.get('use_ai', True)
     min_confidence = data.get('min_confidence', 0.7)
@@ -1080,13 +1094,11 @@ def auto_match_invoices():
             transactions = []
             for txn_id in transaction_ids:
                 txn = get_transaction(txn_id)
-                if txn and txn.get('status') not in ('invoiced', 'ignored'):
+                if txn and txn.get('status') not in ('resolved', 'ignored'):
                     transactions.append(txn)
         else:
             # Get all pending transactions
             transactions = get_transactions_for_matching(status='pending', limit=100)
-            # Also get matched transactions without invoice
-            transactions.extend(get_transactions_for_matching(status='matched', limit=100))
 
         if not transactions:
             return jsonify({
@@ -1140,7 +1152,7 @@ def auto_match_invoices():
 
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/suggestions', methods=['GET'])
-@login_required
+@api_login_required
 def get_invoice_suggestions(transaction_id):
     """
     Get invoice suggestions for a specific transaction.
@@ -1210,7 +1222,7 @@ def get_invoice_suggestions(transaction_id):
 
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/accept-match', methods=['POST'])
-@login_required
+@api_login_required
 def accept_match(transaction_id):
     """
     Accept a suggested invoice match.
@@ -1226,7 +1238,7 @@ def accept_match(transaction_id):
     if not txn:
         return jsonify({'success': False, 'error': 'Transaction not found'}), 404
 
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     override_invoice_id = data.get('invoice_id')
 
     try:
@@ -1236,7 +1248,7 @@ def accept_match(transaction_id):
                 transaction_id,
                 invoice_id=override_invoice_id,
                 match_method='manual',
-                status='invoiced'
+                status='resolved'
             )
         else:
             # Accept the existing suggestion
@@ -1259,7 +1271,7 @@ def accept_match(transaction_id):
 
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/reject-match', methods=['POST'])
-@login_required
+@api_login_required
 def reject_match(transaction_id):
     """
     Reject a suggested invoice match.

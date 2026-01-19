@@ -590,7 +590,8 @@ def get_transaction(transaction_id: int) -> Optional[dict]:
                    transaction_date, value_date, description, vendor_name,
                    matched_supplier, amount, currency, original_amount,
                    original_currency, exchange_rate, auth_code, card_number,
-                   transaction_type, invoice_id, status, created_at
+                   transaction_type, invoice_id, status, created_at,
+                   suggested_invoice_id, match_confidence, match_method
             FROM bank_statement_transactions
             WHERE id = %s
         ''', (transaction_id,))
@@ -602,7 +603,10 @@ def get_transaction(transaction_id: int) -> Optional[dict]:
 
 
 def update_transaction(transaction_id: int, **kwargs) -> bool:
-    """Update a transaction. Accepts any valid column as keyword argument."""
+    """Update a transaction. Accepts any valid column as keyword argument.
+
+    When setting status to 'ignored', also clears any invoice suggestions.
+    """
     conn = get_db()
     try:
         cursor = get_cursor(conn)
@@ -619,6 +623,14 @@ def update_transaction(transaction_id: int, **kwargs) -> bool:
             if key in valid_columns:
                 updates.append(f'{key} = %s')
                 params.append(value)
+
+        # If status is being set to 'ignored', also clear invoice suggestions
+        if kwargs.get('status') == 'ignored':
+            updates.extend([
+                'suggested_invoice_id = NULL',
+                'match_confidence = NULL',
+                'match_method = NULL'
+            ])
 
         if not updates:
             return False
@@ -637,7 +649,11 @@ def update_transaction(transaction_id: int, **kwargs) -> bool:
 
 
 def bulk_update_status(transaction_ids: list[int], status: str) -> int:
-    """Bulk update status for multiple transactions. Returns count updated."""
+    """Bulk update status for multiple transactions. Returns count updated.
+
+    When setting status to 'ignored', also clears any invoice suggestions
+    (suggested_invoice_id, match_confidence, match_method).
+    """
     if not transaction_ids:
         return 0
 
@@ -646,11 +662,23 @@ def bulk_update_status(transaction_ids: list[int], status: str) -> int:
         cursor = get_cursor(conn)
 
         placeholders = ','.join(['%s'] * len(transaction_ids))
-        cursor.execute(f'''
-            UPDATE bank_statement_transactions
-            SET status = %s
-            WHERE id IN ({placeholders})
-        ''', (status, *transaction_ids))
+
+        if status == 'ignored':
+            # Clear invoice suggestions when ignoring transactions
+            cursor.execute(f'''
+                UPDATE bank_statement_transactions
+                SET status = %s,
+                    suggested_invoice_id = NULL,
+                    match_confidence = NULL,
+                    match_method = NULL
+                WHERE id IN ({placeholders})
+            ''', (status, *transaction_ids))
+        else:
+            cursor.execute(f'''
+                UPDATE bank_statement_transactions
+                SET status = %s
+                WHERE id IN ({placeholders})
+            ''', (status, *transaction_ids))
 
         conn.commit()
         return cursor.rowcount
@@ -857,7 +885,7 @@ def update_transaction_match(transaction_id: int, invoice_id: int = None,
 
     Args:
         transaction_id: Transaction to update
-        invoice_id: Confirmed invoice link (sets status to 'invoiced')
+        invoice_id: Confirmed invoice link (sets status to 'resolved')
         suggested_invoice_id: Suggested invoice for review
         match_confidence: Confidence score (0.0-1.0)
         match_method: How the match was made ('rule', 'heuristic', 'ai', 'manual')
@@ -876,9 +904,9 @@ def update_transaction_match(transaction_id: int, invoice_id: int = None,
         if invoice_id is not None:
             updates.append('invoice_id = %s')
             params.append(invoice_id if invoice_id else None)
-            # Auto-set status to invoiced when linking
+            # Auto-set status to resolved when linking
             if not status:
-                status = 'invoiced' if invoice_id else None
+                status = 'resolved' if invoice_id else None
 
         if suggested_invoice_id is not None:
             updates.append('suggested_invoice_id = %s')
@@ -941,7 +969,7 @@ def bulk_update_transaction_matches(results: list[dict]) -> dict:
                 # Auto-link confirmed match
                 cursor.execute('''
                     UPDATE bank_statement_transactions
-                    SET invoice_id = %s, match_confidence = %s, match_method = %s, status = 'invoiced'
+                    SET invoice_id = %s, match_confidence = %s, match_method = %s, status = 'resolved'
                     WHERE id = %s
                 ''', (
                     result['invoice_id'],
@@ -1008,7 +1036,7 @@ def accept_suggested_match(transaction_id: int) -> bool:
             SET invoice_id = suggested_invoice_id,
                 suggested_invoice_id = NULL,
                 match_method = COALESCE(match_method, 'manual') || '_accepted',
-                status = 'invoiced'
+                status = 'resolved'
             WHERE id = %s
         ''', (transaction_id,))
 
