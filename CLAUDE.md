@@ -163,6 +163,8 @@ docker run -p 8080:8080 -e DATABASE_URL="..." -e ANTHROPIC_API_KEY="..." bugetar
 - `TINYPNG_API_KEY` - TinyPNG API key for image compression (optional, has default)
 
 ## Database Schema
+
+### Public Schema (Accounting)
 - `invoices` - Invoice header records (includes subtract_vat, vat_rate_id, net_value)
 - `allocations` - Department allocation splits
 - `invoice_templates` - AI parsing templates per supplier
@@ -172,6 +174,19 @@ docker run -p 8080:8080 -e DATABASE_URL="..." -e ANTHROPIC_API_KEY="..." bugetar
 - `user_events` - Activity log for user actions (login, invoice operations)
 - `vat_rates` - VAT rate definitions (id, name, rate)
 - `connectors` - External service connectors (Google Ads, Anthropic) - DISABLED
+
+### HR Schema (`hr.`)
+The HR module uses a separate PostgreSQL schema for data isolation:
+
+- `hr.employees` - Employee records with optional link to Jarvis users
+  - id, name, department, brand, company, user_id (FK to users), is_active, created_at, updated_at
+- `hr.events` - Event definitions (auto shows, promotions, etc.)
+  - id, name, start_date, end_date, company, brand, description, created_by (FK to users), created_at
+- `hr.event_bonuses` - Individual bonus records per employee/event
+  - id, employee_id (FK), event_id (FK), year, month, participation_start, participation_end
+  - bonus_days, hours_free, bonus_net, details, allocation_month, created_by, created_at, updated_at
+
+**Note**: HR schema auto-creates on app startup via `init_db()` in `jarvis/database.py`
 
 ## Deployment
 Configured via `.do/app.yaml` for DigitalOcean App Platform with auto-deploy on push to main branch.
