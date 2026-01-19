@@ -47,6 +47,9 @@
             </a>
             <span class="navbar-text text-white me-auto ms-3">
                 <i class="bi bi-bank"></i> Bank Statements
+                <span class="badge bg-light text-success ms-2" id="onlineUsersIndicator" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" title="Loading..." style="cursor: pointer; font-size: 0.7rem;">
+                    <i class="bi bi-circle-fill text-success" style="font-size: 0.4rem;"></i> <span id="onlineUsersCount">-</span> online
+                </span>
             </span>
             <div class="d-flex align-items-center">
                 <!-- Theme Toggle -->
@@ -228,7 +231,7 @@
                             <i class="bi" id="hideIgnoredIcon"></i> <span id="hideIgnoredText">Hide Ignored</span>
                         </button>
                         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openColumnConfig()" title="Configure columns">
-                            <i class="bi bi-layout-three-columns"></i> Columns
+                            <i class="bi bi-gear"></i> Columns
                         </button>
                     </div>
                 </div>
@@ -241,7 +244,7 @@
                 <div class="card">
                     <div class="card-body p-0">
                         <div class="table-responsive">
-                            <table class="table table-hover table-striped mb-0" id="transactionsTable">
+                            <table class="table table-hover mb-0" id="transactionsTable">
                                 <thead class="table-light">
                                     <tr id="transactionsHeader">
                                         <!-- Columns rendered dynamically by JavaScript -->
@@ -413,7 +416,7 @@
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-layout-three-columns"></i> Configure Columns</h5>
+                    <h5 class="modal-title"><i class="bi bi-gear"></i> Columns</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -1954,6 +1957,64 @@
                 toastElement.remove();
             });
         }
+
+        // Online users tracking
+        let onlineUsersInterval = null;
+        let onlineUsersTooltip = null;
+
+        async function initOnlineUsersTracking() {
+            // Send initial heartbeat and wait for it to complete
+            await sendHeartbeat();
+            // Update online users count immediately after heartbeat
+            await updateOnlineUsersCount();
+
+            // Send heartbeat every 60 seconds
+            setInterval(sendHeartbeat, 60000);
+            // Update online users count every 30 seconds
+            onlineUsersInterval = setInterval(updateOnlineUsersCount, 30000);
+        }
+
+        async function sendHeartbeat() {
+            try {
+                await fetch('/api/heartbeat', { method: 'POST' });
+            } catch (e) {
+                console.error('Heartbeat failed:', e);
+            }
+        }
+
+        async function updateOnlineUsersCount() {
+            try {
+                const res = await fetch('/api/online-users');
+                const data = await res.json();
+                const countEl = document.getElementById('onlineUsersCount');
+                const indicatorEl = document.getElementById('onlineUsersIndicator');
+                if (countEl) {
+                    countEl.textContent = data.count;
+                    // Update Bootstrap tooltip with user names
+                    if (indicatorEl && data.users) {
+                        // Initialize tooltip if not already done
+                        if (!onlineUsersTooltip) {
+                            onlineUsersTooltip = new bootstrap.Tooltip(indicatorEl);
+                        }
+                        // Build tooltip content with user names on separate lines
+                        let tooltipContent = '<strong>Online Users:</strong>';
+                        if (data.users.length > 0) {
+                            tooltipContent += '<br>' + data.users.map(u => u.name).join('<br>');
+                        } else {
+                            tooltipContent += '<br><em>No users online</em>';
+                        }
+                        indicatorEl.setAttribute('data-bs-original-title', tooltipContent);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to get online users:', e);
+            }
+        }
+
+        // Initialize online users tracking on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initOnlineUsersTracking();
+        });
     </script>
 </body>
 </html>

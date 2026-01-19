@@ -370,6 +370,21 @@ body.dark-theme .summary-card.bg-secondary {
     background: linear-gradient(135deg, #546e7a 0%, #37474f 100%) !important;
 }
 
+/* Dark theme: Breadcrumb background - darker for contrast */
+body.dark-theme .bg-body-secondary {
+    background-color: #0f1a2e !important;
+    border-color: var(--border-color) !important;
+}
+body.dark-theme .bg-body-secondary .breadcrumb-item a {
+    color: #81c784;
+}
+body.dark-theme .bg-body-secondary .breadcrumb-item a:hover {
+    color: #a5d6a7;
+}
+body.dark-theme .bg-body-secondary .breadcrumb-item.active {
+    color: var(--text-secondary);
+}
+
 /* ============================================================================
    TABLES
    ============================================================================ */
@@ -398,6 +413,30 @@ body.dark-theme .summary-card.bg-secondary {
     background: var(--bg-table-hover) !important;
 }
 
+/* Force dark theme table styling */
+body.dark-theme .table {
+    --bs-table-bg: #16213e !important;
+    --bs-table-color: var(--text-primary) !important;
+    --bs-table-hover-bg: #1f4068 !important;
+    --bs-table-striped-bg: rgba(255, 255, 255, 0.03) !important;
+    background-color: #16213e !important;
+}
+body.dark-theme .table tbody {
+    background-color: #16213e !important;
+}
+body.dark-theme .table tbody tr {
+    background-color: #16213e !important;
+}
+body.dark-theme .table tbody td {
+    background-color: transparent !important;
+}
+body.dark-theme .table-hover > tbody > tr:hover {
+    background-color: #1f4068 !important;
+    --bs-table-hover-bg: #1f4068 !important;
+}
+body.dark-theme .table-hover > tbody > tr:hover > td {
+    background-color: #1f4068 !important;
+}
 /* Force text color in dark theme */
 body.dark-theme .table tbody td,
 body.dark-theme .table tbody tr,
@@ -408,12 +447,17 @@ body.dark-theme .table tbody td strong {
     color: #ffffff !important;
 }
 
-/* Override Bootstrap table classes */
+/* Override Bootstrap table classes - dark background + white text */
 body.dark-theme .table-light {
     background-color: var(--bg-table-header) !important;
+    color: #ffffff !important;
 }
 body.dark-theme .table-light th {
     background-color: var(--bg-table-header) !important;
+    color: #ffffff !important;
+}
+body.dark-theme .table-light td {
+    color: #ffffff !important;
 }
 body.dark-theme .table-striped > tbody > tr:nth-of-type(odd) > * {
     --bs-table-bg-type: rgba(255, 255, 255, 0.03);
@@ -456,6 +500,26 @@ body.dark-theme .table-info td strong {
     color: #000000 !important;
     text-shadow: none;
 }
+/* Light backgrounds need dark text for contrast */
+.badge.bg-light,
+.bg-light {
+    color: #212529 !important;
+}
+.badge.bg-info {
+    color: #000000 !important;
+}
+/* Ensure alert/badge light variants have proper contrast */
+.alert-warning,
+.alert-info,
+.alert-light {
+    color: #212529 !important;
+}
+/* Light theme specific - ensure any Bootstrap light classes have dark text */
+body:not(.dark-theme) .table-light,
+body:not(.dark-theme) .table-light th,
+body:not(.dark-theme) .table-light td {
+    color: #212529 !important;
+}
 
 /* ============================================================================
    MODALS
@@ -471,6 +535,22 @@ body.dark-theme .table-info td strong {
 }
 body.dark-theme .btn-close {
     filter: invert(1);
+}
+
+/* Dark theme list-group (used in column config modal, etc.) */
+body.dark-theme .list-group-item {
+    background-color: #1f3460 !important;
+    border-color: #2d4a6e !important;
+    color: #ffffff !important;
+}
+body.dark-theme .list-group-item:hover {
+    background-color: #2a4a7a !important;
+}
+body.dark-theme .list-group-item .form-check-label {
+    color: #ffffff !important;
+}
+body.dark-theme .list-group-item .text-muted {
+    color: #8899aa !important;
 }
 
 /* ============================================================================
@@ -779,6 +859,27 @@ body.dark-theme .loading-spinner {
     margin-bottom: 20px;
     border: 1px solid var(--border-color);
 }
+/* Dark theme filter section */
+body.dark-theme .filter-section {
+    background-color: #16213e !important;
+    border-color: #2d4a6e !important;
+}
+body.dark-theme .filter-section .form-label {
+    color: var(--text-primary) !important;
+}
+/* Dark theme date input calendar icon and text */
+body.dark-theme input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(0.9);
+    cursor: pointer;
+}
+body.dark-theme input[type="date"] {
+    color-scheme: dark;
+    color: #ffffff !important;
+    background-color: var(--bg-input) !important;
+}
+body.dark-theme input[type="date"]::placeholder {
+    color: var(--text-secondary) !important;
+}
 
 /* ============================================================================
    TEXT COLORS
@@ -877,6 +978,22 @@ body.dark-theme .border {
 .upload-zone.has-file {
     border-color: var(--text-positive);
     background: rgba(25, 135, 84, 0.1);
+}
+/* Dark theme drag-drop zones - explicit background */
+body.dark-theme .drag-drop-zone,
+body.dark-theme .dropzone,
+body.dark-theme .upload-zone {
+    background-color: #16213e !important;
+    border-color: #2d4a6e !important;
+}
+body.dark-theme .drag-drop-zone:hover,
+body.dark-theme .drag-drop-zone.dragover,
+body.dark-theme .dropzone:hover,
+body.dark-theme .dropzone.dragover,
+body.dark-theme .upload-zone:hover,
+body.dark-theme .upload-zone.dragover {
+    background-color: rgba(100, 181, 246, 0.1) !important;
+    border-color: #64b5f6 !important;
 }
 
 /* ============================================================================

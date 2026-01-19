@@ -40,6 +40,9 @@
             </a>
             <span class="navbar-text text-white me-auto ms-3">
                 <i class="bi bi-files"></i> Statement Files
+                <span class="badge bg-light text-success ms-2" id="onlineUsersIndicator" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" title="Loading..." style="cursor: pointer; font-size: 0.7rem;">
+                    <i class="bi bi-circle-fill text-success" style="font-size: 0.4rem;"></i> <span id="onlineUsersCount">-</span> online
+                </span>
             </span>
             <div class="d-flex align-items-center">
                 <!-- Theme Toggle -->
@@ -93,7 +96,7 @@
     <div class="container-fluid px-4 mt-3">
         <!-- Upload Section -->
         <div class="row mb-4">
-            <div class="col-lg-10 mx-auto">
+            <div class="col-12">
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center" style="cursor: pointer;" onclick="toggleUploadSection()">
                         <h5 class="mb-0"><i class="bi bi-cloud-upload"></i> Upload Bank Statements</h5>
@@ -131,28 +134,23 @@
 
         <!-- Files Table -->
         <div class="row">
-            <div class="col-lg-10 mx-auto">
+            <div class="col-12">
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-folder2-open"></i> Uploaded Files</h5>
-                        <span id="fileCount" class="badge bg-secondary">0 files</span>
+                        <div class="d-flex align-items-center">
+                            <h5 class="mb-0"><i class="bi bi-folder2-open"></i> Uploaded Files</h5>
+                            <span id="fileCount" class="badge bg-secondary ms-2">0 files</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="openColumnConfig()" title="Configure columns">
+                            <i class="bi bi-gear"></i> Columns
+                        </button>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
-                            <table class="table table-hover mb-0">
+                            <table class="table table-hover mb-0" id="filesTable">
                                 <thead class="table-light">
-                                    <tr>
-                                        <th>Filename</th>
-                                        <th>Company</th>
-                                        <th>CUI</th>
-                                        <th>Account</th>
-                                        <th>Period</th>
-                                        <th class="text-center">Total</th>
-                                        <th class="text-center">New</th>
-                                        <th class="text-center">Duplicates</th>
-                                        <th>Uploaded</th>
-                                        <th>By</th>
-                                        <th style="width: 100px;">Actions</th>
+                                    <tr id="filesHeader">
+                                        <!-- Columns rendered dynamically by JavaScript -->
                                     </tr>
                                 </thead>
                                 <tbody id="filesBody">
@@ -165,6 +163,30 @@
                             </table>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Column Configuration Modal -->
+    <div class="modal fade" id="columnConfigModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear"></i> Columns</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-2">Drag to reorder, check/uncheck to show/hide columns.</p>
+                    <div class="list-group" id="columnList">
+                        <!-- Column items will be populated dynamically -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" onclick="resetColumnConfig()">
+                        <i class="bi bi-arrow-counterclockwise"></i> Reset to Default
+                    </button>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
                 </div>
             </div>
         </div>
@@ -183,10 +205,27 @@
         // Statements data
         let statements = [];
 
+        // Column configuration
+        const DEFAULT_COLUMNS = [
+            { id: 'filename', name: 'Filename', source: 'filename', format: 'text', visible: true },
+            { id: 'company', name: 'Company', source: 'company_name', format: 'text', visible: true },
+            { id: 'cui', name: 'CUI', source: 'company_cui', format: 'text', visible: true },
+            { id: 'account', name: 'Account', source: 'account_number', format: 'text', visible: true },
+            { id: 'period', name: 'Period', source: 'period', format: 'period', visible: true },
+            { id: 'total', name: 'Total', source: 'total_transactions', format: 'badge-primary', visible: true },
+            { id: 'new', name: 'New', source: 'new_transactions', format: 'badge-success', visible: true },
+            { id: 'duplicates', name: 'Duplicates', source: 'duplicate_transactions', format: 'badge-secondary', visible: true },
+            { id: 'uploaded', name: 'Uploaded', source: 'uploaded_at', format: 'datetime', visible: true },
+            { id: 'by', name: 'By', source: 'uploaded_by_name', format: 'text', visible: true },
+            { id: 'actions', name: 'Actions', source: 'actions', format: 'actions', visible: true }
+        ];
+        let columnConfig = [];
+
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             initTheme();
             initDragDrop();
+            loadColumnConfig();
             loadStatements();
         });
 
@@ -202,6 +241,113 @@
                 document.body.classList.toggle('dark-theme', this.checked);
                 localStorage.setItem('theme', this.checked ? 'dark' : 'light');
             });
+        }
+
+        // ============== COLUMN CONFIGURATION ==============
+        function loadColumnConfig() {
+            const saved = localStorage.getItem('filesColumnConfig');
+            if (saved) {
+                try {
+                    columnConfig = JSON.parse(saved);
+                    // Ensure all default columns exist
+                    DEFAULT_COLUMNS.forEach(defCol => {
+                        if (!columnConfig.find(c => c.id === defCol.id)) {
+                            columnConfig.push({ ...defCol });
+                        }
+                    });
+                } catch (e) {
+                    columnConfig = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+                }
+            } else {
+                columnConfig = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+            }
+        }
+
+        function saveColumnConfig() {
+            localStorage.setItem('filesColumnConfig', JSON.stringify(columnConfig));
+            renderTableHeader();
+            renderStatements();
+        }
+
+        function resetColumnConfig() {
+            columnConfig = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+            saveColumnConfig();
+            renderColumnList();
+        }
+
+        function renderColumnList() {
+            const container = document.getElementById('columnList');
+            if (!container) return;
+
+            container.innerHTML = columnConfig.map((col, idx) => `
+                <div class="list-group-item d-flex align-items-center" draggable="true" data-idx="${idx}">
+                    <i class="bi bi-grip-vertical text-muted me-2" style="cursor: grab;"></i>
+                    <div class="form-check me-auto">
+                        <input class="form-check-input" type="checkbox" id="col-${col.id}"
+                               ${col.visible ? 'checked' : ''} ${col.id === 'actions' ? 'disabled' : ''}
+                               onchange="toggleColumnVisibility(${idx}, this.checked)">
+                        <label class="form-check-label" for="col-${col.id}">${col.name}</label>
+                    </div>
+                </div>
+            `).join('');
+
+            // Setup drag and drop
+            setupColumnDragDrop(container);
+        }
+
+        function toggleColumnVisibility(idx, visible) {
+            columnConfig[idx].visible = visible;
+            saveColumnConfig();
+        }
+
+        function setupColumnDragDrop(container) {
+            const items = container.querySelectorAll('.list-group-item');
+            items.forEach(item => {
+                item.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/plain', item.dataset.idx);
+                    item.classList.add('opacity-50');
+                });
+                item.addEventListener('dragend', () => item.classList.remove('opacity-50'));
+                item.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    item.classList.add('border-primary');
+                });
+                item.addEventListener('dragleave', () => item.classList.remove('border-primary'));
+                item.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    item.classList.remove('border-primary');
+                    const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+                    const toIdx = parseInt(item.dataset.idx);
+                    if (fromIdx !== toIdx) {
+                        const [moved] = columnConfig.splice(fromIdx, 1);
+                        columnConfig.splice(toIdx, 0, moved);
+                        saveColumnConfig();
+                        renderColumnList();
+                    }
+                });
+            });
+        }
+
+        function openColumnConfig() {
+            renderColumnList();
+            new bootstrap.Modal(document.getElementById('columnConfigModal')).show();
+        }
+
+        function renderTableHeader() {
+            const header = document.getElementById('filesHeader');
+            if (!header) return;
+
+            const visibleCols = columnConfig.filter(c => c.visible);
+            header.innerHTML = visibleCols.map(col => {
+                let classes = '';
+                if (['total', 'new', 'duplicates'].includes(col.id)) {
+                    classes = 'text-center';
+                }
+                if (col.id === 'actions') {
+                    return `<th style="width: 100px;">${col.name}</th>`;
+                }
+                return `<th class="${classes}">${col.name}</th>`;
+            }).join('');
         }
 
         // ============== DRAG & DROP ==============
@@ -370,13 +516,15 @@
 
                 if (data.success) {
                     statements = data.statements;
+                    renderTableHeader();
                     renderStatements();
                 }
             } catch (error) {
                 console.error('Error loading statements:', error);
+                const visibleCols = columnConfig.filter(c => c.visible);
                 document.getElementById('filesBody').innerHTML = `
                     <tr>
-                        <td colspan="11" class="text-center text-danger py-4">
+                        <td colspan="${visibleCols.length}" class="text-center text-danger py-4">
                             Failed to load statements
                         </td>
                     </tr>
@@ -387,13 +535,14 @@
         function renderStatements() {
             const tbody = document.getElementById('filesBody');
             const countBadge = document.getElementById('fileCount');
+            const visibleCols = columnConfig.filter(c => c.visible);
 
             countBadge.textContent = `${statements.length} file${statements.length !== 1 ? 's' : ''}`;
 
             if (statements.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="11" class="text-center text-muted py-4">
+                        <td colspan="${visibleCols.length}" class="text-center text-muted py-4">
                             No statements uploaded yet. Upload PDF files above.
                         </td>
                     </tr>
@@ -401,37 +550,53 @@
                 return;
             }
 
-            tbody.innerHTML = statements.map(stmt => `
-                <tr>
-                    <td>
-                        <i class="bi bi-file-earmark-pdf text-danger"></i>
-                        ${escapeHtml(stmt.filename)}
-                    </td>
-                    <td>${escapeHtml(stmt.company_name || '-')}</td>
-                    <td>${escapeHtml(stmt.company_cui || '-')}</td>
-                    <td>${escapeHtml(stmt.account_number || '-')}</td>
-                    <td>${stmt.period_from ? formatDate(stmt.period_from) + ' - ' + formatDate(stmt.period_to) : '-'}</td>
-                    <td class="text-center">
-                        <span class="badge bg-primary">${stmt.total_transactions}</span>
-                    </td>
-                    <td class="text-center">
-                        <span class="badge bg-success">${stmt.new_transactions}</span>
-                    </td>
-                    <td class="text-center">
-                        <span class="badge bg-secondary">${stmt.duplicate_transactions}</span>
-                    </td>
-                    <td>${formatDateTime(stmt.uploaded_at)}</td>
-                    <td>${escapeHtml(stmt.uploaded_by_name || '-')}</td>
-                    <td>
+            tbody.innerHTML = statements.map(stmt => {
+                const cells = visibleCols.map(col => renderCell(stmt, col)).join('');
+                return `<tr>${cells}</tr>`;
+            }).join('');
+        }
+
+        function renderCell(stmt, col) {
+            const classes = ['total', 'new', 'duplicates'].includes(col.id) ? 'class="text-center"' : '';
+            let value = '';
+
+            switch (col.format) {
+                case 'text':
+                    value = escapeHtml(stmt[col.source] || '-');
+                    if (col.id === 'filename') {
+                        value = `<i class="bi bi-file-earmark-pdf text-danger"></i> ${value}`;
+                    }
+                    break;
+                case 'period':
+                    value = stmt.period_from ? formatDate(stmt.period_from) + ' - ' + formatDate(stmt.period_to) : '-';
+                    break;
+                case 'badge-primary':
+                    value = `<span class="badge bg-primary">${stmt[col.source] || 0}</span>`;
+                    break;
+                case 'badge-success':
+                    value = `<span class="badge bg-success">${stmt[col.source] || 0}</span>`;
+                    break;
+                case 'badge-secondary':
+                    value = `<span class="badge bg-secondary">${stmt[col.source] || 0}</span>`;
+                    break;
+                case 'datetime':
+                    value = formatDateTime(stmt[col.source]);
+                    break;
+                case 'actions':
+                    value = `
                         <button class="btn btn-sm btn-outline-primary me-1" onclick="viewTransactions(${stmt.id})" title="View transactions from this statement">
                             <i class="bi bi-eye"></i>
                         </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteStatement(${stmt.id}, '${escapeHtml(stmt.filename)}')" title="Delete statement">
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteStatement(${stmt.id}, '${escapeHtml(stmt.filename).replace(/'/g, "\\'")}')" title="Delete statement">
                             <i class="bi bi-trash"></i>
                         </button>
-                    </td>
-                </tr>
-            `).join('');
+                    `;
+                    break;
+                default:
+                    value = escapeHtml(stmt[col.source] || '-');
+            }
+
+            return `<td ${classes}>${value}</td>`;
         }
 
         function viewTransactions(statementId) {
@@ -513,6 +678,53 @@
 
             toast.addEventListener('hidden.bs.toast', () => toast.remove());
         }
+
+        // Online users tracking
+        let onlineUsersInterval = null;
+        let onlineUsersTooltip = null;
+
+        async function initOnlineUsersTracking() {
+            await sendHeartbeat();
+            await updateOnlineUsersCount();
+            setInterval(sendHeartbeat, 60000);
+            onlineUsersInterval = setInterval(updateOnlineUsersCount, 30000);
+        }
+
+        async function sendHeartbeat() {
+            try {
+                await fetch('/api/heartbeat', { method: 'POST' });
+            } catch (e) {
+                console.error('Heartbeat failed:', e);
+            }
+        }
+
+        async function updateOnlineUsersCount() {
+            try {
+                const res = await fetch('/api/online-users');
+                const data = await res.json();
+                const countEl = document.getElementById('onlineUsersCount');
+                const indicatorEl = document.getElementById('onlineUsersIndicator');
+                if (countEl) {
+                    countEl.textContent = data.count;
+                    if (indicatorEl && data.users) {
+                        if (!onlineUsersTooltip) {
+                            onlineUsersTooltip = new bootstrap.Tooltip(indicatorEl);
+                        }
+                        let tooltipContent = '<strong>Online Users:</strong>';
+                        if (data.users.length > 0) {
+                            tooltipContent += '<br>' + data.users.map(u => u.name).join('<br>');
+                        } else {
+                            tooltipContent += '<br><em>No users online</em>';
+                        }
+                        indicatorEl.setAttribute('data-bs-original-title', tooltipContent);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to get online users:', e);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', initOnlineUsersTracking);
     </script>
 </body>
 </html>
