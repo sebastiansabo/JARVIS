@@ -335,6 +335,27 @@ def api_change_password():
     return jsonify({'success': True, 'message': 'Password changed successfully'})
 
 
+@app.route('/api/auth/update-profile', methods=['POST'])
+@login_required
+def api_update_profile():
+    """Update current user's profile (name, phone)."""
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    phone = data.get('phone', '').strip() or None
+
+    if not name:
+        return jsonify({'success': False, 'error': 'Name is required'}), 400
+
+    if len(name) < 2:
+        return jsonify({'success': False, 'error': 'Name must be at least 2 characters'}), 400
+
+    # Update user profile
+    update_user(current_user.id, name=name, phone=phone)
+    log_event('profile_updated', f'User updated their profile: name={name}')
+
+    return jsonify({'success': True, 'message': 'Profile updated successfully', 'name': name})
+
+
 @app.route('/api/users/<int:user_id>/set-password', methods=['POST'])
 @login_required
 def api_set_user_password(user_id):
@@ -1293,14 +1314,29 @@ def api_update_invoice_drive_link(invoice_id):
 @app.route('/api/db/search')
 @login_required
 def api_db_search():
-    """Search invoices by supplier or invoice number."""
+    """Search invoices by supplier or invoice number, respecting active filters."""
     if not current_user.can_view_invoices:
         return jsonify({'error': 'You do not have permission to view invoices'}), 403
 
     query = request.args.get('q', '')
     if len(query) < 2:
         return jsonify([])
-    results = search_invoices(query)
+
+    # Get filter parameters
+    filters = {
+        'company': request.args.get('company'),
+        'department': request.args.get('department'),
+        'subdepartment': request.args.get('subdepartment'),
+        'brand': request.args.get('brand'),
+        'status': request.args.get('status'),
+        'payment_status': request.args.get('payment_status'),
+        'start_date': request.args.get('start_date'),
+        'end_date': request.args.get('end_date'),
+    }
+    # Remove None values
+    filters = {k: v for k, v in filters.items() if v}
+
+    results = search_invoices(query, filters)
     return jsonify(results)
 
 
@@ -2069,6 +2105,37 @@ def api_delete_responsable(responsable_id):
     return jsonify({'success': False, 'error': 'Responsable not found'}), 404
 
 
+# Employees API endpoints (aliases for responsables - platform consistency)
+@app.route('/api/employees', methods=['GET'])
+def api_get_employees():
+    """Get all employees (alias for responsables)."""
+    return api_get_responsables()
+
+
+@app.route('/api/employees/<int:employee_id>', methods=['GET'])
+def api_get_employee(employee_id):
+    """Get a specific employee (alias for responsables)."""
+    return api_get_responsable(employee_id)
+
+
+@app.route('/api/employees', methods=['POST'])
+def api_create_employee():
+    """Create a new employee (alias for responsables)."""
+    return api_create_responsable()
+
+
+@app.route('/api/employees/<int:employee_id>', methods=['PUT'])
+def api_update_employee(employee_id):
+    """Update an employee (alias for responsables)."""
+    return api_update_responsable(employee_id)
+
+
+@app.route('/api/employees/<int:employee_id>', methods=['DELETE'])
+def api_delete_employee(employee_id):
+    """Delete an employee (alias for responsables)."""
+    return api_delete_responsable(employee_id)
+
+
 # VAT Rates API endpoints
 @app.route('/api/vat-rates', methods=['GET'])
 def api_get_vat_rates():
@@ -2154,6 +2221,7 @@ def api_add_dropdown_option():
             value=data['value'],
             label=data['label'],
             color=data.get('color'),
+            opacity=data.get('opacity', 0.7),
             sort_order=data.get('sort_order', 0),
             is_active=data.get('is_active', True)
         )
@@ -2176,6 +2244,7 @@ def api_update_dropdown_option(option_id):
             value=data.get('value'),
             label=data.get('label'),
             color=data.get('color'),
+            opacity=data.get('opacity'),
             sort_order=data.get('sort_order'),
             is_active=data.get('is_active')
         )

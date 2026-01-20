@@ -852,12 +852,14 @@ def init_db():
             ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'add', 'Add', 'Create new employees', FALSE, 2),
             ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'edit', 'Edit', 'Modify employee data', TRUE, 3),
             ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'delete', 'Delete', 'Remove employees', FALSE, 4),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Event Bonuses', 'view', 'View', 'View event bonuses', TRUE, 5),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Event Bonuses', 'view_amounts', 'View Amounts', 'View bonus amounts (HR Manager)', FALSE, 6),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Event Bonuses', 'edit', 'Edit', 'Modify bonuses', TRUE, 7),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Event Bonuses', 'export', 'Export', 'Export bonus data', FALSE, 8),
-            ('hr', 'HR', 'bi-people-fill', 'payroll', 'Payroll', 'view', 'View', 'View payroll data', TRUE, 9),
-            ('hr', 'HR', 'bi-people-fill', 'payroll', 'Payroll', 'edit', 'Edit', 'Modify payroll', FALSE, 10)
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Events', 'view', 'View', 'View events', TRUE, 5),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Events', 'view_amounts', 'View Amounts', 'View bonus amounts (HR Manager)', FALSE, 6),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Events', 'add_event', 'Add Event', 'Create new events', FALSE, 7),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Events', 'add_bonus', 'Add Bonus', 'Create new bonuses', FALSE, 8),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Events', 'edit', 'Edit', 'Modify events', TRUE, 9),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Events', 'export', 'Export', 'Export event data', FALSE, 10),
+            ('hr', 'HR', 'bi-people-fill', 'payroll', 'Payroll', 'view', 'View', 'View payroll data', TRUE, 11),
+            ('hr', 'HR', 'bi-people-fill', 'payroll', 'Payroll', 'edit', 'Edit', 'Modify payroll', FALSE, 12)
         ''')
 
         # Set default permissions for existing roles
@@ -1094,6 +1096,7 @@ def init_db():
             value TEXT NOT NULL,
             label TEXT NOT NULL,
             color TEXT DEFAULT NULL,
+            opacity REAL DEFAULT 0.7,
             sort_order INTEGER DEFAULT 0,
             is_active BOOLEAN DEFAULT TRUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1112,18 +1115,29 @@ def init_db():
         END $$;
     ''')
 
+    # Add opacity column if it doesn't exist (for existing databases)
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'dropdown_options' AND column_name = 'opacity') THEN
+                ALTER TABLE dropdown_options ADD COLUMN opacity REAL DEFAULT 0.7;
+            END IF;
+        END $$;
+    ''')
+
     # Insert default dropdown options if table is empty
     cursor.execute('SELECT COUNT(*) as cnt FROM dropdown_options')
     if cursor.fetchone()['cnt'] == 0:
         cursor.execute('''
-            INSERT INTO dropdown_options (dropdown_type, value, label, color, sort_order, is_active)
+            INSERT INTO dropdown_options (dropdown_type, value, label, color, opacity, sort_order, is_active)
             VALUES
-                ('invoice_status', 'new', 'New', '#0d6efd', 1, TRUE),
-                ('invoice_status', 'processed', 'Processed', '#198754', 2, TRUE),
-                ('invoice_status', 'incomplete', 'Incomplete', '#ffc107', 3, TRUE),
-                ('invoice_status', 'eronata', 'Eronata', '#dc3545', 4, TRUE),
-                ('payment_status', 'not_paid', 'Not Paid', '#dc3545', 1, TRUE),
-                ('payment_status', 'paid', 'Paid', '#198754', 2, TRUE)
+                ('invoice_status', 'new', 'New', '#0d6efd', 0.7, 1, TRUE),
+                ('invoice_status', 'processed', 'Processed', '#198754', 0.7, 2, TRUE),
+                ('invoice_status', 'incomplete', 'Incomplete', '#ffc107', 0.7, 3, TRUE),
+                ('invoice_status', 'eronata', 'Eronata', '#dc3545', 0.7, 4, TRUE),
+                ('payment_status', 'not_paid', 'Not Paid', '#dc3545', 0.7, 1, TRUE),
+                ('payment_status', 'paid', 'Paid', '#198754', 0.7, 2, TRUE)
         ''')
 
     # Theme settings table - global theme configuration for Jarvis
@@ -1420,7 +1434,7 @@ def init_db():
         )
     ''')
 
-    # HR Event Bonuses table - individual bonus records
+    # HR Events table - individual bonus records
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS hr.event_bonuses (
             id SERIAL PRIMARY KEY,
@@ -1435,10 +1449,55 @@ def init_db():
             bonus_net NUMERIC(10,2),
             details TEXT,
             allocation_month TEXT,
+            bonus_type_id INTEGER,
             created_by INTEGER REFERENCES public.users(id) ON DELETE SET NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+    ''')
+
+    # HR Bonus Types table - configurable bonus rates
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS hr.bonus_types (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            amount NUMERIC(10,2) NOT NULL,
+            days_per_amount NUMERIC(5,2) DEFAULT 1,
+            description TEXT,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Add bonus_type_id column if not exists (migration for existing databases)
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_schema = 'hr' AND table_name = 'event_bonuses'
+                          AND column_name = 'bonus_type_id') THEN
+                ALTER TABLE hr.event_bonuses ADD COLUMN bonus_type_id INTEGER;
+            END IF;
+        END $$
+    ''')
+
+    # Migration: Rename amount_per_day to amount and add days_per_amount (for existing databases)
+    cursor.execute('''
+        DO $$
+        BEGIN
+            -- Rename amount_per_day to amount if old column exists
+            IF EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_schema = 'hr' AND table_name = 'bonus_types'
+                      AND column_name = 'amount_per_day') THEN
+                ALTER TABLE hr.bonus_types RENAME COLUMN amount_per_day TO amount;
+            END IF;
+            -- Add days_per_amount column if not exists
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_schema = 'hr' AND table_name = 'bonus_types'
+                          AND column_name = 'days_per_amount') THEN
+                ALTER TABLE hr.bonus_types ADD COLUMN days_per_amount NUMERIC(5,2) DEFAULT 1;
+            END IF;
+        END $$
     ''')
 
     # HR indexes
@@ -2666,15 +2725,21 @@ def check_invoice_number_exists(invoice_number: str, exclude_id: int = None) -> 
     return {'exists': False, 'invoice': None}
 
 
-def search_invoices(query: str) -> list[dict]:
+def search_invoices(query: str, filters: dict = None) -> list[dict]:
     """Search invoices by supplier, invoice number, or value (Elasticsearch-like).
 
     Splits query into words and matches ALL words against supplier OR invoice_number OR invoice_value.
     Each word can match anywhere in the fields (partial matching).
     Case-insensitive. Numeric values are matched against invoice_value.
+
+    Args:
+        query: Search text
+        filters: Optional dict with filter params (company, department, subdepartment, brand,
+                 status, payment_status, start_date, end_date)
     """
     conn = get_db()
     cursor = get_cursor(conn)
+    filters = filters or {}
 
     # Split query into words and filter empty strings
     words = [w.strip() for w in query.split() if w.strip()]
@@ -2692,8 +2757,8 @@ def search_invoices(query: str) -> list[dict]:
         except ValueError:
             return None
 
-    # Build WHERE clause: each word must match somewhere in supplier OR invoice_number OR invoice_value
-    conditions = []
+    # Build search conditions: each word must match somewhere in supplier OR invoice_number OR invoice_value
+    search_conditions = []
     params = []
     for word in words:
         term = f'%{word}%'
@@ -2701,18 +2766,79 @@ def search_invoices(query: str) -> list[dict]:
         numeric_val = parse_numeric(word)
         if numeric_val is not None:
             # Match against text fields OR exact/approximate value match
-            conditions.append('(supplier ILIKE %s OR invoice_number ILIKE %s OR ABS(invoice_value - %s) < 0.01)')
+            search_conditions.append('(i.supplier ILIKE %s OR i.invoice_number ILIKE %s OR ABS(i.invoice_value - %s) < 0.01)')
             params.extend([term, term, numeric_val])
         else:
-            conditions.append('(supplier ILIKE %s OR invoice_number ILIKE %s)')
+            search_conditions.append('(i.supplier ILIKE %s OR i.invoice_number ILIKE %s)')
             params.extend([term, term])
 
-    where_clause = ' AND '.join(conditions)
+    # Build base query
+    company = filters.get('company')
+    department = filters.get('department')
+    subdepartment = filters.get('subdepartment')
+    brand = filters.get('brand')
+
+    # If any allocation filter is set, join with allocations table
+    if company or department or subdepartment or brand:
+        base_query = '''
+            SELECT DISTINCT i.*
+            FROM invoices i
+            JOIN allocations a ON a.invoice_id = i.id
+        '''
+    else:
+        base_query = '''
+            SELECT DISTINCT i.*
+            FROM invoices i
+        '''
+
+    # Build filter conditions
+    filter_conditions = ['i.deleted_at IS NULL']  # Always exclude deleted invoices
+
+    if company:
+        filter_conditions.append('a.company = %s')
+        params.append(company)
+    if department:
+        filter_conditions.append('a.department = %s')
+        params.append(department)
+    if subdepartment:
+        filter_conditions.append('a.subdepartment = %s')
+        params.append(subdepartment)
+    if brand:
+        filter_conditions.append('a.brand = %s')
+        params.append(brand)
+
+    # Date filters
+    start_date = filters.get('start_date')
+    end_date = filters.get('end_date')
+    if start_date:
+        filter_conditions.append('i.invoice_date >= %s')
+        params.append(start_date)
+    if end_date:
+        filter_conditions.append('i.invoice_date <= %s')
+        params.append(end_date)
+
+    # Status filters
+    status = filters.get('status')
+    payment_status = filters.get('payment_status')
+    if status:
+        filter_conditions.append('i.status = %s')
+        params.append(status)
+    if payment_status:
+        filter_conditions.append('i.payment_status = %s')
+        params.append(payment_status)
+
+    # Combine search conditions with filter conditions
+    # Search conditions come first (they use the initial params), filter conditions come after
+    all_conditions = search_conditions + filter_conditions
+
+    # Reorder params: search params first, then filter params
+    # But we already built params in this order, so just join conditions
+    where_clause = ' AND '.join(all_conditions)
 
     cursor.execute(f'''
-        SELECT * FROM invoices
+        {base_query}
         WHERE {where_clause}
-        ORDER BY created_at DESC
+        ORDER BY i.created_at DESC
         LIMIT 50
     ''', params)
 
@@ -4472,16 +4598,16 @@ def get_dropdown_option(option_id: int) -> Optional[dict]:
 
 
 def add_dropdown_option(dropdown_type: str, value: str, label: str,
-                        color: str = None, sort_order: int = 0, is_active: bool = True) -> int:
+                        color: str = None, opacity: float = 0.7, sort_order: int = 0, is_active: bool = True) -> int:
     """Add a new dropdown option. Returns the new option ID."""
     conn = get_db()
     cursor = get_cursor(conn)
 
     cursor.execute('''
-        INSERT INTO dropdown_options (dropdown_type, value, label, color, sort_order, is_active)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO dropdown_options (dropdown_type, value, label, color, opacity, sort_order, is_active)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         RETURNING id
-    ''', (dropdown_type, value, label, color, sort_order, is_active))
+    ''', (dropdown_type, value, label, color, opacity, sort_order, is_active))
 
     option_id = cursor.fetchone()['id']
     conn.commit()
@@ -4490,7 +4616,7 @@ def add_dropdown_option(dropdown_type: str, value: str, label: str,
 
 
 def update_dropdown_option(option_id: int, value: str = None, label: str = None,
-                           color: str = None, sort_order: int = None, is_active: bool = None) -> bool:
+                           color: str = None, opacity: float = None, sort_order: int = None, is_active: bool = None) -> bool:
     """Update a dropdown option. Returns True if updated."""
     conn = get_db()
     cursor = get_cursor(conn)
@@ -4507,6 +4633,9 @@ def update_dropdown_option(option_id: int, value: str = None, label: str = None,
     if color is not None:
         updates.append('color = %s')
         params.append(color)
+    if opacity is not None:
+        updates.append('opacity = %s')
+        params.append(opacity)
     if sort_order is not None:
         updates.append('sort_order = %s')
         params.append(sort_order)

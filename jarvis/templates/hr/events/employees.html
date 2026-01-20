@@ -29,10 +29,13 @@
                     <i class="bi bi-moon-fill"></i>
                 </div>
                 <a href="{{ url_for('hr.events.event_bonuses') }}" class="btn btn-outline-light btn-sm">
-                    <i class="bi bi-gift"></i> Event Bonuses
+                    <i class="bi bi-gift"></i> Events
                 </a>
                 <a href="{{ url_for('hr.events.events') }}" class="btn btn-outline-light btn-sm">
-                    <i class="bi bi-calendar-event"></i> Events
+                    <i class="bi bi-calendar-event"></i> Manage Events
+                </a>
+                <a href="{{ url_for('hr.events.settings') }}#structure" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-diagram-3"></i> Structure
                 </a>
                 <div class="dropdown">
                     <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
@@ -167,14 +170,6 @@
                             <label class="form-label">Department</label>
                             <select id="employeeDepartment" class="form-select">
                                 <option value="">Select Department</option>
-                                <option value="Sales">Sales</option>
-                                <option value="Aftersales">Aftersales</option>
-                                <option value="Marketing">Marketing</option>
-                                <option value="MKT">MKT</option>
-                                <option value="Logistica">Logistica</option>
-                                <option value="HR">HR</option>
-                                <option value="Contabilitate">Contabilitate</option>
-                                <option value="Administrativ">Administrativ</option>
                             </select>
                         </div>
                         <div class="mb-3">
@@ -240,11 +235,37 @@
 
                 document.getElementById('employeeName').value = emp.name;
                 document.getElementById('employeeCompany').value = emp.company || '';
-                document.getElementById('employeeBrand').value = emp.brand || '';
-                document.getElementById('employeeDepartment').value = emp.department || '';
                 document.getElementById('employeeUserId').value = emp.user_id || '';
                 document.getElementById('employeeIsActive').checked = emp.is_active;
                 document.getElementById('activeCheckContainer').style.display = 'block';
+
+                // Load brands and departments for the company, then set values
+                const brandSelect = document.getElementById('employeeBrand');
+                const departmentSelect = document.getElementById('employeeDepartment');
+                brandSelect.innerHTML = '<option value="">Select Brand</option>';
+                departmentSelect.innerHTML = '<option value="">Select Department</option>';
+
+                if (emp.company) {
+                    const [brandsResp, deptsResp] = await Promise.all([
+                        fetch(`/hr/events/api/structure/brands/${encodeURIComponent(emp.company)}`),
+                        fetch(`/hr/events/api/structure/departments/${encodeURIComponent(emp.company)}`)
+                    ]);
+
+                    const brands = await brandsResp.json();
+                    const departments = await deptsResp.json();
+
+                    brands.forEach(b => {
+                        if (b) brandSelect.innerHTML += `<option value="${b}">${b}</option>`;
+                    });
+
+                    departments.forEach(d => {
+                        if (d) departmentSelect.innerHTML += `<option value="${d}">${d}</option>`;
+                    });
+                }
+
+                // Now set the values after options are loaded
+                brandSelect.value = emp.brand || '';
+                departmentSelect.value = emp.department || '';
 
                 employeeModal.show();
             });
@@ -302,17 +323,31 @@
             });
         });
 
-        // Company change - load brands
+        // Company change - load brands and departments
         document.getElementById('employeeCompany').addEventListener('change', async (e) => {
             const company = e.target.value;
             const brandSelect = document.getElementById('employeeBrand');
+            const departmentSelect = document.getElementById('employeeDepartment');
+
             brandSelect.innerHTML = '<option value="">Select Brand</option>';
+            departmentSelect.innerHTML = '<option value="">Select Department</option>';
 
             if (company) {
-                const resp = await fetch(`/hr/events/api/structure/brands/${encodeURIComponent(company)}`);
-                const brands = await resp.json();
+                // Load brands and departments in parallel
+                const [brandsResp, deptsResp] = await Promise.all([
+                    fetch(`/hr/events/api/structure/brands/${encodeURIComponent(company)}`),
+                    fetch(`/hr/events/api/structure/departments/${encodeURIComponent(company)}`)
+                ]);
+
+                const brands = await brandsResp.json();
+                const departments = await deptsResp.json();
+
                 brands.forEach(b => {
                     if (b) brandSelect.innerHTML += `<option value="${b}">${b}</option>`;
+                });
+
+                departments.forEach(d => {
+                    if (d) departmentSelect.innerHTML += `<option value="${d}">${d}</option>`;
                 });
             }
         });

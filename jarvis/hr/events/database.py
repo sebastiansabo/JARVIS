@@ -158,7 +158,7 @@ def delete_hr_event(event_id):
     release_db(conn)
 
 
-# ============== HR Event Bonuses ==============
+# ============== HR Events ==============
 
 def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None):
     """Get event bonuses with optional filters."""
@@ -360,3 +360,70 @@ def get_bonuses_by_employee(year=None, month=None):
     rows = cursor.fetchall()
     release_db(conn)
     return [dict_from_row(row) for row in rows]
+
+
+# ============== HR Bonus Types ==============
+
+def get_all_bonus_types(active_only=True):
+    """Get all bonus types."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    query = 'SELECT * FROM hr.bonus_types'
+    if active_only:
+        query += ' WHERE is_active = TRUE'
+    query += ' ORDER BY name'
+
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    release_db(conn)
+    return [dict_from_row(row) for row in rows]
+
+
+def get_bonus_type(bonus_type_id):
+    """Get a single bonus type by ID."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+    cursor.execute('SELECT * FROM hr.bonus_types WHERE id = %s', (bonus_type_id,))
+    row = cursor.fetchone()
+    release_db(conn)
+    return dict_from_row(row)
+
+
+def save_bonus_type(name, amount, days_per_amount=1, description=None):
+    """Create a new bonus type."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+    cursor.execute('''
+        INSERT INTO hr.bonus_types (name, amount, days_per_amount, description)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id
+    ''', (name, amount, days_per_amount, description))
+    bonus_type_id = cursor.fetchone()['id']
+    conn.commit()
+    release_db(conn)
+    return bonus_type_id
+
+
+def update_bonus_type(bonus_type_id, name, amount, days_per_amount=1, description=None, is_active=True):
+    """Update a bonus type."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+    cursor.execute('''
+        UPDATE hr.bonus_types
+        SET name = %s, amount = %s, days_per_amount = %s, description = %s, is_active = %s
+        WHERE id = %s
+    ''', (name, amount, days_per_amount, description, is_active, bonus_type_id))
+    conn.commit()
+    release_db(conn)
+
+
+def delete_bonus_type(bonus_type_id):
+    """Soft delete a bonus type (set is_active = FALSE)."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+    cursor.execute('''
+        UPDATE hr.bonus_types SET is_active = FALSE WHERE id = %s
+    ''', (bonus_type_id,))
+    conn.commit()
+    release_db(conn)

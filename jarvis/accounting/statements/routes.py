@@ -689,8 +689,20 @@ def bulk_update_transaction_status():
 @statements_bp.route('/api/summary', methods=['GET'])
 @api_login_required
 def transactions_summary():
-    """Get summary statistics for transactions."""
-    summary = get_transaction_summary()
+    """Get summary statistics for transactions.
+
+    Query params (for cascading filters):
+        - company_cui: Filter suppliers by company
+        - supplier: Filter companies by supplier
+        - date_from: Filter by date range start
+        - date_to: Filter by date range end
+    """
+    summary = get_transaction_summary(
+        company_cui=request.args.get('company_cui'),
+        supplier=request.args.get('supplier'),
+        date_from=request.args.get('date_from'),
+        date_to=request.args.get('date_to')
+    )
     return jsonify({
         'success': True,
         'summary': summary

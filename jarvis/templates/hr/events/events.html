@@ -29,10 +29,13 @@
                     <i class="bi bi-moon-fill"></i>
                 </div>
                 <a href="{{ url_for('hr.events.event_bonuses') }}" class="btn btn-outline-light btn-sm">
-                    <i class="bi bi-gift"></i> Event Bonuses
+                    <i class="bi bi-gift"></i> Events
                 </a>
                 <a href="{{ url_for('hr.events.employees') }}" class="btn btn-outline-light btn-sm">
                     <i class="bi bi-person-badge"></i> Employees
+                </a>
+                <a href="{{ url_for('hr.events.settings') }}#structure" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-diagram-3"></i> Structure
                 </a>
                 <div class="dropdown">
                     <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
@@ -68,9 +71,9 @@
                 <div class="d-flex gap-2 align-items-center">
                     <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Search events..." style="width: 250px;">
                 </div>
-                <button id="btnAddEvent" class="btn btn-hr btn-sm" data-bs-toggle="modal" data-bs-target="#eventModal">
+                <a href="{{ url_for('hr.events.add_event') }}" class="btn btn-hr btn-sm">
                     <i class="bi bi-plus-lg"></i> Add Event
-                </button>
+                </a>
             </div>
 
             <div class="table-responsive">
@@ -187,12 +190,6 @@
             });
         });
 
-        // Add event button
-        document.getElementById('btnAddEvent').addEventListener('click', () => {
-            editingEventId = null;
-            document.getElementById('eventModalTitle').textContent = 'Add Event';
-            document.getElementById('eventForm').reset();
-        });
 
         // Edit buttons
         document.querySelectorAll('.btn-edit').forEach(btn => {

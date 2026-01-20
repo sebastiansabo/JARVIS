@@ -55,7 +55,10 @@
                         <li><span class="dropdown-item-text text-muted small">{{ current_user.email }}</span></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="/guide"><i class="bi bi-book"></i> User Guide</a></li>
-                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#changePasswordModal"><i class="bi bi-key"></i> Change Password</a></li>
+                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#editProfileModal"><i class="bi bi-person"></i> Edit Profile</a></li>
+                        {% if current_user.can_access_settings %}
+                        <li><a class="dropdown-item" href="/settings"><i class="bi bi-gear"></i> Jarvis Settings</a></li>
+                        {% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
                     </ul>
@@ -181,18 +184,14 @@
                     <label class="form-label small mb-0">Status</label>
                     <select class="form-select form-select-sm" id="statusFilter">
                         <option value="">All</option>
-                        <option value="new">New</option>
-                        <option value="processed">Processed</option>
-                        <option value="incomplete">Incomplete</option>
-                        <option value="eronata">Eronata</option>
+                        <!-- Populated dynamically from dropdown_options -->
                     </select>
                 </div>
                 <div class="col-auto">
                     <label class="form-label small mb-0">Payment</label>
                     <select class="form-select form-select-sm" id="paymentFilter">
                         <option value="">All</option>
-                        <option value="not_paid">Not Paid</option>
-                        <option value="paid">Paid</option>
+                        <!-- Populated dynamically from dropdown_options -->
                     </select>
                 </div>
                 <div class="col">
@@ -293,10 +292,7 @@
                             <div class="d-flex gap-2 align-items-center">
                                 <select class="form-select form-select-sm" id="bulkStatusChange" onchange="bulkChangeStatus(this.value)" style="width: auto;">
                                     <option value="">Change Status...</option>
-                                    <option value="new">New</option>
-                                    <option value="processed">Processed</option>
-                                    <option value="incomplete">Incomplete</option>
-                                    <option value="eronata">Eronata</option>
+                                    <!-- Populated dynamically from dropdown_options -->
                                 </select>
                                 <button class="btn btn-outline-success btn-sm" onclick="exportSelectedToCSV()">
                                     <i class="bi bi-download"></i> Export CSV
@@ -863,9 +859,7 @@
                             <div class="col-md-2 mb-3">
                                 <label class="form-label">Status</label>
                                 <select class="form-select" id="editStatus">
-                                    <option value="new">New</option>
-                                    <option value="processed">Processed</option>
-                                    <option value="incomplete">Incomplete</option>
+                                    <!-- Populated dynamically from dropdown_options -->
                                 </select>
                             </div>
                         </div>
@@ -873,8 +867,7 @@
                             <div class="col-md-4 mb-3">
                                 <label class="form-label">Payment Status</label>
                                 <select class="form-select" id="editPaymentStatus">
-                                    <option value="not_paid">Not Paid</option>
-                                    <option value="paid">Paid</option>
+                                    <!-- Populated dynamically from dropdown_options -->
                                 </select>
                             </div>
                             <div class="col-md-2 mb-3">
@@ -1002,6 +995,161 @@
         let invoicesWithAllocations = {}; // Cache for full invoice data
         let currentInvoiceId = null;
 
+        // Dynamic dropdown options from settings
+        let invoiceStatusOptions = [];
+        let paymentStatusOptions = [];
+
+        // Set CSS variables for status colors (used by theme.css for row coloring)
+        function setStatusColorCssVariables(options) {
+            options.forEach(opt => {
+                if (opt.color && opt.value) {
+                    // Convert hex color to rgba with configurable opacity from settings
+                    const hex = opt.color.replace('#', '');
+                    const r = parseInt(hex.substring(0, 2), 16);
+                    const g = parseInt(hex.substring(2, 4), 16);
+                    const b = parseInt(hex.substring(4, 6), 16);
+                    const opacity = opt.opacity ?? 0.7; // Use configurable opacity, default to 0.7
+                    const rgbaColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                    document.documentElement.style.setProperty(`--status-color-${opt.value}`, rgbaColor);
+                }
+            });
+        }
+
+        // Set CSS variables for payment status colors (used for dropdown coloring)
+        function setPaymentColorCssVariables(options) {
+            options.forEach(opt => {
+                if (opt.color && opt.value) {
+                    // Payment status uses full color (no transparency) for dropdown background
+                    document.documentElement.style.setProperty(`--payment-color-${opt.value}`, opt.color);
+                }
+            });
+        }
+
+        // Load dropdown options from API
+        async function loadDropdownOptions() {
+            try {
+                const res = await fetch('/api/dropdown-options');
+                const data = await res.json();
+
+                // Store options for invoice_status and payment_status
+                invoiceStatusOptions = data.filter(opt => opt.dropdown_type === 'invoice_status');
+                paymentStatusOptions = data.filter(opt => opt.dropdown_type === 'payment_status');
+
+                // Set CSS variables for status row colors (used by theme.css)
+                setStatusColorCssVariables(invoiceStatusOptions);
+                // Set CSS variables for payment status dropdown colors
+                setPaymentColorCssVariables(paymentStatusOptions);
+
+                // Populate filter dropdowns
+                populateDropdown('statusFilter', invoiceStatusOptions, true);
+                populateDropdown('paymentFilter', paymentStatusOptions, true);
+
+                // Populate edit modal dropdowns
+                populateDropdown('editStatus', invoiceStatusOptions, false);
+                populateDropdown('editPaymentStatus', paymentStatusOptions, false);
+
+                // Populate bulk status dropdown
+                populateBulkStatusDropdown();
+            } catch (err) {
+                console.error('Failed to load dropdown options:', err);
+            }
+        }
+
+        // Populate a dropdown with options
+        function populateDropdown(elementId, options, includeAll) {
+            const select = document.getElementById(elementId);
+            if (!select) return;
+
+            select.innerHTML = '';
+            if (includeAll) {
+                select.innerHTML = '<option value="">All</option>';
+            }
+            options.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt.value;
+                option.textContent = opt.label;
+                select.appendChild(option);
+            });
+        }
+
+        // Populate bulk status dropdown
+        function populateBulkStatusDropdown() {
+            const select = document.getElementById('bulkStatusChange');
+            if (!select) return;
+
+            select.innerHTML = '<option value="">Change Status...</option>';
+            invoiceStatusOptions.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt.value;
+                option.textContent = opt.label;
+                select.appendChild(option);
+            });
+        }
+
+        // Generate status dropdown HTML for inline editing
+        function getStatusDropdownHtml(invoiceId, currentStatus) {
+            currentStatus = currentStatus || invoiceStatusOptions[0]?.value || 'new';
+            let html = `<select class="form-select form-select-sm status-dropdown"
+                        data-invoice-id="${invoiceId}"
+                        onchange="updateInvoiceStatus(${invoiceId}, this.value)"
+                        style="width: auto; min-width: 110px; padding: 2px 24px 2px 8px; font-size: 0.8em;">`;
+            invoiceStatusOptions.forEach(opt => {
+                html += `<option value="${opt.value}" ${currentStatus === opt.value ? 'selected' : ''}>${opt.label}</option>`;
+            });
+            html += '</select>';
+            return html;
+        }
+
+        // Generate payment status dropdown HTML for inline editing
+        function getPaymentStatusDropdownHtml(invoiceId, currentPaymentStatus) {
+            currentPaymentStatus = currentPaymentStatus || paymentStatusOptions[0]?.value || 'not_paid';
+            // Get current option's color for styling
+            const currentOpt = paymentStatusOptions.find(o => o.value === currentPaymentStatus);
+            const bgColor = currentOpt?.color ? `var(--payment-color-${currentPaymentStatus}, ${currentOpt.color})` : '';
+            const style = bgColor ? `background-color: ${bgColor}; color: #fff; font-weight: 500;` : '';
+            let html = `<select class="form-select form-select-sm payment-status-dropdown"
+                        data-invoice-id="${invoiceId}"
+                        data-payment-status="${currentPaymentStatus}"
+                        onchange="updatePaymentStatus(${invoiceId}, this.value)"
+                        style="width: auto; min-width: 100px; padding: 2px 24px 2px 8px; font-size: 0.8em; ${style}">`;
+            paymentStatusOptions.forEach(opt => {
+                html += `<option value="${opt.value}" ${currentPaymentStatus === opt.value ? 'selected' : ''}>${opt.label}</option>`;
+            });
+            html += '</select>';
+            return html;
+        }
+
+        // Generate modal status dropdown HTML
+        function getModalStatusDropdownHtml(invoiceId, currentStatus) {
+            currentStatus = currentStatus || invoiceStatusOptions[0]?.value || 'new';
+            let html = `<select class="form-select form-select-sm" id="modalStatusDropdown"
+                        onchange="updateInvoiceStatus(${invoiceId}, this.value)"
+                        style="width: auto; min-width: 120px;">`;
+            invoiceStatusOptions.forEach(opt => {
+                html += `<option value="${opt.value}" ${currentStatus === opt.value ? 'selected' : ''}>${opt.label}</option>`;
+            });
+            html += '</select>';
+            return html;
+        }
+
+        // Generate modal payment status dropdown HTML
+        function getModalPaymentStatusDropdownHtml(invoiceId, currentPaymentStatus) {
+            currentPaymentStatus = currentPaymentStatus || paymentStatusOptions[0]?.value || 'not_paid';
+            // Get current option's color for styling
+            const currentOpt = paymentStatusOptions.find(o => o.value === currentPaymentStatus);
+            const bgColor = currentOpt?.color ? `var(--payment-color-${currentPaymentStatus}, ${currentOpt.color})` : '';
+            const style = bgColor ? `background-color: ${bgColor}; color: #fff; font-weight: 500;` : '';
+            let html = `<select class="form-select form-select-sm payment-status-dropdown" id="modalPaymentStatusDropdown"
+                        data-payment-status="${currentPaymentStatus}"
+                        onchange="updatePaymentStatus(${invoiceId}, this.value)"
+                        style="width: auto; min-width: 120px; ${style}">`;
+            paymentStatusOptions.forEach(opt => {
+                html += `<option value="${opt.value}" ${currentPaymentStatus === opt.value ? 'selected' : ''}>${opt.label}</option>`;
+            });
+            html += '</select>';
+            return html;
+        }
+
         // Pagination state
         let currentPage = 1;
         let pageSize = parseInt(localStorage.getItem('accountingPageSize') || '50');
@@ -1105,6 +1253,7 @@
             showLoading('Loading dashboard...');
             try {
                 restoreSummaryState();
+                await loadDropdownOptions();
                 await loadColumnConfig();
                 initPagination();
                 initCurrencyToggles();
@@ -2136,7 +2285,29 @@
             }
 
             try {
-                const res = await fetch(`/api/db/search?q=${encodeURIComponent(query)}`);
+                // Build filter params to search within current filter criteria
+                const params = new URLSearchParams();
+                params.append('q', query);
+
+                const company = document.getElementById('companyFilter').value;
+                const department = document.getElementById('departmentFilter').value;
+                const subdepartment = document.getElementById('subdepartmentFilter').value;
+                const brand = document.getElementById('brandFilter').value;
+                const status = document.getElementById('statusFilter').value;
+                const payment = document.getElementById('paymentFilter').value;
+                const startDate = document.getElementById('startDate').value;
+                const endDate = document.getElementById('endDate').value;
+
+                if (company) params.append('company', company);
+                if (department) params.append('department', department);
+                if (subdepartment) params.append('subdepartment', subdepartment);
+                if (brand) params.append('brand', brand);
+                if (status) params.append('status', status);
+                if (payment) params.append('payment_status', payment);
+                if (startDate) params.append('start_date', startDate);
+                if (endDate) params.append('end_date', endDate);
+
+                const res = await fetch(`/api/db/search?${params.toString()}`);
                 const results = await res.json();
                 renderInvoicesTable(results);
             } catch (e) {
@@ -2210,25 +2381,9 @@
                 case 'date':
                     return formatDateRomanian(value) || '-';
                 case 'status':
-                    const currentStatus = value || 'new';
-                    return `<select class="form-select form-select-sm status-dropdown"
-                                data-invoice-id="${inv.id}"
-                                onchange="updateInvoiceStatus(${inv.id}, this.value)"
-                                style="width: auto; min-width: 110px; padding: 2px 24px 2px 8px; font-size: 0.8em;">
-                        <option value="new" ${currentStatus === 'new' ? 'selected' : ''}>New</option>
-                        <option value="processed" ${currentStatus === 'processed' ? 'selected' : ''}>Processed</option>
-                        <option value="incomplete" ${currentStatus === 'incomplete' ? 'selected' : ''}>Incomplete</option>
-                        <option value="eronata" ${currentStatus === 'eronata' ? 'selected' : ''}>Erroneous</option>
-                    </select>`;
+                    return getStatusDropdownHtml(inv.id, value);
                 case 'payment_status':
-                    const currentPaymentStatus = value || 'not_paid';
-                    return `<select class="form-select form-select-sm payment-status-dropdown"
-                                data-invoice-id="${inv.id}"
-                                onchange="updatePaymentStatus(${inv.id}, this.value)"
-                                style="width: auto; min-width: 100px; padding: 2px 24px 2px 8px; font-size: 0.8em;">
-                        <option value="not_paid" ${currentPaymentStatus === 'not_paid' ? 'selected' : ''}>Not Paid</option>
-                        <option value="paid" ${currentPaymentStatus === 'paid' ? 'selected' : ''}>Paid</option>
-                    </select>`;
+                    return getPaymentStatusDropdownHtml(inv.id, value);
                 case 'link':
                     return value ? `<a href="${value}" target="_blank">${value}</a>` : '-';
                 case 'split':
@@ -2496,9 +2651,8 @@
                     const formatted = formatColumnValue(value, col, inv);
                     return `<td>${formatted}</td>`;
                 }).join('');
-                // Add status-based row class (lowercase for CSS matching)
-                const statusClass = inv.status ? `status-row-${inv.status.toLowerCase()}` : 'status-row-new';
-                return `<tr class="${statusClass}">${cells}</tr>`;
+                // Row color applied via CSS using data-status attribute (see theme.css)
+                return `<tr data-status="${inv.status || ''}">${cells}</tr>`;
             }).join('');
 
             // Update pagination UI
@@ -2882,15 +3036,12 @@
                 if (invInList) {
                     invInList.status = newStatus;
                 }
-                // Update row class for status coloring
+                // Update row status attribute (CSS handles color via theme.css)
                 const dropdown = document.querySelector(`select.status-dropdown[data-invoice-id="${invoiceId}"]`);
                 if (dropdown) {
                     const row = dropdown.closest('tr');
                     if (row) {
-                        // Remove existing status classes
-                        row.classList.remove('status-row-new', 'status-row-processed', 'status-row-incomplete', 'status-row-eronata');
-                        // Add new status class (lowercase for CSS matching)
-                        row.classList.add(`status-row-${newStatus.toLowerCase()}`);
+                        row.setAttribute('data-status', newStatus);
                     }
                 }
             } catch (e) {
@@ -2921,6 +3072,21 @@
                 if (invInList) {
                     invInList.payment_status = newStatus;
                 }
+                // Update dropdown color styling
+                const dropdown = document.querySelector(`select.payment-status-dropdown[data-invoice-id="${invoiceId}"]`);
+                if (dropdown) {
+                    dropdown.setAttribute('data-payment-status', newStatus);
+                    const newOpt = paymentStatusOptions.find(o => o.value === newStatus);
+                    if (newOpt?.color) {
+                        dropdown.style.backgroundColor = `var(--payment-color-${newStatus}, ${newOpt.color})`;
+                        dropdown.style.color = '#fff';
+                        dropdown.style.fontWeight = '500';
+                    } else {
+                        dropdown.style.backgroundColor = '';
+                        dropdown.style.color = '';
+                        dropdown.style.fontWeight = '';
+                    }
+                }
             } catch (e) {
                 console.error('Error updating payment status:', e);
                 alert('Error updating payment status');
@@ -2941,25 +3107,8 @@
                 // Cache full invoice data
                 invoicesWithAllocations[id] = invoice;
 
-                const currentStatus = invoice.status || 'new';
-                const statusDropdown = `
-                    <select class="form-select form-select-sm" id="modalStatusDropdown"
-                            onchange="updateInvoiceStatus(${invoice.id}, this.value)"
-                            style="width: auto; min-width: 120px;">
-                        <option value="new" ${currentStatus === 'new' ? 'selected' : ''}>New</option>
-                        <option value="processed" ${currentStatus === 'processed' ? 'selected' : ''}>Processed</option>
-                        <option value="incomplete" ${currentStatus === 'incomplete' ? 'selected' : ''}>Incomplete</option>
-                        <option value="eronata" ${currentStatus === 'eronata' ? 'selected' : ''}>Erroneous</option>
-                    </select>`;
-
-                const currentPaymentStatus = invoice.payment_status || 'not_paid';
-                const paymentStatusDropdown = `
-                    <select class="form-select form-select-sm" id="modalPaymentStatusDropdown"
-                            onchange="updatePaymentStatus(${invoice.id}, this.value)"
-                            style="width: auto; min-width: 120px;">
-                        <option value="not_paid" ${currentPaymentStatus === 'not_paid' ? 'selected' : ''}>Not Paid</option>
-                        <option value="paid" ${currentPaymentStatus === 'paid' ? 'selected' : ''}>Paid</option>
-                    </select>`;
+                const statusDropdown = getModalStatusDropdownHtml(invoice.id, invoice.status);
+                const paymentStatusDropdown = getModalPaymentStatusDropdownHtml(invoice.id, invoice.payment_status);
 
                 const driveButtons = invoice.drive_link
                     ? `<a href="${invoice.drive_link}" target="_blank" class="btn btn-sm btn-outline-success me-1"><i class="bi bi-cloud"></i> View on Drive</a><button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDriveFolder('${invoice.drive_link}')" title="Open Folder"><i class="bi bi-folder2-open"></i></button>`
@@ -4789,6 +4938,138 @@
             </div>
         </div>
     </div>
+
+    <!-- Edit Profile Modal -->
+    <div class="modal fade" id="editProfileModal" tabindex="-1" aria-labelledby="editProfileModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editProfileModalLabel"><i class="bi bi-person"></i> Edit Profile</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Profile Info Section -->
+                    <form id="editProfileForm">
+                        <div class="mb-3">
+                            <label for="profileName" class="form-label">Name</label>
+                            <input type="text" class="form-control" id="profileName" value="{{ current_user.name }}" required minlength="2">
+                        </div>
+                        <div class="mb-3">
+                            <label for="profileEmail" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="profileEmail" value="{{ current_user.email }}" disabled>
+                            <small class="text-muted">Contact an administrator to change your email</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="profilePhone" class="form-label">Phone</label>
+                            <input type="tel" class="form-control" id="profilePhone" value="{{ current_user.phone or '' }}" placeholder="Optional">
+                        </div>
+                    </form>
+                    <div class="d-flex justify-content-end mb-3">
+                        <button type="button" class="btn btn-primary" onclick="updateProfile()">Save Profile</button>
+                    </div>
+
+                    <!-- Change Password Section -->
+                    <hr>
+                    <h6 class="mb-3"><i class="bi bi-key"></i> Change Password</h6>
+                    <form id="changePasswordForm">
+                        <div class="mb-3">
+                            <label for="currentPassword" class="form-label">Current Password</label>
+                            <input type="password" class="form-control" id="currentPassword">
+                        </div>
+                        <div class="mb-3">
+                            <label for="newPassword" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="newPassword" minlength="6">
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label">Confirm New Password</label>
+                            <input type="password" class="form-control" id="confirmPassword" minlength="6">
+                        </div>
+                    </form>
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-warning" onclick="changePassword()">Change Password</button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Edit Profile
+        async function updateProfile() {
+            const name = document.getElementById('profileName').value.trim();
+            const phone = document.getElementById('profilePhone').value.trim();
+
+            if (!name || name.length < 2) {
+                alert('Name must be at least 2 characters');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/auth/update-profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, phone })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    alert('Profile updated successfully');
+                    const userDropdownBtn = document.getElementById('userDropdown');
+                    if (userDropdownBtn) {
+                        userDropdownBtn.innerHTML = '<i class="bi bi-person-circle"></i> ' + result.name;
+                    }
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        // Change Password
+        async function changePassword() {
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                alert('Please fill in all password fields');
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                alert('New passwords do not match');
+                return;
+            }
+
+            if (newPassword.length < 6) {
+                alert('Password must be at least 6 characters');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/auth/change-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        new_password: newPassword
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    alert('Password changed successfully');
+                    document.getElementById('changePasswordForm').reset();
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+    </script>
     <script src="/static/js/theme.js"></script>
 </body>
 </html>

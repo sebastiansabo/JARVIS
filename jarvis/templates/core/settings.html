@@ -41,8 +41,8 @@
                     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
                         <li><span class="dropdown-item-text text-muted small">{{ current_user.email }}</span></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#changePasswordModal"><i class="bi bi-key"></i> Change Password</a></li>
                         <li><a class="dropdown-item" href="/guide"><i class="bi bi-book"></i> User Guide</a></li>
+                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#editProfileModal"><i class="bi bi-person"></i> Edit Profile</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
                     </ul>
@@ -93,17 +93,9 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card bg-info text-white">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="bi bi-person-badge"></i> Responsables</h6>
-                        <h2 id="totalResponsables">0</h2>
-                    </div>
-                </div>
-            </div>
         </div>
 
-        <!-- Tabs for Users, Roles, Responsables, and Notifications -->
+        <!-- Tabs for Users, Roles, and Notifications -->
         <ul class="nav nav-tabs" id="settingsTabs">
             <li class="nav-item">
                 <button class="nav-link active" id="users-tab" data-bs-toggle="tab" data-bs-target="#users" type="button">
@@ -116,33 +108,13 @@
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link" id="responsables-tab" data-bs-toggle="tab" data-bs-target="#responsables" type="button">
-                    <i class="bi bi-person-badge"></i> Responsables
-                </button>
-            </li>
-            <li class="nav-item">
                 <button class="nav-link" id="notifications-tab" data-bs-toggle="tab" data-bs-target="#notifications" type="button">
                     <i class="bi bi-envelope"></i> Notifications
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link" id="company-config-tab" data-bs-toggle="tab" data-bs-target="#company-config" type="button">
-                    <i class="bi bi-building"></i> Company Configuration
-                </button>
-            </li>
-            <li class="nav-item">
-                <button class="nav-link" id="vat-registry-tab" data-bs-toggle="tab" data-bs-target="#vat-registry" type="button">
-                    <i class="bi bi-card-list"></i> VAT Registry
-                </button>
-            </li>
-            <li class="nav-item">
-                <button class="nav-link" id="vat-rates-tab" data-bs-toggle="tab" data-bs-target="#vat-rates" type="button">
-                    <i class="bi bi-percent"></i> VAT Rates
-                </button>
-            </li>
-            <li class="nav-item">
                 <button class="nav-link" id="dropdown-options-tab" data-bs-toggle="tab" data-bs-target="#dropdown-options" type="button">
-                    <i class="bi bi-list-ul"></i> Dropdown Options
+                    <i class="bi bi-calculator"></i> Accounting
                 </button>
             </li>
             <li class="nav-item">
@@ -153,6 +125,11 @@
             <li class="nav-item">
                 <button class="nav-link" id="theme-tab" data-bs-toggle="tab" data-bs-target="#theme-settings" type="button">
                     <i class="bi bi-palette"></i> Theme
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="hr-tab" data-bs-toggle="tab" data-bs-target="#hr-settings" type="button">
+                    <i class="bi bi-people"></i> HR
                 </button>
             </li>
         </ul>
@@ -236,45 +213,6 @@
                                     </table>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Responsables Tab -->
-            <div class="tab-pane fade" id="responsables">
-                <div class="card border-top-0 rounded-top-0">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Invoice Responsables</h5>
-                        <button class="btn btn-primary btn-sm" onclick="showAddResponsableModal()">
-                            <i class="bi bi-person-plus"></i> Add Responsable
-                        </button>
-                    </div>
-                    <div class="card-body">
-                        <p class="text-muted small mb-3">
-                            <i class="bi bi-info-circle"></i> Responsables receive email notifications when invoices are allocated to their departments.
-                        </p>
-                        <div class="table-responsive">
-                            <table class="table table-hover" id="responsablesTable">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Email</th>
-                                        <th>Phone</th>
-                                        <th>Departments</th>
-                                        <th class="text-center">Notify</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="responsablesTableBody">
-                                    <tr class="loading-placeholder"><td colspan="4" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading responsables...</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div id="noResponsablesMessage" class="text-center text-muted py-4" style="display: none;">
-                            <i class="bi bi-person-badge display-4"></i>
-                            <p class="mt-2">No responsables found. Click "Add Responsable" to create one.</p>
                         </div>
                     </div>
                 </div>
@@ -371,170 +309,68 @@
                 </div>
             </div>
 
-            <!-- Company Configuration Tab -->
-            <div class="tab-pane fade" id="company-config">
-                <div class="card border-top-0 rounded-top-0">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-building"></i> Department Structure Configuration</h5>
-                        <button class="btn btn-primary btn-sm" onclick="showAddDepartmentStructureModal()">
-                            <i class="bi bi-plus-circle"></i> Add Department
-                        </button>
-                    </div>
-                    <div class="card-body">
-                        <p class="text-muted small mb-3">
-                            <i class="bi bi-info-circle"></i> Configure the company structure used for invoice allocation. Each entry represents a department allocation option.
-                        </p>
-                        <div class="table-responsive">
-                            <table class="table table-hover" id="departmentStructuresTable">
-                                <thead>
-                                    <tr>
-                                        <th>Company</th>
-                                        <th>Brand</th>
-                                        <th>Department</th>
-                                        <th>Subdepartment</th>
-                                        <th>Manager</th>
-                                        <th>Marketing</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="departmentStructuresTableBody">
-                                    <tr class="loading-placeholder"><td colspan="7" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading structures...</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div id="noDepartmentStructuresMessage" class="text-center text-muted py-4" style="display: none;">
-                            <i class="bi bi-building display-4"></i>
-                            <p class="mt-2">No department structures found. Click "Add Department" to create one.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- VAT Registry Tab -->
-            <div class="tab-pane fade" id="vat-registry">
-                <div class="card border-top-0 rounded-top-0">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-card-list"></i> My Companies (VAT Registry)</h5>
-                    </div>
-                    <div class="card-body">
-                        <p class="text-muted small mb-3">
-                            <i class="bi bi-info-circle"></i> Register your company VAT numbers for automatic matching when parsing invoices. The Customer VAT from invoices will be matched against this registry.
-                        </p>
-                        <div class="table-responsive mb-3">
-                            <table class="table table-hover" id="companiesVatTable">
-                                <thead>
-                                    <tr>
-                                        <th>Company</th>
-                                        <th>Brands</th>
-                                        <th>VAT Number</th>
-                                        <th style="width: 100px;">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="companiesVatTableBody">
-                                    <tr class="loading-placeholder"><td colspan="4" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading companies...</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div id="noCompaniesVatMessage" class="text-center text-muted py-4" style="display: none;">
-                            <i class="bi bi-card-list display-4"></i>
-                            <p class="mt-2">No companies registered. Add a company below.</p>
-                        </div>
-                        <hr>
-                        <h6><i class="bi bi-plus-circle"></i> Add New Company</h6>
-                        <div class="row g-2">
-                            <div class="col-md-4">
-                                <input type="text" class="form-control" id="newCompanyName" placeholder="Company Name">
-                            </div>
-                            <div class="col-md-3">
-                                <input type="text" class="form-control" id="newCompanyBrands" placeholder="Brands (optional)">
-                            </div>
-                            <div class="col-md-3">
-                                <input type="text" class="form-control" id="newCompanyVat" placeholder="VAT Number">
-                            </div>
-                            <div class="col-md-2">
-                                <button class="btn btn-primary w-100" id="addCompanyVatBtn">
-                                    <i class="bi bi-plus"></i> Add
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- VAT Rates Tab -->
-            <div class="tab-pane fade" id="vat-rates">
-                <div class="card border-top-0 rounded-top-0">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-percent"></i> VAT Rates Configuration</h5>
-                    </div>
-                    <div class="card-body">
-                        <p class="text-muted small mb-3">
-                            <i class="bi bi-info-circle"></i> Configure VAT rates for invoice processing. When adding invoices, you can optionally subtract VAT from the invoice value for allocation calculations.
-                        </p>
-                        <div class="table-responsive mb-3">
-                            <table class="table table-hover" id="vatRatesTable">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Rate (%)</th>
-                                        <th>Default</th>
-                                        <th>Active</th>
-                                        <th style="width: 100px;">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="vatRatesTableBody">
-                                    <tr class="loading-placeholder"><td colspan="4" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading VAT rates...</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div id="noVatRatesMessage" class="text-center text-muted py-4" style="display: none;">
-                            <i class="bi bi-percent display-4"></i>
-                            <p class="mt-2">No VAT rates configured. Add a VAT rate below.</p>
-                        </div>
-                        <hr>
-                        <h6><i class="bi bi-plus-circle"></i> Add New VAT Rate</h6>
-                        <div class="row g-2">
-                            <div class="col-md-3">
-                                <input type="text" class="form-control" id="newVatRateName" placeholder="Name (e.g., Standard VAT)">
-                            </div>
-                            <div class="col-md-2">
-                                <div class="input-group">
-                                    <input type="number" class="form-control" id="newVatRateValue" placeholder="Rate" step="0.01" min="0" max="100">
-                                    <span class="input-group-text">%</span>
-                                </div>
-                            </div>
-                            <div class="col-md-2">
-                                <div class="form-check form-switch mt-2">
-                                    <input class="form-check-input" type="checkbox" id="newVatRateDefault">
-                                    <label class="form-check-label" for="newVatRateDefault">Default</label>
-                                </div>
-                            </div>
-                            <div class="col-md-2">
-                                <div class="form-check form-switch mt-2">
-                                    <input class="form-check-input" type="checkbox" id="newVatRateActive" checked>
-                                    <label class="form-check-label" for="newVatRateActive">Active</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <button class="btn btn-primary w-100" id="addVatRateBtn">
-                                    <i class="bi bi-plus"></i> Add VAT Rate
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Dropdown Options Tab -->
+            <!-- Accounting Tab -->
             <div class="tab-pane fade" id="dropdown-options">
                 <div class="card border-top-0 rounded-top-0">
                     <div class="card-header">
-                        <h5 class="mb-0"><i class="bi bi-list-ul"></i> Dropdown Options</h5>
+                        <h5 class="mb-0"><i class="bi bi-calculator"></i> Accounting</h5>
                     </div>
                     <div class="card-body">
-                        <p class="text-muted small mb-3">
-                            <i class="bi bi-info-circle"></i> Configure the dropdown options used in the accounting module (Invoice Status, Payment Status).
-                        </p>
+                        <!-- VAT Rates Section -->
+                        <div class="mb-4">
+                            <h6 class="border-bottom pb-2 mb-3"><i class="bi bi-percent"></i> VAT Rates</h6>
+                            <p class="text-muted small mb-3">
+                                Configure VAT rates for invoice processing. When adding invoices, you can optionally subtract VAT from the invoice value.
+                            </p>
+                            <div class="table-responsive mb-3">
+                                <table class="table table-sm table-hover" id="vatRatesTable">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Rate (%)</th>
+                                            <th>Default</th>
+                                            <th>Active</th>
+                                            <th style="width: 100px;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="vatRatesTableBody">
+                                        <tr class="loading-placeholder"><td colspan="5" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading VAT rates...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div id="noVatRatesMessage" class="text-center text-muted py-4" style="display: none;">
+                                <i class="bi bi-percent display-4"></i>
+                                <p class="mt-2">No VAT rates configured. Add a VAT rate below.</p>
+                            </div>
+                            <div class="row g-2 mt-2">
+                                <div class="col-md-3">
+                                    <input type="text" class="form-control form-control-sm" id="newVatRateName" placeholder="Name (e.g., Standard VAT)">
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" id="newVatRateValue" placeholder="Rate" step="0.01" min="0" max="100">
+                                        <span class="input-group-text">%</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="form-check form-switch mt-1">
+                                        <input class="form-check-input" type="checkbox" id="newVatRateDefault">
+                                        <label class="form-check-label small" for="newVatRateDefault">Default</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="form-check form-switch mt-1">
+                                        <input class="form-check-input" type="checkbox" id="newVatRateActive" checked>
+                                        <label class="form-check-label small" for="newVatRateActive">Active</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <button class="btn btn-primary btn-sm w-100" id="addVatRateBtn">
+                                        <i class="bi bi-plus"></i> Add VAT Rate
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- Invoice Status Options -->
                         <div class="mb-4">
@@ -546,6 +382,7 @@
                                             <th>Value</th>
                                             <th>Label</th>
                                             <th>Color</th>
+                                            <th>Opacity</th>
                                             <th>Order</th>
                                             <th>Active</th>
                                             <th width="100">Actions</th>
@@ -568,6 +405,12 @@
                                     </div>
                                 </div>
                                 <div class="col-md-2">
+                                    <div class="input-group input-group-sm">
+                                        <input type="range" class="form-range" id="newInvoiceStatusOpacity" min="0" max="1" step="0.1" value="0.7" style="width: 70px;">
+                                        <span class="input-group-text small" id="newInvoiceStatusOpacityValue">70%</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-1">
                                     <input type="number" class="form-control form-control-sm" id="newInvoiceStatusOrder" placeholder="Order" value="0">
                                 </div>
                                 <div class="col-md-2">
@@ -588,6 +431,7 @@
                                             <th>Value</th>
                                             <th>Label</th>
                                             <th>Color</th>
+                                            <th>Opacity</th>
                                             <th>Order</th>
                                             <th>Active</th>
                                             <th width="100">Actions</th>
@@ -610,6 +454,12 @@
                                     </div>
                                 </div>
                                 <div class="col-md-2">
+                                    <div class="input-group input-group-sm">
+                                        <input type="range" class="form-range" id="newPaymentStatusOpacity" min="0" max="1" step="0.1" value="0.7" style="width: 70px;">
+                                        <span class="input-group-text small" id="newPaymentStatusOpacityValue">70%</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-1">
                                     <input type="number" class="form-control form-control-sm" id="newPaymentStatusOrder" placeholder="Order" value="0">
                                 </div>
                                 <div class="col-md-2">
@@ -1023,6 +873,312 @@
                 </div>
             </div>
         </div>
+
+            <!-- HR Tab -->
+            <div class="tab-pane fade" id="hr-settings">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-people"></i> HR Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Company Structure Section -->
+                        <div class="card mb-4">
+                            <div class="card-header bg-body-tertiary">
+                                <h6 class="mb-0"><i class="bi bi-diagram-3"></i> Company Structure</h6>
+                            </div>
+                            <div class="card-body">
+                                <!-- Stats Cards -->
+                                <div class="row g-3 mb-3">
+                                    <div class="col-md-4">
+                                        <div class="card bg-primary text-white">
+                                            <div class="card-body py-2">
+                                                <div class="d-flex justify-content-between align-items-center">
+                                                    <div>
+                                                        <small class="text-white-50">Companies</small>
+                                                        <h4 class="mb-0" id="hrStatsCompanies">-</h4>
+                                                    </div>
+                                                    <i class="bi bi-building" style="font-size: 1.5rem; opacity: 0.5;"></i>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="card bg-success text-white">
+                                            <div class="card-body py-2">
+                                                <div class="d-flex justify-content-between align-items-center">
+                                                    <div>
+                                                        <small class="text-white-50">Departments</small>
+                                                        <h4 class="mb-0" id="hrStatsDepartments">-</h4>
+                                                    </div>
+                                                    <i class="bi bi-diagram-2" style="font-size: 1.5rem; opacity: 0.5;"></i>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="card bg-info text-white">
+                                            <div class="card-body py-2">
+                                                <div class="d-flex justify-content-between align-items-center">
+                                                    <div>
+                                                        <small class="text-white-50">Employees</small>
+                                                        <h4 class="mb-0" id="hrStatsEmployees">-</h4>
+                                                    </div>
+                                                    <i class="bi bi-people" style="font-size: 1.5rem; opacity: 0.5;"></i>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Structure Sub-tabs -->
+                                <ul class="nav nav-pills mb-3" id="hrStructureTabs" role="tablist">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link active" id="hr-companies-tab" data-bs-toggle="pill" data-bs-target="#hr-companies" type="button" role="tab">
+                                            <i class="bi bi-building"></i> Companies
+                                        </button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="hr-departments-tab" data-bs-toggle="pill" data-bs-target="#hr-departments" type="button" role="tab">
+                                            <i class="bi bi-diagram-2"></i> Departments
+                                        </button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="hr-employees-tab" data-bs-toggle="pill" data-bs-target="#hr-employees" type="button" role="tab">
+                                            <i class="bi bi-people"></i> Employees
+                                        </button>
+                                    </li>
+                                </ul>
+
+                                <div class="tab-content" id="hrStructureTabContent">
+                                    <!-- Companies Sub-tab -->
+                                    <div class="tab-pane fade show active" id="hr-companies" role="tabpanel">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <span class="text-muted small">Manage companies and their brands</span>
+                                            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#hrCompanyModal" onclick="openAddHrCompanyModal()">
+                                                <i class="bi bi-plus-lg"></i> Add Company
+                                            </button>
+                                        </div>
+                                        <div class="table-responsive">
+                                            <table class="table table-hover table-sm mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Company Name</th>
+                                                        <th>Brands</th>
+                                                        <th>VAT Number</th>
+                                                        <th style="width: 80px;">Actions</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="hrCompaniesTable">
+                                                    <tr class="loading-placeholder"><td colspan="4" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <!-- Departments Sub-tab -->
+                                    <div class="tab-pane fade" id="hr-departments" role="tabpanel">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="text-muted small">Manage department structure</span>
+                                                <select id="hrDepartmentCompanyFilter" class="form-select form-select-sm" style="width: 200px;">
+                                                    <option value="">All Companies</option>
+                                                </select>
+                                            </div>
+                                            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#hrDepartmentModal" onclick="openAddHrDepartmentModal()">
+                                                <i class="bi bi-plus-lg"></i> Add Department
+                                            </button>
+                                        </div>
+                                        <div class="table-responsive">
+                                            <table class="table table-hover table-sm mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Department</th>
+                                                        <th>Subdepartment</th>
+                                                        <th>Manager</th>
+                                                        <th>Brand</th>
+                                                        <th>Company</th>
+                                                        <th style="width: 80px;">Actions</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="hrDepartmentsTable">
+                                                    <tr class="loading-placeholder"><td colspan="6" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <!-- Employees Sub-tab -->
+                                    <div class="tab-pane fade" id="hr-employees" role="tabpanel">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="text-muted small">Manage employees (responsables)</span>
+                                                <select id="hrEmployeeCompanyFilter" class="form-select form-select-sm" style="width: 200px;">
+                                                    <option value="">All Departments</option>
+                                                </select>
+                                            </div>
+                                            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#hrEmployeeModal" onclick="openAddHrEmployeeModal()">
+                                                <i class="bi bi-plus-lg"></i> Add Employee
+                                            </button>
+                                        </div>
+                                        <div class="table-responsive">
+                                            <table class="table table-hover table-sm mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Name</th>
+                                                        <th>Department</th>
+                                                        <th>Email</th>
+                                                        <th>Phone</th>
+                                                        <th>Status</th>
+                                                        <th style="width: 80px;">Actions</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="hrEmployeesTable">
+                                                    <tr class="loading-placeholder"><td colspan="6" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="alert alert-info mt-3 mb-0 py-2 small">
+                                    <i class="bi bi-info-circle"></i> <strong>Platform-wide:</strong> Company structure data is shared across all J.A.R.V.I.S. modules (Accounting, HR, etc.)
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Events Module Section -->
+                        <div class="card mb-4">
+                            <div class="card-header bg-body-tertiary">
+                                <h6 class="mb-0"><i class="bi bi-calendar-event"></i> Events Module</h6>
+                            </div>
+                            <div class="card-body">
+                                <!-- Bonus Types -->
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <div>
+                                        <strong><i class="bi bi-tags"></i> Bonus Types</strong>
+                                        <p class="text-muted small mb-0">
+                                            Configure bonus types used for event bonuses. Each bonus type defines a daily rate multiplied by days.
+                                        </p>
+                                    </div>
+                                    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addBonusTypeModal">
+                                        <i class="bi bi-plus-lg"></i> Add Bonus Type
+                                    </button>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-hover table-sm" id="bonusTypesTable">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th class="text-end">Amount (RON)</th>
+                                                <th class="text-center">Days/Amount</th>
+                                                <th>Description</th>
+                                                <th class="text-center">Status</th>
+                                                <th class="text-end">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="bonusTypesTableBody">
+                                            <tr class="loading-placeholder"><td colspan="6" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading bonus types...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div id="noBonusTypesMessage" class="text-center text-muted py-4" style="display: none;">
+                                    <i class="bi bi-tags display-4"></i>
+                                    <p class="mt-2">No bonus types configured. Click "Add Bonus Type" to create one.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+    </div>
+
+    <!-- Add Bonus Type Modal -->
+    <div class="modal fade" id="addBonusTypeModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-lg"></i> Add Bonus Type</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addBonusTypeForm">
+                        <div class="mb-3">
+                            <label class="form-label">Name <span class="text-danger">*</span></label>
+                            <input type="text" id="addBonusTypeName" class="form-control" required placeholder="e.g., Standard, Premium">
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Amount (RON) <span class="text-danger">*</span></label>
+                                <input type="number" id="addBonusTypeAmount" class="form-control" required step="0.01" min="0" placeholder="e.g., 150.00">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Days per Amount <span class="text-danger">*</span></label>
+                                <input type="number" id="addBonusTypeDaysPerAmount" class="form-control" required step="0.5" min="0.5" value="1" placeholder="e.g., 1">
+                                <small class="text-muted">How many days this amount covers</small>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <textarea id="addBonusTypeDescription" class="form-control" rows="2" placeholder="Optional description"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveBonusType()">
+                        <i class="bi bi-check-lg"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Bonus Type Modal -->
+    <div class="modal fade" id="editBonusTypeModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Edit Bonus Type</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editBonusTypeForm">
+                        <input type="hidden" id="editBonusTypeId">
+                        <div class="mb-3">
+                            <label class="form-label">Name <span class="text-danger">*</span></label>
+                            <input type="text" id="editBonusTypeName" class="form-control" required>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Amount (RON) <span class="text-danger">*</span></label>
+                                <input type="number" id="editBonusTypeAmount" class="form-control" required step="0.01" min="0">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Days per Amount <span class="text-danger">*</span></label>
+                                <input type="number" id="editBonusTypeDaysPerAmount" class="form-control" required step="0.5" min="0.5">
+                                <small class="text-muted">How many days this amount covers</small>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <textarea id="editBonusTypeDescription" class="form-control" rows="2"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input type="checkbox" id="editBonusTypeIsActive" class="form-check-input">
+                                <label class="form-check-label" for="editBonusTypeIsActive">Active</label>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="updateBonusType()">
+                        <i class="bi bi-check-lg"></i> Update
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Edit VAT Registry Modal -->
@@ -1353,6 +1509,152 @@
         </div>
     </div>
 
+    <!-- HR Company Modal -->
+    <div class="modal fade" id="hrCompanyModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-building"></i> <span id="hrCompanyModalTitle">Add Company</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="hrCompanyForm">
+                        <input type="hidden" id="hrCompanyId">
+                        <div class="mb-3">
+                            <label class="form-label">Company Name *</label>
+                            <input type="text" id="hrCompanyName" class="form-control" required placeholder="e.g., Autoworld S.R.L.">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Brands</label>
+                            <input type="text" id="hrCompanyBrands" class="form-control" placeholder="e.g., Audi, BMW (comma-separated)">
+                            <small class="text-muted">Separate multiple brands with commas</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">VAT Number</label>
+                            <input type="text" id="hrCompanyVat" class="form-control" placeholder="e.g., RO 12345678">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveHrCompany()">Save Company</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HR Department Modal -->
+    <div class="modal fade" id="hrDepartmentModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-diagram-2"></i> <span id="hrDepartmentModalTitle">Add Department</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="hrDepartmentForm">
+                        <input type="hidden" id="hrDepartmentId">
+                        <div class="mb-3">
+                            <label class="form-label">Company *</label>
+                            <select id="hrDeptCompany" class="form-select" required>
+                                <option value="">Select Company</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Brand</label>
+                            <select id="hrDeptBrand" class="form-select">
+                                <option value="">Select Brand (optional)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Department *</label>
+                            <input type="text" id="hrDeptName" class="form-control" required placeholder="e.g., Sales, Marketing">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Subdepartment</label>
+                            <input type="text" id="hrDeptSubdepartment" class="form-control" placeholder="e.g., New Cars, Used Cars">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Manager</label>
+                            <input type="text" id="hrDeptManager" class="form-control" placeholder="Manager name">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveHrDepartment()">Save Department</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HR Employee Modal -->
+    <div class="modal fade" id="hrEmployeeModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person"></i> <span id="hrEmployeeModalTitle">Add Employee</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="hrEmployeeForm">
+                        <input type="hidden" id="hrEmployeeId">
+                        <div class="mb-3">
+                            <label class="form-label">Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="hrEmpName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email <span class="text-danger">*</span></label>
+                            <input type="email" class="form-control" id="hrEmpEmail" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Phone</label>
+                            <input type="tel" class="form-control" id="hrEmpPhone">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Company</label>
+                            <select class="form-select" id="hrEmpCompany" onchange="onHrEmpCompanyChange()">
+                                <option value="">Select Company (optional)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Brand</label>
+                            <select class="form-select" id="hrEmpBrand" onchange="onHrEmpBrandChange()">
+                                <option value="">Select Brand (optional)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Department</label>
+                            <select class="form-select" id="hrEmpDept" onchange="onHrEmpDeptChange()">
+                                <option value="">Select Department (optional)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Subdepartment</label>
+                            <select class="form-select" id="hrEmpSubdept">
+                                <option value="">Select Subdepartment (optional)</option>
+                            </select>
+                        </div>
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="hrEmpNotify" checked>
+                            <label class="form-check-label" for="hrEmpNotify">Receive notifications</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="hrEmpIsActive" checked>
+                            <label class="form-check-label" for="hrEmpIsActive">Active</label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveHrEmployee()">
+                        <i class="bi bi-check-lg"></i> Save Employee
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let users = [];
@@ -1363,8 +1665,14 @@
         let deleteId = null;
         let companiesWithVat = [];
         let vatRates = [];
+        let bonusTypes = [];
         let currentTheme = null;
         let currentThemeId = null;
+
+        // HR Company Structure data
+        let hrCompaniesData = [];
+        let hrDepartmentsData = [];
+        let hrEmployeesData = [];
 
         // Permission Matrix data
         let permissionMatrix = { modules: [], roles: [], role_permissions: {} };
@@ -2893,6 +3201,14 @@
                             </div>
                         </td>
                         <td>
+                            <div class="d-flex align-items-center gap-1">
+                                <input type="range" class="form-range" style="width: 60px" min="0" max="1" step="0.1" value="${opt.opacity ?? 0.7}"
+                                       oninput="this.nextElementSibling.textContent = Math.round(this.value * 100) + '%'"
+                                       onchange="updateDropdownOption(${opt.id}, 'opacity', parseFloat(this.value))">
+                                <span class="small text-muted" style="width: 35px">${Math.round((opt.opacity ?? 0.7) * 100)}%</span>
+                            </div>
+                        </td>
+                        <td>
                             <input type="number" class="form-control form-control-sm" style="width: 70px" value="${opt.sort_order}"
                                    onchange="updateDropdownOption(${opt.id}, 'sort_order', parseInt(this.value))">
                         </td>
@@ -2928,6 +3244,14 @@
                             </div>
                         </td>
                         <td>
+                            <div class="d-flex align-items-center gap-1">
+                                <input type="range" class="form-range" style="width: 60px" min="0" max="1" step="0.1" value="${opt.opacity ?? 0.7}"
+                                       oninput="this.nextElementSibling.textContent = Math.round(this.value * 100) + '%'"
+                                       onchange="updateDropdownOption(${opt.id}, 'opacity', parseFloat(this.value))">
+                                <span class="small text-muted" style="width: 35px">${Math.round((opt.opacity ?? 0.7) * 100)}%</span>
+                            </div>
+                        </td>
+                        <td>
                             <input type="number" class="form-control form-control-sm" style="width: 70px" value="${opt.sort_order}"
                                    onchange="updateDropdownOption(${opt.id}, 'sort_order', parseInt(this.value))">
                         </td>
@@ -2960,9 +3284,23 @@
                 colorText.addEventListener('input', () => colorPicker.value = colorText.value);
             }
         }
+
+        // Sync opacity slider with value display
+        function syncOpacityInputs(prefix) {
+            const opacitySlider = document.getElementById(`new${prefix}Opacity`);
+            const opacityValue = document.getElementById(`new${prefix}OpacityValue`);
+            if (opacitySlider && opacityValue) {
+                opacitySlider.addEventListener('input', () => {
+                    opacityValue.textContent = Math.round(opacitySlider.value * 100) + '%';
+                });
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             syncColorInputs('InvoiceStatus');
             syncColorInputs('PaymentStatus');
+            syncOpacityInputs('InvoiceStatus');
+            syncOpacityInputs('PaymentStatus');
         });
 
         async function addDropdownOption(dropdownType) {
@@ -2970,11 +3308,13 @@
             const valueInput = document.getElementById(`new${prefix}Value`);
             const labelInput = document.getElementById(`new${prefix}Label`);
             const colorInput = document.getElementById(`new${prefix}Color`);
+            const opacityInput = document.getElementById(`new${prefix}Opacity`);
             const orderInput = document.getElementById(`new${prefix}Order`);
 
             const value = valueInput.value.trim();
             const label = labelInput.value.trim();
             const color = colorInput.value || '#0d6efd';
+            const opacity = parseFloat(opacityInput.value) || 0.7;
             const sortOrder = parseInt(orderInput.value) || 0;
 
             if (!value || !label) {
@@ -2991,6 +3331,7 @@
                         value: value,
                         label: label,
                         color: color,
+                        opacity: opacity,
                         sort_order: sortOrder,
                         is_active: true
                     })
@@ -3003,6 +3344,8 @@
                     labelInput.value = '';
                     colorInput.value = '#0d6efd';
                     document.getElementById(`new${prefix}ColorText`).value = '#0d6efd';
+                    opacityInput.value = '0.7';
+                    document.getElementById(`new${prefix}OpacityValue`).textContent = '70%';
                     orderInput.value = '0';
                     loadDropdownOptions();
                 } else {
@@ -3599,6 +3942,790 @@
         }
 
         document.addEventListener('DOMContentLoaded', initOnlineUsersTracking);
+
+        // ========== HR Events - Bonus Types Functions ==========
+
+        async function loadBonusTypes() {
+            try {
+                const resp = await fetch('/hr/events/api/bonus-types');
+                if (resp.ok) {
+                    bonusTypes = await resp.json();
+                    renderBonusTypesTable();
+                }
+            } catch (err) {
+                console.error('Error loading bonus types:', err);
+            }
+        }
+
+        function renderBonusTypesTable() {
+            const tbody = document.getElementById('bonusTypesTableBody');
+            const noMessage = document.getElementById('noBonusTypesMessage');
+
+            if (!bonusTypes || bonusTypes.length === 0) {
+                tbody.innerHTML = '';
+                if (noMessage) noMessage.style.display = 'block';
+                return;
+            }
+
+            if (noMessage) noMessage.style.display = 'none';
+
+            tbody.innerHTML = bonusTypes.map(bt => `
+                <tr class="${!bt.is_active ? 'text-muted' : ''}">
+                    <td>${bt.name}</td>
+                    <td class="text-end">${parseFloat(bt.amount).toFixed(2)}</td>
+                    <td class="text-center">${parseFloat(bt.days_per_amount || 1).toFixed(1)}</td>
+                    <td>${bt.description || '-'}</td>
+                    <td class="text-center">
+                        ${bt.is_active
+                            ? '<span class="badge bg-success">Active</span>'
+                            : '<span class="badge bg-secondary">Inactive</span>'}
+                    </td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary" onclick="editBonusType(${bt.id}, '${bt.name.replace(/'/g, "\\'")}', ${bt.amount}, ${bt.days_per_amount || 1}, '${(bt.description || '').replace(/'/g, "\\'")}', ${bt.is_active})">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        ${bt.is_active ? `
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteBonusType(${bt.id}, '${bt.name.replace(/'/g, "\\'")}')">
+                            <i class="bi bi-trash"></i>
+                        </button>` : ''}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function saveBonusType() {
+            const name = document.getElementById('addBonusTypeName').value.trim();
+            const amount = parseFloat(document.getElementById('addBonusTypeAmount').value);
+            const daysPerAmount = parseFloat(document.getElementById('addBonusTypeDaysPerAmount').value) || 1;
+            const description = document.getElementById('addBonusTypeDescription').value.trim();
+
+            if (!name || isNaN(amount)) {
+                alert('Name and Amount are required');
+                return;
+            }
+
+            try {
+                const resp = await fetch('/hr/events/api/bonus-types', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        amount: amount,
+                        days_per_amount: daysPerAmount,
+                        description: description || null
+                    })
+                });
+
+                if (resp.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('addBonusTypeModal')).hide();
+                    document.getElementById('addBonusTypeName').value = '';
+                    document.getElementById('addBonusTypeAmount').value = '';
+                    document.getElementById('addBonusTypeDaysPerAmount').value = '1';
+                    document.getElementById('addBonusTypeDescription').value = '';
+                    await loadBonusTypes();
+                } else {
+                    alert('Error saving bonus type');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Error saving bonus type');
+            }
+        }
+
+        function editBonusType(id, name, amount, daysPerAmount, description, isActive) {
+            document.getElementById('editBonusTypeId').value = id;
+            document.getElementById('editBonusTypeName').value = name;
+            document.getElementById('editBonusTypeAmount').value = amount;
+            document.getElementById('editBonusTypeDaysPerAmount').value = daysPerAmount || 1;
+            document.getElementById('editBonusTypeDescription').value = description;
+            document.getElementById('editBonusTypeIsActive').checked = isActive;
+
+            const modal = new bootstrap.Modal(document.getElementById('editBonusTypeModal'));
+            modal.show();
+        }
+
+        async function updateBonusType() {
+            const id = document.getElementById('editBonusTypeId').value;
+            const name = document.getElementById('editBonusTypeName').value.trim();
+            const amount = parseFloat(document.getElementById('editBonusTypeAmount').value);
+            const daysPerAmount = parseFloat(document.getElementById('editBonusTypeDaysPerAmount').value) || 1;
+            const description = document.getElementById('editBonusTypeDescription').value.trim();
+            const isActive = document.getElementById('editBonusTypeIsActive').checked;
+
+            if (!name || isNaN(amount)) {
+                alert('Name and Amount are required');
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/hr/events/api/bonus-types/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        amount: amount,
+                        days_per_amount: daysPerAmount,
+                        description: description || null,
+                        is_active: isActive
+                    })
+                });
+
+                if (resp.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('editBonusTypeModal')).hide();
+                    await loadBonusTypes();
+                } else {
+                    alert('Error updating bonus type');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Error updating bonus type');
+            }
+        }
+
+        async function deleteBonusType(id, name) {
+            if (!confirm(`Are you sure you want to deactivate "${name}"?`)) {
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/hr/events/api/bonus-types/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (resp.ok) {
+                    await loadBonusTypes();
+                } else {
+                    alert('Error deleting bonus type');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Error deleting bonus type');
+            }
+        }
+
+        // Load bonus types and company structure when HR tab is shown
+        document.getElementById('hr-tab').addEventListener('shown.bs.tab', function() {
+            loadBonusTypes();
+            loadHrCompanies();
+            loadHrDepartments();
+            loadHrEmployees();
+        });
+
+        // ============== Company Structure Functions (Core APIs) ==============
+        async function loadHrCompanies() {
+            try {
+                const resp = await fetch('/api/companies-vat');
+                if (!resp.ok) {
+                    throw new Error(`HTTP ${resp.status}`);
+                }
+                hrCompaniesData = await resp.json();
+                console.log('Companies loaded:', hrCompaniesData.length);
+                renderHrCompanies();
+                populateHrCompanyFilters();
+                document.getElementById('hrStatsCompanies').textContent = hrCompaniesData.length;
+            } catch (err) {
+                console.error('Error loading companies:', err);
+                document.getElementById('hrCompaniesTable').innerHTML = '<tr><td colspan="4" class="text-center text-danger py-3"><i class="bi bi-exclamation-triangle"></i> Error loading companies</td></tr>';
+                document.getElementById('hrStatsCompanies').textContent = '-';
+            }
+        }
+
+        function renderHrCompanies() {
+            const tbody = document.getElementById('hrCompaniesTable');
+            if (hrCompaniesData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3"><i class="bi bi-inbox"></i> No companies found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = hrCompaniesData.map(c => `
+                <tr data-company="${c.company}">
+                    <td><strong>${c.company}</strong></td>
+                    <td>${c.brands || '-'}</td>
+                    <td><code>${c.vat || '-'}</code></td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="editHrCompany('${c.company.replace(/'/g, "\\'")}')" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteHrCompany('${c.company.replace(/'/g, "\\'")}')" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function populateHrCompanyFilters() {
+            const selects = ['hrDepartmentCompanyFilter', 'hrDeptCompany'];
+            selects.forEach(id => {
+                const select = document.getElementById(id);
+                if (!select) return;
+                const currentValue = select.value;
+                const isFilter = id.includes('Filter');
+                select.innerHTML = isFilter
+                    ? '<option value="">All Companies</option>'
+                    : '<option value="">Select Company</option>';
+                hrCompaniesData.forEach(c => {
+                    select.innerHTML += `<option value="${c.company}">${c.company}</option>`;
+                });
+                select.value = currentValue;
+            });
+        }
+
+        function openAddHrCompanyModal() {
+            document.getElementById('hrCompanyModalTitle').textContent = 'Add Company';
+            document.getElementById('hrCompanyForm').reset();
+            document.getElementById('hrCompanyId').value = '';
+        }
+
+        function editHrCompany(companyName) {
+            const company = hrCompaniesData.find(c => c.company === companyName);
+            if (!company) return;
+
+            document.getElementById('hrCompanyModalTitle').textContent = 'Edit Company';
+            document.getElementById('hrCompanyId').value = companyName; // Store original name for update
+            document.getElementById('hrCompanyName').value = company.company;
+            document.getElementById('hrCompanyBrands').value = company.brands || '';
+            document.getElementById('hrCompanyVat').value = company.vat || '';
+
+            const modal = new bootstrap.Modal(document.getElementById('hrCompanyModal'));
+            modal.show();
+        }
+
+        async function saveHrCompany() {
+            const originalCompany = document.getElementById('hrCompanyId').value;
+            const data = {
+                company: document.getElementById('hrCompanyName').value.trim(),
+                brands: document.getElementById('hrCompanyBrands').value.trim() || '',
+                vat: document.getElementById('hrCompanyVat').value.trim() || ''
+            };
+
+            if (!data.company) {
+                alert('Company name is required');
+                return;
+            }
+
+            try {
+                let url, method;
+                if (originalCompany) {
+                    url = `/api/companies-vat/${encodeURIComponent(originalCompany)}`;
+                    method = 'PUT';
+                } else {
+                    url = '/api/companies-vat';
+                    method = 'POST';
+                }
+
+                const resp = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (resp.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('hrCompanyModal')).hide();
+                    loadHrCompanies();
+                } else {
+                    const error = await resp.json();
+                    alert(error.error || 'Error saving company');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Error saving company');
+            }
+        }
+
+        async function deleteHrCompany(companyName) {
+            if (!confirm(`Delete company "${companyName}"? This cannot be undone.`)) return;
+
+            try {
+                const resp = await fetch(`/api/companies-vat/${encodeURIComponent(companyName)}`, { method: 'DELETE' });
+                if (resp.ok) {
+                    loadHrCompanies();
+                } else {
+                    alert('Error deleting company');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Error deleting company');
+            }
+        }
+
+        // ============== Departments (Core APIs) ==============
+        async function loadHrDepartments() {
+            try {
+                const resp = await fetch('/api/department-structures');
+                hrDepartmentsData = await resp.json();
+                renderHrDepartments();
+                document.getElementById('hrStatsDepartments').textContent = hrDepartmentsData.length;
+            } catch (err) {
+                console.error('Error loading departments:', err);
+                document.getElementById('hrDepartmentsTable').innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3"><i class="bi bi-exclamation-triangle"></i> Error loading departments</td></tr>';
+            }
+        }
+
+        function renderHrDepartments() {
+            const filter = document.getElementById('hrDepartmentCompanyFilter').value;
+            const filtered = filter
+                ? hrDepartmentsData.filter(d => d.company === filter)
+                : hrDepartmentsData;
+
+            const tbody = document.getElementById('hrDepartmentsTable');
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3"><i class="bi bi-inbox"></i> No departments found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = filtered.map(d => `
+                <tr data-id="${d.id}">
+                    <td><strong>${d.department}</strong></td>
+                    <td>${d.subdepartment || '-'}</td>
+                    <td>${d.manager || '-'}</td>
+                    <td>${d.brand || '-'}</td>
+                    <td>${d.company}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="editHrDepartment(${d.id})" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteHrDepartment(${d.id})" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        document.getElementById('hrDepartmentCompanyFilter').addEventListener('change', renderHrDepartments);
+
+        function openAddHrDepartmentModal() {
+            document.getElementById('hrDepartmentModalTitle').textContent = 'Add Department';
+            document.getElementById('hrDepartmentForm').reset();
+            document.getElementById('hrDepartmentId').value = '';
+            document.getElementById('hrDeptBrand').innerHTML = '<option value="">Select Brand (optional)</option>';
+        }
+
+        async function editHrDepartment(id) {
+            const dept = hrDepartmentsData.find(d => d.id === id);
+            if (!dept) return;
+
+            document.getElementById('hrDepartmentModalTitle').textContent = 'Edit Department';
+            document.getElementById('hrDepartmentId').value = id;
+            document.getElementById('hrDeptCompany').value = dept.company;
+            document.getElementById('hrDeptName').value = dept.department;
+            document.getElementById('hrDeptSubdepartment').value = dept.subdepartment || '';
+            document.getElementById('hrDeptManager').value = dept.manager || '';
+
+            // Load brands for the company from companies-vat data
+            await loadBrandsForCompany(dept.company, dept.brand);
+
+            const modal = new bootstrap.Modal(document.getElementById('hrDepartmentModal'));
+            modal.show();
+        }
+
+        async function loadBrandsForCompany(company, selectedBrand = '') {
+            const brandSelect = document.getElementById('hrDeptBrand');
+            brandSelect.innerHTML = '<option value="">Select Brand (optional)</option>';
+
+            if (company) {
+                // Get brands from the companies-vat data
+                const companyData = hrCompaniesData.find(c => c.company === company);
+                if (companyData && companyData.brands) {
+                    const brands = companyData.brands.split(/[,\s]+/).filter(b => b.trim());
+                    brands.forEach(b => {
+                        brandSelect.innerHTML += `<option value="${b.trim()}">${b.trim()}</option>`;
+                    });
+                }
+                brandSelect.value = selectedBrand || '';
+            }
+        }
+
+        // Load brands when company changes in department modal
+        document.getElementById('hrDeptCompany').addEventListener('change', async (e) => {
+            await loadBrandsForCompany(e.target.value);
+        });
+
+        async function saveHrDepartment() {
+            const id = document.getElementById('hrDepartmentId').value;
+            const data = {
+                company: document.getElementById('hrDeptCompany').value,
+                brand: document.getElementById('hrDeptBrand').value || null,
+                department: document.getElementById('hrDeptName').value.trim(),
+                subdepartment: document.getElementById('hrDeptSubdepartment').value.trim() || null,
+                manager: document.getElementById('hrDeptManager').value.trim() || null
+            };
+
+            if (!data.company || !data.department) {
+                alert('Company and Department are required');
+                return;
+            }
+
+            try {
+                const url = id ? `/api/department-structures/${id}` : '/api/department-structures';
+                const method = id ? 'PUT' : 'POST';
+
+                const resp = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (resp.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('hrDepartmentModal')).hide();
+                    loadHrDepartments();
+                } else {
+                    alert('Error saving department');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Error saving department');
+            }
+        }
+
+        async function deleteHrDepartment(id) {
+            if (!confirm('Delete this department? This cannot be undone.')) return;
+
+            try {
+                const resp = await fetch(`/api/department-structures/${id}`, { method: 'DELETE' });
+                if (resp.ok) {
+                    loadHrDepartments();
+                } else {
+                    alert('Error deleting department');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Error deleting department');
+            }
+        }
+
+        // ============== Employees (Core API) ==============
+        async function loadHrEmployees() {
+            try {
+                const resp = await fetch('/api/employees');
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                hrEmployeesData = await resp.json();
+                renderHrEmployees();
+                populateHrEmployeeFilters();
+                const activeCount = hrEmployeesData.filter(e => e.is_active).length;
+                document.getElementById('hrStatsEmployees').textContent = activeCount;
+            } catch (err) {
+                console.error('Error loading employees:', err);
+                document.getElementById('hrEmployeesTable').innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3"><i class="bi bi-exclamation-triangle"></i> Error loading employees</td></tr>';
+                document.getElementById('hrStatsEmployees').textContent = '-';
+            }
+        }
+
+        function renderHrEmployees() {
+            const filter = document.getElementById('hrEmployeeCompanyFilter').value;
+            // Note: responsables have 'departments' field, not company - we filter by department text
+            const filtered = filter
+                ? hrEmployeesData.filter(e => e.departments && e.departments.toLowerCase().includes(filter.toLowerCase()))
+                : hrEmployeesData;
+
+            const tbody = document.getElementById('hrEmployeesTable');
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3"><i class="bi bi-inbox"></i> No employees found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = filtered.map(e => `
+                <tr data-id="${e.id}">
+                    <td><strong>${e.name || '-'}</strong></td>
+                    <td>${e.departments || '-'}</td>
+                    <td>${e.email || '-'}</td>
+                    <td>${e.phone || '-'}</td>
+                    <td>${e.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="editHrEmployee(${e.id})" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteHrEmployee(${e.id}, '${(e.name || '').replace(/'/g, "\\'")}')" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function populateHrEmployeeFilters() {
+            const select = document.getElementById('hrEmployeeCompanyFilter');
+            if (!select) return;
+            // Get unique departments from employees
+            const depts = [...new Set(hrEmployeesData.map(e => e.departments).filter(d => d))];
+            select.innerHTML = '<option value="">All Departments</option>';
+            depts.forEach(d => {
+                select.innerHTML += `<option value="${d}">${d}</option>`;
+            });
+        }
+
+        document.getElementById('hrEmployeeCompanyFilter').addEventListener('change', renderHrEmployees);
+
+        function openAddHrEmployeeModal() {
+            document.getElementById('hrEmployeeModalTitle').textContent = 'Add Employee';
+            document.getElementById('hrEmployeeForm').reset();
+            document.getElementById('hrEmployeeId').value = '';
+            document.getElementById('hrEmpNotify').checked = true;
+            document.getElementById('hrEmpIsActive').checked = true;
+            // Populate company dropdown from hrCompaniesData
+            populateHrEmpCompanyDropdown();
+            // Reset brand, department, subdepartment
+            document.getElementById('hrEmpBrand').innerHTML = '<option value="">Select Brand (optional)</option>';
+            document.getElementById('hrEmpDept').innerHTML = '<option value="">Select Department (optional)</option>';
+            document.getElementById('hrEmpSubdept').innerHTML = '<option value="">Select Subdepartment (optional)</option>';
+        }
+
+        function populateHrEmpCompanyDropdown() {
+            const select = document.getElementById('hrEmpCompany');
+            select.innerHTML = '<option value="">Select Company (optional)</option>';
+            hrCompaniesData.forEach(c => {
+                select.innerHTML += `<option value="${c.company}">${c.company}</option>`;
+            });
+        }
+
+        function onHrEmpCompanyChange() {
+            const company = document.getElementById('hrEmpCompany').value;
+            const brandSelect = document.getElementById('hrEmpBrand');
+            const deptSelect = document.getElementById('hrEmpDept');
+            const subdeptSelect = document.getElementById('hrEmpSubdept');
+
+            brandSelect.innerHTML = '<option value="">Select Brand (optional)</option>';
+            deptSelect.innerHTML = '<option value="">Select Department (optional)</option>';
+            subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>';
+
+            if (!company) return;
+
+            // Get unique brands for selected company from department structure
+            const brands = [...new Set(hrDepartmentsData
+                .filter(d => d.company === company && d.brand)
+                .map(d => d.brand))];
+
+            brands.forEach(b => {
+                brandSelect.innerHTML += `<option value="${b}">${b}</option>`;
+            });
+
+            // Also populate departments without brand
+            const deptsNoBrand = [...new Set(hrDepartmentsData
+                .filter(d => d.company === company && !d.brand && d.department)
+                .map(d => d.department))];
+
+            deptsNoBrand.forEach(d => {
+                deptSelect.innerHTML += `<option value="${d}">${d}</option>`;
+            });
+        }
+
+        function onHrEmpBrandChange() {
+            const company = document.getElementById('hrEmpCompany').value;
+            const brand = document.getElementById('hrEmpBrand').value;
+            const deptSelect = document.getElementById('hrEmpDept');
+            const subdeptSelect = document.getElementById('hrEmpSubdept');
+
+            deptSelect.innerHTML = '<option value="">Select Department (optional)</option>';
+            subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>';
+
+            if (!company) return;
+
+            // Get departments for selected company and brand
+            const depts = [...new Set(hrDepartmentsData
+                .filter(d => d.company === company && (brand ? d.brand === brand : !d.brand) && d.department)
+                .map(d => d.department))];
+
+            depts.forEach(d => {
+                deptSelect.innerHTML += `<option value="${d}">${d}</option>`;
+            });
+        }
+
+        function onHrEmpDeptChange() {
+            const company = document.getElementById('hrEmpCompany').value;
+            const brand = document.getElementById('hrEmpBrand').value;
+            const dept = document.getElementById('hrEmpDept').value;
+            const subdeptSelect = document.getElementById('hrEmpSubdept');
+
+            subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>';
+
+            if (!company || !dept) return;
+
+            // Get subdepartments for selected company, brand, and department
+            const subdepts = [...new Set(hrDepartmentsData
+                .filter(d => d.company === company &&
+                            (brand ? d.brand === brand : !d.brand) &&
+                            d.department === dept &&
+                            d.subdepartment)
+                .map(d => d.subdepartment))];
+
+            subdepts.forEach(sd => {
+                subdeptSelect.innerHTML += `<option value="${sd}">${sd}</option>`;
+            });
+        }
+
+        function editHrEmployee(id) {
+            const emp = hrEmployeesData.find(e => e.id === id);
+            if (!emp) return;
+
+            document.getElementById('hrEmployeeModalTitle').textContent = 'Edit Employee';
+            document.getElementById('hrEmployeeId').value = id;
+            document.getElementById('hrEmpName').value = emp.name || '';
+            document.getElementById('hrEmpEmail').value = emp.email || '';
+            document.getElementById('hrEmpPhone').value = emp.phone || '';
+            document.getElementById('hrEmpNotify').checked = emp.notify_on_allocation !== false;
+            document.getElementById('hrEmpIsActive').checked = emp.is_active;
+
+            // Populate dropdowns
+            populateHrEmpCompanyDropdown();
+            document.getElementById('hrEmpBrand').innerHTML = '<option value="">Select Brand (optional)</option>';
+            document.getElementById('hrEmpDept').innerHTML = '<option value="">Select Department (optional)</option>';
+            document.getElementById('hrEmpSubdept').innerHTML = '<option value="">Select Subdepartment (optional)</option>';
+
+            // Try to match existing department string to company/brand/dept
+            // For now just show in department dropdown if it matches
+            if (emp.departments) {
+                // Add the current value as an option if not empty
+                const deptSelect = document.getElementById('hrEmpDept');
+                deptSelect.innerHTML += `<option value="${emp.departments}" selected>${emp.departments}</option>`;
+            }
+
+            const modal = new bootstrap.Modal(document.getElementById('hrEmployeeModal'));
+            modal.show();
+        }
+
+        async function saveHrEmployee() {
+            const id = document.getElementById('hrEmployeeId').value;
+
+            // Build departments string from selection - use the most specific level selected
+            const subdept = document.getElementById('hrEmpSubdept').value;
+            const dept = document.getElementById('hrEmpDept').value;
+            const brand = document.getElementById('hrEmpBrand').value;
+            const company = document.getElementById('hrEmpCompany').value;
+
+            // Use the most specific selection
+            let departments = subdept || dept || brand || company || null;
+
+            const data = {
+                name: document.getElementById('hrEmpName').value.trim(),
+                email: document.getElementById('hrEmpEmail').value.trim(),
+                phone: document.getElementById('hrEmpPhone').value.trim() || null,
+                departments: departments,
+                notify_on_allocation: document.getElementById('hrEmpNotify').checked,
+                is_active: document.getElementById('hrEmpIsActive').checked
+            };
+
+            if (!data.name || !data.email) {
+                alert('Name and Email are required');
+                return;
+            }
+
+            try {
+                const url = id ? `/api/employees/${id}` : '/api/employees';
+                const method = id ? 'PUT' : 'POST';
+
+                const resp = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (resp.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('hrEmployeeModal')).hide();
+                    loadHrEmployees();
+                } else {
+                    alert('Error saving employee');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Error saving employee');
+            }
+        }
+
+        async function deleteHrEmployee(id, name) {
+            if (!confirm(`Delete employee "${name}"? This cannot be undone.`)) return;
+
+            try {
+                const resp = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
+                if (resp.ok) {
+                    loadHrEmployees();
+                } else {
+                    alert('Error deleting employee');
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Error deleting employee');
+            }
+        }
+    </script>
+
+    <!-- Edit Profile Modal -->
+    <div class="modal fade" id="editProfileModal" tabindex="-1" aria-labelledby="editProfileModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editProfileModalLabel"><i class="bi bi-person"></i> Edit Profile</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editProfileForm">
+                        <div class="mb-3">
+                            <label for="profileName" class="form-label">Name</label>
+                            <input type="text" class="form-control" id="profileName" value="{{ current_user.name }}" required minlength="2">
+                        </div>
+                        <div class="mb-3">
+                            <label for="profileEmail" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="profileEmail" value="{{ current_user.email }}" disabled>
+                            <small class="text-muted">Contact an administrator to change your email</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="profilePhone" class="form-label">Phone</label>
+                            <input type="tel" class="form-control" id="profilePhone" value="{{ current_user.phone or '' }}" placeholder="Optional">
+                        </div>
+                    </form>
+                    <div class="d-flex justify-content-end mb-3">
+                        <button type="button" class="btn btn-primary" onclick="updateProfile()">Save Profile</button>
+                    </div>
+                    <hr>
+                    <h6 class="mb-3"><i class="bi bi-key"></i> Change Password</h6>
+                    <form id="changePasswordForm">
+                        <div class="mb-3">
+                            <label for="currentPassword" class="form-label">Current Password</label>
+                            <input type="password" class="form-control" id="currentPassword">
+                        </div>
+                        <div class="mb-3">
+                            <label for="newPassword" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="newPassword" minlength="6">
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label">Confirm New Password</label>
+                            <input type="password" class="form-control" id="confirmPassword" minlength="6">
+                        </div>
+                    </form>
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-warning" onclick="changePassword()">Change Password</button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function updateProfile() {
+            const name = document.getElementById('profileName').value.trim();
+            const phone = document.getElementById('profilePhone').value.trim();
+            if (!name || name.length < 2) { alert('Name must be at least 2 characters'); return; }
+            try {
+                const response = await fetch('/api/auth/update-profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, phone }) });
+                const result = await response.json();
+                if (result.success) { alert('Profile updated successfully'); const btn = document.getElementById('userDropdown'); if (btn) btn.innerHTML = '<i class="bi bi-person-circle"></i> ' + result.name; }
+                else { alert('Error: ' + result.error); }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+        async function changePassword() {
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            if (!currentPassword || !newPassword || !confirmPassword) { alert('Please fill in all password fields'); return; }
+            if (newPassword !== confirmPassword) { alert('New passwords do not match'); return; }
+            if (newPassword.length < 6) { alert('Password must be at least 6 characters'); return; }
+            try {
+                const response = await fetch('/api/auth/change-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) });
+                const result = await response.json();
+                if (result.success) { alert('Password changed successfully'); document.getElementById('changePasswordForm').reset(); }
+                else { alert('Error: ' + result.error); }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
     </script>
     <script src="/static/js/theme.js"></script>
 </body>

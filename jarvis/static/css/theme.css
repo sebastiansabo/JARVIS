@@ -1122,18 +1122,64 @@ body.dark-theme .upload-zone.dragover {
 
 /* ============================================================================
    STATUS-BASED ROW COLORING
+   Dynamic colors from Settings via CSS variables (set by JavaScript)
+   Variables: --status-color-{statusValue} set on :root when dropdown options load
    ============================================================================ */
-.status-row-new > td {
-    background-color: rgba(13, 110, 253, 0.1) !important;
+
+/* Status row coloring using CSS variables from Settings */
+tr[data-status="new"] > td {
+    background-color: var(--status-color-new, transparent) !important;
 }
-.status-row-processed > td {
-    background-color: rgba(25, 135, 84, 0.1) !important;
+tr[data-status="processed"] > td {
+    background-color: var(--status-color-processed, transparent) !important;
 }
-.status-row-incomplete > td {
-    background-color: rgba(220, 53, 69, 0.1) !important;
+tr[data-status="incomplete"] > td {
+    background-color: var(--status-color-incomplete, transparent) !important;
 }
-.status-row-eronata > td {
-    background-color: rgba(255, 0, 0, 0.35) !important;
+tr[data-status="eronata"] > td {
+    background-color: var(--status-color-eronata, transparent) !important;
+}
+tr[data-status="lipsa_factura"] > td {
+    background-color: var(--status-color-lipsa_factura, transparent) !important;
+}
+
+/* Generic fallback: any status with a CSS variable set */
+tr[data-status] > td {
+    transition: background-color 0.2s ease;
+}
+
+/* Dark theme: Status row coloring (higher specificity to override dark theme table defaults) */
+body.dark-theme tr[data-status="new"] > td {
+    background-color: var(--status-color-new, transparent) !important;
+}
+body.dark-theme tr[data-status="processed"] > td {
+    background-color: var(--status-color-processed, transparent) !important;
+}
+body.dark-theme tr[data-status="incomplete"] > td {
+    background-color: var(--status-color-incomplete, transparent) !important;
+}
+body.dark-theme tr[data-status="eronata"] > td {
+    background-color: var(--status-color-eronata, transparent) !important;
+}
+body.dark-theme tr[data-status="lipsa_factura"] > td {
+    background-color: var(--status-color-lipsa_factura, transparent) !important;
+}
+
+/* ============================================================================
+   PAYMENT STATUS DROPDOWN COLORING
+   Dynamic colors applied inline via JavaScript (colors the dropdown element itself)
+   ============================================================================ */
+.payment-status-dropdown {
+    border-radius: 4px;
+    border: 1px solid rgba(0,0,0,0.15);
+    transition: background-color 0.2s ease;
+}
+.payment-status-dropdown:focus {
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
+}
+/* Dark theme: ensure dropdown arrow is visible on colored background */
+body.dark-theme .payment-status-dropdown {
+    border-color: rgba(255,255,255,0.2);
 }
 
 /* ============================================================================

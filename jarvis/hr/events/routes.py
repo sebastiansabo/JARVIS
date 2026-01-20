@@ -10,7 +10,8 @@ from .database import (
     get_all_hr_events, get_hr_event, save_hr_event, update_hr_event, delete_hr_event,
     get_all_event_bonuses, get_event_bonus, save_event_bonus,
     save_event_bonuses_bulk, update_event_bonus, delete_event_bonus,
-    get_event_bonuses_summary, get_bonuses_by_month, get_bonuses_by_employee
+    get_event_bonuses_summary, get_bonuses_by_month, get_bonuses_by_employee,
+    get_all_bonus_types, get_bonus_type, save_bonus_type, update_bonus_type, delete_bonus_type
 )
 
 # Import from app root for structure data
@@ -43,14 +44,14 @@ MONTH_NAMES = {
 }
 
 
-# ============== Event Bonuses Routes ==============
+# ============== Events Routes ==============
 
 @events_bp.route('/')
 @events_bp.route('/event-bonuses')
 @login_required
 @hr_required
 def event_bonuses():
-    """Event Bonuses main page."""
+    """Events main page."""
     year = request.args.get('year', type=int)
     month = request.args.get('month', type=int)
 
@@ -186,6 +187,38 @@ def events():
     all_events = get_all_hr_events()
     companies = get_companies()
     return render_template('events.html', events=all_events, companies=companies)
+
+
+@events_bp.route('/events/new')
+@login_required
+@hr_required
+def add_event():
+    """Add new event page."""
+    companies = get_companies()
+    employees = get_all_hr_employees(active_only=True)
+    bonus_types = get_all_bonus_types(active_only=True)
+    return render_template('add_event.html',
+                           companies=companies,
+                           employees=employees,
+                           bonus_types=bonus_types)
+
+
+@events_bp.route('/bonuses/new')
+@login_required
+@hr_required
+def add_bonus():
+    """Add new bonus page."""
+    from datetime import datetime
+    events = get_all_hr_events()
+    employees = get_all_hr_employees()
+    bonus_types = get_all_bonus_types(active_only=True)
+    return render_template('add_bonus.html',
+                           events=events,
+                           employees=employees,
+                           bonus_types=bonus_types,
+                           months=MONTH_NAMES,
+                           current_year=datetime.now().year,
+                           current_month=datetime.now().month)
 
 
 @events_bp.route('/api/events', methods=['GET'])
@@ -413,6 +446,284 @@ def api_get_departments(company):
     return jsonify(departments)
 
 
+# ============== Companies CRUD API ==============
+
+@events_bp.route('/api/structure/companies-full', methods=['GET'])
+@login_required
+@hr_required
+def api_get_companies_full():
+    """API: Get all companies with full details."""
+    from jarvis.core.database import get_db_connection
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, company, brands, vat, created_at
+        FROM companies
+        ORDER BY company
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return jsonify([{
+        'id': r[0],
+        'company': r[1],
+        'brands': r[2],
+        'vat': r[3],
+        'created_at': r[4].isoformat() if r[4] else None
+    } for r in rows])
+
+
+@events_bp.route('/api/structure/companies', methods=['POST'])
+@login_required
+@hr_required
+def api_create_company():
+    """API: Create a new company."""
+    from jarvis.core.database import get_db_connection
+
+    data = request.get_json()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO companies (company, brands, vat)
+        VALUES (%s, %s, %s)
+        RETURNING id
+    """, (data['company'], data.get('brands'), data.get('vat')))
+    company_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({'success': True, 'id': company_id})
+
+
+@events_bp.route('/api/structure/companies/<int:company_id>', methods=['PUT'])
+@login_required
+@hr_required
+def api_update_company(company_id):
+    """API: Update a company."""
+    from jarvis.core.database import get_db_connection
+
+    data = request.get_json()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE companies
+        SET company = %s, brands = %s, vat = %s
+        WHERE id = %s
+    """, (data['company'], data.get('brands'), data.get('vat'), company_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({'success': True})
+
+
+@events_bp.route('/api/structure/companies/<int:company_id>', methods=['DELETE'])
+@login_required
+@hr_required
+def api_delete_company(company_id):
+    """API: Delete a company."""
+    from jarvis.core.database import get_db_connection
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM companies WHERE id = %s", (company_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({'success': True})
+
+
+# ============== Departments CRUD API ==============
+
+@events_bp.route('/api/structure/departments-full', methods=['GET'])
+@login_required
+@hr_required
+def api_get_departments_full():
+    """API: Get all departments with full details."""
+    from jarvis.core.database import get_db_connection
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, company, brand, department, subdepartment, manager, marketing, created_at
+        FROM department_structure
+        ORDER BY company, brand, department, subdepartment
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return jsonify([{
+        'id': r[0],
+        'company': r[1],
+        'brand': r[2],
+        'department': r[3],
+        'subdepartment': r[4],
+        'manager': r[5],
+        'marketing': r[6],
+        'created_at': r[7].isoformat() if r[7] else None
+    } for r in rows])
+
+
+@events_bp.route('/api/structure/departments', methods=['POST'])
+@login_required
+@hr_required
+def api_create_department():
+    """API: Create a new department."""
+    from jarvis.core.database import get_db_connection
+
+    data = request.get_json()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO department_structure (company, brand, department, subdepartment, manager)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id
+    """, (data['company'], data.get('brand'), data['department'],
+          data.get('subdepartment'), data.get('manager')))
+    dept_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({'success': True, 'id': dept_id})
+
+
+@events_bp.route('/api/structure/departments/<int:dept_id>', methods=['PUT'])
+@login_required
+@hr_required
+def api_update_department(dept_id):
+    """API: Update a department."""
+    from jarvis.core.database import get_db_connection
+
+    data = request.get_json()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE department_structure
+        SET company = %s, brand = %s, department = %s, subdepartment = %s, manager = %s
+        WHERE id = %s
+    """, (data['company'], data.get('brand'), data['department'],
+          data.get('subdepartment'), data.get('manager'), dept_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({'success': True})
+
+
+@events_bp.route('/api/structure/departments/<int:dept_id>', methods=['DELETE'])
+@login_required
+@hr_required
+def api_delete_department(dept_id):
+    """API: Delete a department."""
+    from jarvis.core.database import get_db_connection
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM department_structure WHERE id = %s", (dept_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({'success': True})
+
+
+# ============== Company Structure Routes ==============
+
+@events_bp.route('/structure')
+@login_required
+@hr_required
+def structure():
+    """Company Structure management page."""
+    companies = get_companies()
+    employees = get_all_hr_employees(active_only=False)
+    return render_template('structure.html', companies=companies, employees=employees)
+
+
+# ============== Settings Routes ==============
+
+@events_bp.route('/settings')
+@login_required
+@hr_required
+def settings():
+    """HR Settings page for bonus types configuration."""
+    bonus_types = get_all_bonus_types(active_only=False)
+    return render_template('settings.html', bonus_types=bonus_types)
+
+
+# ============== Bonus Types API Routes ==============
+
+@events_bp.route('/api/bonus-types', methods=['GET'])
+@login_required
+@hr_required
+def api_get_bonus_types():
+    """API: Get all bonus types."""
+    active_only = request.args.get('active_only', 'true').lower() == 'true'
+    bonus_types = get_all_bonus_types(active_only=active_only)
+    return jsonify(bonus_types)
+
+
+@events_bp.route('/api/bonus-types', methods=['POST'])
+@login_required
+@hr_required
+def api_create_bonus_type():
+    """API: Create a new bonus type."""
+    data = request.get_json()
+
+    bonus_type_id = save_bonus_type(
+        name=data['name'],
+        amount=data['amount'],
+        days_per_amount=data.get('days_per_amount', 1),
+        description=data.get('description')
+    )
+
+    return jsonify({'success': True, 'id': bonus_type_id})
+
+
+@events_bp.route('/api/bonus-types/<int:bonus_type_id>', methods=['GET'])
+@login_required
+@hr_required
+def api_get_bonus_type(bonus_type_id):
+    """API: Get a single bonus type."""
+    bonus_type = get_bonus_type(bonus_type_id)
+    if not bonus_type:
+        return jsonify({'error': 'Bonus type not found'}), 404
+    return jsonify(bonus_type)
+
+
+@events_bp.route('/api/bonus-types/<int:bonus_type_id>', methods=['PUT'])
+@login_required
+@hr_required
+def api_update_bonus_type(bonus_type_id):
+    """API: Update a bonus type."""
+    data = request.get_json()
+
+    update_bonus_type(
+        bonus_type_id=bonus_type_id,
+        name=data['name'],
+        amount=data['amount'],
+        days_per_amount=data.get('days_per_amount', 1),
+        description=data.get('description'),
+        is_active=data.get('is_active', True)
+    )
+
+    return jsonify({'success': True})
+
+
+@events_bp.route('/api/bonus-types/<int:bonus_type_id>', methods=['DELETE'])
+@login_required
+@hr_required
+def api_delete_bonus_type(bonus_type_id):
+    """API: Soft delete a bonus type."""
+    delete_bonus_type(bonus_type_id)
+    return jsonify({'success': True})
+
+
 # ============== Export Routes ==============
 
 @events_bp.route('/api/export', methods=['GET'])
@@ -433,7 +744,7 @@ def api_export_bonuses():
     # Create workbook
     wb = Workbook()
     ws = wb.active
-    ws.title = "Event Bonuses"
+    ws.title = "Events"
 
     # Headers
     headers = ['An', 'Luna', 'Nume', 'Dep', 'Brand', 'Compania', 'Eveniment',
@@ -486,7 +797,7 @@ def api_export_bonuses():
     buffer.seek(0)
 
     # Generate filename
-    filename = f"Event_Bonuses"
+    filename = f"Events"
     if year:
         filename += f"_{year}"
     if month:

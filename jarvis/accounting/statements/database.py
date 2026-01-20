@@ -688,39 +688,106 @@ def bulk_update_status(transaction_ids: list[int], status: str) -> int:
         release_db(conn)
 
 
-def get_transaction_summary() -> dict:
-    """Get summary counts by status and supplier."""
+def get_transaction_summary(company_cui: str = None, supplier: str = None,
+                            status: str = None, date_from: str = None,
+                            date_to: str = None) -> dict:
+    """Get summary counts by status and supplier, with optional filters for cascading dropdowns.
+
+    Args:
+        company_cui: Filter by company CUI (for cascading supplier filter)
+        supplier: Filter by supplier (for cascading company filter)
+        status: Filter by status
+        date_from: Filter by date range start
+        date_to: Filter by date range end
+    """
     conn = get_db()
     try:
         cursor = get_cursor(conn)
 
-        # By status
-        cursor.execute('''
+        # Build base conditions for all queries
+        base_conditions = []
+        base_params = []
+
+        if company_cui:
+            base_conditions.append('company_cui = %s')
+            base_params.append(company_cui)
+        if supplier:
+            base_conditions.append('matched_supplier = %s')
+            base_params.append(supplier)
+        if status:
+            base_conditions.append('status = %s')
+            base_params.append(status)
+        if date_from:
+            base_conditions.append('transaction_date >= %s')
+            base_params.append(date_from)
+        if date_to:
+            base_conditions.append('transaction_date <= %s')
+            base_params.append(date_to)
+
+        # By status (apply all filters except status itself)
+        status_conditions = [c for c in base_conditions if 'status' not in c] if base_conditions else []
+        status_params = [p for c, p in zip(base_conditions, base_params) if 'status' not in c] if base_conditions else []
+        status_where = ' AND '.join(status_conditions) if status_conditions else '1=1'
+
+        cursor.execute(f'''
             SELECT status, COUNT(*) as count, SUM(amount) as total
             FROM bank_statement_transactions
+            WHERE {status_where}
             GROUP BY status
-        ''')
+        ''', status_params)
         by_status = {row['status']: {'count': row['count'], 'total': row['total']}
                      for row in cursor.fetchall()}
 
-        # By supplier (matched only)
-        cursor.execute('''
+        # By supplier - apply company filter (and other filters except supplier)
+        # This enables: when company is selected, show only suppliers for that company
+        supplier_conditions = ['matched_supplier IS NOT NULL', 'status != %s']
+        supplier_params = ['ignored']
+
+        if company_cui:
+            supplier_conditions.append('company_cui = %s')
+            supplier_params.append(company_cui)
+        if date_from:
+            supplier_conditions.append('transaction_date >= %s')
+            supplier_params.append(date_from)
+        if date_to:
+            supplier_conditions.append('transaction_date <= %s')
+            supplier_params.append(date_to)
+
+        supplier_where = ' AND '.join(supplier_conditions)
+
+        cursor.execute(f'''
             SELECT matched_supplier, COUNT(*) as count, SUM(amount) as total
             FROM bank_statement_transactions
-            WHERE matched_supplier IS NOT NULL AND status != 'ignored'
+            WHERE {supplier_where}
             GROUP BY matched_supplier
             ORDER BY total DESC
-        ''')
+        ''', supplier_params)
         by_supplier = [dict(row) for row in cursor.fetchall()]
 
-        # By company
-        cursor.execute('''
+        # By company - apply supplier filter (and other filters except company)
+        # This enables: when supplier is selected, show only companies for that supplier
+        company_conditions = ['status != %s']
+        company_params = ['ignored']
+
+        if supplier:
+            company_conditions.append('matched_supplier = %s')
+            company_params.append(supplier)
+        if date_from:
+            company_conditions.append('transaction_date >= %s')
+            company_params.append(date_from)
+        if date_to:
+            company_conditions.append('transaction_date <= %s')
+            company_params.append(date_to)
+
+        company_where = ' AND '.join(company_conditions)
+
+        cursor.execute(f'''
             SELECT company_name, company_cui, COUNT(*) as count, SUM(amount) as total
             FROM bank_statement_transactions
-            WHERE status != 'ignored'
+            WHERE {company_where}
             GROUP BY company_name, company_cui
             ORDER BY company_name
-        ''')
+        ''', company_params)
         by_company = [dict(row) for row in cursor.fetchall()]
 
         return {

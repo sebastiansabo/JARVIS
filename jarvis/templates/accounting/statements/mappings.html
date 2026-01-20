@@ -55,6 +55,12 @@
                     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
                         <li><span class="dropdown-item-text text-muted small">{{ current_user.email }}</span></li>
                         <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="/guide"><i class="bi bi-book"></i> User Guide</a></li>
+                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#editProfileModal"><i class="bi bi-person"></i> Edit Profile</a></li>
+                        {% if current_user.can_access_settings %}
+                        <li><a class="dropdown-item" href="/settings"><i class="bi bi-gear"></i> Jarvis Settings</a></li>
+                        {% endif %}
+                        <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
                     </ul>
                 </div>
@@ -818,5 +824,88 @@
 
         document.addEventListener('DOMContentLoaded', initOnlineUsersTracking);
     </script>
+
+    <!-- Edit Profile Modal -->
+    <div class="modal fade" id="editProfileModal" tabindex="-1" aria-labelledby="editProfileModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editProfileModalLabel"><i class="bi bi-person"></i> Edit Profile</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editProfileForm">
+                        <div class="mb-3">
+                            <label for="profileName" class="form-label">Name</label>
+                            <input type="text" class="form-control" id="profileName" value="{{ current_user.name }}" required minlength="2">
+                        </div>
+                        <div class="mb-3">
+                            <label for="profileEmail" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="profileEmail" value="{{ current_user.email }}" disabled>
+                            <small class="text-muted">Contact an administrator to change your email</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="profilePhone" class="form-label">Phone</label>
+                            <input type="tel" class="form-control" id="profilePhone" value="{{ current_user.phone or '' }}" placeholder="Optional">
+                        </div>
+                    </form>
+                    <div class="d-flex justify-content-end mb-3">
+                        <button type="button" class="btn btn-primary" onclick="updateProfile()">Save Profile</button>
+                    </div>
+                    <hr>
+                    <h6 class="mb-3"><i class="bi bi-key"></i> Change Password</h6>
+                    <form id="changePasswordForm">
+                        <div class="mb-3">
+                            <label for="currentPassword" class="form-label">Current Password</label>
+                            <input type="password" class="form-control" id="currentPassword">
+                        </div>
+                        <div class="mb-3">
+                            <label for="newPassword" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="newPassword" minlength="6">
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label">Confirm New Password</label>
+                            <input type="password" class="form-control" id="confirmPassword" minlength="6">
+                        </div>
+                    </form>
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-warning" onclick="changePassword()">Change Password</button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function updateProfile() {
+            const name = document.getElementById('profileName').value.trim();
+            const phone = document.getElementById('profilePhone').value.trim();
+            if (!name || name.length < 2) { alert('Name must be at least 2 characters'); return; }
+            try {
+                const response = await fetch('/api/auth/update-profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, phone }) });
+                const result = await response.json();
+                if (result.success) { alert('Profile updated successfully'); const btn = document.getElementById('userDropdown'); if (btn) btn.innerHTML = '<i class="bi bi-person-circle"></i> ' + result.name; }
+                else { alert('Error: ' + result.error); }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+        async function changePassword() {
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            if (!currentPassword || !newPassword || !confirmPassword) { alert('Please fill in all password fields'); return; }
+            if (newPassword !== confirmPassword) { alert('New passwords do not match'); return; }
+            if (newPassword.length < 6) { alert('Password must be at least 6 characters'); return; }
+            try {
+                const response = await fetch('/api/auth/change-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) });
+                const result = await response.json();
+                if (result.success) { alert('Password changed successfully'); document.getElementById('changePasswordForm').reset(); }
+                else { alert('Error: ' + result.error); }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+    </script>
+    <script src="/static/js/theme.js"></script>
 </body>
 </html>
