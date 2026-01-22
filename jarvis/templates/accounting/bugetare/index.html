@@ -664,7 +664,6 @@
         async function loadCompaniesWithVat() {
             const res = await fetch('/api/companies-vat');
             companiesWithVat = await res.json();
-            console.log('Loaded companiesWithVat:', companiesWithVat.length, 'companies');
         }
 
         async function loadInvoiceTemplates() {
@@ -938,15 +937,12 @@
 
         function matchCompanyByVat(invoiceVat) {
             if (!invoiceVat) return null;
-            console.log('matchCompanyByVat called with:', invoiceVat, '| companiesWithVat length:', companiesWithVat.length);
             const normalizedInvoiceVat = normalizeVat(invoiceVat);
             const invoiceNumbersOnly = extractVatNumbers(invoiceVat);
-            console.log('Normalized:', normalizedInvoiceVat, '| Numbers only:', invoiceNumbersOnly);
 
             // First pass: exact normalized match
             for (const c of companiesWithVat) {
                 if (normalizeVat(c.vat) === normalizedInvoiceVat) {
-                    console.log('Match found (exact):', c.company);
                     return c;
                 }
             }
@@ -956,13 +952,11 @@
                 for (const c of companiesWithVat) {
                     const companyNumbers = extractVatNumbers(c.vat);
                     if (companyNumbers && companyNumbers === invoiceNumbersOnly) {
-                        console.log('Match found (numeric):', c.company);
                         return c;
                     }
                 }
             }
 
-            console.log('No match found for VAT:', invoiceVat);
             return null;
         }
 
