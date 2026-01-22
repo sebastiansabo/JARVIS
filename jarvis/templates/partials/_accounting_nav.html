@@ -3,12 +3,11 @@
     Usage: {% include 'partials/_accounting_nav.html' %}
 
     Optional variables:
-        - active_page: Current page key to highlight (dashboard, invoice, templates, bulk, statements)
+        - active_page: Current page key to highlight (invoices, statements)
 #}
 
 {% set nav_items = [
-    {'key': 'dashboard', 'url': '/accounting', 'icon': 'bi-speedometer2', 'label': 'Dashboard'},
-    {'key': 'templates', 'url': '/templates', 'icon': 'bi-file-earmark-text', 'label': 'Templates'},
+    {'key': 'invoices', 'url': '/accounting', 'icon': 'bi-receipt', 'label': 'Invoices'},
     {'key': 'statements', 'url': '/statements/', 'icon': 'bi-bank', 'label': 'Statements'}
 ] %}
 
