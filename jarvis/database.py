@@ -187,13 +187,14 @@ if not DATABASE_URL:
 # minconn: minimum connections kept open
 # maxconn: maximum connections allowed
 # Note: DigitalOcean managed DB has ~25 max connections total
-# With multiple workers, keep pool small: 2 workers × 3 min = 6 connections
+# With multiple workers, keep pool small to stay within DO's ~25 connection limit
 _connection_pool = None
 
 # Pool size configuration - can be tuned via environment variables
-# Defaults optimized for 3 Gunicorn workers with 1-10 concurrent users
-POOL_MIN_CONN = int(os.environ.get('DB_POOL_MIN_CONN', '3'))
-POOL_MAX_CONN = int(os.environ.get('DB_POOL_MAX_CONN', '12'))
+# DigitalOcean managed DB has ~25 max connections
+# With 3 Gunicorn workers: 3 workers × 7 max = 21 connections (safe margin)
+POOL_MIN_CONN = int(os.environ.get('DB_POOL_MIN_CONN', '2'))
+POOL_MAX_CONN = int(os.environ.get('DB_POOL_MAX_CONN', '7'))
 
 
 def _get_pool():
