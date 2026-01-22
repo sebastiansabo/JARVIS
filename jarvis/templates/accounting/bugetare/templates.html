@@ -36,11 +36,30 @@
     </div>
 
     <div class="container-fluid px-4 mt-3">
-        {% set active_page = 'templates' %}
+        {% set active_page = 'invoices' %}
         {% set inline_nav = true %}
         {% include 'partials/_accounting_nav.html' %}
 
-        <div class="row mt-3">
+        <!-- Page Tabs -->
+        <ul class="nav nav-tabs mt-3 mb-3">
+            <li class="nav-item">
+                <a class="nav-link" href="/add-invoice">
+                    <i class="bi bi-plus-circle"></i> Add Invoice
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="/bulk">
+                    <i class="bi bi-stack"></i> Bulk
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active" href="/templates">
+                    <i class="bi bi-file-earmark-text"></i> Templates
+                </a>
+            </li>
+        </ul>
+
+        <div class="row">
             <!-- Templates List -->
             <div class="col-md-4">
                 <div class="card mb-4">

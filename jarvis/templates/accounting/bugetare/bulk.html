@@ -36,9 +36,28 @@
     </div>
 
     <div class="container-fluid px-4 mt-3">
-        {% set active_page = 'bulk' %}
+        {% set active_page = 'invoices' %}
         {% set inline_nav = true %}
         {% include 'partials/_accounting_nav.html' %}
+
+        <!-- Page Tabs -->
+        <ul class="nav nav-tabs mt-3 mb-3">
+            <li class="nav-item">
+                <a class="nav-link" href="/add-invoice">
+                    <i class="bi bi-plus-circle"></i> Add Invoice
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active" href="/bulk">
+                    <i class="bi bi-stack"></i> Bulk
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="/templates">
+                    <i class="bi bi-file-earmark-text"></i> Templates
+                </a>
+            </li>
+        </ul>
 
         <!-- Upload Section (collapsible) -->
         <div class="row mb-4 mt-3" id="uploadSection">
