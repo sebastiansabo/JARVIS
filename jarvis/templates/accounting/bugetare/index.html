@@ -392,6 +392,10 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
+            // Setup event listeners FIRST (before async calls that might fail)
+            setupEventListeners();
+            addAllocationRow();
+
             showLoading('Loading data...');
             try {
                 await loadStructure();
@@ -399,11 +403,11 @@
                 await loadInvoiceTemplates();
                 await loadVatRates();
                 await loadPendingBankTransactions();
-                addAllocationRow();
-                setupEventListeners();
 
                 // Check for bulk transfer data from Bulk Processor
                 await checkBulkTransferData();
+            } catch (e) {
+                console.error('Error loading page data:', e);
             } finally {
                 hideLoading();
             }
