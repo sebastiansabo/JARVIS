@@ -942,7 +942,7 @@
             const dropZone = document.getElementById('dropZone');
             const fileInput = document.getElementById('fileInput');
 
-            dropZone.addEventListener('click', () => fileInput.click());
+            dropZone.addEventListener('click', () => document.getElementById('fileInput').click());
             dropZone.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 dropZone.classList.add('dragover');
@@ -1194,15 +1194,13 @@
                 <small class="text-muted">Supports PDF, JPG, PNG</small>
                 <input type="file" id="fileInput" class="d-none" accept=".pdf,.jpg,.jpeg,.png">
             `;
-            // Re-attach file input event listeners
-            const newFileInput = document.getElementById('fileInput');
-            newFileInput.addEventListener('change', function() {
+            // Re-attach file input change listener (click handler uses getElementById so it works automatically)
+            document.getElementById('fileInput').addEventListener('change', function() {
                 if (this.files.length) {
                     uploadedFile = this.files[0];
                     updateDropZoneText(uploadedFile.name);
                 }
             });
-            dropZone.addEventListener('click', () => newFileInput.click());
 
             // Clear attachments
             attachmentFiles = [];
