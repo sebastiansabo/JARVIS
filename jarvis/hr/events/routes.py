@@ -762,10 +762,37 @@ def api_create_department():
             if row:
                 company_name = row['company']
 
-        # brand_id, department_id, subdepartment_id are now TEXT values (the names themselves)
-        brand_name = data.get('brand_id') or None
-        dept_name = data.get('department_id') or None
-        subdept_name = data.get('subdepartment_id') or None
+        # Look up names from master tables if numeric IDs are passed
+        brand_val = data.get('brand_id')
+        dept_val = data.get('department_id')
+        subdept_val = data.get('subdepartment_id')
+
+        brand_name = None
+        if brand_val:
+            if str(brand_val).isdigit():
+                cur.execute("SELECT name FROM brands WHERE id = %s", (int(brand_val),))
+                row = cur.fetchone()
+                brand_name = row['name'] if row else None
+            else:
+                brand_name = brand_val
+
+        dept_name = None
+        if dept_val:
+            if str(dept_val).isdigit():
+                cur.execute("SELECT name FROM departments WHERE id = %s", (int(dept_val),))
+                row = cur.fetchone()
+                dept_name = row['name'] if row else None
+            else:
+                dept_name = dept_val
+
+        subdept_name = None
+        if subdept_val:
+            if str(subdept_val).isdigit():
+                cur.execute("SELECT name FROM subdepartments WHERE id = %s", (int(subdept_val),))
+                row = cur.fetchone()
+                subdept_name = row['name'] if row else None
+            else:
+                subdept_name = subdept_val
 
         cur.execute("""
             INSERT INTO department_structure (company_id, company, brand, department, subdepartment, manager)
@@ -805,10 +832,37 @@ def api_update_department(dept_id):
             if row:
                 company_name = row['company']
 
-        # brand_id, department_id, subdepartment_id are now TEXT values (the names themselves)
-        brand_name = data.get('brand_id') or None
-        dept_name = data.get('department_id') or None
-        subdept_name = data.get('subdepartment_id') or None
+        # Look up names from master tables if numeric IDs are passed
+        brand_val = data.get('brand_id')
+        dept_val = data.get('department_id')
+        subdept_val = data.get('subdepartment_id')
+
+        brand_name = None
+        if brand_val:
+            if str(brand_val).isdigit():
+                cur.execute("SELECT name FROM brands WHERE id = %s", (int(brand_val),))
+                row = cur.fetchone()
+                brand_name = row['name'] if row else None
+            else:
+                brand_name = brand_val
+
+        dept_name = None
+        if dept_val:
+            if str(dept_val).isdigit():
+                cur.execute("SELECT name FROM departments WHERE id = %s", (int(dept_val),))
+                row = cur.fetchone()
+                dept_name = row['name'] if row else None
+            else:
+                dept_name = dept_val
+
+        subdept_name = None
+        if subdept_val:
+            if str(subdept_val).isdigit():
+                cur.execute("SELECT name FROM subdepartments WHERE id = %s", (int(subdept_val),))
+                row = cur.fetchone()
+                subdept_name = row['name'] if row else None
+            else:
+                subdept_name = subdept_val
 
         cur.execute("""
             UPDATE department_structure
