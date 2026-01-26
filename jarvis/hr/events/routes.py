@@ -473,23 +473,29 @@ def api_get_companies_full():
                 'created_at': r['created_at'].isoformat() if r['created_at'] else None
             })
 
-        # Get brands for all companies
+        # Get brands for all companies (JOIN with brands table to get name)
         cur.execute("""
-            SELECT company_id, brand FROM company_brands
-            WHERE is_active = TRUE ORDER BY brand
+            SELECT cb.id as cb_id, cb.company_id, cb.brand_id, b.name as brand
+            FROM company_brands cb
+            JOIN brands b ON cb.brand_id = b.id
+            WHERE cb.is_active = TRUE ORDER BY b.name
         """)
         brands_by_company = {}
         for r in cur.fetchall():
             cid = r['company_id']
             if cid not in brands_by_company:
                 brands_by_company[cid] = []
-            brands_by_company[cid].append(r['brand'])
+            brands_by_company[cid].append({
+                'id': r['cb_id'],        # company_brands.id for update/delete
+                'brand_id': r['brand_id'],  # brands.id (FK)
+                'brand': r['brand']      # brand name
+            })
 
         # Add brands to companies
         for company in companies:
             brand_list = brands_by_company.get(company['id'], [])
-            company['brands'] = ', '.join(brand_list)
-            company['brands_list'] = [{'brand': b} for b in brand_list]
+            company['brands'] = ', '.join(b['brand'] for b in brand_list)
+            company['brands_list'] = brand_list  # Already has {id, brand} structure
 
         return jsonify(companies)
     finally:
@@ -584,19 +590,21 @@ def api_get_company_brands():
 
         if company_id:
             cur.execute("""
-                SELECT cb.id, cb.company_id, c.company, cb.brand, cb.is_active, cb.created_at
+                SELECT cb.id, cb.company_id, c.company, cb.brand_id, b.name as brand, cb.is_active, cb.created_at
                 FROM company_brands cb
                 JOIN companies c ON cb.company_id = c.id
+                JOIN brands b ON cb.brand_id = b.id
                 WHERE cb.company_id = %s AND cb.is_active = TRUE
-                ORDER BY cb.brand
+                ORDER BY b.name
             """, (company_id,))
         else:
             cur.execute("""
-                SELECT cb.id, cb.company_id, c.company, cb.brand, cb.is_active, cb.created_at
+                SELECT cb.id, cb.company_id, c.company, cb.brand_id, b.name as brand, cb.is_active, cb.created_at
                 FROM company_brands cb
                 JOIN companies c ON cb.company_id = c.id
+                JOIN brands b ON cb.brand_id = b.id
                 WHERE cb.is_active = TRUE
-                ORDER BY c.company, cb.brand
+                ORDER BY c.company, b.name
             """)
 
         rows = cur.fetchall()
@@ -619,15 +627,15 @@ def api_create_company_brand():
 
     try:
         cur.execute("""
-            INSERT INTO company_brands (company_id, brand)
+            INSERT INTO company_brands (company_id, brand_id)
             VALUES (%s, %s)
             RETURNING id
-        """, (data['company_id'], data['brand']))
-        brand_id = cur.fetchone()['id']
+        """, (data['company_id'], data['brand_id']))
+        cb_id = cur.fetchone()['id']
         conn.commit()
         release_db(conn)
         clear_structure_cache()
-        return jsonify({'success': True, 'id': brand_id})
+        return jsonify({'success': True, 'id': cb_id})
     except Exception as e:
         conn.rollback()
         release_db(conn)
@@ -648,9 +656,9 @@ def api_update_company_brand(brand_id):
 
     cur.execute("""
         UPDATE company_brands
-        SET brand = %s, is_active = %s
+        SET brand_id = %s, is_active = %s
         WHERE id = %s
-    """, (data['brand'], data.get('is_active', True), brand_id))
+    """, (data['brand_id'], data.get('is_active', True), brand_id))
     conn.commit()
     release_db(conn)
     clear_structure_cache()
@@ -687,10 +695,11 @@ def api_get_brands_for_company(company_id):
     try:
         cur = get_cursor(conn)
         cur.execute("""
-            SELECT id, brand, is_active
-            FROM company_brands
-            WHERE company_id = %s AND is_active = TRUE
-            ORDER BY brand
+            SELECT cb.id, cb.brand_id, b.name as brand, cb.is_active
+            FROM company_brands cb
+            JOIN brands b ON cb.brand_id = b.id
+            WHERE cb.company_id = %s AND cb.is_active = TRUE
+            ORDER BY b.name
         """, (company_id,))
         rows = cur.fetchall()
         return jsonify([dict_from_row(r) for r in rows])

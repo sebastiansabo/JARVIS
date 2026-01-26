@@ -1,6 +1,17 @@
 # Changelog
 
 ## 2026-01-26
+### Company Brands Migration - FK-based Junction Table
+- Migrated `company_brands` from TEXT-based to FK-based storage
+- Schema: `company_brands.brand_id` now references `brands.id` (master table)
+- Dropped `company_brands.brand` TEXT column
+- Updated all code to JOIN with `brands` table for brand names:
+  - `jarvis/hr/events/routes.py` - 5 endpoints updated
+  - `jarvis/services.py` - `get_companies_with_vat()` updated
+  - `jarvis/models.py` - `get_brands_for_company()` updated
+- Updated Settings UI: Company modal now uses dropdown to select brands from master list
+- Benefits: Data normalization, referential integrity, single source of truth for brand names
+
 ### Settings Company Structure - Master Tables
 - Restored master lookup tables (`brands`, `departments`, `subdepartments`) with full CRUD
 - These serve as vocabulary/picklist tables for Settings → Company Structure tabs

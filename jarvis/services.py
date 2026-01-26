@@ -44,12 +44,13 @@ def get_companies_with_vat() -> list[dict]:
         cursor.execute('SELECT id, company, vat FROM companies ORDER BY company')
         companies = [dict(row) for row in cursor.fetchall()]
 
-        # Get brands from company_brands table
+        # Get brands from company_brands table (JOIN with brands to get name)
         cursor.execute('''
-            SELECT cb.company_id, cb.id as brand_id, cb.brand
+            SELECT cb.company_id, cb.id as cb_id, cb.brand_id, b.name as brand
             FROM company_brands cb
+            JOIN brands b ON cb.brand_id = b.id
             WHERE cb.is_active = TRUE
-            ORDER BY cb.brand
+            ORDER BY b.name
         ''')
         brands_rows = cursor.fetchall()
 

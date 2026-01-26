@@ -174,11 +174,12 @@ def get_brands_for_company(company: str) -> list[str]:
         ph = get_placeholder()
 
         cursor.execute(f'''
-            SELECT cb.brand
+            SELECT b.name as brand
             FROM company_brands cb
             JOIN companies c ON cb.company_id = c.id
+            JOIN brands b ON cb.brand_id = b.id
             WHERE c.company = {ph} AND cb.is_active = TRUE
-            ORDER BY cb.brand
+            ORDER BY b.name
         ''', (company,))
 
         brands = [row['brand'] for row in cursor.fetchall()]

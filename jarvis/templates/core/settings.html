@@ -4794,7 +4794,11 @@
         // Track brands for the current company being edited
         let currentCompanyBrands = []; // [{id: null/number, brand: string, isNew: bool, isDeleted: bool}]
 
-        function openAddHrCompanyModal() {
+        async function openAddHrCompanyModal() {
+            // Ensure master brands are loaded for dropdown
+            if (masterBrandsData.length === 0) {
+                await loadMasterBrands();
+            }
             document.getElementById('hrCompanyModalTitle').textContent = 'Add Company';
             document.getElementById('hrCompanyForm').reset();
             document.getElementById('hrCompanyId').value = '';
@@ -4803,7 +4807,11 @@
             renderCompanyBrands();
         }
 
-        function editHrCompany(companyName) {
+        async function editHrCompany(companyName) {
+            // Ensure master brands are loaded for dropdown
+            if (masterBrandsData.length === 0) {
+                await loadMasterBrands();
+            }
             const company = hrCompaniesData.find(c => c.company === companyName);
             if (!company) return;
 
@@ -4813,10 +4821,11 @@
             document.getElementById('hrCompanyName').value = company.company;
             document.getElementById('hrCompanyVat').value = company.vat || '';
 
-            // Load brands from brands_list
+            // Load brands from brands_list (now uses brand_id FK)
             currentCompanyBrands = (company.brands_list || []).map(b => ({
-                id: b.id,
-                brand: b.brand,
+                id: b.id,           // company_brands.id (for update/delete)
+                brand_id: b.brand_id,  // brands.id (FK)
+                brand: b.brand,     // brand name (for display)
                 isNew: false,
                 isDeleted: false
             }));
@@ -4835,12 +4844,22 @@
                 return;
             }
 
+            // Get brand IDs already assigned to this company (to avoid duplicates)
+            const assignedBrandIds = activeBrands.map(b => b.brand_id).filter(id => id);
+
             container.innerHTML = activeBrands.map((b, idx) => {
                 const realIdx = currentCompanyBrands.indexOf(b);
+                // Build options - include current brand_id in options even if assigned
+                const options = masterBrandsData
+                    .filter(mb => !assignedBrandIds.includes(mb.id) || mb.id === b.brand_id)
+                    .map(mb => `<option value="${mb.id}" ${mb.id === b.brand_id ? 'selected' : ''}>${escapeHtml(mb.name)}</option>`)
+                    .join('');
                 return `
                     <div class="d-flex align-items-center gap-2 mb-1" data-idx="${realIdx}">
-                        <input type="text" class="form-control form-control-sm" value="${b.brand}"
-                               onchange="updateCompanyBrand(${realIdx}, this.value)" placeholder="Brand name">
+                        <select class="form-select form-select-sm" onchange="updateCompanyBrand(${realIdx}, this.value)">
+                            <option value="">Select brand...</option>
+                            ${options}
+                        </select>
                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeCompanyBrand(${realIdx})" title="Remove">
                             <i class="bi bi-x"></i>
                         </button>
@@ -4850,17 +4869,23 @@
         }
 
         function addCompanyBrandRow() {
-            currentCompanyBrands.push({ id: null, brand: '', isNew: true, isDeleted: false });
+            currentCompanyBrands.push({ id: null, brand_id: null, brand: '', isNew: true, isDeleted: false });
             renderCompanyBrands();
-            // Focus the new input
+            // Focus the new select
             const container = document.getElementById('hrCompanyBrandsList');
-            const lastInput = container.querySelector('input:last-of-type');
-            if (lastInput) lastInput.focus();
+            const lastSelect = container.querySelector('select:last-of-type');
+            if (lastSelect) lastSelect.focus();
         }
 
         function updateCompanyBrand(idx, value) {
             if (currentCompanyBrands[idx]) {
-                currentCompanyBrands[idx].brand = value.trim();
+                const brandId = parseInt(value) || null;
+                currentCompanyBrands[idx].brand_id = brandId;
+                // Also update brand name for display purposes
+                const brand = masterBrandsData.find(b => b.id === brandId);
+                currentCompanyBrands[idx].brand = brand ? brand.name : '';
+                // Re-render to update available options in other dropdowns
+                renderCompanyBrands();
             }
         }
 
@@ -4925,24 +4950,24 @@
 
                 // Now save brands if we have a company ID
                 if (companyId) {
-                    // Process brand changes
+                    // Process brand changes (using brand_id FK)
                     for (const brand of currentCompanyBrands) {
                         if (brand.isDeleted && brand.id) {
-                            // Delete existing brand
+                            // Delete existing company-brand link
                             await fetch(`/hr/events/api/structure/company-brands/${brand.id}`, { method: 'DELETE' });
-                        } else if (brand.isNew && brand.brand) {
-                            // Create new brand
+                        } else if (brand.isNew && brand.brand_id) {
+                            // Create new company-brand link
                             await fetch('/hr/events/api/structure/company-brands', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ company_id: parseInt(companyId), brand: brand.brand })
+                                body: JSON.stringify({ company_id: parseInt(companyId), brand_id: brand.brand_id })
                             });
-                        } else if (!brand.isNew && !brand.isDeleted && brand.id && brand.brand) {
-                            // Update existing brand (in case name changed)
+                        } else if (!brand.isNew && !brand.isDeleted && brand.id && brand.brand_id) {
+                            // Update existing link (in case brand selection changed)
                             await fetch(`/hr/events/api/structure/company-brands/${brand.id}`, {
                                 method: 'PUT',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ brand: brand.brand })
+                                body: JSON.stringify({ brand_id: brand.brand_id })
                             });
                         }
                     }
