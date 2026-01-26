@@ -60,7 +60,11 @@ def get_companies_with_vat() -> list[dict]:
             cid = row['company_id']
             if cid not in brands_by_company:
                 brands_by_company[cid] = []
-            brands_by_company[cid].append({'id': row['brand_id'], 'brand': row['brand']})
+            brands_by_company[cid].append({
+                'id': row['cb_id'],        # company_brands.id for update/delete
+                'brand_id': row['brand_id'],  # brands.id (FK)
+                'brand': row['brand']      # brand name
+            })
 
         # Add brands to companies
         for company in companies:
