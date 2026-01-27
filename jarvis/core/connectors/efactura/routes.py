@@ -921,6 +921,7 @@ def oauth_authorize():
 
 
 @efactura_bp.route('/oauth/callback', methods=['GET'])
+@efactura_bp.route('/callback', methods=['GET'])  # Also handle /efactura/callback (ANAF registration)
 @login_required
 def oauth_callback():
     """
