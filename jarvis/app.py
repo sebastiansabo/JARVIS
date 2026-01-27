@@ -115,6 +115,14 @@ app.config['REMEMBER_COOKIE_SECURE'] = True  # Only send over HTTPS
 app.config['REMEMBER_COOKIE_HTTPONLY'] = True  # Not accessible via JavaScript
 app.config['REMEMBER_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
 
+# Initialize database tables (moved from database.py to avoid import-time DB connection)
+from database import init_db
+try:
+    init_db()
+    app_logger.info("Database initialized successfully")
+except Exception as e:
+    app_logger.warning(f"Database initialization skipped: {e}")
+
 # Register HR Module Blueprint (section-level, includes /events sub-routes)
 from hr import hr_bp
 app.register_blueprint(hr_bp, url_prefix='/hr')

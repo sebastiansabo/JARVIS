@@ -6145,5 +6145,5 @@ def check_permission_v2(role_id: int, module: str, entity: str, action: str) -> 
     return {'has_permission': False, 'scope': 'deny'}
 
 
-# Initialize database on import
-init_db()
+# Note: init_db() is called from app.py, not at import time
+# This allows the module to be imported without requiring a database connection
