@@ -941,7 +941,7 @@ class EFacturaService:
                     cif=cif,
                     days=days,
                     page=page,
-                    filter_type=None,  # Get both received and sent
+                    filter_type='P',  # Only fetch Received (Primite) invoices
                 )
 
                 if not fetch_result.success:
@@ -1067,6 +1067,38 @@ class EFacturaService:
     def get_unallocated_count(self) -> int:
         """Get count of unallocated invoices for badge."""
         return self.invoice_repo.count_unallocated()
+
+    def ignore_invoice(self, invoice_id: int, ignored: bool = True) -> ServiceResult:
+        """
+        Mark an invoice as ignored (soft delete) or restore it.
+
+        Args:
+            invoice_id: ID of the invoice to ignore/restore
+            ignored: True to ignore, False to restore
+
+        Returns:
+            ServiceResult with success status
+        """
+        # Check if invoice exists
+        invoice = self.invoice_repo.get_by_id(invoice_id)
+        if not invoice:
+            return ServiceResult(success=False, error=f"Invoice {invoice_id} not found")
+
+        # Check if already allocated
+        if self.invoice_repo.is_allocated(invoice_id):
+            return ServiceResult(
+                success=False,
+                error=f"Invoice {invoice_id} is already allocated and cannot be ignored"
+            )
+
+        success = self.invoice_repo.ignore_invoice(invoice_id, ignored)
+        if success:
+            return ServiceResult(success=True, data={
+                'invoice_id': invoice_id,
+                'ignored': ignored,
+            })
+        else:
+            return ServiceResult(success=False, error="Failed to update invoice")
 
     def send_to_invoice_module(self, invoice_ids: List[int]) -> ServiceResult:
         """

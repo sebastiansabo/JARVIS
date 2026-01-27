@@ -474,6 +474,38 @@ class InvoiceRepository:
         finally:
             release_db(conn)
 
+    def ignore_invoice(self, invoice_id: int, ignored: bool = True) -> bool:
+        """
+        Mark an invoice as ignored (soft delete).
+
+        Args:
+            invoice_id: ID of the invoice to ignore
+            ignored: True to ignore, False to restore
+
+        Returns:
+            True if successful, False otherwise
+        """
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute("""
+                UPDATE efactura_invoices
+                SET ignored = %s, updated_at = NOW()
+                WHERE id = %s
+            """, (ignored, invoice_id))
+            conn.commit()
+            logger.info(
+                f"Invoice {'ignored' if ignored else 'restored'}",
+                extra={'invoice_id': invoice_id}
+            )
+            return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to ignore invoice: {e}")
+            return False
+        finally:
+            release_db(conn)
+
     def list_unallocated(
         self,
         cif_owner: Optional[str] = None,
@@ -488,14 +520,14 @@ class InvoiceRepository:
         """
         List invoices that haven't been sent to the main Invoice Module.
 
-        Unallocated = jarvis_invoice_id IS NULL
+        Unallocated = jarvis_invoice_id IS NULL AND ignored = FALSE
         """
         conn = get_db()
         try:
             cursor = get_cursor(conn)
 
-            # Build WHERE clause
-            conditions = ['jarvis_invoice_id IS NULL']
+            # Build WHERE clause - exclude ignored invoices
+            conditions = ['jarvis_invoice_id IS NULL', 'ignored = FALSE']
             params = {'limit': limit, 'offset': offset}
 
             if cif_owner:
@@ -548,19 +580,19 @@ class InvoiceRepository:
             release_db(conn)
 
     def count_unallocated(self, cif_owner: Optional[str] = None) -> int:
-        """Count unallocated invoices."""
+        """Count unallocated invoices (excluding ignored)."""
         conn = get_db()
         try:
             cursor = get_cursor(conn)
             if cif_owner:
                 cursor.execute("""
                     SELECT COUNT(*) as total FROM efactura_invoices
-                    WHERE jarvis_invoice_id IS NULL AND cif_owner = %s
+                    WHERE jarvis_invoice_id IS NULL AND ignored = FALSE AND cif_owner = %s
                 """, (cif_owner,))
             else:
                 cursor.execute("""
                     SELECT COUNT(*) as total FROM efactura_invoices
-                    WHERE jarvis_invoice_id IS NULL
+                    WHERE jarvis_invoice_id IS NULL AND ignored = FALSE
                 """)
             return cursor.fetchone()['total']
         finally:

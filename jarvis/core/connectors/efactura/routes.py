@@ -982,6 +982,45 @@ def send_to_invoice_module():
         }), 500
 
 
+@efactura_bp.route('/api/invoices/<int:invoice_id>/ignore', methods=['POST'])
+@api_login_required
+def ignore_invoice(invoice_id: int):
+    """
+    Mark an invoice as ignored (soft delete).
+
+    This removes the invoice from the unallocated list without deleting it.
+    Can be restored later by setting ignored=False.
+
+    Request body (optional):
+        restore: Set to true to restore a previously ignored invoice
+    """
+    try:
+        data = request.get_json() or {}
+        restore = data.get('restore', False)
+
+        result = efactura_service.ignore_invoice(invoice_id, ignored=not restore)
+
+        if not result.success:
+            return jsonify({
+                'success': False,
+                'error': result.error,
+            }), 400
+
+        return jsonify({
+            'success': True,
+            'invoice_id': invoice_id,
+            'ignored': result.data['ignored'],
+            'message': 'Invoice restored' if restore else 'Invoice ignored',
+        })
+
+    except Exception as e:
+        logger.error(f"Error ignoring invoice: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+        }), 500
+
+
 @efactura_bp.route('/api/invoices/<int:invoice_id>/pdf', methods=['GET'])
 @api_login_required
 def get_invoice_pdf(invoice_id: int):

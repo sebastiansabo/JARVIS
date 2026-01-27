@@ -146,9 +146,21 @@
                     <a href="/efactura/" class="btn btn-sm btn-outline-secondary" title="Go to e-Factura Connector settings">
                         <i class="bi bi-gear"></i> Connector Settings
                     </a>
-                    <button class="btn btn-sm btn-success" onclick="syncAll()" id="syncBtn" title="Fetch and import all invoices from all connected companies">
-                        <i class="bi bi-cloud-arrow-down"></i> Sync
-                    </button>
+                    <div class="btn-group">
+                        <button class="btn btn-sm btn-success" onclick="syncAll()" id="syncBtn" title="Fetch and import all invoices from all connected companies">
+                            <i class="bi bi-cloud-arrow-down"></i> Sync
+                        </button>
+                        <button type="button" class="btn btn-sm btn-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" title="Select sync period">
+                            <span class="visually-hidden">Toggle Dropdown</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="#" onclick="syncAll(1); return false;"><i class="bi bi-calendar3"></i> Last 1 day</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="syncAll(2); return false;"><i class="bi bi-calendar3"></i> Last 2 days</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="syncAll(3); return false;"><i class="bi bi-calendar3"></i> Last 3 days</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" onclick="syncAll(60); return false;"><i class="bi bi-calendar-range"></i> Last 60 days (default)</a></li>
+                        </ul>
+                    </div>
                     <button class="btn btn-sm btn-outline-primary" onclick="loadUnallocatedInvoices()">
                         <i class="bi bi-arrow-clockwise"></i> Refresh
                     </button>
@@ -300,7 +312,7 @@
             { id: 'vat', label: 'VAT', visible: true, align: 'end' },
             { id: 'currency', label: 'Currency', visible: true },
             { id: 'imported', label: 'Imported', visible: true },
-            { id: 'actions', label: 'Actions', fixed: true, width: '120px' }
+            { id: 'actions', label: 'Actions', fixed: true, width: '150px' }
         ];
 
         // Load column config from localStorage
@@ -434,7 +446,7 @@
         }
 
         // Sync all invoices from all connected companies with real progress
-        async function syncAll() {
+        async function syncAll(days = 60) {
             const syncBtn = document.getElementById('syncBtn');
             const originalContent = syncBtn.innerHTML;
 
@@ -443,7 +455,7 @@
             syncBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Syncing...';
 
             // Show progress indicator
-            showSyncProgress('Starting...', 'Getting company list...', 0, 'syncing');
+            showSyncProgress('Starting...', `Fetching last ${days} day(s)...`, 0, 'syncing');
 
             // Totals for summary
             let totalImported = 0;
@@ -484,7 +496,7 @@
                         const syncRes = await fetch('/efactura/api/sync/company', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ cif: company.cif, days: 60 })
+                            body: JSON.stringify({ cif: company.cif, days: days })
                         });
                         const syncData = await syncRes.json();
 
@@ -650,6 +662,9 @@
                         </button>
                         <button class="btn btn-outline-danger" onclick="exportPdf(${inv.id})" title="Export PDF">
                             <i class="bi bi-file-pdf"></i>
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="ignoreInvoice(${inv.id})" title="Ignore (hide from list)">
+                            <i class="bi bi-eye-slash"></i>
                         </button>
                     </div>`
                 };
@@ -863,6 +878,37 @@
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="bi bi-send"></i> Send to Invoices <span id="selectedCount" class="badge bg-light text-dark ms-1">0</span>';
+            }
+        }
+
+        // Ignore (soft delete) an invoice
+        async function ignoreInvoice(invoiceId) {
+            if (!confirm('Ignore this invoice? It will be hidden from the unallocated list.')) return;
+
+            try {
+                const res = await fetch(`/efactura/api/invoices/${invoiceId}/ignore`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    // Remove the row from the table with animation
+                    const row = document.querySelector(`tr[data-id="${invoiceId}"]`);
+                    if (row) {
+                        row.style.transition = 'opacity 0.3s';
+                        row.style.opacity = '0';
+                        setTimeout(() => row.remove(), 300);
+                    }
+                    // Update counts
+                    const currentCount = parseInt(document.getElementById('unallocatedCount').textContent) || 0;
+                    document.getElementById('unallocatedCount').textContent = Math.max(0, currentCount - 1);
+                } else {
+                    alert(data.error || 'Failed to ignore invoice');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
             }
         }
 

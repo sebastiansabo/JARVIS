@@ -1735,9 +1735,23 @@ def init_db():
             company_id INTEGER REFERENCES companies(id),
             jarvis_invoice_id INTEGER REFERENCES invoices(id),
             xml_content TEXT,
+            ignored BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMP NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
+    ''')
+
+    # Add ignored column if not exists (migration for existing databases)
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'efactura_invoices' AND column_name = 'ignored'
+            ) THEN
+                ALTER TABLE efactura_invoices ADD COLUMN ignored BOOLEAN NOT NULL DEFAULT FALSE;
+            END IF;
+        END $$;
     ''')
 
     # e-Factura invoice references (ANAF IDs)
