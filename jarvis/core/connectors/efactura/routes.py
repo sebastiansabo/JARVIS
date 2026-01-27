@@ -989,10 +989,48 @@ def oauth_callback():
         tokens = oauth_service.exchange_code_for_tokens(code, state)
 
         # Store tokens in database
-        from database import save_efactura_oauth_tokens
+        from database import save_efactura_oauth_tokens, get_db, get_cursor, release_db
 
         token_data = tokens.to_dict()
         save_efactura_oauth_tokens(session_cif, token_data)
+
+        # Auto-create company connection if it doesn't exist
+        try:
+            conn = get_db()
+            cursor = get_cursor(conn)
+
+            # Check if connection already exists
+            cursor.execute(
+                'SELECT id FROM efactura_company_connections WHERE cif = %s',
+                (session_cif,)
+            )
+            existing = cursor.fetchone()
+
+            if not existing:
+                # Try to find company name from companies table
+                cursor.execute(
+                    'SELECT company FROM companies WHERE vat LIKE %s',
+                    (f'%{session_cif}%',)
+                )
+                company_row = cursor.fetchone()
+                display_name = company_row['company'] if company_row else f'CIF {session_cif}'
+
+                # Create connection record
+                cursor.execute('''
+                    INSERT INTO efactura_company_connections
+                    (cif, display_name, environment, status, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, NOW(), NOW())
+                ''', (session_cif, display_name, 'production', 'active'))
+                conn.commit()
+
+                logger.info(
+                    "Auto-created company connection",
+                    extra={'cif': session_cif, 'display_name': display_name}
+                )
+
+            release_db(conn)
+        except Exception as conn_err:
+            logger.warning(f"Could not auto-create connection: {conn_err}")
 
         # Clear session data
         session.pop('oauth_state', None)
