@@ -266,7 +266,7 @@ class ANAFOAuthClient:
     def _check_rate_limit(self):
         """Check and enforce rate limit."""
         max_requests = (
-            self.config.MAX_REQUESTS_PER_HOUR - self.config.RATE_LIMIT_BUFFER
+            self.config.MAX_REQUESTS_PER_MINUTE - self.config.RATE_LIMIT_BUFFER
         )
 
         if self._rate_limit.is_near_limit(max_requests, buffer=5):
@@ -275,7 +275,7 @@ class ANAFOAuthClient:
                 extra={
                     'requests_made': self._rate_limit.requests_made,
                     'remaining': self._rate_limit.get_remaining(
-                        self.config.MAX_REQUESTS_PER_HOUR
+                        self.config.MAX_REQUESTS_PER_MINUTE
                     ),
                 }
             )
@@ -283,7 +283,7 @@ class ANAFOAuthClient:
         if self._rate_limit.get_remaining(max_requests) <= 0:
             raise RateLimitError(
                 "Rate limit exceeded, please wait before making more requests",
-                retry_after=3600,  # 1 hour
+                retry_after=60,  # 1 minute
             )
 
     def _make_request(
@@ -643,13 +643,13 @@ class ANAFOAuthClient:
         """Get current rate limit status."""
         return {
             'requests_made': self._rate_limit.requests_made,
-            'max_per_hour': self.config.MAX_REQUESTS_PER_HOUR,
+            'max_per_minute': self.config.MAX_REQUESTS_PER_MINUTE,
             'remaining': self._rate_limit.get_remaining(
-                self.config.MAX_REQUESTS_PER_HOUR
+                self.config.MAX_REQUESTS_PER_MINUTE
             ),
             'window_start': self._rate_limit.window_start.isoformat(),
             'is_near_limit': self._rate_limit.is_near_limit(
-                self.config.MAX_REQUESTS_PER_HOUR,
+                self.config.MAX_REQUESTS_PER_MINUTE,
                 self.config.RATE_LIMIT_BUFFER,
             ),
         }
