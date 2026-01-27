@@ -29,8 +29,16 @@ OAUTH_AUTHORIZE_URL = "https://logincert.anaf.ro/anaf-oauth2/v1/authorize"
 OAUTH_TOKEN_URL = "https://logincert.anaf.ro/anaf-oauth2/v1/token"
 OAUTH_REVOKE_URL = "https://logincert.anaf.ro/anaf-oauth2/v1/revoke"
 
-# Default redirect URI (can be overridden by environment variable)
-DEFAULT_REDIRECT_URI = "http://localhost:5001/efactura/oauth/callback"
+# OAuth Client credentials (from ANAF registration)
+# Set via environment variables for security
+OAUTH_CLIENT_ID = os.environ.get('ANAF_OAUTH_CLIENT_ID', '')
+OAUTH_CLIENT_SECRET = os.environ.get('ANAF_OAUTH_CLIENT_SECRET', '')
+
+# Default redirect URI (must match ANAF registration)
+DEFAULT_REDIRECT_URI = os.environ.get(
+    'ANAF_OAUTH_REDIRECT_URI',
+    "https://mkt-app-922ou.ondigitalocean.app/efactura/callback"
+)
 
 
 @dataclass
@@ -90,18 +98,30 @@ class ANAFOAuthService:
     6. Auto-refresh when access token expires
     """
 
-    def __init__(self, redirect_uri: Optional[str] = None):
+    def __init__(
+        self,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        redirect_uri: Optional[str] = None,
+    ):
         """
         Initialize OAuth service.
 
         Args:
-            redirect_uri: OAuth callback URL (defaults to env var or localhost)
+            client_id: ANAF OAuth client ID (from registration)
+            client_secret: ANAF OAuth client secret (from registration)
+            redirect_uri: OAuth callback URL (defaults to env var)
         """
-        self.redirect_uri = redirect_uri or os.environ.get(
-            'ANAF_OAUTH_REDIRECT_URI',
-            DEFAULT_REDIRECT_URI
-        )
+        self.client_id = client_id or OAUTH_CLIENT_ID
+        self.client_secret = client_secret or OAUTH_CLIENT_SECRET
+        self.redirect_uri = redirect_uri or DEFAULT_REDIRECT_URI
         self._pending_auth: Dict[str, Dict] = {}  # state -> {code_verifier, cif}
+
+        if not self.client_id or not self.client_secret:
+            logger.warning(
+                "ANAF OAuth credentials not configured. "
+                "Set ANAF_OAUTH_CLIENT_ID and ANAF_OAUTH_CLIENT_SECRET environment variables."
+            )
 
     def generate_pkce_pair(self) -> Tuple[str, str]:
         """
@@ -128,12 +148,21 @@ class ANAFOAuthService:
         Generate ANAF authorization URL.
 
         Args:
-            company_cif: Company CIF (without RO prefix)
+            company_cif: Company CIF (without RO prefix) - stored for reference
             scope: OAuth scope (default: efactura)
 
         Returns:
             Tuple of (authorization_url, state)
+
+        Raises:
+            ValueError: If OAuth credentials not configured
         """
+        if not self.client_id or not self.client_secret:
+            raise ValueError(
+                "ANAF OAuth credentials not configured. "
+                "Set ANAF_OAUTH_CLIENT_ID and ANAF_OAUTH_CLIENT_SECRET environment variables."
+            )
+
         # Generate state and PKCE
         state = secrets.token_urlsafe(32)
         code_verifier, code_challenge = self.generate_pkce_pair()
@@ -146,15 +175,16 @@ class ANAFOAuthService:
         }
 
         # Build authorization URL
+        # Use registered client_id, not CIF
         params = {
             'response_type': 'code',
-            'client_id': company_cif,  # ANAF uses CIF as client_id
+            'client_id': self.client_id,
             'redirect_uri': self.redirect_uri,
             'scope': scope,
             'state': state,
             'code_challenge': code_challenge,
             'code_challenge_method': 'S256',
-            'token_content_type': 'jwt',  # Required per ANAF OAuth documentation
+            'token_content_type': 'jwt',
         }
 
         # Build URL with query params
@@ -163,7 +193,12 @@ class ANAFOAuthService:
 
         logger.info(
             "Generated authorization URL",
-            extra={'cif': company_cif, 'state': state[:8] + '...'}
+            extra={
+                'cif': company_cif,
+                'client_id': self.client_id[:8] + '...',
+                'redirect_uri': self.redirect_uri,
+                'state': state[:8] + '...',
+            }
         )
 
         return auth_url, state
@@ -207,9 +242,10 @@ class ANAFOAuthService:
                     'grant_type': 'authorization_code',
                     'code': code,
                     'redirect_uri': self.redirect_uri,
-                    'client_id': company_cif,
+                    'client_id': self.client_id,
+                    'client_secret': self.client_secret,
                     'code_verifier': code_verifier,
-                    'token_content_type': 'jwt',  # Required per ANAF OAuth documentation
+                    'token_content_type': 'jwt',
                 },
                 timeout=30,
             )
@@ -267,7 +303,7 @@ class ANAFOAuthService:
 
         Args:
             refresh_token: Refresh token from previous auth
-            company_cif: Company CIF
+            company_cif: Company CIF (for logging)
 
         Returns:
             New OAuthTokens object
@@ -286,8 +322,9 @@ class ANAFOAuthService:
                 data={
                     'grant_type': 'refresh_token',
                     'refresh_token': refresh_token,
-                    'client_id': company_cif,
-                    'token_content_type': 'jwt',  # Required per ANAF OAuth documentation
+                    'client_id': self.client_id,
+                    'client_secret': self.client_secret,
+                    'token_content_type': 'jwt',
                 },
                 timeout=30,
             )
