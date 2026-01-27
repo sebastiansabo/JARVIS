@@ -448,7 +448,7 @@ class ANAFOAuthClient:
 
     def list_messages(
         self,
-        _company_cif: Optional[str] = None,
+        company_cif: Optional[str] = None,
         days: int = 60,
         page: int = 1,
         filter_type: Optional[str] = None,
@@ -457,7 +457,7 @@ class ANAFOAuthClient:
         List messages (invoices) for the company using paginated endpoint.
 
         Args:
-            _company_cif: Ignored (for API compatibility with certificate client)
+            company_cif: Ignored (uses self.company_cif for API compatibility)
             days: Number of days to look back
             page: Page number (1-based)
             filter_type: Optional filter - 'P' for received, 'T' for sent, None for all
@@ -465,6 +465,8 @@ class ANAFOAuthClient:
         Returns:
             Dict with 'messages', 'has_more', 'next_page', pagination info
         """
+        # Use instance's company_cif, ignore the parameter (for API compatibility)
+        _ = company_cif  # Suppress unused warning
         cif = self.company_cif
 
         logger.info(

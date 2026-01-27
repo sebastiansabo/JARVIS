@@ -162,6 +162,37 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Active OAuth Tokens Card -->
+                        <div class="card mb-3 border-success" id="oauthTokensCard" style="display: none;">
+                            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                                <span><i class="bi bi-key"></i> Active OAuth Tokens</span>
+                                <button class="btn btn-sm btn-light" onclick="loadOAuthTokens()">
+                                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                                </button>
+                            </div>
+                            <div class="card-body p-0">
+                                <table class="table table-hover mb-0" id="oauthTokensTable">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>CIF</th>
+                                            <th>Company</th>
+                                            <th>Status</th>
+                                            <th>Expires</th>
+                                            <th>Days Left</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="oauthTokensList">
+                                        <tr>
+                                            <td colspan="6" class="text-center text-muted py-3">
+                                                <i class="bi bi-hourglass-split"></i> Loading...
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                         <table class="table table-hover" id="connectionsTable">
                             <thead>
                                 <tr>
@@ -1052,7 +1083,137 @@
             checkAnafStatus();
             loadUnallocatedCount();
             initOAuthUI();
+            loadOAuthTokens();
         });
+
+        // Load OAuth tokens list
+        async function loadOAuthTokens() {
+            try {
+                const res = await fetch('/efactura/api/anaf/status');
+                const data = await res.json();
+
+                if (data.success && data.data.oauth_connections) {
+                    renderOAuthTokens(data.data.oauth_connections);
+                }
+            } catch (err) {
+                console.error('Error loading OAuth tokens:', err);
+            }
+        }
+
+        function renderOAuthTokens(tokens) {
+            const card = document.getElementById('oauthTokensCard');
+            const tbody = document.getElementById('oauthTokensList');
+
+            if (!tokens || tokens.length === 0) {
+                card.style.display = 'none';
+                return;
+            }
+
+            card.style.display = 'block';
+
+            tbody.innerHTML = tokens.map(token => {
+                const expiresAt = token.expires_at ? new Date(token.expires_at) : null;
+                const now = new Date();
+                let daysLeft = '-';
+                let statusClass = 'bg-success';
+                let statusText = 'Active';
+
+                if (expiresAt) {
+                    const diffMs = expiresAt - now;
+                    daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+                    if (daysLeft <= 0) {
+                        statusClass = 'bg-danger';
+                        statusText = 'Expired';
+                        daysLeft = 'Expired';
+                    } else if (daysLeft <= 7) {
+                        statusClass = 'bg-danger';
+                        statusText = 'Expiring Soon';
+                    } else if (daysLeft <= 30) {
+                        statusClass = 'bg-warning text-dark';
+                        statusText = 'Active';
+                    }
+                }
+
+                const formattedDate = expiresAt ? expiresAt.toLocaleDateString('ro-RO', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }) : '-';
+
+                return `
+                <tr>
+                    <td><code>${token.cif}</code></td>
+                    <td>${token.company_name || '-'}</td>
+                    <td><span class="badge ${statusClass}">${statusText}</span></td>
+                    <td class="small">${formattedDate}</td>
+                    <td>
+                        ${typeof daysLeft === 'number' ?
+                            `<span class="${daysLeft <= 7 ? 'text-danger fw-bold' : daysLeft <= 30 ? 'text-warning' : ''}">${daysLeft} days</span>` :
+                            `<span class="text-danger">${daysLeft}</span>`
+                        }
+                    </td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-warning" onclick="refreshTokenForCif('${token.cif}')" title="Refresh Token">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                            <button class="btn btn-outline-danger" onclick="revokeTokenForCif('${token.cif}')" title="Revoke Token">
+                                <i class="bi bi-x-circle"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                `;
+            }).join('');
+        }
+
+        async function refreshTokenForCif(cif) {
+            if (!confirm(`Refresh OAuth token for CIF ${cif}?`)) return;
+
+            try {
+                const res = await fetch('/efactura/oauth/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cif: cif })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    alert('Token refreshed successfully');
+                    loadOAuthTokens();
+                } else {
+                    alert(data.error || 'Failed to refresh token');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        async function revokeTokenForCif(cif) {
+            if (!confirm(`Revoke OAuth token for CIF ${cif}? You'll need to re-authenticate.`)) return;
+
+            try {
+                const res = await fetch('/efactura/oauth/revoke', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cif: cif })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    alert('Token revoked successfully');
+                    loadOAuthTokens();
+                    loadConnections();
+                } else {
+                    alert(data.error || 'Failed to revoke token');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
 
         // ==========================================
         // OAuth Authentication Functions
