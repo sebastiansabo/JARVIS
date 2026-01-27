@@ -43,6 +43,18 @@
             {% include 'partials/_accounting_nav.html' %}
 
             <div class="summary-filter-bar d-flex align-items-center flex-wrap gap-3">
+                <!-- Sync Progress Indicator (hidden by default) -->
+                <div id="syncProgressContainer" class="sync-progress-container" style="display: none;">
+                    <div class="sync-progress-info">
+                        <i class="bi bi-cloud-arrow-down sync-icon"></i>
+                        <span id="syncStatusText">Syncing...</span>
+                    </div>
+                    <div class="sync-progress-bar">
+                        <div id="syncProgressBar" class="sync-progress-fill"></div>
+                    </div>
+                    <small id="syncProgressDetail" class="text-muted">Fetching invoices...</small>
+                </div>
+
                 <span class="summary-stat text-warning" title="Unallocated Invoices">
                     <i class="bi bi-inbox"></i>
                     <strong id="unallocatedCount">0</strong> unallocated
@@ -59,6 +71,69 @@
             .summary-stat { display: flex; align-items: center; gap: 4px; color: var(--bs-secondary-color); }
             .summary-stat i { font-size: 1rem; }
             .summary-stat strong { color: var(--bs-body-color); }
+
+            /* Sync Progress Styles */
+            .sync-progress-container {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 8px 16px;
+                background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+                border-radius: 8px;
+                border: 1px solid #a5d6a7;
+                min-width: 280px;
+            }
+            .sync-progress-info {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-weight: 500;
+                color: #2e7d32;
+            }
+            .sync-icon {
+                animation: pulse 1.5s ease-in-out infinite;
+            }
+            @keyframes pulse {
+                0%, 100% { opacity: 1; transform: scale(1); }
+                50% { opacity: 0.6; transform: scale(1.1); }
+            }
+            .sync-progress-bar {
+                flex: 1;
+                height: 6px;
+                background: #c8e6c9;
+                border-radius: 3px;
+                overflow: hidden;
+                min-width: 100px;
+            }
+            .sync-progress-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #4caf50, #81c784);
+                border-radius: 3px;
+                transition: width 0.3s ease;
+                width: 0%;
+            }
+            .sync-progress-fill.indeterminate {
+                width: 30%;
+                animation: indeterminate 1.5s ease-in-out infinite;
+            }
+            @keyframes indeterminate {
+                0% { transform: translateX(-100%); }
+                100% { transform: translateX(400%); }
+            }
+            .sync-progress-container.completed {
+                background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+                border-color: #90caf9;
+            }
+            .sync-progress-container.completed .sync-progress-info {
+                color: #1565c0;
+            }
+            .sync-progress-container.error {
+                background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+                border-color: #ef9a9a;
+            }
+            .sync-progress-container.error .sync-progress-info {
+                color: #c62828;
+            }
         </style>
 
         <!-- Page Content -->
@@ -331,6 +406,33 @@
             }
         }
 
+        // Sync Progress UI helpers
+        function showSyncProgress(status, detail, progress = null, state = 'syncing') {
+            const container = document.getElementById('syncProgressContainer');
+            const statusText = document.getElementById('syncStatusText');
+            const progressBar = document.getElementById('syncProgressBar');
+            const progressDetail = document.getElementById('syncProgressDetail');
+
+            container.style.display = 'flex';
+            container.className = 'sync-progress-container' + (state !== 'syncing' ? ' ' + state : '');
+            statusText.textContent = status;
+            progressDetail.textContent = detail;
+
+            if (progress !== null) {
+                progressBar.classList.remove('indeterminate');
+                progressBar.style.width = progress + '%';
+            } else {
+                progressBar.classList.add('indeterminate');
+                progressBar.style.width = '30%';
+            }
+        }
+
+        function hideSyncProgress(delay = 0) {
+            setTimeout(() => {
+                document.getElementById('syncProgressContainer').style.display = 'none';
+            }, delay);
+        }
+
         // Sync all invoices from all connected companies
         async function syncAll() {
             const syncBtn = document.getElementById('syncBtn');
@@ -340,7 +442,26 @@
             syncBtn.disabled = true;
             syncBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Syncing...';
 
+            // Show progress indicator in summary area
+            showSyncProgress('Syncing...', 'Connecting to ANAF...', null, 'syncing');
+
             try {
+                // Simulate progress phases (since we can't get real-time progress from single API call)
+                const progressPhases = [
+                    { delay: 500, status: 'Syncing...', detail: 'Fetching messages from ANAF...', progress: null },
+                    { delay: 2000, status: 'Syncing...', detail: 'Downloading invoices...', progress: null },
+                    { delay: 4000, status: 'Syncing...', detail: 'Importing to database...', progress: null },
+                ];
+
+                // Start progress animation
+                progressPhases.forEach(phase => {
+                    setTimeout(() => {
+                        if (syncBtn.disabled) { // Only update if still syncing
+                            showSyncProgress(phase.status, phase.detail, phase.progress, 'syncing');
+                        }
+                    }, phase.delay);
+                });
+
                 const res = await fetch('/efactura/api/sync', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -349,40 +470,63 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    // Build summary message
-                    let msg = `Sync completed!\n\n`;
-                    msg += `Companies synced: ${data.companies_synced}\n`;
-                    msg += `Total fetched: ${data.total_fetched}\n`;
-                    msg += `Imported: ${data.total_imported}\n`;
-                    msg += `Skipped (duplicates): ${data.total_skipped}`;
+                    const hasErrors = data.errors && data.errors.length > 0;
+                    const state = hasErrors ? 'error' : 'completed';
+                    const icon = hasErrors ? 'exclamation-triangle' : 'check-circle';
 
-                    // Show per-company results if available
-                    if (data.company_results && data.company_results.length > 0) {
-                        msg += `\n\n--- Per Company ---`;
-                        data.company_results.forEach(cr => {
-                            msg += `\n${cr.company}: ${cr.imported} imported, ${cr.skipped} skipped`;
-                            if (cr.errors > 0) msg += ` (${cr.errors} errors)`;
-                        });
-                    }
+                    // Show completion in progress bar
+                    showSyncProgress(
+                        hasErrors ? 'Completed with errors' : 'Sync Complete!',
+                        `${data.total_imported} imported, ${data.total_skipped} skipped` +
+                        (hasErrors ? `, ${data.errors.length} errors` : ''),
+                        100,
+                        state
+                    );
 
-                    // Show errors if any
-                    if (data.errors && data.errors.length > 0) {
-                        msg += `\n\n--- Errors (${data.errors.length}) ---\n`;
-                        msg += data.errors.slice(0, 10).join('\n');
-                        if (data.errors.length > 10) {
-                            msg += `\n... and ${data.errors.length - 10} more`;
+                    // Build detailed summary for console/tooltip
+                    console.log('Sync Results:', {
+                        companies_synced: data.companies_synced,
+                        total_fetched: data.total_fetched,
+                        total_imported: data.total_imported,
+                        total_skipped: data.total_skipped,
+                        errors: data.errors,
+                        company_results: data.company_results
+                    });
+
+                    // If there are errors or notable results, show a brief toast-like notification
+                    if (data.total_imported > 0 || hasErrors) {
+                        let msg = `Sync completed!\n\n`;
+                        msg += `Imported: ${data.total_imported} invoice(s)\n`;
+                        msg += `Skipped: ${data.total_skipped} (already imported)`;
+
+                        if (hasErrors) {
+                            msg += `\n\n⚠️ ${data.errors.length} errors occurred:\n`;
+                            msg += data.errors.slice(0, 5).join('\n');
+                            if (data.errors.length > 5) {
+                                msg += `\n... and ${data.errors.length - 5} more (check console)`;
+                            }
+                        }
+
+                        // Show alert only if there's something notable
+                        if (data.total_imported > 0 || hasErrors) {
+                            alert(msg);
                         }
                     }
 
-                    alert(msg);
-
                     // Reload the invoices list
                     loadUnallocatedInvoices();
+
+                    // Hide progress after a delay
+                    hideSyncProgress(3000);
                 } else {
+                    showSyncProgress('Sync Failed', data.error || 'Unknown error', 100, 'error');
                     alert('Sync failed: ' + (data.error || 'Unknown error'));
+                    hideSyncProgress(5000);
                 }
             } catch (err) {
+                showSyncProgress('Sync Failed', err.message, 100, 'error');
                 alert('Error: ' + err.message);
+                hideSyncProgress(5000);
             } finally {
                 // Restore button state
                 syncBtn.disabled = false;
