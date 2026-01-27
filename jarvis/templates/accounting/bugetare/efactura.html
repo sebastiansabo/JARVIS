@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. - e-Factura Invoices</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/jarvis-icon.svg') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet">
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading...</div>
+    </div>
+
+    {% set current_module = 'accounting' %}
+    {% include 'partials/_navbar.html' %}
+
+    <!-- Breadcrumb -->
+    <div class="container-fluid px-4 py-2 bg-body-secondary border-bottom">
+        <div class="d-flex justify-content-between align-items-center">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0 small">
+                    <li class="breadcrumb-item"><a href="/">Home</a></li>
+                    <li class="breadcrumb-item"><a href="/accounting">Accounting</a></li>
+                    <li class="breadcrumb-item active">e-Factura</li>
+                </ol>
+            </nav>
+            <a href="javascript:history.back()" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back
+            </a>
+        </div>
+    </div>
+
+    <div class="container-fluid px-4 mt-3">
+        <!-- Nav + Summary Stats -->
+        <div class="d-flex justify-content-between align-items-end flex-wrap gap-2 mb-2">
+            {% set active_page = 'efactura' %}
+            {% set inline_nav = true %}
+            {% include 'partials/_accounting_nav.html' %}
+
+            <div class="summary-filter-bar d-flex align-items-center flex-wrap gap-3">
+                <span class="summary-stat text-warning" title="Unallocated Invoices">
+                    <i class="bi bi-inbox"></i>
+                    <strong id="unallocatedCount">0</strong> unallocated
+                </span>
+                <span class="summary-stat text-success" title="Total Value">
+                    <i class="bi bi-cash-stack"></i>
+                    <strong id="totalValueUnallocated">0</strong>
+                </span>
+            </div>
+        </div>
+
+        <style>
+            .summary-filter-bar { font-size: 0.85rem; }
+            .summary-stat { display: flex; align-items: center; gap: 4px; color: var(--bs-secondary-color); }
+            .summary-stat i { font-size: 1rem; }
+            .summary-stat strong { color: var(--bs-body-color); }
+        </style>
+
+        <!-- Page Content -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="bi bi-cloud-download"></i> e-Factura - Unallocated Invoices
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="/efactura/" class="btn btn-sm btn-outline-secondary" title="Go to e-Factura Connector settings">
+                        <i class="bi bi-gear"></i> Connector Settings
+                    </a>
+                    <button class="btn btn-sm btn-outline-primary" onclick="loadUnallocatedInvoices()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>Workflow:</strong> Invoices fetched from ANAF e-Factura appear here. Select invoices and click "Send to Invoices" to create them in the main Invoice module for allocation.
+                </div>
+
+                <!-- Filters -->
+                <div class="row mb-3 g-2">
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Company</label>
+                        <select class="form-select form-select-sm" id="companyFilter">
+                            <option value="">All</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Direction</label>
+                        <select class="form-select form-select-sm" id="directionFilter">
+                            <option value="">All</option>
+                            <option value="received" selected>Received</option>
+                            <option value="sent">Sent</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">From Date</label>
+                        <input type="date" class="form-control form-control-sm" id="startDate">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">To Date</label>
+                        <input type="date" class="form-control form-control-sm" id="endDate">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Search</label>
+                        <input type="text" class="form-control form-control-sm" id="searchInput" placeholder="Invoice # or supplier...">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end gap-1">
+                        <button class="btn btn-sm btn-primary flex-grow-1" onclick="loadUnallocatedInvoices()">
+                            <i class="bi bi-search"></i> Filter
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="openColumnConfig()" title="Configure Columns">
+                            <i class="bi bi-gear"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Bulk Actions -->
+                <div id="bulkActions" class="mb-3" style="display: none;">
+                    <button class="btn btn-success" id="sendToInvoicesBtn" disabled onclick="sendSelectedToInvoices()">
+                        <i class="bi bi-send"></i> Send to Invoices
+                        <span id="selectedCount" class="badge bg-light text-dark ms-1">0</span>
+                    </button>
+                    <button class="btn btn-outline-secondary ms-2" onclick="selectAll()">
+                        <i class="bi bi-check-all"></i> Select All
+                    </button>
+                    <button class="btn btn-outline-secondary ms-1" onclick="deselectAll()">
+                        <i class="bi bi-x-square"></i> Deselect All
+                    </button>
+                </div>
+
+                <!-- Table -->
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm" id="invoicesTable">
+                        <thead class="table-light" id="invoicesTableHead">
+                            <!-- Dynamic columns rendered by JS -->
+                        </thead>
+                        <tbody id="invoicesTableBody">
+                            <tr>
+                                <td colspan="12" class="text-center text-muted py-4">
+                                    <i class="bi bi-hourglass-split"></i> Loading...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div id="paginationInfo" class="d-flex justify-content-between align-items-center mt-3" style="display: none !important;">
+                    <span id="paginationSummary" class="text-muted small"></span>
+                    <div id="paginationControls" class="btn-group btn-group-sm"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Column Configuration Modal -->
+    <div class="modal fade" id="columnConfigModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear"></i> Configure Columns</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Drag to reorder. Check/uncheck to show/hide.</p>
+                    <ul id="columnConfigList" class="list-group" style="cursor: move;"></ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" onclick="resetColumnConfig()">Reset to Default</button>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="applyColumnConfig()">Apply</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Invoice Modal -->
+    <div class="modal fade" id="viewInvoiceModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-receipt"></i> Invoice Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="invoiceDetailsContent">
+                    Loading...
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-success" id="modalSendToInvoicesBtn">
+                        <i class="bi bi-send"></i> Send to Invoices
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <script>
+        let currentPage = 1;
+        let totalPages = 1;
+        let currentInvoiceId = null;
+        let companiesCache = [];
+
+        // Column definitions
+        const allColumns = [
+            { id: 'checkbox', label: '', fixed: true, width: '40px' },
+            { id: 'company', label: 'Company', visible: true },
+            { id: 'direction', label: 'Direction', visible: true },
+            { id: 'invoice_number', label: 'Invoice #', visible: true },
+            { id: 'partner_name', label: 'Supplier / Partner', visible: true },
+            { id: 'partner_cif', label: 'Partner VAT', visible: true },
+            { id: 'issue_date', label: 'Issue Date', visible: true },
+            { id: 'amount', label: 'Amount', visible: true, align: 'end' },
+            { id: 'vat', label: 'VAT', visible: true, align: 'end' },
+            { id: 'currency', label: 'Currency', visible: true },
+            { id: 'imported', label: 'Imported', visible: true },
+            { id: 'actions', label: 'Actions', fixed: true, width: '120px' }
+        ];
+
+        // Load column config from localStorage
+        function getColumnConfig() {
+            const saved = localStorage.getItem('efacturaColumnConfig');
+            if (saved) {
+                try {
+                    return JSON.parse(saved);
+                } catch (e) {}
+            }
+            return allColumns.map(c => ({ id: c.id, visible: c.visible !== false }));
+        }
+
+        function saveColumnConfig(config) {
+            localStorage.setItem('efacturaColumnConfig', JSON.stringify(config));
+        }
+
+        function getVisibleColumns() {
+            const config = getColumnConfig();
+            const configMap = {};
+            config.forEach((c, i) => configMap[c.id] = { ...c, order: i });
+
+            return allColumns
+                .map(col => ({
+                    ...col,
+                    visible: col.fixed || (configMap[col.id]?.visible ?? col.visible),
+                    order: configMap[col.id]?.order ?? allColumns.indexOf(col)
+                }))
+                .sort((a, b) => a.order - b.order)
+                .filter(col => col.visible || col.fixed);
+        }
+
+        // Render table header
+        function renderTableHeader() {
+            const thead = document.getElementById('invoicesTableHead');
+            const cols = getVisibleColumns();
+
+            thead.innerHTML = `<tr>
+                ${cols.map(col => {
+                    if (col.id === 'checkbox') {
+                        return `<th style="width: ${col.width}"><input type="checkbox" id="selectAllCheckbox" class="form-check-input" onchange="toggleSelectAll()"></th>`;
+                    }
+                    const align = col.align === 'end' ? 'text-end' : '';
+                    const width = col.width ? `style="width: ${col.width}"` : '';
+                    return `<th class="${align}" ${width}>${col.label}</th>`;
+                }).join('')}
+            </tr>`;
+        }
+
+        // Hide loading overlay
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('loadingOverlay').style.display = 'none';
+            renderTableHeader();
+            loadUnallocatedInvoices();
+        });
+
+        // Load unallocated invoices
+        async function loadUnallocatedInvoices(page = 1) {
+            const companyId = document.getElementById('companyFilter').value;
+            const direction = document.getElementById('directionFilter').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const search = document.getElementById('searchInput').value;
+
+            let url = `/efactura/api/invoices/unallocated?page=${page}`;
+            if (companyId) url += `&company_id=${companyId}`;
+            if (direction) url += `&direction=${direction}`;
+            if (startDate) url += `&start_date=${startDate}`;
+            if (endDate) url += `&end_date=${endDate}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+
+            const tbody = document.getElementById('invoicesTableBody');
+            const colCount = getVisibleColumns().length;
+            tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center text-muted py-4">
+                <span class="spinner-border spinner-border-sm"></span> Loading...
+            </td></tr>`;
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data.success) {
+                    // Update companies dropdown
+                    if (data.companies && data.companies.length > 0) {
+                        updateCompanyFilter(data.companies);
+                    }
+
+                    renderInvoices(data.data);
+                    updatePagination(data.pagination);
+                    updateSummary(data.data, data.pagination);
+
+                    // Show bulk actions if we have invoices
+                    document.getElementById('bulkActions').style.display = data.data.length > 0 ? 'block' : 'none';
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center text-danger py-4">
+                        <i class="bi bi-exclamation-triangle"></i> ${data.error || 'Failed to load invoices'}
+                    </td></tr>`;
+                }
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center text-danger py-4">
+                    <i class="bi bi-exclamation-triangle"></i> Error: ${err.message}
+                </td></tr>`;
+            }
+        }
+
+        function updateCompanyFilter(companies) {
+            companiesCache = companies;
+            const select = document.getElementById('companyFilter');
+            const currentValue = select.value;
+            select.innerHTML = '<option value="">All</option>';
+            companies.forEach(c => {
+                select.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+            });
+            select.value = currentValue;
+        }
+
+        function renderInvoices(invoices) {
+            const tbody = document.getElementById('invoicesTableBody');
+            const cols = getVisibleColumns();
+            const colCount = cols.length;
+
+            if (!invoices || invoices.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center text-muted py-4">
+                    <i class="bi bi-check-circle text-success"></i> No unallocated invoices!
+                    <br><small>All e-Factura invoices have been processed.</small>
+                </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = invoices.map(inv => {
+                const isReceived = inv.direction === 'received';
+                const issueDate = inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('ro-RO') : '-';
+                const importedDate = inv.created_at ? new Date(inv.created_at).toLocaleDateString('ro-RO') : '-';
+                const amount = parseFloat(inv.total_amount || 0).toLocaleString('ro-RO', {minimumFractionDigits: 2});
+                const vat = parseFloat(inv.total_vat || 0).toLocaleString('ro-RO', {minimumFractionDigits: 2});
+
+                const cellMap = {
+                    checkbox: `<input type="checkbox" class="form-check-input invoice-checkbox" value="${inv.id}" onchange="updateSelectionCount()">`,
+                    company: `<span class="${inv.company_name ? '' : 'text-muted'}">${inv.company_name || '-'}</span>`,
+                    direction: `<span class="badge ${isReceived ? 'bg-success' : 'bg-info'}">
+                        <i class="bi bi-arrow-${isReceived ? 'down' : 'up'}"></i>
+                        ${isReceived ? 'Received' : 'Sent'}
+                    </span>`,
+                    invoice_number: `<code>${inv.invoice_number || '-'}</code>`,
+                    partner_name: inv.partner_name || '-',
+                    partner_cif: `<code class="text-muted">${inv.partner_cif || '-'}</code>`,
+                    issue_date: issueDate,
+                    amount: amount,
+                    vat: vat,
+                    currency: inv.currency || 'RON',
+                    imported: `<span class="small text-muted">${importedDate}</span>`,
+                    actions: `<div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-success" onclick="sendSingleToInvoices(${inv.id})" title="Send to Invoices">
+                            <i class="bi bi-send"></i>
+                        </button>
+                        <button class="btn btn-outline-primary" onclick="viewInvoice(${inv.id})" title="View Details">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button class="btn btn-outline-danger" onclick="exportPdf(${inv.id})" title="Export PDF">
+                            <i class="bi bi-file-pdf"></i>
+                        </button>
+                    </div>`
+                };
+
+                return `<tr data-id="${inv.id}">
+                    ${cols.map(col => {
+                        const align = col.align === 'end' ? 'text-end' : '';
+                        return `<td class="${align}">${cellMap[col.id] || ''}</td>`;
+                    }).join('')}
+                </tr>`;
+            }).join('');
+        }
+
+        // Column Configuration
+        function openColumnConfig() {
+            const modal = new bootstrap.Modal(document.getElementById('columnConfigModal'));
+            const list = document.getElementById('columnConfigList');
+            const config = getColumnConfig();
+            const configMap = {};
+            config.forEach((c, i) => configMap[c.id] = { ...c, order: i });
+
+            const configCols = allColumns
+                .filter(col => !col.fixed)
+                .map(col => ({
+                    ...col,
+                    visible: configMap[col.id]?.visible ?? col.visible,
+                    order: configMap[col.id]?.order ?? allColumns.indexOf(col)
+                }))
+                .sort((a, b) => a.order - b.order);
+
+            list.innerHTML = configCols.map(col => `
+                <li class="list-group-item d-flex align-items-center" data-id="${col.id}">
+                    <i class="bi bi-grip-vertical text-muted me-2"></i>
+                    <input type="checkbox" class="form-check-input me-2" id="col_${col.id}" ${col.visible ? 'checked' : ''}>
+                    <label class="form-check-label flex-grow-1" for="col_${col.id}">${col.label}</label>
+                </li>
+            `).join('');
+
+            // Initialize SortableJS for drag reordering
+            new Sortable(list, {
+                animation: 150,
+                handle: '.bi-grip-vertical'
+            });
+
+            modal.show();
+        }
+
+        function applyColumnConfig() {
+            const list = document.getElementById('columnConfigList');
+            const items = list.querySelectorAll('li');
+            const config = [];
+
+            // Add fixed columns first
+            allColumns.filter(c => c.fixed).forEach(c => {
+                config.push({ id: c.id, visible: true });
+            });
+
+            // Add reordered columns
+            items.forEach(item => {
+                const id = item.dataset.id;
+                const visible = item.querySelector('input[type="checkbox"]').checked;
+                config.push({ id, visible });
+            });
+
+            saveColumnConfig(config);
+            renderTableHeader();
+            loadUnallocatedInvoices(currentPage);
+        }
+
+        function resetColumnConfig() {
+            localStorage.removeItem('efacturaColumnConfig');
+            bootstrap.Modal.getInstance(document.getElementById('columnConfigModal')).hide();
+            renderTableHeader();
+            loadUnallocatedInvoices(currentPage);
+        }
+
+        function updatePagination(pagination) {
+            if (!pagination) return;
+
+            currentPage = pagination.current_page || 1;
+            totalPages = pagination.total_pages || 1;
+
+            const info = document.getElementById('paginationInfo');
+            const summary = document.getElementById('paginationSummary');
+            const controls = document.getElementById('paginationControls');
+
+            if (pagination.total > 0) {
+                info.style.display = 'flex';
+                const start = pagination.offset + 1;
+                const end = Math.min(pagination.offset + pagination.limit, pagination.total);
+                summary.textContent = `Showing ${start}-${end} of ${pagination.total} invoices`;
+
+                if (totalPages > 1) {
+                    controls.innerHTML = `
+                        <button class="btn btn-outline-secondary" ${currentPage <= 1 ? 'disabled' : ''} onclick="loadUnallocatedInvoices(${currentPage - 1})">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+                        <button class="btn btn-outline-secondary" disabled>Page ${currentPage} of ${totalPages}</button>
+                        <button class="btn btn-outline-secondary" ${currentPage >= totalPages ? 'disabled' : ''} onclick="loadUnallocatedInvoices(${currentPage + 1})">
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
+                    `;
+                } else {
+                    controls.innerHTML = '';
+                }
+            } else {
+                info.style.display = 'none';
+            }
+        }
+
+        function updateSummary(invoices, pagination) {
+            document.getElementById('unallocatedCount').textContent = pagination?.total || invoices?.length || 0;
+
+            // Update badge in nav
+            const badge = document.getElementById('efacturaUnallocatedBadge');
+            if (badge) {
+                const count = pagination?.total || 0;
+                if (count > 0) {
+                    badge.textContent = count;
+                    badge.classList.remove('d-none');
+                } else {
+                    badge.classList.add('d-none');
+                }
+            }
+
+            // Calculate total value
+            const totalValue = (invoices || []).reduce((sum, inv) => sum + parseFloat(inv.total_amount || 0), 0);
+            document.getElementById('totalValueUnallocated').textContent = totalValue.toLocaleString('ro-RO', {minimumFractionDigits: 2}) + ' RON';
+        }
+
+        function updateSelectionCount() {
+            const checked = document.querySelectorAll('.invoice-checkbox:checked').length;
+            document.getElementById('selectedCount').textContent = checked;
+            document.getElementById('sendToInvoicesBtn').disabled = checked === 0;
+        }
+
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAllCheckbox').checked;
+            document.querySelectorAll('.invoice-checkbox').forEach(cb => cb.checked = selectAll);
+            updateSelectionCount();
+        }
+
+        function selectAll() {
+            document.querySelectorAll('.invoice-checkbox').forEach(cb => cb.checked = true);
+            document.getElementById('selectAllCheckbox').checked = true;
+            updateSelectionCount();
+        }
+
+        function deselectAll() {
+            document.querySelectorAll('.invoice-checkbox').forEach(cb => cb.checked = false);
+            document.getElementById('selectAllCheckbox').checked = false;
+            updateSelectionCount();
+        }
+
+        // Send single invoice to Invoices module
+        async function sendSingleToInvoices(invoiceId) {
+            if (!confirm('Send this invoice to the Invoices module for allocation?')) return;
+
+            try {
+                const res = await fetch('/efactura/api/invoices/send-to-module', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ invoice_ids: [invoiceId] })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    alert('Invoice sent to Invoices module successfully!');
+                    loadUnallocatedInvoices(currentPage);
+                } else {
+                    alert(data.error || 'Failed to send invoice');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        // Send selected invoices to Invoices module
+        async function sendSelectedToInvoices() {
+            const selectedIds = Array.from(document.querySelectorAll('.invoice-checkbox:checked'))
+                .map(cb => parseInt(cb.value));
+
+            if (selectedIds.length === 0) {
+                alert('Please select at least one invoice');
+                return;
+            }
+
+            if (!confirm(`Send ${selectedIds.length} invoice(s) to the Invoices module?`)) return;
+
+            const btn = document.getElementById('sendToInvoicesBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sending...';
+
+            try {
+                const res = await fetch('/efactura/api/invoices/send-to-module', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ invoice_ids: selectedIds })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    alert(`${data.sent} invoice(s) sent successfully!`);
+                    deselectAll();
+                    loadUnallocatedInvoices(currentPage);
+                } else {
+                    alert(data.error || 'Failed to send invoices');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-send"></i> Send to Invoices <span id="selectedCount" class="badge bg-light text-dark ms-1">0</span>';
+            }
+        }
+
+        // View invoice details
+        async function viewInvoice(invoiceId) {
+            currentInvoiceId = invoiceId;
+            const modal = new bootstrap.Modal(document.getElementById('viewInvoiceModal'));
+            const content = document.getElementById('invoiceDetailsContent');
+            content.innerHTML = '<div class="text-center py-4"><span class="spinner-border"></span></div>';
+            modal.show();
+
+            try {
+                const res = await fetch(`/efactura/api/invoices/${invoiceId}`);
+                const data = await res.json();
+
+                if (data.success) {
+                    const inv = data.data;
+                    const isReceived = inv.direction === 'received';
+
+                    content.innerHTML = `
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Invoice Information</h6>
+                                <table class="table table-sm">
+                                    <tr><td class="text-muted">Invoice #</td><td><strong>${inv.invoice_number || '-'}</strong></td></tr>
+                                    <tr><td class="text-muted">Series</td><td>${inv.invoice_series || '-'}</td></tr>
+                                    <tr><td class="text-muted">Issue Date</td><td>${inv.issue_date || '-'}</td></tr>
+                                    <tr><td class="text-muted">Due Date</td><td>${inv.due_date || '-'}</td></tr>
+                                    <tr><td class="text-muted">Direction</td><td><span class="badge ${isReceived ? 'bg-success' : 'bg-info'}">${isReceived ? 'Received' : 'Sent'}</span></td></tr>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Partner</h6>
+                                <table class="table table-sm">
+                                    <tr><td class="text-muted">Name</td><td><strong>${inv.partner_name || '-'}</strong></td></tr>
+                                    <tr><td class="text-muted">VAT</td><td><code>${inv.partner_cif || '-'}</code></td></tr>
+                                </table>
+
+                                <h6 class="mt-3">Amounts</h6>
+                                <table class="table table-sm">
+                                    <tr><td class="text-muted">Net Amount</td><td class="text-end">${parseFloat(inv.total_without_vat || 0).toLocaleString('ro-RO', {minimumFractionDigits: 2})} ${inv.currency}</td></tr>
+                                    <tr><td class="text-muted">VAT</td><td class="text-end">${parseFloat(inv.total_vat || 0).toLocaleString('ro-RO', {minimumFractionDigits: 2})} ${inv.currency}</td></tr>
+                                    <tr><td class="text-muted"><strong>Total</strong></td><td class="text-end"><strong>${parseFloat(inv.total_amount || 0).toLocaleString('ro-RO', {minimumFractionDigits: 2})} ${inv.currency}</strong></td></tr>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+
+                    // Setup modal send button
+                    document.getElementById('modalSendToInvoicesBtn').onclick = () => {
+                        modal.hide();
+                        sendSingleToInvoices(invoiceId);
+                    };
+                } else {
+                    content.innerHTML = `<div class="alert alert-danger">${data.error || 'Failed to load invoice'}</div>`;
+                }
+            } catch (err) {
+                content.innerHTML = `<div class="alert alert-danger">Error: ${err.message}</div>`;
+            }
+        }
+
+        // Export PDF
+        async function exportPdf(invoiceId) {
+            try {
+                const res = await fetch(`/efactura/api/invoices/${invoiceId}/pdf`);
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    alert(data.error || 'Failed to export PDF');
+                    return;
+                }
+
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `invoice_${invoiceId}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+    </script>
+</body>
+</html>
