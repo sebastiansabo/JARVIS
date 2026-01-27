@@ -687,6 +687,15 @@ class EFacturaService:
                 # Parse XML to extract invoice data
                 parsed = parse_invoice_xml(xml_content)
 
+                # Validate that this is actually an invoice (not a signature or other XML)
+                if not parsed.invoice_number:
+                    # Check if it's a signature XML
+                    if '<Signature' in xml_content or '<ds:Signature' in xml_content:
+                        errors.append(f"Message {message_id} contains signature XML, not invoice")
+                    else:
+                        errors.append(f"Message {message_id} contains invalid/empty invoice XML")
+                    continue
+
                 # Determine direction based on CIF
                 direction = InvoiceDirection.RECEIVED
                 if parsed.seller_cif and parsed.seller_cif.replace('RO', '') == cif:
