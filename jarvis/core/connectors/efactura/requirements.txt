@@ -1,0 +1,12 @@
+# e-Factura Connector Dependencies
+# Add these to the main JARVIS requirements.txt
+
+# Certificate handling
+cryptography>=41.0.0
+
+# HTTP client (already in JARVIS)
+requests>=2.31.0
+
+# Testing
+pytest>=7.0.0
+pytest-mock>=3.10.0
