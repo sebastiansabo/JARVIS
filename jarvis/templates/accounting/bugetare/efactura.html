@@ -352,6 +352,9 @@
                                 <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#hiddenFiltersCollapse">
                                     <i class="bi bi-funnel"></i> Filters
                                 </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="openHiddenColumnConfig()">
+                                    <i class="bi bi-gear"></i> Columns
+                                </button>
                                 <button class="btn btn-outline-success btn-sm" onclick="bulkRestoreFromHidden()" id="hiddenRestoreBtn" disabled>
                                     <i class="bi bi-arrow-counterclockwise"></i> Restore Selected
                                 </button>
@@ -403,30 +406,8 @@
 
                         <div class="table-responsive">
                             <table class="table table-hover table-sm" id="hiddenTable">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th style="width: 60px">
-                                            <div class="dropdown d-inline">
-                                                <input type="checkbox" class="form-check-input" id="hiddenSelectAll" onchange="toggleHiddenSelectPage()">
-                                                <button class="btn btn-link btn-sm p-0 ms-1 text-muted" type="button" data-bs-toggle="dropdown" style="font-size: 10px;">
-                                                    <i class="bi bi-chevron-down"></i>
-                                                </button>
-                                                <ul class="dropdown-menu dropdown-menu-sm">
-                                                    <li><a class="dropdown-item small" href="#" onclick="toggleHiddenSelectPage(); return false;"><i class="bi bi-check2-square me-2"></i>Select Page</a></li>
-                                                    <li><a class="dropdown-item small" href="#" onclick="selectAllHidden(); return false;"><i class="bi bi-check2-all me-2"></i>Select All (<span id="hiddenTotalForSelect">0</span>)</a></li>
-                                                    <li><hr class="dropdown-divider"></li>
-                                                    <li><a class="dropdown-item small" href="#" onclick="clearHiddenSelection(); return false;"><i class="bi bi-x-square me-2"></i>Clear Selection</a></li>
-                                                </ul>
-                                            </div>
-                                        </th>
-                                        <th class="sortable" onclick="sortHiddenTable('direction')">Direction</th>
-                                        <th class="sortable" onclick="sortHiddenTable('invoice_number')">Invoice #</th>
-                                        <th class="sortable" onclick="sortHiddenTable('partner_name')">Supplier / Partner</th>
-                                        <th class="sortable" onclick="sortHiddenTable('issue_date')">Issue Date</th>
-                                        <th class="sortable text-end" onclick="sortHiddenTable('total_amount')">Amount</th>
-                                        <th class="sortable" onclick="sortHiddenTable('currency')">Currency</th>
-                                        <th>Actions</th>
-                                    </tr>
+                                <thead class="table-light" id="hiddenTableHead">
+                                    <!-- Dynamic columns rendered by JS -->
                                 </thead>
                                 <tbody id="hiddenTableBody">
                                     <tr>
@@ -836,6 +817,26 @@
         </div>
     </div>
 
+    <!-- Hidden Column Configuration Modal -->
+    <div class="modal fade" id="hiddenColumnConfigModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear"></i> Configure Hidden Tab Columns</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Drag to reorder. Check/uncheck to show/hide.</p>
+                    <ul id="hiddenColumnConfigList" class="list-group" style="cursor: move;"></ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" onclick="resetHiddenColumnConfig()">Reset to Default</button>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="applyHiddenColumnConfig()">Apply</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Partner Types Settings Modal -->
     <div class="modal fade" id="partnerTypesModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -1152,6 +1153,169 @@
         // Sortable columns (columns that can be sorted)
         const sortableColumns = ['company', 'direction', 'invoice_number', 'partner_name', 'partner_cif', 'type', 'department', 'subdepartment', 'issue_date', 'amount', 'vat', 'currency', 'imported'];
 
+        // ============================================
+        // Hidden Tab Column Configuration
+        // ============================================
+
+        // Column definitions for Hidden tab
+        const hiddenAllColumns = [
+            { id: 'checkbox', label: '', fixed: true, width: '40px' },
+            { id: 'company', label: 'Company', visible: true },
+            { id: 'direction', label: 'Direction', visible: true },
+            { id: 'invoice_number', label: 'Invoice #', visible: true },
+            { id: 'partner_name', label: 'Supplier / Partner', visible: true },
+            { id: 'partner_cif', label: 'Partner VAT', visible: false },
+            { id: 'type', label: 'Type', visible: true },
+            { id: 'issue_date', label: 'Issue Date', visible: true },
+            { id: 'amount', label: 'Amount', visible: true, align: 'end' },
+            { id: 'vat', label: 'VAT', visible: false, align: 'end' },
+            { id: 'currency', label: 'Currency', visible: true },
+            { id: 'imported', label: 'Imported', visible: false },
+            { id: 'actions', label: 'Actions', fixed: true, width: '120px' }
+        ];
+
+        const HIDDEN_COLUMN_CONFIG_VERSION = 1;
+
+        function getHiddenColumnConfig() {
+            const saved = localStorage.getItem('efacturaHiddenColumnConfig');
+            const savedVersion = parseInt(localStorage.getItem('efacturaHiddenColumnConfigVersion') || '0');
+
+            if (savedVersion !== HIDDEN_COLUMN_CONFIG_VERSION) {
+                localStorage.setItem('efacturaHiddenColumnConfigVersion', HIDDEN_COLUMN_CONFIG_VERSION.toString());
+                localStorage.removeItem('efacturaHiddenColumnConfig');
+                return hiddenAllColumns.map((c, i) => ({ id: c.id, visible: c.visible !== false, order: i }));
+            }
+
+            if (saved) {
+                try {
+                    const config = JSON.parse(saved);
+                    const configIds = new Set(config.map(c => c.id));
+                    const missingCols = hiddenAllColumns.filter(c => !configIds.has(c.id));
+                    if (missingCols.length > 0) {
+                        missingCols.forEach(col => {
+                            config.push({ id: col.id, visible: col.visible !== false, order: hiddenAllColumns.indexOf(col) });
+                        });
+                        saveHiddenColumnConfig(config);
+                    }
+                    return config;
+                } catch (e) {}
+            }
+            return hiddenAllColumns.map((c, i) => ({ id: c.id, visible: c.visible !== false, order: i }));
+        }
+
+        function saveHiddenColumnConfig(config) {
+            localStorage.setItem('efacturaHiddenColumnConfig', JSON.stringify(config));
+            localStorage.setItem('efacturaHiddenColumnConfigVersion', HIDDEN_COLUMN_CONFIG_VERSION.toString());
+        }
+
+        function getHiddenVisibleColumns() {
+            const config = getHiddenColumnConfig();
+            const configMap = {};
+            config.forEach((c, i) => configMap[c.id] = { ...c, order: c.order ?? i });
+
+            return hiddenAllColumns
+                .map(col => ({
+                    ...col,
+                    visible: col.fixed || (configMap[col.id]?.visible ?? col.visible),
+                    order: configMap[col.id]?.order ?? hiddenAllColumns.indexOf(col)
+                }))
+                .sort((a, b) => a.order - b.order)
+                .filter(col => col.visible || col.fixed);
+        }
+
+        const hiddenSortableColumns = ['company', 'direction', 'invoice_number', 'partner_name', 'partner_cif', 'type', 'issue_date', 'amount', 'vat', 'currency', 'imported'];
+
+        function renderHiddenTableHeader() {
+            const thead = document.getElementById('hiddenTableHead');
+            const cols = getHiddenVisibleColumns();
+
+            thead.innerHTML = `<tr>
+                ${cols.map(col => {
+                    if (col.id === 'checkbox') {
+                        return `<th style="width: 60px">
+                            <div class="dropdown d-inline">
+                                <input type="checkbox" class="form-check-input" id="hiddenSelectAll" onchange="toggleHiddenSelectPage()">
+                                <button class="btn btn-link btn-sm p-0 ms-1 text-muted" type="button" data-bs-toggle="dropdown" style="font-size: 10px;">
+                                    <i class="bi bi-chevron-down"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-sm">
+                                    <li><a class="dropdown-item small" href="#" onclick="toggleHiddenSelectPage(); return false;"><i class="bi bi-check2-square me-2"></i>Select Page</a></li>
+                                    <li><a class="dropdown-item small" href="#" onclick="selectAllHidden(); return false;"><i class="bi bi-check2-all me-2"></i>Select All (<span id="hiddenTotalForSelect">0</span>)</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item small" href="#" onclick="clearHiddenSelection(); return false;"><i class="bi bi-x-square me-2"></i>Clear Selection</a></li>
+                                </ul>
+                            </div>
+                        </th>`;
+                    }
+                    const align = col.align === 'end' ? 'text-end' : '';
+                    const width = col.width ? `style="width: ${col.width}"` : '';
+                    const isSortable = hiddenSortableColumns.includes(col.id);
+                    const sortClass = isSortable ? `sortable ${hiddenSortColumn === col.id ? hiddenSortDirection : ''}` : '';
+                    const onClick = isSortable ? `onclick="sortHiddenTable('${col.id}')"` : '';
+                    return `<th class="${align} ${sortClass}" ${width} ${onClick}>${col.label}</th>`;
+                }).join('')}
+            </tr>`;
+        }
+
+        function openHiddenColumnConfig() {
+            const modal = new bootstrap.Modal(document.getElementById('hiddenColumnConfigModal'));
+            const list = document.getElementById('hiddenColumnConfigList');
+            const config = getHiddenColumnConfig();
+            const configMap = {};
+            config.forEach((c, i) => configMap[c.id] = { ...c, order: i });
+
+            const configCols = hiddenAllColumns
+                .filter(col => !col.fixed)
+                .map(col => ({
+                    ...col,
+                    visible: configMap[col.id]?.visible ?? col.visible,
+                    order: configMap[col.id]?.order ?? hiddenAllColumns.indexOf(col)
+                }))
+                .sort((a, b) => a.order - b.order);
+
+            list.innerHTML = configCols.map(col => `
+                <li class="list-group-item d-flex align-items-center" data-id="${col.id}">
+                    <i class="bi bi-grip-vertical text-muted me-2"></i>
+                    <input type="checkbox" class="form-check-input me-2" id="hidden_col_${col.id}" ${col.visible ? 'checked' : ''}>
+                    <label class="form-check-label flex-grow-1" for="hidden_col_${col.id}">${col.label}</label>
+                </li>
+            `).join('');
+
+            // Enable drag-drop reorder
+            if (typeof Sortable !== 'undefined') {
+                new Sortable(list, { animation: 150 });
+            }
+            modal.show();
+        }
+
+        function applyHiddenColumnConfig() {
+            const list = document.getElementById('hiddenColumnConfigList');
+            const items = list.querySelectorAll('li');
+            const config = [];
+            let order = 0;
+
+            config.push({ id: 'checkbox', visible: true, order: order++ });
+
+            items.forEach(item => {
+                const id = item.dataset.id;
+                const visible = item.querySelector('input[type="checkbox"]').checked;
+                config.push({ id, visible, order: order++ });
+            });
+
+            config.push({ id: 'actions', visible: true, order: order++ });
+
+            saveHiddenColumnConfig(config);
+            renderHiddenTableHeader();
+            loadHiddenInvoices(hiddenCurrentPage, true);
+        }
+
+        function resetHiddenColumnConfig() {
+            localStorage.removeItem('efacturaHiddenColumnConfig');
+            bootstrap.Modal.getInstance(document.getElementById('hiddenColumnConfigModal')).hide();
+            renderHiddenTableHeader();
+            loadHiddenInvoices(hiddenCurrentPage, true);
+        }
+
         // Render table header
         function renderTableHeader() {
             const thead = document.getElementById('invoicesTableHead');
@@ -1254,18 +1418,9 @@
             }
             localStorage.setItem('efacturaHiddenSortColumn', hiddenSortColumn);
             localStorage.setItem('efacturaHiddenSortDir', hiddenSortDirection);
-            updateHiddenTableHeaders();
+            renderHiddenTableHeader();
             sortAndRenderHidden();
         }
-
-        function updateHiddenTableHeaders() {
-            document.querySelectorAll('#hiddenTable th.sortable').forEach(th => {
-                th.classList.remove('asc', 'desc');
-                const col = th.getAttribute('onclick')?.match(/sortHiddenTable\('(\w+)'\)/)?.[1];
-                if (col === hiddenSortColumn) {
-                    th.classList.add(hiddenSortDirection);
-                }
-            });
         }
 
         function sortAndRenderHidden() {
@@ -1483,6 +1638,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('loadingOverlay').style.display = 'none';
             renderTableHeader();
+            renderHiddenTableHeader();
             loadBadgeCounts();
 
             // Check if partner types were changed in Settings page while away
@@ -1684,7 +1840,7 @@
                 if (data.success) {
                     hiddenCache = data.data || [];
                     hiddenLoaded = true; // Mark as loaded
-                    updateHiddenTableHeaders();
+                    renderHiddenTableHeader();
                     sortAndRenderHidden();
                     updateHiddenPagination(data.pagination);
 
@@ -1756,8 +1912,11 @@
 
         function renderHiddenTable(invoices) {
             const tbody = document.getElementById('hiddenTableBody');
+            const cols = getHiddenVisibleColumns();
+            const colCount = cols.length;
+
             if (!invoices || invoices.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">
+                tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center text-muted py-4">
                     <i class="bi bi-check-circle text-success"></i> No hidden invoices
                 </td></tr>`;
                 return;
@@ -1766,29 +1925,43 @@
             tbody.innerHTML = invoices.map(inv => {
                 const isReceived = inv.direction === 'received';
                 const issueDate = inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('ro-RO') : '-';
+                const importedDate = inv.created_at ? new Date(inv.created_at).toLocaleDateString('ro-RO') : '-';
                 const amount = parseFloat(inv.total_amount || 0).toLocaleString('ro-RO', {minimumFractionDigits: 2});
+                const vatAmount = parseFloat(inv.total_vat || 0).toLocaleString('ro-RO', {minimumFractionDigits: 2});
                 const checked = selectedHiddenInvoices.has(inv.id) ? 'checked' : '';
 
-                return `<tr data-id="${inv.id}">
-                    <td><input type="checkbox" class="form-check-input hidden-checkbox" value="${inv.id}" onchange="updateHiddenSelectionCount()" ${checked}></td>
-                    <td><span class="badge ${isReceived ? 'bg-success' : 'bg-info'}">
+                const cellMap = {
+                    checkbox: `<input type="checkbox" class="form-check-input hidden-checkbox" value="${inv.id}" onchange="updateHiddenSelectionCount()" ${checked}>`,
+                    company: `<span class="${inv.company_name ? '' : 'text-muted'}">${inv.company_name || '-'}</span>`,
+                    direction: `<span class="badge ${isReceived ? 'bg-success' : 'bg-info'}">
                         <i class="bi bi-arrow-${isReceived ? 'down' : 'up'}"></i>
                         ${isReceived ? 'Received' : 'Sent'}
-                    </span></td>
-                    <td><code>${inv.invoice_number || '-'}</code></td>
-                    <td>${inv.partner_name || '-'}</td>
-                    <td>${issueDate}</td>
-                    <td class="text-end">${amount}</td>
-                    <td>${inv.currency || 'RON'}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-success" onclick="restoreFromHidden(${inv.id})" title="Restore">
+                    </span>`,
+                    invoice_number: `<code>${inv.invoice_number || '-'}</code>`,
+                    partner_name: inv.partner_name || '-',
+                    partner_cif: `<code class="text-muted">${inv.partner_cif || '-'}</code>`,
+                    type: inv.type_name ? `<span class="badge bg-secondary">${inv.type_name}</span>` : '<span class="text-muted">-</span>',
+                    issue_date: issueDate,
+                    amount: amount,
+                    vat: vatAmount,
+                    currency: inv.currency || 'RON',
+                    imported: `<span class="small text-muted">${importedDate}</span>`,
+                    actions: `<div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-success" onclick="restoreFromHidden(${inv.id})" title="Restore">
                             <i class="bi bi-arrow-counterclockwise"></i>
                         </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteFromHidden(${inv.id})" title="Move to Bin">
+                        <button class="btn btn-outline-danger" onclick="deleteFromHidden(${inv.id})" title="Move to Bin">
                             <i class="bi bi-trash"></i>
                         </button>
-                    </td>
-                </tr>`;
+                    </div>`
+                };
+
+                const cells = cols.map(col => {
+                    const align = col.align === 'end' ? 'text-end' : '';
+                    return `<td class="${align}">${cellMap[col.id] || ''}</td>`;
+                }).join('');
+
+                return `<tr data-id="${inv.id}">${cells}</tr>`;
             }).join('');
 
             updateHiddenSelectionCount();
@@ -2099,10 +2272,19 @@
             if (btn) {
                 btn.classList.add('d-none');
             }
-            // Force reload unallocated invoices
+            // Force reload both unallocated and hidden invoices
             unallocatedLoaded = false;
-            loadUnallocatedInvoices(1, true);
-            // Refresh all badge counts (hidden count may have changed)
+            hiddenLoaded = false;
+
+            // Reload current active tab
+            const activeTab = localStorage.getItem('efacturaActiveTab') || 'unallocatedTab';
+            if (activeTab === 'hiddenTab') {
+                loadHiddenInvoices(1, true);
+            } else {
+                loadUnallocatedInvoices(1, true);
+            }
+
+            // Refresh all badge counts (both unallocated and hidden counts may have changed)
             loadBadgeCounts();
         }
 
