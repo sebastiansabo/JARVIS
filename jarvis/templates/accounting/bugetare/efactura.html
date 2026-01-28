@@ -879,6 +879,7 @@
                                 <tr>
                                     <th>Name</th>
                                     <th>Description</th>
+                                    <th>Hide in Filter</th>
                                     <th>Status</th>
                                     <th width="100">Actions</th>
                                 </tr>
@@ -3972,7 +3973,7 @@
 
         async function loadPartnerTypesTable() {
             const tbody = document.getElementById('partnerTypesTableBody');
-            tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">
                 <span class="spinner-border spinner-border-sm"></span> Loading...
             </td></tr>`;
 
@@ -3983,10 +3984,10 @@
                 if (data.success) {
                     renderPartnerTypesTable(data.types || []);
                 } else {
-                    tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger py-4">${data.error}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">${data.error}</td></tr>`;
                 }
             } catch (err) {
-                tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger py-4">Error: ${err.message}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">Error: ${err.message}</td></tr>`;
             }
         }
 
@@ -3994,7 +3995,7 @@
             const tbody = document.getElementById('partnerTypesTableBody');
 
             if (!types || types.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">
                     <i class="bi bi-info-circle"></i> No partner types yet. Add one above.
                 </td></tr>`;
                 return;
@@ -4005,9 +4006,19 @@
                     ? '<span class="badge bg-success">Active</span>'
                     : '<span class="badge bg-secondary">Inactive</span>';
 
+                const hideInFilter = t.hide_in_filter !== false; // Default to true if undefined
+                const toggleChecked = hideInFilter ? 'checked' : '';
+
                 return `<tr data-id="${t.id}">
                     <td><strong>${t.name || '-'}</strong></td>
                     <td class="text-muted small">${t.description || '-'}</td>
+                    <td>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" ${toggleChecked}
+                                   onchange="togglePartnerTypeHideInFilter(${t.id}, this.checked)"
+                                   title="${hideInFilter ? 'Hidden when filter is ON' : 'Visible when filter is ON'}">
+                        </div>
+                    </td>
                     <td>${statusBadge}</td>
                     <td>
                         <div class="btn-group btn-group-sm">
@@ -4018,6 +4029,48 @@
                     </td>
                 </tr>`;
             }).join('');
+        }
+
+        // Toggle hide_in_filter for a partner type and refresh Unallocated/Hidden tabs
+        async function togglePartnerTypeHideInFilter(typeId, hideInFilter) {
+            try {
+                const res = await fetch(`/efactura/api/partner-types/${typeId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hide_in_filter: hideInFilter })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    // Refresh Unallocated and Hidden tabs data
+                    unallocatedLoaded = false;
+                    hiddenLoaded = false;
+
+                    // Reload current tab if it's Unallocated or Hidden
+                    const activeTab = document.querySelector('.nav-link.active[data-bs-toggle="tab"]');
+                    if (activeTab) {
+                        const tabId = activeTab.getAttribute('href') || activeTab.dataset.bsTarget;
+                        if (tabId === '#unallocated') {
+                            loadUnallocatedInvoices(1, true);
+                        } else if (tabId === '#hidden') {
+                            loadHiddenInvoices(1, true);
+                        }
+                    }
+
+                    // Refresh badge counts (hidden count may have changed)
+                    loadBadgeCounts();
+
+                    // Update cache for dropdown
+                    loadPartnerTypesForDropdown();
+                } else {
+                    alert(data.error || 'Failed to update partner type');
+                    // Reload table to reset toggle state
+                    loadPartnerTypesTable();
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+                loadPartnerTypesTable();
+            }
         }
 
         async function addPartnerType() {
