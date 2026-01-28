@@ -1915,22 +1915,33 @@ def init_db():
     conn.commit()
 
     # Junction table for many-to-many mapping between suppliers and types
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS efactura_supplier_mapping_types (
-            mapping_id INTEGER NOT NULL REFERENCES efactura_supplier_mappings(id) ON DELETE CASCADE,
-            type_id INTEGER NOT NULL REFERENCES efactura_partner_types(id) ON DELETE CASCADE,
-            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-            PRIMARY KEY (mapping_id, type_id)
-        )
-    ''')
+    try:
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS efactura_supplier_mapping_types (
+                mapping_id INTEGER NOT NULL REFERENCES efactura_supplier_mappings(id) ON DELETE CASCADE,
+                type_id INTEGER NOT NULL REFERENCES efactura_partner_types(id) ON DELETE CASCADE,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (mapping_id, type_id)
+            )
+        ''')
+        conn.commit()
+        print("Created efactura_supplier_mapping_types table successfully")
+    except Exception as e:
+        print(f"Error creating efactura_supplier_mapping_types table: {e}")
+        conn.rollback()
 
     # Migration: Move existing type_id data to junction table
-    cursor.execute('''
-        INSERT INTO efactura_supplier_mapping_types (mapping_id, type_id)
-        SELECT id, type_id FROM efactura_supplier_mappings
-        WHERE type_id IS NOT NULL
-        ON CONFLICT (mapping_id, type_id) DO NOTHING
-    ''')
+    try:
+        cursor.execute('''
+            INSERT INTO efactura_supplier_mapping_types (mapping_id, type_id)
+            SELECT id, type_id FROM efactura_supplier_mappings
+            WHERE type_id IS NOT NULL
+            ON CONFLICT (mapping_id, type_id) DO NOTHING
+        ''')
+        conn.commit()
+    except Exception as e:
+        print(f"Error migrating type_id data to junction table: {e}")
+        conn.rollback()
 
     # Seed default partner types if table is empty
     cursor.execute('SELECT COUNT(*) FROM efactura_partner_types')
