@@ -742,11 +742,8 @@ class EFacturaService:
 
                 if created_invoice:
                     imported += 1
-                    # Auto-hide invoice if partner has mapping with hidden types
-                    self.invoice_repo.auto_hide_if_typed(
-                        created_invoice.id,
-                        invoice.partner_name
-                    )
+                    # Note: No auto-hide here - visibility is now controlled dynamically
+                    # by partner type settings (hide_in_filter flag)
                 else:
                     errors.append(f"Failed to save message {message_id}")
 

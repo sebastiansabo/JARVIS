@@ -994,16 +994,43 @@ class InvoiceRepository:
         offset: int = 0,
     ) -> Tuple[List[Invoice], int]:
         """
-        List hidden (ignored) invoices.
+        List hidden invoices based on type settings.
 
-        Hidden = ignored = TRUE AND deleted_at IS NULL
+        Hidden = invoices whose type has hide_in_filter = TRUE
+        (Dynamic filtering based on partner type settings)
         """
         conn = get_db()
         try:
             cursor = get_cursor(conn)
 
-            conditions = ['i.ignored = TRUE', 'i.deleted_at IS NULL']
+            # Base conditions: not deleted, not allocated
+            conditions = ['i.deleted_at IS NULL', 'i.jarvis_invoice_id IS NULL']
             params = {'limit': limit, 'offset': offset}
+
+            # Hidden = has a type with hide_in_filter = TRUE
+            # Type comes from: type_override (if set) OR supplier mapping types
+            conditions.append("""
+                (
+                    -- Has a hidden type via override
+                    (i.type_override IS NOT NULL AND EXISTS (
+                        SELECT 1 FROM efactura_partner_types pt
+                        WHERE pt.is_active = TRUE
+                            AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                            AND i.type_override ILIKE '%%' || pt.name || '%%'
+                    ))
+                    OR
+                    -- Has a hidden type via supplier mapping (only when no override)
+                    (i.type_override IS NULL AND EXISTS (
+                        SELECT 1 FROM efactura_supplier_mappings sm2
+                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
+                        JOIN efactura_partner_types pt ON pt.id = smt.type_id
+                        WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
+                            AND sm2.is_active = TRUE
+                            AND pt.is_active = TRUE
+                            AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                    ))
+                )
+            """)
 
             if cif_owner:
                 conditions.append('i.cif_owner = %(cif_owner)s')
@@ -1075,13 +1102,34 @@ class InvoiceRepository:
             release_db(conn)
 
     def count_hidden(self) -> int:
-        """Count hidden (ignored) invoices."""
+        """Count hidden invoices (based on type settings)."""
         conn = get_db()
         try:
             cursor = get_cursor(conn)
             cursor.execute("""
-                SELECT COUNT(*) as total FROM efactura_invoices
-                WHERE ignored = TRUE AND deleted_at IS NULL
+                SELECT COUNT(*) as total FROM efactura_invoices i
+                WHERE i.deleted_at IS NULL
+                    AND i.jarvis_invoice_id IS NULL
+                    AND (
+                        -- Has a hidden type via override
+                        (i.type_override IS NOT NULL AND EXISTS (
+                            SELECT 1 FROM efactura_partner_types pt
+                            WHERE pt.is_active = TRUE
+                                AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                                AND i.type_override ILIKE '%%' || pt.name || '%%'
+                        ))
+                        OR
+                        -- Has a hidden type via supplier mapping (only when no override)
+                        (i.type_override IS NULL AND EXISTS (
+                            SELECT 1 FROM efactura_supplier_mappings sm2
+                            JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
+                            JOIN efactura_partner_types pt ON pt.id = smt.type_id
+                            WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
+                                AND sm2.is_active = TRUE
+                                AND pt.is_active = TRUE
+                                AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                        ))
+                    )
             """)
             return cursor.fetchone()['total']
         finally:
