@@ -722,19 +722,13 @@ class InvoiceRepository:
             """, params)
             total = cursor.fetchone()['total']
 
-            # Get invoices with type_names, department, subdepartment from supplier mappings (via junction table)
-            # Also include invoice-level overrides
+            # OPTIMIZED: Fetch invoices and mappings without correlated subquery
+            # Step 1: Get invoices with basic mapping data (dept/subdept only)
             cursor.execute(f"""
                 SELECT i.*,
+                    sm.id as mapping_id,
                     sm.department as mapping_department,
-                    sm.subdepartment as mapping_subdepartment,
-                    COALESCE(
-                        (SELECT array_agg(pt.name ORDER BY pt.name)
-                         FROM efactura_supplier_mapping_types smt
-                         JOIN efactura_partner_types pt ON smt.type_id = pt.id
-                         WHERE smt.mapping_id = sm.id),
-                        ARRAY[]::text[]
-                    ) as type_names
+                    sm.subdepartment as mapping_subdepartment
                 FROM efactura_invoices i
                 LEFT JOIN efactura_supplier_mappings sm
                     ON LOWER(i.partner_name) = LOWER(sm.partner_name) AND sm.is_active = TRUE
@@ -743,11 +737,29 @@ class InvoiceRepository:
                 LIMIT %(limit)s OFFSET %(offset)s
             """, params)
 
+            rows = cursor.fetchall()
+
+            # Step 2: Collect mapping IDs and fetch type_names in batch (single query)
+            mapping_ids = [r['mapping_id'] for r in rows if r.get('mapping_id')]
+            type_names_map = {}
+            if mapping_ids:
+                cursor.execute("""
+                    SELECT smt.mapping_id, array_agg(pt.name ORDER BY pt.name) as type_names
+                    FROM efactura_supplier_mapping_types smt
+                    JOIN efactura_partner_types pt ON smt.type_id = pt.id
+                    WHERE smt.mapping_id = ANY(%s)
+                    GROUP BY smt.mapping_id
+                """, (mapping_ids,))
+                for type_row in cursor.fetchall():
+                    type_names_map[type_row['mapping_id']] = type_row['type_names'] or []
+
+            # Step 3: Build invoice list with merged data
             invoices = []
-            for row in cursor.fetchall():
+            for row in rows:
                 inv = self._row_to_invoice(row)
                 inv_dict = inv.__dict__.copy()
-                type_names = row.get('type_names') or []
+                mapping_id = row.get('mapping_id')
+                type_names = type_names_map.get(mapping_id, []) if mapping_id else []
                 inv_dict['type_names'] = type_names
                 # Use override if set, otherwise use mapping types
                 inv_dict['type_override'] = row.get('type_override')
