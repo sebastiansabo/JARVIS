@@ -413,24 +413,65 @@
             <!-- Mappings Tab -->
             <div class="tab-pane fade" id="mappingsTab">
                 <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <span><i class="bi bi-diagram-3"></i> Supplier Mappings</span>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-outline-secondary btn-sm" onclick="openPartnerTypesModal()" title="Manage Partner Types">
-                                <i class="bi bi-gear"></i> Types
-                            </button>
-                            <button class="btn btn-outline-secondary btn-sm" onclick="importSuppliersFromInvoices()">
-                                <i class="bi bi-box-arrow-in-down"></i> Import from Invoices
-                            </button>
-                            <button class="btn btn-primary btn-sm" onclick="openAddMappingModal()">
-                                <i class="bi bi-plus-lg"></i> Add Mapping
-                            </button>
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-diagram-3"></i> Supplier Mappings <span id="mappingsResultCount" class="badge bg-secondary ms-2"></span></span>
+                            <div class="d-flex gap-2 align-items-center">
+                                <div class="input-group input-group-sm" style="width: 200px;">
+                                    <input type="text" class="form-control" id="mappingsSearchInput" placeholder="Search partner or supplier..." onkeyup="if(event.key==='Enter') filterMappings()">
+                                    <button class="btn btn-outline-secondary" type="button" onclick="filterMappings()">
+                                        <i class="bi bi-search"></i>
+                                    </button>
+                                </div>
+                                <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#mappingsFiltersCollapse">
+                                    <i class="bi bi-funnel"></i> Filters
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="openPartnerTypesModal()" title="Manage Partner Types">
+                                    <i class="bi bi-gear"></i> Types
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="importSuppliersFromInvoices()">
+                                    <i class="bi bi-box-arrow-in-down"></i> Import from Invoices
+                                </button>
+                                <button class="btn btn-primary btn-sm" onclick="openAddMappingModal()">
+                                    <i class="bi bi-plus-lg"></i> Add Mapping
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="card-body">
-                        <p class="text-muted small mb-3">
+                        <p class="text-muted small mb-2">
                             Map e-Factura partner names to standardized supplier names used in the Invoice module.
                         </p>
+
+                        <!-- Filters (collapsible) -->
+                        <div class="collapse" id="mappingsFiltersCollapse">
+                            <div class="row mb-3 g-2">
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">Type</label>
+                                    <select class="form-select form-select-sm" id="mappingsTypeFilter" onchange="filterMappings()">
+                                        <option value="">All Types</option>
+                                        <option value="Service">Service</option>
+                                        <option value="Merchandise">Merchandise</option>
+                                        <option value="none">No Type</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">Per Page</label>
+                                    <select class="form-select form-select-sm" id="mappingsPageSize" onchange="changeMappingsPageSize(this.value)">
+                                        <option value="25">25</option>
+                                        <option value="50" selected>50</option>
+                                        <option value="100">100</option>
+                                        <option value="200">200</option>
+                                        <option value="0">All</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end">
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="clearMappingsFilters()">
+                                        <i class="bi bi-x"></i> Clear
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- Bulk Actions for Mappings -->
                         <div class="bulk-action-bar" id="mappingsBulkActionBar">
@@ -467,6 +508,17 @@
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <!-- Pagination Footer -->
+                        <div class="d-flex justify-content-between align-items-center mt-3" id="mappingsPaginationFooter" style="display: none !important;">
+                            <div class="text-muted small">
+                                Showing <span id="mappingsShowingRange">0-0</span> of <span id="mappingsTotalCount">0</span>
+                            </div>
+                            <nav>
+                                <ul class="pagination pagination-sm mb-0" id="mappingsPagination">
+                                </ul>
+                            </nav>
                         </div>
                     </div>
                 </div>
@@ -918,8 +970,19 @@
         }
 
         function sortAndRenderMappings() {
-            if (!mappingsCache || mappingsCache.length === 0) return;
-            const sorted = [...mappingsCache].sort((a, b) => {
+            // Use filtered cache (can be empty if filters returned no results)
+            const dataToSort = filteredMappingsCache !== undefined
+                ? filteredMappingsCache
+                : (mappingsCache || []);
+
+            if (dataToSort.length === 0) {
+                renderMappingsTable([]);
+                updateMappingsPagination(0, 0, 0);
+                document.getElementById('mappingsResultCount').textContent = '0 mappings';
+                return;
+            }
+
+            const sorted = [...dataToSort].sort((a, b) => {
                 let valA = a[mappingsSortColumn];
                 let valB = b[mappingsSortColumn];
                 if (valA == null) valA = '';
@@ -932,7 +995,67 @@
                 if (valA > valB) return mappingsSortDirection === 'asc' ? 1 : -1;
                 return 0;
             });
-            renderMappingsTable(sorted);
+
+            // Apply pagination (0 = show all)
+            const total = sorted.length;
+            let paginated = sorted;
+            if (mappingsPageSize > 0) {
+                const start = (mappingsCurrentPage - 1) * mappingsPageSize;
+                const end = start + mappingsPageSize;
+                paginated = sorted.slice(start, end);
+            }
+
+            renderMappingsTable(paginated);
+            updateMappingsPagination(total, mappingsCurrentPage, mappingsPageSize);
+
+            // Update result count badge
+            document.getElementById('mappingsResultCount').textContent = `${total} mappings`;
+        }
+
+        function updateMappingsPagination(total, currentPage, pageSize) {
+            const footer = document.getElementById('mappingsPaginationFooter');
+            const pagination = document.getElementById('mappingsPagination');
+            const showingRange = document.getElementById('mappingsShowingRange');
+            const totalCount = document.getElementById('mappingsTotalCount');
+
+            if (total === 0 || pageSize === 0) {
+                footer.style.display = 'none';
+                return;
+            }
+
+            footer.style.display = 'flex';
+            const totalPages = Math.ceil(total / pageSize);
+            const start = (currentPage - 1) * pageSize + 1;
+            const end = Math.min(currentPage * pageSize, total);
+
+            showingRange.textContent = `${start}-${end}`;
+            totalCount.textContent = total;
+
+            // Build pagination buttons
+            let html = '';
+            html += `<li class="page-item ${currentPage <= 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="goToMappingsPage(${currentPage - 1}); return false;">&laquo;</a>
+            </li>`;
+
+            for (let i = 1; i <= totalPages && i <= 10; i++) {
+                html += `<li class="page-item ${i === currentPage ? 'active' : ''}">
+                    <a class="page-link" href="#" onclick="goToMappingsPage(${i}); return false;">${i}</a>
+                </li>`;
+            }
+
+            html += `<li class="page-item ${currentPage >= totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="goToMappingsPage(${currentPage + 1}); return false;">&raquo;</a>
+            </li>`;
+
+            pagination.innerHTML = html;
+        }
+
+        function goToMappingsPage(page) {
+            const total = filteredMappingsCache.length || mappingsCache.length;
+            const totalPages = mappingsPageSize > 0 ? Math.ceil(total / mappingsPageSize) : 1;
+            if (page < 1 || page > totalPages) return;
+            mappingsCurrentPage = page;
+            sortAndRenderMappings();
         }
 
         // Hide loading overlay
@@ -2038,6 +2161,53 @@
         // ============================================
 
         let mappingsCache = [];
+        let filteredMappingsCache = []; // Filtered subset
+        let mappingsPageSize = parseInt(localStorage.getItem('efacturaMappingsPageSize')) || 50;
+        let mappingsCurrentPage = 1;
+
+        // Filter mappings based on search and type filter
+        function filterMappings() {
+            const searchTerm = document.getElementById('mappingsSearchInput').value.toLowerCase().trim();
+            const typeFilter = document.getElementById('mappingsTypeFilter').value;
+
+            filteredMappingsCache = mappingsCache.filter(m => {
+                // Search filter
+                const matchesSearch = !searchTerm ||
+                    (m.partner_name && m.partner_name.toLowerCase().includes(searchTerm)) ||
+                    (m.supplier_name && m.supplier_name.toLowerCase().includes(searchTerm)) ||
+                    (m.partner_cif && m.partner_cif.toLowerCase().includes(searchTerm)) ||
+                    (m.supplier_vat && m.supplier_vat.toLowerCase().includes(searchTerm)) ||
+                    (m.kod_konto && m.kod_konto.toLowerCase().includes(searchTerm));
+
+                // Type filter
+                let matchesType = true;
+                if (typeFilter === 'none') {
+                    matchesType = !m.type_name;
+                } else if (typeFilter) {
+                    matchesType = m.type_name === typeFilter;
+                }
+
+                return matchesSearch && matchesType;
+            });
+
+            mappingsCurrentPage = 1;
+            sortAndRenderMappings();
+        }
+
+        function changeMappingsPageSize(newSize) {
+            mappingsPageSize = parseInt(newSize);
+            localStorage.setItem('efacturaMappingsPageSize', mappingsPageSize);
+            mappingsCurrentPage = 1;
+            sortAndRenderMappings();
+        }
+
+        function clearMappingsFilters() {
+            document.getElementById('mappingsSearchInput').value = '';
+            document.getElementById('mappingsTypeFilter').value = '';
+            filteredMappingsCache = [...mappingsCache];
+            mappingsCurrentPage = 1;
+            sortAndRenderMappings();
+        }
 
         async function loadSupplierMappings(forceReload = false) {
             // Skip if already loaded and not forcing reload
@@ -2057,10 +2227,13 @@
 
                 if (data.success) {
                     mappingsCache = data.mappings || [];
+                    filteredMappingsCache = [...mappingsCache]; // Initialize filtered cache
                     mappingsLoaded = true; // Mark as loaded
                     updateMappingsTableHeaders();
                     sortAndRenderMappings();
                     updateBadge('mappingsBadge', data.count || 0);
+                    // Restore page size from localStorage
+                    document.getElementById('mappingsPageSize').value = mappingsPageSize || 50;
                 } else {
                     tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger py-4">${data.error}</td></tr>`;
                 }
@@ -2074,11 +2247,15 @@
 
         function renderMappingsTable(mappings) {
             const tbody = document.getElementById('mappingsTableBody');
+            const searchTerm = document.getElementById('mappingsSearchInput')?.value || '';
+            const typeFilter = document.getElementById('mappingsTypeFilter')?.value || '';
+            const hasFilters = searchTerm || typeFilter;
 
             if (!mappings || mappings.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4">
-                    <i class="bi bi-info-circle"></i> No supplier mappings yet. Click "Add Mapping" to create one.
-                </td></tr>`;
+                const message = hasFilters
+                    ? '<i class="bi bi-search"></i> No mappings match your search criteria.'
+                    : '<i class="bi bi-info-circle"></i> No supplier mappings yet. Click "Add Mapping" to create one.';
+                tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4">${message}</td></tr>`;
                 document.getElementById('mappingsSelectAll').checked = false;
                 selectedMappings.clear();
                 updateMappingsSelectionCount();
