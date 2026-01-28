@@ -1865,6 +1865,8 @@ def init_db():
             updated_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
     ''')
+    # Commit to ensure partner_types table exists before creating FK reference
+    conn.commit()
 
     # e-Factura supplier mappings - maps e-Factura partner names to standardized supplier names
     cursor.execute('''
