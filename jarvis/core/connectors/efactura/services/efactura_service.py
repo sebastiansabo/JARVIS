@@ -1078,6 +1078,11 @@ class EFacturaService:
                 'currency': inv.get('currency'),
                 'created_at': inv_created_at,
                 'type_name': inv.get('type_name'),
+                'type_override': inv.get('type_override'),
+                'department': inv.get('department'),
+                'department_override': inv.get('department_override'),
+                'subdepartment': inv.get('subdepartment'),
+                'subdepartment_override': inv.get('subdepartment_override'),
             })
 
         return ServiceResult(success=True, data={

@@ -1768,6 +1768,31 @@ def init_db():
         END $$;
     ''')
 
+    # Add override columns for per-invoice Type/Department/Subdepartment
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'efactura_invoices' AND column_name = 'type_override'
+            ) THEN
+                ALTER TABLE efactura_invoices ADD COLUMN type_override VARCHAR(100);
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'efactura_invoices' AND column_name = 'department_override'
+            ) THEN
+                ALTER TABLE efactura_invoices ADD COLUMN department_override VARCHAR(255);
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'efactura_invoices' AND column_name = 'subdepartment_override'
+            ) THEN
+                ALTER TABLE efactura_invoices ADD COLUMN subdepartment_override VARCHAR(255);
+            END IF;
+        END $$;
+    ''')
+
     # e-Factura invoice references (ANAF IDs)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS efactura_invoice_refs (
@@ -1911,6 +1936,26 @@ def init_db():
             END IF;
         END $;
     ''')
+
+    # Migration: Add department and subdepartment columns to supplier mappings
+    cursor.execute('''
+        DO $
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'efactura_supplier_mappings' AND column_name = 'department'
+            ) THEN
+                ALTER TABLE efactura_supplier_mappings ADD COLUMN department VARCHAR(255);
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'efactura_supplier_mappings' AND column_name = 'subdepartment'
+            ) THEN
+                ALTER TABLE efactura_supplier_mappings ADD COLUMN subdepartment VARCHAR(255);
+            END IF;
+        END $;
+    ''')
+
     # Commit to ensure supplier_mappings table exists before creating junction table FK
     conn.commit()
 

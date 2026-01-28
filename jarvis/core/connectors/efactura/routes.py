@@ -1056,6 +1056,98 @@ def get_unallocated_ids():
         }), 500
 
 
+@efactura_bp.route('/api/invoices/<int:invoice_id>/overrides', methods=['PUT'])
+@api_login_required
+def update_invoice_overrides(invoice_id):
+    """
+    Update invoice-level overrides for Type, Department, and Subdepartment.
+
+    These overrides take precedence over the supplier mapping defaults.
+    Passing null/empty clears the override.
+
+    Request body:
+        type_override: Optional type override value
+        department_override: Optional department override value
+        subdepartment_override: Optional subdepartment override value
+    """
+    try:
+        data = request.get_json()
+        type_override = data.get('type_override') or None
+        department_override = data.get('department_override') or None
+        subdepartment_override = data.get('subdepartment_override') or None
+
+        success = efactura_service.invoice_repo.update_overrides(
+            invoice_id=invoice_id,
+            type_override=type_override,
+            department_override=department_override,
+            subdepartment_override=subdepartment_override,
+        )
+
+        if success:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to update overrides'}), 500
+
+    except Exception as e:
+        logger.error(f"Error updating invoice overrides: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+        }), 500
+
+
+@efactura_bp.route('/api/invoices/bulk-overrides', methods=['PUT'])
+@api_login_required
+def bulk_update_invoice_overrides():
+    """
+    Bulk update invoice-level overrides for multiple invoices.
+
+    Request body:
+        invoice_ids: List of invoice IDs to update
+        type_override: Optional type override value (only updated if key is present)
+        department_override: Optional department override value (only updated if key is present)
+        subdepartment_override: Optional subdepartment override value (only updated if key is present)
+
+    Note: Only fields present in the request body will be updated.
+          Passing null clears the override. Omitting a field keeps the existing value.
+    """
+    try:
+        data = request.get_json()
+        invoice_ids = data.get('invoice_ids', [])
+
+        if not invoice_ids:
+            return jsonify({'success': False, 'error': 'No invoice IDs provided'}), 400
+
+        # Build updates dict only for fields that are explicitly provided
+        updates = {}
+        if 'type_override' in data:
+            updates['type_override'] = data['type_override'] or None
+        if 'department_override' in data:
+            updates['department_override'] = data['department_override'] or None
+        if 'subdepartment_override' in data:
+            updates['subdepartment_override'] = data['subdepartment_override'] or None
+
+        if not updates:
+            return jsonify({'success': False, 'error': 'No fields to update provided'}), 400
+
+        count = efactura_service.invoice_repo.bulk_update_overrides(
+            invoice_ids=invoice_ids,
+            updates=updates,
+        )
+
+        return jsonify({
+            'success': True,
+            'updated_count': count,
+        })
+
+    except Exception as e:
+        logger.error(f"Error bulk updating invoice overrides: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+        }), 500
+
+
 @efactura_bp.route('/api/invoices/send-to-module', methods=['POST'])
 @api_login_required
 def send_to_invoice_module():
@@ -2130,6 +2222,8 @@ def create_supplier_mapping():
             supplier_vat=data.get('supplier_vat', '').strip() or None,
             kod_konto=data.get('kod_konto', '').strip() or None,
             type_ids=type_ids,
+            department=data.get('department', '').strip() or None,
+            subdepartment=data.get('subdepartment', '').strip() or None,
         )
 
         return jsonify({
@@ -2202,6 +2296,8 @@ def update_supplier_mapping(mapping_id: int):
             kod_konto=data.get('kod_konto'),
             type_ids=type_ids,
             is_active=data.get('is_active'),
+            department=data.get('department'),
+            subdepartment=data.get('subdepartment'),
         )
 
         if not success:
@@ -2403,18 +2499,29 @@ def bulk_set_mappings_type():
             finally:
                 release_db(conn)
 
-        # Update all mappings
+        # Update all mappings using junction table
         updated_count = 0
         conn = get_db()
         try:
             cursor = get_cursor(conn)
             for mapping_id in ids:
+                # Delete existing types for this mapping
                 cursor.execute(
-                    "UPDATE efactura_supplier_mappings SET type_id = %s, updated_at = NOW() WHERE id = %s",
-                    (type_id, mapping_id)
+                    "DELETE FROM efactura_supplier_mapping_types WHERE mapping_id = %s",
+                    (mapping_id,)
                 )
-                if cursor.rowcount > 0:
-                    updated_count += 1
+                # Insert new type if provided
+                if type_id:
+                    cursor.execute(
+                        "INSERT INTO efactura_supplier_mapping_types (mapping_id, type_id) VALUES (%s, %s)",
+                        (mapping_id, type_id)
+                    )
+                # Update timestamp on mapping
+                cursor.execute(
+                    "UPDATE efactura_supplier_mappings SET updated_at = NOW() WHERE id = %s",
+                    (mapping_id,)
+                )
+                updated_count += 1
             conn.commit()
         finally:
             release_db(conn)

@@ -284,6 +284,9 @@
                                 <button class="btn btn-success btn-sm" onclick="sendSelectedToInvoices()">
                                     <i class="bi bi-send"></i> Send to Invoices
                                 </button>
+                                <button class="btn btn-warning btn-sm" onclick="openBulkSetOverridesModal()">
+                                    <i class="bi bi-pencil-square"></i> Set Type/Dept
+                                </button>
                                 <button class="btn btn-outline-secondary btn-sm" onclick="bulkHideSelected()">
                                     <i class="bi bi-eye-slash"></i> Hide
                                 </button>
@@ -778,6 +781,27 @@
                         <label class="form-label">Supplier Note</label>
                         <textarea class="form-control" id="mappingSupplierNote" rows="2" placeholder="Optional notes about this supplier..."></textarea>
                     </div>
+                    <hr>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Default Department</label>
+                                <select class="form-select" id="mappingDepartment">
+                                    <option value="">-- None --</option>
+                                </select>
+                                <div class="form-text">Default department for this supplier</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Default Subdepartment</label>
+                                <select class="form-select" id="mappingSubdepartment">
+                                    <option value="">-- None --</option>
+                                </select>
+                                <div class="form-text">Default subdepartment for this supplier</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -869,6 +893,116 @@
         </div>
     </div>
 
+    <!-- Edit Invoice Overrides Modal -->
+    <div class="modal fade" id="editInvoiceOverridesModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil-square"></i> Edit Invoice Overrides</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editInvoiceId">
+                    <p class="text-muted small mb-3">
+                        Override the Type, Department, and Subdepartment for this specific invoice.
+                        These values take precedence over the supplier mapping defaults.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label">Invoice</label>
+                        <div id="editInvoiceInfo" class="form-control-plaintext border rounded px-2 py-1 bg-light">
+                            <!-- Invoice info populated dynamically -->
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type Override</label>
+                        <select class="form-select" id="invoiceTypeOverride">
+                            <option value="">-- Use Mapping Default --</option>
+                        </select>
+                        <div class="form-text">Leave empty to use the supplier mapping default</div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Department Override</label>
+                                <select class="form-select" id="invoiceDepartmentOverride">
+                                    <option value="">-- Use Mapping Default --</option>
+                                </select>
+                                <div class="form-text">Leave empty to use the supplier mapping default</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Subdepartment Override</label>
+                                <select class="form-select" id="invoiceSubdepartmentOverride">
+                                    <option value="">-- Use Mapping Default --</option>
+                                </select>
+                                <div class="form-text">Leave empty to use the supplier mapping default</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveInvoiceOverrides()">
+                        <i class="bi bi-check-lg"></i> Save Overrides
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Set Overrides Modal -->
+    <div class="modal fade" id="bulkSetOverridesModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil-square"></i> Bulk Set Type/Department</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info small mb-3">
+                        <i class="bi bi-info-circle"></i>
+                        Set Type, Department, and/or Subdepartment overrides for <strong id="bulkOverrideCount">0</strong> selected invoices.
+                        Leave a field empty to keep the existing value unchanged.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type Override</label>
+                        <select class="form-select" id="bulkTypeOverride">
+                            <option value="">-- Keep Existing --</option>
+                            <option value="__CLEAR__">Clear Override (Use Mapping Default)</option>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Department Override</label>
+                                <select class="form-select" id="bulkDepartmentOverride">
+                                    <option value="">-- Keep Existing --</option>
+                                    <option value="__CLEAR__">Clear Override (Use Mapping Default)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Subdepartment Override</label>
+                                <select class="form-select" id="bulkSubdepartmentOverride">
+                                    <option value="">-- Keep Existing --</option>
+                                    <option value="__CLEAR__">Clear Override (Use Mapping Default)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-warning" onclick="applyBulkOverrides()">
+                        <i class="bi bi-check-lg"></i> Apply to Selected
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- View Invoice Modal -->
     <div class="modal fade" id="viewInvoiceModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -944,6 +1078,8 @@
             { id: 'partner_name', label: 'Supplier / Partner', visible: true },
             { id: 'partner_cif', label: 'Partner VAT', visible: true },
             { id: 'type', label: 'Type', visible: true },
+            { id: 'department', label: 'Department', visible: true },
+            { id: 'subdepartment', label: 'Subdepartment', visible: false },
             { id: 'issue_date', label: 'Issue Date', visible: true },
             { id: 'amount', label: 'Amount', visible: true, align: 'end' },
             { id: 'vat', label: 'VAT', visible: true, align: 'end' },
@@ -983,7 +1119,7 @@
         }
 
         // Sortable columns (columns that can be sorted)
-        const sortableColumns = ['company', 'direction', 'invoice_number', 'partner_name', 'partner_cif', 'type', 'issue_date', 'amount', 'vat', 'currency', 'imported'];
+        const sortableColumns = ['company', 'direction', 'invoice_number', 'partner_name', 'partner_cif', 'type', 'department', 'subdepartment', 'issue_date', 'amount', 'vat', 'currency', 'imported'];
 
         // Render table header
         function renderTableHeader() {
@@ -1903,6 +2039,14 @@
                 const vat = parseFloat(inv.total_vat || 0).toLocaleString('ro-RO', {minimumFractionDigits: 2});
                 const checked = selectedInvoices.has(inv.id) ? 'checked' : '';
 
+                // Show override indicator if value differs from mapping
+                const typeDisplay = inv.type_name ? `<span class="badge bg-secondary">${inv.type_name}</span>` : '<span class="text-muted">-</span>';
+                const typeOverrideIcon = inv.type_override ? '<i class="bi bi-pencil-fill text-warning ms-1" title="Override"></i>' : '';
+                const deptDisplay = inv.department || '-';
+                const deptOverrideIcon = inv.department_override ? '<i class="bi bi-pencil-fill text-warning ms-1" title="Override"></i>' : '';
+                const subdeptDisplay = inv.subdepartment || '-';
+                const subdeptOverrideIcon = inv.subdepartment_override ? '<i class="bi bi-pencil-fill text-warning ms-1" title="Override"></i>' : '';
+
                 const cellMap = {
                     checkbox: `<input type="checkbox" class="form-check-input invoice-checkbox" value="${inv.id}" onchange="updateSelectionCount()" ${checked}>`,
                     company: `<span class="${inv.company_name ? '' : 'text-muted'}">${inv.company_name || '-'}</span>`,
@@ -1913,7 +2057,9 @@
                     invoice_number: `<code>${inv.invoice_number || '-'}</code>`,
                     partner_name: inv.partner_name || '-',
                     partner_cif: `<code class="text-muted">${inv.partner_cif || '-'}</code>`,
-                    type: inv.type_name ? `<span class="badge bg-secondary">${inv.type_name}</span>` : '<span class="text-muted">-</span>',
+                    type: `${typeDisplay}${typeOverrideIcon}`,
+                    department: `<span class="${inv.department ? '' : 'text-muted'}">${deptDisplay}</span>${deptOverrideIcon}`,
+                    subdepartment: `<span class="${inv.subdepartment ? '' : 'text-muted'}">${subdeptDisplay}</span>${subdeptOverrideIcon}`,
                     issue_date: issueDate,
                     amount: amount,
                     vat: vat,
@@ -1922,6 +2068,9 @@
                     actions: `<div class="btn-group btn-group-sm">
                         <button class="btn btn-outline-success" onclick="sendSingleToInvoices(${inv.id})" title="Send to Invoices">
                             <i class="bi bi-send"></i>
+                        </button>
+                        <button class="btn btn-outline-warning" onclick="editInvoiceOverrides(${inv.id})" title="Edit Type/Dept">
+                            <i class="bi bi-pencil"></i>
                         </button>
                         <button class="btn btn-outline-primary" onclick="viewInvoice(${inv.id})" title="View Details">
                             <i class="bi bi-eye"></i>
@@ -2604,6 +2753,173 @@
             document.getElementById('totalValueUnallocated').textContent = totalValue.toLocaleString('ro-RO', {minimumFractionDigits: 2}) + ' RON';
         }
 
+        // Edit invoice overrides
+        async function editInvoiceOverrides(invoiceId) {
+            // Find invoice in cache
+            const inv = invoicesCache.find(i => i.id === invoiceId);
+            if (!inv) {
+                alert('Invoice not found');
+                return;
+            }
+
+            document.getElementById('editInvoiceId').value = invoiceId;
+            document.getElementById('editInvoiceInfo').innerHTML = `
+                <strong>${inv.invoice_number}</strong> - ${inv.partner_name}<br>
+                <small class="text-muted">${inv.issue_date || '-'} | ${parseFloat(inv.total_amount || 0).toLocaleString('ro-RO')} ${inv.currency || 'RON'}</small>
+            `;
+
+            // Load partner types for type override dropdown
+            if (partnerTypesCache.length === 0) {
+                await loadPartnerTypesForDropdown();
+            }
+            const typeSelect = document.getElementById('invoiceTypeOverride');
+            typeSelect.innerHTML = '<option value="">-- Use Mapping Default --</option>' +
+                partnerTypesCache.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+            typeSelect.value = inv.type_override || '';
+
+            // Load departments for override dropdown
+            await loadDepartmentsForDropdown();
+            const deptSelect = document.getElementById('invoiceDepartmentOverride');
+            deptSelect.innerHTML = '<option value="">-- Use Mapping Default --</option>' +
+                departmentsCache.map(d => `<option value="${d.name}">${d.name}</option>`).join('');
+            deptSelect.value = inv.department_override || '';
+
+            // Load subdepartments for override dropdown
+            await loadSubdepartmentsForDropdown();
+            const subdeptSelect = document.getElementById('invoiceSubdepartmentOverride');
+            subdeptSelect.innerHTML = '<option value="">-- Use Mapping Default --</option>' +
+                subdepartmentsCache.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+            subdeptSelect.value = inv.subdepartment_override || '';
+
+            const modal = new bootstrap.Modal(document.getElementById('editInvoiceOverridesModal'));
+            modal.show();
+        }
+
+        async function saveInvoiceOverrides() {
+            const invoiceId = document.getElementById('editInvoiceId').value;
+            const typeOverride = document.getElementById('invoiceTypeOverride').value;
+            const departmentOverride = document.getElementById('invoiceDepartmentOverride').value;
+            const subdepartmentOverride = document.getElementById('invoiceSubdepartmentOverride').value;
+
+            try {
+                const res = await fetch(`/efactura/api/invoices/${invoiceId}/overrides`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type_override: typeOverride || null,
+                        department_override: departmentOverride || null,
+                        subdepartment_override: subdepartmentOverride || null,
+                    })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('editInvoiceOverridesModal')).hide();
+                    // Reload invoices to reflect changes
+                    loadUnallocatedInvoices();
+                } else {
+                    alert(data.error || 'Failed to save overrides');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        // Bulk set overrides modal
+        async function openBulkSetOverridesModal() {
+            const count = selectedInvoices.size;
+            if (count === 0) {
+                alert('No invoices selected');
+                return;
+            }
+
+            document.getElementById('bulkOverrideCount').textContent = count;
+
+            // Load partner types for type override dropdown
+            if (partnerTypesCache.length === 0) {
+                await loadPartnerTypesForDropdown();
+            }
+            const typeSelect = document.getElementById('bulkTypeOverride');
+            typeSelect.innerHTML = '<option value="">-- Keep Existing --</option>' +
+                '<option value="__CLEAR__">Clear Override (Use Mapping Default)</option>' +
+                partnerTypesCache.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+            typeSelect.value = '';
+
+            // Load departments for override dropdown
+            await loadDepartmentsForDropdown();
+            const deptSelect = document.getElementById('bulkDepartmentOverride');
+            deptSelect.innerHTML = '<option value="">-- Keep Existing --</option>' +
+                '<option value="__CLEAR__">Clear Override (Use Mapping Default)</option>' +
+                departmentsCache.map(d => `<option value="${d.name}">${d.name}</option>`).join('');
+            deptSelect.value = '';
+
+            // Load subdepartments for override dropdown
+            await loadSubdepartmentsForDropdown();
+            const subdeptSelect = document.getElementById('bulkSubdepartmentOverride');
+            subdeptSelect.innerHTML = '<option value="">-- Keep Existing --</option>' +
+                '<option value="__CLEAR__">Clear Override (Use Mapping Default)</option>' +
+                subdepartmentsCache.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+            subdeptSelect.value = '';
+
+            const modal = new bootstrap.Modal(document.getElementById('bulkSetOverridesModal'));
+            modal.show();
+        }
+
+        async function applyBulkOverrides() {
+            const invoiceIds = Array.from(selectedInvoices);
+            const typeOverride = document.getElementById('bulkTypeOverride').value;
+            const departmentOverride = document.getElementById('bulkDepartmentOverride').value;
+            const subdepartmentOverride = document.getElementById('bulkSubdepartmentOverride').value;
+
+            // Check if anything is selected to change
+            if (!typeOverride && !departmentOverride && !subdepartmentOverride) {
+                alert('Please select at least one field to update');
+                return;
+            }
+
+            // Build payload - only include fields that should be changed
+            const payload = { invoice_ids: invoiceIds };
+
+            // Handle the special __CLEAR__ value
+            if (typeOverride === '__CLEAR__') {
+                payload.type_override = null;
+            } else if (typeOverride) {
+                payload.type_override = typeOverride;
+            }
+
+            if (departmentOverride === '__CLEAR__') {
+                payload.department_override = null;
+            } else if (departmentOverride) {
+                payload.department_override = departmentOverride;
+            }
+
+            if (subdepartmentOverride === '__CLEAR__') {
+                payload.subdepartment_override = null;
+            } else if (subdepartmentOverride) {
+                payload.subdepartment_override = subdepartmentOverride;
+            }
+
+            try {
+                const res = await fetch('/efactura/api/invoices/bulk-overrides', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('bulkSetOverridesModal')).hide();
+                    alert(`Updated ${data.updated_count} invoices`);
+                    // Reload invoices to reflect changes
+                    loadUnallocatedInvoices();
+                } else {
+                    alert(data.error || 'Failed to apply overrides');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
         // View invoice details
         async function viewInvoice(invoiceId) {
             currentInvoiceId = invoiceId;
@@ -3057,6 +3373,48 @@
             return Array.from(checkboxes).map(cb => parseInt(cb.value));
         }
 
+        // Department/Subdepartment caches
+        let departmentsCache = [];
+        let subdepartmentsCache = [];
+
+        async function loadDepartmentsForDropdown() {
+            if (departmentsCache.length === 0) {
+                try {
+                    const res = await fetch('/hr/events/api/master/departments');
+                    const data = await res.json();
+                    departmentsCache = data.filter(d => d.is_active !== false) || [];
+                } catch (err) {
+                    console.error('Failed to load departments:', err);
+                    departmentsCache = [];
+                }
+            }
+
+            const select = document.getElementById('mappingDepartment');
+            if (!select) return;
+
+            select.innerHTML = '<option value="">-- None --</option>' +
+                departmentsCache.map(d => `<option value="${d.name}">${d.name}</option>`).join('');
+        }
+
+        async function loadSubdepartmentsForDropdown() {
+            if (subdepartmentsCache.length === 0) {
+                try {
+                    const res = await fetch('/hr/events/api/master/subdepartments');
+                    const data = await res.json();
+                    subdepartmentsCache = data.filter(s => s.is_active !== false) || [];
+                } catch (err) {
+                    console.error('Failed to load subdepartments:', err);
+                    subdepartmentsCache = [];
+                }
+            }
+
+            const select = document.getElementById('mappingSubdepartment');
+            if (!select) return;
+
+            select.innerHTML = '<option value="">-- None --</option>' +
+                subdepartmentsCache.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+        }
+
         async function openAddMappingModal() {
             document.getElementById('mappingId').value = '';
             document.getElementById('mappingPartnerName').value = '';
@@ -3069,6 +3427,12 @@
 
             // Load partner types with no selection
             await loadPartnerTypesForDropdown(false, []);
+
+            // Load and reset department/subdepartment dropdowns
+            await loadDepartmentsForDropdown();
+            await loadSubdepartmentsForDropdown();
+            document.getElementById('mappingDepartment').value = '';
+            document.getElementById('mappingSubdepartment').value = '';
 
             const modal = new bootstrap.Modal(document.getElementById('mappingModal'));
             modal.show();
@@ -3094,6 +3458,12 @@
             const selectedTypeIds = mapping.type_ids || (mapping.type_id ? [mapping.type_id] : []);
             await loadPartnerTypesForDropdown(false, selectedTypeIds);
 
+            // Load and set department/subdepartment dropdowns
+            await loadDepartmentsForDropdown();
+            await loadSubdepartmentsForDropdown();
+            document.getElementById('mappingDepartment').value = mapping.department || '';
+            document.getElementById('mappingSubdepartment').value = mapping.subdepartment || '';
+
             const modal = new bootstrap.Modal(document.getElementById('mappingModal'));
             modal.show();
         }
@@ -3107,6 +3477,8 @@
             const typeIds = getSelectedTypeIds();
             const kodKonto = document.getElementById('mappingKodKonto').value.trim();
             const supplierNote = document.getElementById('mappingSupplierNote').value.trim();
+            const department = document.getElementById('mappingDepartment').value;
+            const subdepartment = document.getElementById('mappingSubdepartment').value;
 
             if (!partnerName) {
                 alert('Partner Name is required');
@@ -3126,6 +3498,8 @@
                 type_ids: typeIds,
                 kod_konto: kodKonto,
                 supplier_note: supplierNote,
+                department: department || null,
+                subdepartment: subdepartment || null,
             };
 
             try {

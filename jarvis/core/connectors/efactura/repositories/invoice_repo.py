@@ -506,6 +506,107 @@ class InvoiceRepository:
         finally:
             release_db(conn)
 
+    def update_overrides(
+        self,
+        invoice_id: int,
+        type_override: Optional[str] = None,
+        department_override: Optional[str] = None,
+        subdepartment_override: Optional[str] = None,
+    ) -> bool:
+        """
+        Update invoice-level overrides for Type, Department, and Subdepartment.
+
+        These overrides take precedence over the mapping defaults.
+        Passing None clears the override.
+        """
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute("""
+                UPDATE efactura_invoices
+                SET type_override = %s,
+                    department_override = %s,
+                    subdepartment_override = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+            """, (type_override, department_override, subdepartment_override, invoice_id))
+            conn.commit()
+            logger.info(
+                f"Invoice overrides updated",
+                extra={
+                    'invoice_id': invoice_id,
+                    'type_override': type_override,
+                    'department_override': department_override,
+                    'subdepartment_override': subdepartment_override,
+                }
+            )
+            return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to update invoice overrides: {e}")
+            return False
+        finally:
+            release_db(conn)
+
+    def bulk_update_overrides(
+        self,
+        invoice_ids: List[int],
+        updates: Dict[str, Any],
+    ) -> int:
+        """
+        Bulk update invoice-level overrides for multiple invoices.
+
+        Args:
+            invoice_ids: List of invoice IDs to update
+            updates: Dict of field -> value pairs to update. Only fields present in the dict will be updated.
+                     Supported fields: type_override, department_override, subdepartment_override
+
+        Returns the number of invoices updated.
+        """
+        if not invoice_ids or not updates:
+            return 0
+
+        # Build SET clause dynamically based on provided updates
+        allowed_fields = {'type_override', 'department_override', 'subdepartment_override'}
+        set_clauses = []
+        params = []
+
+        for field, value in updates.items():
+            if field in allowed_fields:
+                set_clauses.append(f"{field} = %s")
+                params.append(value)
+
+        if not set_clauses:
+            return 0
+
+        set_clauses.append("updated_at = NOW()")
+        params.append(invoice_ids)
+
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute(f"""
+                UPDATE efactura_invoices
+                SET {', '.join(set_clauses)}
+                WHERE id = ANY(%s)
+            """, params)
+            conn.commit()
+            count = cursor.rowcount
+            logger.info(
+                f"Bulk updated {count} invoice overrides",
+                extra={
+                    'invoice_ids': invoice_ids,
+                    'updates': updates,
+                }
+            )
+            return count
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to bulk update invoice overrides: {e}")
+            return 0
+        finally:
+            release_db(conn)
+
     # Valid sort columns mapping (frontend name -> DB column)
     SORT_COLUMNS = {
         'company': 'i.company_id',
@@ -513,7 +614,9 @@ class InvoiceRepository:
         'invoice_number': 'i.invoice_number',
         'partner_name': 'i.partner_name',
         'partner_cif': 'i.partner_cif',
-        'type': 'pt.name',
+        'type': 'i.type_override',
+        'department': 'COALESCE(i.department_override, sm.department)',
+        'subdepartment': 'COALESCE(i.subdepartment_override, sm.subdepartment)',
         'issue_date': 'i.issue_date',
         'amount': 'i.total_amount',
         'total_amount': 'i.total_amount',
@@ -591,9 +694,12 @@ class InvoiceRepository:
             """, params)
             total = cursor.fetchone()['total']
 
-            # Get invoices with type_names from supplier mappings (via junction table)
+            # Get invoices with type_names, department, subdepartment from supplier mappings (via junction table)
+            # Also include invoice-level overrides
             cursor.execute(f"""
                 SELECT i.*,
+                    sm.department as mapping_department,
+                    sm.subdepartment as mapping_subdepartment,
                     COALESCE(
                         (SELECT array_agg(pt.name ORDER BY pt.name)
                          FROM efactura_supplier_mapping_types smt
@@ -615,7 +721,15 @@ class InvoiceRepository:
                 inv_dict = inv.__dict__.copy()
                 type_names = row.get('type_names') or []
                 inv_dict['type_names'] = type_names
-                inv_dict['type_name'] = ', '.join(type_names) if type_names else None
+                # Use override if set, otherwise use mapping types
+                inv_dict['type_override'] = row.get('type_override')
+                inv_dict['type_name'] = row.get('type_override') or (', '.join(type_names) if type_names else None)
+                # Department: use override if set, otherwise use mapping
+                inv_dict['department_override'] = row.get('department_override')
+                inv_dict['department'] = row.get('department_override') or row.get('mapping_department')
+                # Subdepartment: use override if set, otherwise use mapping
+                inv_dict['subdepartment_override'] = row.get('subdepartment_override')
+                inv_dict['subdepartment'] = row.get('subdepartment_override') or row.get('mapping_subdepartment')
                 invoices.append(inv_dict)
 
             return invoices, total
@@ -1260,6 +1374,7 @@ class SupplierMappingRepository:
             cursor.execute(f"""
                 SELECT m.id, m.partner_name, m.partner_cif, m.supplier_name, m.supplier_note,
                        m.supplier_vat, m.kod_konto, m.type_id, m.is_active, m.created_at, m.updated_at,
+                       m.department, m.subdepartment,
                        COALESCE(
                            (SELECT array_agg(pt.id ORDER BY pt.name)
                             FROM efactura_supplier_mapping_types smt
@@ -1299,6 +1414,7 @@ class SupplierMappingRepository:
             cursor.execute("""
                 SELECT m.id, m.partner_name, m.partner_cif, m.supplier_name, m.supplier_note,
                        m.supplier_vat, m.kod_konto, m.type_id, m.is_active, m.created_at, m.updated_at,
+                       m.department, m.subdepartment,
                        COALESCE(
                            (SELECT array_agg(pt.id ORDER BY pt.name)
                             FROM efactura_supplier_mapping_types smt
@@ -1381,6 +1497,8 @@ class SupplierMappingRepository:
         kod_konto: Optional[str] = None,
         type_id: Optional[int] = None,
         type_ids: Optional[List[int]] = None,
+        department: Optional[str] = None,
+        subdepartment: Optional[str] = None,
     ) -> int:
         """Create a new supplier mapping.
 
@@ -1393,6 +1511,8 @@ class SupplierMappingRepository:
             kod_konto: The accounting code
             type_id: Optional partner type ID (legacy, use type_ids instead)
             type_ids: Optional list of partner type IDs
+            department: Optional default department for this supplier
+            subdepartment: Optional default subdepartment for this supplier
 
         Returns:
             The new mapping ID
@@ -1402,10 +1522,10 @@ class SupplierMappingRepository:
             cursor = get_cursor(conn)
             cursor.execute("""
                 INSERT INTO efactura_supplier_mappings
-                (partner_name, partner_cif, supplier_name, supplier_note, supplier_vat, kod_konto, type_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (partner_name, partner_cif, supplier_name, supplier_note, supplier_vat, kod_konto, type_id, department, subdepartment)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            """, (partner_name, partner_cif, supplier_name, supplier_note, supplier_vat, kod_konto, type_id))
+            """, (partner_name, partner_cif, supplier_name, supplier_note, supplier_vat, kod_konto, type_id, department, subdepartment))
             mapping_id = cursor.fetchone()['id']
 
             # Insert types into junction table
@@ -1446,6 +1566,8 @@ class SupplierMappingRepository:
         type_id: Optional[int] = None,
         type_ids: Optional[List[int]] = None,
         is_active: Optional[bool] = None,
+        department: Optional[str] = None,
+        subdepartment: Optional[str] = None,
     ) -> bool:
         """Update a supplier mapping.
 
@@ -1460,6 +1582,8 @@ class SupplierMappingRepository:
             type_id: New partner type ID (legacy, use type_ids instead)
             type_ids: List of partner type IDs (pass empty list to clear types)
             is_active: Whether mapping is active
+            department: New default department
+            subdepartment: New default subdepartment
 
         Returns:
             True if successful
@@ -1495,6 +1619,12 @@ class SupplierMappingRepository:
             if is_active is not None:
                 updates.append('is_active = %s')
                 params.append(is_active)
+            if department is not None:
+                updates.append('department = %s')
+                params.append(department if department else None)
+            if subdepartment is not None:
+                updates.append('subdepartment = %s')
+                params.append(subdepartment if subdepartment else None)
 
             params.append(mapping_id)
 
