@@ -1309,12 +1309,37 @@
         const debouncedHiddenSearch = debounce(() => loadHiddenInvoices(), 300);
         const debouncedBinSearch = debounce(() => loadBinInvoices(), 300);
 
-        // Hide loading overlay
+        // Hide loading overlay and restore saved tab
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('loadingOverlay').style.display = 'none';
             renderTableHeader();
-            loadUnallocatedInvoices();
             loadBadgeCounts();
+
+            // Restore saved tab or default to unallocated
+            const savedTab = localStorage.getItem('efacturaActiveTab') || 'unallocatedTab';
+            const tabLink = document.querySelector(`a[href="#${savedTab}"]`);
+            if (tabLink) {
+                // Activate the saved tab
+                const tab = new bootstrap.Tab(tabLink);
+                tab.show();
+                // Load data for the saved tab
+                switch(savedTab) {
+                    case 'hiddenTab': loadHiddenInvoices(); break;
+                    case 'binTab': loadBinInvoices(); break;
+                    case 'mappingsTab': loadSupplierMappings(); break;
+                    default: loadUnallocatedInvoices();
+                }
+            } else {
+                loadUnallocatedInvoices();
+            }
+
+            // Save active tab when changed
+            document.querySelectorAll('#mainTabs a[data-bs-toggle="tab"]').forEach(tab => {
+                tab.addEventListener('shown.bs.tab', function(e) {
+                    const tabId = e.target.getAttribute('href').substring(1);
+                    localStorage.setItem('efacturaActiveTab', tabId);
+                });
+            });
         });
 
         // Load badge counts
