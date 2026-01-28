@@ -52,15 +52,31 @@
   - User column configs reset when version changes
   - Prevents column mixing when new columns are added
 
+### Performance Monitoring
+- **Request timing middleware**: Tracks slow requests when `PERF_MONITOR=true`
+  - Only logs requests slower than `PERF_MONITOR_MIN_MS` (default: 100ms)
+  - Stores endpoint, method, duration, status code, user, query params
+  - Adds `X-Response-Time` header to all responses
+- **Performance reports table**: `performance_reports` for storing timing data
+- **API endpoints**:
+  - `GET /api/performance/reports` - List reports with filtering
+  - `GET /api/performance/summary` - Statistics by endpoint (avg, max, p95)
+  - `POST /api/performance/cleanup` - Delete old reports
+
 ### Database
 - Added `type_id` column to `efactura_supplier_mappings` (FK to `efactura_partner_types`)
 - Added `department` and `subdepartment` columns to `efactura_supplier_mappings`
 - Added `type_override`, `department_override`, `subdepartment_override` columns to `efactura_invoices`
 - Added `hide_in_filter` column to `efactura_partner_types` (controls "Hide Typed" filter behavior)
+- Added `performance_reports` table for request timing analysis
 - **Trigram indexes for faster search**: Added `pg_trgm` indexes on text search columns
   - `efactura_invoices`: partner_name, partner_cif, invoice_number
   - `efactura_supplier_mappings`: partner_name, supplier_name, partner_cif
   - Speeds up ILIKE searches significantly (uses GIN index)
+- **Functional indexes for LOWER()**: Added indexes for case-insensitive JOINs
+  - `idx_efactura_invoices_partner_name_lower`
+  - `idx_efactura_mappings_partner_name_lower`
+  - Speeds up supplier mapping lookups in queries
 - Migration runs automatically on app startup via `init_db()`
 
 ### API

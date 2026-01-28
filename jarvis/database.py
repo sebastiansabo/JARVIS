@@ -1104,6 +1104,25 @@ def init_db():
         )
     ''')
 
+    # Performance reports table - tracks request timing for debugging
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS performance_reports (
+            id SERIAL PRIMARY KEY,
+            endpoint TEXT NOT NULL,
+            method TEXT NOT NULL,
+            duration_ms REAL NOT NULL,
+            status_code INTEGER,
+            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            query_params TEXT,
+            request_size INTEGER,
+            response_size INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_performance_reports_endpoint ON performance_reports(endpoint)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_performance_reports_created_at ON performance_reports(created_at DESC)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_performance_reports_duration ON performance_reports(duration_ms DESC)')
+
     # VAT rates table - configurable VAT percentages
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS vat_rates (
@@ -2053,6 +2072,16 @@ def init_db():
         print("Created trigram indexes for efactura_supplier_mappings")
     except Exception as e:
         print(f"Note: Could not create trigram indexes for efactura_supplier_mappings: {e}")
+        conn.rollback()
+
+    # Create functional indexes for LOWER() case-insensitive matching (used in JOINs)
+    try:
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_efactura_invoices_partner_name_lower ON efactura_invoices (LOWER(partner_name))')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_efactura_mappings_partner_name_lower ON efactura_supplier_mappings (LOWER(partner_name))')
+        conn.commit()
+        print("Created functional indexes for LOWER() matching")
+    except Exception as e:
+        print(f"Note: Could not create LOWER() functional indexes: {e}")
         conn.rollback()
 
     conn.commit()
@@ -5997,6 +6026,158 @@ def get_event_types() -> list[str]:
     results = [row['event_type'] for row in cursor.fetchall()]
     release_db(conn)
     return results
+
+
+# ============== Performance Monitoring Functions ==============
+
+def save_performance_report(
+    endpoint: str,
+    method: str,
+    duration_ms: float,
+    status_code: int = None,
+    user_id: int = None,
+    query_params: str = None,
+    request_size: int = None,
+    response_size: int = None
+) -> int:
+    """Save a performance report for request timing analysis. Returns report ID."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    cursor.execute('''
+        INSERT INTO performance_reports
+        (endpoint, method, duration_ms, status_code, user_id, query_params, request_size, response_size)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    ''', (
+        endpoint,
+        method,
+        duration_ms,
+        status_code,
+        user_id,
+        query_params,
+        request_size,
+        response_size
+    ))
+
+    report_id = cursor.fetchone()['id']
+    conn.commit()
+    release_db(conn)
+    return report_id
+
+
+def get_performance_reports(
+    limit: int = 100,
+    offset: int = 0,
+    endpoint: str = None,
+    min_duration_ms: float = None,
+    start_date: str = None,
+    end_date: str = None
+) -> list[dict]:
+    """Get performance reports with optional filtering."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    query = '''
+        SELECT pr.*, u.name as user_name, u.email as user_email
+        FROM performance_reports pr
+        LEFT JOIN users u ON pr.user_id = u.id
+    '''
+    params = []
+    conditions = []
+
+    if endpoint:
+        conditions.append('pr.endpoint LIKE %s')
+        params.append(f'%{endpoint}%')
+    if min_duration_ms:
+        conditions.append('pr.duration_ms >= %s')
+        params.append(min_duration_ms)
+    if start_date:
+        conditions.append('pr.created_at >= %s')
+        params.append(start_date)
+    if end_date:
+        conditions.append('pr.created_at <= %s')
+        params.append(end_date)
+
+    if conditions:
+        query += ' WHERE ' + ' AND '.join(conditions)
+
+    query += ' ORDER BY pr.created_at DESC LIMIT %s OFFSET %s'
+    params.extend([limit, offset])
+
+    cursor.execute(query, params)
+    results = [dict_from_row(row) for row in cursor.fetchall()]
+    release_db(conn)
+    return results
+
+
+def get_performance_summary(hours: int = 24) -> dict:
+    """Get performance summary statistics for the last N hours."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    cursor.execute('''
+        SELECT
+            endpoint,
+            COUNT(*) as request_count,
+            AVG(duration_ms) as avg_duration,
+            MAX(duration_ms) as max_duration,
+            MIN(duration_ms) as min_duration,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) as p95_duration
+        FROM performance_reports
+        WHERE created_at >= NOW() - INTERVAL '%s hours'
+        GROUP BY endpoint
+        ORDER BY avg_duration DESC
+    ''', (hours,))
+
+    by_endpoint = [dict_from_row(row) for row in cursor.fetchall()]
+
+    cursor.execute('''
+        SELECT
+            COUNT(*) as total_requests,
+            AVG(duration_ms) as avg_duration,
+            MAX(duration_ms) as max_duration,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) as p95_duration
+        FROM performance_reports
+        WHERE created_at >= NOW() - INTERVAL '%s hours'
+    ''', (hours,))
+
+    overall = dict_from_row(cursor.fetchone())
+
+    # Get slowest requests
+    cursor.execute('''
+        SELECT endpoint, method, duration_ms, created_at, query_params
+        FROM performance_reports
+        WHERE created_at >= NOW() - INTERVAL '%s hours'
+        ORDER BY duration_ms DESC
+        LIMIT 10
+    ''', (hours,))
+
+    slowest = [dict_from_row(row) for row in cursor.fetchall()]
+
+    release_db(conn)
+    return {
+        'overall': overall,
+        'by_endpoint': by_endpoint,
+        'slowest_requests': slowest,
+        'hours': hours
+    }
+
+
+def cleanup_old_performance_reports(days: int = 7) -> int:
+    """Delete performance reports older than N days. Returns count deleted."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    cursor.execute('''
+        DELETE FROM performance_reports
+        WHERE created_at < NOW() - INTERVAL '%s days'
+    ''', (days,))
+
+    deleted = cursor.rowcount
+    conn.commit()
+    release_db(conn)
+    return deleted
 
 
 # ============== Permission Management ==============

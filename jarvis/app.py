@@ -4,7 +4,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, Response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, Response, g
 
 # Structured logging
 from core.utils.logging_config import setup_logging, get_logger
@@ -42,6 +42,8 @@ from database import (
     # Auth & User activity
     authenticate_user, set_user_password, update_user_last_login, update_user_last_seen, get_online_users_count, set_default_password_for_users,
     log_user_event, get_user_events, get_event_types,
+    # Performance monitoring
+    save_performance_report, get_performance_reports, get_performance_summary, cleanup_old_performance_reports,
     # VAT rates
     get_vat_rates, add_vat_rate, update_vat_rate, delete_vat_rate,
     # Dropdown options
@@ -147,6 +149,46 @@ except ImportError as e:
 CACHEABLE_API_ENDPOINTS = {
     # All reference data endpoints removed - fresh data is more valuable than caching
 }
+
+# Performance monitoring - enable with PERF_MONITOR=true environment variable
+PERF_MONITOR_ENABLED = os.environ.get('PERF_MONITOR', 'false').lower() == 'true'
+PERF_MONITOR_MIN_MS = float(os.environ.get('PERF_MONITOR_MIN_MS', '100'))  # Only log requests slower than this
+
+import time
+
+@app.before_request
+def start_timer():
+    """Start timing the request."""
+    if PERF_MONITOR_ENABLED:
+        g.start_time = time.time()
+
+@app.after_request
+def log_request_timing(response):
+    """Log request timing to performance_reports table."""
+    if PERF_MONITOR_ENABLED and hasattr(g, 'start_time'):
+        duration_ms = (time.time() - g.start_time) * 1000
+
+        # Only log requests slower than threshold (skip health checks, static files)
+        if duration_ms >= PERF_MONITOR_MIN_MS and not request.path.startswith('/static'):
+            try:
+                user_id = current_user.id if current_user.is_authenticated else None
+                save_performance_report(
+                    endpoint=request.path,
+                    method=request.method,
+                    duration_ms=round(duration_ms, 2),
+                    status_code=response.status_code,
+                    user_id=user_id,
+                    query_params=request.query_string.decode('utf-8')[:500] if request.query_string else None,
+                    request_size=request.content_length,
+                    response_size=len(response.data) if response.data else None
+                )
+            except Exception as e:
+                app_logger.warning(f"Failed to save performance report: {e}")
+
+        # Add timing header for debugging
+        response.headers['X-Response-Time'] = f'{duration_ms:.2f}ms'
+
+    return response
 
 @app.after_request
 def add_cache_headers(response):
@@ -462,6 +504,60 @@ def api_get_event_types():
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     return jsonify(get_event_types())
+
+
+# ============== Performance Monitoring ==============
+
+@app.route('/api/performance/reports', methods=['GET'])
+@login_required
+def api_get_performance_reports():
+    """Get performance reports with filtering."""
+    if not current_user.can_access_settings:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+    limit = request.args.get('limit', 100, type=int)
+    offset = request.args.get('offset', 0, type=int)
+    endpoint = request.args.get('endpoint')
+    min_duration = request.args.get('min_duration', type=float)
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    reports = get_performance_reports(
+        limit=limit,
+        offset=offset,
+        endpoint=endpoint,
+        min_duration_ms=min_duration,
+        start_date=start_date,
+        end_date=end_date
+    )
+
+    return jsonify({'success': True, 'data': reports})
+
+
+@app.route('/api/performance/summary', methods=['GET'])
+@login_required
+def api_get_performance_summary():
+    """Get performance summary statistics."""
+    if not current_user.can_access_settings:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+    hours = request.args.get('hours', 24, type=int)
+    summary = get_performance_summary(hours=hours)
+
+    return jsonify({'success': True, 'data': summary})
+
+
+@app.route('/api/performance/cleanup', methods=['POST'])
+@login_required
+def api_cleanup_performance_reports():
+    """Delete old performance reports."""
+    if not current_user.can_access_settings:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+    days = request.json.get('days', 7) if request.json else 7
+    deleted = cleanup_old_performance_reports(days=days)
+
+    return jsonify({'success': True, 'deleted': deleted})
 
 
 # ============== Health Check ==============

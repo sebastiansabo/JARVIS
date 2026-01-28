@@ -185,6 +185,8 @@ docker run -p 8080:8080 -e DATABASE_URL="..." -e ANTHROPIC_API_KEY="..." bugetar
 - `GOOGLE_OAUTH_TOKEN` - Base64-encoded OAuth token for Google Drive (production)
 - `TINYPNG_API_KEY` - TinyPNG API key for image compression (optional, has default)
 - `EFACTURA_MOCK_MODE` - Set to `true` for development without ANAF certificate
+- `PERF_MONITOR` - Set to `true` to enable performance monitoring (logs slow requests)
+- `PERF_MONITOR_MIN_MS` - Minimum request duration (ms) to log (default: 100)
 
 ## Database Schema
 
@@ -398,6 +400,20 @@ Page           (JSON)         (ANAF API)
 | description | TEXT | Optional description |
 | is_active | BOOLEAN | Whether type is active (default true) |
 | hide_in_filter | BOOLEAN | When true, invoices with this type are hidden by "Hide Typed" filter (default true) |
+
+### Database Indexes (Performance)
+Trigram indexes (pg_trgm) for faster ILIKE text searches:
+
+| Table | Column | Index Name |
+|-------|--------|------------|
+| efactura_invoices | partner_name | idx_efactura_invoices_partner_name_trgm |
+| efactura_invoices | partner_cif | idx_efactura_invoices_partner_cif_trgm |
+| efactura_invoices | invoice_number | idx_efactura_invoices_invoice_number_trgm |
+| efactura_supplier_mappings | partner_name | idx_efactura_mappings_partner_name_trgm |
+| efactura_supplier_mappings | supplier_name | idx_efactura_mappings_supplier_name_trgm |
+| efactura_supplier_mappings | partner_cif | idx_efactura_mappings_partner_cif_trgm |
+
+These GIN indexes use the `pg_trgm` extension and significantly speed up search queries with ILIKE patterns.
 
 ### XML Parser (`xml_parser.py`)
 Parses UBL 2.1 e-Factura XML documents:
