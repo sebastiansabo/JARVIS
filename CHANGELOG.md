@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-01-28
+### e-Factura Improvements
+- **Sync filter**: Global sync now only fetches **received (Primite)** invoices from ANAF
+  - Sent (outbound) invoices no longer imported during sync
+  - Updated `sync_all()` in `efactura_service.py` with `filter_type='P'`
+
+- **Tab caching**: Added client-side caching to prevent API reloads on tab switch
+  - Each tab (Unallocated, Hidden, Bin, Mappings) tracks loaded state
+  - Switching tabs uses cached data instead of reloading
+  - Cache invalidated automatically when data changes (hide/unhide/delete/restore)
+
+- **Mappings table improvements**:
+  - Search by partner name, supplier name, VAT, or kod konto
+  - Type filter dropdown (Service, Merchandise, No Type)
+  - Page size selector (25, 50, 100, 200, All)
+  - Client-side pagination with navigation controls
+  - Consistent UI with collapsible Filters panel (matches Unallocated tab)
+
+- **Partner Types table**: Added `efactura_partner_types` table for categorizing suppliers
+  - Default types: Service, Merchandise
+  - Migration fix: explicit commit after table creation for FK reference
+
+### Database
+- Added `type_id` column to `efactura_supplier_mappings` (FK to `efactura_partner_types`)
+- Migration runs automatically on app startup via `init_db()`
+
 ## 2026-01-26
 ### e-Factura Connector - JARVIS Integration
 - Added **e-Factura button** to Accounting navigation (between Invoices and Statements)
