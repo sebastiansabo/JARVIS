@@ -656,20 +656,24 @@
         let sortColumn = localStorage.getItem('efacturaSortColumn') || 'issue_date';
         let sortDirection = localStorage.getItem('efacturaSortDir') || 'desc';
         let invoicesCache = []; // Cache for client-side sorting
+        let unallocatedLoaded = false; // Tab loaded flag
 
         // Sorting state - Hidden table
         let hiddenSortColumn = localStorage.getItem('efacturaHiddenSortColumn') || 'issue_date';
         let hiddenSortDirection = localStorage.getItem('efacturaHiddenSortDir') || 'desc';
         let hiddenCache = [];
+        let hiddenLoaded = false; // Tab loaded flag
 
         // Sorting state - Bin table
         let binSortColumn = localStorage.getItem('efacturaBinSortColumn') || 'deleted_at';
         let binSortDirection = localStorage.getItem('efacturaBinSortDir') || 'desc';
         let binCache = [];
+        let binLoaded = false; // Tab loaded flag
 
         // Sorting state - Mappings table
         let mappingsSortColumn = localStorage.getItem('efacturaMappingsSortColumn') || 'partner_name';
         let mappingsSortDirection = localStorage.getItem('efacturaMappingsSortDir') || 'asc';
+        let mappingsLoaded = false; // Tab loaded flag
 
         // Column definitions
         const allColumns = [
@@ -964,8 +968,22 @@
             }
         }
 
+        // Invalidate caches when data changes (after hide/unhide/delete/restore)
+        function invalidateCaches(which = 'all') {
+            if (which === 'all' || which === 'unallocated') unallocatedLoaded = false;
+            if (which === 'all' || which === 'hidden') hiddenLoaded = false;
+            if (which === 'all' || which === 'bin') binLoaded = false;
+            if (which === 'all' || which === 'mappings') mappingsLoaded = false;
+        }
+
         // Load unallocated invoices
-        async function loadUnallocatedInvoices(page = 1) {
+        async function loadUnallocatedInvoices(page = 1, forceReload = false) {
+            // Skip if already loaded and not forcing reload (unless page changed)
+            if (unallocatedLoaded && !forceReload && page === currentPage && invoicesCache.length > 0) {
+                sortAndRenderInvoices();
+                return;
+            }
+
             const companyId = document.getElementById('companyFilter').value;
             const direction = document.getElementById('directionFilter').value;
             const startDate = document.getElementById('startDate').value;
@@ -999,6 +1017,7 @@
                     sortAndRenderInvoices();
                     updatePagination(data.pagination);
                     updateSummary(data.data, data.pagination);
+                    unallocatedLoaded = true; // Mark as loaded
 
                     document.getElementById('unallocatedResultCount').textContent = `${data.pagination?.total || data.data?.length || 0} invoices`;
                 } else {
@@ -1022,7 +1041,13 @@
         }
 
         // Load hidden invoices
-        async function loadHiddenInvoices(page = 1) {
+        async function loadHiddenInvoices(page = 1, forceReload = false) {
+            // Skip if already loaded and not forcing reload
+            if (hiddenLoaded && !forceReload) {
+                sortAndRenderHidden();
+                return;
+            }
+
             const tbody = document.getElementById('hiddenTableBody');
             tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">
                 <span class="spinner-border spinner-border-sm"></span> Loading...
@@ -1034,6 +1059,7 @@
 
                 if (data.success) {
                     hiddenCache = data.data || [];
+                    hiddenLoaded = true; // Mark as loaded
                     updateHiddenTableHeaders();
                     sortAndRenderHidden();
                 } else {
@@ -1085,7 +1111,13 @@
         }
 
         // Load bin invoices
-        async function loadBinInvoices(page = 1) {
+        async function loadBinInvoices(page = 1, forceReload = false) {
+            // Skip if already loaded and not forcing reload
+            if (binLoaded && !forceReload) {
+                sortAndRenderBin();
+                return;
+            }
+
             const tbody = document.getElementById('binTableBody');
             tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">
                 <span class="spinner-border spinner-border-sm"></span> Loading...
@@ -1097,6 +1129,7 @@
 
                 if (data.success) {
                     binCache = data.data || [];
+                    binLoaded = true; // Mark as loaded
                     updateBinTableHeaders();
                     sortAndRenderBin();
                 } else {
@@ -1474,6 +1507,7 @@
                 const data = await res.json();
 
                 if (data.success) {
+                    invalidateCaches('hidden'); // Hide moves to hidden
                     removeRow(invoiceId);
                     loadBadgeCounts();
                 } else {
@@ -1495,6 +1529,7 @@
                 const data = await res.json();
 
                 if (data.success) {
+                    invalidateCaches('bin'); // Delete moves to bin
                     removeRow(invoiceId);
                     loadBadgeCounts();
                 } else {
@@ -1515,7 +1550,8 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    loadHiddenInvoices();
+                    invalidateCaches('unallocated'); // Restore moves to unallocated
+                    loadHiddenInvoices(1, true);
                     loadBadgeCounts();
                 } else {
                     alert(data.error || 'Failed to restore invoice');
@@ -1536,7 +1572,8 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    loadHiddenInvoices();
+                    invalidateCaches('bin'); // Delete moves to bin
+                    loadHiddenInvoices(1, true);
                     loadBadgeCounts();
                 } else {
                     alert(data.error || 'Failed to delete invoice');
@@ -1555,7 +1592,8 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    loadBinInvoices();
+                    invalidateCaches('unallocated'); // Restore moves to unallocated
+                    loadBinInvoices(1, true);
                     loadBadgeCounts();
                 } else {
                     alert(data.error || 'Failed to restore invoice');
@@ -1576,7 +1614,7 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    loadBinInvoices();
+                    loadBinInvoices(1, true);
                     loadBadgeCounts();
                 } else {
                     alert(data.error || 'Failed to delete invoice');
@@ -1630,8 +1668,9 @@
 
                 if (data.success) {
                     alert(`${data.hidden} invoice(s) hidden`);
+                    invalidateCaches('hidden');
                     clearSelection();
-                    loadUnallocatedInvoices(currentPage);
+                    loadUnallocatedInvoices(currentPage, true);
                     loadBadgeCounts();
                 } else {
                     alert(data.error || 'Failed to hide invoices');
@@ -1657,8 +1696,9 @@
 
                 if (data.success) {
                     alert(`${data.deleted} invoice(s) moved to bin`);
+                    invalidateCaches('bin');
                     clearSelection();
-                    loadUnallocatedInvoices(currentPage);
+                    loadUnallocatedInvoices(currentPage, true);
                     loadBadgeCounts();
                 } else {
                     alert(data.error || 'Failed to delete invoices');
@@ -1684,8 +1724,9 @@
 
                 if (data.success) {
                     alert(`${data.restored} invoice(s) restored`);
+                    invalidateCaches('unallocated');
                     selectedHiddenInvoices.clear();
-                    loadHiddenInvoices();
+                    loadHiddenInvoices(1, true);
                     loadBadgeCounts();
                 } else {
                     alert(data.error || 'Failed to restore invoices');
@@ -1711,8 +1752,9 @@
 
                 if (data.success) {
                     alert(`${data.deleted} invoice(s) moved to bin`);
+                    invalidateCaches('bin');
                     selectedHiddenInvoices.clear();
-                    loadHiddenInvoices();
+                    loadHiddenInvoices(1, true);
                     loadBadgeCounts();
                 } else {
                     alert(data.error || 'Failed to delete invoices');
@@ -1738,8 +1780,9 @@
 
                 if (data.success) {
                     alert(`${data.restored} invoice(s) restored`);
+                    invalidateCaches('unallocated');
                     selectedBinInvoices.clear();
-                    loadBinInvoices();
+                    loadBinInvoices(1, true);
                     loadBadgeCounts();
                 } else {
                     alert(data.error || 'Failed to restore invoices');
@@ -1996,7 +2039,13 @@
 
         let mappingsCache = [];
 
-        async function loadSupplierMappings() {
+        async function loadSupplierMappings(forceReload = false) {
+            // Skip if already loaded and not forcing reload
+            if (mappingsLoaded && !forceReload) {
+                sortAndRenderMappings();
+                return;
+            }
+
             const tbody = document.getElementById('mappingsTableBody');
             tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4">
                 <span class="spinner-border spinner-border-sm"></span> Loading...
@@ -2008,6 +2057,7 @@
 
                 if (data.success) {
                     mappingsCache = data.mappings || [];
+                    mappingsLoaded = true; // Mark as loaded
                     updateMappingsTableHeaders();
                     sortAndRenderMappings();
                     updateBadge('mappingsBadge', data.count || 0);
