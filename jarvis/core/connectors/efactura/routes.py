@@ -11,7 +11,6 @@ from flask import request, jsonify, render_template, Response, redirect, session
 from flask_login import login_required, current_user
 
 from core.utils.logging_config import get_logger
-from core.database import get_db, get_cursor, release_db
 
 from . import efactura_bp
 from .config import InvoiceDirection, ArtifactType
@@ -53,37 +52,10 @@ def index():
 def migrate_junction_table():
     """One-time migration to create the supplier mapping types junction table."""
     try:
-        conn = get_db()
-        cursor = get_cursor(conn)
+        from .repositories.invoice_repo import SupplierMappingRepository
+        repo = SupplierMappingRepository()
+        count = repo.migrate_junction_table()
 
-        # Create junction table if it doesn't exist
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS efactura_supplier_mapping_types (
-                mapping_id INTEGER NOT NULL REFERENCES efactura_supplier_mappings(id) ON DELETE CASCADE,
-                type_id INTEGER NOT NULL REFERENCES efactura_partner_types(id) ON DELETE CASCADE,
-                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (mapping_id, type_id)
-            )
-        ''')
-        conn.commit()
-
-        # Migrate existing type_id data
-        cursor.execute('''
-            INSERT INTO efactura_supplier_mapping_types (mapping_id, type_id)
-            SELECT id, type_id FROM efactura_supplier_mappings
-            WHERE type_id IS NOT NULL
-            ON CONFLICT (mapping_id, type_id) DO NOTHING
-        ''')
-        conn.commit()
-
-        # Count migrated records
-        cursor.execute('SELECT COUNT(*) as count FROM efactura_supplier_mapping_types')
-        result = cursor.fetchone()
-        count = result['count'] if result else 0
-
-        release_db(conn)
-
-        logger.info(f"Junction table migration completed. {count} records in table.")
         return jsonify({
             'success': True,
             'message': f'Junction table created/verified. {count} type mappings exist.'
@@ -1015,40 +987,19 @@ def get_unallocated_ids():
         end_date = request.args.get('end_date')
         search = request.args.get('search')
 
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        ids = efactura_service.invoice_repo.get_unallocated_ids(
+            company_id=company_id,
+            direction=direction,
+            start_date=start_date,
+            end_date=end_date,
+            search=search,
+        )
 
-            where_clauses = ["jarvis_invoice_id IS NULL", "deleted_at IS NULL", "ignored = FALSE"]
-            params = {}
-
-            if company_id:
-                where_clauses.append("company_id = %(company_id)s")
-                params['company_id'] = company_id
-            if direction:
-                where_clauses.append("direction = %(direction)s")
-                params['direction'] = direction
-            if start_date:
-                where_clauses.append("issue_date >= %(start_date)s")
-                params['start_date'] = start_date
-            if end_date:
-                where_clauses.append("issue_date <= %(end_date)s")
-                params['end_date'] = end_date
-            if search:
-                where_clauses.append("(partner_name ILIKE %(search)s OR invoice_number ILIKE %(search)s)")
-                params['search'] = f"%{search}%"
-
-            where_clause = " AND ".join(where_clauses)
-            cursor.execute(f"SELECT id FROM efactura_invoices WHERE {where_clause}", params)
-            ids = [row['id'] for row in cursor.fetchall()]
-
-            return jsonify({
-                'success': True,
-                'ids': ids,
-                'count': len(ids),
-            })
-        finally:
-            release_db(conn)
+        return jsonify({
+            'success': True,
+            'ids': ids,
+            'count': len(ids),
+        })
 
     except Exception as e:
         logger.error(f"Error getting unallocated IDs: {e}")
@@ -1851,48 +1802,15 @@ def oauth_callback():
         tokens = oauth_service.exchange_code_for_tokens(code, state)
 
         # Store tokens in database
-        from database import save_efactura_oauth_tokens, get_db, get_cursor, release_db
+        from database import save_efactura_oauth_tokens
 
         token_data = tokens.to_dict()
         save_efactura_oauth_tokens(session_cif, token_data)
 
         # Auto-create company connection if it doesn't exist
-        try:
-            conn = get_db()
-            cursor = get_cursor(conn)
-
-            # Check if connection already exists
-            cursor.execute(
-                'SELECT id FROM efactura_company_connections WHERE cif = %s',
-                (session_cif,)
-            )
-            existing = cursor.fetchone()
-
-            if not existing:
-                # Try to find company name from companies table
-                cursor.execute(
-                    'SELECT company FROM companies WHERE vat LIKE %s',
-                    (f'%{session_cif}%',)
-                )
-                company_row = cursor.fetchone()
-                display_name = company_row['company'] if company_row else f'CIF {session_cif}'
-
-                # Create connection record
-                cursor.execute('''
-                    INSERT INTO efactura_company_connections
-                    (cif, display_name, environment, status, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, NOW(), NOW())
-                ''', (session_cif, display_name, 'production', 'active'))
-                conn.commit()
-
-                logger.info(
-                    "Auto-created company connection",
-                    extra={'cif': session_cif, 'display_name': display_name}
-                )
-
-            release_db(conn)
-        except Exception as conn_err:
-            logger.warning(f"Could not auto-create connection: {conn_err}")
+        from .repositories.company_repo import CompanyConnectionRepository
+        company_repo = CompanyConnectionRepository()
+        company_repo.ensure_connection_for_oauth(session_cif)
 
         # Clear session data
         session.pop('oauth_state', None)
@@ -1960,7 +1878,7 @@ def oauth_revoke():
             oauth_service = get_oauth_service()
             oauth_service.revoke_token(tokens['refresh_token'])
 
-        # Delete from database
+        # Remove tokens via database function
         deleted = delete_efactura_oauth_tokens(clean_cif)
 
         if deleted:
@@ -2499,63 +2417,19 @@ def bulk_set_mappings_type():
                 'error': "No mapping IDs provided",
             }), 400
 
-        # Get type_id from type_name
+        # Get type_id from type_name using repository
         type_id = None
         if type_name:
-            conn = get_db()
-            try:
-                cursor = get_cursor(conn)
-                cursor.execute(
-                    "SELECT id FROM efactura_partner_types WHERE name = %s AND is_active = TRUE",
-                    (type_name,)
-                )
-                row = cursor.fetchone()
-                if row:
-                    type_id = row['id']
-                else:
-                    return jsonify({
-                        'success': False,
-                        'error': f"Type '{type_name}' not found",
-                    }), 400
-            finally:
-                release_db(conn)
+            partner_type = partner_type_repo.get_by_name(type_name)
+            if not partner_type:
+                return jsonify({
+                    'success': False,
+                    'error': f"Type '{type_name}' not found",
+                }), 400
+            type_id = partner_type['id']
 
-        # Update all mappings using junction table
-        updated_count = 0
-        partner_names = []
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-
-            # First, get partner names for these mappings (needed for auto-hide)
-            if type_id:
-                cursor.execute(
-                    "SELECT id, partner_name FROM efactura_supplier_mappings WHERE id = ANY(%s)",
-                    (ids,)
-                )
-                partner_names = [row['partner_name'] for row in cursor.fetchall()]
-
-            for mapping_id in ids:
-                # Delete existing types for this mapping
-                cursor.execute(
-                    "DELETE FROM efactura_supplier_mapping_types WHERE mapping_id = %s",
-                    (mapping_id,)
-                )
-                # Insert new type if provided
-                if type_id:
-                    cursor.execute(
-                        "INSERT INTO efactura_supplier_mapping_types (mapping_id, type_id) VALUES (%s, %s)",
-                        (mapping_id, type_id)
-                    )
-                # Update timestamp on mapping
-                cursor.execute(
-                    "UPDATE efactura_supplier_mappings SET updated_at = NOW() WHERE id = %s",
-                    (mapping_id,)
-                )
-                updated_count += 1
-            conn.commit()
-        finally:
-            release_db(conn)
+        # Update all mappings using repository
+        updated_count, partner_names = supplier_mapping_repo.bulk_set_types(ids, type_id)
 
         # Auto-hide existing invoices if type has hide_in_filter=TRUE
         auto_hidden = 0

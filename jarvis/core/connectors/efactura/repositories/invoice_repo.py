@@ -910,6 +910,56 @@ class InvoiceRepository:
         finally:
             release_db(conn)
 
+    def get_unallocated_ids(
+        self,
+        company_id: Optional[int] = None,
+        direction: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> List[int]:
+        """
+        Get all IDs of unallocated invoices (for select all functionality).
+
+        Args:
+            company_id: Filter by company ID
+            direction: Filter by direction
+            start_date: Filter by start date
+            end_date: Filter by end date
+            search: Search by partner name or invoice number
+
+        Returns:
+            List of invoice IDs
+        """
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+
+            where_clauses = ["jarvis_invoice_id IS NULL", "deleted_at IS NULL", "ignored = FALSE"]
+            params = {}
+
+            if company_id:
+                where_clauses.append("company_id = %(company_id)s")
+                params['company_id'] = company_id
+            if direction:
+                where_clauses.append("direction = %(direction)s")
+                params['direction'] = direction
+            if start_date:
+                where_clauses.append("issue_date >= %(start_date)s")
+                params['start_date'] = start_date
+            if end_date:
+                where_clauses.append("issue_date <= %(end_date)s")
+                params['end_date'] = end_date
+            if search:
+                where_clauses.append("(partner_name ILIKE %(search)s OR invoice_number ILIKE %(search)s)")
+                params['search'] = f"%{search}%"
+
+            where_clause = " AND ".join(where_clauses)
+            cursor.execute(f"SELECT id FROM efactura_invoices WHERE {where_clause}", params)
+            return [row['id'] for row in cursor.fetchall()]
+        finally:
+            release_db(conn)
+
     # ============================================
     # Hidden Invoices (soft delete / ignored)
     # ============================================
@@ -1875,6 +1925,105 @@ class SupplierMappingRepository:
         finally:
             release_db(conn)
 
+    def migrate_junction_table(self) -> int:
+        """
+        One-time migration to create the supplier mapping types junction table.
+
+        Returns:
+            Number of records in the junction table after migration
+        """
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+
+            # Create junction table if it doesn't exist
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS efactura_supplier_mapping_types (
+                    mapping_id INTEGER NOT NULL REFERENCES efactura_supplier_mappings(id) ON DELETE CASCADE,
+                    type_id INTEGER NOT NULL REFERENCES efactura_partner_types(id) ON DELETE CASCADE,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (mapping_id, type_id)
+                )
+            ''')
+            conn.commit()
+
+            # Migrate existing type_id data
+            cursor.execute('''
+                INSERT INTO efactura_supplier_mapping_types (mapping_id, type_id)
+                SELECT id, type_id FROM efactura_supplier_mappings
+                WHERE type_id IS NOT NULL
+                ON CONFLICT (mapping_id, type_id) DO NOTHING
+            ''')
+            conn.commit()
+
+            # Count migrated records
+            cursor.execute('SELECT COUNT(*) as count FROM efactura_supplier_mapping_types')
+            result = cursor.fetchone()
+            count = result['count'] if result else 0
+
+            logger.info(f"Junction table migration completed. {count} records in table.")
+            return count
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Junction table migration failed: {e}")
+            raise
+        finally:
+            release_db(conn)
+
+    def bulk_set_types(self, mapping_ids: List[int], type_id: Optional[int]) -> Tuple[int, List[str]]:
+        """
+        Bulk set type for multiple supplier mappings.
+
+        Args:
+            mapping_ids: List of mapping IDs to update
+            type_id: Type ID to set (None to clear types)
+
+        Returns:
+            Tuple of (updated_count, partner_names)
+        """
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            partner_names = []
+
+            # Get partner names for these mappings (needed for auto-hide)
+            if type_id:
+                cursor.execute(
+                    "SELECT id, partner_name FROM efactura_supplier_mappings WHERE id = ANY(%s)",
+                    (mapping_ids,)
+                )
+                partner_names = [row['partner_name'] for row in cursor.fetchall()]
+
+            updated_count = 0
+            for mapping_id in mapping_ids:
+                # Delete existing types for this mapping
+                cursor.execute(
+                    "DELETE FROM efactura_supplier_mapping_types WHERE mapping_id = %s",
+                    (mapping_id,)
+                )
+                # Insert new type if provided
+                if type_id:
+                    cursor.execute(
+                        "INSERT INTO efactura_supplier_mapping_types (mapping_id, type_id) VALUES (%s, %s)",
+                        (mapping_id, type_id)
+                    )
+                # Update timestamp on mapping
+                cursor.execute(
+                    "UPDATE efactura_supplier_mappings SET updated_at = NOW() WHERE id = %s",
+                    (mapping_id,)
+                )
+                updated_count += 1
+
+            conn.commit()
+            logger.info(f"Bulk updated {updated_count} mappings with type_id={type_id}")
+            return updated_count, partner_names
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to bulk set types: {e}")
+            raise
+        finally:
+            release_db(conn)
+
 
 class PartnerTypeRepository:
     """Repository for e-Factura partner types (Service, Merchandise, etc.)."""
@@ -1924,6 +2073,23 @@ class PartnerTypeRepository:
                 FROM efactura_partner_types
                 WHERE id = %s
             """, (type_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            release_db(conn)
+
+    def get_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get a single partner type by name."""
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute("""
+                SELECT id, name, description, is_active,
+                       COALESCE(hide_in_filter, TRUE) as hide_in_filter,
+                       created_at, updated_at
+                FROM efactura_partner_types
+                WHERE name = %s AND is_active = TRUE
+            """, (name,))
             row = cursor.fetchone()
             return dict(row) if row else None
         finally:

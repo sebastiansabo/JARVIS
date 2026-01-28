@@ -330,6 +330,74 @@ class CompanyConnectionRepository:
         finally:
             release_db(conn)
 
+    def ensure_connection_for_oauth(self, cif: str) -> Optional[CompanyConnection]:
+        """
+        Ensure a connection exists for OAuth callback.
+        Creates one automatically if it doesn't exist.
+
+        Args:
+            cif: Company CIF
+
+        Returns:
+            CompanyConnection (existing or newly created), or None on error
+        """
+        conn = get_db()
+        cursor = get_cursor(conn)
+
+        try:
+            # Check if connection already exists
+            cursor.execute(
+                'SELECT id FROM efactura_company_connections WHERE cif = %s',
+                (cif,)
+            )
+            existing = cursor.fetchone()
+
+            if existing:
+                release_db(conn)
+                return self.get_by_cif(cif)
+
+            # Try to find company name from companies table
+            cursor.execute(
+                'SELECT company FROM companies WHERE vat LIKE %s',
+                (f'%{cif}%',)
+            )
+            company_row = cursor.fetchone()
+            display_name = company_row['company'] if company_row else f'CIF {cif}'
+
+            # Create connection record
+            cursor.execute('''
+                INSERT INTO efactura_company_connections
+                (cif, display_name, environment, status, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, NOW(), NOW())
+                RETURNING id, created_at, updated_at
+            ''', (cif, display_name, 'production', 'active'))
+
+            row = cursor.fetchone()
+            conn.commit()
+
+            logger.info(
+                "Auto-created company connection for OAuth",
+                extra={'cif': cif, 'display_name': display_name}
+            )
+
+            # Return the created connection
+            return CompanyConnection(
+                id=row['id'],
+                cif=cif,
+                display_name=display_name,
+                environment='production',
+                status='active',
+                created_at=row['created_at'],
+                updated_at=row['updated_at'],
+            )
+
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to ensure connection for OAuth: {e}")
+            return None
+        finally:
+            release_db(conn)
+
     def _row_to_model(self, row: Dict[str, Any]) -> CompanyConnection:
         """Convert database row to CompanyConnection model."""
         return CompanyConnection(
