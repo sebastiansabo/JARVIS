@@ -1088,25 +1088,49 @@
             { id: 'actions', label: 'Actions', fixed: true, width: '180px' }
         ];
 
+        // Column config version - increment when columns are added/removed to reset user configs
+        const COLUMN_CONFIG_VERSION = 2; // Bumped for department/subdepartment columns
+
         // Load column config from localStorage
         function getColumnConfig() {
             const saved = localStorage.getItem('efacturaColumnConfig');
+            const savedVersion = parseInt(localStorage.getItem('efacturaColumnConfigVersion') || '0');
+
+            // If version mismatch, reset to defaults
+            if (savedVersion !== COLUMN_CONFIG_VERSION) {
+                localStorage.setItem('efacturaColumnConfigVersion', COLUMN_CONFIG_VERSION.toString());
+                localStorage.removeItem('efacturaColumnConfig');
+                return allColumns.map((c, i) => ({ id: c.id, visible: c.visible !== false, order: i }));
+            }
+
             if (saved) {
                 try {
-                    return JSON.parse(saved);
+                    const config = JSON.parse(saved);
+                    // Ensure all current columns are in config (handle any missed columns)
+                    const configIds = new Set(config.map(c => c.id));
+                    const missingCols = allColumns.filter(c => !configIds.has(c.id));
+                    if (missingCols.length > 0) {
+                        // Add missing columns at their default position
+                        missingCols.forEach(col => {
+                            config.push({ id: col.id, visible: col.visible !== false, order: allColumns.indexOf(col) });
+                        });
+                        saveColumnConfig(config);
+                    }
+                    return config;
                 } catch (e) {}
             }
-            return allColumns.map(c => ({ id: c.id, visible: c.visible !== false }));
+            return allColumns.map((c, i) => ({ id: c.id, visible: c.visible !== false, order: i }));
         }
 
         function saveColumnConfig(config) {
             localStorage.setItem('efacturaColumnConfig', JSON.stringify(config));
+            localStorage.setItem('efacturaColumnConfigVersion', COLUMN_CONFIG_VERSION.toString());
         }
 
         function getVisibleColumns() {
             const config = getColumnConfig();
             const configMap = {};
-            config.forEach((c, i) => configMap[c.id] = { ...c, order: i });
+            config.forEach((c, i) => configMap[c.id] = { ...c, order: c.order ?? i });
 
             return allColumns
                 .map(col => ({
