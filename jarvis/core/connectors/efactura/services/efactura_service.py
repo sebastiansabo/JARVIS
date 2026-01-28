@@ -1161,18 +1161,20 @@ class EFacturaService:
         return ServiceResult(success=True, data={
             'invoices': [
                 {
-                    'id': inv.id,
+                    'id': inv['id'],
                     'company_name': None,  # Could add lookup if needed
-                    'direction': inv.direction.value,
-                    'partner_name': inv.partner_name,
-                    'partner_cif': inv.partner_cif,
-                    'invoice_number': inv.invoice_number,
-                    'invoice_series': inv.invoice_series,
-                    'issue_date': inv.issue_date.isoformat() if inv.issue_date else None,
-                    'total_amount': str(inv.total_amount),
-                    'total_vat': str(inv.total_vat),
-                    'currency': inv.currency,
-                    'created_at': inv.created_at.isoformat() if inv.created_at else None,
+                    'direction': inv['direction'].value if hasattr(inv['direction'], 'value') else inv['direction'],
+                    'partner_name': inv['partner_name'],
+                    'partner_cif': inv['partner_cif'],
+                    'invoice_number': inv['invoice_number'],
+                    'invoice_series': inv['invoice_series'],
+                    'issue_date': inv['issue_date'].isoformat() if inv.get('issue_date') else None,
+                    'total_amount': str(inv['total_amount']),
+                    'total_vat': str(inv['total_vat']),
+                    'currency': inv['currency'],
+                    'created_at': inv['created_at'].isoformat() if inv.get('created_at') else None,
+                    'type_name': inv.get('type_name'),
+                    'type_names': inv.get('type_names', []),
                 }
                 for inv in invoices
             ],
@@ -1233,7 +1235,7 @@ class EFacturaService:
             'invoices': [
                 {
                     'id': inv.get('id'),
-                    'direction': inv.get('direction').value if inv.get('direction') else None,
+                    'direction': inv.get('direction').value if hasattr(inv.get('direction'), 'value') else inv.get('direction'),
                     'partner_name': inv.get('partner_name'),
                     'partner_cif': inv.get('partner_cif'),
                     'invoice_number': inv.get('invoice_number'),
@@ -1244,6 +1246,8 @@ class EFacturaService:
                     'currency': inv.get('currency'),
                     'created_at': inv.get('created_at').isoformat() if inv.get('created_at') else None,
                     'deleted_at': inv.get('deleted_at').isoformat() if inv.get('deleted_at') else None,
+                    'type_name': inv.get('type_name'),
+                    'type_names': inv.get('type_names', []),
                 }
                 for inv in invoices
             ],
