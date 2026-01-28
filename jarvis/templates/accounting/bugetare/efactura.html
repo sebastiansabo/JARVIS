@@ -2932,9 +2932,17 @@
                 const data = await res.json();
 
                 if (data.success) {
+                    // Remove deleted items from local caches
+                    const deletedSet = new Set(ids);
+                    mappingsCache = mappingsCache.filter(m => !deletedSet.has(m.id));
+                    filteredMappingsCache = filteredMappingsCache.filter(m => !deletedSet.has(m.id));
                     selectedMappings.clear();
                     updateMappingsSelectionCount();
-                    loadSupplierMappings();
+                    sortAndRenderMappings();
+                    // Update badge with new count
+                    updateBadge('mappingsBadge', mappingsCache.length);
+                    // Re-populate partner dropdown with remaining partners
+                    populateMappingsFilterDropdowns();
                 } else {
                     alert(data.error || 'Failed to delete mappings');
                 }
