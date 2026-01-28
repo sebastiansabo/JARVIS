@@ -28,6 +28,30 @@
         .summary-stat { display: flex; align-items: center; gap: 4px; color: var(--bs-secondary-color); }
         .summary-stat i { font-size: 1rem; }
         .summary-stat strong { color: var(--bs-body-color); }
+        /* Sortable Table Headers */
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .sortable:hover {
+            background-color: rgba(0,0,0,0.05);
+        }
+        .sortable::after {
+            content: '\F282';
+            font-family: 'bootstrap-icons';
+            margin-left: 4px;
+            opacity: 0.3;
+            font-size: 0.75em;
+        }
+        .sortable.asc::after {
+            content: '\F235';
+            opacity: 1;
+        }
+        .sortable.desc::after {
+            content: '\F229';
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -115,7 +139,7 @@
                             </button>
                         </div>
                         <!-- Sort -->
-                        <select class="form-select form-select-sm" id="sortOrder" onchange="renderStatements()" style="width: auto;">
+                        <select class="form-select form-select-sm" id="sortOrder" onchange="syncSortFromDropdown(); renderStatements()" style="width: auto;">
                             <option value="newest">Date: Newest</option>
                             <option value="oldest">Date: Oldest</option>
                             <option value="name_asc">Name: A-Z</option>
@@ -224,6 +248,11 @@
         // Statements data
         let statements = [];
         let searchTerm = '';
+
+        // Sorting state for column headers
+        let sortColumn = localStorage.getItem('filesSortColumn') || 'uploaded';
+        let sortDirection = localStorage.getItem('filesSortDir') || 'desc';
+        const sortableColumns = ['filename', 'company', 'cui', 'account', 'period', 'total', 'new', 'duplicates', 'uploaded', 'by'];
 
         // Column configuration
         const DEFAULT_COLUMNS = [
@@ -402,8 +431,48 @@
                 if (col.id === 'actions') {
                     return `<th style="width: 100px;">${col.name}</th>`;
                 }
-                return `<th class="${classes}">${col.name}</th>`;
+
+                const isSortable = sortableColumns.includes(col.id);
+                const sortClass = isSortable
+                    ? `sortable ${sortColumn === col.id ? sortDirection : ''}`
+                    : '';
+                const onClick = isSortable ? `onclick="sortTableColumn('${col.id}')"` : '';
+
+                return `<th class="${classes} ${sortClass}" ${onClick}>${col.name}</th>`;
             }).join('');
+        }
+
+        function sortTableColumn(column) {
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = 'asc';
+            }
+            localStorage.setItem('filesSortColumn', sortColumn);
+            localStorage.setItem('filesSortDir', sortDirection);
+
+            // Sync with dropdown if applicable
+            if (column === 'uploaded') {
+                document.getElementById('sortOrder').value = sortDirection === 'desc' ? 'newest' : 'oldest';
+            } else if (column === 'filename') {
+                document.getElementById('sortOrder').value = sortDirection === 'asc' ? 'name_asc' : 'name_desc';
+            }
+
+            renderTableHeader();
+            renderStatements();
+        }
+
+        function syncSortFromDropdown() {
+            const sortOrder = document.getElementById('sortOrder').value;
+            if (sortOrder === 'newest') { sortColumn = 'uploaded'; sortDirection = 'desc'; }
+            else if (sortOrder === 'oldest') { sortColumn = 'uploaded'; sortDirection = 'asc'; }
+            else if (sortOrder === 'name_asc') { sortColumn = 'filename'; sortDirection = 'asc'; }
+            else if (sortOrder === 'name_desc') { sortColumn = 'filename'; sortDirection = 'desc'; }
+
+            localStorage.setItem('filesSortColumn', sortColumn);
+            localStorage.setItem('filesSortDir', sortDirection);
+            renderTableHeader();
         }
 
         // ============== DRAG & DROP ==============
@@ -600,18 +669,44 @@
                 );
             }
 
-            // Sort
+            // Sort using column sorting state
             filtered = [...filtered].sort((a, b) => {
-                switch (sortOrder) {
-                    case 'oldest':
-                        return new Date(a.uploaded_at) - new Date(b.uploaded_at);
-                    case 'name_asc':
-                        return (a.filename || '').localeCompare(b.filename || '');
-                    case 'name_desc':
-                        return (b.filename || '').localeCompare(a.filename || '');
-                    default: // newest
-                        return new Date(b.uploaded_at) - new Date(a.uploaded_at);
+                // Map column IDs to data source fields
+                const columnSourceMap = {
+                    'filename': 'filename',
+                    'company': 'company_name',
+                    'cui': 'company_cui',
+                    'account': 'account_number',
+                    'period': 'period_from',
+                    'total': 'total_transactions',
+                    'new': 'new_transactions',
+                    'duplicates': 'duplicate_transactions',
+                    'uploaded': 'uploaded_at',
+                    'by': 'uploaded_by_name'
+                };
+                const sourceField = columnSourceMap[sortColumn] || sortColumn;
+                let valA = a[sourceField];
+                let valB = b[sourceField];
+
+                // Handle date fields
+                if (sortColumn === 'uploaded' || sortColumn === 'period') {
+                    valA = valA ? new Date(valA).getTime() : 0;
+                    valB = valB ? new Date(valB).getTime() : 0;
                 }
+                // Handle numeric fields
+                else if (['total', 'new', 'duplicates'].includes(sortColumn)) {
+                    valA = parseInt(valA) || 0;
+                    valB = parseInt(valB) || 0;
+                }
+                // Handle string fields
+                else {
+                    valA = (valA || '').toLowerCase();
+                    valB = (valB || '').toLowerCase();
+                }
+
+                if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
             });
 
             countBadge.textContent = filtered.length;

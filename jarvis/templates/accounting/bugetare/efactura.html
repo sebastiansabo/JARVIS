@@ -85,6 +85,30 @@
             border-color: #ef9a9a;
         }
         .sync-progress-container.error .sync-progress-info { color: #c62828; }
+        /* Sortable Table Headers */
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .sortable:hover {
+            background-color: rgba(0,0,0,0.05);
+        }
+        .sortable::after {
+            content: '\F282';
+            font-family: 'bootstrap-icons';
+            margin-left: 4px;
+            opacity: 0.3;
+            font-size: 0.75em;
+        }
+        .sortable.asc::after {
+            content: '\F235';
+            opacity: 1;
+        }
+        .sortable.desc::after {
+            content: '\F229';
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -290,7 +314,16 @@
 
                         <!-- Pagination -->
                         <div id="paginationInfo" class="d-flex justify-content-between align-items-center mt-3" style="display: none !important;">
-                            <span id="paginationSummary" class="text-muted small"></span>
+                            <div class="d-flex align-items-center gap-2">
+                                <span id="paginationSummary" class="text-muted small"></span>
+                                <select class="form-select form-select-sm" style="width: auto;" onchange="changePageSize(this.value)" id="pageSizeSelect">
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                </select>
+                                <span class="text-muted small">per page</span>
+                            </div>
                             <div id="paginationControls" class="btn-group btn-group-sm"></div>
                         </div>
                     </div>
@@ -317,12 +350,12 @@
                                 <thead class="table-light">
                                     <tr>
                                         <th><input type="checkbox" class="form-check-input" id="hiddenSelectAll" onchange="toggleHiddenSelectAll()"></th>
-                                        <th>Direction</th>
-                                        <th>Invoice #</th>
-                                        <th>Supplier / Partner</th>
-                                        <th>Issue Date</th>
-                                        <th class="text-end">Amount</th>
-                                        <th>Currency</th>
+                                        <th class="sortable" onclick="sortHiddenTable('direction')">Direction</th>
+                                        <th class="sortable" onclick="sortHiddenTable('invoice_number')">Invoice #</th>
+                                        <th class="sortable" onclick="sortHiddenTable('partner_name')">Supplier / Partner</th>
+                                        <th class="sortable" onclick="sortHiddenTable('issue_date')">Issue Date</th>
+                                        <th class="sortable text-end" onclick="sortHiddenTable('total_amount')">Amount</th>
+                                        <th class="sortable" onclick="sortHiddenTable('currency')">Currency</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -357,12 +390,12 @@
                                 <thead class="table-light">
                                     <tr>
                                         <th><input type="checkbox" class="form-check-input" id="binSelectAll" onchange="toggleBinSelectAll()"></th>
-                                        <th>Direction</th>
-                                        <th>Invoice #</th>
-                                        <th>Supplier / Partner</th>
-                                        <th>Issue Date</th>
-                                        <th class="text-end">Amount</th>
-                                        <th>Deleted At</th>
+                                        <th class="sortable" onclick="sortBinTable('direction')">Direction</th>
+                                        <th class="sortable" onclick="sortBinTable('invoice_number')">Invoice #</th>
+                                        <th class="sortable" onclick="sortBinTable('partner_name')">Supplier / Partner</th>
+                                        <th class="sortable" onclick="sortBinTable('issue_date')">Issue Date</th>
+                                        <th class="sortable text-end" onclick="sortBinTable('total_amount')">Amount</th>
+                                        <th class="sortable" onclick="sortBinTable('deleted_at')">Deleted At</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -383,6 +416,9 @@
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-diagram-3"></i> Supplier Mappings</span>
                         <div class="d-flex gap-2">
+                            <button class="btn btn-outline-secondary btn-sm" onclick="openPartnerTypesModal()" title="Manage Partner Types">
+                                <i class="bi bi-gear"></i> Types
+                            </button>
                             <button class="btn btn-outline-secondary btn-sm" onclick="importSuppliersFromInvoices()">
                                 <i class="bi bi-box-arrow-in-down"></i> Import from Invoices
                             </button>
@@ -395,23 +431,39 @@
                         <p class="text-muted small mb-3">
                             Map e-Factura partner names to standardized supplier names used in the Invoice module.
                         </p>
+
+                        <!-- Bulk Actions for Mappings -->
+                        <div class="bulk-action-bar" id="mappingsBulkActionBar">
+                            <span><strong id="mappingsSelectedCount">0</strong> selected</span>
+                            <div class="d-flex gap-2 align-items-center">
+                                <button class="btn btn-danger btn-sm" onclick="bulkDeleteMappings()">
+                                    <i class="bi bi-trash"></i> Delete Selected
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="clearMappingsSelection()">
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+
                         <div class="table-responsive">
                             <table class="table table-hover table-sm" id="mappingsTable">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>Partner (e-Factura)</th>
-                                        <th>Partner VAT</th>
-                                        <th>Supplier Name</th>
-                                        <th>Supplier VAT</th>
-                                        <th>Kod Konto</th>
+                                        <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="mappingsSelectAll" onchange="toggleMappingsSelectAll()"></th>
+                                        <th class="sortable" onclick="sortMappingsTable('partner_name')">Partner (e-Factura)</th>
+                                        <th class="sortable" onclick="sortMappingsTable('partner_cif')">Partner VAT</th>
+                                        <th class="sortable" onclick="sortMappingsTable('supplier_name')">Supplier Name</th>
+                                        <th class="sortable" onclick="sortMappingsTable('supplier_vat')">Supplier VAT</th>
+                                        <th class="sortable" onclick="sortMappingsTable('type_name')">Type</th>
+                                        <th class="sortable" onclick="sortMappingsTable('kod_konto')">Kod Konto</th>
                                         <th>Supplier Note</th>
-                                        <th>Created</th>
+                                        <th class="sortable" onclick="sortMappingsTable('created_at')">Created</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="mappingsTableBody">
                                     <tr>
-                                        <td colspan="8" class="text-center text-muted py-4">Click "Mappings" tab to load supplier mappings</td>
+                                        <td colspan="10" class="text-center text-muted py-4">Click "Mappings" tab to load supplier mappings</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -453,10 +505,23 @@
                         <input type="text" class="form-control" id="mappingSupplierVat" placeholder="e.g. RO12345678">
                         <div class="form-text">Standardized VAT number</div>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Kod Konto</label>
-                        <input type="text" class="form-control" id="mappingKodKonto" placeholder="e.g. 401.01">
-                        <div class="form-text">Accounting code for this supplier</div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Type</label>
+                                <select class="form-select" id="mappingTypeId">
+                                    <option value="">-- Select Type --</option>
+                                </select>
+                                <div class="form-text">Supplier type (Service, Merchandise)</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Kod Konto</label>
+                                <input type="text" class="form-control" id="mappingKodKonto" placeholder="e.g. 401.01">
+                                <div class="form-text">Accounting code</div>
+                            </div>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Supplier Note</label>
@@ -493,6 +558,66 @@
         </div>
     </div>
 
+    <!-- Partner Types Settings Modal -->
+    <div class="modal fade" id="partnerTypesModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-tags"></i> Partner Types</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">Manage partner types for supplier mappings (e.g., Service, Merchandise).</p>
+
+                    <!-- Add new type form -->
+                    <div class="card mb-3">
+                        <div class="card-body py-2">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-4">
+                                    <label class="form-label small mb-1">Name <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control form-control-sm" id="newTypeName" placeholder="e.g. Service">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small mb-1">Description</label>
+                                    <input type="text" class="form-control form-control-sm" id="newTypeDescription" placeholder="Optional description">
+                                </div>
+                                <div class="col-md-2">
+                                    <button class="btn btn-primary btn-sm w-100" onclick="addPartnerType()">
+                                        <i class="bi bi-plus-lg"></i> Add
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Types list -->
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Description</th>
+                                    <th>Status</th>
+                                    <th width="100">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="partnerTypesTableBody">
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted py-4">
+                                        <span class="spinner-border spinner-border-sm"></span> Loading...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- View Invoice Modal -->
     <div class="modal fade" id="viewInvoiceModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -520,11 +645,31 @@
     <script>
         let currentPage = 1;
         let totalPages = 1;
+        let pageSize = parseInt(localStorage.getItem('efacturaPageSize')) || 50;
         let currentInvoiceId = null;
         let companiesCache = [];
         let selectedInvoices = new Set();
         let selectedHiddenInvoices = new Set();
         let selectedBinInvoices = new Set();
+
+        // Sorting state - Unallocated table
+        let sortColumn = localStorage.getItem('efacturaSortColumn') || 'issue_date';
+        let sortDirection = localStorage.getItem('efacturaSortDir') || 'desc';
+        let invoicesCache = []; // Cache for client-side sorting
+
+        // Sorting state - Hidden table
+        let hiddenSortColumn = localStorage.getItem('efacturaHiddenSortColumn') || 'issue_date';
+        let hiddenSortDirection = localStorage.getItem('efacturaHiddenSortDir') || 'desc';
+        let hiddenCache = [];
+
+        // Sorting state - Bin table
+        let binSortColumn = localStorage.getItem('efacturaBinSortColumn') || 'deleted_at';
+        let binSortDirection = localStorage.getItem('efacturaBinSortDir') || 'desc';
+        let binCache = [];
+
+        // Sorting state - Mappings table
+        let mappingsSortColumn = localStorage.getItem('efacturaMappingsSortColumn') || 'partner_name';
+        let mappingsSortDirection = localStorage.getItem('efacturaMappingsSortDir') || 'asc';
 
         // Column definitions
         const allColumns = [
@@ -534,6 +679,7 @@
             { id: 'invoice_number', label: 'Invoice #', visible: true },
             { id: 'partner_name', label: 'Supplier / Partner', visible: true },
             { id: 'partner_cif', label: 'Partner VAT', visible: true },
+            { id: 'type', label: 'Type', visible: true },
             { id: 'issue_date', label: 'Issue Date', visible: true },
             { id: 'amount', label: 'Amount', visible: true, align: 'end' },
             { id: 'vat', label: 'VAT', visible: true, align: 'end' },
@@ -572,6 +718,9 @@
                 .filter(col => col.visible || col.fixed);
         }
 
+        // Sortable columns (columns that can be sorted)
+        const sortableColumns = ['company', 'direction', 'invoice_number', 'partner_name', 'partner_cif', 'type', 'issue_date', 'amount', 'vat', 'currency', 'imported'];
+
         // Render table header
         function renderTableHeader() {
             const thead = document.getElementById('invoicesTableHead');
@@ -585,9 +734,201 @@
                     }
                     const align = col.align === 'end' ? 'text-end' : '';
                     const width = col.width ? `style="width: ${col.width}"` : '';
-                    return `<th class="${align}" ${width}>${col.label}</th>`;
+                    const isSortable = sortableColumns.includes(col.id);
+                    const sortClass = isSortable ? `sortable ${sortColumn === col.id ? sortDirection : ''}` : '';
+                    const onClick = isSortable ? `onclick="sortTable('${col.id}')"` : '';
+                    return `<th class="${align} ${sortClass}" ${width} ${onClick}>${col.label}</th>`;
                 }).join('')}
             </tr>`;
+        }
+
+        // Sort table
+        function sortTable(column) {
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = 'asc';
+            }
+            localStorage.setItem('efacturaSortColumn', sortColumn);
+            localStorage.setItem('efacturaSortDir', sortDirection);
+            renderTableHeader();
+            sortAndRenderInvoices();
+        }
+
+        // Sort and render invoices from cache
+        function sortAndRenderInvoices() {
+            if (!invoicesCache || invoicesCache.length === 0) return;
+
+            const sorted = [...invoicesCache].sort((a, b) => {
+                let valA = a[sortColumn];
+                let valB = b[sortColumn];
+
+                // Handle special columns
+                if (sortColumn === 'amount') {
+                    valA = parseFloat(a.total_amount || 0);
+                    valB = parseFloat(b.total_amount || 0);
+                } else if (sortColumn === 'vat') {
+                    valA = parseFloat(a.total_vat || 0);
+                    valB = parseFloat(b.total_vat || 0);
+                } else if (sortColumn === 'imported') {
+                    valA = a.created_at || '';
+                    valB = b.created_at || '';
+                } else if (sortColumn === 'type') {
+                    valA = a.type_name || '';
+                    valB = b.type_name || '';
+                }
+
+                // Null handling
+                if (valA == null) valA = '';
+                if (valB == null) valB = '';
+
+                // String comparison
+                if (typeof valA === 'string') {
+                    valA = valA.toLowerCase();
+                    valB = (valB || '').toLowerCase();
+                }
+
+                if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            renderInvoices(sorted);
+        }
+
+        // Sort Hidden table
+        function sortHiddenTable(column) {
+            if (hiddenSortColumn === column) {
+                hiddenSortDirection = hiddenSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                hiddenSortColumn = column;
+                hiddenSortDirection = 'asc';
+            }
+            localStorage.setItem('efacturaHiddenSortColumn', hiddenSortColumn);
+            localStorage.setItem('efacturaHiddenSortDir', hiddenSortDirection);
+            updateHiddenTableHeaders();
+            sortAndRenderHidden();
+        }
+
+        function updateHiddenTableHeaders() {
+            document.querySelectorAll('#hiddenTable th.sortable').forEach(th => {
+                th.classList.remove('asc', 'desc');
+                const col = th.getAttribute('onclick')?.match(/sortHiddenTable\('(\w+)'\)/)?.[1];
+                if (col === hiddenSortColumn) {
+                    th.classList.add(hiddenSortDirection);
+                }
+            });
+        }
+
+        function sortAndRenderHidden() {
+            if (!hiddenCache || hiddenCache.length === 0) return;
+            const sorted = [...hiddenCache].sort((a, b) => {
+                let valA = a[hiddenSortColumn];
+                let valB = b[hiddenSortColumn];
+                if (hiddenSortColumn === 'total_amount') {
+                    valA = parseFloat(a.total_amount || 0);
+                    valB = parseFloat(b.total_amount || 0);
+                }
+                if (valA == null) valA = '';
+                if (valB == null) valB = '';
+                if (typeof valA === 'string') {
+                    valA = valA.toLowerCase();
+                    valB = (valB || '').toLowerCase();
+                }
+                if (valA < valB) return hiddenSortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return hiddenSortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+            renderHiddenTable(sorted);
+        }
+
+        // Sort Bin table
+        function sortBinTable(column) {
+            if (binSortColumn === column) {
+                binSortDirection = binSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                binSortColumn = column;
+                binSortDirection = 'asc';
+            }
+            localStorage.setItem('efacturaBinSortColumn', binSortColumn);
+            localStorage.setItem('efacturaBinSortDir', binSortDirection);
+            updateBinTableHeaders();
+            sortAndRenderBin();
+        }
+
+        function updateBinTableHeaders() {
+            document.querySelectorAll('#binTable th.sortable').forEach(th => {
+                th.classList.remove('asc', 'desc');
+                const col = th.getAttribute('onclick')?.match(/sortBinTable\('(\w+)'\)/)?.[1];
+                if (col === binSortColumn) {
+                    th.classList.add(binSortDirection);
+                }
+            });
+        }
+
+        function sortAndRenderBin() {
+            if (!binCache || binCache.length === 0) return;
+            const sorted = [...binCache].sort((a, b) => {
+                let valA = a[binSortColumn];
+                let valB = b[binSortColumn];
+                if (binSortColumn === 'total_amount') {
+                    valA = parseFloat(a.total_amount || 0);
+                    valB = parseFloat(b.total_amount || 0);
+                }
+                if (valA == null) valA = '';
+                if (valB == null) valB = '';
+                if (typeof valA === 'string') {
+                    valA = valA.toLowerCase();
+                    valB = (valB || '').toLowerCase();
+                }
+                if (valA < valB) return binSortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return binSortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+            renderBinTable(sorted);
+        }
+
+        // Sort Mappings table
+        function sortMappingsTable(column) {
+            if (mappingsSortColumn === column) {
+                mappingsSortDirection = mappingsSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                mappingsSortColumn = column;
+                mappingsSortDirection = 'asc';
+            }
+            localStorage.setItem('efacturaMappingsSortColumn', mappingsSortColumn);
+            localStorage.setItem('efacturaMappingsSortDir', mappingsSortDirection);
+            updateMappingsTableHeaders();
+            sortAndRenderMappings();
+        }
+
+        function updateMappingsTableHeaders() {
+            document.querySelectorAll('#mappingsTable th.sortable').forEach(th => {
+                th.classList.remove('asc', 'desc');
+                const col = th.getAttribute('onclick')?.match(/sortMappingsTable\('(\w+)'\)/)?.[1];
+                if (col === mappingsSortColumn) {
+                    th.classList.add(mappingsSortDirection);
+                }
+            });
+        }
+
+        function sortAndRenderMappings() {
+            if (!mappingsCache || mappingsCache.length === 0) return;
+            const sorted = [...mappingsCache].sort((a, b) => {
+                let valA = a[mappingsSortColumn];
+                let valB = b[mappingsSortColumn];
+                if (valA == null) valA = '';
+                if (valB == null) valB = '';
+                if (typeof valA === 'string') {
+                    valA = valA.toLowerCase();
+                    valB = (valB || '').toLowerCase();
+                }
+                if (valA < valB) return mappingsSortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return mappingsSortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+            renderMappingsTable(sorted);
         }
 
         // Hide loading overlay
@@ -631,12 +972,13 @@
             const endDate = document.getElementById('endDate').value;
             const search = document.getElementById('searchInput').value;
 
-            let url = `/efactura/api/invoices/unallocated?page=${page}`;
+            let url = `/efactura/api/invoices/unallocated?page=${page}&limit=${pageSize}`;
             if (companyId) url += `&company_id=${companyId}`;
             if (direction) url += `&direction=${direction}`;
             if (startDate) url += `&start_date=${startDate}`;
             if (endDate) url += `&end_date=${endDate}`;
             if (search) url += `&search=${encodeURIComponent(search)}`;
+            if (sortColumn) url += `&sort_by=${sortColumn}&sort_dir=${sortDirection}`;
 
             const tbody = document.getElementById('invoicesTableBody');
             const colCount = getVisibleColumns().length;
@@ -653,7 +995,8 @@
                         updateCompanyFilter(data.companies);
                     }
 
-                    renderInvoices(data.data);
+                    invoicesCache = data.data || [];
+                    sortAndRenderInvoices();
                     updatePagination(data.pagination);
                     updateSummary(data.data, data.pagination);
 
@@ -670,6 +1013,14 @@
             }
         }
 
+        // Change page size
+        function changePageSize(newSize) {
+            pageSize = parseInt(newSize);
+            localStorage.setItem('efacturaPageSize', pageSize);
+            currentPage = 1;
+            loadUnallocatedInvoices(1);
+        }
+
         // Load hidden invoices
         async function loadHiddenInvoices(page = 1) {
             const tbody = document.getElementById('hiddenTableBody');
@@ -682,7 +1033,9 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    renderHiddenTable(data.data);
+                    hiddenCache = data.data || [];
+                    updateHiddenTableHeaders();
+                    sortAndRenderHidden();
                 } else {
                     tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">${data.error}</td></tr>`;
                 }
@@ -743,7 +1096,9 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    renderBinTable(data.data);
+                    binCache = data.data || [];
+                    updateBinTableHeaders();
+                    sortAndRenderBin();
                 } else {
                     tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">${data.error}</td></tr>`;
                 }
@@ -959,6 +1314,7 @@
                     invoice_number: `<code>${inv.invoice_number || '-'}</code>`,
                     partner_name: inv.partner_name || '-',
                     partner_cif: `<code class="text-muted">${inv.partner_cif || '-'}</code>`,
+                    type: inv.type_name ? `<span class="badge bg-secondary">${inv.type_name}</span>` : '<span class="text-muted">-</span>',
                     issue_date: issueDate,
                     amount: amount,
                     vat: vat,
@@ -1504,12 +1860,18 @@
             const info = document.getElementById('paginationInfo');
             const summary = document.getElementById('paginationSummary');
             const controls = document.getElementById('paginationControls');
+            const pageSizeSelect = document.getElementById('pageSizeSelect');
+
+            // Set page size selector value
+            if (pageSizeSelect) {
+                pageSizeSelect.value = pageSize;
+            }
 
             if (pagination.total > 0) {
                 info.style.display = 'flex';
                 const start = pagination.offset + 1;
                 const end = Math.min(pagination.offset + pagination.limit, pagination.total);
-                summary.textContent = `Showing ${start}-${end} of ${pagination.total} invoices`;
+                summary.textContent = `Showing ${start}-${end} of ${pagination.total}`;
 
                 if (totalPages > 1) {
                     controls.innerHTML = `
@@ -1636,7 +1998,7 @@
 
         async function loadSupplierMappings() {
             const tbody = document.getElementById('mappingsTableBody');
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">
+            tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4">
                 <span class="spinner-border spinner-border-sm"></span> Loading...
             </td></tr>`;
 
@@ -1646,34 +2008,47 @@
 
                 if (data.success) {
                     mappingsCache = data.mappings || [];
-                    renderMappingsTable(mappingsCache);
+                    updateMappingsTableHeaders();
+                    sortAndRenderMappings();
                     updateBadge('mappingsBadge', data.count || 0);
                 } else {
-                    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-4">${data.error}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger py-4">${data.error}</td></tr>`;
                 }
             } catch (err) {
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-4">Error: ${err.message}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger py-4">Error: ${err.message}</td></tr>`;
             }
         }
+
+        // Bulk selection state for mappings
+        let selectedMappings = new Set();
 
         function renderMappingsTable(mappings) {
             const tbody = document.getElementById('mappingsTableBody');
 
             if (!mappings || mappings.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">
+                tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4">
                     <i class="bi bi-info-circle"></i> No supplier mappings yet. Click "Add Mapping" to create one.
                 </td></tr>`;
+                document.getElementById('mappingsSelectAll').checked = false;
+                selectedMappings.clear();
+                updateMappingsSelectionCount();
                 return;
             }
 
             tbody.innerHTML = mappings.map(m => {
                 const createdDate = m.created_at ? new Date(m.created_at).toLocaleDateString('ro-RO') : '-';
+                const isSelected = selectedMappings.has(m.id);
+                const typeBadge = m.type_name
+                    ? `<span class="badge ${m.type_name === 'Service' ? 'bg-info' : 'bg-warning'}">${m.type_name}</span>`
+                    : '<span class="text-muted">-</span>';
 
                 return `<tr data-id="${m.id}">
+                    <td><input type="checkbox" class="form-check-input mapping-checkbox" value="${m.id}" ${isSelected ? 'checked' : ''} onchange="onMappingCheckboxChange(${m.id}, this.checked)"></td>
                     <td><strong>${m.partner_name || '-'}</strong></td>
                     <td><code class="text-muted">${m.partner_cif || '-'}</code></td>
                     <td>${m.supplier_name || '-'}</td>
                     <td><code class="text-success">${m.supplier_vat || '-'}</code></td>
+                    <td>${typeBadge}</td>
                     <td><code class="text-primary">${m.kod_konto || '-'}</code></td>
                     <td><span class="text-muted small">${m.supplier_note || '-'}</span></td>
                     <td><span class="small text-muted">${createdDate}</span></td>
@@ -1689,23 +2064,129 @@
                     </td>
                 </tr>`;
             }).join('');
+
+            // Update select all checkbox state
+            const allChecked = mappings.length > 0 && mappings.every(m => selectedMappings.has(m.id));
+            document.getElementById('mappingsSelectAll').checked = allChecked;
         }
 
-        function openAddMappingModal() {
+        function onMappingCheckboxChange(id, checked) {
+            if (checked) {
+                selectedMappings.add(id);
+            } else {
+                selectedMappings.delete(id);
+            }
+            updateMappingsSelectionCount();
+
+            // Update select all checkbox state
+            const allChecked = mappingsCache.length > 0 && mappingsCache.every(m => selectedMappings.has(m.id));
+            document.getElementById('mappingsSelectAll').checked = allChecked;
+        }
+
+        function toggleMappingsSelectAll() {
+            const selectAll = document.getElementById('mappingsSelectAll').checked;
+            selectedMappings.clear();
+            if (selectAll) {
+                mappingsCache.forEach(m => selectedMappings.add(m.id));
+            }
+            document.querySelectorAll('.mapping-checkbox').forEach(cb => cb.checked = selectAll);
+            updateMappingsSelectionCount();
+        }
+
+        function updateMappingsSelectionCount() {
+            const count = selectedMappings.size;
+            document.getElementById('mappingsSelectedCount').textContent = count;
+            const bulkBar = document.getElementById('mappingsBulkActionBar');
+            if (count > 0) {
+                bulkBar.classList.add('show');
+            } else {
+                bulkBar.classList.remove('show');
+            }
+        }
+
+        function clearMappingsSelection() {
+            selectedMappings.clear();
+            document.querySelectorAll('.mapping-checkbox').forEach(cb => cb.checked = false);
+            document.getElementById('mappingsSelectAll').checked = false;
+            updateMappingsSelectionCount();
+        }
+
+        async function bulkDeleteMappings() {
+            const ids = Array.from(selectedMappings);
+            if (ids.length === 0) {
+                alert('No mappings selected');
+                return;
+            }
+
+            if (!confirm(`Delete ${ids.length} selected mapping(s)? This cannot be undone.`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch('/efactura/api/mappings/bulk-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    selectedMappings.clear();
+                    updateMappingsSelectionCount();
+                    loadSupplierMappings();
+                } else {
+                    alert(data.error || 'Failed to delete mappings');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        // Partner types cache
+        let partnerTypesCache = [];
+
+        async function loadPartnerTypesForDropdown() {
+            try {
+                const res = await fetch('/efactura/api/partner-types');
+                const data = await res.json();
+                if (data.success) {
+                    partnerTypesCache = data.types || [];
+                    populateTypeDropdown();
+                }
+            } catch (err) {
+                console.error('Failed to load partner types:', err);
+            }
+        }
+
+        function populateTypeDropdown() {
+            const select = document.getElementById('mappingTypeId');
+            const currentValue = select.value;
+            select.innerHTML = '<option value="">-- Select Type --</option>' +
+                partnerTypesCache.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+            if (currentValue) {
+                select.value = currentValue;
+            }
+        }
+
+        async function openAddMappingModal() {
             document.getElementById('mappingId').value = '';
             document.getElementById('mappingPartnerName').value = '';
             document.getElementById('mappingPartnerCif').value = '';
             document.getElementById('mappingSupplierName').value = '';
             document.getElementById('mappingSupplierVat').value = '';
+            document.getElementById('mappingTypeId').value = '';
             document.getElementById('mappingKodKonto').value = '';
             document.getElementById('mappingSupplierNote').value = '';
             document.getElementById('mappingModalTitle').innerHTML = '<i class="bi bi-diagram-3"></i> Add Supplier Mapping';
+
+            // Load partner types for dropdown
+            await loadPartnerTypesForDropdown();
 
             const modal = new bootstrap.Modal(document.getElementById('mappingModal'));
             modal.show();
         }
 
-        function editMapping(mappingId) {
+        async function editMapping(mappingId) {
             const mapping = mappingsCache.find(m => m.id === mappingId);
             if (!mapping) {
                 alert('Mapping not found');
@@ -1721,6 +2202,10 @@
             document.getElementById('mappingSupplierNote').value = mapping.supplier_note || '';
             document.getElementById('mappingModalTitle').innerHTML = '<i class="bi bi-diagram-3"></i> Edit Supplier Mapping';
 
+            // Load partner types and set the current value
+            await loadPartnerTypesForDropdown();
+            document.getElementById('mappingTypeId').value = mapping.type_id || '';
+
             const modal = new bootstrap.Modal(document.getElementById('mappingModal'));
             modal.show();
         }
@@ -1731,6 +2216,7 @@
             const partnerCif = document.getElementById('mappingPartnerCif').value.trim();
             const supplierName = document.getElementById('mappingSupplierName').value.trim();
             const supplierVat = document.getElementById('mappingSupplierVat').value.trim();
+            const typeId = document.getElementById('mappingTypeId').value;
             const kodKonto = document.getElementById('mappingKodKonto').value.trim();
             const supplierNote = document.getElementById('mappingSupplierNote').value.trim();
 
@@ -1749,6 +2235,7 @@
                 partner_cif: partnerCif,
                 supplier_name: supplierName,
                 supplier_vat: supplierVat,
+                type_id: typeId || null,
                 kod_konto: kodKonto,
                 supplier_note: supplierNote,
             };
@@ -1984,6 +2471,119 @@
 
             // Reload mappings
             loadSupplierMappings();
+        }
+
+        // ============================================
+        // Partner Types Management
+        // ============================================
+
+        async function openPartnerTypesModal() {
+            const modal = new bootstrap.Modal(document.getElementById('partnerTypesModal'));
+            modal.show();
+            await loadPartnerTypesTable();
+        }
+
+        async function loadPartnerTypesTable() {
+            const tbody = document.getElementById('partnerTypesTableBody');
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">
+                <span class="spinner-border spinner-border-sm"></span> Loading...
+            </td></tr>`;
+
+            try {
+                const res = await fetch('/efactura/api/partner-types?active_only=false');
+                const data = await res.json();
+
+                if (data.success) {
+                    renderPartnerTypesTable(data.types || []);
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger py-4">${data.error}</td></tr>`;
+                }
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger py-4">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        function renderPartnerTypesTable(types) {
+            const tbody = document.getElementById('partnerTypesTableBody');
+
+            if (!types || types.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">
+                    <i class="bi bi-info-circle"></i> No partner types yet. Add one above.
+                </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = types.map(t => {
+                const statusBadge = t.is_active
+                    ? '<span class="badge bg-success">Active</span>'
+                    : '<span class="badge bg-secondary">Inactive</span>';
+
+                return `<tr data-id="${t.id}">
+                    <td><strong>${t.name || '-'}</strong></td>
+                    <td class="text-muted small">${t.description || '-'}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-danger" onclick="deletePartnerType(${t.id})" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        async function addPartnerType() {
+            const name = document.getElementById('newTypeName').value.trim();
+            const description = document.getElementById('newTypeDescription').value.trim();
+
+            if (!name) {
+                alert('Name is required');
+                return;
+            }
+
+            try {
+                const res = await fetch('/efactura/api/partner-types', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    document.getElementById('newTypeName').value = '';
+                    document.getElementById('newTypeDescription').value = '';
+                    loadPartnerTypesTable();
+                    // Update cache for dropdown
+                    loadPartnerTypesForDropdown();
+                } else {
+                    alert(data.error || 'Failed to create partner type');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        async function deletePartnerType(typeId) {
+            if (!confirm('Delete this partner type? It will be soft-deleted (deactivated).')) return;
+
+            try {
+                const res = await fetch(`/efactura/api/partner-types/${typeId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    loadPartnerTypesTable();
+                    // Update cache for dropdown
+                    loadPartnerTypesForDropdown();
+                } else {
+                    alert(data.error || 'Failed to delete partner type');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
         }
     </script>
 </body>

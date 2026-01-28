@@ -1014,6 +1014,8 @@ class EFacturaService:
         end_date: Optional[date] = None,
         page: int = 1,
         limit: int = 50,
+        sort_by: str = 'issue_date',
+        sort_dir: str = 'desc',
     ) -> ServiceResult:
         """List invoices that have not been sent to the Invoice Module."""
         offset = (page - 1) * limit
@@ -1026,6 +1028,8 @@ class EFacturaService:
             end_date=end_date,
             limit=limit,
             offset=offset,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
         )
 
         total_pages = max(1, (total + limit - 1) // limit)
@@ -1034,25 +1038,48 @@ class EFacturaService:
         companies = get_companies_with_vat()
         company_map = {c['id']: c['company'] for c in companies}
 
+        # Build invoice response list (invoices are dicts with type_name from repo)
+        invoice_list = []
+        for inv in invoices:
+            # inv is a dict from the repository
+            inv_direction = inv.get('direction')
+            if hasattr(inv_direction, 'value'):
+                inv_direction = inv_direction.value
+
+            inv_issue_date = inv.get('issue_date')
+            if hasattr(inv_issue_date, 'isoformat'):
+                inv_issue_date = inv_issue_date.isoformat()
+
+            inv_created_at = inv.get('created_at')
+            if hasattr(inv_created_at, 'isoformat'):
+                inv_created_at = inv_created_at.isoformat()
+
+            # Build full invoice number
+            inv_number = inv.get('invoice_number', '')
+            inv_series = inv.get('invoice_series')
+            full_invoice_number = f"{inv_series}-{inv_number}" if inv_series else inv_number
+
+            inv_company_id = inv.get('company_id')
+
+            invoice_list.append({
+                'id': inv.get('id'),
+                'cif_owner': inv.get('cif_owner'),
+                'company_id': inv_company_id,
+                'company_name': company_map.get(inv_company_id) if inv_company_id else None,
+                'direction': inv_direction,
+                'partner_cif': inv.get('partner_cif'),
+                'partner_name': inv.get('partner_name'),
+                'invoice_number': full_invoice_number,
+                'issue_date': inv_issue_date,
+                'total_amount': str(inv.get('total_amount', 0)),
+                'total_vat': str(inv.get('total_vat', 0)),
+                'currency': inv.get('currency'),
+                'created_at': inv_created_at,
+                'type_name': inv.get('type_name'),
+            })
+
         return ServiceResult(success=True, data={
-            'invoices': [
-                {
-                    'id': inv.id,
-                    'cif_owner': inv.cif_owner,
-                    'company_id': inv.company_id,
-                    'company_name': company_map.get(inv.company_id) if inv.company_id else None,
-                    'direction': inv.direction.value,
-                    'partner_cif': inv.partner_cif,
-                    'partner_name': inv.partner_name,
-                    'invoice_number': inv.full_invoice_number,
-                    'issue_date': inv.issue_date.isoformat() if inv.issue_date else None,
-                    'total_amount': str(inv.total_amount),
-                    'total_vat': str(inv.total_vat),
-                    'currency': inv.currency,
-                    'created_at': inv.created_at.isoformat() if inv.created_at else None,
-                }
-                for inv in invoices
-            ],
+            'invoices': invoice_list,
             'companies': [{'id': c['id'], 'name': c['company']} for c in companies],
             'pagination': {
                 'current_page': page,

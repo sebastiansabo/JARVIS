@@ -506,6 +506,24 @@ class InvoiceRepository:
         finally:
             release_db(conn)
 
+    # Valid sort columns mapping (frontend name -> DB column)
+    SORT_COLUMNS = {
+        'company': 'i.company_id',
+        'direction': 'i.direction',
+        'invoice_number': 'i.invoice_number',
+        'partner_name': 'i.partner_name',
+        'partner_cif': 'i.partner_cif',
+        'type': 'pt.name',
+        'issue_date': 'i.issue_date',
+        'amount': 'i.total_amount',
+        'total_amount': 'i.total_amount',
+        'vat': 'i.total_vat',
+        'total_vat': 'i.total_vat',
+        'currency': 'i.currency',
+        'imported': 'i.created_at',
+        'created_at': 'i.created_at',
+    }
+
     def list_unallocated(
         self,
         cif_owner: Optional[str] = None,
@@ -516,64 +534,81 @@ class InvoiceRepository:
         search: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Tuple[List[Invoice], int]:
+        sort_by: str = 'issue_date',
+        sort_dir: str = 'desc',
+    ) -> Tuple[List[Dict[str, Any]], int]:
         """
         List invoices that haven't been sent to the main Invoice Module.
 
         Unallocated = jarvis_invoice_id IS NULL AND ignored = FALSE AND deleted_at IS NULL
+        Returns invoices with type_name from supplier mappings.
         """
         conn = get_db()
         try:
             cursor = get_cursor(conn)
 
             # Build WHERE clause - exclude ignored and deleted invoices
-            conditions = ['jarvis_invoice_id IS NULL', 'ignored = FALSE', 'deleted_at IS NULL']
+            conditions = ['i.jarvis_invoice_id IS NULL', 'i.ignored = FALSE', 'i.deleted_at IS NULL']
             params = {'limit': limit, 'offset': offset}
 
             if cif_owner:
-                conditions.append('cif_owner = %(cif_owner)s')
+                conditions.append('i.cif_owner = %(cif_owner)s')
                 params['cif_owner'] = cif_owner
 
             if company_id is not None:
-                conditions.append('company_id = %(company_id)s')
+                conditions.append('i.company_id = %(company_id)s')
                 params['company_id'] = company_id
 
             if direction is not None:
-                conditions.append('direction = %(direction)s')
+                conditions.append('i.direction = %(direction)s')
                 params['direction'] = direction.value
 
             if start_date:
-                conditions.append('issue_date >= %(start_date)s')
+                conditions.append('i.issue_date >= %(start_date)s')
                 params['start_date'] = start_date
 
             if end_date:
-                conditions.append('issue_date <= %(end_date)s')
+                conditions.append('i.issue_date <= %(end_date)s')
                 params['end_date'] = end_date
 
             if search:
                 conditions.append(
-                    "(invoice_number ILIKE %(search)s OR partner_name ILIKE %(search)s OR partner_cif ILIKE %(search)s)"
+                    "(i.invoice_number ILIKE %(search)s OR i.partner_name ILIKE %(search)s OR i.partner_cif ILIKE %(search)s)"
                 )
                 params['search'] = f'%{search}%'
 
             where_clause = ' AND '.join(conditions)
 
+            # Build ORDER BY clause (validate column to prevent SQL injection)
+            db_column = self.SORT_COLUMNS.get(sort_by, 'i.issue_date')
+            sort_direction = 'ASC' if sort_dir.lower() == 'asc' else 'DESC'
+            order_clause = f"{db_column} {sort_direction}, i.id {sort_direction}"
+
             # Get total count
             cursor.execute(f"""
-                SELECT COUNT(*) as total FROM efactura_invoices
+                SELECT COUNT(*) as total FROM efactura_invoices i
                 WHERE {where_clause}
             """, params)
             total = cursor.fetchone()['total']
 
-            # Get invoices
+            # Get invoices with type_name from supplier mappings
             cursor.execute(f"""
-                SELECT * FROM efactura_invoices
+                SELECT i.*, pt.name as type_name
+                FROM efactura_invoices i
+                LEFT JOIN efactura_supplier_mappings sm
+                    ON LOWER(i.partner_name) = LOWER(sm.partner_name) AND sm.is_active = TRUE
+                LEFT JOIN efactura_partner_types pt ON sm.type_id = pt.id
                 WHERE {where_clause}
-                ORDER BY created_at DESC, id DESC
+                ORDER BY {order_clause}
                 LIMIT %(limit)s OFFSET %(offset)s
             """, params)
 
-            invoices = [self._row_to_invoice(row) for row in cursor.fetchall()]
+            invoices = []
+            for row in cursor.fetchall():
+                inv = self._row_to_invoice(row)
+                inv_dict = inv.__dict__.copy()
+                inv_dict['type_name'] = row.get('type_name')
+                invoices.append(inv_dict)
 
             return invoices, total
         finally:
@@ -1183,18 +1218,22 @@ class SupplierMappingRepository:
             cursor = get_cursor(conn)
             if active_only:
                 cursor.execute("""
-                    SELECT id, partner_name, partner_cif, supplier_name, supplier_note,
-                           supplier_vat, kod_konto, is_active, created_at, updated_at
-                    FROM efactura_supplier_mappings
-                    WHERE is_active = TRUE
-                    ORDER BY partner_name
+                    SELECT m.id, m.partner_name, m.partner_cif, m.supplier_name, m.supplier_note,
+                           m.supplier_vat, m.kod_konto, m.type_id, m.is_active, m.created_at, m.updated_at,
+                           pt.name as type_name
+                    FROM efactura_supplier_mappings m
+                    LEFT JOIN efactura_partner_types pt ON m.type_id = pt.id
+                    WHERE m.is_active = TRUE
+                    ORDER BY m.partner_name
                 """)
             else:
                 cursor.execute("""
-                    SELECT id, partner_name, partner_cif, supplier_name, supplier_note,
-                           supplier_vat, kod_konto, is_active, created_at, updated_at
-                    FROM efactura_supplier_mappings
-                    ORDER BY partner_name
+                    SELECT m.id, m.partner_name, m.partner_cif, m.supplier_name, m.supplier_note,
+                           m.supplier_vat, m.kod_konto, m.type_id, m.is_active, m.created_at, m.updated_at,
+                           pt.name as type_name
+                    FROM efactura_supplier_mappings m
+                    LEFT JOIN efactura_partner_types pt ON m.type_id = pt.id
+                    ORDER BY m.partner_name
                 """)
             return [dict(row) for row in cursor.fetchall()]
         finally:
@@ -1206,10 +1245,12 @@ class SupplierMappingRepository:
         try:
             cursor = get_cursor(conn)
             cursor.execute("""
-                SELECT id, partner_name, partner_cif, supplier_name, supplier_note,
-                       supplier_vat, kod_konto, is_active, created_at, updated_at
-                FROM efactura_supplier_mappings
-                WHERE id = %s
+                SELECT m.id, m.partner_name, m.partner_cif, m.supplier_name, m.supplier_note,
+                       m.supplier_vat, m.kod_konto, m.type_id, m.is_active, m.created_at, m.updated_at,
+                       pt.name as type_name
+                FROM efactura_supplier_mappings m
+                LEFT JOIN efactura_partner_types pt ON m.type_id = pt.id
+                WHERE m.id = %s
             """, (mapping_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
@@ -1233,10 +1274,12 @@ class SupplierMappingRepository:
             # Try exact match with CIF first
             if partner_cif:
                 cursor.execute("""
-                    SELECT id, partner_name, partner_cif, supplier_name, supplier_note,
-                           supplier_vat, kod_konto, is_active, created_at, updated_at
-                    FROM efactura_supplier_mappings
-                    WHERE LOWER(partner_name) = LOWER(%s) AND partner_cif = %s AND is_active = TRUE
+                    SELECT m.id, m.partner_name, m.partner_cif, m.supplier_name, m.supplier_note,
+                           m.supplier_vat, m.kod_konto, m.type_id, m.is_active, m.created_at, m.updated_at,
+                           pt.name as type_name
+                    FROM efactura_supplier_mappings m
+                    LEFT JOIN efactura_partner_types pt ON m.type_id = pt.id
+                    WHERE LOWER(m.partner_name) = LOWER(%s) AND m.partner_cif = %s AND m.is_active = TRUE
                     LIMIT 1
                 """, (partner_name, partner_cif))
                 row = cursor.fetchone()
@@ -1245,10 +1288,12 @@ class SupplierMappingRepository:
 
             # Fallback to name-only match
             cursor.execute("""
-                SELECT id, partner_name, partner_cif, supplier_name, supplier_note,
-                       supplier_vat, kod_konto, is_active, created_at, updated_at
-                FROM efactura_supplier_mappings
-                WHERE LOWER(partner_name) = LOWER(%s) AND is_active = TRUE
+                SELECT m.id, m.partner_name, m.partner_cif, m.supplier_name, m.supplier_note,
+                       m.supplier_vat, m.kod_konto, m.type_id, m.is_active, m.created_at, m.updated_at,
+                       pt.name as type_name
+                FROM efactura_supplier_mappings m
+                LEFT JOIN efactura_partner_types pt ON m.type_id = pt.id
+                WHERE LOWER(m.partner_name) = LOWER(%s) AND m.is_active = TRUE
                 LIMIT 1
             """, (partner_name,))
             row = cursor.fetchone()
@@ -1264,6 +1309,7 @@ class SupplierMappingRepository:
         supplier_note: Optional[str] = None,
         supplier_vat: Optional[str] = None,
         kod_konto: Optional[str] = None,
+        type_id: Optional[int] = None,
     ) -> int:
         """Create a new supplier mapping.
 
@@ -1274,6 +1320,7 @@ class SupplierMappingRepository:
             supplier_note: Optional notes about the supplier
             supplier_vat: The standardized VAT number
             kod_konto: The accounting code
+            type_id: Optional partner type ID
 
         Returns:
             The new mapping ID
@@ -1283,10 +1330,10 @@ class SupplierMappingRepository:
             cursor = get_cursor(conn)
             cursor.execute("""
                 INSERT INTO efactura_supplier_mappings
-                (partner_name, partner_cif, supplier_name, supplier_note, supplier_vat, kod_konto)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                (partner_name, partner_cif, supplier_name, supplier_note, supplier_vat, kod_konto, type_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            """, (partner_name, partner_cif, supplier_name, supplier_note, supplier_vat, kod_konto))
+            """, (partner_name, partner_cif, supplier_name, supplier_note, supplier_vat, kod_konto, type_id))
             mapping_id = cursor.fetchone()['id']
             conn.commit()
             logger.info(f"Created supplier mapping {mapping_id}: {partner_name} -> {supplier_name}")
@@ -1307,6 +1354,7 @@ class SupplierMappingRepository:
         supplier_note: Optional[str] = None,
         supplier_vat: Optional[str] = None,
         kod_konto: Optional[str] = None,
+        type_id: Optional[int] = None,
         is_active: Optional[bool] = None,
     ) -> bool:
         """Update a supplier mapping.
@@ -1319,6 +1367,7 @@ class SupplierMappingRepository:
             supplier_note: New supplier note
             supplier_vat: New supplier VAT
             kod_konto: New accounting code
+            type_id: New partner type ID
             is_active: Whether mapping is active
 
         Returns:
@@ -1349,6 +1398,9 @@ class SupplierMappingRepository:
             if kod_konto is not None:
                 updates.append('kod_konto = %s')
                 params.append(kod_konto if kod_konto else None)
+            if type_id is not None:
+                updates.append('type_id = %s')
+                params.append(type_id if type_id else None)
             if is_active is not None:
                 updates.append('is_active = %s')
                 params.append(is_active)
@@ -1419,5 +1471,170 @@ class SupplierMappingRepository:
                 ORDER BY COUNT(*) DESC, partner_name
             """)
             return [dict(row) for row in cursor.fetchall()]
+        finally:
+            release_db(conn)
+
+
+class PartnerTypeRepository:
+    """Repository for e-Factura partner types (Service, Merchandise, etc.)."""
+
+    def get_all(self, active_only: bool = True) -> List[Dict[str, Any]]:
+        """Get all partner types.
+
+        Args:
+            active_only: If True, only return active types
+
+        Returns:
+            List of partner type dictionaries
+        """
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            if active_only:
+                cursor.execute("""
+                    SELECT id, name, description, is_active, created_at, updated_at
+                    FROM efactura_partner_types
+                    WHERE is_active = TRUE
+                    ORDER BY name
+                """)
+            else:
+                cursor.execute("""
+                    SELECT id, name, description, is_active, created_at, updated_at
+                    FROM efactura_partner_types
+                    ORDER BY name
+                """)
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            release_db(conn)
+
+    def get_by_id(self, type_id: int) -> Optional[Dict[str, Any]]:
+        """Get a single partner type by ID."""
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute("""
+                SELECT id, name, description, is_active, created_at, updated_at
+                FROM efactura_partner_types
+                WHERE id = %s
+            """, (type_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            release_db(conn)
+
+    def create(
+        self,
+        name: str,
+        description: Optional[str] = None,
+    ) -> int:
+        """Create a new partner type.
+
+        Args:
+            name: The type name (e.g., "Service", "Merchandise")
+            description: Optional description
+
+        Returns:
+            The new type ID
+        """
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute("""
+                INSERT INTO efactura_partner_types (name, description)
+                VALUES (%s, %s)
+                RETURNING id
+            """, (name, description))
+            type_id = cursor.fetchone()['id']
+            conn.commit()
+            logger.info(f"Created partner type {type_id}: {name}")
+            return type_id
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to create partner type: {e}")
+            raise
+        finally:
+            release_db(conn)
+
+    def update(
+        self,
+        type_id: int,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        is_active: Optional[bool] = None,
+    ) -> bool:
+        """Update a partner type.
+
+        Args:
+            type_id: The type ID
+            name: New name
+            description: New description
+            is_active: Whether type is active
+
+        Returns:
+            True if successful
+        """
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+
+            updates = ['updated_at = NOW()']
+            params = []
+
+            if name is not None:
+                updates.append('name = %s')
+                params.append(name)
+            if description is not None:
+                updates.append('description = %s')
+                params.append(description if description else None)
+            if is_active is not None:
+                updates.append('is_active = %s')
+                params.append(is_active)
+
+            params.append(type_id)
+
+            cursor.execute(f"""
+                UPDATE efactura_partner_types
+                SET {', '.join(updates)}
+                WHERE id = %s
+            """, tuple(params))
+
+            success = cursor.rowcount > 0
+            conn.commit()
+            if success:
+                logger.info(f"Updated partner type {type_id}")
+            return success
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to update partner type: {e}")
+            return False
+        finally:
+            release_db(conn)
+
+    def delete(self, type_id: int) -> bool:
+        """Delete a partner type (soft delete by setting is_active = FALSE).
+
+        Args:
+            type_id: The type ID
+
+        Returns:
+            True if successful
+        """
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute("""
+                UPDATE efactura_partner_types
+                SET is_active = FALSE, updated_at = NOW()
+                WHERE id = %s
+            """, (type_id,))
+            success = cursor.rowcount > 0
+            conn.commit()
+            if success:
+                logger.info(f"Soft-deleted partner type {type_id}")
+            return success
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to delete partner type: {e}")
+            return False
         finally:
             release_db(conn)

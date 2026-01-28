@@ -878,6 +878,8 @@ def list_unallocated_invoices():
         end_date: Filter to date (YYYY-MM-DD)
         page: Page number (default 1)
         limit: Page size (default 50, max 200)
+        sort_by: Column to sort by (default 'issue_date')
+        sort_dir: Sort direction ('asc' or 'desc', default 'desc')
     """
     try:
         cif = request.args.get('cif')
@@ -887,6 +889,8 @@ def list_unallocated_invoices():
         end_date = request.args.get('end_date')
         page = int(request.args.get('page', 1))
         limit = min(int(request.args.get('limit', 50)), 200)
+        sort_by = request.args.get('sort_by', 'issue_date')
+        sort_dir = request.args.get('sort_dir', 'desc')
 
         # Parse direction
         direction_enum = None
@@ -908,6 +912,8 @@ def list_unallocated_invoices():
             end_date=end,
             page=page,
             limit=limit,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
         )
 
         return jsonify({
@@ -1994,6 +2000,14 @@ def create_supplier_mapping():
                 'error': "supplier_name is required",
             }), 400
 
+        # Handle type_id - convert to int or None
+        type_id = data.get('type_id')
+        if type_id is not None:
+            try:
+                type_id = int(type_id) if type_id else None
+            except (ValueError, TypeError):
+                type_id = None
+
         mapping_id = supplier_mapping_repo.create(
             partner_name=partner_name,
             supplier_name=supplier_name,
@@ -2001,6 +2015,7 @@ def create_supplier_mapping():
             supplier_note=data.get('supplier_note', '').strip() or None,
             supplier_vat=data.get('supplier_vat', '').strip() or None,
             kod_konto=data.get('kod_konto', '').strip() or None,
+            type_id=type_id,
         )
 
         return jsonify({
@@ -2047,6 +2062,14 @@ def update_supplier_mapping(mapping_id: int):
                 'error': "No data provided",
             }), 400
 
+        # Handle type_id - convert to int or None
+        type_id = data.get('type_id')
+        if type_id is not None:
+            try:
+                type_id = int(type_id) if type_id else None
+            except (ValueError, TypeError):
+                type_id = None
+
         success = supplier_mapping_repo.update(
             mapping_id,
             partner_name=data.get('partner_name'),
@@ -2055,6 +2078,7 @@ def update_supplier_mapping(mapping_id: int):
             supplier_note=data.get('supplier_note'),
             supplier_vat=data.get('supplier_vat'),
             kod_konto=data.get('kod_konto'),
+            type_id=type_id,
             is_active=data.get('is_active'),
         )
 
@@ -2161,6 +2185,236 @@ def lookup_supplier_mapping():
 
     except Exception as e:
         logger.error(f"Error looking up supplier mapping: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+        }), 500
+
+
+@efactura_bp.route('/api/mappings/bulk-delete', methods=['POST'])
+@api_login_required
+def bulk_delete_supplier_mappings():
+    """
+    Bulk delete supplier mappings.
+
+    Request body:
+        {
+            "ids": [1, 2, 3]
+        }
+
+    Returns:
+        Number of mappings deleted
+    """
+    try:
+        data = request.get_json() or {}
+        ids = data.get('ids', [])
+
+        if not ids:
+            return jsonify({
+                'success': False,
+                'error': "No mapping IDs provided",
+            }), 400
+
+        deleted_count = 0
+        for mapping_id in ids:
+            if supplier_mapping_repo.delete(mapping_id):
+                deleted_count += 1
+
+        return jsonify({
+            'success': True,
+            'deleted_count': deleted_count,
+            'message': f"Deleted {deleted_count} mapping(s)",
+        })
+
+    except Exception as e:
+        logger.error(f"Error bulk deleting supplier mappings: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+        }), 500
+
+
+# ============================================================
+# API: Partner Types
+# ============================================================
+
+from .repositories.invoice_repo import PartnerTypeRepository
+
+partner_type_repo = PartnerTypeRepository()
+
+
+@efactura_bp.route('/api/partner-types', methods=['GET'])
+@api_login_required
+def list_partner_types():
+    """
+    List all partner types.
+
+    Query params:
+        active_only: Whether to show only active types (default true)
+    """
+    try:
+        active_only = request.args.get('active_only', 'true').lower() == 'true'
+
+        types = partner_type_repo.get_all(active_only=active_only)
+
+        return jsonify({
+            'success': True,
+            'types': types,
+            'count': len(types),
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing partner types: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+        }), 500
+
+
+@efactura_bp.route('/api/partner-types/<int:type_id>', methods=['GET'])
+@api_login_required
+def get_partner_type(type_id: int):
+    """Get a single partner type by ID."""
+    try:
+        partner_type = partner_type_repo.get_by_id(type_id)
+
+        if not partner_type:
+            return jsonify({
+                'success': False,
+                'error': 'Partner type not found',
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'type': partner_type,
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting partner type: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+        }), 500
+
+
+@efactura_bp.route('/api/partner-types', methods=['POST'])
+@api_login_required
+def create_partner_type():
+    """
+    Create a new partner type.
+
+    Request body:
+        name: The type name (required)
+        description: Optional description
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': "No data provided",
+            }), 400
+
+        name = data.get('name', '').strip()
+
+        if not name:
+            return jsonify({
+                'success': False,
+                'error': "name is required",
+            }), 400
+
+        type_id = partner_type_repo.create(
+            name=name,
+            description=data.get('description', '').strip() or None,
+        )
+
+        return jsonify({
+            'success': True,
+            'id': type_id,
+            'message': 'Partner type created successfully',
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Error creating partner type: {e}")
+        # Check for unique constraint violation
+        if 'unique constraint' in str(e).lower() or 'duplicate' in str(e).lower():
+            return jsonify({
+                'success': False,
+                'error': 'A partner type with this name already exists',
+            }), 409
+        return jsonify({
+            'success': False,
+            'error': str(e),
+        }), 500
+
+
+@efactura_bp.route('/api/partner-types/<int:type_id>', methods=['PUT'])
+@api_login_required
+def update_partner_type(type_id: int):
+    """
+    Update a partner type.
+
+    Request body:
+        name: New name
+        description: New description
+        is_active: Whether type is active
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': "No data provided",
+            }), 400
+
+        success = partner_type_repo.update(
+            type_id,
+            name=data.get('name'),
+            description=data.get('description'),
+            is_active=data.get('is_active'),
+        )
+
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Partner type not found or update failed',
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'message': 'Partner type updated successfully',
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating partner type: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+        }), 500
+
+
+@efactura_bp.route('/api/partner-types/<int:type_id>', methods=['DELETE'])
+@api_login_required
+def delete_partner_type(type_id: int):
+    """Delete a partner type (soft delete)."""
+    try:
+        success = partner_type_repo.delete(type_id)
+
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Partner type not found',
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'message': 'Partner type deleted successfully',
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting partner type: {e}")
         return jsonify({
             'success': False,
             'error': str(e),

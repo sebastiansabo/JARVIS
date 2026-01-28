@@ -1854,6 +1854,18 @@ def init_db():
         )
     ''')
 
+    # e-Factura partner types - defines supplier types (Service, Merchandise, etc.)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS efactura_partner_types (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL UNIQUE,
+            description TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    ''')
+
     # e-Factura supplier mappings - maps e-Factura partner names to standardized supplier names
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS efactura_supplier_mappings (
@@ -1864,6 +1876,7 @@ def init_db():
             supplier_note TEXT,
             supplier_vat VARCHAR(50),
             kod_konto VARCHAR(50),
+            type_id INTEGER REFERENCES efactura_partner_types(id),
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMP NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -1883,6 +1896,29 @@ def init_db():
             END IF;
         END $;
     ''')
+
+    # Migration: Add type_id column if it doesn't exist
+    cursor.execute('''
+        DO $
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'efactura_supplier_mappings' AND column_name = 'type_id'
+            ) THEN
+                ALTER TABLE efactura_supplier_mappings ADD COLUMN type_id INTEGER REFERENCES efactura_partner_types(id);
+            END IF;
+        END $;
+    ''')
+
+    # Seed default partner types if table is empty
+    cursor.execute('SELECT COUNT(*) FROM efactura_partner_types')
+    result = cursor.fetchone()
+    if result['count'] == 0:
+        cursor.execute('''
+            INSERT INTO efactura_partner_types (name, description) VALUES
+            ('Service', 'Service-based suppliers (consultancy, IT, maintenance, etc.)'),
+            ('Merchandise', 'Product/goods suppliers (inventory, parts, materials, etc.)')
+        ''')
 
     # Create indexes for e-Factura tables
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_efactura_connections_status ON efactura_company_connections(status)')
