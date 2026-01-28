@@ -2762,10 +2762,22 @@
                 return;
             }
 
+            // Find the mapping for this invoice's partner to show defaults
+            const mapping = mappingsCache.find(m =>
+                m.partner_name && inv.partner_name &&
+                m.partner_name.toLowerCase() === inv.partner_name.toLowerCase()
+            );
+
+            // Get mapping defaults
+            const mappingType = inv.type_name && !inv.type_override ? inv.type_name : (mapping?.type_names?.join(', ') || null);
+            const mappingDept = inv.department && !inv.department_override ? inv.department : (mapping?.department || null);
+            const mappingSubdept = inv.subdepartment && !inv.subdepartment_override ? inv.subdepartment : (mapping?.subdepartment || null);
+
             document.getElementById('editInvoiceId').value = invoiceId;
             document.getElementById('editInvoiceInfo').innerHTML = `
                 <strong>${inv.invoice_number}</strong> - ${inv.partner_name}<br>
                 <small class="text-muted">${inv.issue_date || '-'} | ${parseFloat(inv.total_amount || 0).toLocaleString('ro-RO')} ${inv.currency || 'RON'}</small>
+                ${mappingType || mappingDept ? `<br><small class="text-info"><i class="bi bi-info-circle"></i> Mapping defaults: ${[mappingType, mappingDept, mappingSubdept].filter(Boolean).join(' / ') || 'None'}</small>` : ''}
             `;
 
             // Load partner types for type override dropdown
@@ -2773,26 +2785,67 @@
                 await loadPartnerTypesForDropdown();
             }
             const typeSelect = document.getElementById('invoiceTypeOverride');
-            typeSelect.innerHTML = '<option value="">-- Use Mapping Default --</option>' +
+            const typeDefaultLabel = mappingType ? `-- Use Mapping Default (${mappingType}) --` : '-- Use Mapping Default --';
+            typeSelect.innerHTML = `<option value="">${typeDefaultLabel}</option>` +
                 partnerTypesCache.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
             typeSelect.value = inv.type_override || '';
 
-            // Load departments for override dropdown
-            await loadDepartmentsForDropdown();
+            // Load department structure
+            await loadDepartmentStructure();
             const deptSelect = document.getElementById('invoiceDepartmentOverride');
-            deptSelect.innerHTML = '<option value="">-- Use Mapping Default --</option>' +
+            const deptDefaultLabel = mappingDept ? `-- Use Mapping Default (${mappingDept}) --` : '-- Use Mapping Default --';
+            deptSelect.innerHTML = `<option value="">${deptDefaultLabel}</option>` +
                 departmentsCache.map(d => `<option value="${d.name}">${d.name}</option>`).join('');
             deptSelect.value = inv.department_override || '';
 
-            // Load subdepartments for override dropdown
-            await loadSubdepartmentsForDropdown();
+            // Add change handler for department to filter subdepartments
+            deptSelect.onchange = () => {
+                const selectedDept = deptSelect.value || mappingDept;
+                updateInvoiceSubdepartmentsForDepartment(selectedDept, mappingSubdept);
+            };
+
+            // Load subdepartments based on effective department
+            const effectiveDept = inv.department_override || mappingDept;
+            updateInvoiceSubdepartmentsForDepartment(effectiveDept, mappingSubdept);
+
+            // Set subdepartment override value after dropdown is populated
             const subdeptSelect = document.getElementById('invoiceSubdepartmentOverride');
-            subdeptSelect.innerHTML = '<option value="">-- Use Mapping Default --</option>' +
-                subdepartmentsCache.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
             subdeptSelect.value = inv.subdepartment_override || '';
 
             const modal = new bootstrap.Modal(document.getElementById('editInvoiceOverridesModal'));
             modal.show();
+        }
+
+        function updateInvoiceSubdepartmentsForDepartment(department, mappingSubdept) {
+            const select = document.getElementById('invoiceSubdepartmentOverride');
+            if (!select) return;
+
+            const subdeptDefaultLabel = mappingSubdept ? `-- Use Mapping Default (${mappingSubdept}) --` : '-- Use Mapping Default --';
+
+            if (!department) {
+                select.innerHTML = `<option value="">${subdeptDefaultLabel}</option>`;
+                select.disabled = true;
+                return;
+            }
+
+            // Filter subdepartments that exist for this department in the structure
+            const subdepts = new Set();
+            departmentStructureCache.forEach(ds => {
+                if (ds.department === department && ds.subdepartment) {
+                    subdepts.add(ds.subdepartment);
+                }
+            });
+
+            const subdeptList = Array.from(subdepts).sort();
+
+            if (subdeptList.length === 0) {
+                select.innerHTML = `<option value="">${subdeptDefaultLabel}</option>`;
+                select.disabled = true;
+            } else {
+                select.innerHTML = `<option value="">${subdeptDefaultLabel}</option>` +
+                    subdeptList.map(s => `<option value="${s}">${s}</option>`).join('');
+                select.disabled = false;
+            }
         }
 
         async function saveInvoiceOverrides() {
@@ -3373,46 +3426,91 @@
             return Array.from(checkboxes).map(cb => parseInt(cb.value));
         }
 
-        // Department/Subdepartment caches
+        // Department/Subdepartment caches - loaded from department_structure
+        let departmentStructureCache = [];
         let departmentsCache = [];
         let subdepartmentsCache = [];
 
-        async function loadDepartmentsForDropdown() {
-            if (departmentsCache.length === 0) {
+        async function loadDepartmentStructure() {
+            if (departmentStructureCache.length === 0) {
                 try {
-                    const res = await fetch('/hr/events/api/master/departments');
+                    const res = await fetch('/hr/events/api/structure/departments-full');
                     const data = await res.json();
-                    departmentsCache = data.filter(d => d.is_active !== false) || [];
+                    departmentStructureCache = data || [];
+                    // Extract unique departments
+                    const deptSet = new Set();
+                    departmentStructureCache.forEach(ds => {
+                        if (ds.department) deptSet.add(ds.department);
+                    });
+                    departmentsCache = Array.from(deptSet).sort().map(name => ({ name }));
                 } catch (err) {
-                    console.error('Failed to load departments:', err);
+                    console.error('Failed to load department structure:', err);
+                    departmentStructureCache = [];
                     departmentsCache = [];
                 }
             }
+        }
+
+        async function loadDepartmentsForDropdown() {
+            await loadDepartmentStructure();
 
             const select = document.getElementById('mappingDepartment');
             if (!select) return;
 
             select.innerHTML = '<option value="">-- None --</option>' +
                 departmentsCache.map(d => `<option value="${d.name}">${d.name}</option>`).join('');
+
+            // Add change handler to filter subdepartments
+            select.onchange = () => updateSubdepartmentsForDepartment(select.value, 'mappingSubdepartment');
+        }
+
+        function updateSubdepartmentsForDepartment(department, selectId) {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+
+            if (!department) {
+                // No department selected - show all subdepartments or none
+                select.innerHTML = '<option value="">-- None --</option>';
+                select.disabled = true;
+                return;
+            }
+
+            // Filter subdepartments that exist for this department in the structure
+            const subdepts = new Set();
+            departmentStructureCache.forEach(ds => {
+                if (ds.department === department && ds.subdepartment) {
+                    subdepts.add(ds.subdepartment);
+                }
+            });
+
+            const subdeptList = Array.from(subdepts).sort();
+
+            if (subdeptList.length === 0) {
+                select.innerHTML = '<option value="">-- No subdepartments --</option>';
+                select.disabled = true;
+            } else {
+                select.innerHTML = '<option value="">-- None --</option>' +
+                    subdeptList.map(s => `<option value="${s}">${s}</option>`).join('');
+                select.disabled = false;
+            }
         }
 
         async function loadSubdepartmentsForDropdown() {
-            if (subdepartmentsCache.length === 0) {
-                try {
-                    const res = await fetch('/hr/events/api/master/subdepartments');
-                    const data = await res.json();
-                    subdepartmentsCache = data.filter(s => s.is_active !== false) || [];
-                } catch (err) {
-                    console.error('Failed to load subdepartments:', err);
-                    subdepartmentsCache = [];
-                }
-            }
+            await loadDepartmentStructure();
 
             const select = document.getElementById('mappingSubdepartment');
             if (!select) return;
 
-            select.innerHTML = '<option value="">-- None --</option>' +
-                subdepartmentsCache.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+            // Initially disabled until department is selected
+            const deptSelect = document.getElementById('mappingDepartment');
+            const selectedDept = deptSelect ? deptSelect.value : '';
+
+            if (selectedDept) {
+                updateSubdepartmentsForDepartment(selectedDept, 'mappingSubdepartment');
+            } else {
+                select.innerHTML = '<option value="">-- Select Department First --</option>';
+                select.disabled = true;
+            }
         }
 
         async function openAddMappingModal() {
@@ -3458,10 +3556,12 @@
             const selectedTypeIds = mapping.type_ids || (mapping.type_id ? [mapping.type_id] : []);
             await loadPartnerTypesForDropdown(false, selectedTypeIds);
 
-            // Load and set department/subdepartment dropdowns
+            // Load departments and set value
             await loadDepartmentsForDropdown();
-            await loadSubdepartmentsForDropdown();
             document.getElementById('mappingDepartment').value = mapping.department || '';
+
+            // Update subdepartments based on selected department, then set value
+            updateSubdepartmentsForDepartment(mapping.department || '', 'mappingSubdepartment');
             document.getElementById('mappingSubdepartment').value = mapping.subdepartment || '';
 
             const modal = new bootstrap.Modal(document.getElementById('mappingModal'));
