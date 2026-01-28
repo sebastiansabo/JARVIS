@@ -1202,7 +1202,10 @@
 
         // Sort and render invoices from cache
         function sortAndRenderInvoices() {
-            if (!invoicesCache || invoicesCache.length === 0) return;
+            if (!invoicesCache || invoicesCache.length === 0) {
+                renderInvoices([]);  // Render empty state instead of leaving "Loading..."
+                return;
+            }
 
             const sorted = [...invoicesCache].sort((a, b) => {
                 let valA = a[sortColumn];
@@ -2075,9 +2078,19 @@
 
             // Server-side filtering is now used - no client-side filtering needed
             if (!invoices || invoices.length === 0) {
-                const message = hideTypedInvoices
-                    ? `<i class="bi bi-funnel"></i> No untyped invoices found.<br><small>All invoices have partner types assigned.</small>`
-                    : `<i class="bi bi-check-circle text-success"></i> No unallocated invoices!<br><small>All e-Factura invoices have been processed.</small>`;
+                const searchTerm = document.getElementById('searchInput')?.value?.trim();
+                const hasFilters = searchTerm || document.getElementById('companyFilter')?.value ||
+                                   document.getElementById('startDate')?.value || document.getElementById('endDate')?.value;
+                let message;
+                if (searchTerm) {
+                    message = `<i class="bi bi-search"></i> No invoices found matching "<strong>${searchTerm}</strong>".<br><small>Try a different search term.</small>`;
+                } else if (hasFilters) {
+                    message = `<i class="bi bi-funnel"></i> No invoices match your filters.<br><small>Try adjusting your filter criteria.</small>`;
+                } else if (hideTypedInvoices) {
+                    message = `<i class="bi bi-funnel"></i> No untyped invoices found.<br><small>All invoices have partner types assigned.</small>`;
+                } else {
+                    message = `<i class="bi bi-check-circle text-success"></i> No unallocated invoices!<br><small>All e-Factura invoices have been processed.</small>`;
+                }
                 tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center text-muted py-4">${message}</td></tr>`;
                 return;
             }
