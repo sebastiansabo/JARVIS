@@ -105,6 +105,11 @@
                     <i class="bi bi-arrow-repeat"></i> Sync History
                 </button>
             </li>
+            <li class="nav-item">
+                <button class="nav-link" id="partnertypes-tab" data-bs-toggle="tab" data-bs-target="#partnertypes" type="button">
+                    <i class="bi bi-tags"></i> Partner Types
+                </button>
+            </li>
         </ul>
 
         <div class="tab-content mt-3" id="efacturaTabsContent">
@@ -486,6 +491,63 @@
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Partner Types Tab -->
+            <div class="tab-pane fade" id="partnertypes">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-tags"></i> Partner Types
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">Manage partner types for supplier mappings (e.g., Service, Merchandise).</p>
+
+                        <!-- Add new type form -->
+                        <div class="card mb-3 border-primary">
+                            <div class="card-header bg-primary text-white py-2">
+                                <i class="bi bi-plus-circle"></i> Add New Partner Type
+                            </div>
+                            <div class="card-body py-2">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-md-4">
+                                        <label class="form-label small mb-1">Name <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control form-control-sm" id="newTypeName" placeholder="e.g. Service">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small mb-1">Description</label>
+                                        <input type="text" class="form-control form-control-sm" id="newTypeDescription" placeholder="Optional description">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <button class="btn btn-primary btn-sm w-100" onclick="addPartnerType()">
+                                            <i class="bi bi-plus-lg"></i> Add
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Types list -->
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Description</th>
+                                        <th>Status</th>
+                                        <th width="100">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="partnerTypesTableBody">
+                                    <tr>
+                                        <td colspan="4" class="text-center text-muted py-4">
+                                            <span class="spinner-border spinner-border-sm"></span> Loading...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1768,6 +1830,114 @@
             connections.forEach(c => {
                 select.innerHTML += `<option value="${c.cif}">${c.display_name} (${c.cif})</option>`;
             });
+        }
+
+        // ==========================================
+        // Partner Types Management
+        // ==========================================
+
+        // Load partner types when tab is shown
+        document.getElementById('partnertypes-tab').addEventListener('shown.bs.tab', function() {
+            loadPartnerTypesTable();
+        });
+
+        async function loadPartnerTypesTable() {
+            const tbody = document.getElementById('partnerTypesTableBody');
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">
+                <span class="spinner-border spinner-border-sm"></span> Loading...
+            </td></tr>`;
+
+            try {
+                const res = await fetch('/efactura/api/partner-types?active_only=false');
+                const data = await res.json();
+
+                if (data.success) {
+                    renderPartnerTypesTable(data.types || []);
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger py-4">${data.error}</td></tr>`;
+                }
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger py-4">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        function renderPartnerTypesTable(types) {
+            const tbody = document.getElementById('partnerTypesTableBody');
+
+            if (!types || types.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">
+                    <i class="bi bi-info-circle"></i> No partner types yet. Add one above.
+                </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = types.map(t => {
+                const statusBadge = t.is_active
+                    ? '<span class="badge bg-success">Active</span>'
+                    : '<span class="badge bg-secondary">Inactive</span>';
+
+                return `<tr data-id="${t.id}">
+                    <td><strong>${t.name || '-'}</strong></td>
+                    <td class="text-muted small">${t.description || '-'}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-danger" onclick="deletePartnerType(${t.id})" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        async function addPartnerType() {
+            const name = document.getElementById('newTypeName').value.trim();
+            const description = document.getElementById('newTypeDescription').value.trim();
+
+            if (!name) {
+                alert('Name is required');
+                return;
+            }
+
+            try {
+                const res = await fetch('/efactura/api/partner-types', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    document.getElementById('newTypeName').value = '';
+                    document.getElementById('newTypeDescription').value = '';
+                    loadPartnerTypesTable();
+                } else {
+                    alert(data.error || 'Failed to create partner type');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        async function deletePartnerType(typeId) {
+            if (!confirm('Delete this partner type? It will be soft-deleted (deactivated).')) return;
+
+            try {
+                const res = await fetch(`/efactura/api/partner-types/${typeId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    loadPartnerTypesTable();
+                } else {
+                    alert(data.error || 'Failed to delete partner type');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
         }
     </script>
 </body>
