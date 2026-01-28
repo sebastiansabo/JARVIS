@@ -1582,8 +1582,13 @@
             </td></tr>`;
 
             try {
+                console.time('fetchUnallocated');
+                console.log('[DEBUG] Fetching:', url);
                 const res = await fetch(url);
+                console.log('[DEBUG] Response status:', res.status);
                 const data = await res.json();
+                console.timeEnd('fetchUnallocated');
+                console.log('[DEBUG] Data received:', data.success, 'invoices:', data.data?.length);
 
                 if (data.success) {
                     if (data.companies && data.companies.length > 0) {
@@ -1591,6 +1596,7 @@
                     }
 
                     invoicesCache = data.data || [];
+                    console.log('[DEBUG] Rendering', invoicesCache.length, 'invoices');
                     sortAndRenderInvoices();
                     updatePagination(data.pagination);
                     updateSummary(data.data, data.pagination);
@@ -1598,11 +1604,13 @@
 
                     document.getElementById('unallocatedResultCount').textContent = `${data.pagination?.total || data.data?.length || 0} invoices`;
                 } else {
+                    console.error('[DEBUG] API error:', data.error);
                     tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center text-danger py-4">
                         <i class="bi bi-exclamation-triangle"></i> ${data.error || 'Failed to load invoices'}
                     </td></tr>`;
                 }
             } catch (err) {
+                console.error('[DEBUG] Fetch error:', err);
                 tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center text-danger py-4">
                     <i class="bi bi-exclamation-triangle"></i> Error: ${err.message}
                 </td></tr>`;
