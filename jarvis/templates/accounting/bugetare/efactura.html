@@ -333,18 +333,68 @@
             <!-- Hidden Tab -->
             <div class="tab-pane fade" id="hiddenTab">
                 <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <span><i class="bi bi-eye-slash"></i> Hidden Invoices</span>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-outline-success btn-sm" onclick="bulkRestoreFromHidden()" id="hiddenRestoreBtn" disabled>
-                                <i class="bi bi-arrow-counterclockwise"></i> Restore Selected
-                            </button>
-                            <button class="btn btn-outline-danger btn-sm" onclick="bulkDeleteFromHidden()" id="hiddenDeleteBtn" disabled>
-                                <i class="bi bi-trash"></i> Move to Bin
-                            </button>
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-eye-slash"></i> Hidden Invoices <span id="hiddenResultCount" class="badge bg-secondary ms-2"></span></span>
+                            <div class="d-flex gap-2 align-items-center">
+                                <div class="input-group input-group-sm" style="width: 200px;">
+                                    <input type="text" class="form-control" id="hiddenSearchInput" placeholder="Search supplier or invoice #..." onkeyup="if(event.key==='Enter') loadHiddenInvoices(1, true)">
+                                    <button class="btn btn-outline-secondary" type="button" onclick="loadHiddenInvoices(1, true)">
+                                        <i class="bi bi-search"></i>
+                                    </button>
+                                </div>
+                                <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#hiddenFiltersCollapse">
+                                    <i class="bi bi-funnel"></i> Filters
+                                </button>
+                                <button class="btn btn-outline-success btn-sm" onclick="bulkRestoreFromHidden()" id="hiddenRestoreBtn" disabled>
+                                    <i class="bi bi-arrow-counterclockwise"></i> Restore Selected
+                                </button>
+                                <button class="btn btn-outline-danger btn-sm" onclick="bulkDeleteFromHidden()" id="hiddenDeleteBtn" disabled>
+                                    <i class="bi bi-trash"></i> Move to Bin
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="card-body">
+                        <!-- Filters (collapsible) -->
+                        <div class="collapse" id="hiddenFiltersCollapse">
+                            <div class="row mb-3 g-2">
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">Direction</label>
+                                    <select class="form-select form-select-sm" id="hiddenDirectionFilter">
+                                        <option value="">All</option>
+                                        <option value="received">Received</option>
+                                        <option value="sent">Sent</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">From Date</label>
+                                    <input type="date" class="form-control form-control-sm" id="hiddenStartDate">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">To Date</label>
+                                    <input type="date" class="form-control form-control-sm" id="hiddenEndDate">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">Page Size</label>
+                                    <select class="form-select form-select-sm" id="hiddenPageSizeSelect" onchange="changeHiddenPageSize(this.value)">
+                                        <option value="25">25</option>
+                                        <option value="50" selected>50</option>
+                                        <option value="100">100</option>
+                                        <option value="200">200</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end">
+                                    <button class="btn btn-sm btn-primary" onclick="loadHiddenInvoices(1, true)">
+                                        <i class="bi bi-search"></i> Apply
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary ms-1" onclick="clearHiddenFilters()">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="table-responsive">
                             <table class="table table-hover table-sm" id="hiddenTable">
                                 <thead class="table-light">
@@ -379,6 +429,13 @@
                                 </tbody>
                             </table>
                         </div>
+                        <!-- Pagination -->
+                        <nav id="hiddenPagination" class="mt-3" style="display: none;">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted" id="hiddenPaginationInfo">Showing 0-0 of 0</small>
+                                <ul class="pagination pagination-sm mb-0" id="hiddenPaginationList"></ul>
+                            </div>
+                        </nav>
                     </div>
                 </div>
             </div>
@@ -386,8 +443,70 @@
             <!-- Bin Tab -->
             <div class="tab-pane fade" id="binTab">
                 <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <span><i class="bi bi-trash3"></i> Deleted Invoices (Bin) - Auto-deleted after 30 days</span>
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-trash3"></i> Deleted Invoices (Bin) - Auto-deleted after 30 days <span id="binResultCount" class="badge bg-secondary ms-2"></span></span>
+                            <div class="d-flex gap-2 align-items-center">
+                                <div class="input-group input-group-sm" style="width: 200px;">
+                                    <input type="text" class="form-control" id="binSearchInput" placeholder="Search supplier or invoice #..." onkeyup="if(event.key==='Enter') loadBinInvoices(1, true)">
+                                    <button class="btn btn-outline-secondary" type="button" onclick="loadBinInvoices(1, true)">
+                                        <i class="bi bi-search"></i>
+                                    </button>
+                                </div>
+                                <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#binFiltersCollapse">
+                                    <i class="bi bi-funnel"></i> Filters
+                                </button>
+                                <button class="btn btn-outline-success btn-sm" onclick="bulkRestoreFromBin()" id="binRestoreBtn" disabled>
+                                    <i class="bi bi-arrow-counterclockwise"></i> Restore Selected
+                                </button>
+                                <button class="btn btn-outline-danger btn-sm" onclick="bulkPermanentDelete()" id="binPermanentDeleteBtn" disabled>
+                                    <i class="bi bi-trash"></i> Delete Permanently
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Filters (collapsible) -->
+                        <div class="collapse" id="binFiltersCollapse">
+                            <div class="row mb-3 g-2">
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">Direction</label>
+                                    <select class="form-select form-select-sm" id="binDirectionFilter">
+                                        <option value="">All</option>
+                                        <option value="received">Received</option>
+                                        <option value="sent">Sent</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">From Date</label>
+                                    <input type="date" class="form-control form-control-sm" id="binStartDate">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">To Date</label>
+                                    <input type="date" class="form-control form-control-sm" id="binEndDate">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-1">Page Size</label>
+                                    <select class="form-select form-select-sm" id="binPageSizeSelect" onchange="changeBinPageSize(this.value)">
+                                        <option value="25">25</option>
+                                        <option value="50" selected>50</option>
+                                        <option value="100">100</option>
+                                        <option value="200">200</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end">
+                                    <button class="btn btn-sm btn-primary" onclick="loadBinInvoices(1, true)">
+                                        <i class="bi bi-search"></i> Apply
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary ms-1" onclick="clearBinFilters()">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm" id="binTable">
                         <div class="d-flex gap-2">
                             <button class="btn btn-outline-success btn-sm" onclick="bulkRestoreFromBin()" id="binRestoreBtn" disabled>
                                 <i class="bi bi-arrow-counterclockwise"></i> Restore Selected
@@ -432,6 +551,13 @@
                                 </tbody>
                             </table>
                         </div>
+                        <!-- Pagination -->
+                        <nav id="binPagination" class="mt-3" style="display: none;">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted" id="binPaginationInfo">Showing 0-0 of 0</small>
+                                <ul class="pagination pagination-sm mb-0" id="binPaginationList"></ul>
+                            </div>
+                        </nav>
                     </div>
                 </div>
             </div>
@@ -473,6 +599,10 @@
                         <div class="collapse" id="mappingsFiltersCollapse">
                             <div class="row mb-3 g-2">
                                 <div class="col-md-2">
+                                    <label class="form-label small mb-1">Supplier</label>
+                                    <input type="text" class="form-control form-control-sm" id="mappingsSupplierFilter" placeholder="Filter by supplier..." onkeyup="if(event.key==='Enter') filterMappings()">
+                                </div>
+                                <div class="col-md-2">
                                     <label class="form-label small mb-1">Type</label>
                                     <select class="form-select form-select-sm" id="mappingsTypeFilter" onchange="filterMappings()">
                                         <option value="">All Types</option>
@@ -492,6 +622,9 @@
                                     </select>
                                 </div>
                                 <div class="col-md-2 d-flex align-items-end">
+                                    <button class="btn btn-sm btn-primary me-1" onclick="filterMappings()">
+                                        <i class="bi bi-search"></i> Apply
+                                    </button>
                                     <button class="btn btn-sm btn-outline-secondary" onclick="clearMappingsFilters()">
                                         <i class="bi bi-x"></i> Clear
                                     </button>
@@ -766,18 +899,27 @@
         let sortDirection = localStorage.getItem('efacturaSortDir') || 'desc';
         let invoicesCache = []; // Cache for client-side sorting
         let unallocatedLoaded = false; // Tab loaded flag
+        let lastUnallocatedFilters = ''; // Track last used filter state
 
         // Sorting state - Hidden table
         let hiddenSortColumn = localStorage.getItem('efacturaHiddenSortColumn') || 'issue_date';
         let hiddenSortDirection = localStorage.getItem('efacturaHiddenSortDir') || 'desc';
         let hiddenCache = [];
         let hiddenLoaded = false; // Tab loaded flag
+        let hiddenCurrentPage = 1;
+        let hiddenTotalPages = 1;
+        let hiddenPageSize = parseInt(localStorage.getItem('efacturaHiddenPageSize')) || 50;
+        let lastHiddenFilters = ''; // Track last used filter state
 
         // Sorting state - Bin table
         let binSortColumn = localStorage.getItem('efacturaBinSortColumn') || 'deleted_at';
         let binSortDirection = localStorage.getItem('efacturaBinSortDir') || 'desc';
         let binCache = [];
         let binLoaded = false; // Tab loaded flag
+        let binCurrentPage = 1;
+        let binTotalPages = 1;
+        let binPageSize = parseInt(localStorage.getItem('efacturaBinPageSize')) || 50;
+        let lastBinFilters = ''; // Track last used filter state
 
         // Sorting state - Mappings table
         let mappingsSortColumn = localStorage.getItem('efacturaMappingsSortColumn') || 'partner_name';
@@ -1187,17 +1329,24 @@
 
         // Load unallocated invoices
         async function loadUnallocatedInvoices(page = 1, forceReload = false) {
-            // Skip if already loaded and not forcing reload (unless page changed)
-            if (unallocatedLoaded && !forceReload && page === currentPage && invoicesCache.length > 0) {
-                sortAndRenderInvoices();
-                return;
-            }
-
             const companyId = document.getElementById('companyFilter').value;
             const direction = document.getElementById('directionFilter').value;
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
             const search = document.getElementById('searchInput').value;
+
+            // Build filter state string to detect changes
+            const currentFilters = JSON.stringify({companyId, direction, startDate, endDate, search, pageSize});
+            const filtersChanged = currentFilters !== lastUnallocatedFilters;
+
+            // Skip if already loaded, not forcing reload, page same, and filters unchanged
+            if (unallocatedLoaded && !forceReload && page === currentPage && invoicesCache.length > 0 && !filtersChanged) {
+                sortAndRenderInvoices();
+                return;
+            }
+
+            // Update filter state
+            lastUnallocatedFilters = currentFilters;
 
             let url = `/efactura/api/invoices/unallocated?page=${page}&limit=${pageSize}`;
             if (companyId) url += `&company_id=${companyId}`;
@@ -1251,11 +1400,31 @@
 
         // Load hidden invoices
         async function loadHiddenInvoices(page = 1, forceReload = false) {
-            // Skip if already loaded and not forcing reload
-            if (hiddenLoaded && !forceReload) {
+            const direction = document.getElementById('hiddenDirectionFilter')?.value || '';
+            const startDate = document.getElementById('hiddenStartDate')?.value || '';
+            const endDate = document.getElementById('hiddenEndDate')?.value || '';
+            const search = document.getElementById('hiddenSearchInput')?.value || '';
+
+            // Build filter state string to detect changes
+            const currentFilters = JSON.stringify({direction, startDate, endDate, search, hiddenPageSize});
+            const filtersChanged = currentFilters !== lastHiddenFilters;
+
+            // Skip if already loaded, not forcing reload, page same, and filters unchanged
+            if (hiddenLoaded && !forceReload && page === hiddenCurrentPage && hiddenCache.length > 0 && !filtersChanged) {
                 sortAndRenderHidden();
                 return;
             }
+
+            // Update filter state
+            lastHiddenFilters = currentFilters;
+            hiddenCurrentPage = page;
+
+            let url = `/efactura/api/invoices/hidden?page=${page}&limit=${hiddenPageSize}`;
+            if (direction) url += `&direction=${direction}`;
+            if (startDate) url += `&start_date=${startDate}`;
+            if (endDate) url += `&end_date=${endDate}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+            if (hiddenSortColumn) url += `&sort_by=${hiddenSortColumn}&sort_dir=${hiddenSortDirection}`;
 
             const tbody = document.getElementById('hiddenTableBody');
             tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">
@@ -1263,7 +1432,7 @@
             </td></tr>`;
 
             try {
-                const res = await fetch(`/efactura/api/invoices/hidden?page=${page}`);
+                const res = await fetch(url);
                 const data = await res.json();
 
                 if (data.success) {
@@ -1271,12 +1440,72 @@
                     hiddenLoaded = true; // Mark as loaded
                     updateHiddenTableHeaders();
                     sortAndRenderHidden();
+                    updateHiddenPagination(data.pagination);
+
+                    const total = data.pagination?.total || data.data?.length || 0;
+                    document.getElementById('hiddenResultCount').textContent = `${total} invoices`;
                 } else {
                     tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">${data.error}</td></tr>`;
                 }
             } catch (err) {
                 tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">Error: ${err.message}</td></tr>`;
             }
+        }
+
+        function updateHiddenPagination(pagination) {
+            const paginationNav = document.getElementById('hiddenPagination');
+            const paginationList = document.getElementById('hiddenPaginationList');
+            const paginationInfo = document.getElementById('hiddenPaginationInfo');
+
+            if (!pagination || pagination.total === 0) {
+                paginationNav.style.display = 'none';
+                return;
+            }
+
+            paginationNav.style.display = 'block';
+            hiddenTotalPages = pagination.total_pages;
+            const start = pagination.offset + 1;
+            const end = Math.min(pagination.offset + pagination.limit, pagination.total);
+            paginationInfo.textContent = `Showing ${start}-${end} of ${pagination.total}`;
+
+            let html = '';
+            // Previous button
+            html += `<li class="page-item ${pagination.current_page === 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="loadHiddenInvoices(${pagination.current_page - 1}, true); return false;">&laquo;</a>
+            </li>`;
+
+            // Page numbers
+            for (let i = 1; i <= pagination.total_pages; i++) {
+                if (i === 1 || i === pagination.total_pages || Math.abs(i - pagination.current_page) <= 2) {
+                    html += `<li class="page-item ${i === pagination.current_page ? 'active' : ''}">
+                        <a class="page-link" href="#" onclick="loadHiddenInvoices(${i}, true); return false;">${i}</a>
+                    </li>`;
+                } else if (Math.abs(i - pagination.current_page) === 3) {
+                    html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+            }
+
+            // Next button
+            html += `<li class="page-item ${pagination.current_page >= pagination.total_pages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="loadHiddenInvoices(${pagination.current_page + 1}, true); return false;">&raquo;</a>
+            </li>`;
+
+            paginationList.innerHTML = html;
+        }
+
+        function changeHiddenPageSize(newSize) {
+            hiddenPageSize = parseInt(newSize);
+            localStorage.setItem('efacturaHiddenPageSize', hiddenPageSize);
+            hiddenCurrentPage = 1;
+            loadHiddenInvoices(1, true);
+        }
+
+        function clearHiddenFilters() {
+            document.getElementById('hiddenSearchInput').value = '';
+            document.getElementById('hiddenDirectionFilter').value = '';
+            document.getElementById('hiddenStartDate').value = '';
+            document.getElementById('hiddenEndDate').value = '';
+            loadHiddenInvoices(1, true);
         }
 
         function renderHiddenTable(invoices) {
@@ -1321,11 +1550,31 @@
 
         // Load bin invoices
         async function loadBinInvoices(page = 1, forceReload = false) {
-            // Skip if already loaded and not forcing reload
-            if (binLoaded && !forceReload) {
+            const direction = document.getElementById('binDirectionFilter')?.value || '';
+            const startDate = document.getElementById('binStartDate')?.value || '';
+            const endDate = document.getElementById('binEndDate')?.value || '';
+            const search = document.getElementById('binSearchInput')?.value || '';
+
+            // Build filter state string to detect changes
+            const currentFilters = JSON.stringify({direction, startDate, endDate, search, binPageSize});
+            const filtersChanged = currentFilters !== lastBinFilters;
+
+            // Skip if already loaded, not forcing reload, page same, and filters unchanged
+            if (binLoaded && !forceReload && page === binCurrentPage && binCache.length > 0 && !filtersChanged) {
                 sortAndRenderBin();
                 return;
             }
+
+            // Update filter state
+            lastBinFilters = currentFilters;
+            binCurrentPage = page;
+
+            let url = `/efactura/api/invoices/bin?page=${page}&limit=${binPageSize}`;
+            if (direction) url += `&direction=${direction}`;
+            if (startDate) url += `&start_date=${startDate}`;
+            if (endDate) url += `&end_date=${endDate}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+            if (binSortColumn) url += `&sort_by=${binSortColumn}&sort_dir=${binSortDirection}`;
 
             const tbody = document.getElementById('binTableBody');
             tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">
@@ -1333,7 +1582,7 @@
             </td></tr>`;
 
             try {
-                const res = await fetch(`/efactura/api/invoices/bin?page=${page}`);
+                const res = await fetch(url);
                 const data = await res.json();
 
                 if (data.success) {
@@ -1341,12 +1590,72 @@
                     binLoaded = true; // Mark as loaded
                     updateBinTableHeaders();
                     sortAndRenderBin();
+                    updateBinPagination(data.pagination);
+
+                    const total = data.pagination?.total || data.data?.length || 0;
+                    document.getElementById('binResultCount').textContent = `${total} invoices`;
                 } else {
                     tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">${data.error}</td></tr>`;
                 }
             } catch (err) {
                 tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">Error: ${err.message}</td></tr>`;
             }
+        }
+
+        function updateBinPagination(pagination) {
+            const paginationNav = document.getElementById('binPagination');
+            const paginationList = document.getElementById('binPaginationList');
+            const paginationInfo = document.getElementById('binPaginationInfo');
+
+            if (!pagination || pagination.total === 0) {
+                paginationNav.style.display = 'none';
+                return;
+            }
+
+            paginationNav.style.display = 'block';
+            binTotalPages = pagination.total_pages;
+            const start = pagination.offset + 1;
+            const end = Math.min(pagination.offset + pagination.limit, pagination.total);
+            paginationInfo.textContent = `Showing ${start}-${end} of ${pagination.total}`;
+
+            let html = '';
+            // Previous button
+            html += `<li class="page-item ${pagination.current_page === 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="loadBinInvoices(${pagination.current_page - 1}, true); return false;">&laquo;</a>
+            </li>`;
+
+            // Page numbers
+            for (let i = 1; i <= pagination.total_pages; i++) {
+                if (i === 1 || i === pagination.total_pages || Math.abs(i - pagination.current_page) <= 2) {
+                    html += `<li class="page-item ${i === pagination.current_page ? 'active' : ''}">
+                        <a class="page-link" href="#" onclick="loadBinInvoices(${i}, true); return false;">${i}</a>
+                    </li>`;
+                } else if (Math.abs(i - pagination.current_page) === 3) {
+                    html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+            }
+
+            // Next button
+            html += `<li class="page-item ${pagination.current_page >= pagination.total_pages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="loadBinInvoices(${pagination.current_page + 1}, true); return false;">&raquo;</a>
+            </li>`;
+
+            paginationList.innerHTML = html;
+        }
+
+        function changeBinPageSize(newSize) {
+            binPageSize = parseInt(newSize);
+            localStorage.setItem('efacturaBinPageSize', binPageSize);
+            binCurrentPage = 1;
+            loadBinInvoices(1, true);
+        }
+
+        function clearBinFilters() {
+            document.getElementById('binSearchInput').value = '';
+            document.getElementById('binDirectionFilter').value = '';
+            document.getElementById('binStartDate').value = '';
+            document.getElementById('binEndDate').value = '';
+            loadBinInvoices(1, true);
         }
 
         function renderBinTable(invoices) {
@@ -2351,16 +2660,20 @@
         // Filter mappings based on search and type filter
         function filterMappings() {
             const searchTerm = document.getElementById('mappingsSearchInput').value.toLowerCase().trim();
+            const supplierFilter = document.getElementById('mappingsSupplierFilter')?.value.toLowerCase().trim() || '';
             const typeFilter = document.getElementById('mappingsTypeFilter').value;
 
             filteredMappingsCache = mappingsCache.filter(m => {
-                // Search filter
+                // Search filter (partner name, partner CIF, kod_konto)
                 const matchesSearch = !searchTerm ||
                     (m.partner_name && m.partner_name.toLowerCase().includes(searchTerm)) ||
-                    (m.supplier_name && m.supplier_name.toLowerCase().includes(searchTerm)) ||
                     (m.partner_cif && m.partner_cif.toLowerCase().includes(searchTerm)) ||
-                    (m.supplier_vat && m.supplier_vat.toLowerCase().includes(searchTerm)) ||
                     (m.kod_konto && m.kod_konto.toLowerCase().includes(searchTerm));
+
+                // Supplier filter (supplier name, supplier VAT)
+                const matchesSupplier = !supplierFilter ||
+                    (m.supplier_name && m.supplier_name.toLowerCase().includes(supplierFilter)) ||
+                    (m.supplier_vat && m.supplier_vat.toLowerCase().includes(supplierFilter));
 
                 // Type filter
                 let matchesType = true;
@@ -2370,7 +2683,7 @@
                     matchesType = m.type_name === typeFilter;
                 }
 
-                return matchesSearch && matchesType;
+                return matchesSearch && matchesSupplier && matchesType;
             });
 
             mappingsCurrentPage = 1;
@@ -2386,6 +2699,7 @@
 
         function clearMappingsFilters() {
             document.getElementById('mappingsSearchInput').value = '';
+            document.getElementById('mappingsSupplierFilter').value = '';
             document.getElementById('mappingsTypeFilter').value = '';
             filteredMappingsCache = [...mappingsCache];
             mappingsCurrentPage = 1;
@@ -2609,7 +2923,13 @@
         // Partner types cache
         let partnerTypesCache = [];
 
-        async function loadPartnerTypesForDropdown() {
+        async function loadPartnerTypesForDropdown(forceReload = false) {
+            // Use cache if available and not forcing reload
+            if (partnerTypesCache.length > 0 && !forceReload) {
+                populateTypeDropdown();
+                return;
+            }
+
             try {
                 const res = await fetch('/efactura/api/partner-types');
                 const data = await res.json();
@@ -2726,7 +3046,7 @@
 
                 if (data.success) {
                     bootstrap.Modal.getInstance(document.getElementById('mappingModal')).hide();
-                    loadSupplierMappings();
+                    loadSupplierMappings(true); // Force reload to get fresh data
                 } else {
                     alert(data.error || 'Failed to save mapping');
                 }

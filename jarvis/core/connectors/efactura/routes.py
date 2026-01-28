@@ -888,6 +888,7 @@ def list_unallocated_invoices():
         direction = request.args.get('direction')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
+        search = request.args.get('search')
         page = int(request.args.get('page', 1))
         limit = min(int(request.args.get('limit', 50)), 200)
         sort_by = request.args.get('sort_by', 'issue_date')
@@ -911,6 +912,7 @@ def list_unallocated_invoices():
             direction=direction_enum,
             start_date=start,
             end_date=end,
+            search=search,
             page=page,
             limit=limit,
             sort_by=sort_by,
