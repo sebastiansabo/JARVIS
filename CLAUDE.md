@@ -344,6 +344,13 @@ Page           (JSON)         (ANAF API)
 | POST | `/efactura/api/invoices/send-to-module` | Send to Invoice Module |
 | GET | `/efactura/api/invoices/<id>/pdf` | Export PDF from XML |
 | GET | `/efactura/api/messages` | List ANAF messages (SPV inbox) |
+| PUT | `/efactura/api/invoices/<id>/overrides` | Update invoice overrides (type, department, subdepartment) |
+| PUT | `/efactura/api/invoices/bulk-overrides` | Bulk update overrides for multiple invoices |
+| GET | `/efactura/api/supplier-mappings` | List supplier mappings with types |
+| POST | `/efactura/api/supplier-mappings` | Create supplier mapping |
+| PUT | `/efactura/api/supplier-mappings/<id>` | Update supplier mapping |
+| DELETE | `/efactura/api/supplier-mappings/<id>` | Delete supplier mapping |
+| GET | `/efactura/api/partner-types` | List partner types (Service, Merchandise) |
 
 ### Database Table (`efactura_invoices`)
 
@@ -365,7 +372,30 @@ Page           (JSON)         (ANAF API)
 | direction | VARCHAR(10) | 'inbound' or 'outbound' |
 | xml_content | TEXT | Stored XML for PDF generation |
 | jarvis_invoice_id | INTEGER | FK to invoices table (NULL = unallocated) |
+| type_override | TEXT | Invoice-level type override (comma-separated type IDs) |
+| department_override | VARCHAR(255) | Invoice-level department override |
+| subdepartment_override | VARCHAR(255) | Invoice-level subdepartment override |
 | created_at | TIMESTAMP | Import timestamp |
+
+### Database Table (`efactura_supplier_mappings`)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| seller_cif | VARCHAR(50) | Supplier VAT (unique) |
+| seller_name | VARCHAR(255) | Supplier name |
+| type_ids | TEXT | Comma-separated partner type IDs (e.g., "1,2") |
+| department | VARCHAR(255) | Default department for this supplier |
+| subdepartment | VARCHAR(255) | Default subdepartment for this supplier |
+| created_at | TIMESTAMP | Creation timestamp |
+
+### Database Table (`efactura_partner_types`)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| name | VARCHAR(100) | Type name (e.g., "Service", "Merchandise") |
+| is_active | BOOLEAN | Whether type is active (default true) |
 
 ### XML Parser (`xml_parser.py`)
 Parses UBL 2.1 e-Factura XML documents:
@@ -396,6 +426,74 @@ The Unallocated Invoices page (`/accounting/efactura`):
 4. **Review**: View unallocated invoices in `/accounting/efactura`
 5. **Send to Module**: Create record in main `invoices` table
 6. **Mark Allocated**: Set `jarvis_invoice_id` to link records
+
+### Supplier Mappings
+Supplier mappings define default categorization for invoices from specific suppliers:
+
+**Features:**
+- **Partner Types**: Multi-select types (Service, Merchandise) per supplier
+- **Default Department**: Pre-set department for new invoices from this supplier
+- **Default Subdepartment**: Pre-set subdepartment (filtered by department from `department_structure`)
+
+**Workflow:**
+1. When an invoice is imported, system looks for a mapping by `seller_cif`
+2. If found, the mapping's types/department/subdepartment become defaults
+3. Defaults appear in Unallocated list columns (Type, Department, Subdepartment)
+4. Users can override defaults at the invoice level without changing the mapping
+
+**Subdepartment Filtering:**
+- Subdepartment dropdown only shows options that exist for the selected department
+- Data comes from `department_structure` table (same as company org hierarchy)
+- If a department has no subdepartments in the structure, the dropdown is disabled
+
+### Invoice Overrides
+Individual invoices can have overrides that take precedence over supplier mapping defaults:
+
+**Override Fields:**
+- `type_override` - Comma-separated type IDs (e.g., "1,2" for Service + Merchandise)
+- `department_override` - Department name
+- `subdepartment_override` - Subdepartment name (filtered by department)
+
+**Display Logic:**
+- If invoice has override → show override value
+- Else if supplier mapping exists → show mapping default
+- Else → show empty
+
+**Edit Modal:**
+- Click edit icon on invoice row to open override modal
+- Shows current values (from override or mapping default)
+- Subdepartment dropdown filters based on selected department
+- Changes only affect the individual invoice, not the supplier mapping
+
+**Bulk Override:**
+- Select multiple invoices in Unallocated tab
+- Click "Set Type" dropdown → select type(s)
+- All selected invoices get the same type override
+
+### "Hide Typed" Filter
+Toggle switch to filter out invoices that already have partner types assigned:
+
+**Configuration:**
+- Located next to search field in Unallocated tab
+- Hides invoices where type matches: `['Service', 'Merchandise']`
+- State persisted in localStorage as `efacturaHideTyped`
+
+**Use Case:**
+- Focus on unclassified invoices that need attention
+- Quickly identify invoices without partner type assignment
+
+### Column Configuration Versioning
+The e-Factura page uses versioned column configurations to handle schema changes:
+
+**How it works:**
+- `COLUMN_CONFIG_VERSION` constant tracks schema version
+- When new columns are added, version is bumped
+- If user's saved config version differs, config resets to defaults
+- Prevents column mixing when new columns are added
+
+**Storage:**
+- `efacturaColumnConfig` - Column visibility and order
+- `efacturaColumnConfigVersion` - Version number for migration
 
 ## Deployment
 Configured via `.do/app.yaml` for DigitalOcean App Platform with auto-deploy on push to main branch.
