@@ -30,6 +30,7 @@
 - **Invoice Overrides**: Invoice-level overrides for type, department, subdepartment
   - Override fields: `type_override`, `department_override`, `subdepartment_override`
   - Edit modal shows current values (from override or mapping default)
+  - **Edit modal shows actual mapping defaults** in dropdowns (e.g., "-- Use Mapping Default (Aftersales) --")
   - Changes affect only the individual invoice, not the supplier mapping
   - Bulk "Set Type" action for multiple selected invoices
 
