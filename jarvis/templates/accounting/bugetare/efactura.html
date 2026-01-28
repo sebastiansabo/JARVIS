@@ -235,6 +235,9 @@
                                     <input class="form-check-input" type="checkbox" id="hideTypesSwitch" onchange="toggleHideTypes()">
                                     <label class="form-check-label small text-nowrap" for="hideTypesSwitch">Hide Typed</label>
                                 </div>
+                                <button class="btn btn-danger btn-sm d-none" id="refreshDataBtn" onclick="refreshAfterMappingChange()" title="Mapping types changed - click to refresh data">
+                                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                                </button>
                                 <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#filtersCollapse">
                                     <i class="bi bi-funnel"></i> Filters
                                 </button>
@@ -2071,6 +2074,32 @@
             loadUnallocatedInvoices(1);
         }
 
+        // Show refresh button when mapping types are changed
+        function showRefreshButton(autoHiddenCount = 0) {
+            const btn = document.getElementById('refreshDataBtn');
+            if (btn) {
+                btn.classList.remove('d-none');
+                if (autoHiddenCount > 0) {
+                    btn.title = `${autoHiddenCount} invoice(s) were auto-hidden - click to refresh data`;
+                } else {
+                    btn.title = 'Mapping types changed - click to refresh data';
+                }
+            }
+        }
+
+        // Refresh data after mapping change and hide the button
+        function refreshAfterMappingChange() {
+            const btn = document.getElementById('refreshDataBtn');
+            if (btn) {
+                btn.classList.add('d-none');
+            }
+            // Force reload unallocated invoices
+            unallocatedLoaded = false;
+            loadUnallocatedInvoices(1, true);
+            // Also refresh hidden count
+            updateBadge('hiddenBadge', null); // Will be updated by loadHiddenInvoices
+        }
+
         function renderInvoices(invoices) {
             const tbody = document.getElementById('invoicesTableBody');
             const cols = getVisibleColumns();
@@ -3449,6 +3478,11 @@
                     updateMappingsSelectionCount();
                     mappingsLoaded = false; // Force reload
                     loadSupplierMappings(true);
+
+                    // Show refresh button if type was set (may have auto-hidden invoices)
+                    if (typeName) {
+                        showRefreshButton(data.auto_hidden || 0);
+                    }
                 } else {
                     alert(data.error || 'Failed to update mappings');
                 }
@@ -3703,6 +3737,11 @@
                 if (data.success) {
                     bootstrap.Modal.getInstance(document.getElementById('mappingModal')).hide();
                     loadSupplierMappings(true); // Force reload to get fresh data
+
+                    // Show refresh button if types were set (may have auto-hidden invoices)
+                    if (typeIds && typeIds.length > 0) {
+                        showRefreshButton(data.auto_hidden || 0);
+                    }
                 } else {
                     alert(data.error || 'Failed to save mapping');
                 }
