@@ -804,7 +804,7 @@ class EFacturaService:
                         cif=cif,
                         days=days,
                         page=page,
-                        filter_type=None,  # Get both received and sent
+                        filter_type='P',  # Only fetch Received (Primite) invoices
                     )
 
                     if not fetch_result.success:
