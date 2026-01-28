@@ -546,6 +546,8 @@ class InvoiceRepository:
         """
         Automatically hide an invoice if its partner has types with hide_in_filter=TRUE.
 
+        Skips invoices that have a manual type override (type_override IS NOT NULL).
+
         Args:
             invoice_id: ID of the invoice
             partner_name: Name of the partner
@@ -553,6 +555,20 @@ class InvoiceRepository:
         Returns:
             True if invoice was auto-hidden, False otherwise
         """
+        # Check if invoice has manual type override - don't auto-hide if so
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute(
+                'SELECT type_override FROM efactura_invoices WHERE id = %s',
+                (invoice_id,)
+            )
+            row = cursor.fetchone()
+            if row and row.get('type_override'):
+                return False  # Has manual override, skip auto-hide
+        finally:
+            release_db(conn)
+
         if self.partner_has_hidden_types(partner_name):
             logger.info(
                 "Auto-hiding invoice due to partner having hidden types",
@@ -566,6 +582,7 @@ class InvoiceRepository:
         Auto-hide all unallocated, non-ignored invoices for a partner.
 
         Called when a supplier mapping is created/updated with hidden types.
+        Only affects invoices without manual type override (type_override IS NULL).
 
         Args:
             partner_name: Name of the partner
@@ -586,6 +603,7 @@ class InvoiceRepository:
                     AND jarvis_invoice_id IS NULL
                     AND ignored = FALSE
                     AND deleted_at IS NULL
+                    AND type_override IS NULL
             """, (partner_name,))
             count = cursor.rowcount
             conn.commit()
