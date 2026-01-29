@@ -958,6 +958,34 @@
                     document.documentElement.style.setProperty(`--status-color-${opt.value}`, rgbaColor);
                 }
             });
+            // Inject dynamic CSS rules for all statuses (covers custom statuses not in theme.css)
+            injectDynamicStatusCSS(options);
+        }
+
+        // Dynamically inject CSS rules for status row coloring
+        function injectDynamicStatusCSS(options) {
+            // Remove any existing dynamic status CSS
+            const existingStyle = document.getElementById('dynamic-status-css');
+            if (existingStyle) existingStyle.remove();
+
+            // Create CSS rules for all status options
+            const rules = options.filter(opt => opt.color && opt.value).map(opt => {
+                const statusValue = opt.value;
+                return `
+                    tr[data-status="${statusValue}"] > td {
+                        background-color: var(--status-color-${statusValue}, transparent) !important;
+                    }
+                    body.dark-theme tr[data-status="${statusValue}"] > td {
+                        background-color: var(--status-color-${statusValue}, transparent) !important;
+                    }
+                `;
+            }).join('\n');
+
+            // Inject the style element
+            const styleEl = document.createElement('style');
+            styleEl.id = 'dynamic-status-css';
+            styleEl.textContent = rules;
+            document.head.appendChild(styleEl);
         }
 
         // Set CSS variables for payment status colors (used for dropdown coloring)
