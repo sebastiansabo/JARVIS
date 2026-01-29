@@ -1124,6 +1124,12 @@ def send_to_invoice_module():
 
         result = efactura_service.send_to_invoice_module(invoice_ids)
 
+        if not result.success:
+            return jsonify({
+                'success': False,
+                'error': result.error or 'Failed to send invoices to module',
+            }), 500
+
         return jsonify({
             'success': True,
             'sent': result.data['sent'],
