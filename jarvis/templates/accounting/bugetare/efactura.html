@@ -2218,7 +2218,7 @@
                     alert(msg);
                 }
 
-                loadUnallocatedInvoices();
+                loadUnallocatedInvoices(1, true);  // Force reload after sync
                 loadBadgeCounts();
                 hideSyncProgress(3000);
 
@@ -2566,7 +2566,7 @@
 
                 if (data.success) {
                     alert('Invoice sent to Invoices module successfully!');
-                    loadUnallocatedInvoices(currentPage);
+                    loadUnallocatedInvoices(currentPage, true);  // Force reload after data change
                     loadBadgeCounts();
                 } else {
                     alert(data.error || 'Failed to send invoice');
@@ -2723,7 +2723,7 @@
                 if (data.success) {
                     alert(`${data.sent} invoice(s) sent successfully!`);
                     clearSelection();
-                    loadUnallocatedInvoices(currentPage);
+                    loadUnallocatedInvoices(currentPage, true);  // Force reload after data change
                     loadBadgeCounts();
                 } else {
                     alert(data.error || 'Failed to send invoices');
@@ -2890,7 +2890,7 @@
                 if (data.success) {
                     alert(`${data.deleted} invoice(s) permanently deleted`);
                     selectedBinInvoices.clear();
-                    loadBinInvoices();
+                    loadBinInvoices(binCurrentPage, true);  // Force reload after data change
                     loadBadgeCounts();
                 } else {
                     alert(data.error || 'Failed to delete invoices');
@@ -3153,8 +3153,8 @@
 
                 if (data.success) {
                     bootstrap.Modal.getInstance(document.getElementById('editInvoiceOverridesModal')).hide();
-                    // Reload invoices to reflect changes
-                    loadUnallocatedInvoices();
+                    // Reload invoices to reflect changes (force reload to bypass cache)
+                    loadUnallocatedInvoices(currentPage, true);
                 } else {
                     alert(data.error || 'Failed to save overrides');
                 }
