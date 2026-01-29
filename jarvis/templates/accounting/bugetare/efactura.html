@@ -3331,7 +3331,7 @@
         }
 
         async function saveInvoiceOverrides() {
-            const invoiceId = document.getElementById('editInvoiceId').value;
+            const invoiceId = parseInt(document.getElementById('editInvoiceId').value);
             const typeOverride = document.getElementById('invoiceTypeOverride').value;
             const departmentOverride = document.getElementById('invoiceDepartmentOverride').value;
             const subdepartmentOverride = document.getElementById('invoiceSubdepartmentOverride').value;
@@ -3350,14 +3350,58 @@
 
                 if (data.success) {
                     bootstrap.Modal.getInstance(document.getElementById('editInvoiceOverridesModal')).hide();
-                    // Reload invoices to reflect changes (force reload to bypass cache)
-                    loadUnallocatedInvoices(currentPage, true);
+
+                    // Update cache and row in place (no full reload)
+                    const inv = invoicesCache.find(i => i.id === invoiceId);
+                    if (inv) {
+                        // Update cache values
+                        inv.type_override = typeOverride || null;
+                        inv.department_override = departmentOverride || null;
+                        inv.subdepartment_override = subdepartmentOverride || null;
+
+                        // Calculate effective values (override takes precedence)
+                        inv.type_name = typeOverride || inv.mapping_type_name || null;
+                        inv.department = departmentOverride || inv.mapping_department || null;
+                        inv.subdepartment = subdepartmentOverride || inv.mapping_subdepartment || null;
+
+                        // Update the row in DOM
+                        updateInvoiceRowInPlace(invoiceId, inv);
+                    }
                 } else {
                     alert(data.error || 'Failed to save overrides');
                 }
             } catch (err) {
                 alert('Error: ' + err.message);
             }
+        }
+
+        // Update a single invoice row in the table without full reload
+        function updateInvoiceRowInPlace(invoiceId, inv) {
+            const row = document.querySelector(`#invoicesTableBody tr[data-id="${invoiceId}"]`);
+            if (!row) return;
+
+            // Find and update the cells based on column visibility
+            const cols = getVisibleColumns();
+            const cells = row.querySelectorAll('td');
+
+            cols.forEach((col, idx) => {
+                const cell = cells[idx];
+                if (!cell) return;
+
+                if (col.id === 'type') {
+                    const typeDisplay = inv.type_name ? `<span class="badge bg-secondary">${inv.type_name}</span>` : '<span class="text-muted">-</span>';
+                    const typeOverrideIcon = inv.type_override ? '<i class="bi bi-pencil-fill text-warning ms-1" title="Override"></i>' : '';
+                    cell.innerHTML = `${typeDisplay}${typeOverrideIcon}`;
+                } else if (col.id === 'department') {
+                    const deptDisplay = inv.department || '-';
+                    const deptOverrideIcon = inv.department_override ? '<i class="bi bi-pencil-fill text-warning ms-1" title="Override"></i>' : '';
+                    cell.innerHTML = `<span class="${inv.department ? '' : 'text-muted'}">${deptDisplay}</span>${deptOverrideIcon}`;
+                } else if (col.id === 'subdepartment') {
+                    const subdeptDisplay = inv.subdepartment || '-';
+                    const subdeptOverrideIcon = inv.subdepartment_override ? '<i class="bi bi-pencil-fill text-warning ms-1" title="Override"></i>' : '';
+                    cell.innerHTML = `<span class="${inv.subdepartment ? '' : 'text-muted'}">${subdeptDisplay}</span>${subdeptOverrideIcon}`;
+                }
+            });
         }
 
         // Bulk set overrides modal
