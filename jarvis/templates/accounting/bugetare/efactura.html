@@ -159,7 +159,7 @@
 
                 <span class="summary-stat text-warning" title="Unallocated Invoices">
                     <i class="bi bi-inbox"></i>
-                    <strong id="unallocatedCount">0</strong> unallocated
+                    <span id="unallocatedSummaryText"><strong>0</strong> invoices</span>
                 </span>
                 <span class="summary-stat text-success" title="Total Value">
                     <i class="bi bi-cash-stack"></i>
@@ -223,7 +223,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="d-flex justify-content-between align-items-center">
-                            <span><i class="bi bi-table"></i> Unallocated Invoices <span id="unallocatedResultCount" class="badge bg-secondary ms-2"></span></span>
+                            <span><i class="bi bi-table"></i> Unallocated Invoices</span>
                             <div class="d-flex gap-2 align-items-center">
                                 <div class="input-group input-group-sm" style="width: 200px;">
                                     <input type="text" class="form-control" id="searchInput" placeholder="Search supplier or invoice #..." onkeypress="if(event.key==='Enter') loadUnallocatedInvoices()">
@@ -1688,16 +1688,15 @@
             });
         });
 
-        // Load badge counts
+        // Load badge counts (unallocated badge is updated from updateSummary for visible count)
         async function loadBadgeCounts() {
             try {
-                const [unalloc, hidden, bin] = await Promise.all([
-                    fetch('/efactura/api/invoices/unallocated/count').then(r => r.json()),
+                const [hidden, bin] = await Promise.all([
                     fetch('/efactura/api/invoices/hidden/count').then(r => r.json()),
                     fetch('/efactura/api/invoices/bin/count').then(r => r.json())
                 ]);
 
-                updateBadge('unallocatedBadge', unalloc.count || 0);
+                // Note: unallocatedBadge is updated from updateSummary() with visible count
                 updateBadge('hiddenBadge', hidden.count || 0);
                 updateBadge('binBadge', bin.count || 0);
             } catch (e) {
@@ -1771,14 +1770,6 @@
                     updatePagination(data.pagination);
                     updateSummary(data.data, data.pagination);
                     unallocatedLoaded = true; // Mark as loaded
-
-                    const total = data.pagination?.total || data.data?.length || 0;
-                    const hiddenByFilter = data.pagination?.hidden_by_filter || 0;
-                    let resultText = `${total} invoices`;
-                    if (hiddenByFilter > 0) {
-                        resultText += ` <span class="text-warning">(${hiddenByFilter} hidden by filter)</span>`;
-                    }
-                    document.getElementById('unallocatedResultCount').innerHTML = resultText;
                 } else {
                     tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center text-danger py-4">
                         <i class="bi bi-exclamation-triangle"></i> ${data.error || 'Failed to load invoices'}
@@ -3031,7 +3022,17 @@
         function updateSummary(invoices, pagination) {
             // Server-side filtering is now used - pagination.total reflects filtered count
             const displayCount = pagination?.total || invoices?.length || 0;
-            document.getElementById('unallocatedCount').textContent = displayCount;
+            const hiddenByFilter = pagination?.hidden_by_filter || 0;
+
+            // Update summary text with visible count and hidden count
+            let summaryText = `<strong>${displayCount}</strong> invoices`;
+            if (hiddenByFilter > 0) {
+                summaryText += ` <span class="text-muted small">(${hiddenByFilter} hidden)</span>`;
+            }
+            document.getElementById('unallocatedSummaryText').innerHTML = summaryText;
+
+            // Update tab badge with visible count (not total)
+            updateBadge('unallocatedBadge', displayCount);
 
             const totalValue = (invoices || []).reduce((sum, inv) => sum + parseFloat(inv.total_amount || 0), 0);
             document.getElementById('totalValueUnallocated').textContent = totalValue.toLocaleString('ro-RO', {minimumFractionDigits: 2}) + ' RON';
@@ -3247,8 +3248,9 @@
                 if (data.success) {
                     bootstrap.Modal.getInstance(document.getElementById('bulkSetOverridesModal')).hide();
                     alert(`Updated ${data.updated_count} invoices`);
-                    // Reload invoices to reflect changes
-                    loadUnallocatedInvoices();
+                    // Clear selection and reload invoices to reflect changes
+                    clearSelection();
+                    loadUnallocatedInvoices(currentPage, true);
                 } else {
                     alert(data.error || 'Failed to apply overrides');
                 }

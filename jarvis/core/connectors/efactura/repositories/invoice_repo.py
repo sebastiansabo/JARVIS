@@ -1477,6 +1477,121 @@ class InvoiceRepository:
         finally:
             release_db(conn)
 
+    def get_invoices_for_module(
+        self,
+        invoice_ids: List[int],
+    ) -> List[Dict[str, Any]]:
+        """
+        Batch fetch invoices for sending to Invoice Module.
+
+        Fetches only unallocated invoices (jarvis_invoice_id IS NULL) with
+        minimal columns needed for creating main invoices.
+
+        Args:
+            invoice_ids: List of e-Factura invoice IDs
+
+        Returns:
+            List of dicts with invoice data needed for module creation
+        """
+        if not invoice_ids:
+            return []
+
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute("""
+                SELECT
+                    id,
+                    partner_name,
+                    partner_cif,
+                    invoice_number,
+                    invoice_series,
+                    issue_date,
+                    total_amount,
+                    currency
+                FROM efactura_invoices
+                WHERE id = ANY(%s)
+                AND jarvis_invoice_id IS NULL
+                AND deleted_at IS NULL
+            """, (invoice_ids,))
+            rows = cursor.fetchall()
+
+            result = []
+            for row in rows:
+                # Build full invoice number
+                full_number = row['invoice_number']
+                if row['invoice_series']:
+                    full_number = f"{row['invoice_series']}-{row['invoice_number']}"
+
+                result.append({
+                    'id': row['id'],
+                    'partner_name': row['partner_name'],
+                    'partner_cif': row['partner_cif'],
+                    'invoice_number': full_number,
+                    'issue_date': row['issue_date'],
+                    'total_amount': float(row['total_amount']),
+                    'currency': row['currency'],
+                })
+
+            logger.info(
+                f"Batch fetched {len(result)} invoices for module (requested: {len(invoice_ids)})"
+            )
+            return result
+        finally:
+            release_db(conn)
+
+    def bulk_mark_allocated(
+        self,
+        mappings: List[Tuple[int, int]],
+    ) -> int:
+        """
+        Bulk mark invoices as allocated to main Invoice Module.
+
+        Uses a single UPDATE with unnest for optimal performance.
+
+        Args:
+            mappings: List of (efactura_id, jarvis_invoice_id) tuples
+
+        Returns:
+            Number of rows updated
+        """
+        if not mappings:
+            return 0
+
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+
+            # Extract separate lists for unnest
+            efactura_ids = [m[0] for m in mappings]
+            jarvis_ids = [m[1] for m in mappings]
+
+            cursor.execute("""
+                UPDATE efactura_invoices
+                SET
+                    jarvis_invoice_id = mapping.jarvis_id,
+                    updated_at = NOW()
+                FROM (
+                    SELECT
+                        unnest(%s::int[]) AS efactura_id,
+                        unnest(%s::int[]) AS jarvis_id
+                ) AS mapping
+                WHERE efactura_invoices.id = mapping.efactura_id
+            """, (efactura_ids, jarvis_ids))
+
+            updated = cursor.rowcount
+            conn.commit()
+
+            logger.info(f"Bulk marked {updated} invoices as allocated")
+            return updated
+
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to bulk mark invoices as allocated: {e}")
+            raise
+        finally:
+            release_db(conn)
+
     def create_with_refs(
         self,
         invoice: Invoice,

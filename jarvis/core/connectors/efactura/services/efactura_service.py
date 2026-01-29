@@ -10,7 +10,7 @@ import io
 import zipfile
 import hashlib
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import date
 
 from core.utils.logging_config import get_logger
@@ -1326,41 +1326,56 @@ class EFacturaService:
         Send selected invoices to the main JARVIS Invoice Module.
 
         Creates records in the main invoices table and marks these as allocated.
+
+        Optimized for batch operations:
+        - 1 query to fetch all unallocated invoices
+        - 1 query to bulk insert into invoices table
+        - 1 query to bulk mark as allocated
+
+        Performance: 3 queries total vs 4*N queries (99% reduction for 100+ invoices)
         """
-        sent = 0
         errors = []
 
-        for inv_id in invoice_ids:
-            try:
-                # Get the e-Factura invoice
-                invoice = self.invoice_repo.get_by_id(inv_id)
-                if not invoice:
-                    errors.append(f"Invoice {inv_id} not found")
-                    continue
+        try:
+            # Step 1: Batch fetch all unallocated invoices (1 query)
+            # This filters out already-allocated and returns only needed columns
+            invoices = self.invoice_repo.get_invoices_for_module(invoice_ids)
 
-                # Check if already allocated
-                if self.invoice_repo.is_allocated(inv_id):
-                    errors.append(f"Invoice {inv_id} already allocated")
-                    continue
+            if not invoices:
+                # Check if all were already allocated
+                return ServiceResult(success=True, data={
+                    'sent': 0,
+                    'errors': ['All selected invoices are already allocated or not found'],
+                })
 
-                # Create record in main invoices table using repository method
-                jarvis_invoice_id = self._create_main_invoice(invoice)
+            # Track which IDs were not found/already allocated
+            found_ids = {inv['id'] for inv in invoices}
+            skipped_ids = [id for id in invoice_ids if id not in found_ids]
+            if skipped_ids:
+                errors.append(f"Skipped {len(skipped_ids)} already allocated/not found invoices")
 
-                if jarvis_invoice_id:
-                    # Mark e-Factura invoice as allocated
-                    self.invoice_repo.mark_allocated(inv_id, jarvis_invoice_id)
-                    sent += 1
-                else:
-                    errors.append(f"Failed to create main invoice for {inv_id}")
+            # Step 2: Bulk insert into main invoices table (1 query)
+            mappings = self._bulk_create_main_invoices(invoices)
 
-            except Exception as e:
-                logger.error(f"Error sending invoice {inv_id} to module: {e}")
-                errors.append(f"Error with invoice {inv_id}: {str(e)}")
+            if not mappings:
+                return ServiceResult(success=False, error="Failed to create invoices in module")
 
-        return ServiceResult(success=True, data={
-            'sent': sent,
-            'errors': errors if errors else None,
-        })
+            # Step 3: Bulk mark as allocated (1 query)
+            self.invoice_repo.bulk_mark_allocated(mappings)
+
+            logger.info(
+                f"Batch sent {len(mappings)} invoices to module",
+                extra={'invoice_count': len(mappings)}
+            )
+
+            return ServiceResult(success=True, data={
+                'sent': len(mappings),
+                'errors': errors if errors else None,
+            })
+
+        except Exception as e:
+            logger.error(f"Error in batch send to module: {e}")
+            return ServiceResult(success=False, error=str(e))
 
     def _create_main_invoice(self, invoice: Invoice) -> Optional[int]:
         """Create a record in the main invoices table."""
@@ -1368,20 +1383,25 @@ class EFacturaService:
         cursor = get_cursor(conn)
 
         try:
+            # Calculate value_ron based on currency
+            invoice_value = float(invoice.total_amount)
+            value_ron = invoice_value if invoice.currency == 'RON' else None
+
             cursor.execute('''
                 INSERT INTO invoices (
-                    supplier, supplier_vat, invoice_number, invoice_date,
-                    invoice_value, currency, dedicated_to, created_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                    supplier, invoice_template, invoice_number, invoice_date,
+                    invoice_value, currency, value_ron, comment, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
                 RETURNING id
             ''', (
                 invoice.partner_name,
-                invoice.partner_cif,
+                invoice.partner_name,  # Use supplier name as template for matching
                 invoice.full_invoice_number,
                 invoice.issue_date,
-                float(invoice.total_amount),
+                invoice_value,
                 invoice.currency,
-                None,  # dedicated_to will be set during allocation
+                value_ron,
+                f"e-Factura import | CIF: {invoice.partner_cif}",  # Store VAT in comment
             ))
 
             jarvis_invoice_id = cursor.fetchone()['id']
@@ -1401,6 +1421,80 @@ class EFacturaService:
             conn.rollback()
             logger.error(f"Failed to create main invoice: {e}")
             return None
+        finally:
+            release_db(conn)
+
+    def _bulk_create_main_invoices(
+        self,
+        invoices: List[Dict[str, Any]],
+    ) -> List[Tuple[int, int]]:
+        """
+        Bulk create records in the main invoices table.
+
+        Uses a single multi-row INSERT for optimal performance.
+
+        Args:
+            invoices: List of invoice dicts from get_invoices_for_module()
+
+        Returns:
+            List of (efactura_id, jarvis_invoice_id) tuples
+        """
+        if not invoices:
+            return []
+
+        conn = get_db()
+        cursor = get_cursor(conn)
+
+        try:
+            # Build values for multi-row INSERT
+            values = []
+            params = []
+            efactura_ids = []
+
+            for inv in invoices:
+                invoice_value = inv['total_amount']
+                value_ron = invoice_value if inv['currency'] == 'RON' else None
+                comment = f"e-Factura import | CIF: {inv['partner_cif']}"
+
+                values.append(f"(%s, %s, %s, %s, %s, %s, %s, %s, NOW())")
+                params.extend([
+                    inv['partner_name'],      # supplier
+                    inv['partner_name'],      # invoice_template
+                    inv['invoice_number'],    # invoice_number
+                    inv['issue_date'],        # invoice_date
+                    invoice_value,            # invoice_value
+                    inv['currency'],          # currency
+                    value_ron,                # value_ron
+                    comment,                  # comment
+                ])
+                efactura_ids.append(inv['id'])
+
+            # Execute multi-row INSERT
+            cursor.execute(f'''
+                INSERT INTO invoices (
+                    supplier, invoice_template, invoice_number, invoice_date,
+                    invoice_value, currency, value_ron, comment, created_at
+                ) VALUES {', '.join(values)}
+                RETURNING id
+            ''', params)
+
+            # Get created IDs in order
+            jarvis_ids = [row['id'] for row in cursor.fetchall()]
+            conn.commit()
+
+            # Create mapping tuples
+            mappings = list(zip(efactura_ids, jarvis_ids))
+
+            logger.info(
+                f"Bulk created {len(mappings)} main invoices from e-Factura"
+            )
+
+            return mappings
+
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to bulk create main invoices: {e}")
+            raise
         finally:
             release_db(conn)
 
