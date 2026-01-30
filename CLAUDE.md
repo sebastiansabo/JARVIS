@@ -25,6 +25,50 @@ git merge staging
 git push origin main
 ```
 
+## ⛔ CRITICAL: Protected Code Sections
+
+**NEVER DELETE OR MODIFY** the following critical sections without explicit user confirmation:
+
+### database.py - Protected Functions
+These functions are **ESSENTIAL** for the application to work. Do NOT remove them:
+
+```python
+# e-Factura OAuth Token Functions (lines ~6444-6580)
+- get_efactura_oauth_tokens(company_cif)    # Required for ANAF authentication
+- save_efactura_oauth_tokens(company_cif, tokens)  # Required for ANAF authentication
+- delete_efactura_oauth_tokens(company_cif)  # Required for ANAF authentication
+- get_efactura_oauth_status(company_cif)     # Required for ANAF authentication
+```
+
+### database.py - Protected Table Definitions in init_db()
+These CREATE TABLE statements are **ESSENTIAL**. Do NOT remove them:
+
+```sql
+-- e-Factura Connector Tables (lines ~1730-2050)
+- efactura_company_connections
+- efactura_invoices (with all migrations: ignored, deleted_at, overrides)
+- efactura_invoice_refs
+- efactura_invoice_artifacts
+- efactura_sync_runs
+- efactura_sync_errors
+- efactura_oauth_tokens
+- efactura_partner_types
+- efactura_supplier_mappings
+- efactura_supplier_mapping_types (junction table)
+```
+
+### Before Removing Any Code
+1. **Search for usages**: `grep -r "function_name" jarvis/`
+2. **Check imports**: Look for `from database import function_name`
+3. **Verify no dependencies**: Ensure no other code relies on the function
+4. **Ask user**: "This function appears to be used by X. Should I still remove it?"
+
+### Recovery Procedure
+If critical functions are accidentally removed:
+1. Check git history: `git log --oneline --all -S "function_name"`
+2. Find the last commit with the function: `git show <commit>:jarvis/database.py | grep -A50 "def function_name"`
+3. Restore from that commit
+
 ## Project Overview
 J.A.R.V.I.S. is a modular enterprise platform with multiple sections:
 - **Accounting** → Bugetare (Invoice Budget Allocation), Statements (Bank Statement Parsing), e-Factura (ANAF Invoice Import)
@@ -356,6 +400,30 @@ Page           (JSON)         (ANAF API)
 | PUT | `/efactura/api/supplier-mappings/<id>` | Update supplier mapping |
 | DELETE | `/efactura/api/supplier-mappings/<id>` | Delete supplier mapping |
 | GET | `/efactura/api/partner-types` | List partner types (Service, Merchandise) |
+| GET | `/efactura/oauth/status?cif=X` | Get OAuth authentication status for company |
+| POST | `/efactura/oauth/refresh` | Manually refresh OAuth access token |
+| POST | `/efactura/oauth/revoke` | Revoke OAuth tokens (disconnect company) |
+
+### OAuth Token Functions (database.py) ⚠️ CRITICAL
+
+These functions manage ANAF OAuth authentication. **DO NOT DELETE**:
+
+| Function | Purpose |
+|----------|---------|
+| `get_efactura_oauth_tokens(cif)` | Get OAuth tokens from `connectors` table |
+| `save_efactura_oauth_tokens(cif, tokens)` | Save/update tokens (creates connector if needed) |
+| `delete_efactura_oauth_tokens(cif)` | Remove tokens, set connector status to disconnected |
+| `get_efactura_oauth_status(cif)` | Get auth status (authenticated, expires_at, is_expired) |
+
+**Storage**: Tokens are stored in the `connectors` table with `connector_type = 'efactura'` and `name = company_cif`. The `credentials` JSONB column contains:
+```json
+{
+  "access_token": "...",
+  "refresh_token": "...",
+  "expires_at": "2026-04-30T12:00:00",
+  "token_type": "Bearer"
+}
+```
 
 ### Database Table (`efactura_invoices`)
 

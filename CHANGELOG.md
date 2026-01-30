@@ -1,5 +1,45 @@
 # Changelog
 
+## 2026-01-30
+### e-Factura OAuth Token Functions Restoration
+- **Critical Fix**: Restored missing OAuth token management functions that were accidentally removed
+  - `get_efactura_oauth_tokens(company_cif)` - Retrieve tokens from connectors table
+  - `save_efactura_oauth_tokens(company_cif, tokens)` - Save/update OAuth tokens
+  - `delete_efactura_oauth_tokens(company_cif)` - Disconnect (remove tokens)
+  - `get_efactura_oauth_status(company_cif)` - Get authentication status
+
+- **e-Factura Tables Restoration**: Restored all missing table definitions in `init_db()`
+  - `efactura_company_connections` - Company sync connections
+  - `efactura_invoices` - Invoice records from ANAF
+  - `efactura_invoice_refs` - ANAF message IDs
+  - `efactura_invoice_artifacts` - ZIP/XML/PDF storage
+  - `efactura_sync_runs` - Sync tracking
+  - `efactura_sync_errors` - Error logging
+  - `efactura_oauth_tokens` - OAuth token storage table
+  - `efactura_partner_types` - Supplier types (Service, Merchandise)
+  - `efactura_supplier_mappings` - Supplier name mappings
+  - `efactura_supplier_mapping_types` - Junction table for multi-type
+
+- **Migrations Restored**:
+  - `ignored`, `deleted_at` columns on efactura_invoices
+  - `type_override`, `department_override`, `subdepartment_override` columns
+  - `kod_konto`, `type_id`, `department`, `subdepartment`, `brand` on supplier_mappings
+  - `hide_in_filter` on partner_types
+
+- **Indexes Restored**: All e-Factura indexes including trigram indexes for fast ILIKE search
+
+### Bulk Processor Enhancements
+- **Session Caching**: Invoice data persists across page refresh (1-hour TTL)
+- **Duplicate Detection**: Skip invoices with same invoice_number, show warning
+- **Delete from List**: X button to remove individual invoices
+- **Incremental Upload**: Add to existing list instead of replacing
+- **Sticky Sidebar**: Left column stays visible while scrolling
+
+### Select All Enhancement (e-Factura)
+- **True Select All**: Selects ALL records matching filters, not just visible page
+- **API Enhancement**: `get_unallocated_ids()` now supports `hide_typed` parameter
+- **Toast Notification**: Shows count of selected invoices
+
 ## 2026-01-29
 ### Custom Dialog System
 - **JarvisDialog**: Custom styled dialogs replacing native browser `alert()`, `confirm()`, `prompt()`
