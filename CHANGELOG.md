@@ -1,6 +1,25 @@
 # Changelog
 
 ## 2026-01-30
+### Sync Modal with Period and Company Selection
+- **Sync Modal**: Replaced dropdown with modal dialog for sync options
+  - Period selection: 1, 3, 7, 15, 30 days preset buttons
+  - Custom days input (max 90 days)
+  - Company checkboxes with Select All / Deselect All
+  - Only syncs received (inbound) invoices
+- **Improved Sync Results**:
+  - XML signature files shown separately from errors (not counted as errors)
+  - "XML files (not invoices)" section with file icon
+  - Actual errors shown in separate section
+
+### Mappings Tab Column Configuration
+- **Configure Columns**: Show/hide and reorder columns in Mappings tab
+- **Persistent Config**: Settings saved to localStorage with version tracking
+
+### Dialog Improvements
+- **HTML Support**: `JarvisDialog.alert()` now supports `html: true` option
+- **Skipped Details**: Renamed "Error Details" to "Skipped Details" in sync results
+
 ### e-Factura OAuth Token Functions Restoration
 - **Critical Fix**: Restored missing OAuth token management functions that were accidentally removed
   - `get_efactura_oauth_tokens(company_cif)` - Retrieve tokens from connectors table

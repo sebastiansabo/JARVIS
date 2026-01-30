@@ -866,7 +866,7 @@
                     <!-- Period Selection -->
                     <div class="mb-3">
                         <label class="form-label fw-semibold"><i class="bi bi-calendar3"></i> Period</label>
-                        <div class="btn-group w-100" role="group" id="syncPeriodGroup">
+                        <div class="btn-group w-100 mb-2" role="group" id="syncPeriodGroup">
                             <input type="radio" class="btn-check" name="syncPeriod" id="period1" value="1" checked>
                             <label class="btn btn-outline-primary" for="period1">1 day</label>
                             <input type="radio" class="btn-check" name="syncPeriod" id="period3" value="3">
@@ -877,6 +877,11 @@
                             <label class="btn btn-outline-primary" for="period15">15 days</label>
                             <input type="radio" class="btn-check" name="syncPeriod" id="period30" value="30">
                             <label class="btn btn-outline-primary" for="period30">30 days</label>
+                        </div>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">Custom</span>
+                            <input type="number" class="form-control" id="syncCustomDays" placeholder="Enter days" min="1" max="90" onchange="clearPeriodSelection()">
+                            <span class="input-group-text">days (max 90)</span>
                         </div>
                     </div>
 
@@ -1972,26 +1977,54 @@
         function formatSyncResult(imported, skipped, errors) {
             let html = '<div style="text-align: left;">';
 
+            // Separate XML signature files from actual errors
+            const xmlFiles = (errors || []).filter(e => e.includes('signature XML') || e.includes('not invoice'));
+            const actualErrors = (errors || []).filter(e => !e.includes('signature XML') && !e.includes('not invoice'));
+
             // Summary section
             html += '<div style="margin-bottom: 12px;">';
             html += `<div style="font-size: 1.1em; margin-bottom: 8px;"><strong>Sync Summary</strong></div>`;
             html += `<div style="display: flex; gap: 20px; flex-wrap: wrap;">`;
             html += `<span><i class="bi bi-check-circle text-success"></i> <strong>${imported}</strong> imported</span>`;
             html += `<span><i class="bi bi-skip-forward text-secondary"></i> <strong>${skipped}</strong> skipped</span>`;
-            if (errors && errors.length > 0) {
-                html += `<span><i class="bi bi-exclamation-triangle text-warning"></i> <strong>${errors.length}</strong> errors</span>`;
+            if (xmlFiles.length > 0) {
+                html += `<span><i class="bi bi-file-earmark-code text-info"></i> <strong>${xmlFiles.length}</strong> XML files</span>`;
+            }
+            if (actualErrors.length > 0) {
+                html += `<span><i class="bi bi-exclamation-triangle text-warning"></i> <strong>${actualErrors.length}</strong> errors</span>`;
             }
             html += '</div></div>';
 
-            // Errors section (collapsible)
-            if (errors && errors.length > 0) {
-                html += '<div style="border-top: 1px solid var(--border-color, #dee2e6); padding-top: 12px;">';
-                html += '<div style="font-size: 0.9em; color: var(--text-muted, #6c757d); margin-bottom: 8px;">Skipped Details:</div>';
-                html += '<div style="max-height: 200px; overflow-y: auto; font-size: 0.85em; background: var(--bg-muted, #f8f9fa); padding: 8px; border-radius: 4px;">';
+            // XML files section
+            if (xmlFiles.length > 0) {
+                html += '<div style="border-top: 1px solid var(--border-color, #dee2e6); padding-top: 12px; margin-bottom: 12px;">';
+                html += '<div style="font-size: 0.9em; color: var(--text-muted, #6c757d); margin-bottom: 8px;"><i class="bi bi-file-earmark-code"></i> XML Files (not invoices):</div>';
+                html += '<div style="max-height: 120px; overflow-y: auto; font-size: 0.85em; background: var(--bg-muted, #f8f9fa); padding: 8px; border-radius: 4px;">';
 
-                const errorsToShow = errors.slice(0, 10);
+                const xmlToShow = xmlFiles.slice(0, 5);
+                xmlToShow.forEach(err => {
+                    const match = err.match(/^(.+?):\s*(.+)$/);
+                    if (match) {
+                        html += `<div style="margin-bottom: 4px; padding: 2px 0;"><span class="text-muted">${match[1]}:</span> ${match[2]}</div>`;
+                    } else {
+                        html += `<div style="margin-bottom: 4px; padding: 2px 0;">${err}</div>`;
+                    }
+                });
+
+                if (xmlFiles.length > 5) {
+                    html += `<div style="color: var(--text-muted, #6c757d); font-style: italic;">... and ${xmlFiles.length - 5} more</div>`;
+                }
+                html += '</div></div>';
+            }
+
+            // Actual errors section
+            if (actualErrors.length > 0) {
+                html += '<div style="border-top: 1px solid var(--border-color, #dee2e6); padding-top: 12px;">';
+                html += '<div style="font-size: 0.9em; color: var(--text-muted, #6c757d); margin-bottom: 8px;"><i class="bi bi-exclamation-triangle"></i> Errors:</div>';
+                html += '<div style="max-height: 150px; overflow-y: auto; font-size: 0.85em; background: var(--bg-muted, #f8f9fa); padding: 8px; border-radius: 4px;">';
+
+                const errorsToShow = actualErrors.slice(0, 10);
                 errorsToShow.forEach(err => {
-                    // Try to extract company and message details
                     const match = err.match(/^(.+?):\s*Message (\d+) (.+)$/);
                     if (match) {
                         html += `<div style="margin-bottom: 4px; padding: 4px 0; border-bottom: 1px solid var(--border-color, #eee);">`;
@@ -2004,8 +2037,8 @@
                     }
                 });
 
-                if (errors.length > 10) {
-                    html += `<div style="color: var(--text-muted, #6c757d); font-style: italic; margin-top: 8px;">... and ${errors.length - 10} more</div>`;
+                if (actualErrors.length > 10) {
+                    html += `<div style="color: var(--text-muted, #6c757d); font-style: italic; margin-top: 8px;">... and ${actualErrors.length - 10} more</div>`;
                 }
                 html += '</div></div>';
             }
@@ -2476,8 +2509,25 @@
             document.querySelectorAll('.sync-company-checkbox').forEach(cb => cb.checked = checked);
         }
 
+        function clearPeriodSelection() {
+            // Clear radio buttons when custom days is entered
+            const customDays = document.getElementById('syncCustomDays').value;
+            if (customDays) {
+                document.querySelectorAll('input[name="syncPeriod"]').forEach(r => r.checked = false);
+            }
+        }
+
         function startSync() {
-            const days = parseInt(document.querySelector('input[name="syncPeriod"]:checked')?.value || 1);
+            // Get days from custom input or radio buttons
+            const customDays = document.getElementById('syncCustomDays').value;
+            let days;
+
+            if (customDays && parseInt(customDays) > 0) {
+                days = Math.min(parseInt(customDays), 90); // Cap at 90 days
+            } else {
+                days = parseInt(document.querySelector('input[name="syncPeriod"]:checked')?.value || 1);
+            }
+
             const selectedCifs = Array.from(document.querySelectorAll('.sync-company-checkbox:checked')).map(cb => cb.value);
 
             if (selectedCifs.length === 0) {
@@ -2526,6 +2576,7 @@
                     );
 
                     try {
+                        // Note: Backend already filters to only received (inbound) invoices
                         const syncRes = await fetch('/efactura/api/sync/company', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
