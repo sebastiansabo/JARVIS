@@ -1188,6 +1188,19 @@ def init_db():
         END $$;
     ''')
 
+    # Add min_role column for status permissions (which roles can set this status)
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'dropdown_options' AND column_name = 'min_role') THEN
+                ALTER TABLE dropdown_options ADD COLUMN min_role TEXT DEFAULT NULL;
+                -- Set default min_role to 'Viewer' for all invoice_status options (most permissive)
+                UPDATE dropdown_options SET min_role = 'Viewer' WHERE dropdown_type = 'invoice_status' AND min_role IS NULL;
+            END IF;
+        END $$;
+    ''')
+
     # Insert default dropdown options if table is empty
     cursor.execute('SELECT COUNT(*) as cnt FROM dropdown_options')
     if cursor.fetchone()['cnt'] == 0:

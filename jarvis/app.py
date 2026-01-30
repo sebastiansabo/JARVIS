@@ -84,6 +84,38 @@ except ImportError:
     IMAGE_COMPRESSION_ENABLED = False
     compress_if_image = None
 
+# Role hierarchy for status permissions (higher index = more permissions)
+ROLE_HIERARCHY = ['Viewer', 'Manager', 'Admin']
+
+
+def user_can_set_status(user_role_name: str, status_value: str, dropdown_type: str = 'invoice_status') -> bool:
+    """
+    Check if a user's role meets the min_role requirement for a specific status.
+
+    Args:
+        user_role_name: The user's role name (e.g., 'Viewer', 'Manager', 'Admin')
+        status_value: The status value to check (e.g., 'new', 'processed')
+        dropdown_type: The dropdown type ('invoice_status' or 'payment_status')
+
+    Returns:
+        True if the user can set this status, False otherwise
+    """
+    options = get_dropdown_options(dropdown_type, active_only=True)
+    status_option = next((opt for opt in options if opt['value'] == status_value), None)
+
+    if not status_option:
+        return False  # Status doesn't exist
+
+    min_role = status_option.get('min_role')
+    if not min_role:
+        return True  # No restriction
+
+    user_level = ROLE_HIERARCHY.index(user_role_name) if user_role_name in ROLE_HIERARCHY else -1
+    min_level = ROLE_HIERARCHY.index(min_role) if min_role in ROLE_HIERARCHY else 0
+
+    return user_level >= min_level
+
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
@@ -1207,6 +1239,15 @@ def api_db_update_invoice(invoice_id):
         old_payment_status = current_invoice.get('payment_status') if current_invoice else None
         new_status = data.get('status')
         new_payment_status = data.get('payment_status')
+
+        # Validate status change permissions based on min_role
+        if new_status and new_status != old_status:
+            if not user_can_set_status(current_user.role_name, new_status, 'invoice_status'):
+                return jsonify({'success': False, 'error': f'Permission denied: Your role cannot set status to "{new_status}"'}), 403
+
+        if new_payment_status and new_payment_status != old_payment_status:
+            if not user_can_set_status(current_user.role_name, new_payment_status, 'payment_status'):
+                return jsonify({'success': False, 'error': f'Permission denied: Your role cannot set payment status to "{new_payment_status}"'}), 403
 
         updated = update_invoice(
             invoice_id=invoice_id,
