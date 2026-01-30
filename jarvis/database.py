@@ -16,6 +16,43 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # Prevents race conditions in multi-threaded Gunicorn environment
 _cache_lock = threading.RLock()
 
+
+# ============== CACHE UTILITIES ==============
+
+def _is_cache_valid(cache_entry: dict) -> bool:
+    """Check if a cache entry is still valid."""
+    if cache_entry.get('data') is None:
+        return False
+    return (time.time() - cache_entry.get('timestamp', 0)) < cache_entry.get('ttl', 300)
+
+
+def _get_cache_data(cache_dict: dict, key: str = 'data'):
+    """Thread-safe getter for cache data."""
+    with _cache_lock:
+        return cache_dict.get(key)
+
+
+def _set_cache_data(cache_dict: dict, data, key: str = 'data'):
+    """Thread-safe setter for cache data with timestamp update."""
+    with _cache_lock:
+        cache_dict[key] = data
+        cache_dict['timestamp'] = time.time()
+
+
+def create_cache(ttl: int = 300) -> dict:
+    """Create a new cache dictionary with specified TTL."""
+    return {
+        'data': None,
+        'timestamp': 0,
+        'ttl': ttl
+    }
+
+
+def get_cache_lock():
+    """Get the shared cache lock for custom cache operations."""
+    return _cache_lock
+
+
 # Configure module logger
 logger = logging.getLogger('jarvis.database')
 
