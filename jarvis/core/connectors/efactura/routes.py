@@ -986,6 +986,7 @@ def get_unallocated_ids():
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         search = request.args.get('search')
+        hide_typed = request.args.get('hide_typed', 'false').lower() == 'true'
 
         ids = efactura_service.invoice_repo.get_unallocated_ids(
             company_id=company_id,
@@ -993,6 +994,7 @@ def get_unallocated_ids():
             start_date=start_date,
             end_date=end_date,
             search=search,
+            hide_typed=hide_typed,
         )
 
         return jsonify({

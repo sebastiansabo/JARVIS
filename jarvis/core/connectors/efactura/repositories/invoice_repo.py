@@ -935,6 +935,7 @@ class InvoiceRepository:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         search: Optional[str] = None,
+        hide_typed: bool = False,
     ) -> List[int]:
         """
         Get all IDs of unallocated invoices (for select all functionality).
@@ -945,6 +946,7 @@ class InvoiceRepository:
             start_date: Filter by start date
             end_date: Filter by end date
             search: Search by partner name or invoice number
+            hide_typed: If True, hide invoices with types that have hide_in_filter=TRUE
 
         Returns:
             List of invoice IDs
@@ -953,27 +955,50 @@ class InvoiceRepository:
         try:
             cursor = get_cursor(conn)
 
-            where_clauses = ["jarvis_invoice_id IS NULL", "deleted_at IS NULL", "ignored = FALSE"]
+            where_clauses = ["i.jarvis_invoice_id IS NULL", "i.deleted_at IS NULL", "i.ignored = FALSE"]
             params = {}
 
             if company_id:
-                where_clauses.append("company_id = %(company_id)s")
+                where_clauses.append("i.company_id = %(company_id)s")
                 params['company_id'] = company_id
             if direction:
-                where_clauses.append("direction = %(direction)s")
+                where_clauses.append("i.direction = %(direction)s")
                 params['direction'] = direction
             if start_date:
-                where_clauses.append("issue_date >= %(start_date)s")
+                where_clauses.append("i.issue_date >= %(start_date)s")
                 params['start_date'] = start_date
             if end_date:
-                where_clauses.append("issue_date <= %(end_date)s")
+                where_clauses.append("i.issue_date <= %(end_date)s")
                 params['end_date'] = end_date
             if search:
-                where_clauses.append("(partner_name ILIKE %(search)s OR invoice_number ILIKE %(search)s)")
+                where_clauses.append("(i.partner_name ILIKE %(search)s OR i.invoice_number ILIKE %(search)s)")
                 params['search'] = f"%{search}%"
 
+            if hide_typed:
+                # Hide invoices that have types with hide_in_filter=TRUE
+                where_clauses.append("""
+                    NOT (
+                        (i.type_override IS NOT NULL AND EXISTS (
+                            SELECT 1 FROM efactura_partner_types pt
+                            WHERE pt.is_active = TRUE
+                                AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                                AND i.type_override ILIKE '%%' || pt.name || '%%'
+                        ))
+                        OR
+                        (i.type_override IS NULL AND EXISTS (
+                            SELECT 1 FROM efactura_supplier_mappings sm2
+                            JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
+                            JOIN efactura_partner_types pt ON pt.id = smt.type_id
+                            WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
+                                AND sm2.is_active = TRUE
+                                AND pt.is_active = TRUE
+                                AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                        ))
+                    )
+                """)
+
             where_clause = " AND ".join(where_clauses)
-            cursor.execute(f"SELECT id FROM efactura_invoices WHERE {where_clause}", params)
+            cursor.execute(f"SELECT i.id FROM efactura_invoices i WHERE {where_clause}", params)
             return [row['id'] for row in cursor.fetchall()]
         finally:
             release_db(conn)

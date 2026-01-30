@@ -2582,6 +2582,7 @@
                 const startDate = document.getElementById('startDate').value;
                 const endDate = document.getElementById('endDate').value;
                 const search = document.getElementById('searchInput').value;
+                const hideTyped = document.getElementById('hideTypedToggle')?.checked || false;
 
                 let url = '/efactura/api/invoices/unallocated/ids?';
                 if (companyId) url += `company_id=${companyId}&`;
@@ -2589,6 +2590,7 @@
                 if (startDate) url += `start_date=${startDate}&`;
                 if (endDate) url += `end_date=${endDate}&`;
                 if (search) url += `search=${encodeURIComponent(search)}&`;
+                if (hideTyped) url += `hide_typed=true&`;
 
                 const res = await fetch(url);
                 const data = await res.json();
@@ -2599,6 +2601,8 @@
                     document.querySelectorAll('.invoice-checkbox').forEach(cb => cb.checked = true);
                     document.getElementById('selectAllCheckbox').checked = true;
                     updateSelectionCount();
+                    // Show toast with count
+                    JarvisToast.success(`Selected all ${data.count} invoices`);
                 }
             } catch (err) {
                 console.error('Failed to select all:', err);
@@ -3211,6 +3215,10 @@
                 const start = pagination.offset + 1;
                 const end = Math.min(pagination.offset + pagination.limit, pagination.total);
                 summary.textContent = `Showing ${start}-${end} of ${pagination.total}`;
+
+                // Update "Select All" count to show actual total
+                const selectAllCount = document.getElementById('invoicesTotalForSelect');
+                if (selectAllCount) selectAllCount.textContent = pagination.total;
 
                 if (totalPages > 1) {
                     controls.innerHTML = `
