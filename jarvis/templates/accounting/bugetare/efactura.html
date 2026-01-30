@@ -586,6 +586,9 @@
                                 <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#mappingsFiltersCollapse">
                                     <i class="bi bi-funnel"></i> Filters
                                 </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="openMappingsColumnConfig()">
+                                    <i class="bi bi-layout-three-columns"></i> Columns
+                                </button>
                                 <button class="btn btn-outline-secondary btn-sm" onclick="openPartnerTypesModal()" title="Manage Partner Types">
                                     <i class="bi bi-gear"></i> Types
                                 </button>
@@ -683,31 +686,7 @@
                         <div class="table-responsive">
                             <table class="table table-hover table-sm" id="mappingsTable">
                                 <thead class="table-light">
-                                    <tr>
-                                        <th style="width: 60px;">
-                                            <div class="dropdown d-inline">
-                                                <input type="checkbox" class="form-check-input" id="mappingsSelectAll" onchange="toggleMappingsSelectPage()">
-                                                <button class="btn btn-link btn-sm p-0 ms-1 text-muted" type="button" data-bs-toggle="dropdown" style="font-size: 10px;">
-                                                    <i class="bi bi-chevron-down"></i>
-                                                </button>
-                                                <ul class="dropdown-menu dropdown-menu-sm">
-                                                    <li><a class="dropdown-item small" href="#" onclick="toggleMappingsSelectPage(); return false;"><i class="bi bi-check2-square me-2"></i>Select Page</a></li>
-                                                    <li><a class="dropdown-item small" href="#" onclick="selectAllMappings(); return false;"><i class="bi bi-check2-all me-2"></i>Select All (<span id="mappingsTotalForSelect">0</span>)</a></li>
-                                                    <li><hr class="dropdown-divider"></li>
-                                                    <li><a class="dropdown-item small" href="#" onclick="clearMappingsSelection(); return false;"><i class="bi bi-x-square me-2"></i>Clear Selection</a></li>
-                                                </ul>
-                                            </div>
-                                        </th>
-                                        <th class="sortable" onclick="sortMappingsTable('partner_name')">Partner (e-Factura)</th>
-                                        <th class="sortable" onclick="sortMappingsTable('partner_cif')">Partner VAT</th>
-                                        <th class="sortable" onclick="sortMappingsTable('supplier_name')">Supplier Name</th>
-                                        <th class="sortable" onclick="sortMappingsTable('supplier_vat')">Supplier VAT</th>
-                                        <th class="sortable" onclick="sortMappingsTable('type_name')">Type</th>
-                                        <th class="sortable" onclick="sortMappingsTable('kod_konto')">Kod Konto</th>
-                                        <th>Supplier Note</th>
-                                        <th class="sortable" onclick="sortMappingsTable('created_at')">Created</th>
-                                        <th>Actions</th>
-                                    </tr>
+                                    <!-- Rendered dynamically by renderMappingsTableHeader() -->
                                 </thead>
                                 <tbody id="mappingsTableBody">
                                     <tr>
@@ -860,6 +839,26 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" onclick="resetHiddenColumnConfig()">Reset to Default</button>
                     <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="applyHiddenColumnConfig()">Apply</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mappings Column Configuration Modal -->
+    <div class="modal fade" id="mappingsColumnConfigModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-layout-three-columns"></i> Configure Mappings Columns</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Drag to reorder. Check/uncheck to show/hide.</p>
+                    <ul id="mappingsColumnConfigList" class="list-group" style="cursor: move;"></ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" onclick="resetMappingsColumnConfig()">Reset to Default</button>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="applyMappingsColumnConfig()">Apply</button>
                 </div>
             </div>
         </div>
@@ -1254,6 +1253,107 @@
 
         const hiddenSortableColumns = ['company', 'direction', 'invoice_number', 'partner_name', 'partner_cif', 'type', 'issue_date', 'amount', 'vat', 'currency', 'imported'];
 
+        // ============================================
+        // Mappings Tab Column Configuration
+        // ============================================
+
+        // Column definitions for Mappings tab
+        const mappingsAllColumns = [
+            { id: 'checkbox', label: '', fixed: true, width: '60px' },
+            { id: 'partner_name', label: 'Partner (e-Factura)', visible: true },
+            { id: 'partner_cif', label: 'Partner VAT', visible: true },
+            { id: 'supplier_name', label: 'Supplier Name', visible: true },
+            { id: 'supplier_vat', label: 'Supplier VAT', visible: true },
+            { id: 'type', label: 'Type', visible: true },
+            { id: 'kod_konto', label: 'Kod Konto', visible: true },
+            { id: 'supplier_note', label: 'Supplier Note', visible: true },
+            { id: 'created_at', label: 'Created', visible: true },
+            { id: 'actions', label: 'Actions', fixed: true, width: '100px' }
+        ];
+
+        const MAPPINGS_COLUMN_CONFIG_VERSION = 1;
+
+        function getMappingsColumnConfig() {
+            const saved = localStorage.getItem('efacturaMappingsColumnConfig');
+            const savedVersion = parseInt(localStorage.getItem('efacturaMappingsColumnConfigVersion') || '0');
+
+            if (savedVersion !== MAPPINGS_COLUMN_CONFIG_VERSION) {
+                localStorage.setItem('efacturaMappingsColumnConfigVersion', MAPPINGS_COLUMN_CONFIG_VERSION.toString());
+                localStorage.removeItem('efacturaMappingsColumnConfig');
+                return mappingsAllColumns.map((c, i) => ({ id: c.id, visible: c.visible !== false, order: i }));
+            }
+
+            if (saved) {
+                try {
+                    const config = JSON.parse(saved);
+                    const configIds = new Set(config.map(c => c.id));
+                    const missingCols = mappingsAllColumns.filter(c => !configIds.has(c.id));
+                    if (missingCols.length > 0) {
+                        missingCols.forEach(col => {
+                            config.push({ id: col.id, visible: col.visible !== false, order: mappingsAllColumns.indexOf(col) });
+                        });
+                        saveMappingsColumnConfig(config);
+                    }
+                    return config;
+                } catch (e) {}
+            }
+            return mappingsAllColumns.map((c, i) => ({ id: c.id, visible: c.visible !== false, order: i }));
+        }
+
+        function saveMappingsColumnConfig(config) {
+            localStorage.setItem('efacturaMappingsColumnConfig', JSON.stringify(config));
+            localStorage.setItem('efacturaMappingsColumnConfigVersion', MAPPINGS_COLUMN_CONFIG_VERSION.toString());
+        }
+
+        function getMappingsVisibleColumns() {
+            const config = getMappingsColumnConfig();
+            const configMap = {};
+            config.forEach((c, i) => configMap[c.id] = { ...c, order: c.order ?? i });
+
+            return mappingsAllColumns
+                .map(col => ({
+                    ...col,
+                    visible: col.fixed || (configMap[col.id]?.visible ?? col.visible),
+                    order: configMap[col.id]?.order ?? mappingsAllColumns.indexOf(col)
+                }))
+                .sort((a, b) => a.order - b.order)
+                .filter(col => col.visible || col.fixed);
+        }
+
+        const mappingsSortableColumns = ['partner_name', 'partner_cif', 'supplier_name', 'supplier_vat', 'type_name', 'kod_konto', 'created_at'];
+
+        function renderMappingsTableHeader() {
+            const thead = document.querySelector('#mappingsTable thead');
+            const cols = getMappingsVisibleColumns();
+
+            thead.innerHTML = `<tr>
+                ${cols.map(col => {
+                    if (col.id === 'checkbox') {
+                        return `<th style="width: 60px;">
+                            <div class="dropdown d-inline">
+                                <input type="checkbox" class="form-check-input" id="mappingsSelectAll" onchange="toggleMappingsSelectPage()">
+                                <button class="btn btn-link btn-sm p-0 ms-1 text-muted" type="button" data-bs-toggle="dropdown" style="font-size: 10px;">
+                                    <i class="bi bi-chevron-down"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-sm">
+                                    <li><a class="dropdown-item small" href="#" onclick="toggleMappingsSelectPage(); return false;"><i class="bi bi-check2-square me-2"></i>Select Page</a></li>
+                                    <li><a class="dropdown-item small" href="#" onclick="selectAllMappings(); return false;"><i class="bi bi-check2-all me-2"></i>Select All (<span id="mappingsTotalForSelect">0</span>)</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item small" href="#" onclick="clearMappingsSelection(); return false;"><i class="bi bi-x-square me-2"></i>Clear Selection</a></li>
+                                </ul>
+                            </div>
+                        </th>`;
+                    }
+                    if (col.id === 'actions') {
+                        return `<th style="${col.width ? 'width:' + col.width : ''}">Actions</th>`;
+                    }
+                    const sortCol = col.id === 'type' ? 'type_name' : col.id;
+                    const isSortable = mappingsSortableColumns.includes(sortCol);
+                    return `<th${isSortable ? ` class="sortable" onclick="sortMappingsTable('${sortCol}')"` : ''}${col.width ? ` style="width:${col.width}"` : ''}>${col.label}</th>`;
+                }).join('')}
+            </tr>`;
+        }
+
         function renderHiddenTableHeader() {
             const thead = document.getElementById('hiddenTableHead');
             const cols = getHiddenVisibleColumns();
@@ -1343,6 +1443,78 @@
             bootstrap.Modal.getInstance(document.getElementById('hiddenColumnConfigModal')).hide();
             renderHiddenTableHeader();
             loadHiddenInvoices(hiddenCurrentPage, true);
+        }
+
+        // Mappings Column Configuration Modal Functions
+        function openMappingsColumnConfig() {
+            const modal = new bootstrap.Modal(document.getElementById('mappingsColumnConfigModal'));
+            const list = document.getElementById('mappingsColumnConfigList');
+            const config = getMappingsColumnConfig();
+            const configMap = {};
+            config.forEach((c, i) => configMap[c.id] = { ...c, order: i });
+
+            const configCols = mappingsAllColumns
+                .filter(col => !col.fixed)
+                .map(col => ({
+                    ...col,
+                    visible: configMap[col.id]?.visible ?? col.visible,
+                    order: configMap[col.id]?.order ?? mappingsAllColumns.indexOf(col)
+                }))
+                .sort((a, b) => a.order - b.order);
+
+            list.innerHTML = configCols.map(col => `
+                <li class="list-group-item d-flex align-items-center" data-id="${col.id}">
+                    <i class="bi bi-grip-vertical text-muted me-2"></i>
+                    <input type="checkbox" class="form-check-input me-2" id="mappings_col_${col.id}" ${col.visible ? 'checked' : ''}>
+                    <label class="form-check-label flex-grow-1" for="mappings_col_${col.id}">${col.label}</label>
+                </li>
+            `).join('');
+
+            // Enable drag-drop reorder
+            if (typeof Sortable !== 'undefined') {
+                new Sortable(list, { animation: 150 });
+            }
+            modal.show();
+        }
+
+        function applyMappingsColumnConfig() {
+            const list = document.getElementById('mappingsColumnConfigList');
+            const items = list.querySelectorAll('li');
+            const config = [];
+            let order = 0;
+
+            config.push({ id: 'checkbox', visible: true, order: order++ });
+
+            items.forEach(item => {
+                const id = item.dataset.id;
+                const visible = item.querySelector('input[type="checkbox"]').checked;
+                config.push({ id, visible, order: order++ });
+            });
+
+            config.push({ id: 'actions', visible: true, order: order++ });
+
+            saveMappingsColumnConfig(config);
+            renderMappingsTableHeader();
+            // Re-render the table with current page data
+            if (mappingsCache.length > 0) {
+                const filtered = filteredMappingsCache.length > 0 ? filteredMappingsCache : mappingsCache;
+                const start = (mappingsCurrentPage - 1) * mappingsPageSize;
+                const end = mappingsPageSize === 0 ? filtered.length : start + mappingsPageSize;
+                renderMappingsTable(filtered.slice(start, end));
+            }
+        }
+
+        function resetMappingsColumnConfig() {
+            localStorage.removeItem('efacturaMappingsColumnConfig');
+            bootstrap.Modal.getInstance(document.getElementById('mappingsColumnConfigModal')).hide();
+            renderMappingsTableHeader();
+            // Re-render the table with current page data
+            if (mappingsCache.length > 0) {
+                const filtered = filteredMappingsCache.length > 0 ? filteredMappingsCache : mappingsCache;
+                const start = (mappingsCurrentPage - 1) * mappingsPageSize;
+                const end = mappingsPageSize === 0 ? filtered.length : start + mappingsPageSize;
+                renderMappingsTable(filtered.slice(start, end));
+            }
         }
 
         // Render table header
@@ -1747,6 +1919,52 @@
             if (which === 'all' || which === 'hidden') hiddenLoaded = false;
             if (which === 'all' || which === 'bin') binLoaded = false;
             if (which === 'all' || which === 'mappings') mappingsLoaded = false;
+        }
+
+        // Helper: Format sync result message with HTML
+        function formatSyncResult(imported, skipped, errors) {
+            let html = '<div style="text-align: left;">';
+
+            // Summary section
+            html += '<div style="margin-bottom: 12px;">';
+            html += `<div style="font-size: 1.1em; margin-bottom: 8px;"><strong>Sync Summary</strong></div>`;
+            html += `<div style="display: flex; gap: 20px; flex-wrap: wrap;">`;
+            html += `<span><i class="bi bi-check-circle text-success"></i> <strong>${imported}</strong> imported</span>`;
+            html += `<span><i class="bi bi-skip-forward text-secondary"></i> <strong>${skipped}</strong> skipped</span>`;
+            if (errors && errors.length > 0) {
+                html += `<span><i class="bi bi-exclamation-triangle text-warning"></i> <strong>${errors.length}</strong> errors</span>`;
+            }
+            html += '</div></div>';
+
+            // Errors section (collapsible)
+            if (errors && errors.length > 0) {
+                html += '<div style="border-top: 1px solid var(--border-color, #dee2e6); padding-top: 12px;">';
+                html += '<div style="font-size: 0.9em; color: var(--text-muted, #6c757d); margin-bottom: 8px;">Skipped Details:</div>';
+                html += '<div style="max-height: 200px; overflow-y: auto; font-size: 0.85em; background: var(--bg-muted, #f8f9fa); padding: 8px; border-radius: 4px;">';
+
+                const errorsToShow = errors.slice(0, 10);
+                errorsToShow.forEach(err => {
+                    // Try to extract company and message details
+                    const match = err.match(/^(.+?):\s*Message (\d+) (.+)$/);
+                    if (match) {
+                        html += `<div style="margin-bottom: 4px; padding: 4px 0; border-bottom: 1px solid var(--border-color, #eee);">`;
+                        html += `<span style="font-weight: 500;">${match[1]}</span> - `;
+                        html += `<span style="font-family: monospace; color: var(--text-muted, #6c757d);">${match[2]}</span>: `;
+                        html += `<span>${match[3]}</span>`;
+                        html += '</div>';
+                    } else {
+                        html += `<div style="margin-bottom: 4px; padding: 4px 0; border-bottom: 1px solid var(--border-color, #eee);">${err}</div>`;
+                    }
+                });
+
+                if (errors.length > 10) {
+                    html += `<div style="color: var(--text-muted, #6c757d); font-style: italic; margin-top: 8px;">... and ${errors.length - 10} more</div>`;
+                }
+                html += '</div></div>';
+            }
+
+            html += '</div>';
+            return html;
         }
 
         // Load unallocated invoices
@@ -2239,12 +2457,8 @@
                 );
 
                 if (totalImported > 0 || hasErrors) {
-                    let msg = `Sync completed!\n\nImported: ${totalImported} invoice(s)\nSkipped: ${totalSkipped} (already imported)`;
-                    if (hasErrors) {
-                        msg += `\n\n${allErrors.length} errors occurred:\n${allErrors.slice(0, 5).join('\n')}`;
-                        if (allErrors.length > 5) msg += `\n... and ${allErrors.length - 5} more`;
-                    }
-                    await JarvisDialog.alert(msg, { type: hasErrors ? 'warning' : 'success' });
+                    const msg = formatSyncResult(totalImported, totalSkipped, hasErrors ? allErrors : null);
+                    await JarvisDialog.alert(msg, { type: hasErrors ? 'warning' : 'success', html: true });
                 }
 
                 loadUnallocatedInvoices(1, true);  // Force reload after sync
@@ -3720,8 +3934,12 @@
                 return;
             }
 
+            // Render table header with column config
+            renderMappingsTableHeader();
+
             const tbody = document.getElementById('mappingsTableBody');
-            tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4">
+            const cols = getMappingsVisibleColumns();
+            tbody.innerHTML = `<tr><td colspan="${cols.length}" class="text-center text-muted py-4">
                 <span class="spinner-border spinner-border-sm"></span> Loading...
             </td></tr>`;
 
@@ -3741,7 +3959,7 @@
                 if (data.success) {
                     mappingsCache = data.mappings || [];
                     mappingsLoaded = true; // Mark as loaded
-                    updateMappingsTableHeaders();
+                    updateMappingsTableHeaders(); // Update sort indicators
                     populateMappingsFilterDropdowns(); // Populate Partner and Type dropdowns
                     // Reapply filters and preserve page position on reload
                     filterMappings(forceReload);
@@ -3749,10 +3967,10 @@
                     // Restore page size from localStorage
                     document.getElementById('mappingsPageSize').value = mappingsPageSize || 50;
                 } else {
-                    tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger py-4">${data.error}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="${cols.length}" class="text-center text-danger py-4">${data.error}</td></tr>`;
                 }
             } catch (err) {
-                tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger py-4">Error: ${err.message}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="${cols.length}" class="text-center text-danger py-4">Error: ${err.message}</td></tr>`;
             }
         }
 
@@ -3761,6 +3979,7 @@
 
         function renderMappingsTable(mappings) {
             const tbody = document.getElementById('mappingsTableBody');
+            const cols = getMappingsVisibleColumns();
             const searchTerm = document.getElementById('mappingsSearchInput')?.value || '';
             const typeFilter = document.getElementById('mappingsTypeFilter')?.value || '';
             const hasFilters = searchTerm || typeFilter;
@@ -3769,8 +3988,9 @@
                 const message = hasFilters
                     ? '<i class="bi bi-search"></i> No mappings match your search criteria.'
                     : '<i class="bi bi-info-circle"></i> No supplier mappings yet. Click "Add Mapping" to create one.';
-                tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4">${message}</td></tr>`;
-                document.getElementById('mappingsSelectAll').checked = false;
+                tbody.innerHTML = `<tr><td colspan="${cols.length}" class="text-center text-muted py-4">${message}</td></tr>`;
+                const selectAll = document.getElementById('mappingsSelectAll');
+                if (selectAll) selectAll.checked = false;
                 selectedMappings.clear();
                 updateMappingsSelectionCount();
                 return;
@@ -3786,31 +4006,48 @@
                     : '<span class="text-muted">-</span>';
 
                 return `<tr data-id="${m.id}">
-                    <td><input type="checkbox" class="form-check-input mapping-checkbox" value="${m.id}" ${isSelected ? 'checked' : ''} onchange="onMappingCheckboxChange(${m.id}, this.checked)"></td>
-                    <td><strong>${m.partner_name || '-'}</strong></td>
-                    <td><code class="text-muted">${m.partner_cif || '-'}</code></td>
-                    <td>${m.supplier_name || '-'}</td>
-                    <td><code class="text-success">${m.supplier_vat || '-'}</code></td>
-                    <td>${typeBadges}</td>
-                    <td><code class="text-primary">${m.kod_konto || '-'}</code></td>
-                    <td><span class="text-muted small">${m.supplier_note || '-'}</span></td>
-                    <td><span class="small text-muted">${createdDate}</span></td>
-                    <td>
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-primary" onclick="editMapping(${m.id})" title="Edit">
-                                <i class="bi bi-pencil"></i>
-                            </button>
-                            <button class="btn btn-outline-danger" onclick="deleteMapping(${m.id})" title="Delete">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </div>
-                    </td>
+                    ${cols.map(col => {
+                        switch(col.id) {
+                            case 'checkbox':
+                                return `<td><input type="checkbox" class="form-check-input mapping-checkbox" value="${m.id}" ${isSelected ? 'checked' : ''} onchange="onMappingCheckboxChange(${m.id}, this.checked)"></td>`;
+                            case 'partner_name':
+                                return `<td><strong>${m.partner_name || '-'}</strong></td>`;
+                            case 'partner_cif':
+                                return `<td><code class="text-muted">${m.partner_cif || '-'}</code></td>`;
+                            case 'supplier_name':
+                                return `<td>${m.supplier_name || '-'}</td>`;
+                            case 'supplier_vat':
+                                return `<td><code class="text-success">${m.supplier_vat || '-'}</code></td>`;
+                            case 'type':
+                                return `<td>${typeBadges}</td>`;
+                            case 'kod_konto':
+                                return `<td><code class="text-primary">${m.kod_konto || '-'}</code></td>`;
+                            case 'supplier_note':
+                                return `<td><span class="text-muted small">${m.supplier_note || '-'}</span></td>`;
+                            case 'created_at':
+                                return `<td><span class="small text-muted">${createdDate}</span></td>`;
+                            case 'actions':
+                                return `<td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-primary" onclick="editMapping(${m.id})" title="Edit">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-outline-danger" onclick="deleteMapping(${m.id})" title="Delete">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>`;
+                            default:
+                                return '<td>-</td>';
+                        }
+                    }).join('')}
                 </tr>`;
             }).join('');
 
             // Update select all checkbox state
+            const selectAll = document.getElementById('mappingsSelectAll');
             const allChecked = mappings.length > 0 && mappings.every(m => selectedMappings.has(m.id));
-            document.getElementById('mappingsSelectAll').checked = allChecked;
+            if (selectAll) selectAll.checked = allChecked;
         }
 
         function onMappingCheckboxChange(id, checked) {

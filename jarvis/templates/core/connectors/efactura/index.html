@@ -1033,14 +1033,8 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    let msg = `Imported ${data.imported} invoice(s). ${data.skipped || 0} skipped (already imported).`;
-                    if (data.errors && data.errors.length > 0) {
-                        msg += `\n\n${data.errors.length} errors:\n${data.errors.slice(0, 10).join('\n')}`;
-                        if (data.errors.length > 10) {
-                            msg += `\n... and ${data.errors.length - 10} more`;
-                        }
-                    }
-                    await JarvisDialog.alert(msg, { type: 'success' });
+                    const msg = formatImportResult(data);
+                    await JarvisDialog.alert(msg, { type: 'success', html: true });
                     // Refresh unallocated count
                     loadUnallocatedCount();
                 } else {
@@ -1049,6 +1043,51 @@
             } catch (err) {
                 await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
+        }
+
+        // Helper: Format import result message with HTML
+        function formatImportResult(data) {
+            let html = '<div style="text-align: left;">';
+
+            // Summary section
+            html += '<div style="margin-bottom: 12px;">';
+            html += `<div style="font-size: 1.1em; margin-bottom: 8px;"><strong>Import Summary</strong></div>`;
+            html += `<div style="display: flex; gap: 20px; flex-wrap: wrap;">`;
+            html += `<span><i class="bi bi-check-circle text-success"></i> <strong>${data.imported || 0}</strong> imported</span>`;
+            html += `<span><i class="bi bi-skip-forward text-secondary"></i> <strong>${data.skipped || 0}</strong> skipped</span>`;
+            if (data.errors && data.errors.length > 0) {
+                html += `<span><i class="bi bi-exclamation-triangle text-warning"></i> <strong>${data.errors.length}</strong> errors</span>`;
+            }
+            html += '</div></div>';
+
+            // Errors section (collapsible)
+            if (data.errors && data.errors.length > 0) {
+                html += '<div style="border-top: 1px solid var(--border-color, #dee2e6); padding-top: 12px;">';
+                html += '<div style="font-size: 0.9em; color: var(--text-muted, #6c757d); margin-bottom: 8px;">Skipped Details:</div>';
+                html += '<div style="max-height: 200px; overflow-y: auto; font-size: 0.85em; background: var(--bg-muted, #f8f9fa); padding: 8px; border-radius: 4px;">';
+
+                const errorsToShow = data.errors.slice(0, 10);
+                errorsToShow.forEach(err => {
+                    // Extract message ID and error type for better formatting
+                    const match = err.match(/Message (\d+) (.+)/);
+                    if (match) {
+                        html += `<div style="margin-bottom: 4px; padding: 4px 0; border-bottom: 1px solid var(--border-color, #eee);">`;
+                        html += `<span style="font-family: monospace; color: var(--text-muted, #6c757d);">${match[1]}</span>: `;
+                        html += `<span>${match[2]}</span>`;
+                        html += '</div>';
+                    } else {
+                        html += `<div style="margin-bottom: 4px;">${err}</div>`;
+                    }
+                });
+
+                if (data.errors.length > 10) {
+                    html += `<div style="color: var(--text-muted, #6c757d); font-style: italic; margin-top: 8px;">... and ${data.errors.length - 10} more</div>`;
+                }
+                html += '</div></div>';
+            }
+
+            html += '</div>';
+            return html;
         }
 
         // Import selected messages
@@ -1082,14 +1121,8 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    let msg = `Imported ${data.imported} invoice(s). ${data.skipped || 0} skipped (already imported).`;
-                    if (data.errors && data.errors.length > 0) {
-                        msg += `\n\n${data.errors.length} errors:\n${data.errors.slice(0, 10).join('\n')}`;
-                        if (data.errors.length > 10) {
-                            msg += `\n... and ${data.errors.length - 10} more`;
-                        }
-                    }
-                    await JarvisDialog.alert(msg, { type: 'success' });
+                    const msg = formatImportResult(data);
+                    await JarvisDialog.alert(msg, { type: 'success', html: true });
                     // Clear checkboxes
                     document.querySelectorAll('.anaf-checkbox').forEach(cb => cb.checked = false);
                     document.getElementById('selectAllAnafCheckbox').checked = false;

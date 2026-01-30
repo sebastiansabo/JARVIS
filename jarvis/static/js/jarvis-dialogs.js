@@ -22,8 +22,12 @@ const JarvisDialog = {
             title: options.title || this._getDefaultTitle(options.type || 'info'),
             type: options.type || 'info',  // info, success, warning, error
             buttonText: options.buttonText || 'OK',
-            buttonClass: options.buttonClass || 'jarvis-dialog-btn-primary'
+            buttonClass: options.buttonClass || 'jarvis-dialog-btn-primary',
+            html: options.html || false  // If true, message is treated as HTML
         };
+
+        // Convert newlines to <br> if not HTML mode
+        const formattedMessage = config.html ? message : this._escapeHtml(message).replace(/\n/g, '<br>');
 
         return new Promise(resolve => {
             const overlay = this._createOverlay();
@@ -37,7 +41,7 @@ const JarvisDialog = {
                     <h3 class="jarvis-dialog-title">${config.title}</h3>
                 </div>
                 <div class="jarvis-dialog-body">
-                    <p class="jarvis-dialog-message">${message}</p>
+                    <div class="jarvis-dialog-message">${formattedMessage}</div>
                 </div>
                 <div class="jarvis-dialog-footer">
                     <button class="jarvis-dialog-btn ${config.buttonClass}" data-action="ok">
@@ -272,6 +276,13 @@ const JarvisDialog = {
             confirm: 'Confirm'
         };
         return titles[type] || 'Notice';
+    },
+
+    // Helper: Escape HTML to prevent XSS
+    _escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 };
 

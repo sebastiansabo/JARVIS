@@ -2836,7 +2836,7 @@ body.dark-theme .module-menu .home-link i {
     background: var(--bg-card);
     border-radius: 12px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-    max-width: 400px;
+    max-width: 500px;
     width: 90%;
     transform: scale(0.95);
     transition: transform 0.2s ease;
