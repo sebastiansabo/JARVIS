@@ -6029,9 +6029,8 @@ def get_responsable_by_email(email: str) -> Optional[dict]:
 
     cursor.execute('''
         SELECT r.id, r.name, r.email, r.phone,
-               ds.company, ds.brand, ds.department, ds.subdepartment
+               r.company, r.brand, r.departments, r.subdepartment
         FROM responsables r
-        LEFT JOIN department_structure ds ON r.org_unit_id = ds.id
         WHERE LOWER(r.email) = LOWER(%s)
         LIMIT 1
     ''', (email,))
@@ -6047,9 +6046,9 @@ def get_responsable_by_email(email: str) -> Optional[dict]:
             'phone': row['phone'],
             'company': row['company'],
             'brand': row['brand'],
-            'department': row['department'],
+            'department': row['departments'],
             'subdepartment': row['subdepartment'],
-            'departments': row['department'],  # Alias for profile page
+            'departments': row['departments'],  # Alias for profile page
         }
     return None
 
