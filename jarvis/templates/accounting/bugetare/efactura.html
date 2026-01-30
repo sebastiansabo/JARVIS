@@ -200,19 +200,9 @@
                 <a href="/efactura/" class="btn btn-sm btn-outline-secondary" title="Go to e-Factura Connector settings">
                     <i class="bi bi-gear"></i> Connector Settings
                 </a>
-                <div class="btn-group">
-                    <button class="btn btn-sm btn-success" onclick="syncAll()" id="syncBtn" title="Fetch and import all invoices from all connected companies">
-                        <i class="bi bi-cloud-arrow-down"></i> Sync
-                    </button>
-                    <button type="button" class="btn btn-sm btn-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" title="Select sync period">
-                        <span class="visually-hidden">Toggle Dropdown</span>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item" href="#" onclick="syncAll(1); return false;"><i class="bi bi-calendar3"></i> Last 1 day (default)</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="syncAll(2); return false;"><i class="bi bi-calendar3"></i> Last 2 days</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="syncAll(3); return false;"><i class="bi bi-calendar3"></i> Last 3 days</a></li>
-                    </ul>
-                </div>
+                <button class="btn btn-sm btn-success" onclick="openSyncModal()" id="syncBtn" title="Fetch and import invoices from ANAF">
+                    <i class="bi bi-cloud-arrow-down"></i> Sync
+                </button>
             </div>
         </div>
 
@@ -859,6 +849,63 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" onclick="resetMappingsColumnConfig()">Reset to Default</button>
                     <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="applyMappingsColumnConfig()">Apply</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sync Modal -->
+    <div class="modal fade" id="syncModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-cloud-arrow-down text-success"></i> Sync from ANAF</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Period Selection -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold"><i class="bi bi-calendar3"></i> Period</label>
+                        <div class="btn-group w-100" role="group" id="syncPeriodGroup">
+                            <input type="radio" class="btn-check" name="syncPeriod" id="period1" value="1" checked>
+                            <label class="btn btn-outline-primary" for="period1">1 day</label>
+                            <input type="radio" class="btn-check" name="syncPeriod" id="period3" value="3">
+                            <label class="btn btn-outline-primary" for="period3">3 days</label>
+                            <input type="radio" class="btn-check" name="syncPeriod" id="period7" value="7">
+                            <label class="btn btn-outline-primary" for="period7">7 days</label>
+                            <input type="radio" class="btn-check" name="syncPeriod" id="period15" value="15">
+                            <label class="btn btn-outline-primary" for="period15">15 days</label>
+                            <input type="radio" class="btn-check" name="syncPeriod" id="period30" value="30">
+                            <label class="btn btn-outline-primary" for="period30">30 days</label>
+                        </div>
+                    </div>
+
+                    <!-- Company Selection -->
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label fw-semibold mb-0"><i class="bi bi-building"></i> Companies</label>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-secondary" onclick="toggleAllSyncCompanies(true)">Select All</button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="toggleAllSyncCompanies(false)">Deselect All</button>
+                            </div>
+                        </div>
+                        <div id="syncCompaniesLoading" class="text-center py-3">
+                            <span class="spinner-border spinner-border-sm"></span> Loading companies...
+                        </div>
+                        <div id="syncCompaniesContainer" class="border rounded p-2" style="max-height: 250px; overflow-y: auto; display: none;">
+                            <!-- Populated dynamically -->
+                        </div>
+                        <div id="syncCompaniesEmpty" class="alert alert-warning mb-0 mt-2" style="display: none;">
+                            <i class="bi bi-exclamation-triangle"></i> No connected companies found.
+                            <a href="/efactura/">Go to Connector Settings</a> to add a connection.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" onclick="startSync()" id="startSyncBtn">
+                        <i class="bi bi-cloud-arrow-down"></i> Start Sync
+                    </button>
                 </div>
             </div>
         </div>
@@ -2382,8 +2429,72 @@
             }, delay);
         }
 
-        // Sync all invoices
-        async function syncAll(days = 1) {
+        // Sync Modal Functions
+        let syncCompaniesCache = [];
+
+        async function openSyncModal() {
+            const modal = new bootstrap.Modal(document.getElementById('syncModal'));
+            const loading = document.getElementById('syncCompaniesLoading');
+            const container = document.getElementById('syncCompaniesContainer');
+            const empty = document.getElementById('syncCompaniesEmpty');
+
+            // Show loading state
+            loading.style.display = 'block';
+            container.style.display = 'none';
+            empty.style.display = 'none';
+
+            modal.show();
+
+            try {
+                const res = await fetch('/efactura/api/sync/companies');
+                const data = await res.json();
+
+                loading.style.display = 'none';
+
+                if (data.success && data.companies && data.companies.length > 0) {
+                    syncCompaniesCache = data.companies;
+                    container.style.display = 'block';
+                    container.innerHTML = data.companies.map(c => `
+                        <div class="form-check">
+                            <input class="form-check-input sync-company-checkbox" type="checkbox" value="${c.cif}" id="sync_${c.cif}" checked>
+                            <label class="form-check-label" for="sync_${c.cif}">
+                                <strong>${c.display_name}</strong> <small class="text-muted">(${c.cif})</small>
+                            </label>
+                        </div>
+                    `).join('');
+                } else {
+                    empty.style.display = 'block';
+                }
+            } catch (err) {
+                loading.style.display = 'none';
+                empty.style.display = 'block';
+                empty.innerHTML = `<i class="bi bi-exclamation-triangle"></i> Error loading companies: ${err.message}`;
+            }
+        }
+
+        function toggleAllSyncCompanies(checked) {
+            document.querySelectorAll('.sync-company-checkbox').forEach(cb => cb.checked = checked);
+        }
+
+        function startSync() {
+            const days = parseInt(document.querySelector('input[name="syncPeriod"]:checked')?.value || 1);
+            const selectedCifs = Array.from(document.querySelectorAll('.sync-company-checkbox:checked')).map(cb => cb.value);
+
+            if (selectedCifs.length === 0) {
+                JarvisDialog.alert('Please select at least one company to sync.', { type: 'warning' });
+                return;
+            }
+
+            // Close modal and start sync
+            bootstrap.Modal.getInstance(document.getElementById('syncModal')).hide();
+
+            // Filter companies to only selected ones
+            const selectedCompanies = syncCompaniesCache.filter(c => selectedCifs.includes(c.cif));
+            syncWithCompanies(days, selectedCompanies);
+        }
+
+        // Sync with specified companies
+        async function syncWithCompanies(days, companies) {
             const syncBtn = document.getElementById('syncBtn');
             const originalContent = syncBtn.innerHTML;
 
@@ -2396,17 +2507,12 @@
             let allErrors = [];
 
             try {
-                const companiesRes = await fetch('/efactura/api/sync/companies');
-                const companiesData = await companiesRes.json();
-
-                if (!companiesData.success || !companiesData.companies || companiesData.companies.length === 0) {
-                    showSyncProgress('No companies', companiesData.error || 'No connected companies found', 100, 'error');
-                    await JarvisDialog.alert(companiesData.error || 'No connected companies found. Go to Connector Settings to add a connection.', { type: 'warning' });
+                if (!companies || companies.length === 0) {
+                    showSyncProgress('No companies', 'No companies selected', 100, 'error');
+                    await JarvisDialog.alert('No companies selected.', { type: 'warning' });
                     hideSyncProgress(3000);
                     return;
                 }
-
-                const companies = companiesData.companies;
 
                 for (let i = 0; i < companies.length; i++) {
                     const company = companies[i];
