@@ -144,29 +144,30 @@
                     updateUI();
 
                     if (newInvoices.length === 0) {
-                        alert('No new invoices found from ' + source);
+                        await JarvisDialog.alert('No new invoices found from ' + source, { type: 'warning' });
                     }
                 } else {
-                    alert('Error: ' + (result.error || 'Failed to fetch invoices'));
+                    await JarvisDialog.alert('Error: ' + (result.error || 'Failed to fetch invoices'), { type: 'error' });
                 }
             } catch (err) {
                 hideLoading();
-                alert('Error fetching invoices: ' + err.message);
+                await JarvisDialog.alert('Error fetching invoices: ' + err.message, { type: 'error' });
             }
         }
 
-        function clearBuffer() {
-            if (confirm('Clear all invoices from buffer?')) {
+        async function clearBuffer() {
+            const confirmed = await JarvisDialog.confirm('Clear all invoices from buffer?', { danger: true });
+            if (confirmed) {
                 bufferInvoices = [];
                 updateUI();
             }
         }
 
-        function sendToBulk() {
+        async function sendToBulk() {
             const selected = bufferInvoices.filter(inv => inv.selected !== false);
 
             if (selected.length === 0) {
-                alert('No invoices selected');
+                await JarvisDialog.alert('No invoices selected', { type: 'warning' });
                 return;
             }
 
@@ -182,5 +183,6 @@
     <script src="/static/js/jarvis-utils.js"></script>
     <script src="/static/js/online-users.js"></script>
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>

@@ -1255,7 +1255,7 @@
                                 return `Group ${i + 1}: ${names.join(' + ')}`;
                             }).join('\n');
 
-                            const confirmed = confirm(
+                            const confirmed = await JarvisDialog.confirm(
                                 `AI found ${aiGroups.length} group(s) of similar items:\n\n${groupDescriptions}\n\nMerge these items?`
                             );
 
@@ -3062,5 +3062,6 @@
     <script src="/static/js/online-users.js"></script>
     {% include 'partials/_edit_profile_modal.html' %}
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>

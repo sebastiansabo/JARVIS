@@ -454,6 +454,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/jarvis-dialogs.js') }}"></script>
     <script>
         // State
         let transactions = [];
@@ -1460,7 +1461,8 @@
         }
 
         async function unlinkInvoice(transactionId) {
-            if (!confirm('Are you sure you want to unlink this invoice from the transaction?')) {
+            const confirmed = await JarvisDialog.confirm('Are you sure you want to unlink this invoice from the transaction?', { danger: true });
+            if (!confirmed) {
                 return;
             }
 
@@ -1560,7 +1562,8 @@
         async function bulkIgnore() {
             if (selectedTransactionIds.size === 0) return;
 
-            if (!confirm(`Ignore ${selectedTransactionIds.size} transactions?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Ignore ${selectedTransactionIds.size} transactions?`);
+            if (!confirmed) return;
 
             try {
                 const response = await fetch('/statements/api/transactions/bulk-ignore', {
@@ -1673,7 +1676,8 @@
         }
 
         async function unmergeTransaction(mergedId) {
-            if (!confirm('Unmerge this transaction? The original transactions will be restored.')) {
+            const confirmed = await JarvisDialog.confirm('Unmerge this transaction? The original transactions will be restored.');
+            if (!confirmed) {
                 return;
             }
 
@@ -1902,7 +1906,8 @@
                 return;
             }
 
-            if (!confirm(message)) {
+            const confirmed = await JarvisDialog.confirm(message);
+            if (!confirmed) {
                 return;
             }
 

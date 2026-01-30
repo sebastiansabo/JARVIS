@@ -574,7 +574,7 @@
 
             // Validate regex
             if (!validateRegex(pattern)) {
-                alert('Invalid regex pattern. Please check your syntax.');
+                await JarvisDialog.alert('Invalid regex pattern. Please check your syntax.', { type: 'error' });
                 return;
             }
 
@@ -636,12 +636,12 @@
             const isActive = document.getElementById('editIsActive').checked;
 
             if (!pattern || !supplierName) {
-                alert('Pattern and Supplier Name are required');
+                await JarvisDialog.alert('Pattern and Supplier Name are required', { type: 'warning' });
                 return;
             }
 
             if (!validateRegex(pattern)) {
-                alert('Invalid regex pattern. Please check your syntax.');
+                await JarvisDialog.alert('Invalid regex pattern. Please check your syntax.', { type: 'error' });
                 return;
             }
 
@@ -682,7 +682,8 @@
             const mapping = mappings.find(m => m.id === id);
             if (!mapping) return;
 
-            if (!confirm(`Delete the mapping for "${mapping.supplier_name}"?\n\nThis action cannot be undone.`)) {
+            const confirmed = await JarvisDialog.confirm(`Delete the mapping for "${mapping.supplier_name}"?\n\nThis action cannot be undone.`, { danger: true });
+            if (!confirmed) {
                 return;
             }
 
@@ -719,7 +720,7 @@
             }
         }
 
-        function testPattern(context) {
+        async function testPattern(context) {
             currentTestContext = context;
             let pattern = '';
 
@@ -730,12 +731,12 @@
             }
 
             if (!pattern) {
-                alert('Please enter a pattern first');
+                await JarvisDialog.alert('Please enter a pattern first', { type: 'warning' });
                 return;
             }
 
             if (!validateRegex(pattern)) {
-                alert('Invalid regex pattern');
+                await JarvisDialog.alert('Invalid regex pattern', { type: 'error' });
                 return;
             }
 
@@ -781,12 +782,12 @@
             runPatternTest();
         }
 
-        function runPatternTest() {
+        async function runPatternTest() {
             const pattern = document.getElementById('testPatternInput').value;
             const testString = document.getElementById('testString').value;
 
             if (!testString) {
-                alert('Please enter a test string');
+                await JarvisDialog.alert('Please enter a test string', { type: 'warning' });
                 return;
             }
 
@@ -861,5 +862,6 @@
     <script src="/static/js/online-users.js"></script>
     {% include 'partials/_edit_profile_modal.html' %}
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>

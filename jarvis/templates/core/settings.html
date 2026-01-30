@@ -2419,13 +2419,13 @@
             };
 
             if (!userData.name || !userData.email) {
-                alert('Name and email are required');
+                await JarvisDialog.alert('Name and email are required', { type: 'warning' });
                 return;
             }
 
             // Password required for new users
             if (!userId && !password) {
-                alert('Password is required for new users');
+                await JarvisDialog.alert('Password is required for new users', { type: 'warning' });
                 return;
             }
 
@@ -2450,11 +2450,11 @@
                     userModal.hide();
                     loadUsers();
                 } else {
-                    alert(result.error || 'Failed to save user');
+                    await JarvisDialog.alert(result.error || 'Failed to save user', { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error saving user:', error);
-                alert('Failed to save user');
+                await JarvisDialog.alert('Failed to save user', { type: 'error' });
             }
         }
 
@@ -2575,7 +2575,7 @@
             const description = document.getElementById('roleDescription').value.trim() || null;
 
             if (!name) {
-                alert('Role name is required');
+                await JarvisDialog.alert('Role name is required', { type: 'warning' });
                 return;
             }
 
@@ -2593,7 +2593,7 @@
                 const result = await res.json();
 
                 if (!result.success && !result.id) {
-                    alert(result.error || 'Failed to save role');
+                    await JarvisDialog.alert(result.error || 'Failed to save role', { type: 'error' });
                     return;
                 }
 
@@ -2604,7 +2604,7 @@
 
             } catch (error) {
                 console.error('Error saving role:', error);
-                alert('Failed to save role');
+                await JarvisDialog.alert('Failed to save role', { type: 'error' });
             }
         }
 
@@ -2636,11 +2636,11 @@
                     else if (deleteType === 'responsable') loadResponsables();
                     else if (deleteType === 'vat_rate') loadVatRates();
                 } else {
-                    alert(result.error || 'Failed to delete');
+                    await JarvisDialog.alert(result.error || 'Failed to delete', { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error deleting:', error);
-                alert('Failed to delete');
+                await JarvisDialog.alert('Failed to delete', { type: 'error' });
             } finally {
                 deleteType = null;
                 deleteId = null;
@@ -2740,7 +2740,7 @@
             };
 
             if (!responsableData.name || !responsableData.email) {
-                alert('Name and email are required');
+                await JarvisDialog.alert('Name and email are required', { type: 'warning' });
                 return;
             }
 
@@ -2760,11 +2760,11 @@
                     responsableModal.hide();
                     loadResponsables();
                 } else {
-                    alert(result.error || 'Failed to save responsable');
+                    await JarvisDialog.alert(result.error || 'Failed to save responsable', { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error saving responsable:', error);
-                alert('Failed to save responsable');
+                await JarvisDialog.alert('Failed to save responsable', { type: 'error' });
             }
         }
 
@@ -2817,14 +2817,14 @@
                 const result = await res.json();
 
                 if (result.success) {
-                    alert('Notification settings saved successfully!');
+                    await JarvisDialog.alert('Notification settings saved successfully!', { type: 'success' });
                     loadNotificationSettings();
                 } else {
-                    alert(result.error || 'Failed to save settings');
+                    await JarvisDialog.alert(result.error || 'Failed to save settings', { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error saving notification settings:', error);
-                alert('Failed to save settings');
+                await JarvisDialog.alert('Failed to save settings', { type: 'error' });
             }
         }
 
@@ -3110,7 +3110,7 @@
             const department = document.getElementById('dsDepartment').value.trim();
 
             if (!company || !department) {
-                alert('Company and Department are required');
+                await JarvisDialog.alert('Company and Department are required', { type: 'warning' });
                 return;
             }
 
@@ -3144,16 +3144,17 @@
                     loadDepartmentStructures();
                     showToast(id ? 'Department structure updated' : 'Department structure created', 'success');
                 } else {
-                    alert(result.error || 'Failed to save department structure');
+                    await JarvisDialog.alert(result.error || 'Failed to save department structure', { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error saving department structure:', error);
-                alert('Failed to save department structure');
+                await JarvisDialog.alert('Failed to save department structure', { type: 'error' });
             }
         }
 
         async function deleteDepartmentStructure(id) {
-            if (!confirm('Are you sure you want to delete this department structure?')) return;
+            const confirmed = await JarvisDialog.confirm('Are you sure you want to delete this department structure?', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/api/department-structures/${id}`, { method: 'DELETE' });
@@ -3163,11 +3164,11 @@
                     loadDepartmentStructures();
                     showToast('Department structure deleted', 'success');
                 } else {
-                    alert(result.error || 'Failed to delete department structure');
+                    await JarvisDialog.alert(result.error || 'Failed to delete department structure', { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error deleting department structure:', error);
-                alert('Failed to delete department structure');
+                await JarvisDialog.alert('Failed to delete department structure', { type: 'error' });
             }
         }
 
@@ -3222,7 +3223,7 @@
             const vat = document.getElementById('newCompanyVat').value.trim();
 
             if (!name || !vat) {
-                alert('Company name and VAT number are required');
+                await JarvisDialog.alert('Company name and VAT number are required', { type: 'warning' });
                 return;
             }
 
@@ -3241,16 +3242,17 @@
                     await loadCompaniesWithVat();
                     showToast('Company added to VAT registry', 'success');
                 } else {
-                    alert('Error adding company: ' + result.error);
+                    await JarvisDialog.alert('Error adding company: ' + result.error, { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error adding company:', error);
-                alert('Failed to add company');
+                await JarvisDialog.alert('Failed to add company', { type: 'error' });
             }
         }
 
         async function deleteCompanyVat(company) {
-            if (!confirm(`Delete "${company}" from VAT registry?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Delete "${company}" from VAT registry?`, { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/api/companies-vat/${encodeURIComponent(company)}`, { method: 'DELETE' });
@@ -3259,11 +3261,11 @@
                     await loadCompaniesWithVat();
                     showToast('Company removed from VAT registry', 'success');
                 } else {
-                    alert('Error deleting company: ' + result.error);
+                    await JarvisDialog.alert('Error deleting company: ' + result.error, { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error deleting company:', error);
-                alert('Failed to delete company');
+                await JarvisDialog.alert('Failed to delete company', { type: 'error' });
             }
         }
 
@@ -3286,7 +3288,7 @@
             const vat = document.getElementById('editVatNumber').value.trim();
 
             if (!newCompany || !vat) {
-                alert('Company name and VAT number are required');
+                await JarvisDialog.alert('Company name and VAT number are required', { type: 'warning' });
                 return;
             }
 
@@ -3303,11 +3305,11 @@
                     await loadCompaniesWithVat();
                     showToast('Company updated successfully', 'success');
                 } else {
-                    alert('Error updating company: ' + result.error);
+                    await JarvisDialog.alert('Error updating company: ' + result.error, { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error updating company:', error);
-                alert('Failed to update company');
+                await JarvisDialog.alert('Failed to update company', { type: 'error' });
             }
         }
 
@@ -3924,7 +3926,8 @@
         }
 
         async function deleteDropdownOption(optionId) {
-            if (!confirm('Are you sure you want to delete this option?')) return;
+            const confirmed = await JarvisDialog.confirm('Are you sure you want to delete this option?', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/api/dropdown-options/${optionId}`, {
@@ -4190,7 +4193,7 @@
             settings.logo = logoSettings;
 
             if (!themeName) {
-                alert('Please enter a theme name');
+                await JarvisDialog.alert('Please enter a theme name', { type: 'warning' });
                 return;
             }
 
@@ -4213,20 +4216,21 @@
                 if (data.success) {
                     currentTheme = data.theme;
                     currentThemeId = data.theme.id;
-                    alert('Theme saved successfully! Refresh the page to see changes applied.');
+                    await JarvisDialog.alert('Theme saved successfully! Refresh the page to see changes applied.', { type: 'success' });
                 } else {
-                    alert('Error saving theme: ' + (data.error || 'Unknown error'));
+                    await JarvisDialog.alert('Error saving theme: ' + (data.error || 'Unknown error'), { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error saving theme:', err);
-                alert('Error saving theme: ' + err.message);
+                await JarvisDialog.alert('Error saving theme: ' + err.message, { type: 'error' });
             } finally {
                 hideLoading();
             }
         }
 
-        function resetThemeToDefault() {
-            if (confirm('Reset theme to default Jarvis colors? This will not save automatically.')) {
+        async function resetThemeToDefault() {
+            const confirmed = await JarvisDialog.confirm('Reset theme to default Jarvis colors? This will not save automatically.');
+            if (confirmed) {
                 document.getElementById('themeName').value = 'Jarvis Default';
                 populateThemeForm({ theme_name: 'Jarvis Default', settings: defaultTheme, is_active: true });
             }
@@ -4402,7 +4406,7 @@
             };
 
             if (!data.module_key || !data.name) {
-                alert('Module Key and Name are required');
+                await JarvisDialog.alert('Module Key and Name are required', { type: 'warning' });
                 return;
             }
 
@@ -4420,11 +4424,11 @@
                     loadModuleMenu();
                 } else {
                     const err = await res.json();
-                    alert(err.error || 'Failed to save module');
+                    await JarvisDialog.alert(err.error || 'Failed to save module', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error saving module:', err);
-                alert('Failed to save module');
+                await JarvisDialog.alert('Failed to save module', { type: 'error' });
             }
         }
 
@@ -4437,18 +4441,19 @@
                 msg += '\n\nWarning: This will also delete all sub-pages!';
             }
 
-            if (!confirm(msg)) return;
+            const confirmed = await JarvisDialog.confirm(msg, { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/api/module-menu/${itemId}`, { method: 'DELETE' });
                 if (res.ok) {
                     loadModuleMenu();
                 } else {
-                    alert('Failed to delete module');
+                    await JarvisDialog.alert('Failed to delete module', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error deleting module:', err);
-                alert('Failed to delete module');
+                await JarvisDialog.alert('Failed to delete module', { type: 'error' });
             }
         }
 
@@ -4648,7 +4653,7 @@
         async function saveAllPermissions() {
             const roleIds = Object.keys(pendingPermissionChanges);
             if (roleIds.length === 0) {
-                alert('No changes to save.');
+                await JarvisDialog.alert('No changes to save.', { type: 'warning' });
                 return;
             }
 
@@ -4664,12 +4669,12 @@
                 }
 
                 pendingPermissionChanges = {};
-                alert('Permissions saved successfully!');
+                await JarvisDialog.alert('Permissions saved successfully!', { type: 'success' });
                 // Reload to get fresh data
                 await loadPermissionMatrix();
             } catch (err) {
                 console.error('Error saving permissions:', err);
-                alert('Error saving permissions: ' + err.message);
+                await JarvisDialog.alert('Error saving permissions: ' + err.message, { type: 'error' });
             } finally {
                 hideLoading();
             }
@@ -4736,7 +4741,7 @@
             const description = document.getElementById('addBonusTypeDescription').value.trim();
 
             if (!name || isNaN(amount)) {
-                alert('Name and Amount are required');
+                await JarvisDialog.alert('Name and Amount are required', { type: 'warning' });
                 return;
             }
 
@@ -4760,11 +4765,11 @@
                     document.getElementById('addBonusTypeDescription').value = '';
                     await loadBonusTypes();
                 } else {
-                    alert('Error saving bonus type');
+                    await JarvisDialog.alert('Error saving bonus type', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving bonus type');
+                await JarvisDialog.alert('Error saving bonus type', { type: 'error' });
             }
         }
 
@@ -4789,7 +4794,7 @@
             const isActive = document.getElementById('editBonusTypeIsActive').checked;
 
             if (!name || isNaN(amount)) {
-                alert('Name and Amount are required');
+                await JarvisDialog.alert('Name and Amount are required', { type: 'warning' });
                 return;
             }
 
@@ -4810,16 +4815,17 @@
                     bootstrap.Modal.getInstance(document.getElementById('editBonusTypeModal')).hide();
                     await loadBonusTypes();
                 } else {
-                    alert('Error updating bonus type');
+                    await JarvisDialog.alert('Error updating bonus type', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error updating bonus type');
+                await JarvisDialog.alert('Error updating bonus type', { type: 'error' });
             }
         }
 
         async function deleteBonusType(id, name) {
-            if (!confirm(`Are you sure you want to deactivate "${name}"?`)) {
+            const confirmed = await JarvisDialog.confirm(`Are you sure you want to deactivate "${name}"?`, { danger: true });
+            if (!confirmed) {
                 return;
             }
 
@@ -4831,11 +4837,11 @@
                 if (resp.ok) {
                     await loadBonusTypes();
                 } else {
-                    alert('Error deleting bonus type');
+                    await JarvisDialog.alert('Error deleting bonus type', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting bonus type');
+                await JarvisDialog.alert('Error deleting bonus type', { type: 'error' });
             }
         }
 
@@ -5270,7 +5276,7 @@
             };
 
             if (!data.company) {
-                alert('Company name is required');
+                await JarvisDialog.alert('Company name is required', { type: 'warning' });
                 return;
             }
 
@@ -5293,7 +5299,7 @@
 
                 if (!resp.ok) {
                     const error = await resp.json();
-                    alert(error.error || 'Error saving company');
+                    await JarvisDialog.alert(error.error || 'Error saving company', { type: 'error' });
                     return;
                 }
 
@@ -5336,23 +5342,24 @@
                 loadHrCompanies();
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving company');
+                await JarvisDialog.alert('Error saving company', { type: 'error' });
             }
         }
 
         async function deleteHrCompany(companyName) {
-            if (!confirm(`Delete company "${companyName}"? This will also delete all associated brands. This cannot be undone.`)) return;
+            const confirmed = await JarvisDialog.confirm(`Delete company "${companyName}"? This will also delete all associated brands. This cannot be undone.`, { danger: true });
+            if (!confirmed) return;
 
             try {
                 const resp = await fetch(`/api/companies-vat/${encodeURIComponent(companyName)}`, { method: 'DELETE' });
                 if (resp.ok) {
                     loadHrCompanies();
                 } else {
-                    alert('Error deleting company');
+                    await JarvisDialog.alert('Error deleting company', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting company');
+                await JarvisDialog.alert('Error deleting company', { type: 'error' });
             }
         }
 
@@ -5467,7 +5474,7 @@
             };
 
             if (!data.company || !data.department) {
-                alert('Company and Department are required');
+                await JarvisDialog.alert('Company and Department are required', { type: 'warning' });
                 return;
             }
 
@@ -5485,27 +5492,28 @@
                     bootstrap.Modal.getInstance(document.getElementById('hrDepartmentModal')).hide();
                     loadHrDepartments();
                 } else {
-                    alert('Error saving department');
+                    await JarvisDialog.alert('Error saving department', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving department');
+                await JarvisDialog.alert('Error saving department', { type: 'error' });
             }
         }
 
         async function deleteHrDepartment(id) {
-            if (!confirm('Delete this department? This cannot be undone.')) return;
+            const confirmed = await JarvisDialog.confirm('Delete this department? This cannot be undone.', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const resp = await fetch(`/api/department-structures/${id}`, { method: 'DELETE' });
                 if (resp.ok) {
                     loadHrDepartments();
                 } else {
-                    alert('Error deleting department');
+                    await JarvisDialog.alert('Error deleting department', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting department');
+                await JarvisDialog.alert('Error deleting department', { type: 'error' });
             }
         }
 
@@ -5963,7 +5971,7 @@
             };
 
             if (!data.name) {
-                alert('Name is required');
+                await JarvisDialog.alert('Name is required', { type: 'warning' });
                 return;
             }
 
@@ -5981,27 +5989,28 @@
                     bootstrap.Modal.getInstance(document.getElementById('hrEmployeeModal')).hide();
                     loadHrEmployees();
                 } else {
-                    alert('Error saving employee');
+                    await JarvisDialog.alert('Error saving employee', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving employee');
+                await JarvisDialog.alert('Error saving employee', { type: 'error' });
             }
         }
 
         async function deleteHrEmployee(id, name) {
-            if (!confirm(`Delete employee "${name}"? This cannot be undone.`)) return;
+            const confirmed = await JarvisDialog.confirm(`Delete employee "${name}"? This cannot be undone.`, { danger: true });
+            if (!confirmed) return;
 
             try {
                 const resp = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
                 if (resp.ok) {
                     loadHrEmployees();
                 } else {
-                    alert('Error deleting employee');
+                    await JarvisDialog.alert('Error deleting employee', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting employee');
+                await JarvisDialog.alert('Error deleting employee', { type: 'error' });
             }
         }
 
@@ -6078,7 +6087,10 @@
         async function saveMasterBrand() {
             const id = document.getElementById('masterBrandId').value;
             const name = document.getElementById('masterBrandName').value.trim();
-            if (!name) return alert('Brand name is required');
+            if (!name) {
+                await JarvisDialog.alert('Brand name is required', { type: 'warning' });
+                return;
+            }
 
             const url = id ? `/hr/events/api/master/brands/${id}` : '/hr/events/api/master/brands';
             const method = id ? 'PUT' : 'POST';
@@ -6093,23 +6105,24 @@
                     loadMasterBrands();
                 } else {
                     const data = await resp.json();
-                    alert(data.error || 'Error saving brand');
+                    await JarvisDialog.alert(data.error || 'Error saving brand', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving brand');
+                await JarvisDialog.alert('Error saving brand', { type: 'error' });
             }
         }
 
         async function deleteMasterBrand(id, name) {
-            if (!confirm(`Delete brand "${name}"?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Delete brand "${name}"?`, { danger: true });
+            if (!confirmed) return;
             try {
                 const resp = await fetch(`/hr/events/api/master/brands/${id}`, { method: 'DELETE' });
                 if (resp.ok) loadMasterBrands();
-                else alert('Error deleting brand');
+                else await JarvisDialog.alert('Error deleting brand', { type: 'error' });
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting brand');
+                await JarvisDialog.alert('Error deleting brand', { type: 'error' });
             }
         }
 
@@ -6179,7 +6192,10 @@
         async function saveMasterDept() {
             const id = document.getElementById('masterDeptId').value;
             const name = document.getElementById('masterDeptName').value.trim();
-            if (!name) return alert('Department name is required');
+            if (!name) {
+                await JarvisDialog.alert('Department name is required', { type: 'warning' });
+                return;
+            }
 
             const url = id ? `/hr/events/api/master/departments/${id}` : '/hr/events/api/master/departments';
             const method = id ? 'PUT' : 'POST';
@@ -6194,23 +6210,24 @@
                     loadMasterDepts();
                 } else {
                     const data = await resp.json();
-                    alert(data.error || 'Error saving department');
+                    await JarvisDialog.alert(data.error || 'Error saving department', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving department');
+                await JarvisDialog.alert('Error saving department', { type: 'error' });
             }
         }
 
         async function deleteMasterDept(id, name) {
-            if (!confirm(`Delete department "${name}"?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Delete department "${name}"?`, { danger: true });
+            if (!confirmed) return;
             try {
                 const resp = await fetch(`/hr/events/api/master/departments/${id}`, { method: 'DELETE' });
                 if (resp.ok) loadMasterDepts();
-                else alert('Error deleting department');
+                else await JarvisDialog.alert('Error deleting department', { type: 'error' });
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting department');
+                await JarvisDialog.alert('Error deleting department', { type: 'error' });
             }
         }
 
@@ -6279,7 +6296,10 @@
         async function saveMasterSubdept() {
             const id = document.getElementById('masterSubdeptId').value;
             const name = document.getElementById('masterSubdeptName').value.trim();
-            if (!name) return alert('Subdepartment name is required');
+            if (!name) {
+                await JarvisDialog.alert('Subdepartment name is required', { type: 'warning' });
+                return;
+            }
 
             const url = id ? `/hr/events/api/master/subdepartments/${id}` : '/hr/events/api/master/subdepartments';
             const method = id ? 'PUT' : 'POST';
@@ -6294,23 +6314,24 @@
                     loadMasterSubdepts();
                 } else {
                     const data = await resp.json();
-                    alert(data.error || 'Error saving subdepartment');
+                    await JarvisDialog.alert(data.error || 'Error saving subdepartment', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving subdepartment');
+                await JarvisDialog.alert('Error saving subdepartment', { type: 'error' });
             }
         }
 
         async function deleteMasterSubdept(id, name) {
-            if (!confirm(`Delete subdepartment "${name}"?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Delete subdepartment "${name}"?`, { danger: true });
+            if (!confirmed) return;
             try {
                 const resp = await fetch(`/hr/events/api/master/subdepartments/${id}`, { method: 'DELETE' });
                 if (resp.ok) loadMasterSubdepts();
-                else alert('Error deleting subdepartment');
+                else await JarvisDialog.alert('Error deleting subdepartment', { type: 'error' });
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting subdepartment');
+                await JarvisDialog.alert('Error deleting subdepartment', { type: 'error' });
             }
         }
 
@@ -6534,7 +6555,8 @@
             const manager = document.getElementById('structureManagerSearch').value.trim();
 
             if (!company_id || !department_id) {
-                return alert('Company and Department are required');
+                await JarvisDialog.alert('Company and Department are required', { type: 'warning' });
+                return;
             }
 
             const url = id ? `/hr/events/api/structure/departments/${id}` : '/hr/events/api/structure/departments';
@@ -6549,23 +6571,24 @@
                     bootstrap.Modal.getInstance(document.getElementById('structureModal')).hide();
                     loadStructure();
                 } else {
-                    alert('Error saving structure entry');
+                    await JarvisDialog.alert('Error saving structure entry', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving structure entry');
+                await JarvisDialog.alert('Error saving structure entry', { type: 'error' });
             }
         }
 
         async function deleteStructure(id) {
-            if (!confirm('Delete this structure entry?')) return;
+            const confirmed = await JarvisDialog.confirm('Delete this structure entry?', { danger: true });
+            if (!confirmed) return;
             try {
                 const resp = await fetch(`/hr/events/api/structure/departments/${id}`, { method: 'DELETE' });
                 if (resp.ok) loadStructure();
-                else alert('Error deleting structure entry');
+                else await JarvisDialog.alert('Error deleting structure entry', { type: 'error' });
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting structure entry');
+                await JarvisDialog.alert('Error deleting structure entry', { type: 'error' });
             }
         }
     </script>
@@ -6573,5 +6596,6 @@
     <script src="/static/js/online-users.js"></script>
     {% include 'partials/_edit_profile_modal.html' %}
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>

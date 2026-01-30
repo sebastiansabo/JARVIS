@@ -437,7 +437,7 @@
         });
 
         // Plus button click - add selected employee from search results
-        document.getElementById('btnAddEmployee').addEventListener('click', () => {
+        document.getElementById('btnAddEmployee').addEventListener('click', async () => {
             const selected = searchResults.querySelector('.employee-search-item.selected[data-id]');
             if (selected) {
                 selected.click();
@@ -448,9 +448,9 @@
                     first.click();
                 } else if (searchInput.value.trim()) {
                     // No results, show hint
-                    alert('No matching employees found. Try a different search term.');
+                    await JarvisDialog.alert('No matching employees found. Try a different search term.', { type: 'warning' });
                 } else {
-                    alert('Type an employee name to search first.');
+                    await JarvisDialog.alert('Type an employee name to search first.', { type: 'warning' });
                 }
             }
         });
@@ -720,13 +720,13 @@
 
             // Validation: Basic event fields
             if (!data.name || !data.start_date || !data.end_date) {
-                alert('Name, start date, and end date are required');
+                await JarvisDialog.alert('Name, start date, and end date are required', { type: 'warning' });
                 return;
             }
 
             // Validation: At least one employee
             if (selectedEmployees.size === 0) {
-                alert('Please add at least one employee to the event.');
+                await JarvisDialog.alert('Please add at least one employee to the event.', { type: 'warning' });
                 return;
             }
 
@@ -743,11 +743,11 @@
                 }
             });
             if (!hasAnyDays) {
-                alert('Please enter bonus days for at least one employee.');
+                await JarvisDialog.alert('Please enter bonus days for at least one employee.', { type: 'warning' });
                 return;
             }
             if (missingBonusType) {
-                alert('Please select a bonus type for all employees with bonus days.');
+                await JarvisDialog.alert('Please select a bonus type for all employees with bonus days.', { type: 'warning' });
                 return;
             }
 
@@ -760,7 +760,7 @@
                 });
 
                 if (!resp.ok) {
-                    alert('Error saving event');
+                    await JarvisDialog.alert('Error saving event', { type: 'error' });
                     return;
                 }
 
@@ -824,19 +824,20 @@
                 window.location.href = '{{ url_for("hr.events.events") }}';
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving event');
+                await JarvisDialog.alert('Error saving event', { type: 'error' });
             }
         });
     </script>
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
     <!-- Crafted with care by Seba - Find the hidden surprises! -->
     <script>
         // Seba's secret: Triple-click the page title for a surprise
         let titleClicks = 0;
-        document.querySelector('.card-header h5').addEventListener('click', () => {
+        document.querySelector('.card-header h5').addEventListener('click', async () => {
             titleClicks++;
             if (titleClicks === 3) {
-                alert('Seba says: "May your events be legendary and your bonuses generous!"');
+                await JarvisDialog.alert('Seba says: "May your events be legendary and your bonuses generous!"', { type: 'success' });
                 titleClicks = 0;
             }
             setTimeout(() => titleClicks = 0, 500);

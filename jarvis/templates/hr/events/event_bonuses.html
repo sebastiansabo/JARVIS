@@ -759,7 +759,7 @@
             };
 
             if (!data.employee_id || !data.event_id || !data.year || !data.month) {
-                alert('Please fill in all required fields');
+                await JarvisDialog.alert('Please fill in all required fields', { type: 'warning' });
                 return;
             }
 
@@ -778,14 +778,15 @@
                 bonusModal.hide();
                 window.location.reload();
             } else {
-                alert('Error saving bonus');
+                await JarvisDialog.alert('Error saving bonus', { type: 'error' });
             }
         });
 
         // Delete handler
         document.querySelectorAll('.btn-delete').forEach(btn => {
             btn.addEventListener('click', async () => {
-                if (!confirm('Delete this bonus record?')) return;
+                const confirmed = await JarvisDialog.confirm('Delete this bonus record?', { danger: true });
+                if (!confirmed) return;
 
                 const id = btn.dataset.id;
                 const resp = await fetch(`/hr/events/api/event-bonuses/${id}`, {
@@ -795,7 +796,7 @@
                 if (resp.ok) {
                     window.location.reload();
                 } else {
-                    alert('Error deleting bonus');
+                    await JarvisDialog.alert('Error deleting bonus', { type: 'error' });
                 }
             });
         });
@@ -861,7 +862,7 @@
             const month = document.getElementById('bulkMonth').value;
 
             if (!eventId || !year || !month) {
-                alert('Please select event, year, and month');
+                await JarvisDialog.alert('Please select event, year, and month', { type: 'warning' });
                 return;
             }
 
@@ -888,7 +889,7 @@
             });
 
             if (bonuses.length === 0) {
-                alert('No valid rows to save');
+                await JarvisDialog.alert('No valid rows to save', { type: 'warning' });
                 return;
             }
 
@@ -900,10 +901,10 @@
 
             if (resp.ok) {
                 const result = await resp.json();
-                alert(`Saved ${result.count} bonuses`);
+                await JarvisDialog.alert(`Saved ${result.count} bonuses`, { type: 'success' });
                 window.location.reload();
             } else {
-                alert('Error saving bonuses');
+                await JarvisDialog.alert('Error saving bonuses', { type: 'error' });
             }
         });
 
@@ -1000,7 +1001,7 @@
             const month = parseInt(document.getElementById('newEventMonth').value);
 
             if (!eventName || !eventStart || !eventEnd) {
-                alert('Please fill in event name and dates');
+                await JarvisDialog.alert('Please fill in event name and dates', { type: 'warning' });
                 return;
             }
 
@@ -1016,7 +1017,7 @@
             });
 
             if (!eventResp.ok) {
-                alert('Error creating event');
+                await JarvisDialog.alert('Error creating event', { type: 'error' });
                 return;
             }
 
@@ -1055,12 +1056,12 @@
 
                 if (bonusResp.ok) {
                     const result = await bonusResp.json();
-                    alert(`Event created with ${result.count} employee bonuses`);
+                    await JarvisDialog.alert(`Event created with ${result.count} employee bonuses`, { type: 'success' });
                 } else {
-                    alert('Event created but error saving bonuses');
+                    await JarvisDialog.alert('Event created but error saving bonuses', { type: 'warning' });
                 }
             } else {
-                alert('Event created (no employees added)');
+                await JarvisDialog.alert('Event created (no employees added)', { type: 'success' });
             }
 
             addEventModal.hide();
@@ -1382,5 +1383,6 @@
     <script src="/static/js/jarvis-utils.js"></script>
     <script src="/static/js/online-users.js"></script>
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>

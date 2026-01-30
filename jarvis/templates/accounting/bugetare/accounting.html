@@ -1512,7 +1512,8 @@
             const config = configMap[tab];
             if (!config) return;
 
-            if (!confirm(`Set current ${tab} column configuration as the default for all users?`)) {
+            const confirmed = await JarvisDialog.confirm(`Set current ${tab} column configuration as the default for all users?`, { title: 'Set Default Columns' });
+            if (!confirmed) {
                 return;
             }
 
@@ -1527,15 +1528,15 @@
                 });
                 const result = await response.json();
                 if (result.success) {
-                    alert('Default columns saved for all users');
+                    await JarvisDialog.alert('Default columns saved for all users', { type: 'success', title: 'Success' });
                     // Update the cached server defaults
                     serverDefaultColumns[tab] = JSON.parse(JSON.stringify(config));
                 } else {
-                    alert('Error: ' + result.error);
+                    await JarvisDialog.alert('Error: ' + result.error, { type: 'error', title: 'Error' });
                 }
             } catch (error) {
                 console.error('Error setting default columns:', error);
-                alert('Error saving default columns');
+                await JarvisDialog.alert('Error saving default columns', { type: 'error', title: 'Error' });
             }
         }
 
@@ -1745,13 +1746,13 @@
             setupDragAndDrop(container, supplierColumnConfig, saveSupplierColumnConfig, renderSupplierColumnList);
         }
 
-        function addCustomColumn() {
+        async function addCustomColumn() {
             const name = document.getElementById('newColumnName').value.trim();
             const source = document.getElementById('newColumnSource').value;
             const format = document.getElementById('newColumnFormat').value;
 
             if (!name) {
-                alert('Please enter a column name');
+                await JarvisDialog.alert('Please enter a column name', { type: 'warning', title: 'Missing Name' });
                 return;
             }
 
@@ -1839,28 +1840,33 @@
                 if (document.getElementById('editSubtractVat').checked) calculateEditNetValue();
             });
             document.getElementById('addCustomColumnBtn').addEventListener('click', addCustomColumn);
-            document.getElementById('resetColumnsBtn').addEventListener('click', () => {
-                if (confirm('Reset all columns to default? This will remove custom columns.')) {
+            document.getElementById('resetColumnsBtn').addEventListener('click', async () => {
+                const confirmed = await JarvisDialog.confirm('Reset all columns to default? This will remove custom columns.', { title: 'Reset Columns', danger: true });
+                if (confirmed) {
                     resetColumnConfig();
                 }
             });
-            document.getElementById('resetCompanyColumnsBtn').addEventListener('click', () => {
-                if (confirm('Reset company columns to default?')) {
+            document.getElementById('resetCompanyColumnsBtn').addEventListener('click', async () => {
+                const confirmed = await JarvisDialog.confirm('Reset company columns to default?', { title: 'Reset Columns', danger: true });
+                if (confirmed) {
                     resetCompanyColumnConfig();
                 }
             });
-            document.getElementById('resetDepartmentColumnsBtn').addEventListener('click', () => {
-                if (confirm('Reset department columns to default?')) {
+            document.getElementById('resetDepartmentColumnsBtn').addEventListener('click', async () => {
+                const confirmed = await JarvisDialog.confirm('Reset department columns to default?', { title: 'Reset Columns', danger: true });
+                if (confirmed) {
                     resetDepartmentColumnConfig();
                 }
             });
-            document.getElementById('resetBrandColumnsBtn').addEventListener('click', () => {
-                if (confirm('Reset brand columns to default?')) {
+            document.getElementById('resetBrandColumnsBtn').addEventListener('click', async () => {
+                const confirmed = await JarvisDialog.confirm('Reset brand columns to default?', { title: 'Reset Columns', danger: true });
+                if (confirmed) {
                     resetBrandColumnConfig();
                 }
             });
-            document.getElementById('resetSupplierColumnsBtn').addEventListener('click', () => {
-                if (confirm('Reset supplier columns to default?')) {
+            document.getElementById('resetSupplierColumnsBtn').addEventListener('click', async () => {
+                const confirmed = await JarvisDialog.confirm('Reset supplier columns to default?', { title: 'Reset Columns', danger: true });
+                if (confirmed) {
                     resetSupplierColumnConfig();
                 }
             });
@@ -3045,11 +3051,11 @@
                 if (data.success && data.folder_link) {
                     window.open(data.folder_link, '_blank');
                 } else {
-                    alert('Could not find folder for this file');
+                    await JarvisDialog.alert('Could not find folder for this file', { type: 'warning', title: 'Not Found' });
                 }
             } catch (err) {
                 console.error('Error fetching folder link:', err);
-                alert('Error fetching folder link');
+                await JarvisDialog.alert('Error fetching folder link', { type: 'error', title: 'Error' });
             }
         }
 
@@ -3063,7 +3069,7 @@
                 const result = await res.json();
                 if (!result.success && result.error) {
                     console.error('Failed to update status:', result.error);
-                    alert('Error updating status: ' + result.error);
+                    await JarvisDialog.alert('Error updating status: ' + result.error, { type: 'error', title: 'Error' });
                     return;
                 }
                 // Update local cache
@@ -3085,7 +3091,7 @@
                 }
             } catch (e) {
                 console.error('Error updating status:', e);
-                alert('Error updating status');
+                await JarvisDialog.alert('Error updating status', { type: 'error', title: 'Error' });
             }
         }
 
@@ -3099,7 +3105,7 @@
                 const result = await res.json();
                 if (!result.success && result.error) {
                     console.error('Failed to update payment status:', result.error);
-                    alert('Error updating payment status: ' + result.error);
+                    await JarvisDialog.alert('Error updating payment status: ' + result.error, { type: 'error', title: 'Error' });
                     return;
                 }
                 // Update local cache
@@ -3128,7 +3134,7 @@
                 }
             } catch (e) {
                 console.error('Error updating payment status:', e);
-                alert('Error updating payment status');
+                await JarvisDialog.alert('Error updating payment status', { type: 'error', title: 'Error' });
             }
         }
 
@@ -3207,7 +3213,8 @@
 
         async function handleDelete() {
             if (!currentInvoiceId) return;
-            if (!confirm('Are you sure you want to delete this invoice? This action cannot be undone.')) return;
+            const confirmed = await JarvisDialog.confirm('Are you sure you want to delete this invoice? This action cannot be undone.', { title: 'Delete Invoice', danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/api/db/invoices/${currentInvoiceId}`, { method: 'DELETE' });
@@ -3217,10 +3224,10 @@
                     delete invoicesWithAllocations[currentInvoiceId];
                     loadData();
                 } else {
-                    alert('Error deleting invoice');
+                    await JarvisDialog.alert('Error deleting invoice', { type: 'error', title: 'Error' });
                 }
             } catch (e) {
-                alert('Error: ' + e.message);
+                await JarvisDialog.alert('Error: ' + e.message, { type: 'error', title: 'Error' });
             }
         }
 
@@ -3319,7 +3326,7 @@
             const file = fileInput.files[0];
 
             if (!file) {
-                alert('Please select a file first');
+                await JarvisDialog.alert('Please select a file first', { type: 'warning', title: 'No File Selected' });
                 return;
             }
 
@@ -3347,13 +3354,13 @@
 
                 if (result.success && result.drive_link) {
                     document.getElementById('editDriveLink').value = result.drive_link;
-                    alert('File uploaded successfully to Google Drive!');
+                    await JarvisDialog.alert('File uploaded successfully to Google Drive!', { type: 'success', title: 'Upload Complete' });
                     fileInput.value = '';
                 } else {
-                    alert('Upload failed: ' + (result.error || 'Unknown error'));
+                    await JarvisDialog.alert('Upload failed: ' + (result.error || 'Unknown error'), { type: 'error', title: 'Upload Failed' });
                 }
             } catch (e) {
-                alert('Upload error: ' + e.message);
+                await JarvisDialog.alert('Upload error: ' + e.message, { type: 'error', title: 'Upload Error' });
             } finally {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
@@ -3369,7 +3376,7 @@
 
             // Validate dedicated company
             if (!dedicatedCompany) {
-                alert('Please select a company');
+                await JarvisDialog.alert('Please select a company', { type: 'warning', title: 'Missing Company' });
                 return;
             }
 
@@ -3381,7 +3388,7 @@
                     const dupResult = await dupRes.json();
                     if (dupResult.exists) {
                         const existing = dupResult.invoice;
-                        alert(`Invoice number "${invoiceNumber}" already exists!\n\nExisting invoice:\n- Supplier: ${existing.supplier}\n- Date: ${existing.invoice_date}\n- Value: ${existing.invoice_value} ${existing.currency}`);
+                        await JarvisDialog.alert(`Invoice number "${invoiceNumber}" already exists!\n\nExisting invoice:\n- Supplier: ${existing.supplier}\n- Date: ${existing.invoice_date}\n- Value: ${existing.invoice_value} ${existing.currency}`, { type: 'warning', title: 'Duplicate Invoice' });
                         return;
                     }
                 } catch (e) {
@@ -3392,7 +3399,7 @@
             // Validate allocations (must be 100%, allow up to 0.1% overdraft for rounding)
             const totalPercent = editAllocations.reduce((sum, a) => sum + (parseFloat(a.allocation_percent) || 0), 0);
             if (totalPercent < 100 || totalPercent > 100.1) {
-                alert(`Allocations must sum to 100% (max 0.1% overdraft allowed). Current total: ${totalPercent.toFixed(2)}%`);
+                await JarvisDialog.alert(`Allocations must sum to 100% (max 0.1% overdraft allowed). Current total: ${totalPercent.toFixed(2)}%`, { type: 'warning', title: 'Invalid Allocation' });
                 return;
             }
 
@@ -3400,7 +3407,7 @@
             for (let idx = 0; idx < editAllocations.length; idx++) {
                 const alloc = editAllocations[idx];
                 if (!alloc.department) {
-                    alert('Please select a department for all allocations');
+                    await JarvisDialog.alert('Please select a department for all allocations', { type: 'warning', title: 'Missing Department' });
                     return;
                 }
 
@@ -3411,13 +3418,13 @@
                 if (reinvoiceDestinations.length > 0) {
                     const totalReinvoicePercent = reinvoiceDestinations.reduce((sum, d) => sum + d.percentage, 0);
                     if (totalReinvoicePercent > 100) {
-                        alert(`Allocation #${idx + 1}: Reinvoice total percentage (${totalReinvoicePercent.toFixed(2)}%) cannot exceed 100%`);
+                        await JarvisDialog.alert(`Allocation #${idx + 1}: Reinvoice total percentage (${totalReinvoicePercent.toFixed(2)}%) cannot exceed 100%`, { type: 'warning', title: 'Invalid Reinvoice' });
                         return;
                     }
                     // Check that all destinations have a company selected
                     const invalidDest = reinvoiceDestinations.find(d => !d.company);
                     if (invalidDest) {
-                        alert(`Allocation #${idx + 1}: All reinvoice destinations must have a company selected`);
+                        await JarvisDialog.alert(`Allocation #${idx + 1}: All reinvoice destinations must have a company selected`, { type: 'warning', title: 'Invalid Reinvoice' });
                         return;
                     }
                 }
@@ -3467,7 +3474,7 @@
                 const invoiceResult = await invoiceRes.json();
 
                 if (!invoiceResult.success && invoiceRes.status !== 404) {
-                    alert('Error updating invoice: ' + (invoiceResult.error || 'Unknown error'));
+                    await JarvisDialog.alert('Error updating invoice: ' + (invoiceResult.error || 'Unknown error'), { type: 'error', title: 'Error' });
                     return;
                 }
 
@@ -3485,12 +3492,12 @@
                     // Clear the cache for this invoice
                     delete invoicesWithAllocations[invoiceId];
                     loadData();
-                    alert('Invoice and allocations updated successfully!');
+                    await JarvisDialog.alert('Invoice and allocations updated successfully!', { type: 'success', title: 'Success' });
                 } else {
-                    alert('Error updating allocations: ' + (allocResult.error || 'Unknown error'));
+                    await JarvisDialog.alert('Error updating allocations: ' + (allocResult.error || 'Unknown error'), { type: 'error', title: 'Error' });
                 }
             } catch (e) {
-                alert('Error: ' + e.message);
+                await JarvisDialog.alert('Error: ' + e.message, { type: 'error', title: 'Error' });
             }
         }
 
@@ -4114,10 +4121,10 @@
             renderEditAllocations();
         }
 
-        function addNewAllocation() {
+        async function addNewAllocation() {
             const dedicatedCompany = document.getElementById('editDedicatedCompany').value;
             if (!dedicatedCompany) {
-                alert('Please select a company first');
+                await JarvisDialog.alert('Please select a company first', { type: 'warning', title: 'Missing Company' });
                 return;
             }
             editAllocations.push({
@@ -4135,9 +4142,9 @@
             applySmartSplit(); // Redistribute with smart split when adding
         }
 
-        function deleteAllocation(idx) {
+        async function deleteAllocation(idx) {
             if (editAllocations.length <= 1) {
-                alert('Invoice must have at least one allocation');
+                await JarvisDialog.alert('Invoice must have at least one allocation', { type: 'warning', title: 'Cannot Delete' });
                 return;
             }
             editAllocations.splice(idx, 1);
@@ -4569,7 +4576,8 @@
         async function bulkDeleteSelected() {
             if (selectedInvoices.size === 0) return;
 
-            if (!confirm(`Are you sure you want to move ${selectedInvoices.size} invoice(s) to the bin?`)) {
+            const confirmed = await JarvisDialog.confirm(`Are you sure you want to move ${selectedInvoices.size} invoice(s) to the bin?`, { title: 'Move to Bin', danger: true });
+            if (!confirmed) {
                 return;
             }
 
@@ -4593,13 +4601,13 @@
                     updateSummaryCards();
                     loadBinCount();
 
-                    alert(`${result.deleted_count} invoice(s) moved to bin.`);
+                    await JarvisDialog.alert(`${result.deleted_count} invoice(s) moved to bin.`, { type: 'success', title: 'Success' });
                 } else {
-                    alert('Error: ' + (result.error || 'Failed to delete'));
+                    await JarvisDialog.alert('Error: ' + (result.error || 'Failed to delete'), { type: 'error', title: 'Error' });
                 }
             } catch (err) {
                 console.error('Bulk delete error:', err);
-                alert('Error deleting invoices');
+                await JarvisDialog.alert('Error deleting invoices', { type: 'error', title: 'Error' });
             }
         }
 
@@ -4625,10 +4633,10 @@
 
                 document.getElementById('bulkStatusChange').value = '';
                 applySorting();
-                alert(`${successCount} invoice(s) updated to "${newStatus}".`);
+                await JarvisDialog.alert(`${successCount} invoice(s) updated to "${newStatus}".`, { type: 'success', title: 'Success' });
             } catch (err) {
                 console.error('Bulk status change error:', err);
-                alert('Error changing status');
+                await JarvisDialog.alert('Error changing status', { type: 'error', title: 'Error' });
             }
         }
 
@@ -4771,7 +4779,8 @@
         }
 
         async function restoreInvoice(id) {
-            if (!confirm('Restore this invoice from the bin?')) return;
+            const confirmed = await JarvisDialog.confirm('Restore this invoice from the bin?', { title: 'Restore Invoice' });
+            if (!confirmed) return;
 
             try {
                 const response = await fetch(`/api/db/invoices/${id}/restore`, {
@@ -4783,16 +4792,17 @@
                     loadData();
                 } else {
                     const result = await response.json();
-                    alert('Error: ' + (result.error || 'Failed to restore'));
+                    await JarvisDialog.alert('Error: ' + (result.error || 'Failed to restore'), { type: 'error', title: 'Error' });
                 }
             } catch (err) {
                 console.error('Restore error:', err);
-                alert('Error restoring invoice');
+                await JarvisDialog.alert('Error restoring invoice', { type: 'error', title: 'Error' });
             }
         }
 
         async function permanentDeleteInvoice(id) {
-            if (!confirm('PERMANENTLY delete this invoice? This cannot be undone!')) return;
+            const confirmed = await JarvisDialog.confirm('PERMANENTLY delete this invoice? This cannot be undone!', { title: 'Permanent Delete', danger: true });
+            if (!confirmed) return;
 
             try {
                 const response = await fetch(`/api/db/invoices/${id}/permanent`, {
@@ -4803,18 +4813,19 @@
                     loadBinData();
                 } else {
                     const result = await response.json();
-                    alert('Error: ' + (result.error || 'Failed to delete'));
+                    await JarvisDialog.alert('Error: ' + (result.error || 'Failed to delete'), { type: 'error', title: 'Error' });
                 }
             } catch (err) {
                 console.error('Permanent delete error:', err);
-                alert('Error deleting invoice');
+                await JarvisDialog.alert('Error deleting invoice', { type: 'error', title: 'Error' });
             }
         }
 
         async function bulkRestoreSelected() {
             if (selectedBinInvoices.size === 0) return;
 
-            if (!confirm(`Restore ${selectedBinInvoices.size} invoice(s) from the bin?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Restore ${selectedBinInvoices.size} invoice(s) from the bin?`, { title: 'Restore Invoices' });
+            if (!confirmed) return;
 
             try {
                 const invoice_ids = Array.from(selectedBinInvoices);
@@ -4830,20 +4841,21 @@
                     selectedBinInvoices.clear();
                     loadBinData();
                     loadData();
-                    alert(`${result.restored_count} invoice(s) restored.`);
+                    await JarvisDialog.alert(`${result.restored_count} invoice(s) restored.`, { type: 'success', title: 'Success' });
                 } else {
-                    alert('Error: ' + (result.error || 'Failed to restore'));
+                    await JarvisDialog.alert('Error: ' + (result.error || 'Failed to restore'), { type: 'error', title: 'Error' });
                 }
             } catch (err) {
                 console.error('Bulk restore error:', err);
-                alert('Error restoring invoices');
+                await JarvisDialog.alert('Error restoring invoices', { type: 'error', title: 'Error' });
             }
         }
 
         async function bulkPermanentDeleteSelected() {
             if (selectedBinInvoices.size === 0) return;
 
-            if (!confirm(`PERMANENTLY delete ${selectedBinInvoices.size} invoice(s)? This cannot be undone!`)) return;
+            const confirmed = await JarvisDialog.confirm(`PERMANENTLY delete ${selectedBinInvoices.size} invoice(s)? This cannot be undone!`, { title: 'Permanent Delete', danger: true });
+            if (!confirmed) return;
 
             try {
                 const invoice_ids = Array.from(selectedBinInvoices);
@@ -4858,13 +4870,13 @@
                 if (response.ok) {
                     selectedBinInvoices.clear();
                     loadBinData();
-                    alert(`${result.deleted_count} invoice(s) permanently deleted.`);
+                    await JarvisDialog.alert(`${result.deleted_count} invoice(s) permanently deleted.`, { type: 'success', title: 'Success' });
                 } else {
-                    alert('Error: ' + (result.error || 'Failed to delete'));
+                    await JarvisDialog.alert('Error: ' + (result.error || 'Failed to delete'), { type: 'error', title: 'Error' });
                 }
             } catch (err) {
                 console.error('Bulk permanent delete error:', err);
-                alert('Error deleting invoices');
+                await JarvisDialog.alert('Error deleting invoices', { type: 'error', title: 'Error' });
             }
         }
 
@@ -4929,11 +4941,11 @@
                     // Clear cache for this invoice
                     invoicesWithAllocations = {};
                 } else {
-                    alert('Error saving comment: ' + (data.error || 'Unknown error'));
+                    await JarvisDialog.alert('Error saving comment: ' + (data.error || 'Unknown error'), { type: 'error', title: 'Error' });
                 }
             } catch (error) {
                 console.error('Error saving comment:', error);
-                alert('Error saving comment');
+                await JarvisDialog.alert('Error saving comment', { type: 'error', title: 'Error' });
             }
         });
 
@@ -4985,6 +4997,7 @@
     </div>
 
     <script src="/static/js/jarvis-utils.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
     <script src="/static/js/online-users.js"></script>
     {% include 'partials/_edit_profile_modal.html' %}
     <script src="/static/js/theme.js"></script>

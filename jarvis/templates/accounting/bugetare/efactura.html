@@ -1060,6 +1060,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/jarvis-dialogs.js') }}"></script>
     <script>
         let currentPage = 1;
         let totalPages = 1;
@@ -2182,7 +2183,7 @@
 
                 if (!companiesData.success || !companiesData.companies || companiesData.companies.length === 0) {
                     showSyncProgress('No companies', companiesData.error || 'No connected companies found', 100, 'error');
-                    alert(companiesData.error || 'No connected companies found. Go to Connector Settings to add a connection.');
+                    await JarvisDialog.alert(companiesData.error || 'No connected companies found. Go to Connector Settings to add a connection.', { type: 'warning' });
                     hideSyncProgress(3000);
                     return;
                 }
@@ -2240,10 +2241,10 @@
                 if (totalImported > 0 || hasErrors) {
                     let msg = `Sync completed!\n\nImported: ${totalImported} invoice(s)\nSkipped: ${totalSkipped} (already imported)`;
                     if (hasErrors) {
-                        msg += `\n\n⚠️ ${allErrors.length} errors occurred:\n${allErrors.slice(0, 5).join('\n')}`;
+                        msg += `\n\n${allErrors.length} errors occurred:\n${allErrors.slice(0, 5).join('\n')}`;
                         if (allErrors.length > 5) msg += `\n... and ${allErrors.length - 5} more`;
                     }
-                    alert(msg);
+                    await JarvisDialog.alert(msg, { type: hasErrors ? 'warning' : 'success' });
                 }
 
                 loadUnallocatedInvoices(1, true);  // Force reload after sync
@@ -2255,7 +2256,7 @@
 
             } catch (err) {
                 showSyncProgress('Sync Failed', err.message, 100, 'error');
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
                 hideSyncProgress(5000);
             } finally {
                 syncBtn.disabled = false;
@@ -2364,9 +2365,9 @@
             duplicatesCache = [];
         }
 
-        function viewDuplicates() {
+        async function viewDuplicates() {
             if (duplicatesCache.length === 0) {
-                alert('No duplicates to display.');
+                await JarvisDialog.alert('No duplicates to display.', { type: 'warning' });
                 return;
             }
 
@@ -2405,17 +2406,18 @@
 
             msg += 'Click "Mark All as Duplicates" to link these to existing invoices and remove them from Unallocated.';
 
-            alert(msg);
+            await JarvisDialog.alert(msg, { type: 'warning' });
         }
 
         async function markAllDuplicates() {
             if (duplicatesCache.length === 0) {
-                alert('No duplicates to mark.');
+                await JarvisDialog.alert('No duplicates to mark.', { type: 'warning' });
                 return;
             }
 
             const count = duplicatesCache.length;
-            if (!confirm(`Mark ${count} invoice(s) as duplicates?\n\nThis will link them to the existing invoices in the Invoices module and remove them from the Unallocated list.`)) {
+            const confirmed = await JarvisDialog.confirm(`Mark ${count} invoice(s) as duplicates?\n\nThis will link them to the existing invoices in the Invoices module and remove them from the Unallocated list.`, { title: 'Confirm' });
+            if (!confirmed) {
                 return;
             }
 
@@ -2457,13 +2459,13 @@
                     }
                 }
 
-                alert(`Successfully marked ${totalMarked} invoice(s) as duplicates.`);
+                await JarvisDialog.alert(`Successfully marked ${totalMarked} invoice(s) as duplicates.`, { type: 'success' });
                 hideDuplicatesBanner();
                 loadUnallocatedInvoices(1, true);
                 loadBadgeCounts();
 
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -2743,7 +2745,8 @@
 
         // Single invoice actions
         async function sendSingleToInvoices(invoiceId) {
-            if (!confirm('Send this invoice to the Invoices module for allocation?')) return;
+            const confirmed = await JarvisDialog.confirm('Send this invoice to the Invoices module for allocation?', { title: 'Confirm' });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch('/efactura/api/invoices/send-to-module', {
@@ -2755,22 +2758,23 @@
 
                 if (data.success) {
                     if (data.duplicates > 0) {
-                        alert('⚠️ Invoice already exists in Invoices module (duplicate skipped).');
+                        await JarvisDialog.alert('Invoice already exists in Invoices module (duplicate skipped).', { type: 'warning' });
                     } else {
-                        alert('Invoice sent to Invoices module successfully!');
+                        await JarvisDialog.alert('Invoice sent to Invoices module successfully!', { type: 'success' });
                     }
                     loadUnallocatedInvoices(currentPage, true);  // Force reload after data change
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to send invoice');
+                    await JarvisDialog.alert(data.error || 'Failed to send invoice', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
         async function hideInvoice(invoiceId) {
-            if (!confirm('Hide this invoice? It will be moved to the Hidden tab.')) return;
+            const confirmed = await JarvisDialog.confirm('Hide this invoice? It will be moved to the Hidden tab.', { title: 'Confirm' });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/efactura/api/invoices/${invoiceId}/ignore`, {
@@ -2785,15 +2789,16 @@
                     removeRow(invoiceId);
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to hide invoice');
+                    await JarvisDialog.alert(data.error || 'Failed to hide invoice', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
         async function deleteInvoice(invoiceId) {
-            if (!confirm('Delete this invoice? It will be moved to the Bin.')) return;
+            const confirmed = await JarvisDialog.confirm('Delete this invoice? It will be moved to the Bin.', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/efactura/api/invoices/${invoiceId}/delete`, {
@@ -2807,10 +2812,10 @@
                     removeRow(invoiceId);
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to delete invoice');
+                    await JarvisDialog.alert(data.error || 'Failed to delete invoice', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -2828,15 +2833,16 @@
                     loadHiddenInvoices(1, true);
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to restore invoice');
+                    await JarvisDialog.alert(data.error || 'Failed to restore invoice', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
         async function deleteFromHidden(invoiceId) {
-            if (!confirm('Move this invoice to the Bin?')) return;
+            const confirmed = await JarvisDialog.confirm('Move this invoice to the Bin?', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/efactura/api/invoices/${invoiceId}/delete`, {
@@ -2850,10 +2856,10 @@
                     loadHiddenInvoices(1, true);
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to delete invoice');
+                    await JarvisDialog.alert(data.error || 'Failed to delete invoice', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -2870,15 +2876,16 @@
                     loadBinInvoices(1, true);
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to restore invoice');
+                    await JarvisDialog.alert(data.error || 'Failed to restore invoice', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
         async function permanentDelete(invoiceId) {
-            if (!confirm('PERMANENTLY delete this invoice? This cannot be undone!')) return;
+            const confirmed = await JarvisDialog.confirm('PERMANENTLY delete this invoice? This cannot be undone!', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/efactura/api/invoices/${invoiceId}/permanent-delete`, {
@@ -2891,10 +2898,10 @@
                     loadBinInvoices(1, true);
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to delete invoice');
+                    await JarvisDialog.alert(data.error || 'Failed to delete invoice', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -2903,7 +2910,8 @@
             const ids = Array.from(selectedInvoices);
             if (ids.length === 0) return;
 
-            if (!confirm(`Send ${ids.length} invoice(s) to the Invoices module?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Send ${ids.length} invoice(s) to the Invoices module?`, { title: 'Confirm' });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch('/efactura/api/invoices/send-to-module', {
@@ -2916,17 +2924,17 @@
                 if (data.success) {
                     let msg = `${data.sent} invoice(s) sent successfully!`;
                     if (data.duplicates > 0) {
-                        msg += `\n\n⚠️ ${data.duplicates} duplicate(s) skipped (already exist in Invoices).`;
+                        msg += `\n\n${data.duplicates} duplicate(s) skipped (already exist in Invoices).`;
                     }
-                    alert(msg);
+                    await JarvisDialog.alert(msg, { type: data.duplicates > 0 ? 'warning' : 'success' });
                     clearSelection();
                     loadUnallocatedInvoices(currentPage, true);  // Force reload after data change
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to send invoices');
+                    await JarvisDialog.alert(data.error || 'Failed to send invoices', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -2934,7 +2942,8 @@
             const ids = Array.from(selectedInvoices);
             if (ids.length === 0) return;
 
-            if (!confirm(`Hide ${ids.length} invoice(s)?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Hide ${ids.length} invoice(s)?`, { title: 'Confirm' });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch('/efactura/api/invoices/bulk-hide', {
@@ -2945,16 +2954,16 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    alert(`${data.hidden} invoice(s) hidden`);
+                    await JarvisDialog.alert(`${data.hidden} invoice(s) hidden`, { type: 'success' });
                     invalidateCaches('hidden');
                     clearSelection();
                     loadUnallocatedInvoices(currentPage, true);
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to hide invoices');
+                    await JarvisDialog.alert(data.error || 'Failed to hide invoices', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -2962,7 +2971,8 @@
             const ids = Array.from(selectedInvoices);
             if (ids.length === 0) return;
 
-            if (!confirm(`Move ${ids.length} invoice(s) to the Bin?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Move ${ids.length} invoice(s) to the Bin?`, { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch('/efactura/api/invoices/bulk-delete', {
@@ -2973,16 +2983,16 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    alert(`${data.deleted} invoice(s) moved to bin`);
+                    await JarvisDialog.alert(`${data.deleted} invoice(s) moved to bin`, { type: 'success' });
                     invalidateCaches('bin');
                     clearSelection();
                     loadUnallocatedInvoices(currentPage, true);
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to delete invoices');
+                    await JarvisDialog.alert(data.error || 'Failed to delete invoices', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -2990,7 +3000,8 @@
             const ids = Array.from(selectedHiddenInvoices);
             if (ids.length === 0) return;
 
-            if (!confirm(`Restore ${ids.length} invoice(s) from hidden?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Restore ${ids.length} invoice(s) from hidden?`, { title: 'Confirm' });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch('/efactura/api/invoices/bulk-restore-hidden', {
@@ -3001,16 +3012,16 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    alert(`${data.restored} invoice(s) restored`);
+                    await JarvisDialog.alert(`${data.restored} invoice(s) restored`, { type: 'success' });
                     invalidateCaches('unallocated');
                     selectedHiddenInvoices.clear();
                     loadHiddenInvoices(1, true);
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to restore invoices');
+                    await JarvisDialog.alert(data.error || 'Failed to restore invoices', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -3018,7 +3029,8 @@
             const ids = Array.from(selectedHiddenInvoices);
             if (ids.length === 0) return;
 
-            if (!confirm(`Move ${ids.length} invoice(s) to the Bin?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Move ${ids.length} invoice(s) to the Bin?`, { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch('/efactura/api/invoices/bulk-delete', {
@@ -3029,16 +3041,16 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    alert(`${data.deleted} invoice(s) moved to bin`);
+                    await JarvisDialog.alert(`${data.deleted} invoice(s) moved to bin`, { type: 'success' });
                     invalidateCaches('bin');
                     selectedHiddenInvoices.clear();
                     loadHiddenInvoices(1, true);
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to delete invoices');
+                    await JarvisDialog.alert(data.error || 'Failed to delete invoices', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -3046,7 +3058,8 @@
             const ids = Array.from(selectedBinInvoices);
             if (ids.length === 0) return;
 
-            if (!confirm(`Restore ${ids.length} invoice(s) from bin?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Restore ${ids.length} invoice(s) from bin?`, { title: 'Confirm' });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch('/efactura/api/invoices/bulk-restore-bin', {
@@ -3057,16 +3070,16 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    alert(`${data.restored} invoice(s) restored`);
+                    await JarvisDialog.alert(`${data.restored} invoice(s) restored`, { type: 'success' });
                     invalidateCaches('unallocated');
                     selectedBinInvoices.clear();
                     loadBinInvoices(1, true);
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to restore invoices');
+                    await JarvisDialog.alert(data.error || 'Failed to restore invoices', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -3074,7 +3087,8 @@
             const ids = Array.from(selectedBinInvoices);
             if (ids.length === 0) return;
 
-            if (!confirm(`PERMANENTLY delete ${ids.length} invoice(s)? This cannot be undone!`)) return;
+            const confirmed = await JarvisDialog.confirm(`PERMANENTLY delete ${ids.length} invoice(s)? This cannot be undone!`, { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch('/efactura/api/invoices/bulk-permanent-delete', {
@@ -3085,15 +3099,15 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    alert(`${data.deleted} invoice(s) permanently deleted`);
+                    await JarvisDialog.alert(`${data.deleted} invoice(s) permanently deleted`, { type: 'success' });
                     selectedBinInvoices.clear();
                     loadBinInvoices(binCurrentPage, true);  // Force reload after data change
                     loadBadgeCounts();
                 } else {
-                    alert(data.error || 'Failed to delete invoices');
+                    await JarvisDialog.alert(data.error || 'Failed to delete invoices', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -3240,7 +3254,7 @@
             // Find invoice in cache
             const inv = invoicesCache.find(i => i.id === invoiceId);
             if (!inv) {
-                alert('Invoice not found');
+                await JarvisDialog.alert('Invoice not found', { type: 'error' });
                 return;
             }
 
@@ -3368,10 +3382,10 @@
                         updateInvoiceRowInPlace(invoiceId, inv);
                     }
                 } else {
-                    alert(data.error || 'Failed to save overrides');
+                    await JarvisDialog.alert(data.error || 'Failed to save overrides', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -3408,7 +3422,7 @@
         async function openBulkSetOverridesModal() {
             const count = selectedInvoices.size;
             if (count === 0) {
-                alert('No invoices selected');
+                await JarvisDialog.alert('No invoices selected', { type: 'warning' });
                 return;
             }
 
@@ -3452,7 +3466,7 @@
 
             // Check if anything is selected to change
             if (!typeOverride && !departmentOverride && !subdepartmentOverride) {
-                alert('Please select at least one field to update');
+                await JarvisDialog.alert('Please select at least one field to update', { type: 'warning' });
                 return;
             }
 
@@ -3488,15 +3502,15 @@
 
                 if (data.success) {
                     bootstrap.Modal.getInstance(document.getElementById('bulkSetOverridesModal')).hide();
-                    alert(`Updated ${data.updated_count} invoices`);
+                    await JarvisDialog.alert(`Updated ${data.updated_count} invoices`, { type: 'success' });
                     // Clear selection and reload invoices to reflect changes
                     clearSelection();
                     loadUnallocatedInvoices(currentPage, true);
                 } else {
-                    alert(data.error || 'Failed to apply overrides');
+                    await JarvisDialog.alert(data.error || 'Failed to apply overrides', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -3574,7 +3588,7 @@
 
                 if (!res.ok) {
                     const data = await res.json();
-                    alert(data.error || 'Failed to export PDF');
+                    await JarvisDialog.alert(data.error || 'Failed to export PDF', { type: 'error' });
                     return;
                 }
 
@@ -3588,7 +3602,7 @@
                 window.URL.revokeObjectURL(url);
                 a.remove();
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -3855,11 +3869,12 @@
         async function bulkDeleteMappings() {
             const ids = Array.from(selectedMappings);
             if (ids.length === 0) {
-                alert('No mappings selected');
+                await JarvisDialog.alert('No mappings selected', { type: 'warning' });
                 return;
             }
 
-            if (!confirm(`Delete ${ids.length} selected mapping(s)? This cannot be undone.`)) {
+            const confirmed = await JarvisDialog.confirm(`Delete ${ids.length} selected mapping(s)? This cannot be undone.`, { danger: true });
+            if (!confirmed) {
                 return;
             }
 
@@ -3884,22 +3899,23 @@
                     // Re-populate partner dropdown with remaining partners
                     populateMappingsFilterDropdowns();
                 } else {
-                    alert(data.error || 'Failed to delete mappings');
+                    await JarvisDialog.alert(data.error || 'Failed to delete mappings', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
         async function bulkSetMappingsType(typeName) {
             const ids = Array.from(selectedMappings);
             if (ids.length === 0) {
-                alert('No mappings selected');
+                await JarvisDialog.alert('No mappings selected', { type: 'warning' });
                 return;
             }
 
             const typeLabel = typeName || 'No Type';
-            if (!confirm(`Set type to "${typeLabel}" for ${ids.length} selected mapping(s)?`)) {
+            const confirmed = await JarvisDialog.confirm(`Set type to "${typeLabel}" for ${ids.length} selected mapping(s)?`, { title: 'Confirm' });
+            if (!confirmed) {
                 return;
             }
 
@@ -3912,7 +3928,7 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    alert(`${data.updated} mapping(s) updated to "${typeLabel}"`);
+                    await JarvisDialog.alert(`${data.updated} mapping(s) updated to "${typeLabel}"`, { type: 'success' });
                     selectedMappings.clear();
                     updateMappingsSelectionCount();
                     mappingsLoaded = false; // Force reload
@@ -3923,10 +3939,10 @@
                         showRefreshButton(data.auto_hidden || 0);
                     }
                 } else {
-                    alert(data.error || 'Failed to update mappings');
+                    await JarvisDialog.alert(data.error || 'Failed to update mappings', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -4118,7 +4134,7 @@
         async function editMapping(mappingId) {
             const mapping = mappingsCache.find(m => m.id === mappingId);
             if (!mapping) {
-                alert('Mapping not found');
+                await JarvisDialog.alert('Mapping not found', { type: 'error' });
                 return;
             }
 
@@ -4165,12 +4181,12 @@
             const subdepartment = document.getElementById('mappingSubdepartment').value;
 
             if (!partnerName) {
-                alert('Partner Name is required');
+                await JarvisDialog.alert('Partner Name is required', { type: 'warning' });
                 return;
             }
 
             if (!supplierName) {
-                alert('Supplier Name is required');
+                await JarvisDialog.alert('Supplier Name is required', { type: 'warning' });
                 return;
             }
 
@@ -4216,15 +4232,16 @@
                         showRefreshButton(data.auto_hidden || 0);
                     }
                 } else {
-                    alert(data.error || 'Failed to save mapping');
+                    await JarvisDialog.alert(data.error || 'Failed to save mapping', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
         async function deleteMapping(mappingId) {
-            if (!confirm('Delete this supplier mapping?')) return;
+            const confirmed = await JarvisDialog.confirm('Delete this supplier mapping?', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/efactura/api/mappings/${mappingId}`, {
@@ -4243,10 +4260,10 @@
                     // Update badge count
                     updateBadge('mappingsBadge', mappingsCache.length);
                 } else {
-                    alert(data.error || 'Failed to delete mapping');
+                    await JarvisDialog.alert(data.error || 'Failed to delete mapping', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -4257,12 +4274,12 @@
                 const data = await res.json();
 
                 if (!data.success) {
-                    alert(data.error || 'Failed to load partners');
+                    await JarvisDialog.alert(data.error || 'Failed to load partners', { type: 'error' });
                     return;
                 }
 
                 if (!data.partners || data.partners.length === 0) {
-                    alert('No partners found in imported invoices.');
+                    await JarvisDialog.alert('No partners found in imported invoices.', { type: 'warning' });
                     return;
                 }
 
@@ -4273,7 +4290,7 @@
                 );
 
                 if (unmappedPartners.length === 0) {
-                    alert('All partners from invoices already have mappings.');
+                    await JarvisDialog.alert('All partners from invoices already have mappings.', { type: 'warning' });
                     return;
                 }
 
@@ -4281,7 +4298,7 @@
                 showImportPartnersModal(unmappedPartners);
 
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -4375,7 +4392,7 @@
         async function importSelectedPartners() {
             const checkboxes = document.querySelectorAll('.import-partner-checkbox:checked');
             if (checkboxes.length === 0) {
-                alert('Please select at least one partner to import.');
+                await JarvisDialog.alert('Please select at least one partner to import.', { type: 'warning' });
                 return;
             }
 
@@ -4426,7 +4443,7 @@
                 msg += `\n\n${errors.length} error(s):\n${errors.slice(0, 5).join('\n')}`;
                 if (errors.length > 5) msg += `\n... and ${errors.length - 5} more`;
             }
-            alert(msg);
+            await JarvisDialog.alert(msg, { type: errors.length > 0 ? 'warning' : 'success' });
 
             // Reload mappings
             loadSupplierMappings();
@@ -4519,12 +4536,12 @@
                     // Update cache for dropdown
                     loadPartnerTypesForDropdown();
                 } else {
-                    alert(data.error || 'Failed to update partner type');
+                    await JarvisDialog.alert(data.error || 'Failed to update partner type', { type: 'error' });
                     // Reload table to reset toggle state
                     loadPartnerTypesTable();
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
                 loadPartnerTypesTable();
             }
         }
@@ -4534,7 +4551,7 @@
             const description = document.getElementById('newTypeDescription').value.trim();
 
             if (!name) {
-                alert('Name is required');
+                await JarvisDialog.alert('Name is required', { type: 'warning' });
                 return;
             }
 
@@ -4553,15 +4570,16 @@
                     // Update cache for dropdown
                     loadPartnerTypesForDropdown();
                 } else {
-                    alert(data.error || 'Failed to create partner type');
+                    await JarvisDialog.alert(data.error || 'Failed to create partner type', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
         async function deletePartnerType(typeId) {
-            if (!confirm('Delete this partner type? It will be soft-deleted (deactivated).')) return;
+            const confirmed = await JarvisDialog.confirm('Delete this partner type? It will be soft-deleted (deactivated).', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/efactura/api/partner-types/${typeId}`, {
@@ -4575,10 +4593,10 @@
                     // Update cache for dropdown
                     loadPartnerTypesForDropdown();
                 } else {
-                    alert(data.error || 'Failed to delete partner type');
+                    await JarvisDialog.alert(data.error || 'Failed to delete partner type', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
     </script>

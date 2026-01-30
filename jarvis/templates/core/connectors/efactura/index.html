@@ -610,6 +610,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/jarvis-dialogs.js') }}"></script>
     <script>
         // Global state for OAuth-authenticated CIFs
         let oauthTokensList = [];
@@ -730,7 +731,7 @@
             const environment = document.getElementById('connectionEnvironment').value;
 
             if (!cif || !displayName) {
-                alert('Please fill in all required fields');
+                await JarvisDialog.alert('Please fill in all required fields', { type: 'warning' });
                 return;
             }
 
@@ -746,16 +747,17 @@
                     bootstrap.Modal.getInstance(document.getElementById('addConnectionModal')).hide();
                     loadConnections();
                 } else {
-                    alert(data.error || 'Failed to add connection');
+                    await JarvisDialog.alert(data.error || 'Failed to add connection', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         });
 
         // Delete connection
         async function deleteConnection(cif) {
-            if (!confirm(`Delete connection for CIF ${cif}?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Delete connection for CIF ${cif}?`, { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/efactura/api/connections/${cif}`, { method: 'DELETE' });
@@ -764,10 +766,10 @@
                 if (data.success) {
                     loadConnections();
                 } else {
-                    alert(data.error || 'Failed to delete connection');
+                    await JarvisDialog.alert(data.error || 'Failed to delete connection', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -777,7 +779,7 @@
         async function loadInvoices() {
             const cif = document.getElementById('invoiceCompanyFilter').value;
             if (!cif) {
-                alert('Please select a company');
+                await JarvisDialog.alert('Please select a company', { type: 'warning' });
                 return;
             }
 
@@ -797,10 +799,10 @@
                 if (data.success) {
                     renderInvoices(data.data);
                 } else {
-                    alert(data.error || 'Failed to load invoices');
+                    await JarvisDialog.alert(data.error || 'Failed to load invoices', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -834,8 +836,8 @@
             `).join('');
         }
 
-        function viewInvoice(id) {
-            alert('Invoice details view coming in Phase 2');
+        async function viewInvoice(id) {
+            await JarvisDialog.alert('Invoice details view coming in Phase 2', { type: 'info' });
         }
 
         // ==========================================
@@ -878,7 +880,7 @@
         async function fetchAnafMessages(page = 1) {
             const cif = document.getElementById('anafCompanyFilter').value;
             if (!cif) {
-                alert('Please select a company first');
+                await JarvisDialog.alert('Please select a company first', { type: 'warning' });
                 return;
             }
 
@@ -911,10 +913,10 @@
                         (${data.data.pagination.total_records} total messages)
                     `;
                 } else {
-                    alert(data.error || 'Failed to fetch messages');
+                    await JarvisDialog.alert(data.error || 'Failed to fetch messages', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="bi bi-cloud-download"></i> Fetch Messages';
@@ -1015,7 +1017,7 @@
         async function importSingleMessage(messageId) {
             const cif = document.getElementById('anafCompanyFilter').value;
             if (!cif) {
-                alert('Please select a company first');
+                await JarvisDialog.alert('Please select a company first', { type: 'warning' });
                 return;
             }
 
@@ -1038,14 +1040,14 @@
                             msg += `\n... and ${data.errors.length - 10} more`;
                         }
                     }
-                    alert(msg);
+                    await JarvisDialog.alert(msg, { type: 'success' });
                     // Refresh unallocated count
                     loadUnallocatedCount();
                 } else {
-                    alert(data.error || 'Failed to import');
+                    await JarvisDialog.alert(data.error || 'Failed to import', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -1053,7 +1055,7 @@
         document.getElementById('importSelectedBtn').addEventListener('click', async function() {
             const cif = document.getElementById('anafCompanyFilter').value;
             if (!cif) {
-                alert('Please select a company first');
+                await JarvisDialog.alert('Please select a company first', { type: 'warning' });
                 return;
             }
 
@@ -1061,7 +1063,7 @@
                 .map(cb => cb.value);
 
             if (selectedIds.length === 0) {
-                alert('Please select at least one invoice');
+                await JarvisDialog.alert('Please select at least one invoice', { type: 'warning' });
                 return;
             }
 
@@ -1087,7 +1089,7 @@
                             msg += `\n... and ${data.errors.length - 10} more`;
                         }
                     }
-                    alert(msg);
+                    await JarvisDialog.alert(msg, { type: 'success' });
                     // Clear checkboxes
                     document.querySelectorAll('.anaf-checkbox').forEach(cb => cb.checked = false);
                     document.getElementById('selectAllAnafCheckbox').checked = false;
@@ -1095,10 +1097,10 @@
                     // Refresh unallocated count
                     loadUnallocatedCount();
                 } else {
-                    alert(data.error || 'Failed to import');
+                    await JarvisDialog.alert(data.error || 'Failed to import', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             } finally {
                 this.disabled = false;
                 this.innerHTML = '<i class="bi bi-download"></i> Import Selected <span id="anafSelectedCount" class="badge bg-light text-dark ms-1">0</span>';
@@ -1130,7 +1132,7 @@
         async function downloadAnafMessage(messageId) {
             const cif = document.getElementById('anafCompanyFilter').value;
             if (!cif) {
-                alert('Please select a company first');
+                await JarvisDialog.alert('Please select a company first', { type: 'warning' });
                 return;
             }
 
@@ -1139,7 +1141,7 @@
 
                 if (!res.ok) {
                     const data = await res.json();
-                    alert(data.error || 'Failed to download');
+                    await JarvisDialog.alert(data.error || 'Failed to download', { type: 'error' });
                     return;
                 }
 
@@ -1155,14 +1157,14 @@
                 a.remove();
 
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
         async function exportPdf(messageId) {
             const cif = document.getElementById('anafCompanyFilter').value;
             if (!cif) {
-                alert('Please select a company first');
+                await JarvisDialog.alert('Please select a company first', { type: 'warning' });
                 return;
             }
 
@@ -1177,7 +1179,7 @@
 
                 if (!res.ok) {
                     const data = await res.json();
-                    alert(data.error || 'Failed to export PDF');
+                    await JarvisDialog.alert(data.error || 'Failed to export PDF', { type: 'error' });
                     return;
                 }
 
@@ -1193,7 +1195,7 @@
                 a.remove();
 
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             } finally {
                 // Restore button state
                 const btn = event.target.closest('button');
@@ -1348,7 +1350,8 @@
         }
 
         async function refreshTokenForCif(cif) {
-            if (!confirm(`Refresh OAuth token for CIF ${cif}?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Refresh OAuth token for CIF ${cif}?`);
+            if (!confirmed) return;
 
             try {
                 const res = await fetch('/efactura/oauth/refresh', {
@@ -1359,18 +1362,19 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    alert('Token refreshed successfully');
+                    await JarvisDialog.alert('Token refreshed successfully', { type: 'success' });
                     loadOAuthTokens();
                 } else {
-                    alert(data.error || 'Failed to refresh token');
+                    await JarvisDialog.alert(data.error || 'Failed to refresh token', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
         async function revokeTokenForCif(cif) {
-            if (!confirm(`Revoke OAuth token for CIF ${cif}? You'll need to re-authenticate.`)) return;
+            const confirmed = await JarvisDialog.confirm(`Revoke OAuth token for CIF ${cif}? You'll need to re-authenticate.`, { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch('/efactura/oauth/revoke', {
@@ -1381,14 +1385,14 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    alert('Token revoked successfully');
+                    await JarvisDialog.alert('Token revoked successfully', { type: 'success' });
                     loadOAuthTokens();
                     loadConnections();
                 } else {
-                    alert(data.error || 'Failed to revoke token');
+                    await JarvisDialog.alert(data.error || 'Failed to revoke token', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -1416,10 +1420,10 @@
         }
 
         // Initiate OAuth flow
-        function initiateOAuth() {
+        async function initiateOAuth() {
             const cif = document.getElementById('oauthCif').value.trim();
             if (!cif) {
-                alert('Please enter a Company CIF');
+                await JarvisDialog.alert('Please enter a Company CIF', { type: 'warning' });
                 return;
             }
 
@@ -1489,11 +1493,12 @@
         async function disconnectOAuth() {
             const cif = document.getElementById('oauthCif').value.trim();
             if (!cif) {
-                alert('Please enter a Company CIF');
+                await JarvisDialog.alert('Please enter a Company CIF', { type: 'warning' });
                 return;
             }
 
-            if (!confirm(`Disconnect ANAF authentication for CIF ${cif}?`)) {
+            const confirmed = await JarvisDialog.confirm(`Disconnect ANAF authentication for CIF ${cif}?`, { danger: true });
+            if (!confirmed) {
                 return;
             }
 
@@ -1506,13 +1511,13 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    alert('Disconnected successfully');
+                    await JarvisDialog.alert('Disconnected successfully', { type: 'success' });
                     checkOAuthStatus(cif);
                 } else {
-                    alert(data.error || 'Failed to disconnect');
+                    await JarvisDialog.alert(data.error || 'Failed to disconnect', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -1520,7 +1525,7 @@
         async function refreshOAuthToken() {
             const cif = document.getElementById('oauthCif').value.trim();
             if (!cif) {
-                alert('Please enter a Company CIF');
+                await JarvisDialog.alert('Please enter a Company CIF', { type: 'warning' });
                 return;
             }
 
@@ -1537,13 +1542,13 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    alert('Token refreshed successfully');
+                    await JarvisDialog.alert('Token refreshed successfully', { type: 'success' });
                     checkOAuthStatus(cif);
                 } else {
-                    alert(data.error || 'Failed to refresh token');
+                    await JarvisDialog.alert(data.error || 'Failed to refresh token', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
@@ -1611,10 +1616,10 @@
                     // Show actions if we have invoices
                     document.getElementById('unallocatedActions').style.display = data.data.length > 0 ? 'block' : 'none';
                 } else {
-                    alert(data.error || 'Failed to load unallocated invoices');
+                    await JarvisDialog.alert(data.error || 'Failed to load unallocated invoices', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -1733,7 +1738,8 @@
 
         // Send single invoice to module
         async function sendSingleToModule(invoiceId) {
-            if (!confirm('Send this invoice to the Invoice Module for allocation?')) return;
+            const confirmed = await JarvisDialog.confirm('Send this invoice to the Invoice Module for allocation?');
+            if (!confirmed) return;
 
             try {
                 const res = await fetch('/efactura/api/invoices/send-to-module', {
@@ -1745,17 +1751,17 @@
 
                 if (data.success) {
                     if (data.duplicates > 0) {
-                        alert('⚠️ Invoice already exists in Invoices module (duplicate skipped).');
+                        await JarvisDialog.alert('Invoice already exists in Invoices module (duplicate skipped).', { type: 'warning' });
                     } else {
-                        alert(`Invoice sent to Invoice Module successfully!`);
+                        await JarvisDialog.alert('Invoice sent to Invoice Module successfully!', { type: 'success' });
                     }
                     loadUnallocatedInvoices(unallocatedPage);
                     loadUnallocatedCount();
                 } else {
-                    alert(data.error || 'Failed to send invoice');
+                    await JarvisDialog.alert(data.error || 'Failed to send invoice', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -1765,11 +1771,12 @@
                 .map(cb => parseInt(cb.value));
 
             if (selectedIds.length === 0) {
-                alert('Please select at least one invoice');
+                await JarvisDialog.alert('Please select at least one invoice', { type: 'warning' });
                 return;
             }
 
-            if (!confirm(`Send ${selectedIds.length} invoice(s) to the Invoice Module?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Send ${selectedIds.length} invoice(s) to the Invoice Module?`);
+            if (!confirmed) return;
 
             this.disabled = true;
             this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sending...';
@@ -1785,12 +1792,12 @@
                 if (data.success) {
                     let msg = `${data.sent} invoice(s) sent to Invoice Module successfully!`;
                     if (data.duplicates > 0) {
-                        msg += `\n\n⚠️ ${data.duplicates} duplicate(s) skipped (already exist in Invoices).`;
+                        msg += `\n\n${data.duplicates} duplicate(s) skipped (already exist in Invoices).`;
                     }
                     if (data.errors && data.errors.length > 0) {
                         msg += `\n\nNotes:\n${data.errors.join('\n')}`;
                     }
-                    alert(msg);
+                    await JarvisDialog.alert(msg, { type: 'success' });
                     // Clear checkboxes
                     document.querySelectorAll('.unallocated-checkbox').forEach(cb => cb.checked = false);
                     document.getElementById('selectAllCheckbox').checked = false;
@@ -1799,10 +1806,10 @@
                     loadUnallocatedInvoices(unallocatedPage);
                     loadUnallocatedCount();
                 } else {
-                    alert(data.error || 'Failed to send invoices');
+                    await JarvisDialog.alert(data.error || 'Failed to send invoices', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             } finally {
                 this.disabled = false;
                 this.innerHTML = '<i class="bi bi-send"></i> Send to Invoice Module <span id="selectedCount" class="badge bg-light text-dark ms-1">0</span>';
@@ -1823,7 +1830,7 @@
 
                 if (!res.ok) {
                     const data = await res.json();
-                    alert(data.error || 'Failed to export PDF');
+                    await JarvisDialog.alert(data.error || 'Failed to export PDF', { type: 'error' });
                     return;
                 }
 
@@ -1837,7 +1844,7 @@
                 window.URL.revokeObjectURL(url);
                 a.remove();
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -1978,7 +1985,7 @@
             }
 
             if (errors.length > 0) {
-                alert('Some changes failed to save:\n' + errors.join('\n'));
+                await JarvisDialog.alert('Some changes failed to save:\n' + errors.join('\n'), { type: 'error' });
             } else {
                 // Signal e-Factura page to refresh
                 localStorage.setItem('efacturaPartnerTypesChanged', Date.now().toString());
@@ -2003,7 +2010,7 @@
             const description = document.getElementById('newTypeDescription').value.trim();
 
             if (!name) {
-                alert('Name is required');
+                await JarvisDialog.alert('Name is required', { type: 'warning' });
                 return;
             }
 
@@ -2020,15 +2027,16 @@
                     document.getElementById('newTypeDescription').value = '';
                     loadPartnerTypesTable();
                 } else {
-                    alert(data.error || 'Failed to create partner type');
+                    await JarvisDialog.alert(data.error || 'Failed to create partner type', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
         async function deletePartnerType(typeId) {
-            if (!confirm('Delete this partner type? It will be soft-deleted (deactivated).')) return;
+            const confirmed = await JarvisDialog.confirm('Delete this partner type? It will be soft-deleted (deactivated).', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/efactura/api/partner-types/${typeId}`, {
@@ -2040,10 +2048,10 @@
                 if (data.success) {
                     loadPartnerTypesTable();
                 } else {
-                    alert(data.error || 'Failed to delete partner type');
+                    await JarvisDialog.alert(data.error || 'Failed to delete partner type', { type: 'error' });
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
     </script>

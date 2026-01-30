@@ -264,7 +264,7 @@
             };
 
             if (!data.name || !data.start_date || !data.end_date) {
-                alert('Name, start date, and end date are required');
+                await JarvisDialog.alert('Name, start date, and end date are required', { type: 'warning' });
                 return;
             }
 
@@ -283,14 +283,15 @@
                 eventModal.hide();
                 window.location.reload();
             } else {
-                alert('Error saving event');
+                await JarvisDialog.alert('Error saving event', { type: 'error' });
             }
         });
 
         // Delete buttons
         document.querySelectorAll('.btn-delete').forEach(btn => {
             btn.addEventListener('click', async () => {
-                if (!confirm('Delete this event? This will also delete all associated bonuses.')) return;
+                const confirmed = await JarvisDialog.confirm('Delete this event? This will also delete all associated bonuses.', { danger: true });
+                if (!confirmed) return;
 
                 const resp = await fetch(`/hr/events/api/events/${btn.dataset.id}`, {
                     method: 'DELETE'
@@ -299,7 +300,7 @@
                 if (resp.ok) {
                     window.location.reload();
                 } else {
-                    alert('Error deleting event');
+                    await JarvisDialog.alert('Error deleting event', { type: 'error' });
                 }
             });
         });
@@ -323,5 +324,6 @@
     <script src="/static/js/jarvis-utils.js"></script>
     <script src="/static/js/online-users.js"></script>
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>

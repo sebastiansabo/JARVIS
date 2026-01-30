@@ -207,7 +207,7 @@
             };
 
             if (!data.employee_id || !data.event_id || !data.year || !data.month) {
-                alert('Please fill in all required fields');
+                await JarvisDialog.alert('Please fill in all required fields', { type: 'warning' });
                 return;
             }
 
@@ -221,14 +221,15 @@
                 if (resp.ok) {
                     window.location.href = '{{ url_for("hr.events.event_bonuses") }}';
                 } else {
-                    alert('Error saving bonus');
+                    await JarvisDialog.alert('Error saving bonus', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving bonus');
+                await JarvisDialog.alert('Error saving bonus', { type: 'error' });
             }
         });
     </script>
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>
