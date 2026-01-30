@@ -1,0 +1,558 @@
+================================================================================
+JARVIS AI AGENT - DIAGNOSTICS MODULE CLAUDE CODE PROMPT
+================================================================================
+
+Generate comprehensive diagnostics, anomaly detection, and debugging services
+that enable the AI Agent to identify system weaknesses, performance issues,
+data problems, and provide actionable recommendations.
+
+SPECIFICATION:
+==============
+
+## Core Services to Generate
+
+### 1. SystemHealthService (600+ lines)
+
+check_gl_balance() → {is_balanced, variance, unbalanced_accounts}
+  - Verify total debits = total credits
+  - Check each account balances
+  - Identify unbalanced accounts
+  - Return detailed report
+  - Alert if out of balance
+
+run_full_diagnostic() → HealthReport
+  - Run 10 health checks
+  - Score each 0-100
+  - Aggregate results
+  - Return overall health score
+  - List weak points
+  - Provide recommendations
+
+### 2. DataIntegrityService (600+ lines)
+
+check_invoice_reconciliation() → ReconciliationStatus
+  - Count matched/unmatched invoices
+  - Sum unmatched amounts
+  - Identify old unmatched (>90 days)
+  - Return match percentage
+  - Alert on high unmatched
+
+check_transaction_matching() → MatchingStatus
+  - Count matched/unmatched transactions
+  - Identify suspicious unmatched
+  - Calculate match percentage
+  - Alert on large variances
+
+check_data_completeness() → CompletenessReport
+  - Check for missing fields
+  - Count incomplete records
+  - Calculate completeness %
+  - Identify problem areas
+  - Suggest data cleanup
+
+check_for_duplicates() → DuplicateReport
+  - Find duplicate invoices (same vendor, amount, date)
+  - Find duplicate transactions
+  - Count total duplicates
+  - Suggest resolution
+
+### 3. PerformanceMonitoringService (500+ lines)
+
+monitor_query_performance() → PerformanceReport
+  - Identify slow queries (>2 seconds)
+  - Find queries without indices
+  - Calculate average query times
+  - Suggest indices to create
+  - Return optimization recommendations
+
+monitor_llm_performance() → LLMPerformanceReport
+  - Track latency per provider
+  - Calculate costs
+  - Measure error rates
+  - Identify most efficient provider
+  - Provide provider recommendations
+
+monitor_rag_effectiveness() → RAGReport
+  - Calculate hit rate
+  - Identify searches with no results
+  - Measure retrieval times
+  - Find ineffective searches
+  - Suggest RAG improvements
+
+### 4. AnomalyDetectionService (400+ lines)
+
+detect_spending_anomalies() → AnomalyReport
+  - Calculate normal spending distribution per vendor
+  - Find spending spikes (>95th percentile)
+  - Detect spending drops
+  - Identify new vendors
+  - Return with severity levels
+
+detect_revenue_anomalies() → RevenueAnomalyReport
+  - Calculate normal revenue per customer
+  - Find revenue spikes/drops
+  - Identify inactive customers
+  - Return with severity levels
+
+detect_reconciliation_anomalies() → ReconciliationAnomalyReport
+  - Find high-value variances (>€100)
+  - Find old unmatched items
+  - Find low-confidence matches
+  - Identify variance patterns
+
+detect_performance_anomalies() → PerformanceAnomalyReport
+  - Detect query slowdown
+  - Monitor error rate spikes
+  - Track token usage spikes
+  - Identify cost anomalies
+
+### 5. DebuggingService (500+ lines)
+
+debug_unmatched_invoice(invoice_id) → DebugReport
+  - Load invoice details
+  - Search for matching transactions
+  - Check exact amount matches
+  - Check fuzzy matches (±1%, ±5%, ±10%)
+  - Analyze why no match
+  - Suggest fixes (vendor name standardization, etc.)
+  - Return root cause and solutions
+
+debug_gl_imbalance() → DebugReport
+  - Identify which accounts unbalanced
+  - Find last balanced state
+  - Search for errors since then
+  - Calculate variance
+  - Identify likely causes:
+    * Duplicate posting
+    * Wrong amount
+    * Missing offset
+    * Incorrect GL code
+  - Suggest corrections
+
+debug_slow_query(query_type) → QueryDebugReport
+  - Profile the query
+  - Check execution plan
+  - Identify missing indices
+  - Check for full table scans
+  - Measure performance baseline vs current
+  - Suggest optimization
+  - Estimate improvement
+
+debug_high_cost(provider, date_range) → CostDebugReport
+  - Analyze costs before/after date
+  - Identify what changed
+  - Calculate contribution of each factor:
+    * More conversations
+    * Longer conversations
+    * More tokens per request
+  - Find root cause
+  - Suggest optimization
+
+### 6. RecommendationService (300+ lines)
+
+get_system_recommendations() → RecommendationList
+  - Compile all diagnostic recommendations
+  - Prioritize by impact:
+    - CRITICAL: Fix immediately
+    - HIGH: Fix this week
+    - MEDIUM: Fix this month
+    - LOW: Nice to have
+  - For each: effort estimate, time estimate, expected impact
+  - Return prioritized action list
+
+### 7. DiagnosticOrchestrator (300+ lines)
+
+run_full_system_diagnostic() → CompleteHealthReport
+  - Call all diagnostic services
+  - Compile results
+  - Generate executive summary
+  - List critical issues
+  - Provide top 5 recommendations
+  - Return complete report
+
+schedule_nightly_diagnostic()
+  - Run full diagnostic at 2 AM UTC
+  - Send alerts if critical found
+  - Log results to diagnostic_results table
+
+## Models to Create
+
+```python
+HealthReport {
+  overall_score: 0-100
+  checks: [
+    {
+      name: string,
+      status: PASS | WARNING | CRITICAL,
+      score: 0-100,
+      details: string,
+      recommendations: [string]
+    }
+  ],
+  weak_points: [string],
+  recommendations: [string],
+  timestamp: datetime
+}
+
+DiagnosticResult {
+  id: UUID
+  company_id: UUID
+  diagnostic_type: string
+  status: PASS | WARNING | CRITICAL
+  score: 0-100
+  details: JSON
+  created_at: datetime
+}
+
+DetectedAnomaly {
+  id: UUID
+  company_id: UUID
+  anomaly_type: string (SPENDING, REVENUE, RECONCILIATION, PERFORMANCE)
+  severity: LOW | MEDIUM | HIGH
+  description: string
+  data: JSON
+  resolution_status: NEW | IN_PROGRESS | RESOLVED
+  created_at: datetime
+  resolved_at: datetime (nullable)
+}
+
+SystemRecommendation {
+  id: UUID
+  company_id: UUID
+  priority: CRITICAL | HIGH | MEDIUM | LOW
+  category: string
+  issue: string
+  action_recommended: string
+  estimated_impact: string
+  effort_required: EASY | MEDIUM | HARD
+  estimated_time: string
+  implemented: boolean
+  created_at: datetime
+}
+```
+
+## Repositories to Create
+
+DiagnosticRepository:
+  - save_diagnostic_result()
+  - get_latest_diagnostic()
+  - get_diagnostic_history(days=30)
+
+AnomalyRepository:
+  - save_anomaly()
+  - get_active_anomalies()
+  - get_anomaly_history()
+  - mark_resolved()
+
+RecommendationRepository:
+  - save_recommendation()
+  - get_active_recommendations()
+  - get_implemented_recommendations()
+  - mark_implemented()
+
+## Tests to Create (80%+ MINIMUM)
+
+### SystemHealthService Tests
+
+test_gl_balance_check_passes():
+  - Create balanced GL postings
+  - Run check
+  - Assert is_balanced = true
+
+test_gl_balance_check_fails():
+  - Create unbalanced GL (€500 variance)
+  - Run check
+  - Assert is_balanced = false
+  - Assert variance = 500
+
+test_full_diagnostic_all_healthy():
+  - Create company with all healthy metrics
+  - Run full diagnostic
+  - Assert score >= 90
+  - Assert no critical issues
+
+test_full_diagnostic_with_issues():
+  - Create company with issues:
+    * Unmatched invoices
+    * GL imbalance
+    * Slow queries
+  - Run full diagnostic
+  - Assert score < 75
+  - Assert issues detected
+
+### DataIntegrityService Tests
+
+test_invoice_reconciliation_all_matched():
+  - Create 10 invoices, all matched
+  - Run check
+  - Assert match_percentage = 100
+
+test_invoice_reconciliation_some_unmatched():
+  - Create 10 invoices, 3 unmatched (€5,000)
+  - Run check
+  - Assert match_percentage = 70
+  - Assert unmatched_count = 3
+  - Assert unmatched_amount = 5000
+
+test_data_completeness_fully_complete():
+  - Create complete records
+  - Run check
+  - Assert completeness = 100%
+
+test_data_completeness_with_missing():
+  - Create records with missing fields (10%)
+  - Run check
+  - Assert completeness = 90%
+  - Assert missing_count = 10
+
+test_duplicate_detection():
+  - Create duplicate invoices (same vendor, amount, date)
+  - Run check
+  - Assert duplicates_found = true
+  - Assert count correct
+
+### PerformanceMonitoringService Tests
+
+test_slow_query_detection():
+  - Create query log entries (some slow >2s, some fast)
+  - Run performance check
+  - Assert slow_queries detected
+  - Assert optimization suggestions provided
+
+test_llm_performance_tracking():
+  - Create usage logs for multiple providers
+  - Run performance check
+  - Assert stats calculated correctly
+  - Assert provider comparison works
+
+test_rag_effectiveness():
+  - Create RAG retrieval logs
+  - Calculate hit rate, retrieval time
+  - Assert metrics accurate
+
+### AnomalyDetectionService Tests
+
+test_spending_spike_detection():
+  - Create spending history (normal: €3K-5K)
+  - Add spike entry (€45K)
+  - Run anomaly detection
+  - Assert spike detected
+  - Assert severity = HIGH
+
+test_revenue_drop_detection():
+  - Create revenue history (normal: €20K/month)
+  - Add drop month (€5K)
+  - Run anomaly detection
+  - Assert drop detected
+  - Assert severity = HIGH
+
+test_no_anomalies():
+  - Create normal spending/revenue pattern
+  - Run anomaly detection
+  - Assert no anomalies found
+
+### DebuggingService Tests
+
+test_debug_unmatched_invoice():
+  - Create unmatched invoice (€5K from ACME, Jan 15)
+  - Create matching transaction (€5K from ACME, Jan 15)
+  - Run debug
+  - Assert root cause found (vendor name mismatch)
+  - Assert suggested fix provided
+
+test_debug_gl_imbalance():
+  - Create GL with €500 imbalance
+  - Inject error (JE with unbalanced posting)
+  - Run debug
+  - Assert error detected
+  - Assert correction suggested
+
+test_debug_slow_query():
+  - Create slow query scenario
+  - Run debug
+  - Assert bottleneck identified
+  - Assert optimization suggested
+
+test_debug_high_cost():
+  - Create cost spike in logs
+  - Run debug
+  - Assert root cause found (more requests? longer context?)
+  - Assert optimization suggested
+
+### RecommendationService Tests
+
+test_recommendations_prioritized():
+  - Run diagnostics with multiple issues
+  - Get recommendations
+  - Assert CRITICAL before HIGH
+  - Assert HIGH before MEDIUM
+  - Assert MEDIUM before LOW
+
+test_recommendations_have_impact():
+  - Get recommendations
+  - Assert each has estimated_impact
+  - Assert impact is meaningful (not vague)
+
+test_recommendations_executable():
+  - Get recommendations
+  - Assert each has specific action
+  - Assert effort estimate provided
+  - Assert time estimate provided
+
+### Integration Tests
+
+test_full_diagnostic_end_to_end():
+  - Create company with mixed issues
+  - Run full system diagnostic
+  - Assert all checks run
+  - Assert report generated
+  - Assert recommendations provided
+  - Assert alert sent (if critical)
+
+test_nightly_diagnostic_scheduler():
+  - Schedule nightly diagnostic
+  - Advance time to 2 AM UTC
+  - Assert diagnostic ran
+  - Assert results saved
+  - Assert alerts sent if needed
+
+test_ai_agent_diagnostic_question():
+  - User asks "Is my system healthy?"
+  - AI Agent calls diagnostic service
+  - Returns health report with issues
+  - User asks "Why is this slow?"
+  - AI Agent calls debug service
+  - Returns debug analysis
+
+## Configuration
+
+In .claude-code/config.json:
+
+```json
+{
+  "ai_agent_diagnostics": {
+    "path": "jarvis/ai_agent/diagnostics",
+    "test_path": "tests/ai_agent/diagnostics/",
+    "min_coverage": 80,
+    "core_entities": ["DiagnosticResult", "DetectedAnomaly", "SystemRecommendation"],
+    "features": {
+      "auto_diagnostics": true,
+      "nightly_schedule": "02:00 UTC",
+      "anomaly_detection": true,
+      "performance_monitoring": true,
+      "debug_tools": true,
+      "recommendations": true
+    },
+    "thresholds": {
+      "slow_query_ms": 2000,
+      "gl_imbalance_alert": 0.01,
+      "anomaly_percentile": 95,
+      "cost_spike_percentage": 25,
+      "health_score_critical": 50,
+      "health_score_warning": 75
+    }
+  }
+}
+```
+
+## Database Schema
+
+CREATE TABLE diagnostic_results (
+    id UUID PRIMARY KEY,
+    company_id UUID NOT NULL REFERENCES companies(id),
+    diagnostic_type VARCHAR(100) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    score INTEGER CHECK (score >= 0 AND score <= 100),
+    details JSONB,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE detected_anomalies (
+    id UUID PRIMARY KEY,
+    company_id UUID NOT NULL REFERENCES companies(id),
+    anomaly_type VARCHAR(100) NOT NULL,
+    severity VARCHAR(50) NOT NULL,
+    description TEXT NOT NULL,
+    data JSONB,
+    resolution_status VARCHAR(50) DEFAULT 'NEW',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    resolved_at TIMESTAMP
+);
+
+CREATE TABLE system_recommendations (
+    id UUID PRIMARY KEY,
+    company_id UUID NOT NULL REFERENCES companies(id),
+    priority VARCHAR(50) NOT NULL,
+    category VARCHAR(100) NOT NULL,
+    issue TEXT NOT NULL,
+    action_recommended TEXT NOT NULL,
+    estimated_impact TEXT,
+    effort_required VARCHAR(50),
+    estimated_time VARCHAR(100),
+    implemented BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_diagnostic_results_company ON diagnostic_results(company_id, created_at);
+CREATE INDEX idx_detected_anomalies_company ON detected_anomalies(company_id, severity);
+CREATE INDEX idx_system_recommendations_company ON system_recommendations(company_id, priority);
+
+## Success Criteria
+
+Code is DONE when:
+
+✅ SystemHealthService complete (600+ lines)
+✅ DataIntegrityService complete (600+ lines)
+✅ PerformanceMonitoringService complete (500+ lines)
+✅ AnomalyDetectionService complete (400+ lines)
+✅ DebuggingService complete (500+ lines)
+✅ RecommendationService complete (300+ lines)
+✅ DiagnosticOrchestrator complete (300+ lines)
+
+✅ All models created
+✅ All repositories created
+✅ Database schema created
+✅ Migration script created
+
+✅ 80%+ test coverage
+✅ All diagnostic checks implemented
+✅ GL balance verification works
+✅ Invoice reconciliation check works
+✅ Data completeness detection works
+✅ Duplicate detection works
+✅ Performance monitoring works
+✅ Anomaly detection works (spending, revenue, reconciliation, performance)
+✅ Debugging tools work
+✅ Recommendations generated
+✅ Nightly scheduler works
+✅ Alerts sent on critical issues
+
+✅ AI Agent integration:
+  - User can ask diagnostic questions
+  - System responds with detailed analysis
+  - Recommendations provided
+  - Issues debugged
+
+✅ All error paths tested
+✅ Edge cases handled
+✅ Performance acceptable
+✅ Ready for production
+✅ Ready to merge
+
+## How to Use This Prompt
+
+1. Open Claude Code
+2. Load JARVIS system prompt: .claude-code/system_prompt.md
+3. Paste this entire prompt into Claude Code
+4. Claude Code will:
+   - Generate all 7 diagnostic services
+   - Generate models and repositories
+   - Generate database migrations
+   - Generate comprehensive tests (80%+ coverage)
+   - Run validation hooks automatically
+   - Show you a report
+5. Review the report, approve, commit
+
+================================================================================
+END OF DIAGNOSTICS PROMPT
+================================================================================

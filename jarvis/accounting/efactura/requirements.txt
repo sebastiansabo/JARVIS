@@ -1,0 +1,15 @@
+# e-Factura Connector Dependencies
+# Add these to the main JARVIS requirements.txt
+
+# Certificate handling
+cryptography>=41.0.0
+
+# HTTP client (already in JARVIS)
+requests>=2.31.0
+
+# XML parsing (stdlib, but listed for documentation)
+# xml.etree.ElementTree - included in Python stdlib
+
+# Testing
+pytest>=7.0.0
+pytest-mock>=3.10.0
