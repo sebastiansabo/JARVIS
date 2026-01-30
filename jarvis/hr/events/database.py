@@ -628,7 +628,7 @@ def get_all_department_structures():
     cursor = get_cursor(conn)
     cursor.execute("""
         SELECT ds.id, ds.company, ds.brand, ds.department, ds.subdepartment,
-               ds.manager, ds.company_id, ds.brand_id, ds.department_id, ds.subdepartment_id
+               ds.manager, ds.company_id
         FROM department_structure ds
         ORDER BY ds.company, ds.brand, ds.department
     """)
@@ -637,31 +637,31 @@ def get_all_department_structures():
     return [dict_from_row(r) for r in rows]
 
 
-def create_department_structure(company_id, brand_id, department_id, subdepartment_id, manager, company, brand, department, subdepartment):
+def create_department_structure(company_id, manager, company, brand, department, subdepartment):
     """Create a new department structure entry."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute("""
-        INSERT INTO department_structure (company_id, brand_id, department_id, subdepartment_id, manager, company, brand, department, subdepartment)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO department_structure (company_id, manager, company, brand, department, subdepartment)
+        VALUES (%s, %s, %s, %s, %s, %s)
         RETURNING id
-    """, (company_id, brand_id, department_id, subdepartment_id, manager, company, brand, department, subdepartment))
+    """, (company_id, manager, company, brand, department, subdepartment))
     struct_id = cursor.fetchone()['id']
     conn.commit()
     release_db(conn)
     return struct_id
 
 
-def update_department_structure(struct_id, company_id, brand_id, department_id, subdepartment_id, manager, company, brand, department, subdepartment):
+def update_department_structure(struct_id, company_id, manager, company, brand, department, subdepartment):
     """Update a department structure entry."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute("""
         UPDATE department_structure
-        SET company_id = %s, brand_id = %s, department_id = %s, subdepartment_id = %s,
-            manager = %s, company = %s, brand = %s, department = %s, subdepartment = %s
+        SET company_id = %s, manager = %s, company = %s, brand = %s,
+            department = %s, subdepartment = %s
         WHERE id = %s
-    """, (company_id, brand_id, department_id, subdepartment_id, manager, company, brand, department, subdepartment, struct_id))
+    """, (company_id, manager, company, brand, department, subdepartment, struct_id))
     conn.commit()
     release_db(conn)
 

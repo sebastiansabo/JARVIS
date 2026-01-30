@@ -577,20 +577,20 @@ def api_get_departments_full():
 @login_required
 @hr_required
 def api_create_department():
-    """API: Create a new department structure entry using foreign keys."""
+    """API: Create a new department structure entry."""
     from models import clear_structure_cache
 
     data = request.get_json()
 
-    # Look up the text values from master tables
-    company_name = get_name_by_id('companies', data.get('company_id'))
-    brand_name = get_name_by_id('brands', data.get('brand_id'))
-    dept_name = get_name_by_id('departments', data.get('department_id'))
-    subdept_name = get_name_by_id('subdepartments', data.get('subdepartment_id'))
+    # Look up the text values from master tables (if IDs provided)
+    company_name = get_name_by_id('companies', data.get('company_id')) or data.get('company', '')
+    brand_name = get_name_by_id('brands', data.get('brand_id')) or data.get('brand', '')
+    dept_name = get_name_by_id('departments', data.get('department_id')) or data.get('department', '')
+    subdept_name = get_name_by_id('subdepartments', data.get('subdepartment_id')) or data.get('subdepartment', '')
 
     dept_id = create_department_structure(
-        data.get('company_id'), data.get('brand_id'), data.get('department_id'),
-        data.get('subdepartment_id'), data.get('manager'),
+        data.get('company_id'),
+        data.get('manager', ''),
         company_name, brand_name, dept_name, subdept_name
     )
     clear_structure_cache()
@@ -601,20 +601,20 @@ def api_create_department():
 @login_required
 @hr_required
 def api_update_department(dept_id):
-    """API: Update a department structure entry using foreign keys."""
+    """API: Update a department structure entry."""
     from models import clear_structure_cache
 
     data = request.get_json()
 
-    # Look up the text values from master tables
-    company_name = get_name_by_id('companies', data.get('company_id'))
-    brand_name = get_name_by_id('brands', data.get('brand_id'))
-    dept_name = get_name_by_id('departments', data.get('department_id'))
-    subdept_name = get_name_by_id('subdepartments', data.get('subdepartment_id'))
+    # Look up the text values from master tables (if IDs provided)
+    company_name = get_name_by_id('companies', data.get('company_id')) or data.get('company', '')
+    brand_name = get_name_by_id('brands', data.get('brand_id')) or data.get('brand', '')
+    dept_name = get_name_by_id('departments', data.get('department_id')) or data.get('department', '')
+    subdept_name = get_name_by_id('subdepartments', data.get('subdepartment_id')) or data.get('subdepartment', '')
 
     update_department_structure(
-        dept_id, data.get('company_id'), data.get('brand_id'), data.get('department_id'),
-        data.get('subdepartment_id'), data.get('manager'),
+        dept_id, data.get('company_id'),
+        data.get('manager', ''),
         company_name, brand_name, dept_name, subdept_name
     )
     clear_structure_cache()

@@ -165,7 +165,7 @@ class EFacturaService:
 
         try:
             response = requests.post(
-                'https://webservicesp.anaf.ro/PlatitorTvaRest/api/v8/ws/tva',
+                'https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva',
                 json=[{
                     'cui': int(clean_cif),
                     'data': date.today().strftime('%Y-%m-%d')
@@ -189,14 +189,18 @@ class EFacturaService:
                 )
 
             company = data['found'][0]
+            # v9 API response structure: data is nested in date_generale, etc.
+            general = company.get('date_generale', {})
+            vat_info = company.get('inregistrare_scop_Tva', {})
+            inactive_info = company.get('stare_inactiv', {})
 
             return ServiceResult(success=True, data={
                 'cif': clean_cif,
-                'name': company.get('denumire', ''),
-                'address': company.get('adresa', ''),
-                'is_vat_payer': company.get('scpTVA', False),
-                'is_active': company.get('statusInactivi', False) is False,
-                'registration_date': company.get('data_inregistrare'),
+                'name': general.get('denumire', ''),
+                'address': general.get('adresa', ''),
+                'is_vat_payer': vat_info.get('scpTVA', False),
+                'is_active': inactive_info.get('statusInactivi', False) is False,
+                'registration_date': general.get('data_inregistrare'),
             })
 
         except requests.exceptions.Timeout:
@@ -242,7 +246,7 @@ class EFacturaService:
 
         try:
             response = requests.post(
-                'https://webservicesp.anaf.ro/PlatitorTvaRest/api/v8/ws/tva',
+                'https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva',
                 json=payload,
                 headers={'Content-Type': 'application/json'},
                 timeout=15,
@@ -257,13 +261,16 @@ class EFacturaService:
             data = response.json()
             result = {}
 
+            # v9 API response structure: data is nested in date_generale and inregistrare_scop_Tva
             for company in data.get('found', []):
-                cif = str(company.get('cui', ''))
+                general = company.get('date_generale', {})
+                vat_info = company.get('inregistrare_scop_Tva', {})
+                cif = str(general.get('cui', ''))
                 result[cif] = {
                     'cif': cif,
-                    'name': company.get('denumire', ''),
-                    'address': company.get('adresa', ''),
-                    'is_vat_payer': company.get('scpTVA', False),
+                    'name': general.get('denumire', ''),
+                    'address': general.get('adresa', ''),
+                    'is_vat_payer': vat_info.get('scpTVA', False),
                 }
 
             return ServiceResult(success=True, data=result)

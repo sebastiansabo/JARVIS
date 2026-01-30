@@ -4103,22 +4103,25 @@
         // ============== END ALLOCATION EDITING FUNCTIONS ==============
 
         // ============== SUMMARY CARDS TOGGLE ==============
+        // Note: summaryCards/summaryBar elements were removed in UI refactor
+        // These functions are kept for backwards compatibility but are now no-ops
         function toggleSummaryCards() {
             const cards = document.getElementById('summaryCards');
             const summaryBar = document.getElementById('summaryBar');
             const btn = document.getElementById('toggleSummary');
 
+            // Early return if elements don't exist (UI was refactored)
+            if (!cards || !summaryBar || !btn) return;
+
             if (cards.classList.contains('d-none')) {
-                // Show expanded cards, hide compact bar stats
                 cards.classList.remove('d-none');
-                summaryBar.querySelector('.summary-stats').classList.add('d-none');
+                summaryBar.querySelector('.summary-stats')?.classList.add('d-none');
                 btn.innerHTML = '<i class="bi bi-chevron-up"></i>';
                 btn.title = 'Collapse summary';
                 localStorage.setItem('summaryCardsVisible', 'true');
             } else {
-                // Hide cards, show compact bar
                 cards.classList.add('d-none');
-                summaryBar.querySelector('.summary-stats').classList.remove('d-none');
+                summaryBar.querySelector('.summary-stats')?.classList.remove('d-none');
                 btn.innerHTML = '<i class="bi bi-bar-chart-fill"></i>';
                 btn.title = 'Expand summary';
                 localStorage.setItem('summaryCardsVisible', 'false');
