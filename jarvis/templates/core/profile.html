@@ -1247,9 +1247,16 @@
             if (savedTab) {
                 const tabBtn = document.querySelector(`button[data-bs-target="${savedTab}"]`);
                 if (tabBtn) {
+                    // If the saved tab is invoices (which is already active by default),
+                    // we need to load it directly since tab.show() won't fire shown.bs.tab
+                    if (savedTab === '#invoices') {
+                        loadInvoicesTab();
+                        return;
+                    }
+                    // For other tabs, show() will trigger the shown.bs.tab event
                     const tab = new bootstrap.Tab(tabBtn);
                     tab.show();
-                    return; // Don't load invoices tab since the saved tab will trigger its own load
+                    return;
                 }
             }
             // Default: load invoices tab
