@@ -14,6 +14,9 @@ from database import (
     get_user_invoices_summary,
     get_user_activity,
     get_user_activity_count,
+    get_user_event_bonuses,
+    get_user_event_bonuses_count,
+    get_user_event_bonuses_summary,
 )
 
 
@@ -50,10 +53,13 @@ def api_profile_summary():
         invoices_summary = get_user_invoices_summary(current_user.email)
         activity_count = get_user_activity_count(current_user.id)
 
+        # Get HR events summary for this user
+        hr_events_summary = get_user_event_bonuses_summary(current_user.id)
+
         return jsonify({
             'user': user_info,
             'invoices': invoices_summary,
-            'hr_events': {'total_bonuses': 0, 'total_amount': 0, 'events_count': 0},
+            'hr_events': hr_events_summary,
             'notifications': {'total': 0, 'sent': 0, 'failed': 0},
             'activity': {'total_events': activity_count},
         })
@@ -120,13 +126,47 @@ def api_profile_invoices():
 def api_profile_hr_events():
     """Get HR event bonuses for current user."""
     try:
-        # HR events functionality - placeholder for now
-        # TODO: Implement when HR module is updated to use users table
+        # Query params
+        year = request.args.get('year', '', type=str)
+        month = request.args.get('month', '', type=str)
+        search = request.args.get('search', '')
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+
+        # Validate
+        if page < 1:
+            page = 1
+        if per_page < 1 or per_page > 1000:
+            per_page = 50
+
+        offset = (page - 1) * per_page
+
+        # Convert year/month to int if provided
+        year_int = int(year) if year else None
+        month_int = int(month) if month else None
+
+        # Get bonuses for current user
+        bonuses = get_user_event_bonuses(
+            user_id=current_user.id,
+            year=year_int,
+            month=month_int,
+            search=search if search else None,
+            limit=per_page,
+            offset=offset,
+        )
+
+        total = get_user_event_bonuses_count(
+            user_id=current_user.id,
+            year=year_int,
+            month=month_int,
+            search=search if search else None,
+        )
+
         return jsonify({
-            'bonuses': [],
-            'total': 0,
-            'page': 1,
-            'per_page': 20,
+            'bonuses': bonuses,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
         })
     except Exception as e:
         print(f"Profile HR events API error: {e}")

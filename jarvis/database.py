@@ -6582,12 +6582,15 @@ def get_user_invoices_summary(user_email: str) -> dict:
 def get_user_event_bonuses(
     user_id: int,
     year: Optional[int] = None,
+    month: Optional[int] = None,
+    search: Optional[str] = None,
     limit: int = 20,
     offset: int = 0,
 ) -> list[dict]:
     """
     Get HR event bonuses for a user.
-    Now that hr.event_bonuses.employee_id references users.id directly.
+    Joins through hr.employees since employee_id references hr.employees.id,
+    and hr.employees.user_id references users.id.
     """
     conn = get_db()
     cursor = get_cursor(conn)
@@ -6596,18 +6599,29 @@ def get_user_event_bonuses(
         SELECT
             eb.id, eb.year, eb.month, eb.bonus_days, eb.hours_free,
             eb.bonus_net, eb.details, eb.allocation_month,
+            eb.participation_start, eb.participation_end,
             eb.created_at, eb.updated_at,
             e.name as event_name, e.start_date, e.end_date,
             e.company, e.brand
         FROM hr.event_bonuses eb
+        INNER JOIN hr.employees emp ON eb.employee_id = emp.id
         INNER JOIN hr.events e ON eb.event_id = e.id
-        WHERE eb.employee_id = %s
+        WHERE emp.user_id = %s
     '''
     params = [user_id]
 
     if year:
         query += ' AND eb.year = %s'
         params.append(year)
+
+    if month:
+        query += ' AND eb.month = %s'
+        params.append(month)
+
+    if search:
+        query += ' AND (e.name ILIKE %s OR e.company ILIKE %s)'
+        search_pattern = f'%{search}%'
+        params.extend([search_pattern, search_pattern])
 
     query += ' ORDER BY eb.year DESC, eb.month DESC LIMIT %s OFFSET %s'
     params.extend([limit, offset])
@@ -6622,7 +6636,8 @@ def get_user_event_bonuses(
 def get_user_event_bonuses_summary(user_id: int) -> dict:
     """
     Get summary of HR event bonuses for a user.
-    Now that hr.event_bonuses.employee_id references users.id directly.
+    Joins through hr.employees since employee_id references hr.employees.id,
+    and hr.employees.user_id references users.id.
     """
     conn = get_db()
     cursor = get_cursor(conn)
@@ -6630,10 +6645,11 @@ def get_user_event_bonuses_summary(user_id: int) -> dict:
     cursor.execute('''
         SELECT
             COUNT(*) as total_bonuses,
-            COALESCE(SUM(bonus_net), 0) as total_amount,
-            COUNT(DISTINCT event_id) as events_count
-        FROM hr.event_bonuses
-        WHERE employee_id = %s
+            COALESCE(SUM(eb.bonus_net), 0) as total_amount,
+            COUNT(DISTINCT eb.event_id) as events_count
+        FROM hr.event_bonuses eb
+        INNER JOIN hr.employees emp ON eb.employee_id = emp.id
+        WHERE emp.user_id = %s
     ''', (user_id,))
 
     row = cursor.fetchone()
@@ -6646,6 +6662,49 @@ def get_user_event_bonuses_summary(user_id: int) -> dict:
             'events_count': row['events_count'],
         }
     return {'total_bonuses': 0, 'total_amount': 0, 'events_count': 0}
+
+
+def get_user_event_bonuses_count(
+    user_id: int,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    search: Optional[str] = None,
+) -> int:
+    """
+    Get count of HR event bonuses for a user with filters.
+    Joins through hr.employees since employee_id references hr.employees.id,
+    and hr.employees.user_id references users.id.
+    """
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    query = '''
+        SELECT COUNT(*) as count
+        FROM hr.event_bonuses eb
+        INNER JOIN hr.employees emp ON eb.employee_id = emp.id
+        INNER JOIN hr.events e ON eb.event_id = e.id
+        WHERE emp.user_id = %s
+    '''
+    params = [user_id]
+
+    if year:
+        query += ' AND eb.year = %s'
+        params.append(year)
+
+    if month:
+        query += ' AND eb.month = %s'
+        params.append(month)
+
+    if search:
+        query += ' AND (e.name ILIKE %s OR e.company ILIKE %s)'
+        search_pattern = f'%{search}%'
+        params.extend([search_pattern, search_pattern])
+
+    cursor.execute(query, params)
+    row = cursor.fetchone()
+    release_db(conn)
+
+    return row['count'] if row else 0
 
 
 def get_user_notifications(

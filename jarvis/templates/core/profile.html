@@ -89,69 +89,66 @@
             </div>
         </div>
 
-        <!-- Summary Cards -->
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card bg-primary text-white">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="bi bi-receipt"></i> My Invoices</h6>
-                        <h2 id="totalInvoices">0</h2>
-                        <small id="invoiceStatusSummary" class="opacity-75">-</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-success text-white">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="bi bi-cash-stack"></i> Total Value</h6>
-                        <h2 id="totalValue">0 RON</h2>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-info text-white">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="bi bi-calendar-event"></i> HR Events</h6>
-                        <h2 id="totalEvents">0</h2>
-                        <small id="eventBonusSummary" class="opacity-75">-</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-warning text-dark">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="bi bi-envelope"></i> Notifications</h6>
-                        <h2 id="totalNotifications">0</h2>
-                    </div>
-                </div>
+        <!-- Nav + Summary Stats (same line, matching accounting page) -->
+        <div class="d-flex justify-content-between align-items-end flex-wrap gap-2 mb-2">
+            <ul class="nav nav-tabs mb-0" id="profileTabs">
+                <li class="nav-item">
+                    <button class="nav-link active" id="invoices-tab" data-bs-toggle="tab" data-bs-target="#invoices" type="button">
+                        <i class="bi bi-receipt"></i> My Invoices
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" id="hr-events-tab" data-bs-toggle="tab" data-bs-target="#hr-events" type="button">
+                        <i class="bi bi-calendar-event"></i> My HR Events
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" id="notifications-tab" data-bs-toggle="tab" data-bs-target="#notifications" type="button">
+                        <i class="bi bi-envelope"></i> My Notifications
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" id="activity-tab" data-bs-toggle="tab" data-bs-target="#activity" type="button">
+                        <i class="bi bi-clock-history"></i> Activity Log
+                    </button>
+                </li>
+            </ul>
+
+            <div class="summary-filter-bar d-flex align-items-center flex-wrap gap-3">
+                <span class="summary-stat" title="Total Invoices">
+                    <i class="bi bi-receipt text-primary"></i>
+                    <strong id="totalInvoices">0</strong> invoices
+                </span>
+                <span class="summary-stat text-success" title="Total Value">
+                    <i class="bi bi-cash-stack"></i>
+                    <strong id="totalValue">0 RON</strong>
+                </span>
+                <span class="summary-stat" title="HR Events">
+                    <i class="bi bi-calendar-event text-info"></i>
+                    <strong id="totalEvents">0</strong> events
+                    <small id="eventBonusSummary" class="text-muted ms-1"></small>
+                </span>
+                <span class="summary-stat" title="Notifications">
+                    <i class="bi bi-envelope text-warning"></i>
+                    <strong id="totalNotifications">0</strong> notifications
+                </span>
+                <span class="summary-stat" title="Activity">
+                    <i class="bi bi-clock-history text-secondary"></i>
+                    <strong id="totalActivity">0</strong> events
+                </span>
             </div>
         </div>
+        <style>
+            .summary-filter-bar { font-size: 0.85rem; }
+            .summary-stat { display: flex; align-items: center; gap: 4px; color: var(--bs-secondary-color); }
+            .summary-stat i { font-size: 1rem; }
+            .summary-stat strong { color: var(--bs-body-color); }
+        </style>
 
-        <!-- Tabs -->
-        <ul class="nav nav-tabs" id="profileTabs">
-            <li class="nav-item">
-                <button class="nav-link active" id="invoices-tab" data-bs-toggle="tab" data-bs-target="#invoices" type="button">
-                    <i class="bi bi-receipt"></i> My Invoices
-                </button>
-            </li>
-            <li class="nav-item">
-                <button class="nav-link" id="hr-events-tab" data-bs-toggle="tab" data-bs-target="#hr-events" type="button">
-                    <i class="bi bi-calendar-event"></i> My HR Events
-                </button>
-            </li>
-            <li class="nav-item">
-                <button class="nav-link" id="notifications-tab" data-bs-toggle="tab" data-bs-target="#notifications" type="button">
-                    <i class="bi bi-envelope"></i> My Notifications
-                </button>
-            </li>
-            <li class="nav-item">
-                <button class="nav-link" id="activity-tab" data-bs-toggle="tab" data-bs-target="#activity" type="button">
-                    <i class="bi bi-clock-history"></i> Activity Log
-                </button>
-            </li>
-        </ul>
+        <!-- Hidden for compatibility -->
+        <span id="invoiceStatusSummary" class="d-none"></span>
 
-        <div class="tab-content mt-3">
+        <div class="tab-content">
             <!-- My Invoices Tab -->
             <div class="tab-pane fade show active" id="invoices" role="tabpanel">
                 <div class="card">
@@ -161,8 +158,8 @@
                             <div class="d-flex gap-2 align-items-center">
                                 <!-- Search -->
                                 <div class="input-group input-group-sm" style="width: 220px;">
-                                    <input type="text" class="form-control" id="invoiceSearchInput" placeholder="Search supplier or invoice #..." oninput="updateInvoiceSearchIcon()">
-                                    <button class="btn btn-outline-secondary" type="button" id="invoiceSearchBtn" onclick="handleInvoiceSearchClick()" title="Search">
+                                    <input type="text" class="form-control" id="invoiceSearchInput" placeholder="Search supplier or invoice #..." oninput="updateInvoiceSearchIcon()" onkeydown="if(event.key==='Enter') loadInvoicesTab()">
+                                    <button class="btn btn-outline-secondary" type="button" id="invoiceSearchBtn" onclick="handleInvoiceSearchClick()" title="Click to search or clear">
                                         <i class="bi bi-search" id="invoiceSearchIcon"></i>
                                     </button>
                                 </div>
@@ -273,36 +270,125 @@
             <!-- My HR Events Tab -->
             <div class="tab-pane fade" id="hr-events" role="tabpanel">
                 <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <div class="d-flex align-items-center gap-2">
-                            <select class="form-select form-select-sm" id="hrEventYearFilter" style="width: auto;">
-                                <option value="">All Years</option>
-                            </select>
-                            <button class="btn btn-sm btn-outline-secondary" onclick="loadHrEventsTab()">
-                                <i class="bi bi-funnel"></i> Filter
-                            </button>
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-calendar-event"></i> My HR Event Bonuses <span id="hrEventsCount" class="badge bg-secondary ms-2">0</span></span>
+                            <div class="d-flex gap-2 align-items-center">
+                                <!-- Search -->
+                                <div class="input-group input-group-sm" style="width: 200px;">
+                                    <input type="text" class="form-control" id="hrEventSearchInput" placeholder="Search event..." oninput="updateHrEventSearchIcon()" onkeydown="if(event.key==='Enter') loadHrEventsTab()">
+                                    <button class="btn btn-outline-secondary" type="button" id="hrEventSearchBtn" onclick="handleHrEventSearchClick()" title="Search">
+                                        <i class="bi bi-search" id="hrEventSearchIcon"></i>
+                                    </button>
+                                </div>
+                                <!-- Filters Toggle -->
+                                <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#hrEventFiltersCollapse" id="hrEventFiltersToggleBtn">
+                                    <i class="bi bi-funnel"></i> Filters <span id="hrEventActiveFiltersCount" class="badge bg-primary ms-1 d-none">0</span>
+                                </button>
+                                <!-- Sort -->
+                                <select class="form-select form-select-sm" id="hrEventSortOrder" onchange="applyHrEventSorting()" style="width: auto;">
+                                    <option value="newest">Date: Newest</option>
+                                    <option value="oldest">Date: Oldest</option>
+                                    <option value="bonus_highest">Bonus: Highest</option>
+                                    <option value="bonus_lowest">Bonus: Lowest</option>
+                                </select>
+                                <!-- Columns -->
+                                <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#hrEventsColumnConfigModal">
+                                    <i class="bi bi-gear"></i> Columns
+                                </button>
+                            </div>
                         </div>
-                        <div class="text-muted small" id="hrEventsCount">0 bonuses</div>
+                    </div>
+                    <!-- Collapsible Filters Panel -->
+                    <div class="collapse" id="hrEventFiltersCollapse">
+                        <div class="card-body py-2 border-bottom">
+                            <div class="row align-items-end g-2">
+                                <div class="col-auto">
+                                    <label class="form-label small mb-0">Year</label>
+                                    <select class="form-select form-select-sm" id="hrEventYearFilter">
+                                        <option value="">All</option>
+                                    </select>
+                                </div>
+                                <div class="col-auto">
+                                    <label class="form-label small mb-0">Month</label>
+                                    <select class="form-select form-select-sm" id="hrEventMonthFilter">
+                                        <option value="">All</option>
+                                        <option value="1">January</option>
+                                        <option value="2">February</option>
+                                        <option value="3">March</option>
+                                        <option value="4">April</option>
+                                        <option value="5">May</option>
+                                        <option value="6">June</option>
+                                        <option value="7">July</option>
+                                        <option value="8">August</option>
+                                        <option value="9">September</option>
+                                        <option value="10">October</option>
+                                        <option value="11">November</option>
+                                        <option value="12">December</option>
+                                    </select>
+                                </div>
+                                <div class="col-auto">
+                                    <label class="form-label small mb-0">Quick</label>
+                                    <select class="form-select form-select-sm" id="hrEventQuickFilter" onchange="setHrEventQuickFilter(this.value)">
+                                        <option value="">--</option>
+                                        <option value="month">This Month</option>
+                                        <option value="quarter">This Quarter</option>
+                                        <option value="year">This Year</option>
+                                    </select>
+                                </div>
+                                <div class="col-auto">
+                                    <button class="btn btn-primary btn-sm" onclick="loadHrEventsTab()">
+                                        <i class="bi bi-funnel"></i> Apply
+                                    </button>
+                                </div>
+                                <div class="col-auto">
+                                    <button class="btn btn-outline-secondary btn-sm" onclick="clearHrEventFilters()" title="Clear All">
+                                        <i class="bi bi-x-circle"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
-                            <table class="table table-hover table-profile mb-0">
-                                <thead>
+                            <table class="table table-hover table-profile mb-0" id="hrEventsDataTable">
+                                <thead class="table-light" id="hrEventsTableHead">
                                     <tr>
-                                        <th>Year</th>
-                                        <th>Month</th>
-                                        <th>Event</th>
-                                        <th>Company</th>
-                                        <th>Participation</th>
-                                        <th class="text-end">Bonus Days</th>
-                                        <th class="text-end">Bonus Net</th>
+                                        <!-- Dynamic columns will be rendered here -->
                                     </tr>
                                 </thead>
                                 <tbody id="hrEventsTableBody">
-                                    <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
+                                    <tr><td colspan="9" class="text-center text-muted">Loading...</td></tr>
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                    <!-- Pagination Controls -->
+                    <div class="card-footer d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="text-muted small">Rows per page:</span>
+                            <select class="form-select form-select-sm" style="width: auto;" id="hrEventPageSize" onchange="changeHrEventPageSize()">
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                                <option value="0">All</option>
+                            </select>
+                            <span class="text-muted small ms-3" id="hrEventsPaginationInfo">Showing 1-50 of 100</span>
+                        </div>
+                        <nav>
+                            <ul class="pagination pagination-sm mb-0">
+                                <li class="page-item" id="hrEventPrevPageItem">
+                                    <a class="page-link" href="#" onclick="goToHrEventPage(hrEventsPage - 1); return false;">
+                                        <i class="bi bi-chevron-left"></i>
+                                    </a>
+                                </li>
+                                <li class="page-item" id="hrEventNextPageItem">
+                                    <a class="page-link" href="#" onclick="goToHrEventPage(hrEventsPage + 1); return false;">
+                                        <i class="bi bi-chevron-right"></i>
+                                    </a>
+                                </li>
+                            </ul>
+                        </nav>
                     </div>
                 </div>
             </div>
@@ -310,14 +396,29 @@
             <!-- My Notifications Tab -->
             <div class="tab-pane fade" id="notifications" role="tabpanel">
                 <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <span><i class="bi bi-envelope"></i> Notifications Sent to Me</span>
-                        <div class="text-muted small" id="notificationsCount">0 notifications</div>
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-envelope"></i> Notifications Sent to Me <span id="notificationsCount" class="badge bg-secondary ms-2">0</span></span>
+                            <div class="d-flex gap-2 align-items-center">
+                                <!-- Status Filter -->
+                                <select class="form-select form-select-sm" id="notificationStatusFilter" style="width: auto;" onchange="loadNotificationsTab()">
+                                    <option value="">All Status</option>
+                                    <option value="sent">Sent</option>
+                                    <option value="failed">Failed</option>
+                                    <option value="pending">Pending</option>
+                                </select>
+                                <!-- Sort -->
+                                <select class="form-select form-select-sm" id="notificationSortOrder" onchange="applyNotificationSorting()" style="width: auto;">
+                                    <option value="newest">Date: Newest</option>
+                                    <option value="oldest">Date: Oldest</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
-                            <table class="table table-hover table-profile mb-0">
-                                <thead>
+                            <table class="table table-hover table-profile mb-0" id="notificationsDataTable">
+                                <thead class="table-light">
                                     <tr>
                                         <th>Date</th>
                                         <th>Type</th>
@@ -332,56 +433,122 @@
                             </table>
                         </div>
                     </div>
+                    <!-- Pagination Controls -->
+                    <div class="card-footer d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="text-muted small">Rows per page:</span>
+                            <select class="form-select form-select-sm" style="width: auto;" id="notificationPageSize" onchange="changeNotificationPageSize()">
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                            </select>
+                            <span class="text-muted small ms-3" id="notificationsPaginationInfo">Showing 0 of 0</span>
+                        </div>
+                        <nav>
+                            <ul class="pagination pagination-sm mb-0">
+                                <li class="page-item" id="notificationPrevPageItem">
+                                    <a class="page-link" href="#" onclick="goToNotificationPage(notificationsPage - 1); return false;">
+                                        <i class="bi bi-chevron-left"></i>
+                                    </a>
+                                </li>
+                                <li class="page-item" id="notificationNextPageItem">
+                                    <a class="page-link" href="#" onclick="goToNotificationPage(notificationsPage + 1); return false;">
+                                        <i class="bi bi-chevron-right"></i>
+                                    </a>
+                                </li>
+                            </ul>
+                        </nav>
+                    </div>
                 </div>
             </div>
 
             <!-- Activity Log Tab -->
             <div class="tab-pane fade" id="activity" role="tabpanel">
                 <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <div class="d-flex align-items-center gap-2">
-                            <select class="form-select form-select-sm" id="activityTypeFilter" style="width: auto;">
-                                <option value="">All Events</option>
-                                <option value="login">Login</option>
-                                <option value="logout">Logout</option>
-                                <option value="create">Create</option>
-                                <option value="update">Update</option>
-                                <option value="delete">Delete</option>
-                            </select>
-                            <button class="btn btn-sm btn-outline-secondary" onclick="loadActivityTab()">
-                                <i class="bi bi-funnel"></i> Filter
-                            </button>
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-clock-history"></i> Activity Log <span id="activityCount" class="badge bg-secondary ms-2">0</span></span>
+                            <div class="d-flex gap-2 align-items-center">
+                                <!-- Search -->
+                                <div class="input-group input-group-sm" style="width: 200px;">
+                                    <input type="text" class="form-control" id="activitySearchInput" placeholder="Search activity..." oninput="updateActivitySearchIcon()" onkeydown="if(event.key==='Enter') loadActivityTab()">
+                                    <button class="btn btn-outline-secondary" type="button" onclick="handleActivitySearchClick()" title="Search">
+                                        <i class="bi bi-search" id="activitySearchIcon"></i>
+                                    </button>
+                                </div>
+                                <!-- Event Type Filter -->
+                                <select class="form-select form-select-sm" id="activityTypeFilter" style="width: auto;" onchange="loadActivityTab()">
+                                    <option value="">All Events</option>
+                                    <option value="login">Login</option>
+                                    <option value="logout">Logout</option>
+                                    <option value="create">Create</option>
+                                    <option value="update">Update</option>
+                                    <option value="delete">Delete</option>
+                                </select>
+                                <!-- Sort -->
+                                <select class="form-select form-select-sm" id="activitySortOrder" onchange="applyActivitySorting()" style="width: auto;">
+                                    <option value="newest">Date: Newest</option>
+                                    <option value="oldest">Date: Oldest</option>
+                                </select>
+                                <!-- Columns -->
+                                <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#activityColumnConfigModal">
+                                    <i class="bi bi-gear"></i> Columns
+                                </button>
+                            </div>
                         </div>
-                        <div class="text-muted small" id="activityCount">0 events</div>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
-                            <table class="table table-hover table-profile mb-0">
-                                <thead>
+                            <table class="table table-hover table-profile mb-0" id="activityDataTable">
+                                <thead class="table-light" id="activityTableHead">
                                     <tr>
-                                        <th>Date/Time</th>
-                                        <th>Event Type</th>
-                                        <th>Description</th>
-                                        <th>Details</th>
+                                        <!-- Dynamic columns will be rendered here -->
                                     </tr>
                                 </thead>
                                 <tbody id="activityTableBody">
-                                    <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
+                                    <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                    <!-- Pagination Controls -->
+                    <div class="card-footer d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="text-muted small">Rows per page:</span>
+                            <select class="form-select form-select-sm" style="width: auto;" id="activityPageSize" onchange="changeActivityPageSize()">
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                                <option value="0">All</option>
+                            </select>
+                            <span class="text-muted small ms-3" id="activityPaginationInfo">Showing 1-50 of 100</span>
+                        </div>
+                        <nav>
+                            <ul class="pagination pagination-sm mb-0">
+                                <li class="page-item" id="activityPrevPageItem">
+                                    <a class="page-link" href="#" onclick="goToActivityPage(activityPage - 1); return false;">
+                                        <i class="bi bi-chevron-left"></i>
+                                    </a>
+                                </li>
+                                <li class="page-item" id="activityNextPageItem">
+                                    <a class="page-link" href="#" onclick="goToActivityPage(activityPage + 1); return false;">
+                                        <i class="bi bi-chevron-right"></i>
+                                    </a>
+                                </li>
+                            </ul>
+                        </nav>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Profile Column Configuration Modal -->
+    <!-- Profile Column Configuration Modal (Invoices Tab) -->
     <div class="modal fade" id="profileColumnConfigModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-gear"></i> Configure Columns</h5>
+                    <h5 class="modal-title"><i class="bi bi-gear"></i> Configure Columns - Invoices</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -392,6 +559,58 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-warning" id="resetProfileColumnsBtn" onclick="resetProfileColumns()">
+                        <i class="bi bi-arrow-counterclockwise"></i> Reset to Default
+                    </button>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">
+                        <i class="bi bi-check"></i> Done
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HR Events Column Configuration Modal -->
+    <div class="modal fade" id="hrEventsColumnConfigModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear"></i> Configure Columns - HR Events</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Toggle columns visibility. Drag to reorder.</p>
+                    <div id="hrEventsColumnList" class="border rounded">
+                        <!-- Column items will be rendered here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-warning" onclick="resetHrEventsColumns()">
+                        <i class="bi bi-arrow-counterclockwise"></i> Reset to Default
+                    </button>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">
+                        <i class="bi bi-check"></i> Done
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Column Configuration Modal -->
+    <div class="modal fade" id="activityColumnConfigModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear"></i> Configure Columns - Activity</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Toggle columns visibility. Drag to reorder.</p>
+                    <div id="activityColumnList" class="border rounded">
+                        <!-- Column items will be rendered here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-warning" onclick="resetActivityColumns()">
                         <i class="bi bi-arrow-counterclockwise"></i> Reset to Default
                     </button>
                     <button type="button" class="btn btn-primary" data-bs-dismiss="modal">
@@ -446,6 +665,36 @@
         ];
         let profileColumnConfig = [];
 
+        // Column configuration for HR Events tab
+        const DEFAULT_HR_EVENTS_COLUMNS = [
+            { id: 'year', name: 'Year', visible: true },
+            { id: 'month', name: 'Month', visible: true },
+            { id: 'event_name', name: 'Event', visible: true },
+            { id: 'company', name: 'Company', visible: true },
+            { id: 'brand', name: 'Brand', visible: false },
+            { id: 'participation', name: 'Participation', visible: true },
+            { id: 'bonus_days', name: 'Days', visible: true },
+            { id: 'hours_free', name: 'Hours', visible: false },
+            { id: 'bonus_net', name: 'Bonus Net', visible: true },
+            { id: 'details', name: 'Details', visible: false },
+            { id: 'created_at', name: 'Created', visible: false }
+        ];
+        let hrEventsColumnConfig = [];
+        let allHrEvents = [];
+        let hrEventsPageSize = parseInt(localStorage.getItem('profileHrEventsPageSize')) || 50;
+
+        // Column configuration for Activity tab
+        const DEFAULT_ACTIVITY_COLUMNS = [
+            { id: 'created_at', name: 'Date/Time', visible: true },
+            { id: 'event_type', name: 'Event Type', visible: true },
+            { id: 'description', name: 'Description', visible: true },
+            { id: 'details', name: 'Details', visible: true },
+            { id: 'ip_address', name: 'IP Address', visible: false }
+        ];
+        let activityColumnConfig = [];
+        let allActivity = [];
+        let activityPageSize = parseInt(localStorage.getItem('profileActivityPageSize')) || 50;
+
         // Check if user's role meets the minimum required role
         function userHasRole(minRole) {
             const userRoleIndex = roleHierarchy.indexOf(userRole);
@@ -468,8 +717,10 @@
                 // Load dropdown options for inline editing
                 await loadStatusOptions();
 
-                // Load column configuration
+                // Load column configuration for all tabs
                 loadProfileColumnConfig();
+                loadHrEventsColumnConfig();
+                loadActivityColumnConfig();
 
                 // Load profile summary
                 await loadProfileSummary();
@@ -477,13 +728,19 @@
                 // Setup tab handlers
                 setupTabHandlers();
 
-                // Setup column config modal handler
+                // Setup column config modal handlers
+                document.getElementById('profileColumnConfigModal').addEventListener('shown.bs.modal', renderProfileColumnList);
                 document.getElementById('profileColumnConfigModal').addEventListener('hidden.bs.modal', () => {
                     renderInvoicesTable(allInvoices);
                 });
-
-                // Load first tab
-                await loadInvoicesTab();
+                document.getElementById('hrEventsColumnConfigModal').addEventListener('shown.bs.modal', renderHrEventsColumnList);
+                document.getElementById('hrEventsColumnConfigModal').addEventListener('hidden.bs.modal', () => {
+                    renderHrEventsTable(allHrEvents);
+                });
+                document.getElementById('activityColumnConfigModal').addEventListener('shown.bs.modal', renderActivityColumnList);
+                document.getElementById('activityColumnConfigModal').addEventListener('hidden.bs.modal', () => {
+                    renderActivityTable(allActivity);
+                });
             } catch (error) {
                 console.error('Error loading profile:', error);
                 showError('Error: ' + (error.message || error));
@@ -576,6 +833,158 @@
             profileColumnConfig = JSON.parse(JSON.stringify(DEFAULT_PROFILE_COLUMNS));
             saveProfileColumnConfig();
             renderProfileColumnList();
+        }
+
+        // ============== HR Events Column Configuration ==============
+        function loadHrEventsColumnConfig() {
+            const saved = localStorage.getItem('profileHrEventsColumnConfig');
+            if (saved) {
+                try {
+                    hrEventsColumnConfig = JSON.parse(saved);
+                } catch (e) {
+                    hrEventsColumnConfig = JSON.parse(JSON.stringify(DEFAULT_HR_EVENTS_COLUMNS));
+                }
+            } else {
+                hrEventsColumnConfig = JSON.parse(JSON.stringify(DEFAULT_HR_EVENTS_COLUMNS));
+            }
+        }
+
+        function saveHrEventsColumnConfig() {
+            localStorage.setItem('profileHrEventsColumnConfig', JSON.stringify(hrEventsColumnConfig));
+        }
+
+        function toggleHrEventsColumn(idx, checked) {
+            hrEventsColumnConfig[idx].visible = checked;
+            saveHrEventsColumnConfig();
+        }
+
+        function renderHrEventsColumnList() {
+            const container = document.getElementById('hrEventsColumnList');
+            container.innerHTML = hrEventsColumnConfig.map((col, idx) => `
+                <div class="d-flex align-items-center p-2 border-bottom column-item" draggable="true" data-idx="${idx}">
+                    <i class="bi bi-grip-vertical text-muted me-2" style="cursor: grab;"></i>
+                    <div class="form-check flex-grow-1 mb-0">
+                        <input class="form-check-input" type="checkbox" id="hrcol-${col.id}" ${col.visible ? 'checked' : ''} onchange="toggleHrEventsColumn(${idx}, this.checked)">
+                        <label class="form-check-label" for="hrcol-${col.id}">${col.name}</label>
+                    </div>
+                </div>
+            `).join('');
+            setupHrEventsColumnDragDrop();
+        }
+
+        function setupHrEventsColumnDragDrop() {
+            const items = document.querySelectorAll('#hrEventsColumnList .column-item');
+            let draggedItem = null;
+            items.forEach(item => {
+                item.addEventListener('dragstart', function(e) {
+                    draggedItem = this;
+                    e.dataTransfer.effectAllowed = 'move';
+                    this.style.opacity = '0.5';
+                });
+                item.addEventListener('dragend', function() {
+                    this.style.opacity = '1';
+                    const newOrder = [];
+                    document.querySelectorAll('#hrEventsColumnList .column-item').forEach(el => {
+                        newOrder.push(hrEventsColumnConfig[parseInt(el.dataset.idx)]);
+                    });
+                    hrEventsColumnConfig = newOrder;
+                    saveHrEventsColumnConfig();
+                    renderHrEventsColumnList();
+                });
+                item.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    const rect = this.getBoundingClientRect();
+                    const midY = rect.top + rect.height / 2;
+                    if (e.clientY < midY) {
+                        this.parentNode.insertBefore(draggedItem, this);
+                    } else {
+                        this.parentNode.insertBefore(draggedItem, this.nextSibling);
+                    }
+                });
+            });
+        }
+
+        function resetHrEventsColumns() {
+            hrEventsColumnConfig = JSON.parse(JSON.stringify(DEFAULT_HR_EVENTS_COLUMNS));
+            saveHrEventsColumnConfig();
+            renderHrEventsColumnList();
+        }
+
+        // ============== Activity Column Configuration ==============
+        function loadActivityColumnConfig() {
+            const saved = localStorage.getItem('profileActivityColumnConfig');
+            if (saved) {
+                try {
+                    activityColumnConfig = JSON.parse(saved);
+                } catch (e) {
+                    activityColumnConfig = JSON.parse(JSON.stringify(DEFAULT_ACTIVITY_COLUMNS));
+                }
+            } else {
+                activityColumnConfig = JSON.parse(JSON.stringify(DEFAULT_ACTIVITY_COLUMNS));
+            }
+        }
+
+        function saveActivityColumnConfig() {
+            localStorage.setItem('profileActivityColumnConfig', JSON.stringify(activityColumnConfig));
+        }
+
+        function toggleActivityColumn(idx, checked) {
+            activityColumnConfig[idx].visible = checked;
+            saveActivityColumnConfig();
+        }
+
+        function renderActivityColumnList() {
+            const container = document.getElementById('activityColumnList');
+            container.innerHTML = activityColumnConfig.map((col, idx) => `
+                <div class="d-flex align-items-center p-2 border-bottom column-item" draggable="true" data-idx="${idx}">
+                    <i class="bi bi-grip-vertical text-muted me-2" style="cursor: grab;"></i>
+                    <div class="form-check flex-grow-1 mb-0">
+                        <input class="form-check-input" type="checkbox" id="actcol-${col.id}" ${col.visible ? 'checked' : ''} onchange="toggleActivityColumn(${idx}, this.checked)">
+                        <label class="form-check-label" for="actcol-${col.id}">${col.name}</label>
+                    </div>
+                </div>
+            `).join('');
+            setupActivityColumnDragDrop();
+        }
+
+        function setupActivityColumnDragDrop() {
+            const items = document.querySelectorAll('#activityColumnList .column-item');
+            let draggedItem = null;
+            items.forEach(item => {
+                item.addEventListener('dragstart', function(e) {
+                    draggedItem = this;
+                    e.dataTransfer.effectAllowed = 'move';
+                    this.style.opacity = '0.5';
+                });
+                item.addEventListener('dragend', function() {
+                    this.style.opacity = '1';
+                    const newOrder = [];
+                    document.querySelectorAll('#activityColumnList .column-item').forEach(el => {
+                        newOrder.push(activityColumnConfig[parseInt(el.dataset.idx)]);
+                    });
+                    activityColumnConfig = newOrder;
+                    saveActivityColumnConfig();
+                    renderActivityColumnList();
+                });
+                item.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    const rect = this.getBoundingClientRect();
+                    const midY = rect.top + rect.height / 2;
+                    if (e.clientY < midY) {
+                        this.parentNode.insertBefore(draggedItem, this);
+                    } else {
+                        this.parentNode.insertBefore(draggedItem, this.nextSibling);
+                    }
+                });
+            });
+        }
+
+        function resetActivityColumns() {
+            activityColumnConfig = JSON.parse(JSON.stringify(DEFAULT_ACTIVITY_COLUMNS));
+            saveActivityColumnConfig();
+            renderActivityColumnList();
         }
 
         // Load status options from API
@@ -787,18 +1196,12 @@
             document.getElementById('totalValue').textContent = formatCurrency(data.invoices?.total_value || 0);
             document.getElementById('totalEvents').textContent = data.hr_events?.total_bonuses || 0;
             document.getElementById('totalNotifications').textContent = data.notifications?.total || 0;
+            document.getElementById('totalActivity').textContent = data.activity?.total_events || 0;
 
-            if (data.invoices?.by_status && Object.keys(data.invoices.by_status).length > 0) {
-                const statusSummary = Object.entries(data.invoices.by_status)
-                    .slice(0, 3)
-                    .map(([status, count]) => `${count} ${status}`)
-                    .join(', ');
-                document.getElementById('invoiceStatusSummary').textContent = statusSummary;
-            }
-
+            // HR events bonus summary (inline)
             if (data.hr_events?.total_amount > 0) {
                 document.getElementById('eventBonusSummary').textContent =
-                    `${formatCurrency(data.hr_events.total_amount)} total`;
+                    `(${formatCurrency(data.hr_events.total_amount)})`;
             }
         }
 
@@ -820,6 +1223,8 @@
             tabEls.forEach(tab => {
                 tab.addEventListener('shown.bs.tab', function(event) {
                     const targetId = event.target.dataset.bsTarget;
+                    // Save active tab to localStorage
+                    localStorage.setItem('profileActiveTab', targetId);
                     switch(targetId) {
                         case '#invoices':
                             loadInvoicesTab();
@@ -836,22 +1241,44 @@
                     }
                 });
             });
+
+            // Restore active tab from localStorage
+            const savedTab = localStorage.getItem('profileActiveTab');
+            if (savedTab) {
+                const tabBtn = document.querySelector(`button[data-bs-target="${savedTab}"]`);
+                if (tabBtn) {
+                    const tab = new bootstrap.Tab(tabBtn);
+                    tab.show();
+                    return; // Don't load invoices tab since the saved tab will trigger its own load
+                }
+            }
+            // Default: load invoices tab
+            loadInvoicesTab();
         }
 
         // ============== Invoice Search/Filter/Sort Functions ==============
         function updateInvoiceSearchIcon() {
             const input = document.getElementById('invoiceSearchInput');
             const icon = document.getElementById('invoiceSearchIcon');
-            icon.className = input.value ? 'bi bi-x-lg' : 'bi bi-search';
+            const btn = document.getElementById('invoiceSearchBtn');
+            if (input.value) {
+                icon.className = 'bi bi-x-lg';
+                btn.title = 'Clear search';
+            } else {
+                icon.className = 'bi bi-search';
+                btn.title = 'Search';
+            }
         }
 
         function handleInvoiceSearchClick() {
             const input = document.getElementById('invoiceSearchInput');
             if (input.value) {
+                // Clear search
                 input.value = '';
                 updateInvoiceSearchIcon();
+                loadInvoicesTab();
             }
-            loadInvoicesTab();
+            // If no value, do nothing (user should type something first)
         }
 
         function setInvoiceQuickFilter(value) {
@@ -1257,27 +1684,45 @@
         async function loadHrEventsTab(page = 1) {
             hrEventsPage = page;
             const year = document.getElementById('hrEventYearFilter').value;
+            const month = document.getElementById('hrEventMonthFilter').value;
+            const search = document.getElementById('hrEventSearchInput').value;
 
             const params = new URLSearchParams({
                 page: page,
-                per_page: perPage,
-                year: year
+                per_page: hrEventsPageSize === 0 ? 10000 : hrEventsPageSize,
+                year: year,
+                month: month,
+                search: search
             });
 
             const response = await fetch(`/profile/api/hr-events?${params}`);
             const data = await response.json();
 
-            renderHrEventsTable(data.bonuses);
-            document.getElementById('hrEventsCount').textContent = `${data.bonuses?.length || 0} bonuses`;
+            allHrEvents = data.bonuses || [];
+            renderHrEventsTable(allHrEvents);
+            updateHrEventsPaginationInfo(data.total, allHrEvents.length);
+            document.getElementById('hrEventsCount').textContent = data.total || 0;
+            updateHrEventActiveFiltersCount();
         }
 
         function renderHrEventsTable(bonuses) {
+            const thead = document.getElementById('hrEventsTableHead').querySelector('tr');
             const tbody = document.getElementById('hrEventsTableBody');
+            const visibleCols = hrEventsColumnConfig.filter(c => c.visible);
+            const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+            // Render header
+            thead.innerHTML = visibleCols.map(col => {
+                if (col.id === 'bonus_net' || col.id === 'bonus_days' || col.id === 'hours_free') {
+                    return `<th class="text-end">${col.name}</th>`;
+                }
+                return `<th>${col.name}</th>`;
+            }).join('');
 
             if (!bonuses || bonuses.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="7">
+                        <td colspan="${visibleCols.length}">
                             <div class="no-data-message">
                                 <i class="bi bi-calendar-event d-block"></i>
                                 <p>No HR event bonuses found</p>
@@ -1287,35 +1732,166 @@
                 return;
             }
 
-            const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
             tbody.innerHTML = bonuses.map(b => `
                 <tr>
-                    <td>${b.year}</td>
-                    <td>${monthNames[b.month] || b.month}</td>
-                    <td>${b.event_name || '-'}</td>
-                    <td>${b.company || '-'}</td>
-                    <td>${formatDateRomanian(b.participation_start)} - ${formatDateRomanian(b.participation_end)}</td>
-                    <td class="text-end">${b.bonus_days || '-'}</td>
-                    <td class="text-end">${b.bonus_net ? formatCurrency(b.bonus_net) : '-'}</td>
+                    ${visibleCols.map(col => {
+                        switch(col.id) {
+                            case 'year': return `<td>${b.year || '-'}</td>`;
+                            case 'month': return `<td><span class="badge bg-info">${monthNames[b.month] || b.month}</span></td>`;
+                            case 'event_name': return `<td><strong>${b.event_name || '-'}</strong></td>`;
+                            case 'company': return `<td>${b.company || '-'}</td>`;
+                            case 'brand': return `<td>${b.brand || '-'}</td>`;
+                            case 'participation': return `<td>${formatDateRomanian(b.participation_start) || '-'} - ${formatDateRomanian(b.participation_end) || '-'}</td>`;
+                            case 'bonus_days': return `<td class="text-end">${b.bonus_days !== null ? b.bonus_days : '-'}</td>`;
+                            case 'hours_free': return `<td class="text-end">${b.hours_free !== null ? b.hours_free : '-'}</td>`;
+                            case 'bonus_net': return `<td class="text-end"><strong>${b.bonus_net ? formatCurrency(b.bonus_net, 'RON') : '-'}</strong></td>`;
+                            case 'details': return `<td class="small text-muted">${b.details || '-'}</td>`;
+                            case 'created_at': return `<td class="small text-muted">${formatDateTime(b.created_at) || '-'}</td>`;
+                            default: return `<td>-</td>`;
+                        }
+                    }).join('')}
                 </tr>
             `).join('');
         }
 
+        function updateHrEventsPaginationInfo(total, shown) {
+            const pageSize = hrEventsPageSize === 0 ? total : hrEventsPageSize;
+            const start = total > 0 ? (hrEventsPage - 1) * pageSize + 1 : 0;
+            const end = Math.min(hrEventsPage * pageSize, total);
+            document.getElementById('hrEventsPaginationInfo').textContent = `Showing ${start}-${end} of ${total}`;
+
+            const totalPages = Math.ceil(total / pageSize) || 1;
+            document.getElementById('hrEventPrevPageItem').classList.toggle('disabled', hrEventsPage <= 1);
+            document.getElementById('hrEventNextPageItem').classList.toggle('disabled', hrEventsPage >= totalPages);
+        }
+
+        function goToHrEventPage(page) {
+            if (page < 1) return;
+            loadHrEventsTab(page);
+        }
+
+        function changeHrEventPageSize() {
+            const newSize = parseInt(document.getElementById('hrEventPageSize').value);
+            hrEventsPageSize = newSize;
+            localStorage.setItem('profileHrEventsPageSize', newSize.toString());
+            hrEventsPage = 1;
+            loadHrEventsTab(1);
+        }
+
+        function applyHrEventSorting() {
+            const sortOrder = document.getElementById('hrEventSortOrder').value;
+            let sorted = [...allHrEvents];
+
+            switch(sortOrder) {
+                case 'newest':
+                    sorted.sort((a, b) => (b.year * 100 + b.month) - (a.year * 100 + a.month));
+                    break;
+                case 'oldest':
+                    sorted.sort((a, b) => (a.year * 100 + a.month) - (b.year * 100 + b.month));
+                    break;
+                case 'bonus_highest':
+                    sorted.sort((a, b) => (b.bonus_net || 0) - (a.bonus_net || 0));
+                    break;
+                case 'bonus_lowest':
+                    sorted.sort((a, b) => (a.bonus_net || 0) - (b.bonus_net || 0));
+                    break;
+            }
+            allHrEvents = sorted;
+            renderHrEventsTable(sorted);
+        }
+
+        function updateHrEventSearchIcon() {
+            const input = document.getElementById('hrEventSearchInput');
+            const icon = document.getElementById('hrEventSearchIcon');
+            icon.className = input.value ? 'bi bi-x-lg' : 'bi bi-search';
+        }
+
+        function handleHrEventSearchClick() {
+            const input = document.getElementById('hrEventSearchInput');
+            if (input.value) {
+                input.value = '';
+                updateHrEventSearchIcon();
+                loadHrEventsTab();
+            }
+        }
+
+        function setHrEventQuickFilter(value) {
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            const currentMonth = now.getMonth() + 1;
+
+            switch(value) {
+                case 'month':
+                    document.getElementById('hrEventYearFilter').value = currentYear.toString();
+                    document.getElementById('hrEventMonthFilter').value = currentMonth.toString();
+                    break;
+                case 'quarter':
+                    document.getElementById('hrEventYearFilter').value = currentYear.toString();
+                    document.getElementById('hrEventMonthFilter').value = '';
+                    break;
+                case 'year':
+                    document.getElementById('hrEventYearFilter').value = currentYear.toString();
+                    document.getElementById('hrEventMonthFilter').value = '';
+                    break;
+                default:
+                    document.getElementById('hrEventYearFilter').value = '';
+                    document.getElementById('hrEventMonthFilter').value = '';
+            }
+            loadHrEventsTab();
+        }
+
+        function clearHrEventFilters() {
+            document.getElementById('hrEventYearFilter').value = '';
+            document.getElementById('hrEventMonthFilter').value = '';
+            document.getElementById('hrEventSearchInput').value = '';
+            document.getElementById('hrEventQuickFilter').value = '';
+            updateHrEventSearchIcon();
+            loadHrEventsTab();
+        }
+
+        function updateHrEventActiveFiltersCount() {
+            let count = 0;
+            if (document.getElementById('hrEventYearFilter').value) count++;
+            if (document.getElementById('hrEventMonthFilter').value) count++;
+            if (document.getElementById('hrEventSearchInput').value) count++;
+
+            const badge = document.getElementById('hrEventActiveFiltersCount');
+            if (count > 0) {
+                badge.textContent = count;
+                badge.classList.remove('d-none');
+            } else {
+                badge.classList.add('d-none');
+            }
+        }
+
         // ============== Notifications Tab ==============
+        let notificationsPageSize = parseInt(localStorage.getItem('profileNotificationsPageSize')) || 50;
+        let allNotifications = [];
+
         async function loadNotificationsTab(page = 1) {
             notificationsPage = page;
+            const statusFilter = document.getElementById('notificationStatusFilter');
+            const status = statusFilter ? statusFilter.value : '';
 
             const params = new URLSearchParams({
                 page: page,
-                per_page: perPage
+                per_page: notificationsPageSize === 0 ? 10000 : notificationsPageSize
             });
 
             const response = await fetch(`/profile/api/notifications?${params}`);
             const data = await response.json();
 
-            renderNotificationsTable(data.notifications);
-            document.getElementById('notificationsCount').textContent = `${data.total} notifications`;
+            allNotifications = data.notifications || [];
+
+            // Client-side status filter
+            let filteredNotifications = allNotifications;
+            if (status) {
+                filteredNotifications = allNotifications.filter(n => n.status === status);
+            }
+
+            renderNotificationsTable(filteredNotifications);
+            updateNotificationsPaginationInfo(data.total, filteredNotifications.length);
+            document.getElementById('notificationsCount').textContent = data.total || 0;
         }
 
         function renderNotificationsTable(notifications) {
@@ -1337,39 +1913,100 @@
             tbody.innerHTML = notifications.map(n => `
                 <tr>
                     <td>${formatDateTime(n.created_at)}</td>
-                    <td>${n.notification_type || '-'}</td>
-                    <td>${n.invoice_number ? `<a href="/accounting?search=${encodeURIComponent(n.invoice_number)}">${n.invoice_number}</a>` : '-'}</td>
-                    <td>${n.subject || '-'}</td>
-                    <td><span class="badge ${n.status === 'sent' ? 'bg-success' : 'bg-danger'}">${n.status || '-'}</span></td>
+                    <td><span class="badge bg-secondary">${n.event_type || n.notification_type || '-'}</span></td>
+                    <td>${n.invoice_id ? `<a href="/accounting?search=inv:${n.invoice_id}">#${n.invoice_id}</a>` : '-'}</td>
+                    <td>${n.recipient_email || '-'}</td>
+                    <td><span class="badge ${n.status === 'sent' ? 'bg-success' : n.status === 'pending' ? 'bg-warning' : 'bg-danger'}">${n.status || '-'}</span></td>
                 </tr>
             `).join('');
+        }
+
+        function updateNotificationsPaginationInfo(total, shown) {
+            const pageSize = notificationsPageSize === 0 ? total : notificationsPageSize;
+            const start = total > 0 ? (notificationsPage - 1) * pageSize + 1 : 0;
+            const end = Math.min(notificationsPage * pageSize, total);
+            document.getElementById('notificationsPaginationInfo').textContent = `Showing ${start}-${end} of ${total}`;
+
+            const totalPages = Math.ceil(total / pageSize) || 1;
+            document.getElementById('notificationPrevPageItem').classList.toggle('disabled', notificationsPage <= 1);
+            document.getElementById('notificationNextPageItem').classList.toggle('disabled', notificationsPage >= totalPages);
+        }
+
+        function goToNotificationPage(page) {
+            if (page < 1) return;
+            loadNotificationsTab(page);
+        }
+
+        function changeNotificationPageSize() {
+            const newSize = parseInt(document.getElementById('notificationPageSize').value);
+            notificationsPageSize = newSize;
+            localStorage.setItem('profileNotificationsPageSize', newSize.toString());
+            notificationsPage = 1;
+            loadNotificationsTab(1);
+        }
+
+        function applyNotificationSorting() {
+            const sortOrder = document.getElementById('notificationSortOrder').value;
+            let sorted = [...allNotifications];
+
+            switch(sortOrder) {
+                case 'newest':
+                    sorted.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+                    break;
+                case 'oldest':
+                    sorted.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+                    break;
+            }
+            allNotifications = sorted;
+            renderNotificationsTable(sorted);
         }
 
         // ============== Activity Tab ==============
         async function loadActivityTab(page = 1) {
             activityPage = page;
             const eventType = document.getElementById('activityTypeFilter').value;
+            const searchInput = document.getElementById('activitySearchInput');
+            const search = searchInput ? searchInput.value : '';
 
             const params = new URLSearchParams({
                 page: page,
-                per_page: 50,
+                per_page: activityPageSize === 0 ? 10000 : activityPageSize,
                 event_type: eventType
             });
 
             const response = await fetch(`/profile/api/activity?${params}`);
             const data = await response.json();
 
-            renderActivityTable(data.events);
-            document.getElementById('activityCount').textContent = `${data.total} events`;
+            allActivity = data.events || [];
+
+            // Client-side search filter
+            let filteredActivity = allActivity;
+            if (search) {
+                const searchLower = search.toLowerCase();
+                filteredActivity = allActivity.filter(e =>
+                    (e.description && e.description.toLowerCase().includes(searchLower)) ||
+                    (e.details && e.details.toLowerCase().includes(searchLower)) ||
+                    (e.event_type && e.event_type.toLowerCase().includes(searchLower))
+                );
+            }
+
+            renderActivityTable(filteredActivity);
+            updateActivityPaginationInfo(data.total, filteredActivity.length);
+            document.getElementById('activityCount').textContent = data.total || 0;
         }
 
         function renderActivityTable(events) {
+            const thead = document.getElementById('activityTableHead').querySelector('tr');
             const tbody = document.getElementById('activityTableBody');
+            const visibleCols = activityColumnConfig.filter(c => c.visible);
+
+            // Render header
+            thead.innerHTML = visibleCols.map(col => `<th>${col.name}</th>`).join('');
 
             if (!events || events.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="4">
+                        <td colspan="${visibleCols.length}">
                             <div class="no-data-message">
                                 <i class="bi bi-clock-history d-block"></i>
                                 <p>No activity found</p>
@@ -1381,12 +2018,73 @@
 
             tbody.innerHTML = events.map(e => `
                 <tr>
-                    <td>${formatDateTime(e.created_at)}</td>
-                    <td><span class="badge ${getEventTypeClass(e.event_type)}">${e.event_type || '-'}</span></td>
-                    <td>${e.description || '-'}</td>
-                    <td class="text-muted small">${e.details ? truncate(e.details, 50) : '-'}</td>
+                    ${visibleCols.map(col => {
+                        switch(col.id) {
+                            case 'created_at': return `<td>${formatDateTime(e.created_at) || '-'}</td>`;
+                            case 'event_type': return `<td><span class="badge ${getEventTypeClass(e.event_type)}">${e.event_type || '-'}</span></td>`;
+                            case 'description': return `<td>${e.description || '-'}</td>`;
+                            case 'details': return `<td class="text-muted small">${e.details ? truncate(e.details, 50) : '-'}</td>`;
+                            case 'ip_address': return `<td class="text-muted small">${e.ip_address || '-'}</td>`;
+                            default: return `<td>-</td>`;
+                        }
+                    }).join('')}
                 </tr>
             `).join('');
+        }
+
+        function updateActivityPaginationInfo(total, shown) {
+            const pageSize = activityPageSize === 0 ? total : activityPageSize;
+            const start = total > 0 ? (activityPage - 1) * pageSize + 1 : 0;
+            const end = Math.min(activityPage * pageSize, total);
+            document.getElementById('activityPaginationInfo').textContent = `Showing ${start}-${end} of ${total}`;
+
+            const totalPages = Math.ceil(total / pageSize) || 1;
+            document.getElementById('activityPrevPageItem').classList.toggle('disabled', activityPage <= 1);
+            document.getElementById('activityNextPageItem').classList.toggle('disabled', activityPage >= totalPages);
+        }
+
+        function goToActivityPage(page) {
+            if (page < 1) return;
+            loadActivityTab(page);
+        }
+
+        function changeActivityPageSize() {
+            const newSize = parseInt(document.getElementById('activityPageSize').value);
+            activityPageSize = newSize;
+            localStorage.setItem('profileActivityPageSize', newSize.toString());
+            activityPage = 1;
+            loadActivityTab(1);
+        }
+
+        function applyActivitySorting() {
+            const sortOrder = document.getElementById('activitySortOrder').value;
+            let sorted = [...allActivity];
+
+            switch(sortOrder) {
+                case 'newest':
+                    sorted.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+                    break;
+                case 'oldest':
+                    sorted.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+                    break;
+            }
+            allActivity = sorted;
+            renderActivityTable(sorted);
+        }
+
+        function updateActivitySearchIcon() {
+            const input = document.getElementById('activitySearchInput');
+            const icon = document.getElementById('activitySearchIcon');
+            icon.className = input.value ? 'bi bi-x-lg' : 'bi bi-search';
+        }
+
+        function handleActivitySearchClick() {
+            const input = document.getElementById('activitySearchInput');
+            if (input.value) {
+                input.value = '';
+                updateActivitySearchIcon();
+                loadActivityTab();
+            }
         }
 
         // ============== Helper Functions ==============

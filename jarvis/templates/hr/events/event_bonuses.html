@@ -147,6 +147,10 @@
                             <button id="btnClearFilter" class="btn btn-outline-secondary btn-sm">
                                 <i class="bi bi-x"></i> Clear
                             </button>
+                            <!-- Column Config -->
+                            <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#columnConfigModal">
+                                <i class="bi bi-gear"></i> Columns
+                            </button>
                         </div>
                     </div>
                     <div class="table-responsive">
@@ -628,6 +632,32 @@
         </div>
     </div>
 
+    <!-- Column Configuration Modal -->
+    <div class="modal fade" id="columnConfigModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear"></i> Configure Columns</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Toggle columns visibility. Drag to reorder.</p>
+                    <div id="columnConfigList" class="border rounded">
+                        <!-- Column items will be rendered here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-warning" onclick="resetColumns()">
+                        <i class="bi bi-arrow-counterclockwise"></i> Reset to Default
+                    </button>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">
+                        <i class="bi bi-check"></i> Done
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // Month names for display
@@ -638,6 +668,173 @@
 
         // Total bonuses count for badge
         const totalBonusesCount = {{ bonuses|length }};
+
+        // Column configuration
+        const COLUMN_CONFIG_VERSION = 1;
+        const DEFAULT_COLUMNS = [
+            { id: 'year', name: 'Year', visible: true },
+            { id: 'month', name: 'Month', visible: true },
+            { id: 'employee', name: 'Employee', visible: true },
+            { id: 'dept', name: 'Dept', visible: true },
+            { id: 'company', name: 'Company', visible: true },
+            { id: 'event', name: 'Event', visible: true },
+            { id: 'participation', name: 'Participation', visible: true },
+            { id: 'days', name: 'Days', visible: true },
+            { id: 'hours', name: 'Hours', visible: true },
+            { id: 'bonus', name: 'Bonus (Net)', visible: isHrManager },
+            { id: 'details', name: 'Details', visible: true },
+            { id: 'created', name: 'Created', visible: false },
+            { id: 'actions', name: 'Actions', visible: true, fixed: true }
+        ];
+        let columnConfig = [];
+
+        function loadColumnConfig() {
+            const savedVersion = localStorage.getItem('hrBonusesColumnConfigVersion');
+            const saved = localStorage.getItem('hrBonusesColumnConfig');
+
+            if (saved && savedVersion === COLUMN_CONFIG_VERSION.toString()) {
+                try {
+                    columnConfig = JSON.parse(saved);
+                    // Ensure the bonus column respects permissions
+                    const bonusCol = columnConfig.find(c => c.id === 'bonus');
+                    if (bonusCol && !isHrManager) {
+                        bonusCol.visible = false;
+                    }
+                } catch (e) {
+                    columnConfig = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+                }
+            } else {
+                columnConfig = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+                localStorage.setItem('hrBonusesColumnConfigVersion', COLUMN_CONFIG_VERSION.toString());
+            }
+        }
+
+        function saveColumnConfig() {
+            localStorage.setItem('hrBonusesColumnConfig', JSON.stringify(columnConfig));
+            localStorage.setItem('hrBonusesColumnConfigVersion', COLUMN_CONFIG_VERSION.toString());
+        }
+
+        function toggleColumn(idx, checked) {
+            // Don't allow hiding bonus column if not HR manager
+            if (columnConfig[idx].id === 'bonus' && !isHrManager) {
+                columnConfig[idx].visible = false;
+                return;
+            }
+            columnConfig[idx].visible = checked;
+            saveColumnConfig();
+        }
+
+        function renderColumnConfigList() {
+            const container = document.getElementById('columnConfigList');
+            container.innerHTML = columnConfig.map((col, idx) => {
+                const disabled = col.fixed || (col.id === 'bonus' && !isHrManager);
+                return `
+                <div class="d-flex align-items-center p-2 border-bottom column-item ${disabled ? 'bg-light' : ''}" draggable="${!col.fixed}" data-idx="${idx}">
+                    <i class="bi bi-grip-vertical text-muted me-2" style="cursor: ${col.fixed ? 'default' : 'grab'};"></i>
+                    <div class="form-check flex-grow-1 mb-0">
+                        <input class="form-check-input" type="checkbox" id="col-${col.id}"
+                               ${col.visible ? 'checked' : ''}
+                               ${disabled ? 'disabled' : ''}
+                               onchange="toggleColumn(${idx}, this.checked)">
+                        <label class="form-check-label ${disabled ? 'text-muted' : ''}" for="col-${col.id}">
+                            ${col.name} ${col.fixed ? '<small class="text-muted">(fixed)</small>' : ''}
+                            ${col.id === 'bonus' && !isHrManager ? '<small class="text-muted">(HR only)</small>' : ''}
+                        </label>
+                    </div>
+                </div>
+            `}).join('');
+
+            setupColumnDragDrop();
+        }
+
+        function setupColumnDragDrop() {
+            const items = document.querySelectorAll('#columnConfigList .column-item[draggable="true"]');
+            let draggedItem = null;
+
+            items.forEach(item => {
+                item.addEventListener('dragstart', function(e) {
+                    draggedItem = this;
+                    e.dataTransfer.effectAllowed = 'move';
+                    this.style.opacity = '0.5';
+                });
+
+                item.addEventListener('dragend', function() {
+                    this.style.opacity = '1';
+                    const newOrder = [];
+                    document.querySelectorAll('#columnConfigList .column-item').forEach(el => {
+                        newOrder.push(columnConfig[parseInt(el.dataset.idx)]);
+                    });
+                    columnConfig = newOrder;
+                    saveColumnConfig();
+                    renderColumnConfigList();
+                });
+
+                item.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    const rect = this.getBoundingClientRect();
+                    const midY = rect.top + rect.height / 2;
+                    if (e.clientY < midY) {
+                        this.parentNode.insertBefore(draggedItem, this);
+                    } else {
+                        this.parentNode.insertBefore(draggedItem, this.nextSibling);
+                    }
+                });
+            });
+        }
+
+        function resetColumns() {
+            columnConfig = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+            saveColumnConfig();
+            renderColumnConfigList();
+            applyColumnConfig();
+        }
+
+        function applyColumnConfig() {
+            const table = document.getElementById('bonusesTableMain');
+            if (!table) return;
+
+            const thead = table.querySelector('thead tr');
+            const tbody = table.querySelector('tbody');
+            if (!thead || !tbody) return;
+
+            // Get all header cells
+            const headerCells = thead.querySelectorAll('th');
+            const rows = tbody.querySelectorAll('tr');
+
+            // Map column IDs to indices
+            const columnIds = ['year', 'month', 'employee', 'dept', 'company', 'event', 'participation', 'days', 'hours', 'bonus', 'details', 'created', 'actions'];
+
+            columnIds.forEach((colId, colIdx) => {
+                const config = columnConfig.find(c => c.id === colId);
+                const visible = config ? config.visible : true;
+
+                // Hide/show header cell
+                if (headerCells[colIdx]) {
+                    headerCells[colIdx].style.display = visible ? '' : 'none';
+                }
+
+                // Hide/show body cells
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells[colIdx]) {
+                        cells[colIdx].style.display = visible ? '' : 'none';
+                    }
+                });
+            });
+        }
+
+        // Initialize column config on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadColumnConfig();
+
+            // Setup modal handler
+            document.getElementById('columnConfigModal').addEventListener('shown.bs.modal', renderColumnConfigList);
+            document.getElementById('columnConfigModal').addEventListener('hidden.bs.modal', applyColumnConfig);
+
+            // Apply column config on load
+            applyColumnConfig();
+        });
 
         // Search functions
         function updateSearchIcon() {

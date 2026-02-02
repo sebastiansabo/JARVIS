@@ -1333,13 +1333,16 @@
             { id: 'supplier_name', label: 'Supplier Name', visible: true },
             { id: 'supplier_vat', label: 'Supplier VAT', visible: true },
             { id: 'type', label: 'Type', visible: true },
-            { id: 'kod_konto', label: 'Kod Konto', visible: true },
-            { id: 'supplier_note', label: 'Supplier Note', visible: true },
+            { id: 'brand', label: 'Brand', visible: true },
+            { id: 'department', label: 'Department', visible: true },
+            { id: 'subdepartment', label: 'Subdepartment', visible: false },
+            { id: 'kod_konto', label: 'Kod Konto', visible: false },
+            { id: 'supplier_note', label: 'Supplier Note', visible: false },
             { id: 'created_at', label: 'Created', visible: true },
             { id: 'actions', label: 'Actions', fixed: true, width: '100px' }
         ];
 
-        const MAPPINGS_COLUMN_CONFIG_VERSION = 1;
+        const MAPPINGS_COLUMN_CONFIG_VERSION = 2;
 
         function getMappingsColumnConfig() {
             const saved = localStorage.getItem('efacturaMappingsColumnConfig');
@@ -1388,7 +1391,7 @@
                 .filter(col => col.visible || col.fixed);
         }
 
-        const mappingsSortableColumns = ['partner_name', 'partner_cif', 'supplier_name', 'supplier_vat', 'type_name', 'kod_konto', 'created_at'];
+        const mappingsSortableColumns = ['partner_name', 'partner_cif', 'supplier_name', 'supplier_vat', 'type_name', 'brand', 'department', 'subdepartment', 'kod_konto', 'created_at'];
 
         function renderMappingsTableHeader() {
             const thead = document.querySelector('#mappingsTable thead');
@@ -4056,11 +4059,14 @@
             const typeFilter = document.getElementById('mappingsTypeFilter').value;
 
             filteredMappingsCache = mappingsCache.filter(m => {
-                // Search filter (partner name, partner CIF, kod_konto)
+                // Search filter (partner name, partner CIF, kod_konto, brand, department, subdepartment)
                 const matchesSearch = !searchTerm ||
                     (m.partner_name && m.partner_name.toLowerCase().includes(searchTerm)) ||
                     (m.partner_cif && m.partner_cif.toLowerCase().includes(searchTerm)) ||
-                    (m.kod_konto && m.kod_konto.toLowerCase().includes(searchTerm));
+                    (m.kod_konto && m.kod_konto.toLowerCase().includes(searchTerm)) ||
+                    (m.brand && m.brand.toLowerCase().includes(searchTerm)) ||
+                    (m.department && m.department.toLowerCase().includes(searchTerm)) ||
+                    (m.subdepartment && m.subdepartment.toLowerCase().includes(searchTerm));
 
                 // Partner filter (exact match by partner_name)
                 const matchesPartner = !partnerFilter || m.partner_name === partnerFilter;
@@ -4229,6 +4235,12 @@
                                 return `<td><code class="text-success">${m.supplier_vat || '-'}</code></td>`;
                             case 'type':
                                 return `<td>${typeBadges}</td>`;
+                            case 'brand':
+                                return `<td>${m.brand ? `<span class="badge bg-info text-dark">${m.brand}</span>` : '<span class="text-muted">-</span>'}</td>`;
+                            case 'department':
+                                return `<td>${m.department || '<span class="text-muted">-</span>'}</td>`;
+                            case 'subdepartment':
+                                return `<td>${m.subdepartment || '<span class="text-muted">-</span>'}</td>`;
                             case 'kod_konto':
                                 return `<td><code class="text-primary">${m.kod_konto || '-'}</code></td>`;
                             case 'supplier_note':
