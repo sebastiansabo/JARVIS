@@ -1090,6 +1090,9 @@
                                         <span class="text-muted small">Companies</span>
                                         <span id="companiesCount" class="badge bg-secondary">0</span>
                                         <span id="companiesSelectedCount" class="badge bg-primary d-none">0 selected</span>
+                                        <button class="btn btn-danger btn-sm d-none" id="companiesDeleteSelectedBtn" onclick="bulkDeleteCompanies()">
+                                            <i class="bi bi-trash"></i> Delete Selected
+                                        </button>
                                         <div class="input-group input-group-sm" style="width: 200px;">
                                             <input type="text" class="form-control" id="companiesSearchInput" placeholder="Search..." oninput="filterCompanies()">
                                             <button class="btn btn-outline-secondary" type="button" onclick="clearCompaniesSearch()"><i class="bi bi-x-lg"></i></button>
@@ -1123,6 +1126,9 @@
                                         <span class="text-muted small">Brands</span>
                                         <span id="brandsCount" class="badge bg-secondary">0</span>
                                         <span id="brandsSelectedCount" class="badge bg-primary d-none">0 selected</span>
+                                        <button class="btn btn-danger btn-sm d-none" id="brandsDeleteSelectedBtn" onclick="bulkDeleteBrands()">
+                                            <i class="bi bi-trash"></i> Delete Selected
+                                        </button>
                                         <div class="input-group input-group-sm" style="width: 200px;">
                                             <input type="text" class="form-control" id="brandsSearchInput" placeholder="Search..." oninput="filterBrands()">
                                             <button class="btn btn-outline-secondary" type="button" onclick="clearBrandsSearch()"><i class="bi bi-x-lg"></i></button>
@@ -1155,6 +1161,9 @@
                                         <span class="text-muted small">Departments</span>
                                         <span id="deptsCount" class="badge bg-secondary">0</span>
                                         <span id="deptsSelectedCount" class="badge bg-primary d-none">0 selected</span>
+                                        <button class="btn btn-danger btn-sm d-none" id="deptsDeleteSelectedBtn" onclick="bulkDeleteDepts()">
+                                            <i class="bi bi-trash"></i> Delete Selected
+                                        </button>
                                         <div class="input-group input-group-sm" style="width: 200px;">
                                             <input type="text" class="form-control" id="deptsSearchInput" placeholder="Search..." oninput="filterDepts()">
                                             <button class="btn btn-outline-secondary" type="button" onclick="clearDeptsSearch()"><i class="bi bi-x-lg"></i></button>
@@ -1187,6 +1196,9 @@
                                         <span class="text-muted small">Subdepartments</span>
                                         <span id="subdeptsCount" class="badge bg-secondary">0</span>
                                         <span id="subdeptsSelectedCount" class="badge bg-primary d-none">0 selected</span>
+                                        <button class="btn btn-danger btn-sm d-none" id="subdeptsDeleteSelectedBtn" onclick="bulkDeleteSubdepts()">
+                                            <i class="bi bi-trash"></i> Delete Selected
+                                        </button>
                                         <div class="input-group input-group-sm" style="width: 200px;">
                                             <input type="text" class="form-control" id="subdeptsSearchInput" placeholder="Search..." oninput="filterSubdepts()">
                                             <button class="btn btn-outline-secondary" type="button" onclick="clearSubdeptsSearch()"><i class="bi bi-x-lg"></i></button>
@@ -1219,6 +1231,9 @@
                                         <span class="text-muted small">Structure</span>
                                         <span id="structureCount" class="badge bg-secondary">0</span>
                                         <span id="structureSelectedCount" class="badge bg-primary d-none">0 selected</span>
+                                        <button class="btn btn-danger btn-sm d-none" id="structureDeleteSelectedBtn" onclick="bulkDeleteStructure()">
+                                            <i class="bi bi-trash"></i> Delete Selected
+                                        </button>
                                         <div class="input-group input-group-sm" style="width: 180px;">
                                             <input type="text" class="form-control" id="structureSearchInput" placeholder="Search..." oninput="filterStructure()">
                                             <button class="btn btn-outline-secondary" type="button" onclick="clearStructureSearch()"><i class="bi bi-x-lg"></i></button>
@@ -1269,6 +1284,9 @@
                                         <span class="text-muted small">Employees</span>
                                         <span id="employeesCount" class="badge bg-secondary">0</span>
                                         <span id="employeesSelectedCount" class="badge bg-primary d-none">0 selected</span>
+                                        <button class="btn btn-danger btn-sm d-none" id="employeesDeleteSelectedBtn" onclick="bulkDeleteEmployees()">
+                                            <i class="bi bi-trash"></i> Delete Selected
+                                        </button>
                                         <div class="input-group input-group-sm" style="width: 180px;">
                                             <input type="text" class="form-control" id="employeesSearchInput" placeholder="Search..." oninput="filterEmployees()">
                                             <button class="btn btn-outline-secondary" type="button" onclick="clearEmployeesSearch()"><i class="bi bi-x-lg"></i></button>
@@ -4946,6 +4964,7 @@
 
         function updateCompaniesSelection() {
             const countEl = document.getElementById('companiesSelectedCount');
+            const deleteBtn = document.getElementById('companiesDeleteSelectedBtn');
             const selectAll = document.getElementById('companiesSelectAll');
             const visibleIds = filteredCompaniesData.map(c => c.id);
             const visibleSelected = visibleIds.filter(id => selectedCompanies.has(id));
@@ -4953,8 +4972,10 @@
             if (selectedCompanies.size > 0) {
                 countEl.textContent = `${selectedCompanies.size} selected`;
                 countEl.classList.remove('d-none');
+                deleteBtn.classList.remove('d-none');
             } else {
                 countEl.classList.add('d-none');
+                deleteBtn.classList.add('d-none');
             }
 
             // Update select all checkbox state
@@ -4987,6 +5008,7 @@
 
         function updateBrandsSelection() {
             const countEl = document.getElementById('brandsSelectedCount');
+            const deleteBtn = document.getElementById('brandsDeleteSelectedBtn');
             const selectAll = document.getElementById('brandsSelectAll');
             const visibleIds = filteredBrandsData.map(b => b.id);
             const visibleSelected = visibleIds.filter(id => selectedBrands.has(id));
@@ -4994,8 +5016,10 @@
             if (selectedBrands.size > 0) {
                 countEl.textContent = `${selectedBrands.size} selected`;
                 countEl.classList.remove('d-none');
+                deleteBtn.classList.remove('d-none');
             } else {
                 countEl.classList.add('d-none');
+                deleteBtn.classList.add('d-none');
             }
 
             if (selectAll) {
@@ -5027,6 +5051,7 @@
 
         function updateDeptsSelection() {
             const countEl = document.getElementById('deptsSelectedCount');
+            const deleteBtn = document.getElementById('deptsDeleteSelectedBtn');
             const selectAll = document.getElementById('deptsSelectAll');
             const visibleIds = filteredDeptsData.map(d => d.id);
             const visibleSelected = visibleIds.filter(id => selectedDepts.has(id));
@@ -5034,8 +5059,10 @@
             if (selectedDepts.size > 0) {
                 countEl.textContent = `${selectedDepts.size} selected`;
                 countEl.classList.remove('d-none');
+                deleteBtn.classList.remove('d-none');
             } else {
                 countEl.classList.add('d-none');
+                deleteBtn.classList.add('d-none');
             }
 
             if (selectAll) {
@@ -5067,6 +5094,7 @@
 
         function updateSubdeptsSelection() {
             const countEl = document.getElementById('subdeptsSelectedCount');
+            const deleteBtn = document.getElementById('subdeptsDeleteSelectedBtn');
             const selectAll = document.getElementById('subdeptsSelectAll');
             const visibleIds = filteredSubdeptsData.map(s => s.id);
             const visibleSelected = visibleIds.filter(id => selectedSubdepts.has(id));
@@ -5074,8 +5102,10 @@
             if (selectedSubdepts.size > 0) {
                 countEl.textContent = `${selectedSubdepts.size} selected`;
                 countEl.classList.remove('d-none');
+                deleteBtn.classList.remove('d-none');
             } else {
                 countEl.classList.add('d-none');
+                deleteBtn.classList.add('d-none');
             }
 
             if (selectAll) {
@@ -5107,6 +5137,7 @@
 
         function updateStructureSelection() {
             const countEl = document.getElementById('structureSelectedCount');
+            const deleteBtn = document.getElementById('structureDeleteSelectedBtn');
             const selectAll = document.getElementById('structureSelectAll');
             const visibleIds = filteredStructureData.map(s => s.id);
             const visibleSelected = visibleIds.filter(id => selectedStructure.has(id));
@@ -5114,8 +5145,10 @@
             if (selectedStructure.size > 0) {
                 countEl.textContent = `${selectedStructure.size} selected`;
                 countEl.classList.remove('d-none');
+                deleteBtn.classList.remove('d-none');
             } else {
                 countEl.classList.add('d-none');
+                deleteBtn.classList.add('d-none');
             }
 
             if (selectAll) {
@@ -5147,6 +5180,7 @@
 
         function updateEmployeesSelection() {
             const countEl = document.getElementById('employeesSelectedCount');
+            const deleteBtn = document.getElementById('employeesDeleteSelectedBtn');
             const selectAll = document.getElementById('employeesSelectAll');
             const visibleIds = filteredEmployeesData.map(e => e.id);
             const visibleSelected = visibleIds.filter(id => selectedEmployees.has(id));
@@ -5154,8 +5188,10 @@
             if (selectedEmployees.size > 0) {
                 countEl.textContent = `${selectedEmployees.size} selected`;
                 countEl.classList.remove('d-none');
+                deleteBtn.classList.remove('d-none');
             } else {
                 countEl.classList.add('d-none');
+                deleteBtn.classList.add('d-none');
             }
 
             if (selectAll) {
@@ -5360,6 +5396,46 @@
             } catch (err) {
                 console.error('Error:', err);
                 await JarvisDialog.alert('Error deleting company', { type: 'error' });
+            }
+        }
+
+        async function bulkDeleteCompanies() {
+            const ids = Array.from(selectedCompanies);
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} ${ids.length === 1 ? 'company' : 'companies'}? This will also delete all associated brands. This cannot be undone.`,
+                { danger: true, confirmText: 'Delete All' }
+            );
+            if (!confirmed) return;
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const id of ids) {
+                const company = hrCompaniesData.find(c => c.id === id);
+                if (!company) continue;
+
+                try {
+                    const resp = await fetch(`/api/companies-vat/${encodeURIComponent(company.company)}`, { method: 'DELETE' });
+                    if (resp.ok) {
+                        successCount++;
+                        selectedCompanies.delete(id);
+                    } else {
+                        errorCount++;
+                    }
+                } catch (err) {
+                    console.error('Error deleting company:', err);
+                    errorCount++;
+                }
+            }
+
+            loadHrCompanies();
+
+            if (errorCount > 0) {
+                await JarvisDialog.alert(`Deleted ${successCount} companies. ${errorCount} failed.`, { type: 'warning' });
+            } else {
+                JarvisToast.success(`Deleted ${successCount} companies`);
             }
         }
 
@@ -6014,6 +6090,43 @@
             }
         }
 
+        async function bulkDeleteEmployees() {
+            const ids = Array.from(selectedEmployees);
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} ${ids.length === 1 ? 'employee' : 'employees'}? This cannot be undone.`,
+                { danger: true, confirmText: 'Delete All' }
+            );
+            if (!confirmed) return;
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const id of ids) {
+                try {
+                    const resp = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
+                    if (resp.ok) {
+                        successCount++;
+                        selectedEmployees.delete(id);
+                    } else {
+                        errorCount++;
+                    }
+                } catch (err) {
+                    console.error('Error deleting employee:', err);
+                    errorCount++;
+                }
+            }
+
+            loadHrEmployees();
+
+            if (errorCount > 0) {
+                await JarvisDialog.alert(`Deleted ${successCount} employees. ${errorCount} failed.`, { type: 'warning' });
+            } else {
+                JarvisToast.success(`Deleted ${successCount} employees`);
+            }
+        }
+
         // ============== Master Tables Functions ==============
         // Load master data when sub-tabs are shown
         document.getElementById('hr-brands-tab')?.addEventListener('shown.bs.tab', loadMasterBrands);
@@ -6126,6 +6239,43 @@
             }
         }
 
+        async function bulkDeleteBrands() {
+            const ids = Array.from(selectedBrands);
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} ${ids.length === 1 ? 'brand' : 'brands'}? This cannot be undone.`,
+                { danger: true, confirmText: 'Delete All' }
+            );
+            if (!confirmed) return;
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const id of ids) {
+                try {
+                    const resp = await fetch(`/hr/events/api/master/brands/${id}`, { method: 'DELETE' });
+                    if (resp.ok) {
+                        successCount++;
+                        selectedBrands.delete(id);
+                    } else {
+                        errorCount++;
+                    }
+                } catch (err) {
+                    console.error('Error deleting brand:', err);
+                    errorCount++;
+                }
+            }
+
+            loadMasterBrands();
+
+            if (errorCount > 0) {
+                await JarvisDialog.alert(`Deleted ${successCount} brands. ${errorCount} failed.`, { type: 'warning' });
+            } else {
+                JarvisToast.success(`Deleted ${successCount} brands`);
+            }
+        }
+
         // ============== Master Departments ==============
         async function loadMasterDepts() {
             try {
@@ -6231,6 +6381,43 @@
             }
         }
 
+        async function bulkDeleteDepts() {
+            const ids = Array.from(selectedDepts);
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} ${ids.length === 1 ? 'department' : 'departments'}? This cannot be undone.`,
+                { danger: true, confirmText: 'Delete All' }
+            );
+            if (!confirmed) return;
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const id of ids) {
+                try {
+                    const resp = await fetch(`/hr/events/api/master/departments/${id}`, { method: 'DELETE' });
+                    if (resp.ok) {
+                        successCount++;
+                        selectedDepts.delete(id);
+                    } else {
+                        errorCount++;
+                    }
+                } catch (err) {
+                    console.error('Error deleting department:', err);
+                    errorCount++;
+                }
+            }
+
+            loadMasterDepts();
+
+            if (errorCount > 0) {
+                await JarvisDialog.alert(`Deleted ${successCount} departments. ${errorCount} failed.`, { type: 'warning' });
+            } else {
+                JarvisToast.success(`Deleted ${successCount} departments`);
+            }
+        }
+
         // ============== Master Subdepartments ==============
         async function loadMasterSubdepts() {
             try {
@@ -6332,6 +6519,43 @@
             } catch (err) {
                 console.error('Error:', err);
                 await JarvisDialog.alert('Error deleting subdepartment', { type: 'error' });
+            }
+        }
+
+        async function bulkDeleteSubdepts() {
+            const ids = Array.from(selectedSubdepts);
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} ${ids.length === 1 ? 'subdepartment' : 'subdepartments'}? This cannot be undone.`,
+                { danger: true, confirmText: 'Delete All' }
+            );
+            if (!confirmed) return;
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const id of ids) {
+                try {
+                    const resp = await fetch(`/hr/events/api/master/subdepartments/${id}`, { method: 'DELETE' });
+                    if (resp.ok) {
+                        successCount++;
+                        selectedSubdepts.delete(id);
+                    } else {
+                        errorCount++;
+                    }
+                } catch (err) {
+                    console.error('Error deleting subdepartment:', err);
+                    errorCount++;
+                }
+            }
+
+            loadMasterSubdepts();
+
+            if (errorCount > 0) {
+                await JarvisDialog.alert(`Deleted ${successCount} subdepartments. ${errorCount} failed.`, { type: 'warning' });
+            } else {
+                JarvisToast.success(`Deleted ${successCount} subdepartments`);
             }
         }
 
@@ -6589,6 +6813,43 @@
             } catch (err) {
                 console.error('Error:', err);
                 await JarvisDialog.alert('Error deleting structure entry', { type: 'error' });
+            }
+        }
+
+        async function bulkDeleteStructure() {
+            const ids = Array.from(selectedStructure);
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} structure ${ids.length === 1 ? 'entry' : 'entries'}? This cannot be undone.`,
+                { danger: true, confirmText: 'Delete All' }
+            );
+            if (!confirmed) return;
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const id of ids) {
+                try {
+                    const resp = await fetch(`/hr/events/api/structure/departments/${id}`, { method: 'DELETE' });
+                    if (resp.ok) {
+                        successCount++;
+                        selectedStructure.delete(id);
+                    } else {
+                        errorCount++;
+                    }
+                } catch (err) {
+                    console.error('Error deleting structure:', err);
+                    errorCount++;
+                }
+            }
+
+            loadStructure();
+
+            if (errorCount > 0) {
+                await JarvisDialog.alert(`Deleted ${successCount} entries. ${errorCount} failed.`, { type: 'warning' });
+            } else {
+                JarvisToast.success(`Deleted ${successCount} structure entries`);
             }
         }
     </script>

@@ -6450,7 +6450,7 @@ def get_user_invoices_by_responsible_name(
     query = '''
         SELECT DISTINCT
             i.id, i.invoice_number, i.invoice_date, i.invoice_value,
-            i.currency, i.supplier, i.supplier_vat, i.dedicated_to,
+            i.currency, i.supplier, i.dedicated_to,
             i.status, i.payment_status, i.drive_link, i.notes,
             i.created_at, i.updated_at
         FROM invoices i
