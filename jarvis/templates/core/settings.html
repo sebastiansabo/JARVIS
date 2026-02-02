@@ -5742,10 +5742,13 @@
         }
 
         function populateStructureDropdowns(selected = {}) {
-            // Companies - match by company_id
+            // Companies - match by company_id or by name
             const companySelect = document.getElementById('structureCompany');
             companySelect.innerHTML = '<option value="">Select Company</option>' +
-                hrCompaniesData.map(c => `<option value="${c.id}" ${c.id == selected.company_id ? 'selected' : ''}>${c.company}</option>`).join('');
+                hrCompaniesData.map(c => {
+                    const isSelected = c.id == selected.company_id || (selected.company && c.company === selected.company);
+                    return `<option value="${c.id}" ${isSelected ? 'selected' : ''}>${c.company}</option>`;
+                }).join('');
 
             // Brands - match by brand_id or by name
             const brandSelect = document.getElementById('structureBrand');
