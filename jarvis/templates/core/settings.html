@@ -5742,25 +5742,34 @@
         }
 
         function populateStructureDropdowns(selected = {}) {
-            // Companies
+            // Companies - match by company_id
             const companySelect = document.getElementById('structureCompany');
             companySelect.innerHTML = '<option value="">Select Company</option>' +
                 hrCompaniesData.map(c => `<option value="${c.id}" ${c.id == selected.company_id ? 'selected' : ''}>${c.company}</option>`).join('');
 
-            // Brands
+            // Brands - match by brand_id or by name
             const brandSelect = document.getElementById('structureBrand');
             brandSelect.innerHTML = '<option value="">Select Brand (optional)</option>' +
-                masterBrandsData.map(b => `<option value="${b.id}" ${b.id == selected.brand_id ? 'selected' : ''}>${b.name}</option>`).join('');
+                masterBrandsData.map(b => {
+                    const isSelected = b.id == selected.brand_id || (selected.brand && b.name === selected.brand);
+                    return `<option value="${b.id}" ${isSelected ? 'selected' : ''}>${b.name}</option>`;
+                }).join('');
 
-            // Departments
+            // Departments - match by department_id or by name
             const deptSelect = document.getElementById('structureDept');
             deptSelect.innerHTML = '<option value="">Select Department</option>' +
-                masterDeptsData.map(d => `<option value="${d.id}" ${d.id == selected.department_id ? 'selected' : ''}>${d.name}</option>`).join('');
+                masterDeptsData.map(d => {
+                    const isSelected = d.id == selected.department_id || (selected.department && d.name === selected.department);
+                    return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${d.name}</option>`;
+                }).join('');
 
-            // Subdepartments
+            // Subdepartments - match by subdepartment_id or by name
             const subdeptSelect = document.getElementById('structureSubdept');
             subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>' +
-                masterSubdeptsData.map(s => `<option value="${s.id}" ${s.id == selected.subdepartment_id ? 'selected' : ''}>${s.name}</option>`).join('');
+                masterSubdeptsData.map(s => {
+                    const isSelected = s.id == selected.subdepartment_id || (selected.subdepartment && s.name === selected.subdepartment);
+                    return `<option value="${s.id}" ${isSelected ? 'selected' : ''}>${s.name}</option>`;
+                }).join('');
         }
 
         // ============== Manager Employee Search ==============
