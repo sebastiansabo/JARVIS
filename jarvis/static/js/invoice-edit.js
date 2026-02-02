@@ -1,6 +1,12 @@
 /**
  * Invoice Edit Module - Shared JavaScript for editing invoices
  * Used by: accounting.html, profile.html, and any page with the edit invoice modal
+ *
+ * Full-featured version matching accounting.html functionality:
+ * - Smart split allocation
+ * - Lock allocations
+ * - Multi-line reinvoice destinations
+ * - Allocation comments
  */
 
 // Module state
@@ -291,7 +297,8 @@ const InvoiceEdit = {
                 this.editAllocations = invoice.allocations.map(a => ({
                     ...a,
                     locked: a.locked || false,
-                    reinvoice_to: a.reinvoice_to || ''
+                    comment: a.comment || null,
+                    reinvoice_destinations: a.reinvoice_destinations || []
                 }));
             } else {
                 this.editAllocations = [];
@@ -322,6 +329,8 @@ const InvoiceEdit = {
         if (checked) {
             this.calculateNetValue();
         }
+        this.recalculateAllocationValues();
+        this.renderEditAllocations();
     },
 
     // Calculate net value
@@ -342,22 +351,92 @@ const InvoiceEdit = {
 
         document.getElementById('editNetValue').value = netValue.toFixed(2);
         document.getElementById('editNetValueDisplay').value = this.formatCurrencyNoSymbol(netValue) + ' ' + currency;
+
+        this.recalculateAllocationValues();
+    },
+
+    // Get base value for allocation calculations (net value if VAT subtracted, otherwise gross value)
+    getBaseValue() {
+        const subtractVat = document.getElementById('editSubtractVat').checked;
+        const grossValue = parseFloat(document.getElementById('editInvoiceValue').value) || 0;
+        const netValue = parseFloat(document.getElementById('editNetValue').value) || 0;
+        return subtractVat && netValue > 0 ? netValue : grossValue;
     },
 
     // Dedicated company change handler
     onDedicatedCompanyChange() {
         const company = document.getElementById('editDedicatedCompany').value;
-        // Update all allocations to new company
+        // Update all allocations to new company and reset fields
         this.editAllocations.forEach(a => {
             a.company = company;
             a.brand = '';
             a.department = '';
             a.subdepartment = '';
+            a.responsible = '';
         });
         this.renderEditAllocations();
     },
 
-    // Add allocation
+    // Smart split percentages based on count (matching accounting.html)
+    // 1: 100%, 2: 50-50, 3: 40-30-30, 4: 40-20-20-20, etc.
+    getSmartSplitPercentages(count) {
+        if (count === 1) return [100];
+        if (count === 2) return [50, 50];
+
+        // For 3+: first gets 40%, rest split equally
+        const firstPercent = 40;
+        const remaining = 100 - firstPercent;
+        const otherPercent = remaining / (count - 1);
+
+        const result = [firstPercent];
+        for (let i = 1; i < count; i++) {
+            result.push(otherPercent);
+        }
+        return result;
+    },
+
+    // Apply smart split to all allocations (respecting locked allocations)
+    applySmartSplit() {
+        const count = this.editAllocations.length;
+        if (count === 0) return;
+
+        const baseValue = this.getBaseValue();
+
+        // Separate locked and unlocked allocations
+        const lockedAllocs = this.editAllocations.filter(a => a.locked);
+        const unlockedAllocs = this.editAllocations.filter(a => !a.locked);
+
+        // Calculate total locked percentage
+        let lockedPercent = 0;
+        lockedAllocs.forEach(alloc => {
+            lockedPercent += parseFloat(alloc.allocation_percent) || 0;
+        });
+
+        // Distribute remaining percentage among unlocked allocations
+        const remainingPercent = Math.max(0, 100 - lockedPercent);
+        const unlockedCount = unlockedAllocs.length;
+
+        if (unlockedCount > 0) {
+            let percentages = this.getSmartSplitPercentages(unlockedCount);
+            // Scale percentages to fit remaining percent
+            const scaleFactor = remainingPercent / 100;
+            percentages = percentages.map(p => p * scaleFactor);
+
+            unlockedAllocs.forEach((alloc, idx) => {
+                alloc.allocation_percent = percentages[idx];
+                alloc.allocation_value = (baseValue * percentages[idx]) / 100;
+            });
+        }
+
+        // Update locked allocation values (in case invoice value changed)
+        lockedAllocs.forEach(alloc => {
+            alloc.allocation_value = (baseValue * (parseFloat(alloc.allocation_percent) || 0)) / 100;
+        });
+
+        this.renderEditAllocations();
+    },
+
+    // Add allocation with smart split
     addAllocation() {
         const company = document.getElementById('editDedicatedCompany').value;
         if (!company) {
@@ -365,27 +444,45 @@ const InvoiceEdit = {
             return;
         }
 
-        // Calculate remaining percentage
-        const usedPercent = this.editAllocations.reduce((sum, a) => sum + (a.allocation_percent || 0), 0);
-        const remainingPercent = Math.max(0, 100 - usedPercent);
-
         this.editAllocations.push({
             company: company,
-            brand: '',
+            brand: null,
             department: '',
-            subdepartment: '',
-            allocation_percent: remainingPercent,
+            subdepartment: null,
+            allocation_percent: 0,
             allocation_value: 0,
-            locked: false
+            responsible: '',
+            reinvoice_destinations: [],
+            locked: false,
+            comment: null
         });
-        this.recalculateAllocationValues();
-        this.renderEditAllocations();
+
+        // Apply smart split when adding
+        this.applySmartSplit();
     },
 
-    // Render allocations
+    // Remove allocation with smart split redistribution
+    removeAllocation(index) {
+        if (this.editAllocations.length <= 1) {
+            JarvisDialog.alert('Invoice must have at least one allocation', { type: 'warning', title: 'Cannot Delete' });
+            return;
+        }
+        this.editAllocations.splice(index, 1);
+        // Apply smart split when removing
+        this.applySmartSplit();
+    },
+
+    // Render allocations (matching accounting.html layout)
     renderEditAllocations() {
         const container = document.getElementById('allocationsContainer');
         const currency = document.getElementById('editCurrency').value || 'RON';
+        const dedicatedCompany = document.getElementById('editDedicatedCompany').value;
+        const baseValue = this.getBaseValue();
+
+        // Get departments/brands for the dedicated company
+        const departments = this.getDepartmentsForCompany(dedicatedCompany);
+        const brands = this.getBrandsForCompany(dedicatedCompany);
+        const hasBrands = brands.length > 0;
 
         if (this.editAllocations.length === 0) {
             container.innerHTML = '<p class="text-muted">No allocations. Click "Add Allocation" to add one.</p>';
@@ -393,83 +490,379 @@ const InvoiceEdit = {
             return;
         }
 
-        container.innerHTML = this.editAllocations.map((alloc, index) => {
-            const brands = this.getBrandsForCompany(alloc.company);
-            const departments = this.getDepartmentsForCompany(alloc.company);
-            const manager = this.getManagerForDepartment(alloc.company, alloc.department, alloc.brand);
-            const lockIcon = alloc.locked ? 'bi-lock-fill' : 'bi-unlock';
-            const lockClass = alloc.locked ? 'btn-warning' : 'btn-outline-secondary';
+        container.innerHTML = this.editAllocations.map((alloc, idx) => {
+            const subdepartments = this.getSubdepartmentsForDept(dedicatedCompany, alloc.department);
+            const hasSubdepts = subdepartments.length > 0;
+            const allocValue = (baseValue * (parseFloat(alloc.allocation_percent) || 0)) / 100;
+            const manager = this.getManagerForDepartment(dedicatedCompany, alloc.department, alloc.subdepartment, alloc.brand);
+            const hasReinvoice = alloc.reinvoice_destinations && alloc.reinvoice_destinations.length > 0;
 
             return `
-            <div class="allocation-row border rounded p-3 mb-2" data-index="${index}">
-                <div class="row g-2 align-items-end">
-                    <div class="col-md-2">
-                        <label class="form-label small mb-1">Brand</label>
-                        <select class="form-select form-select-sm" onchange="InvoiceEdit.updateAllocationField(${index}, 'brand', this.value)">
-                            <option value="">N/A</option>
-                            ${brands.map(b => `<option value="${b}" ${alloc.brand === b ? 'selected' : ''}>${b}</option>`).join('')}
-                        </select>
+                <div class="allocation-edit-row position-relative border rounded p-3 mb-2" data-idx="${idx}">
+                    <div class="position-absolute d-flex gap-1" style="top: 8px; right: 45px;">
+                        <button type="button" class="btn btn-sm ${alloc.comment ? 'btn-info' : 'btn-outline-info'}" onclick="InvoiceEdit.openAllocationComment(${idx})" title="${alloc.comment ? 'Edit comment' : 'Add comment'}">
+                            <i class="bi ${alloc.comment ? 'bi-chat-text-fill' : 'bi-chat-text'}"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm ${alloc.locked ? 'btn-warning' : 'btn-outline-secondary'}" onclick="InvoiceEdit.toggleLock(${idx})" title="${alloc.locked ? 'Unlock this allocation' : 'Lock this allocation'}">
+                            <i class="bi ${alloc.locked ? 'bi-lock-fill' : 'bi-unlock'}"></i>
+                        </button>
                     </div>
-                    <div class="col-md-3">
-                        <label class="form-label small mb-1">Department</label>
-                        <select class="form-select form-select-sm" onchange="InvoiceEdit.updateAllocationDepartment(${index}, this.value)" required>
-                            <option value="">Select...</option>
-                            ${departments.map(d => `<option value="${d}" ${alloc.department === d ? 'selected' : ''}>${d}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small mb-1">Allocation %</label>
-                        <div class="input-group input-group-sm">
-                            <input type="number" class="form-control" min="0" max="100" step="0.01"
-                                value="${alloc.allocation_percent || 0}"
-                                onchange="InvoiceEdit.updateAllocationField(${index}, 'allocation_percent', parseFloat(this.value))" required>
-                            <span class="input-group-text">%</span>
+                    <button type="button" class="btn btn-sm btn-outline-danger position-absolute" style="top: 8px; right: 8px;" onclick="InvoiceEdit.removeAllocation(${idx})" ${this.editAllocations.length <= 1 ? 'disabled' : ''} title="Delete allocation">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                    <div class="row">
+                        <div class="col-md-2 mb-2" ${hasBrands ? '' : 'style="display: none;"'}>
+                            <label class="form-label small">Brand</label>
+                            <select class="form-select form-select-sm" data-idx="${idx}" onchange="InvoiceEdit.onAllocationFieldChange(${idx}, 'brand', this.value)">
+                                <option value="">N/A</option>
+                                ${brands.map(b => `<option value="${b}" ${b === alloc.brand ? 'selected' : ''}>${b}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="col-md-2 mb-2">
+                            <label class="form-label small">Department</label>
+                            <select class="form-select form-select-sm" data-idx="${idx}" onchange="InvoiceEdit.onAllocationDeptChange(${idx}, this.value)">
+                                <option value="">Select...</option>
+                                ${departments.map(d => `<option value="${d}" ${d === alloc.department ? 'selected' : ''}>${d}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="col-md-2 mb-2" ${hasSubdepts ? '' : 'style="display: none;"'}>
+                            <label class="form-label small">Subdepartment</label>
+                            <select class="form-select form-select-sm" data-idx="${idx}" onchange="InvoiceEdit.onAllocationFieldChange(${idx}, 'subdepartment', this.value)">
+                                <option value="">N/A</option>
+                                ${subdepartments.map(s => `<option value="${s}" ${s === alloc.subdepartment ? 'selected' : ''}>${s}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="col-md-2 mb-2">
+                            <label class="form-label small">Allocation %</label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" class="form-control alloc-percent" data-idx="${idx}"
+                                       value="${alloc.allocation_percent || ''}" min="0" max="100" step="0.01"
+                                       onchange="InvoiceEdit.onAllocationPercentChange(${idx}, this.value)"
+                                       onkeyup="InvoiceEdit.onAllocationPercentChange(${idx}, this.value)">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <label class="form-label small">Value (${currency})</label>
+                            <input type="number" class="form-control form-control-sm alloc-value" data-idx="${idx}"
+                                   value="${allocValue.toFixed(2)}" min="0" step="0.01"
+                                   onchange="InvoiceEdit.onAllocationValueChange(${idx}, this.value)"
+                                   onkeyup="InvoiceEdit.onAllocationValueChange(${idx}, this.value)">
                         </div>
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label small mb-1">Value (${currency})</label>
-                        <input type="text" class="form-control form-control-sm" readonly
-                            value="${this.formatCurrencyNoSymbol(alloc.allocation_value || 0)}">
-                    </div>
-                    <div class="col-md-3 d-flex align-items-end gap-1">
-                        <button type="button" class="btn ${lockClass} btn-sm" onclick="InvoiceEdit.toggleLock(${index})" title="Lock/Unlock">
-                            <i class="bi ${lockIcon}"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="InvoiceEdit.openAllocationComment(${index})" title="Comment">
-                            <i class="bi bi-chat${alloc.comment ? '-fill text-primary' : ''}"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="InvoiceEdit.duplicateAllocation(${index})" title="Duplicate">
-                            <i class="bi bi-copy"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="InvoiceEdit.removeAllocation(${index})" title="Delete">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="row g-2 mt-2">
-                    <div class="col-md-3">
-                        <small class="text-muted">Manager: ${manager || '--'}</small>
-                    </div>
-                    <div class="col-md-9">
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input" type="checkbox" id="reinvoice-${index}"
-                                ${alloc.reinvoice_to ? 'checked' : ''}
-                                onchange="InvoiceEdit.toggleReinvoice(${index}, this.checked)">
-                            <label class="form-check-label small" for="reinvoice-${index}">Reinvoice to:</label>
+                    <div class="row">
+                        <div class="col-md-6 mb-2">
+                            <small class="text-muted">Manager: ${manager || '--'}</small>
                         </div>
-                        ${alloc.reinvoice_to !== undefined && alloc.reinvoice_to !== null ? `
-                        <select class="form-select form-select-sm d-inline-block" style="width: auto;"
-                            onchange="InvoiceEdit.updateAllocationField(${index}, 'reinvoice_to', this.value)">
-                            <option value="">Select company...</option>
-                            ${this.companiesData.map(c => `<option value="${c.company}" ${alloc.reinvoice_to === c.company ? 'selected' : ''}>${c.company}</option>`).join('')}
-                        </select>
-                        ` : ''}
+                        <div class="col-md-6 mb-2">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input alloc-reinvoice-check" type="checkbox" data-idx="${idx}"
+                                       ${hasReinvoice ? 'checked' : ''} onchange="InvoiceEdit.onReinvoiceCheckChange(${idx}, this.checked)">
+                                <label class="form-check-label small">Reinvoice to:</label>
+                                <span class="reinvoice-total-badge badge bg-secondary ms-2" data-idx="${idx}" style="display: ${hasReinvoice ? '' : 'none'};">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="reinvoice-section" data-idx="${idx}" style="display: ${hasReinvoice ? '' : 'none'};">
+                        <div class="reinvoice-lines-container" data-idx="${idx}"></div>
+                        <div class="row mt-1">
+                            <div class="col-12">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="InvoiceEdit.addReinvoiceLine(${idx}, true)">
+                                    <i class="bi bi-plus"></i> Add Reinvoice Line
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>`;
+            `;
         }).join('');
 
         this.updateAllocationTotalBadge();
+
+        // Initialize reinvoice lines for allocations with existing reinvoice destinations
+        this.initializeReinvoiceLines();
+    },
+
+    // Initialize reinvoice lines from existing data
+    async initializeReinvoiceLines() {
+        for (let idx = 0; idx < this.editAllocations.length; idx++) {
+            const alloc = this.editAllocations[idx];
+            // Support both new reinvoice_destinations array and legacy single reinvoice fields
+            if (alloc.reinvoice_destinations && alloc.reinvoice_destinations.length > 0) {
+                // New multi-destination format
+                for (const dest of alloc.reinvoice_destinations) {
+                    await this.addReinvoiceLine(idx, false, dest);
+                }
+            } else if (alloc.reinvoice_to) {
+                // Legacy single destination - migrate to new format
+                const legacyDest = {
+                    company: alloc.reinvoice_to,
+                    brand: alloc.reinvoice_brand,
+                    department: alloc.reinvoice_department,
+                    subdepartment: alloc.reinvoice_subdepartment,
+                    percentage: 100
+                };
+                this.editAllocations[idx].reinvoice_destinations = [legacyDest];
+                await this.addReinvoiceLine(idx, false, legacyDest);
+            }
+            this.updateReinvoiceTotalBadge(idx);
+        }
+    },
+
+    // Add reinvoice line
+    async addReinvoiceLine(allocIdx, redistribute = false, existingData = null) {
+        const container = document.querySelector(`.reinvoice-lines-container[data-idx="${allocIdx}"]`);
+        if (!container) return;
+
+        // Get companies list
+        const companies = this.companiesData.map(c => c.company);
+
+        const lineCount = container.children.length;
+        let newPercentage = existingData ? existingData.percentage : 100;
+
+        // If redistributing, update all existing lines to equal percentage
+        if (redistribute && lineCount > 0) {
+            newPercentage = 100 / (lineCount + 1);
+            container.querySelectorAll('.reinvoice-percent').forEach(input => {
+                input.value = newPercentage.toFixed(2);
+            });
+        }
+
+        const lineId = `reinvoice-line-${allocIdx}-${Date.now()}`;
+        const line = document.createElement('div');
+        line.className = 'reinvoice-line row mb-1 align-items-center';
+        line.id = lineId;
+
+        line.innerHTML = `
+            <div class="col-md-2">
+                <select class="form-select form-select-sm reinvoice-company" onchange="InvoiceEdit.onReinvoiceCompanyChange('${lineId}', ${allocIdx})">
+                    <option value="">Company...</option>
+                    ${companies.map(c => `<option value="${c}" ${existingData && c === existingData.company ? 'selected' : ''}>${c}</option>`).join('')}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select class="form-select form-select-sm reinvoice-brand">
+                    <option value="">Brand...</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select class="form-select form-select-sm reinvoice-dept" onchange="InvoiceEdit.onReinvoiceDeptChange('${lineId}', ${allocIdx})">
+                    <option value="">Dept...</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select class="form-select form-select-sm reinvoice-subdept" onchange="InvoiceEdit.updateReinvoiceTotalBadge(${allocIdx})">
+                    <option value="">N/A</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <div class="input-group input-group-sm">
+                    <input type="number" class="form-control reinvoice-percent" value="${newPercentage.toFixed(2)}"
+                           min="0" max="100" step="0.01" onchange="InvoiceEdit.updateReinvoiceTotalBadge(${allocIdx})">
+                    <span class="input-group-text">%</span>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="InvoiceEdit.removeReinvoiceLine('${lineId}', ${allocIdx})">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        `;
+
+        container.appendChild(line);
+
+        // Populate brands, departments and subdepartments if existing data
+        if (existingData && existingData.company) {
+            const brandSelect = line.querySelector('.reinvoice-brand');
+            const deptSelect = line.querySelector('.reinvoice-dept');
+            const subdeptSelect = line.querySelector('.reinvoice-subdept');
+
+            const [brands, depts] = await Promise.all([
+                fetch(`/api/brands/${encodeURIComponent(existingData.company)}`).then(r => r.json()),
+                fetch(`/api/departments/${encodeURIComponent(existingData.company)}`).then(r => r.json())
+            ]);
+
+            brandSelect.innerHTML = '<option value="">Brand...</option>';
+            brands.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b;
+                opt.textContent = b;
+                if (b === existingData.brand) opt.selected = true;
+                brandSelect.appendChild(opt);
+            });
+
+            deptSelect.innerHTML = '<option value="">Dept...</option>';
+            depts.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d;
+                opt.textContent = d;
+                if (d === existingData.department) opt.selected = true;
+                deptSelect.appendChild(opt);
+            });
+
+            if (existingData.department) {
+                const subdepts = await fetch(`/api/subdepartments/${encodeURIComponent(existingData.company)}/${encodeURIComponent(existingData.department)}`).then(r => r.json());
+                subdeptSelect.innerHTML = '<option value="">N/A</option>';
+                subdepts.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s;
+                    opt.textContent = s;
+                    if (s === existingData.subdepartment) opt.selected = true;
+                    subdeptSelect.appendChild(opt);
+                });
+            }
+        }
+
+        this.updateReinvoiceTotalBadge(allocIdx);
+    },
+
+    // Remove reinvoice line
+    removeReinvoiceLine(lineId, allocIdx) {
+        const line = document.getElementById(lineId);
+        if (line) {
+            line.remove();
+        }
+
+        // If no lines left, uncheck the reinvoice checkbox
+        const container = document.querySelector(`.reinvoice-lines-container[data-idx="${allocIdx}"]`);
+        if (container && container.children.length === 0) {
+            const checkbox = document.querySelector(`.alloc-reinvoice-check[data-idx="${allocIdx}"]`);
+            if (checkbox) checkbox.checked = false;
+            const section = document.querySelector(`.reinvoice-section[data-idx="${allocIdx}"]`);
+            if (section) section.style.display = 'none';
+            const badge = document.querySelector(`.reinvoice-total-badge[data-idx="${allocIdx}"]`);
+            if (badge) badge.style.display = 'none';
+        }
+
+        this.updateReinvoiceTotalBadge(allocIdx);
+    },
+
+    // Reinvoice company change handler
+    async onReinvoiceCompanyChange(lineId, allocIdx) {
+        const line = document.getElementById(lineId);
+        if (!line) return;
+
+        const company = line.querySelector('.reinvoice-company').value;
+        const brandSelect = line.querySelector('.reinvoice-brand');
+        const deptSelect = line.querySelector('.reinvoice-dept');
+        const subdeptSelect = line.querySelector('.reinvoice-subdept');
+
+        brandSelect.innerHTML = '<option value="">Brand...</option>';
+        deptSelect.innerHTML = '<option value="">Dept...</option>';
+        subdeptSelect.innerHTML = '<option value="">N/A</option>';
+
+        if (company) {
+            const [brands, depts] = await Promise.all([
+                fetch(`/api/brands/${encodeURIComponent(company)}`).then(r => r.json()),
+                fetch(`/api/departments/${encodeURIComponent(company)}`).then(r => r.json())
+            ]);
+
+            brands.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b;
+                opt.textContent = b;
+                brandSelect.appendChild(opt);
+            });
+
+            depts.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d;
+                opt.textContent = d;
+                deptSelect.appendChild(opt);
+            });
+        }
+
+        this.updateReinvoiceTotalBadge(allocIdx);
+    },
+
+    // Reinvoice department change handler
+    async onReinvoiceDeptChange(lineId, allocIdx) {
+        const line = document.getElementById(lineId);
+        if (!line) return;
+
+        const company = line.querySelector('.reinvoice-company').value;
+        const department = line.querySelector('.reinvoice-dept').value;
+        const subdeptSelect = line.querySelector('.reinvoice-subdept');
+
+        subdeptSelect.innerHTML = '<option value="">N/A</option>';
+
+        if (company && department) {
+            const subdepts = await fetch(`/api/subdepartments/${encodeURIComponent(company)}/${encodeURIComponent(department)}`).then(r => r.json());
+            subdepts.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s;
+                opt.textContent = s;
+                subdeptSelect.appendChild(opt);
+            });
+        }
+
+        this.updateReinvoiceTotalBadge(allocIdx);
+    },
+
+    // Update reinvoice total badge
+    updateReinvoiceTotalBadge(allocIdx) {
+        const container = document.querySelector(`.reinvoice-lines-container[data-idx="${allocIdx}"]`);
+        const badge = document.querySelector(`.reinvoice-total-badge[data-idx="${allocIdx}"]`);
+        if (!container || !badge) return;
+
+        let total = 0;
+        container.querySelectorAll('.reinvoice-percent').forEach(input => {
+            total += parseFloat(input.value) || 0;
+        });
+
+        badge.textContent = `${total.toFixed(1)}%`;
+        badge.className = total <= 100 ? 'reinvoice-total-badge badge bg-success ms-2' : 'reinvoice-total-badge badge bg-danger ms-2';
+    },
+
+    // Get reinvoice destinations for an allocation
+    getReinvoiceDestinations(allocIdx) {
+        const container = document.querySelector(`.reinvoice-lines-container[data-idx="${allocIdx}"]`);
+        const destinations = [];
+        if (!container) return destinations;
+
+        container.querySelectorAll('.reinvoice-line').forEach(line => {
+            const company = line.querySelector('.reinvoice-company').value;
+            const brand = line.querySelector('.reinvoice-brand').value;
+            const department = line.querySelector('.reinvoice-dept').value;
+            const subdepartment = line.querySelector('.reinvoice-subdept').value;
+            const percentage = parseFloat(line.querySelector('.reinvoice-percent').value) || 0;
+
+            if (company && percentage > 0) {
+                destinations.push({
+                    company,
+                    brand: brand || null,
+                    department: department || null,
+                    subdepartment: subdepartment || null,
+                    percentage
+                });
+            }
+        });
+
+        return destinations;
+    },
+
+    // Reinvoice checkbox change handler
+    onReinvoiceCheckChange(idx, checked) {
+        const section = document.querySelector(`.reinvoice-section[data-idx="${idx}"]`);
+        const badge = document.querySelector(`.reinvoice-total-badge[data-idx="${idx}"]`);
+        const container = document.querySelector(`.reinvoice-lines-container[data-idx="${idx}"]`);
+
+        if (checked) {
+            section.style.display = '';
+            badge.style.display = '';
+            // Add first line if none exist
+            if (container && container.children.length === 0) {
+                this.addReinvoiceLine(idx, false);
+            }
+        } else {
+            section.style.display = 'none';
+            badge.style.display = 'none';
+            // Clear all reinvoice lines
+            if (container) {
+                container.innerHTML = '';
+            }
+            this.editAllocations[idx].reinvoice_destinations = [];
+        }
     },
 
     // Helper functions for organizational structure
@@ -491,29 +884,125 @@ const InvoiceEdit = {
         return Array.from(depts).sort();
     },
 
-    getManagerForDepartment(company, department, brand) {
+    getSubdepartmentsForDept(company, department) {
+        if (!this.organizationalStructure || !company || !department) return [];
+        const subdepts = new Set();
+        this.organizationalStructure.filter(s =>
+            s.company === company && s.department === department
+        ).forEach(s => {
+            if (s.subdepartment) subdepts.add(s.subdepartment);
+        });
+        return Array.from(subdepts).sort();
+    },
+
+    getManagerForDepartment(company, department, subdepartment, brand) {
         if (!this.organizationalStructure || !company || !department) return null;
         const match = this.organizationalStructure.find(s =>
             s.company === company &&
             s.department === department &&
+            (!subdepartment || s.subdepartment === subdepartment) &&
             (!brand || s.brand === brand)
         );
         return match?.manager || null;
     },
 
-    // Allocation field update handlers
-    updateAllocationField(index, field, value) {
-        this.editAllocations[index][field] = value;
-        this.recalculateAllocationValues();
-        if (field === 'allocation_percent') {
-            this.renderEditAllocations();
-        }
+    // Allocation field change handlers
+    onAllocationFieldChange(idx, field, value) {
+        this.editAllocations[idx][field] = value || null;
+
+        // Update responsible based on company/dept/subdept/brand
+        const company = document.getElementById('editDedicatedCompany').value;
+        const alloc = this.editAllocations[idx];
+        alloc.responsible = this.getManagerForDepartment(company, alloc.department, alloc.subdepartment, alloc.brand);
     },
 
-    updateAllocationDepartment(index, value) {
-        this.editAllocations[index].department = value;
-        this.editAllocations[index].subdepartment = '';
+    onAllocationDeptChange(idx, value) {
+        const company = document.getElementById('editDedicatedCompany').value;
+        const brand = this.editAllocations[idx].brand;
+
+        this.editAllocations[idx].department = value;
+        this.editAllocations[idx].subdepartment = '';
+        this.editAllocations[idx].responsible = this.getManagerForDepartment(company, value, null, brand);
         this.renderEditAllocations();
+    },
+
+    onAllocationPercentChange(idx, value) {
+        const percent = parseFloat(value) || 0;
+        const baseValue = this.getBaseValue();
+        this.editAllocations[idx].allocation_percent = percent;
+        this.editAllocations[idx].allocation_value = (baseValue * percent) / 100;
+
+        // Update value field without re-rendering (to avoid losing focus)
+        const valueInput = document.querySelector(`.alloc-value[data-idx="${idx}"]`);
+        if (valueInput) {
+            valueInput.value = this.editAllocations[idx].allocation_value.toFixed(2);
+        }
+
+        // Redistribute remaining to other unlocked allocations
+        this.redistributeOtherAllocations(idx);
+    },
+
+    onAllocationValueChange(idx, value) {
+        const allocValue = parseFloat(value) || 0;
+        const baseValue = this.getBaseValue();
+
+        this.editAllocations[idx].allocation_value = allocValue;
+        this.editAllocations[idx].allocation_percent = baseValue > 0 ? (allocValue / baseValue) * 100 : 0;
+
+        // Update percent field without re-rendering (to avoid losing focus)
+        const percentInput = document.querySelector(`.alloc-percent[data-idx="${idx}"]`);
+        if (percentInput) {
+            percentInput.value = this.editAllocations[idx].allocation_percent.toFixed(2);
+        }
+
+        // Redistribute remaining to other unlocked allocations
+        this.redistributeOtherAllocations(idx);
+    },
+
+    // Redistribute remaining percentage equally among other unlocked allocations
+    redistributeOtherAllocations(changedIdx) {
+        const count = this.editAllocations.length;
+        if (count <= 1) {
+            this.updateAllocationTotalBadge();
+            return;
+        }
+
+        // Get indices of unlocked allocations (excluding the changed one)
+        const unlockedOthers = this.editAllocations
+            .map((a, i) => ({ alloc: a, idx: i }))
+            .filter(item => !item.alloc.locked && item.idx !== changedIdx);
+
+        if (unlockedOthers.length === 0) {
+            this.updateAllocationTotalBadge();
+            return;
+        }
+
+        const changedPercent = this.editAllocations[changedIdx].allocation_percent || 0;
+
+        // Calculate total locked percent (excluding the changed allocation)
+        let lockedPercent = 0;
+        this.editAllocations.forEach((a, i) => {
+            if (a.locked && i !== changedIdx) {
+                lockedPercent += parseFloat(a.allocation_percent) || 0;
+            }
+        });
+
+        const remaining = 100 - changedPercent - lockedPercent;
+        const perOther = remaining / unlockedOthers.length;
+        const baseValue = this.getBaseValue();
+
+        unlockedOthers.forEach(item => {
+            item.alloc.allocation_percent = perOther;
+            item.alloc.allocation_value = (baseValue * perOther) / 100;
+
+            // Update UI without re-rendering
+            const pInput = document.querySelector(`.alloc-percent[data-idx="${item.idx}"]`);
+            const vInput = document.querySelector(`.alloc-value[data-idx="${item.idx}"]`);
+            if (pInput) pInput.value = perOther.toFixed(2);
+            if (vInput) vInput.value = item.alloc.allocation_value.toFixed(2);
+        });
+
+        this.updateAllocationTotalBadge();
     },
 
     toggleLock(index) {
@@ -521,27 +1010,17 @@ const InvoiceEdit = {
         this.renderEditAllocations();
     },
 
-    toggleReinvoice(index, checked) {
-        this.editAllocations[index].reinvoice_to = checked ? '' : null;
-        this.renderEditAllocations();
-    },
-
-    duplicateAllocation(index) {
-        const original = this.editAllocations[index];
-        this.editAllocations.push({...original, allocation_percent: 0, allocation_value: 0, locked: false});
-        this.renderEditAllocations();
-    },
-
-    removeAllocation(index) {
-        this.editAllocations.splice(index, 1);
-        this.renderEditAllocations();
-    },
-
     openAllocationComment(index) {
         const alloc = this.editAllocations[index];
+        const currency = document.getElementById('editCurrency').value || 'RON';
+        const baseValue = this.getBaseValue();
+        const allocValue = (baseValue * (parseFloat(alloc.allocation_percent) || 0)) / 100;
+
         document.getElementById('allocationCommentIndex').value = index;
+        const deptPart = alloc.department || '-';
+        const brandPart = alloc.brand ? ` (${alloc.brand})` : '';
         document.getElementById('allocationCommentDetails').textContent =
-            `${alloc.department || 'No department'} - ${alloc.brand || 'No brand'} (${alloc.allocation_percent || 0}%)`;
+            `${deptPart}${brandPart} - ${this.formatCurrencyNoSymbol(allocValue)} ${currency} (${alloc.allocation_percent || 0}%)`;
         document.getElementById('allocationCommentText').value = alloc.comment || '';
 
         const modal = new bootstrap.Modal(document.getElementById('allocationCommentModal'));
@@ -551,32 +1030,29 @@ const InvoiceEdit = {
     saveAllocationComment() {
         const index = parseInt(document.getElementById('allocationCommentIndex').value);
         const comment = document.getElementById('allocationCommentText').value;
-        this.editAllocations[index].comment = comment;
+        this.editAllocations[index].comment = comment || null;
 
         bootstrap.Modal.getInstance(document.getElementById('allocationCommentModal')).hide();
         this.renderEditAllocations();
     },
 
     recalculateAllocationValues() {
-        const invoiceValue = parseFloat(document.getElementById('editInvoiceValue').value) || 0;
-        const subtractVat = document.getElementById('editSubtractVat').checked;
-        const netValue = subtractVat ? parseFloat(document.getElementById('editNetValue').value) : null;
-        const effectiveValue = subtractVat && netValue ? netValue : invoiceValue;
-
+        const baseValue = this.getBaseValue();
         this.editAllocations.forEach(a => {
-            a.allocation_value = (effectiveValue * (a.allocation_percent || 0)) / 100;
+            a.allocation_value = (baseValue * (a.allocation_percent || 0)) / 100;
         });
     },
 
     updateAllocationTotalBadge() {
-        const total = this.editAllocations.reduce((sum, a) => sum + (a.allocation_percent || 0), 0);
-        const totalValue = this.editAllocations.reduce((sum, a) => sum + (a.allocation_value || 0), 0);
+        const totalPercent = this.editAllocations.reduce((sum, a) => sum + (parseFloat(a.allocation_percent) || 0), 0);
+        const totalValue = this.editAllocations.reduce((sum, a) => sum + (parseFloat(a.allocation_value) || 0), 0);
         const currency = document.getElementById('editCurrency').value || 'RON';
         const badge = document.getElementById('allocationTotalBadge');
 
         if (badge) {
-            badge.textContent = `${total.toFixed(2)}% | ${this.formatCurrencyNoSymbol(totalValue)} ${currency}`;
-            badge.className = 'badge ms-2 ' + (Math.abs(total - 100) < 0.1 ? 'bg-success' : (total > 100 ? 'bg-danger' : 'bg-warning'));
+            badge.textContent = `${totalPercent.toFixed(2)}% | ${this.formatCurrencyNoSymbol(totalValue)} ${currency}`;
+            // Valid if 100% to 100.1% (allow small overdraft for rounding)
+            badge.className = 'badge ms-2 ' + ((totalPercent >= 100 && totalPercent <= 100.1) ? 'bg-success' : 'bg-danger');
         }
     },
 
@@ -669,7 +1145,8 @@ const InvoiceEdit = {
             net_value: netValue
         };
 
-        const allocationsData = this.editAllocations.map(a => ({
+        // Collect reinvoice destinations for each allocation
+        const allocationsData = this.editAllocations.map((a, idx) => ({
             company: dedicatedCompany,
             brand: a.brand || null,
             department: a.department,
@@ -677,7 +1154,7 @@ const InvoiceEdit = {
             allocation_percent: a.allocation_percent,
             allocation_value: a.allocation_value,
             responsible: a.responsible || null,
-            reinvoice_to: a.reinvoice_to || null,
+            reinvoice_destinations: this.getReinvoiceDestinations(idx),
             comment: a.comment || null,
             locked: a.locked || false
         }));
