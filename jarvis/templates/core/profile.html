@@ -78,22 +78,15 @@
                         <small class="text-muted" id="userEmail">{{ current_user.email }}</small>
                         <span class="badge bg-secondary ms-2" id="userRole">{{ current_user.role_name or 'User' }}</span>
                     </div>
-                    <div class="ms-auto" id="responsableInfo" style="display: none;">
+                    <div class="ms-auto" id="userOrgInfo" style="display: none;">
                         <small class="text-muted">
-                            <i class="bi bi-building"></i> <span id="responsableCompany">-</span>
+                            <i class="bi bi-building"></i> <span id="userCompany">-</span>
                             <span class="mx-2">|</span>
-                            <i class="bi bi-diagram-3"></i> <span id="responsableDept">-</span>
+                            <i class="bi bi-diagram-3"></i> <span id="userDepartment">-</span>
                         </small>
                     </div>
                 </div>
             </div>
-        </div>
-
-        <!-- No Responsable Warning -->
-        <div id="noResponsableAlert" class="alert alert-warning d-none">
-            <i class="bi bi-exclamation-triangle"></i>
-            <strong>Limited Profile Data:</strong> Your email is not linked to a responsable record.
-            You can only view your activity log. Contact an administrator to link your account.
         </div>
 
         <!-- Summary Cards -->
@@ -419,7 +412,6 @@
     <script>
         // Profile page state
         let profileData = null;
-        let currentResponsable = null;
         let allInvoices = [];  // All loaded invoices for client-side filtering
         let invoicesPage = 1;
         let invoicePageSize = parseInt(localStorage.getItem('profileInvoicePageSize')) || 50;
@@ -494,7 +486,7 @@
                 await loadInvoicesTab();
             } catch (error) {
                 console.error('Error loading profile:', error);
-                showError('Failed to load profile data');
+                showError('Error: ' + (error.message || error));
             } finally {
                 hideLoading();
             }
@@ -779,13 +771,11 @@
             const response = await fetch('/profile/api/summary');
             profileData = await response.json();
 
-            if (profileData.responsable) {
-                currentResponsable = profileData.responsable;
-                document.getElementById('responsableInfo').style.display = 'block';
-                document.getElementById('responsableCompany').textContent = profileData.responsable.company || '-';
-                document.getElementById('responsableDept').textContent = profileData.responsable.departments || '-';
-            } else {
-                document.getElementById('noResponsableAlert').classList.remove('d-none');
+            // Display user organizational info from the users table
+            if (profileData.user && (profileData.user.company || profileData.user.department)) {
+                document.getElementById('userOrgInfo').style.display = 'block';
+                document.getElementById('userCompany').textContent = profileData.user.company || '-';
+                document.getElementById('userDepartment').textContent = profileData.user.department || '-';
             }
 
             updateSummaryCards(profileData);
@@ -950,6 +940,12 @@
 
             const response = await fetch(`/profile/api/invoices?${params}`);
             const data = await response.json();
+
+            // Check for API error
+            if (data.error) {
+                console.error('API error:', data.error);
+                throw new Error('Invoice API: ' + data.error);
+            }
 
             allInvoices = data.invoices || [];
 

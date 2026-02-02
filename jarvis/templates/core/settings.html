@@ -994,7 +994,7 @@
                     <div class="card-body">
                         <!-- Stats Cards -->
                         <div class="row g-3 mb-3">
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <div class="card bg-primary text-white">
                                     <div class="card-body py-2">
                                         <div class="d-flex justify-content-between align-items-center">
@@ -1007,7 +1007,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <div class="card bg-success text-white">
                                     <div class="card-body py-2">
                                         <div class="d-flex justify-content-between align-items-center">
@@ -1020,7 +1020,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <div class="card bg-info text-white">
                                     <div class="card-body py-2">
                                         <div class="d-flex justify-content-between align-items-center">
@@ -1029,19 +1029,6 @@
                                                 <h4 class="mb-0" id="hrStatsDepartments">-</h4>
                                             </div>
                                             <i class="bi bi-diagram-2" style="font-size: 1.5rem; opacity: 0.5;"></i>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card bg-warning text-dark">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <small class="opacity-75">Employees</small>
-                                                <h4 class="mb-0" id="hrStatsEmployees">-</h4>
-                                            </div>
-                                            <i class="bi bi-people" style="font-size: 1.5rem; opacity: 0.5;"></i>
                                         </div>
                                     </div>
                                 </div>
@@ -1073,11 +1060,6 @@
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="hr-structure-tab" data-bs-toggle="pill" data-bs-target="#hr-structure" type="button" role="tab">
                                     <i class="bi bi-diagram-3"></i> Structure Mapping
-                                </button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="hr-employees-tab" data-bs-toggle="pill" data-bs-target="#hr-employees" type="button" role="tab">
-                                    <i class="bi bi-people"></i> Employees
                                 </button>
                             </li>
                         </ul>
@@ -1277,56 +1259,6 @@
                                 </div>
                             </div>
 
-                            <!-- Employees Sub-tab -->
-                            <div class="tab-pane fade" id="hr-employees" role="tabpanel">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <div class="d-flex align-items-center gap-2">
-                                        <span class="text-muted small">Employees</span>
-                                        <span id="employeesCount" class="badge bg-secondary">0</span>
-                                        <span id="employeesSelectedCount" class="badge bg-primary d-none">0 selected</span>
-                                        <button class="btn btn-danger btn-sm d-none" id="employeesDeleteSelectedBtn" onclick="bulkDeleteEmployees()">
-                                            <i class="bi bi-trash"></i> Delete Selected
-                                        </button>
-                                        <div class="input-group input-group-sm" style="width: 180px;">
-                                            <input type="text" class="form-control" id="employeesSearchInput" placeholder="Search..." oninput="filterEmployees()">
-                                            <button class="btn btn-outline-secondary" type="button" onclick="clearEmployeesSearch()"><i class="bi bi-x-lg"></i></button>
-                                        </div>
-                                        <select id="hrEmployeeCompanyFilter" class="form-select form-select-sm" style="width: 160px;" onchange="filterEmployees()">
-                                            <option value="">All Companies</option>
-                                        </select>
-                                        <select id="employeeStatusFilter" class="form-select form-select-sm" style="width: 100px;" onchange="filterEmployees()">
-                                            <option value="">All</option>
-                                            <option value="active">Active</option>
-                                            <option value="inactive">Inactive</option>
-                                        </select>
-                                    </div>
-                                    <div class="d-flex gap-2 align-items-center">
-                                        <select class="form-select form-select-sm" id="employeesSortOrder" style="width: 120px;" onchange="filterEmployees()">
-                                            <option value="name_asc">Name A-Z</option>
-                                            <option value="name_desc">Name Z-A</option>
-                                            <option value="company_asc">Company A-Z</option>
-                                        </select>
-                                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#employeeColumnConfigModal">
-                                            <i class="bi bi-gear"></i> Columns
-                                        </button>
-                                        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#hrEmployeeModal" onclick="openAddHrEmployeeModal()">
-                                            <i class="bi bi-plus-lg"></i> Add
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="table-responsive" style="max-height: 450px; overflow-y: auto;">
-                                    <table class="table table-hover table-sm mb-0" id="employeesTableEl">
-                                        <thead class="table-light sticky-top" id="employeesTableHead">
-                                            <tr>
-                                                <!-- Dynamic columns rendered by JS (including checkbox column) -->
-                                            </tr>
-                                        </thead>
-                                        <tbody id="hrEmployeesTable">
-                                            <tr class="loading-placeholder"><td colspan="10" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
                         </div>
 
                         <div class="alert alert-info mt-3 mb-0 py-2 small">
@@ -1571,7 +1503,7 @@
                                         </div>
                                         <div class="pills-dropdown" id="dsManagerDropdown"></div>
                                     </div>
-                                    <small class="text-muted">Search and select responsables as managers.</small>
+                                    <small class="text-muted">Search and select users as managers.</small>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -1588,7 +1520,7 @@
                                         </div>
                                         <div class="pills-dropdown" id="dsMarketingDropdown"></div>
                                     </div>
-                                    <small class="text-muted">Search and select responsables for marketing.</small>
+                                    <small class="text-muted">Search and select users for marketing.</small>
                                 </div>
                             </div>
                         </div>
@@ -1691,54 +1623,6 @@
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-primary" onclick="saveRole()">
                         <i class="bi bi-check-lg"></i> Save Role
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Add/Edit Responsable Modal -->
-    <div class="modal fade" id="responsableModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="responsableModalTitle">Add Responsable</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="responsableForm">
-                        <input type="hidden" id="responsableId">
-                        <div class="mb-3">
-                            <label class="form-label">Name <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="responsableName" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Email <span class="text-danger">*</span></label>
-                            <input type="email" class="form-control" id="responsableEmail" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Phone</label>
-                            <input type="tel" class="form-control" id="responsablePhone">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Departments</label>
-                            <input type="text" class="form-control" id="responsableDepartments" placeholder="e.g., Marketing, Sales, IT (comma-separated)">
-                            <small class="text-muted">List the departments this person is responsible for, separated by commas</small>
-                        </div>
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input" type="checkbox" id="responsableNotify" checked>
-                            <label class="form-check-label" for="responsableNotify">Receive notifications on allocation</label>
-                        </div>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="responsableActive" checked>
-                            <label class="form-check-label" for="responsableActive">Active</label>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="saveResponsable()">
-                        <i class="bi bi-check-lg"></i> Save Responsable
                     </button>
                 </div>
             </div>
@@ -2023,102 +1907,10 @@
         </div>
     </div>
 
-    <!-- Employee Column Configuration Modal -->
-    <div class="modal fade" id="employeeColumnConfigModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-layout-three-columns"></i> Configure Columns</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="text-muted small mb-3">Drag to reorder. Toggle visibility with switches.</p>
-                    <ul class="list-group" id="employeeColumnList">
-                        <!-- Columns rendered by JS -->
-                    </ul>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" onclick="resetEmployeeColumnConfig()">
-                        <i class="bi bi-arrow-counterclockwise"></i> Reset
-                    </button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- HR Employee Modal -->
-    <div class="modal fade" id="hrEmployeeModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-person"></i> <span id="hrEmployeeModalTitle">Add Employee</span></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="hrEmployeeForm">
-                        <input type="hidden" id="hrEmployeeId">
-                        <div class="mb-3">
-                            <label class="form-label">Name <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="hrEmpName" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Email <span class="text-danger">*</span></label>
-                            <input type="email" class="form-control" id="hrEmpEmail" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Phone</label>
-                            <input type="tel" class="form-control" id="hrEmpPhone">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Company</label>
-                            <select class="form-select" id="hrEmpCompany" onchange="onHrEmpCompanyChange()">
-                                <option value="">Select Company (optional)</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Brand</label>
-                            <select class="form-select" id="hrEmpBrand" onchange="onHrEmpBrandChange()">
-                                <option value="">Select Brand (optional)</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Department</label>
-                            <select class="form-select" id="hrEmpDept" onchange="onHrEmpDeptChange()">
-                                <option value="">Select Department (optional)</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Subdepartment</label>
-                            <select class="form-select" id="hrEmpSubdept">
-                                <option value="">Select Subdepartment (optional)</option>
-                            </select>
-                        </div>
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input" type="checkbox" id="hrEmpNotify" checked>
-                            <label class="form-check-label" for="hrEmpNotify">Receive notifications</label>
-                        </div>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="hrEmpIsActive" checked>
-                            <label class="form-check-label" for="hrEmpIsActive">Active</label>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="saveHrEmployee()">
-                        <i class="bi bi-check-lg"></i> Save Employee
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let users = [];
         let roles = [];
-        let responsables = [];
         let notificationSettings = {};
         let deleteType = null;
         let deleteId = null;
@@ -2132,7 +1924,6 @@
         let hrCompaniesData = [];
         let filteredCompaniesData = [];
         let hrDepartmentsData = [];
-        let hrEmployeesData = [];
 
         // Master Tables Data
         let masterBrandsData = [];
@@ -2143,7 +1934,6 @@
         let filteredSubdeptsData = [];
         let structureData = [];
         let filteredStructureData = [];
-        let filteredEmployeesData = [];
 
         // Selection state (stores IDs of selected items)
         let selectedCompanies = new Set();
@@ -2151,21 +1941,6 @@
         let selectedDepts = new Set();
         let selectedSubdepts = new Set();
         let selectedStructure = new Set();
-        let selectedEmployees = new Set();
-
-        // Employee Column Configuration
-        const DEFAULT_EMPLOYEE_COLUMNS = [
-            { id: 'name', name: 'Name', visible: true },
-            { id: 'company', name: 'Company', visible: true },
-            { id: 'brand', name: 'Brand', visible: true },
-            { id: 'departments', name: 'Department', visible: true },
-            { id: 'subdepartment', name: 'Subdepartment', visible: true },
-            { id: 'email', name: 'Email', visible: true },
-            { id: 'phone', name: 'Phone', visible: false },
-            { id: 'status', name: 'Status', visible: true },
-            { id: 'actions', name: 'Actions', visible: true }
-        ];
-        let employeeColumnConfig = [];
 
         // Permission Matrix data
         let permissionMatrix = { modules: [], roles: [], role_permissions: {} };
@@ -2222,7 +1997,6 @@
 
         const userModal = new bootstrap.Modal(document.getElementById('userModal'));
         const roleModal = new bootstrap.Modal(document.getElementById('roleModal'));
-        const responsableModal = new bootstrap.Modal(document.getElementById('responsableModal'));
         const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
         const editVatRateModal = new bootstrap.Modal(document.getElementById('editVatRateModal'));
 
@@ -2250,7 +2024,6 @@
             Promise.all([
                 loadRoles(),
                 loadUsers(),
-                loadResponsables(),
                 loadNotificationSettings(),
                 loadCompaniesWithVat(),
                 loadDepartmentStructures(),
@@ -2337,12 +2110,10 @@
             const totalUsersEl = document.getElementById('totalUsers');
             const activeUsersEl = document.getElementById('activeUsers');
             const totalRolesEl = document.getElementById('totalRoles');
-            const totalResponsablesEl = document.getElementById('totalResponsables');
 
             if (totalUsersEl) totalUsersEl.textContent = total;
             if (activeUsersEl) activeUsersEl.textContent = active;
             if (totalRolesEl) totalRolesEl.textContent = roles.length;
-            if (totalResponsablesEl) totalResponsablesEl.textContent = responsables.length;
         }
 
         // ========== USERS ==========
@@ -2642,7 +2413,6 @@
                 let url;
                 if (deleteType === 'user') url = `/api/users/${deleteId}`;
                 else if (deleteType === 'role') url = `/api/roles/${deleteId}`;
-                else if (deleteType === 'responsable') url = `/api/responsables/${deleteId}`;
                 else if (deleteType === 'vat_rate') url = `/api/vat-rates/${deleteId}`;
                 const res = await fetch(url, { method: 'DELETE' });
                 const result = await res.json();
@@ -2651,7 +2421,6 @@
                     deleteModal.hide();
                     if (deleteType === 'user') loadUsers();
                     else if (deleteType === 'role') { loadRoles(); loadPermissionMatrix(); }
-                    else if (deleteType === 'responsable') loadResponsables();
                     else if (deleteType === 'vat_rate') loadVatRates();
                 } else {
                     await JarvisDialog.alert(result.error || 'Failed to delete', { type: 'error' });
@@ -2662,127 +2431,6 @@
             } finally {
                 deleteType = null;
                 deleteId = null;
-            }
-        }
-
-        // ========== RESPONSABLES ==========
-
-        async function loadResponsables() {
-            try {
-                const res = await fetch('/api/responsables');
-                responsables = await res.json();
-                renderResponsables();
-                updateSummary();
-            } catch (error) {
-                console.error('Error loading responsables:', error);
-            }
-        }
-
-        function renderResponsables() {
-            const tbody = document.getElementById('responsablesTableBody');
-            const noResponsablesMsg = document.getElementById('noResponsablesMessage');
-
-            if (!tbody) return;
-
-            if (responsables.length === 0) {
-                tbody.innerHTML = '';
-                if (noResponsablesMsg) noResponsablesMsg.style.display = 'block';
-                return;
-            }
-
-            if (noResponsablesMsg) noResponsablesMsg.style.display = 'none';
-            tbody.innerHTML = responsables.map(r => `
-                <tr>
-                    <td><strong>${escapeHtml(r.name)}</strong></td>
-                    <td><a href="mailto:${escapeHtml(r.email)}">${escapeHtml(r.email)}</a></td>
-                    <td>${r.phone ? escapeHtml(r.phone) : '<span class="text-muted">-</span>'}</td>
-                    <td>${r.departments ? escapeHtml(r.departments) : '<span class="text-muted">All</span>'}</td>
-                    <td class="text-center">
-                        ${r.notify_on_allocation
-                            ? '<i class="bi bi-bell-fill text-success"></i>'
-                            : '<i class="bi bi-bell-slash text-muted"></i>'}
-                    </td>
-                    <td>
-                        ${r.is_active
-                            ? '<span class="badge bg-success">Active</span>'
-                            : '<span class="badge bg-secondary">Inactive</span>'}
-                    </td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editResponsable(${r.id})" title="Edit" aria-label="Edit responsable">
-                            <i class="bi bi-pencil"></i>
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="showDeleteModal('responsable', ${r.id}, '${escapeHtml(r.name)}')" title="Delete" aria-label="Delete responsable">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        function showAddResponsableModal() {
-            document.getElementById('responsableModalTitle').textContent = 'Add Responsable';
-            document.getElementById('responsableId').value = '';
-            document.getElementById('responsableName').value = '';
-            document.getElementById('responsableEmail').value = '';
-            document.getElementById('responsablePhone').value = '';
-            document.getElementById('responsableDepartments').value = '';
-            document.getElementById('responsableNotify').checked = true;
-            document.getElementById('responsableActive').checked = true;
-            responsableModal.show();
-        }
-
-        function editResponsable(responsableId) {
-            const r = responsables.find(resp => resp.id === responsableId);
-            if (!r) return;
-
-            document.getElementById('responsableModalTitle').textContent = 'Edit Responsable';
-            document.getElementById('responsableId').value = r.id;
-            document.getElementById('responsableName').value = r.name;
-            document.getElementById('responsableEmail').value = r.email;
-            document.getElementById('responsablePhone').value = r.phone || '';
-            document.getElementById('responsableDepartments').value = r.departments || '';
-            document.getElementById('responsableNotify').checked = r.notify_on_allocation;
-            document.getElementById('responsableActive').checked = r.is_active;
-            responsableModal.show();
-        }
-
-        async function saveResponsable() {
-            const responsableId = document.getElementById('responsableId').value;
-            const responsableData = {
-                name: document.getElementById('responsableName').value.trim(),
-                email: document.getElementById('responsableEmail').value.trim(),
-                phone: document.getElementById('responsablePhone').value.trim() || null,
-                departments: document.getElementById('responsableDepartments').value.trim() || null,
-                notify_on_allocation: document.getElementById('responsableNotify').checked,
-                is_active: document.getElementById('responsableActive').checked
-            };
-
-            if (!responsableData.name || !responsableData.email) {
-                await JarvisDialog.alert('Name and email are required', { type: 'warning' });
-                return;
-            }
-
-            try {
-                const url = responsableId ? `/api/responsables/${responsableId}` : '/api/responsables';
-                const method = responsableId ? 'PUT' : 'POST';
-
-                const res = await fetch(url, {
-                    method,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(responsableData)
-                });
-
-                const result = await res.json();
-
-                if (result.success || result.id) {
-                    responsableModal.hide();
-                    loadResponsables();
-                } else {
-                    await JarvisDialog.alert(result.error || 'Failed to save responsable', { type: 'error' });
-                }
-            } catch (error) {
-                console.error('Error saving responsable:', error);
-                await JarvisDialog.alert('Failed to save responsable', { type: 'error' });
             }
         }
 
@@ -2889,16 +2537,11 @@
         // ========== DEPARTMENT STRUCTURE ==========
 
         let departmentStructuresData = [];
-        let responsablesForDS = [];
 
         async function loadDepartmentStructures() {
             try {
-                const [dsRes, respRes] = await Promise.all([
-                    fetch('/api/department-structures'),
-                    fetch('/api/responsables')
-                ]);
+                const dsRes = await fetch('/api/department-structures');
                 departmentStructuresData = await dsRes.json();
-                responsablesForDS = await respRes.json();
                 renderDepartmentStructuresTable();
             } catch (error) {
                 console.error('Error loading department structures:', error);
@@ -2921,14 +2564,14 @@
             tbody.innerHTML = departmentStructuresData.map(ds => {
                 // Get manager names from manager_ids
                 const managerNames = (ds.manager_ids || [])
-                    .map(id => responsablesForDS.find(r => r.id === id))
+                    .map(id => users.find(r => r.id === id))
                     .filter(r => r)
                     .map(r => r.name)
                     .join(', ') || '-';
 
                 // Get marketing names from marketing_ids
                 const marketingNames = (ds.marketing_ids || [])
-                    .map(id => responsablesForDS.find(r => r.id === id))
+                    .map(id => users.find(r => r.id === id))
                     .filter(r => r)
                     .map(r => r.name)
                     .join(', ') || '-';
@@ -3009,14 +2652,14 @@
         function renderPills(fieldName) {
             const pillsContainer = document.getElementById(`ds${capitalize(fieldName)}Pills`);
             const selectedIds = getSelectedIds(fieldName);
-            const activeResponsables = responsablesForDS.filter(r => r.is_active);
+            const activeUsers = users.filter(r => r.is_active);
 
             pillsContainer.innerHTML = selectedIds.map(id => {
-                const responsable = activeResponsables.find(r => r.id === id);
-                if (!responsable) return '';
+                const user = activeUsers.find(u => u.id === id);
+                if (!user) return '';
                 return `
                     <span class="pill" data-id="${id}">
-                        ${escapeHtml(responsable.name)}
+                        ${escapeHtml(user.name)}
                         <span class="remove-pill" onclick="removePill('${fieldName}', ${id})">&times;</span>
                     </span>
                 `;
@@ -3049,20 +2692,20 @@
             const dropdown = document.getElementById(`ds${capitalize(fieldName)}Dropdown`);
             const searchTerm = searchInput.value.toLowerCase().trim();
             const selectedIds = getSelectedIds(fieldName);
-            const activeResponsables = responsablesForDS.filter(r => r.is_active);
+            const activeUsers = users.filter(r => r.is_active);
 
             // Filter out already selected and match search term
-            const filtered = activeResponsables.filter(r =>
+            const filtered = activeUsers.filter(r =>
                 !selectedIds.includes(r.id) &&
                 r.name.toLowerCase().includes(searchTerm)
             );
 
             if (filtered.length === 0) {
-                dropdown.innerHTML = '<div class="pills-dropdown-empty">No responsables found</div>';
+                dropdown.innerHTML = '<div class="pills-dropdown-empty">No users found</div>';
             } else {
-                dropdown.innerHTML = filtered.map(r => `
-                    <div class="pills-dropdown-item" onclick="selectResponsable('${fieldName}', ${r.id})">
-                        ${escapeHtml(r.name)}
+                dropdown.innerHTML = filtered.map(u => `
+                    <div class="pills-dropdown-item" onclick="selectUser('${fieldName}', ${u.id})">
+                        ${escapeHtml(u.name)}
                     </div>
                 `).join('');
             }
@@ -3070,7 +2713,7 @@
             dropdown.classList.add('show');
         }
 
-        function selectResponsable(fieldName, id) {
+        function selectUser(fieldName, id) {
             const selectedIds = getSelectedIds(fieldName);
             if (!selectedIds.includes(id)) {
                 selectedIds.push(id);
@@ -4865,14 +4508,12 @@
 
         // Load company structure when Company Structure tab is shown
         document.getElementById('company-structure-tab').addEventListener('shown.bs.tab', async function() {
-            initEmployeeColumnConfig();
             // Load companies first since filters depends on hrCompaniesData
             await loadHrCompanies();
             loadMasterBrands();
             loadMasterDepts();
             loadMasterSubdepts();
             loadHrDepartments();
-            loadHrEmployees();
         });
 
         // Load bonus types when HR tab is shown
@@ -5144,49 +4785,6 @@
 
             if (selectedStructure.size > 0) {
                 countEl.textContent = `${selectedStructure.size} selected`;
-                countEl.classList.remove('d-none');
-                deleteBtn.classList.remove('d-none');
-            } else {
-                countEl.classList.add('d-none');
-                deleteBtn.classList.add('d-none');
-            }
-
-            if (selectAll) {
-                selectAll.checked = visibleIds.length > 0 && visibleSelected.length === visibleIds.length;
-                selectAll.indeterminate = visibleSelected.length > 0 && visibleSelected.length < visibleIds.length;
-            }
-        }
-
-        function toggleSelectAllEmployees() {
-            const selectAll = document.getElementById('employeesSelectAll');
-            const visibleIds = filteredEmployeesData.map(e => e.id);
-            if (selectAll.checked) {
-                visibleIds.forEach(id => selectedEmployees.add(id));
-            } else {
-                visibleIds.forEach(id => selectedEmployees.delete(id));
-            }
-            updateEmployeesSelection();
-            renderHrEmployees();
-        }
-
-        function toggleEmployeeSelect(id) {
-            if (selectedEmployees.has(id)) {
-                selectedEmployees.delete(id);
-            } else {
-                selectedEmployees.add(id);
-            }
-            updateEmployeesSelection();
-        }
-
-        function updateEmployeesSelection() {
-            const countEl = document.getElementById('employeesSelectedCount');
-            const deleteBtn = document.getElementById('employeesDeleteSelectedBtn');
-            const selectAll = document.getElementById('employeesSelectAll');
-            const visibleIds = filteredEmployeesData.map(e => e.id);
-            const visibleSelected = visibleIds.filter(id => selectedEmployees.has(id));
-
-            if (selectedEmployees.size > 0) {
-                countEl.textContent = `${selectedEmployees.size} selected`;
                 countEl.classList.remove('d-none');
                 deleteBtn.classList.remove('d-none');
             } else {
@@ -5590,540 +5188,6 @@
             } catch (err) {
                 console.error('Error:', err);
                 await JarvisDialog.alert('Error deleting department', { type: 'error' });
-            }
-        }
-
-        // ============== Employees (Core API) ==============
-        async function loadHrEmployees() {
-            try {
-                const resp = await fetch('/api/employees');
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                hrEmployeesData = await resp.json();
-                // populateHrEmployeeFilters calls filterEmployees which calls renderHrEmployees
-                populateHrEmployeeFilters();
-                const activeCount = hrEmployeesData.filter(e => e.is_active).length;
-                document.getElementById('hrStatsEmployees').textContent = activeCount;
-            } catch (err) {
-                console.error('Error loading employees:', err);
-                document.getElementById('hrEmployeesTable').innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3"><i class="bi bi-exclamation-triangle"></i> Error loading employees</td></tr>';
-                document.getElementById('hrStatsEmployees').textContent = '-';
-            }
-        }
-
-        function initEmployeeColumnConfig() {
-            const saved = localStorage.getItem('employeeColumnConfig');
-            if (saved) {
-                employeeColumnConfig = JSON.parse(saved);
-                // Ensure all default columns exist (for migrations)
-                DEFAULT_EMPLOYEE_COLUMNS.forEach(dc => {
-                    if (!employeeColumnConfig.find(c => c.id === dc.id)) {
-                        // Insert before actions column
-                        const actionsIdx = employeeColumnConfig.findIndex(c => c.id === 'actions');
-                        if (actionsIdx >= 0) {
-                            employeeColumnConfig.splice(actionsIdx, 0, { ...dc });
-                        } else {
-                            employeeColumnConfig.push({ ...dc });
-                        }
-                    }
-                });
-            } else {
-                employeeColumnConfig = JSON.parse(JSON.stringify(DEFAULT_EMPLOYEE_COLUMNS));
-            }
-            renderEmployeeColumnList();
-        }
-
-        function saveEmployeeColumnConfig() {
-            localStorage.setItem('employeeColumnConfig', JSON.stringify(employeeColumnConfig));
-            renderHrEmployees();
-        }
-
-        function resetEmployeeColumnConfig() {
-            employeeColumnConfig = JSON.parse(JSON.stringify(DEFAULT_EMPLOYEE_COLUMNS));
-            saveEmployeeColumnConfig();
-            renderEmployeeColumnList();
-        }
-
-        function renderEmployeeColumnList() {
-            const container = document.getElementById('employeeColumnList');
-            container.innerHTML = employeeColumnConfig.map((col, idx) => `
-                <li class="list-group-item d-flex justify-content-between align-items-center ${col.visible ? '' : 'text-muted'}" data-idx="${idx}" draggable="true" style="cursor: grab;">
-                    <span>
-                        <i class="bi bi-grip-vertical me-2 text-muted"></i>
-                        ${col.name}
-                    </span>
-                    <div class="form-check form-switch mb-0">
-                        <input class="form-check-input emp-col-toggle" type="checkbox" data-idx="${idx}" ${col.visible ? 'checked' : ''} ${col.id === 'actions' ? 'disabled' : ''}>
-                    </div>
-                </li>
-            `).join('');
-
-            // Add toggle event listeners
-            container.querySelectorAll('.emp-col-toggle').forEach(toggle => {
-                toggle.addEventListener('change', (e) => {
-                    const idx = parseInt(e.target.dataset.idx);
-                    employeeColumnConfig[idx].visible = e.target.checked;
-                    saveEmployeeColumnConfig();
-                    renderEmployeeColumnList();
-                });
-            });
-
-            // Add drag-and-drop functionality
-            setupEmployeeDragAndDrop(container);
-        }
-
-        function setupEmployeeDragAndDrop(container) {
-            let draggedItem = null;
-
-            container.querySelectorAll('li').forEach(item => {
-                item.addEventListener('dragstart', (e) => {
-                    draggedItem = item;
-                    item.style.opacity = '0.5';
-                });
-
-                item.addEventListener('dragend', (e) => {
-                    item.style.opacity = '1';
-                    draggedItem = null;
-                });
-
-                item.addEventListener('dragover', (e) => {
-                    e.preventDefault();
-                });
-
-                item.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    if (draggedItem && draggedItem !== item) {
-                        const fromIdx = parseInt(draggedItem.dataset.idx);
-                        const toIdx = parseInt(item.dataset.idx);
-
-                        // Reorder array
-                        const [movedItem] = employeeColumnConfig.splice(fromIdx, 1);
-                        employeeColumnConfig.splice(toIdx, 0, movedItem);
-
-                        saveEmployeeColumnConfig();
-                        renderEmployeeColumnList();
-                    }
-                });
-            });
-        }
-
-        function renderHrEmployees() {
-            const thead = document.getElementById('employeesTableHead').querySelector('tr');
-            const tbody = document.getElementById('hrEmployeesTable');
-            const visibleCols = employeeColumnConfig.filter(c => c.visible);
-
-            // Render header with checkbox column first
-            thead.innerHTML = `<th style="width: 40px;"><input type="checkbox" class="form-check-input" id="employeesSelectAll" onchange="toggleSelectAllEmployees()"></th>` +
-                visibleCols.map(col => {
-                    if (col.id === 'actions') {
-                        return `<th style="width: 80px;">Actions</th>`;
-                    }
-                    return `<th>${col.name}</th>`;
-                }).join('');
-
-            // Use filtered data (set by filterEmployees())
-            if (filteredEmployeesData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="${visibleCols.length + 1}" class="text-center text-muted py-3"><i class="bi bi-inbox"></i> No employees found</td></tr>`;
-                updateEmployeesSelection();
-                return;
-            }
-
-            tbody.innerHTML = filteredEmployeesData.map(e => {
-                const cells = visibleCols.map(col => {
-                    switch (col.id) {
-                        case 'name':
-                            return `<td><strong>${e.name || '-'}</strong></td>`;
-                        case 'company':
-                            return `<td>${e.company || '-'}</td>`;
-                        case 'brand':
-                            return `<td>${e.brand || '-'}</td>`;
-                        case 'departments':
-                            return `<td>${e.departments || '-'}</td>`;
-                        case 'subdepartment':
-                            return `<td>${e.subdepartment || '-'}</td>`;
-                        case 'email':
-                            return `<td>${e.email || '-'}</td>`;
-                        case 'phone':
-                            return `<td>${e.phone || '-'}</td>`;
-                        case 'status':
-                            return `<td>${e.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>`;
-                        case 'actions':
-                            return `<td>
-                                <button class="btn btn-sm btn-outline-primary" onclick="editHrEmployee(${e.id})" title="Edit">
-                                    <i class="bi bi-pencil"></i>
-                                </button>
-                                <button class="btn btn-sm btn-outline-danger" onclick="deleteHrEmployee(${e.id}, '${(e.name || '').replace(/'/g, "\\'")}')" title="Delete">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </td>`;
-                        default:
-                            return `<td>-</td>`;
-                    }
-                });
-                const checkboxCell = `<td><input type="checkbox" class="form-check-input" ${selectedEmployees.has(e.id) ? 'checked' : ''} onchange="toggleEmployeeSelect(${e.id})"></td>`;
-                return `<tr data-id="${e.id}" class="${selectedEmployees.has(e.id) ? 'table-primary' : ''}">${checkboxCell}${cells.join('')}</tr>`;
-            }).join('');
-            updateEmployeesSelection();
-        }
-
-        function populateHrEmployeeFilters() {
-            const select = document.getElementById('hrEmployeeCompanyFilter');
-            if (!select) return;
-            // Use companies from the companies table for consistency
-            select.innerHTML = '<option value="">All Companies</option>';
-            hrCompaniesData.forEach(c => {
-                select.innerHTML += `<option value="${c.company}">${c.company}</option>`;
-            });
-
-            // Initialize filtered data
-            filterEmployees();
-        }
-
-        function filterEmployees() {
-            const searchTerm = (document.getElementById('employeesSearchInput')?.value || '').toLowerCase().trim();
-            const companyFilter = document.getElementById('hrEmployeeCompanyFilter')?.value || '';
-            const statusFilter = document.getElementById('employeeStatusFilter')?.value || '';
-            const sortOrder = document.getElementById('employeesSortOrder')?.value || 'name_asc';
-
-            // Filter
-            filteredEmployeesData = hrEmployeesData.filter(e => {
-                // Company filter
-                if (companyFilter && (!e.company || e.company.toLowerCase() !== companyFilter.toLowerCase())) return false;
-
-                // Status filter
-                if (statusFilter === 'active' && !e.is_active) return false;
-                if (statusFilter === 'inactive' && e.is_active) return false;
-
-                // Search filter (searches across name, company, brand, department, email, phone)
-                if (searchTerm) {
-                    const searchFields = [
-                        e.name || '',
-                        e.company || '',
-                        e.brand || '',
-                        e.departments || '',
-                        e.subdepartment || '',
-                        e.email || '',
-                        e.phone || ''
-                    ].join(' ').toLowerCase();
-                    if (!searchFields.includes(searchTerm)) return false;
-                }
-
-                return true;
-            });
-
-            // Sort
-            const [sortField, sortDir] = sortOrder.split('_');
-            filteredEmployeesData.sort((a, b) => {
-                let valA, valB;
-                if (sortField === 'name') {
-                    valA = (a.name || '').toLowerCase();
-                    valB = (b.name || '').toLowerCase();
-                } else if (sortField === 'company') {
-                    valA = (a.company || '').toLowerCase();
-                    valB = (b.company || '').toLowerCase();
-                } else {
-                    valA = (a.name || '').toLowerCase();
-                    valB = (b.name || '').toLowerCase();
-                }
-
-                if (sortDir === 'desc') {
-                    return valB.localeCompare(valA);
-                }
-                return valA.localeCompare(valB);
-            });
-
-            // Update count badge
-            const countEl = document.getElementById('employeesCount');
-            if (countEl) {
-                countEl.textContent = filteredEmployeesData.length;
-            }
-
-            renderHrEmployees();
-        }
-
-        function clearEmployeesSearch() {
-            const input = document.getElementById('employeesSearchInput');
-            if (input) {
-                input.value = '';
-                filterEmployees();
-            }
-        }
-
-        function openAddHrEmployeeModal() {
-            document.getElementById('hrEmployeeModalTitle').textContent = 'Add Employee';
-            document.getElementById('hrEmployeeForm').reset();
-            document.getElementById('hrEmployeeId').value = '';
-            document.getElementById('hrEmpNotify').checked = true;
-            document.getElementById('hrEmpIsActive').checked = true;
-            // Populate company dropdown from hrCompaniesData
-            populateHrEmpCompanyDropdown();
-            // Reset brand, department, subdepartment
-            document.getElementById('hrEmpBrand').innerHTML = '<option value="">Select Brand (optional)</option>';
-            document.getElementById('hrEmpDept').innerHTML = '<option value="">Select Department (optional)</option>';
-            document.getElementById('hrEmpSubdept').innerHTML = '<option value="">Select Subdepartment (optional)</option>';
-        }
-
-        function populateHrEmpCompanyDropdown() {
-            const select = document.getElementById('hrEmpCompany');
-            select.innerHTML = '<option value="">Select Company (optional)</option>';
-            hrCompaniesData.forEach(c => {
-                select.innerHTML += `<option value="${c.company}">${c.company}</option>`;
-            });
-        }
-
-        function onHrEmpCompanyChange() {
-            const company = document.getElementById('hrEmpCompany').value;
-            const brandSelect = document.getElementById('hrEmpBrand');
-            const deptSelect = document.getElementById('hrEmpDept');
-            const subdeptSelect = document.getElementById('hrEmpSubdept');
-
-            brandSelect.innerHTML = '<option value="">Select Brand (optional)</option>';
-            deptSelect.innerHTML = '<option value="">Select Department (optional)</option>';
-            subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>';
-
-            if (!company) return;
-
-            // Get unique brands for selected company from department structure
-            const brands = [...new Set(hrDepartmentsData
-                .filter(d => d.company === company && d.brand)
-                .map(d => d.brand))];
-
-            brands.forEach(b => {
-                brandSelect.innerHTML += `<option value="${b}">${b}</option>`;
-            });
-
-            // Also populate departments without brand
-            const deptsNoBrand = [...new Set(hrDepartmentsData
-                .filter(d => d.company === company && !d.brand && d.department)
-                .map(d => d.department))];
-
-            deptsNoBrand.forEach(d => {
-                deptSelect.innerHTML += `<option value="${d}">${d}</option>`;
-            });
-        }
-
-        function onHrEmpBrandChange() {
-            const company = document.getElementById('hrEmpCompany').value;
-            const brand = document.getElementById('hrEmpBrand').value;
-            const deptSelect = document.getElementById('hrEmpDept');
-            const subdeptSelect = document.getElementById('hrEmpSubdept');
-
-            deptSelect.innerHTML = '<option value="">Select Department (optional)</option>';
-            subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>';
-
-            if (!company) return;
-
-            // Get departments for selected company and brand
-            const depts = [...new Set(hrDepartmentsData
-                .filter(d => d.company === company && (brand ? d.brand === brand : !d.brand) && d.department)
-                .map(d => d.department))];
-
-            depts.forEach(d => {
-                deptSelect.innerHTML += `<option value="${d}">${d}</option>`;
-            });
-        }
-
-        function onHrEmpDeptChange() {
-            const company = document.getElementById('hrEmpCompany').value;
-            const brand = document.getElementById('hrEmpBrand').value;
-            const dept = document.getElementById('hrEmpDept').value;
-            const subdeptSelect = document.getElementById('hrEmpSubdept');
-
-            subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>';
-
-            if (!company || !dept) return;
-
-            // Get subdepartments for selected company, brand, and department
-            const subdepts = [...new Set(hrDepartmentsData
-                .filter(d => d.company === company &&
-                            (brand ? d.brand === brand : !d.brand) &&
-                            d.department === dept &&
-                            d.subdepartment)
-                .map(d => d.subdepartment))];
-
-            subdepts.forEach(sd => {
-                subdeptSelect.innerHTML += `<option value="${sd}">${sd}</option>`;
-            });
-        }
-
-        function editHrEmployee(id) {
-            const emp = hrEmployeesData.find(e => e.id === id);
-            if (!emp) return;
-
-            document.getElementById('hrEmployeeModalTitle').textContent = 'Edit Employee';
-            document.getElementById('hrEmployeeId').value = id;
-            document.getElementById('hrEmpName').value = emp.name || '';
-            document.getElementById('hrEmpEmail').value = emp.email || '';
-            document.getElementById('hrEmpPhone').value = emp.phone || '';
-            document.getElementById('hrEmpNotify').checked = emp.notify_on_allocation !== false;
-            document.getElementById('hrEmpIsActive').checked = emp.is_active;
-
-            // Get dropdown elements
-            const companySelect = document.getElementById('hrEmpCompany');
-            const brandSelect = document.getElementById('hrEmpBrand');
-            const deptSelect = document.getElementById('hrEmpDept');
-            const subdeptSelect = document.getElementById('hrEmpSubdept');
-
-            // Populate company dropdown
-            populateHrEmpCompanyDropdown();
-
-            // Reset cascaded dropdowns
-            brandSelect.innerHTML = '<option value="">Select Brand (optional)</option>';
-            deptSelect.innerHTML = '<option value="">Select Department (optional)</option>';
-            subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>';
-
-            if (emp.company) {
-                // Add company to dropdown if not present
-                if (!Array.from(companySelect.options).find(o => o.value === emp.company)) {
-                    companySelect.innerHTML += `<option value="${emp.company}">${emp.company}</option>`;
-                }
-                companySelect.value = emp.company;
-
-                // Trigger cascade to populate brand dropdown
-                onHrEmpCompanyChange();
-
-                if (emp.brand) {
-                    // Add brand to dropdown if not present
-                    if (!Array.from(brandSelect.options).find(o => o.value === emp.brand)) {
-                        brandSelect.innerHTML += `<option value="${emp.brand}">${emp.brand}</option>`;
-                    }
-                    brandSelect.value = emp.brand;
-                    // Trigger cascade to populate department dropdown
-                    onHrEmpBrandChange();
-                }
-
-                if (emp.departments) {
-                    // Add department to dropdown if not present
-                    if (!Array.from(deptSelect.options).find(o => o.value === emp.departments)) {
-                        deptSelect.innerHTML += `<option value="${emp.departments}">${emp.departments}</option>`;
-                    }
-                    deptSelect.value = emp.departments;
-                    // Trigger cascade to populate subdepartment dropdown
-                    onHrEmpDeptChange();
-                }
-
-                if (emp.subdepartment) {
-                    // Add subdepartment to dropdown if not present
-                    if (!Array.from(subdeptSelect.options).find(o => o.value === emp.subdepartment)) {
-                        subdeptSelect.innerHTML += `<option value="${emp.subdepartment}">${emp.subdepartment}</option>`;
-                    }
-                    subdeptSelect.value = emp.subdepartment;
-                }
-            } else {
-                // No company - but still show legacy values if they exist
-                if (emp.brand) {
-                    brandSelect.innerHTML += `<option value="${emp.brand}" selected>${emp.brand}</option>`;
-                }
-                if (emp.departments) {
-                    deptSelect.innerHTML += `<option value="${emp.departments}" selected>${emp.departments}</option>`;
-                }
-                if (emp.subdepartment) {
-                    subdeptSelect.innerHTML += `<option value="${emp.subdepartment}" selected>${emp.subdepartment}</option>`;
-                }
-            }
-
-            const modal = new bootstrap.Modal(document.getElementById('hrEmployeeModal'));
-            modal.show();
-        }
-
-        async function saveHrEmployee() {
-            const id = document.getElementById('hrEmployeeId').value;
-
-            // Get all fields separately
-            const subdept = document.getElementById('hrEmpSubdept').value;
-            const dept = document.getElementById('hrEmpDept').value;
-            const brand = document.getElementById('hrEmpBrand').value;
-            const company = document.getElementById('hrEmpCompany').value;
-
-            const data = {
-                name: document.getElementById('hrEmpName').value.trim(),
-                email: document.getElementById('hrEmpEmail').value.trim() || null,
-                phone: document.getElementById('hrEmpPhone').value.trim() || null,
-                company: company || null,
-                brand: brand || null,
-                departments: dept || null,
-                subdepartment: subdept || null,
-                notify_on_allocation: document.getElementById('hrEmpNotify').checked,
-                is_active: document.getElementById('hrEmpIsActive').checked
-            };
-
-            if (!data.name) {
-                await JarvisDialog.alert('Name is required', { type: 'warning' });
-                return;
-            }
-
-            try {
-                const url = id ? `/api/employees/${id}` : '/api/employees';
-                const method = id ? 'PUT' : 'POST';
-
-                const resp = await fetch(url, {
-                    method: method,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-
-                if (resp.ok) {
-                    bootstrap.Modal.getInstance(document.getElementById('hrEmployeeModal')).hide();
-                    loadHrEmployees();
-                } else {
-                    await JarvisDialog.alert('Error saving employee', { type: 'error' });
-                }
-            } catch (err) {
-                console.error('Error:', err);
-                await JarvisDialog.alert('Error saving employee', { type: 'error' });
-            }
-        }
-
-        async function deleteHrEmployee(id, name) {
-            const confirmed = await JarvisDialog.confirm(`Delete employee "${name}"? This cannot be undone.`, { danger: true });
-            if (!confirmed) return;
-
-            try {
-                const resp = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
-                if (resp.ok) {
-                    loadHrEmployees();
-                } else {
-                    await JarvisDialog.alert('Error deleting employee', { type: 'error' });
-                }
-            } catch (err) {
-                console.error('Error:', err);
-                await JarvisDialog.alert('Error deleting employee', { type: 'error' });
-            }
-        }
-
-        async function bulkDeleteEmployees() {
-            const ids = Array.from(selectedEmployees);
-            if (ids.length === 0) return;
-
-            const confirmed = await JarvisDialog.confirm(
-                `Delete ${ids.length} ${ids.length === 1 ? 'employee' : 'employees'}? This cannot be undone.`,
-                { danger: true, confirmText: 'Delete All' }
-            );
-            if (!confirmed) return;
-
-            let successCount = 0;
-            let errorCount = 0;
-
-            for (const id of ids) {
-                try {
-                    const resp = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
-                    if (resp.ok) {
-                        successCount++;
-                        selectedEmployees.delete(id);
-                    } else {
-                        errorCount++;
-                    }
-                } catch (err) {
-                    console.error('Error deleting employee:', err);
-                    errorCount++;
-                }
-            }
-
-            loadHrEmployees();
-
-            if (errorCount > 0) {
-                await JarvisDialog.alert(`Deleted ${successCount} employees. ${errorCount} failed.`, { type: 'warning' });
-            } else {
-                JarvisToast.success(`Deleted ${successCount} employees`);
             }
         }
 
@@ -6714,17 +5778,17 @@
                 return;
             }
 
-            const filtered = hrEmployeesData.filter(emp =>
-                emp.name && emp.name.toLowerCase().includes(query)
+            const filtered = users.filter(user =>
+                user.name && user.name.toLowerCase().includes(query)
             ).slice(0, 10);
 
             if (filtered.length === 0) {
-                dropdown.innerHTML = '<div class="dropdown-item text-muted">No employees found</div>';
+                dropdown.innerHTML = '<div class="dropdown-item text-muted">No users found</div>';
             } else {
-                dropdown.innerHTML = filtered.map(emp => `
-                    <a class="dropdown-item manager-item" href="#" data-emp-id="${emp.id}" data-emp-name="${emp.name}">
-                        <i class="bi bi-person-badge"></i> ${emp.name}
-                        ${emp.company ? `<small class="text-muted ms-1">(${emp.company})</small>` : ''}
+                dropdown.innerHTML = filtered.map(user => `
+                    <a class="dropdown-item manager-item" href="#" data-emp-id="${user.id}" data-emp-name="${user.name}">
+                        <i class="bi bi-person-badge"></i> ${user.name}
+                        ${user.email ? `<small class="text-muted ms-1">(${user.email})</small>` : ''}
                     </a>
                 `).join('');
             }

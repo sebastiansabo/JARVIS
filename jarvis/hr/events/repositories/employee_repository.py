@@ -1,6 +1,6 @@
 """Employee Repository - Data access for HR employees.
 
-Handles all database operations for the responsables table.
+Handles all database operations for the users table (formerly responsables).
 """
 from typing import Optional, List, Dict, Any
 
@@ -14,7 +14,7 @@ class EmployeeRepository:
     """Repository for employee data access operations."""
 
     def get_all(self, active_only: bool = True) -> List[Dict[str, Any]]:
-        """Get all HR employees from responsables table.
+        """Get all HR employees from users table.
 
         Args:
             active_only: If True, only return active employees
@@ -26,9 +26,9 @@ class EmployeeRepository:
         cursor = get_cursor(conn)
 
         query = '''
-            SELECT id, name, email, phone, departments, subdepartment, company, brand,
+            SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
                    notify_on_allocation, is_active, created_at, updated_at
-            FROM responsables
+            FROM users
         '''
         if active_only:
             query += ' WHERE is_active = TRUE'
@@ -51,9 +51,9 @@ class EmployeeRepository:
         conn = get_db()
         cursor = get_cursor(conn)
         cursor.execute('''
-            SELECT id, name, email, phone, departments, subdepartment, company, brand,
+            SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
                    notify_on_allocation, is_active, created_at, updated_at
-            FROM responsables WHERE id = %s
+            FROM users WHERE id = %s
         ''', (employee_id,))
         row = cursor.fetchone()
         release_db(conn)
@@ -88,7 +88,7 @@ class EmployeeRepository:
         conn = get_db()
         cursor = get_cursor(conn)
         cursor.execute('''
-            INSERT INTO responsables (name, departments, subdepartment, brand, company, email, phone, notify_on_allocation)
+            INSERT INTO users (name, department, subdepartment, brand, company, email, phone, notify_on_allocation)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (name, department, subdepartment, brand, company, email, phone, notify_on_allocation))
@@ -130,8 +130,8 @@ class EmployeeRepository:
         conn = get_db()
         cursor = get_cursor(conn)
         cursor.execute('''
-            UPDATE responsables
-            SET name = %s, departments = %s, subdepartment = %s, brand = %s, company = %s,
+            UPDATE users
+            SET name = %s, department = %s, subdepartment = %s, brand = %s, company = %s,
                 email = %s, phone = %s, notify_on_allocation = %s,
                 is_active = %s, updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
@@ -153,7 +153,7 @@ class EmployeeRepository:
         conn = get_db()
         cursor = get_cursor(conn)
         cursor.execute('''
-            UPDATE responsables SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s
+            UPDATE users SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s
         ''', (employee_id,))
         conn.commit()
         release_db(conn)
@@ -171,9 +171,9 @@ class EmployeeRepository:
         conn = get_db()
         cursor = get_cursor(conn)
         cursor.execute('''
-            SELECT id, name, email, phone, departments, subdepartment, company, brand,
+            SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
                    notify_on_allocation, is_active, created_at, updated_at
-            FROM responsables
+            FROM users
             WHERE is_active = TRUE AND name ILIKE %s
             ORDER BY name
             LIMIT 20

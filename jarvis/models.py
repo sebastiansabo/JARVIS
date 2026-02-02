@@ -259,7 +259,7 @@ def get_subdepartments(company: str, department: str) -> list[str]:
 def get_manager(company: str, department: str, subdepartment: Optional[str] = None, brand: Optional[str] = None) -> str:
     """Get the manager for a specific department, optionally filtered by brand.
 
-    Uses manager_ids array joined with responsables table to get manager names.
+    Uses manager_ids array joined with users table to get manager names.
     """
     conn = get_db()
     try:
@@ -277,12 +277,12 @@ def get_manager(company: str, department: str, subdepartment: Optional[str] = No
             conditions.append("ds.subdepartment = %s")
             params.append(subdepartment)
 
-        # Query manager_ids and join with responsables to get names
+        # Query manager_ids and join with users to get names
         query = f'''
             SELECT COALESCE(
-                (SELECT string_agg(r.name, ', ')
+                (SELECT string_agg(u.name, ', ')
                  FROM unnest(ds.manager_ids) AS mid
-                 JOIN responsables r ON r.id = mid),
+                 JOIN users u ON u.id = mid),
                 ds.manager,
                 ''
             ) AS manager_name

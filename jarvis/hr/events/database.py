@@ -6,17 +6,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import get_db, get_cursor, release_db, dict_from_row
 
 
-# ============== HR Employees (using responsables table) ==============
+# ============== HR Employees (now using users table) ==============
 
 def get_all_hr_employees(active_only=True):
-    """Get all HR employees from responsables table."""
+    """Get all HR employees from users table."""
     conn = get_db()
     cursor = get_cursor(conn)
 
     query = '''
-        SELECT id, name, email, phone, departments, subdepartment, company, brand,
+        SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
                notify_on_allocation, is_active, created_at, updated_at
-        FROM responsables
+        FROM users
     '''
     if active_only:
         query += ' WHERE is_active = TRUE'
@@ -29,13 +29,13 @@ def get_all_hr_employees(active_only=True):
 
 
 def get_hr_employee(employee_id):
-    """Get a single HR employee by ID from responsables table."""
+    """Get a single HR employee by ID from users table."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
-        SELECT id, name, email, phone, departments, subdepartment, company, brand,
+        SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
                notify_on_allocation, is_active, created_at, updated_at
-        FROM responsables WHERE id = %s
+        FROM users WHERE id = %s
     ''', (employee_id,))
     row = cursor.fetchone()
     release_db(conn)
@@ -44,11 +44,11 @@ def get_hr_employee(employee_id):
 
 def save_hr_employee(name, department=None, subdepartment=None, brand=None, company=None,
                      email=None, phone=None, notify_on_allocation=True):
-    """Create a new HR employee in responsables table."""
+    """Create a new HR employee in users table."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
-        INSERT INTO responsables (name, departments, subdepartment, brand, company, email, phone, notify_on_allocation)
+        INSERT INTO users (name, department, subdepartment, brand, company, email, phone, notify_on_allocation)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
     ''', (name, department, subdepartment, brand, company, email, phone, notify_on_allocation))
@@ -60,12 +60,12 @@ def save_hr_employee(name, department=None, subdepartment=None, brand=None, comp
 
 def update_hr_employee(employee_id, name, department=None, subdepartment=None, brand=None, company=None,
                        email=None, phone=None, notify_on_allocation=True, is_active=True):
-    """Update an HR employee in responsables table."""
+    """Update an HR employee in users table."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
-        UPDATE responsables
-        SET name = %s, departments = %s, subdepartment = %s, brand = %s, company = %s,
+        UPDATE users
+        SET name = %s, department = %s, subdepartment = %s, brand = %s, company = %s,
             email = %s, phone = %s, notify_on_allocation = %s,
             is_active = %s, updated_at = CURRENT_TIMESTAMP
         WHERE id = %s
@@ -79,20 +79,20 @@ def delete_hr_employee(employee_id):
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
-        UPDATE responsables SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s
+        UPDATE users SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s
     ''', (employee_id,))
     conn.commit()
     release_db(conn)
 
 
 def search_hr_employees(query):
-    """Search HR employees by name from responsables table."""
+    """Search HR employees by name from users table."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
-        SELECT id, name, email, phone, departments, subdepartment, company, brand,
+        SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
                notify_on_allocation, is_active, created_at, updated_at
-        FROM responsables
+        FROM users
         WHERE is_active = TRUE AND name ILIKE %s
         ORDER BY name
         LIMIT 20
@@ -178,18 +178,16 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
     conn = get_db()
     cursor = get_cursor(conn)
 
-    # Use responsable_id with fallback to employee_id for backwards compatibility
+    # employee_id now references users.id directly
     query = '''
-        SELECT b.*, r.name as employee_name, r.departments as department, r.brand, r.company,
+        SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
                ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
-               u.name as created_by_name,
-               COALESCE(b.responsable_id, b.employee_id) as effective_employee_id
+               creator.name as created_by_name,
+               b.employee_id as effective_employee_id
         FROM hr.event_bonuses b
-        LEFT JOIN responsables r ON r.id = COALESCE(b.responsable_id, (
-            SELECT r2.id FROM responsables r2 WHERE r2.hr_employee_id = b.employee_id LIMIT 1
-        ))
+        LEFT JOIN public.users u ON u.id = b.employee_id
         JOIN hr.events ev ON b.event_id = ev.id
-        LEFT JOIN public.users u ON b.created_by = u.id
+        LEFT JOIN public.users creator ON b.created_by = creator.id
         WHERE 1=1
     '''
     params = []
@@ -201,14 +199,13 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
         query += ' AND b.month = %s'
         params.append(month)
     if employee_id:
-        query += ' AND (b.responsable_id = %s OR b.employee_id = %s)'
-        params.append(employee_id)
+        query += ' AND b.employee_id = %s'
         params.append(employee_id)
     if event_id:
         query += ' AND b.event_id = %s'
         params.append(event_id)
 
-    query += ' ORDER BY b.year DESC, b.month DESC, r.name'
+    query += ' ORDER BY b.year DESC, b.month DESC, u.name'
 
     cursor.execute(query, params)
     rows = cursor.fetchall()
@@ -221,13 +218,11 @@ def get_event_bonus(bonus_id):
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
-        SELECT b.*, r.name as employee_name, r.departments as department, r.brand, r.company,
+        SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
                ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
-               COALESCE(b.responsable_id, b.employee_id) as effective_employee_id
+               b.employee_id as effective_employee_id
         FROM hr.event_bonuses b
-        LEFT JOIN responsables r ON r.id = COALESCE(b.responsable_id, (
-            SELECT r2.id FROM responsables r2 WHERE r2.hr_employee_id = b.employee_id LIMIT 1
-        ))
+        LEFT JOIN public.users u ON u.id = b.employee_id
         JOIN hr.events ev ON b.event_id = ev.id
         WHERE b.id = %s
     ''', (bonus_id,))
@@ -239,13 +234,12 @@ def get_event_bonus(bonus_id):
 def save_event_bonus(employee_id, event_id, year, month, participation_start=None,
                      participation_end=None, bonus_days=None, hours_free=None,
                      bonus_net=None, details=None, allocation_month=None, created_by=None):
-    """Create a new event bonus record using responsable_id."""
+    """Create a new event bonus record using employee_id (references users.id)."""
     conn = get_db()
     cursor = get_cursor(conn)
-    # Use responsable_id instead of employee_id
     cursor.execute('''
         INSERT INTO hr.event_bonuses
-        (responsable_id, event_id, year, month, participation_start, participation_end,
+        (employee_id, event_id, year, month, participation_start, participation_end,
          bonus_days, hours_free, bonus_net, details, allocation_month, created_by)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
@@ -258,7 +252,7 @@ def save_event_bonus(employee_id, event_id, year, month, participation_start=Non
 
 
 def save_event_bonuses_bulk(bonuses, created_by=None):
-    """Bulk create event bonus records using responsable_id."""
+    """Bulk create event bonus records using employee_id (references users.id)."""
     conn = get_db()
     cursor = get_cursor(conn)
 
@@ -266,7 +260,7 @@ def save_event_bonuses_bulk(bonuses, created_by=None):
     for b in bonuses:
         cursor.execute('''
             INSERT INTO hr.event_bonuses
-            (responsable_id, event_id, year, month, participation_start, participation_end,
+            (employee_id, event_id, year, month, participation_start, participation_end,
              bonus_days, hours_free, bonus_net, details, allocation_month, created_by)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
@@ -284,12 +278,12 @@ def save_event_bonuses_bulk(bonuses, created_by=None):
 def update_event_bonus(bonus_id, employee_id, event_id, year, month, participation_start=None,
                        participation_end=None, bonus_days=None, hours_free=None,
                        bonus_net=None, details=None, allocation_month=None):
-    """Update an event bonus record using responsable_id."""
+    """Update an event bonus record using employee_id (references users.id)."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
         UPDATE hr.event_bonuses
-        SET responsable_id = %s, event_id = %s, year = %s, month = %s,
+        SET employee_id = %s, event_id = %s, year = %s, month = %s,
             participation_start = %s, participation_end = %s, bonus_days = %s,
             hours_free = %s, bonus_net = %s, details = %s, allocation_month = %s,
             updated_at = CURRENT_TIMESTAMP
@@ -318,7 +312,7 @@ def get_event_bonuses_summary(year=None):
 
     query = '''
         SELECT
-            COUNT(DISTINCT COALESCE(b.responsable_id, b.employee_id)) as total_employees,
+            COUNT(DISTINCT b.employee_id) as total_employees,
             COUNT(DISTINCT b.event_id) as total_events,
             COUNT(*) as total_bonuses,
             SUM(b.bonus_net) as total_bonus_amount,
@@ -354,20 +348,18 @@ def get_bonuses_by_month(year):
 
 
 def get_bonuses_by_employee(year=None, month=None):
-    """Get bonus totals grouped by employee from responsables table."""
+    """Get bonus totals grouped by employee from users table."""
     conn = get_db()
     cursor = get_cursor(conn)
 
     query = '''
-        SELECT r.id, r.name, r.departments as department, r.company, r.brand,
+        SELECT u.id, u.name, u.department, u.company, u.brand,
                COUNT(*) as bonus_count,
                COALESCE(SUM(b.bonus_days), 0) as total_days,
                COALESCE(SUM(b.hours_free), 0) as total_hours,
                COALESCE(SUM(b.bonus_net), 0) as total_bonus
         FROM hr.event_bonuses b
-        LEFT JOIN responsables r ON r.id = COALESCE(b.responsable_id, (
-            SELECT r2.id FROM responsables r2 WHERE r2.hr_employee_id = b.employee_id LIMIT 1
-        ))
+        LEFT JOIN public.users u ON u.id = b.employee_id
         WHERE 1=1
     '''
     params = []
@@ -378,7 +370,7 @@ def get_bonuses_by_employee(year=None, month=None):
         query += ' AND b.month = %s'
         params.append(month)
 
-    query += ' GROUP BY r.id, r.name, r.departments, r.company, r.brand ORDER BY total_bonus DESC'
+    query += ' GROUP BY u.id, u.name, u.department, u.company, u.brand ORDER BY total_bonus DESC'
 
     cursor.execute(query, params)
     rows = cursor.fetchall()

@@ -12,9 +12,19 @@ class User(UserMixin):
         self.id = user_data['id']
         self.email = user_data['email']
         self.name = user_data['name']
+        self.phone = user_data.get('phone')
         self.role_id = user_data.get('role_id')
         self.role_name = user_data.get('role_name')
         self.is_active_user = user_data.get('is_active', True)
+
+        # Organizational fields (from responsables migration)
+        self.company = user_data.get('company')
+        self.brand = user_data.get('brand')
+        self.department = user_data.get('department')
+        self.subdepartment = user_data.get('subdepartment')
+        self.org_unit_id = user_data.get('org_unit_id')
+        self.notify_on_allocation = user_data.get('notify_on_allocation', True)
+
         # Role permissions (backward compatible boolean properties)
         self.can_add_invoices = user_data.get('can_add_invoices', False)
         self.can_edit_invoices = user_data.get('can_edit_invoices', False)

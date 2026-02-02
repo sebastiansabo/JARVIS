@@ -37,16 +37,14 @@ class BonusRepository:
         cursor = get_cursor(conn)
 
         query = '''
-            SELECT b.*, r.name as employee_name, r.departments as department, r.brand, r.company,
+            SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
                    ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
-                   u.name as created_by_name,
-                   COALESCE(b.responsable_id, b.employee_id) as effective_employee_id
+                   creator.name as created_by_name,
+                   b.employee_id as effective_employee_id
             FROM hr.event_bonuses b
-            LEFT JOIN responsables r ON r.id = COALESCE(b.responsable_id, (
-                SELECT r2.id FROM responsables r2 WHERE r2.hr_employee_id = b.employee_id LIMIT 1
-            ))
+            LEFT JOIN public.users u ON u.id = b.employee_id
             JOIN hr.events ev ON b.event_id = ev.id
-            LEFT JOIN public.users u ON b.created_by = u.id
+            LEFT JOIN public.users creator ON b.created_by = creator.id
             WHERE 1=1
         '''
         params = []
@@ -58,14 +56,13 @@ class BonusRepository:
             query += ' AND b.month = %s'
             params.append(month)
         if employee_id:
-            query += ' AND (b.responsable_id = %s OR b.employee_id = %s)'
-            params.append(employee_id)
+            query += ' AND b.employee_id = %s'
             params.append(employee_id)
         if event_id:
             query += ' AND b.event_id = %s'
             params.append(event_id)
 
-        query += ' ORDER BY b.year DESC, b.month DESC, r.name'
+        query += ' ORDER BY b.year DESC, b.month DESC, u.name'
 
         cursor.execute(query, params)
         rows = cursor.fetchall()
@@ -84,13 +81,11 @@ class BonusRepository:
         conn = get_db()
         cursor = get_cursor(conn)
         cursor.execute('''
-            SELECT b.*, r.name as employee_name, r.departments as department, r.brand, r.company,
+            SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
                    ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
-                   COALESCE(b.responsable_id, b.employee_id) as effective_employee_id
+                   b.employee_id as effective_employee_id
             FROM hr.event_bonuses b
-            LEFT JOIN responsables r ON r.id = COALESCE(b.responsable_id, (
-                SELECT r2.id FROM responsables r2 WHERE r2.hr_employee_id = b.employee_id LIMIT 1
-            ))
+            LEFT JOIN public.users u ON u.id = b.employee_id
             JOIN hr.events ev ON b.event_id = ev.id
             WHERE b.id = %s
         ''', (bonus_id,))
@@ -116,7 +111,7 @@ class BonusRepository:
         """Create a new event bonus record.
 
         Args:
-            employee_id: The employee/responsable ID
+            employee_id: The employee/user ID
             event_id: The event ID
             year: Bonus year
             month: Bonus month
@@ -136,7 +131,7 @@ class BonusRepository:
         cursor = get_cursor(conn)
         cursor.execute('''
             INSERT INTO hr.event_bonuses
-            (responsable_id, event_id, year, month, participation_start, participation_end,
+            (employee_id, event_id, year, month, participation_start, participation_end,
              bonus_days, hours_free, bonus_net, details, allocation_month, created_by)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
@@ -164,7 +159,7 @@ class BonusRepository:
         for b in bonuses:
             cursor.execute('''
                 INSERT INTO hr.event_bonuses
-                (responsable_id, event_id, year, month, participation_start, participation_end,
+                (employee_id, event_id, year, month, participation_start, participation_end,
                  bonus_days, hours_free, bonus_net, details, allocation_month, created_by)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
@@ -197,7 +192,7 @@ class BonusRepository:
 
         Args:
             bonus_id: The bonus ID
-            employee_id: The employee/responsable ID
+            employee_id: The employee/user ID
             event_id: The event ID
             year: Bonus year
             month: Bonus month
@@ -216,7 +211,7 @@ class BonusRepository:
         cursor = get_cursor(conn)
         cursor.execute('''
             UPDATE hr.event_bonuses
-            SET responsable_id = %s, event_id = %s, year = %s, month = %s,
+            SET employee_id = %s, event_id = %s, year = %s, month = %s,
                 participation_start = %s, participation_end = %s, bonus_days = %s,
                 hours_free = %s, bonus_net = %s, details = %s, allocation_month = %s,
                 updated_at = CURRENT_TIMESTAMP
@@ -259,7 +254,7 @@ class BonusRepository:
 
         query = '''
             SELECT
-                COUNT(DISTINCT COALESCE(b.responsable_id, b.employee_id)) as total_employees,
+                COUNT(DISTINCT b.employee_id) as total_employees,
                 COUNT(DISTINCT b.event_id) as total_events,
                 COUNT(*) as total_bonuses,
                 SUM(b.bonus_net) as total_bonus_amount,
@@ -313,15 +308,13 @@ class BonusRepository:
         cursor = get_cursor(conn)
 
         query = '''
-            SELECT r.id, r.name, r.departments as department, r.company, r.brand,
+            SELECT u.id, u.name, u.department, u.company, u.brand,
                    COUNT(*) as bonus_count,
                    COALESCE(SUM(b.bonus_days), 0) as total_days,
                    COALESCE(SUM(b.hours_free), 0) as total_hours,
                    COALESCE(SUM(b.bonus_net), 0) as total_bonus
             FROM hr.event_bonuses b
-            LEFT JOIN responsables r ON r.id = COALESCE(b.responsable_id, (
-                SELECT r2.id FROM responsables r2 WHERE r2.hr_employee_id = b.employee_id LIMIT 1
-            ))
+            LEFT JOIN public.users u ON u.id = b.employee_id
             WHERE 1=1
         '''
         params = []
@@ -332,7 +325,7 @@ class BonusRepository:
             query += ' AND b.month = %s'
             params.append(month)
 
-        query += ' GROUP BY r.id, r.name, r.departments, r.company, r.brand ORDER BY total_bonus DESC'
+        query += ' GROUP BY u.id, u.name, u.department, u.company, u.brand ORDER BY total_bonus DESC'
 
         cursor.execute(query, params)
         rows = cursor.fetchall()

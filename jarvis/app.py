@@ -29,7 +29,6 @@ from database import (
     get_invoice_drive_link, get_invoice_drive_links,
     get_all_users, get_user, get_user_by_email, save_user, update_user, delete_user,
     get_all_roles, get_role, save_role, update_role, delete_role,
-    get_all_responsables, get_responsable, save_responsable, update_responsable, delete_responsable,
     get_notification_settings, save_notification_settings_bulk, save_notification_setting, get_notification_logs,
     get_all_companies, get_company, save_company, update_company, delete_company as delete_company_db,
     get_all_department_structures, get_department_structure, save_department_structure,
@@ -2170,32 +2169,38 @@ def api_delete_user(user_id):
     return jsonify({'success': False, 'error': 'User not found'}), 404
 
 
-# Responsables API endpoints
-@app.route('/api/responsables', methods=['GET'])
-def api_get_responsables():
-    """Get all responsables."""
-    responsables = get_all_responsables()
-    return jsonify(responsables)
+# Employees API endpoints (uses users table)
+@app.route('/api/employees', methods=['GET'])
+def api_get_employees():
+    """Get all users as employees."""
+    users = get_all_users()
+    # Map department field to departments for backwards compatibility
+    for user in users:
+        user['departments'] = user.get('department')
+    return jsonify(users)
 
 
-@app.route('/api/responsables/<int:responsable_id>', methods=['GET'])
-def api_get_responsable(responsable_id):
-    """Get a specific responsable."""
-    responsable = get_responsable(responsable_id)
-    if responsable:
-        return jsonify(responsable)
-    return jsonify({'error': 'Responsable not found'}), 404
+@app.route('/api/employees/<int:employee_id>', methods=['GET'])
+def api_get_employee(employee_id):
+    """Get a specific user as employee."""
+    user = get_user(employee_id)
+    if user:
+        user['departments'] = user.get('department')
+        return jsonify(user)
+    return jsonify({'error': 'Employee not found'}), 404
 
 
-@app.route('/api/responsables', methods=['POST'])
-def api_create_responsable():
-    """Create a new responsable/employee."""
+@app.route('/api/employees', methods=['POST'])
+def api_create_employee():
+    """Create a new user/employee."""
     data = request.get_json()
 
     name = data.get('name', '').strip()
     email = data.get('email', '').strip() if data.get('email') else None
     phone = data.get('phone', '').strip() if data.get('phone') else None
-    departments = data.get('departments', '').strip() if data.get('departments') else None
+    # Support both 'departments' (legacy) and 'department' field names
+    department = data.get('department') or data.get('departments')
+    department = department.strip() if department else None
     subdepartment = data.get('subdepartment', '').strip() if data.get('subdepartment') else None
     company = data.get('company', '').strip() if data.get('company') else None
     brand = data.get('brand', '').strip() if data.get('brand') else None
@@ -2204,36 +2209,39 @@ def api_create_responsable():
         return jsonify({'error': 'Name is required'}), 400
 
     try:
-        responsable_id = save_responsable(
+        user_id = save_user(
             name=name,
             email=email,
             phone=phone,
-            departments=departments,
+            department=department,
             subdepartment=subdepartment,
             company=company,
             brand=brand,
             notify_on_allocation=data.get('notify_on_allocation', True),
             is_active=data.get('is_active', True)
         )
-        return jsonify({'success': True, 'id': responsable_id})
+        return jsonify({'success': True, 'id': user_id})
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/responsables/<int:responsable_id>', methods=['PUT'])
-def api_update_responsable(responsable_id):
-    """Update a responsable/employee."""
+@app.route('/api/employees/<int:employee_id>', methods=['PUT'])
+def api_update_employee(employee_id):
+    """Update a user/employee."""
     data = request.get_json()
 
+    # Support both 'departments' (legacy) and 'department' field names
+    department = data.get('department') if data.get('department') is not None else data.get('departments')
+
     try:
-        updated = update_responsable(
-            responsable_id=responsable_id,
+        updated = update_user(
+            user_id=employee_id,
             name=data.get('name'),
             email=data.get('email'),
             phone=data.get('phone'),
-            departments=data.get('departments'),
+            department=department,
             subdepartment=data.get('subdepartment'),
             company=data.get('company'),
             brand=data.get('brand'),
@@ -2242,50 +2250,19 @@ def api_update_responsable(responsable_id):
         )
         if updated:
             return jsonify({'success': True})
-        return jsonify({'success': False, 'error': 'Responsable not found'}), 404
+        return jsonify({'success': False, 'error': 'Employee not found'}), 404
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/responsables/<int:responsable_id>', methods=['DELETE'])
-def api_delete_responsable(responsable_id):
-    """Delete a responsable."""
-    if delete_responsable(responsable_id):
-        return jsonify({'success': True})
-    return jsonify({'success': False, 'error': 'Responsable not found'}), 404
-
-
-# Employees API endpoints (aliases for responsables - platform consistency)
-@app.route('/api/employees', methods=['GET'])
-def api_get_employees():
-    """Get all employees (alias for responsables)."""
-    return api_get_responsables()
-
-
-@app.route('/api/employees/<int:employee_id>', methods=['GET'])
-def api_get_employee(employee_id):
-    """Get a specific employee (alias for responsables)."""
-    return api_get_responsable(employee_id)
-
-
-@app.route('/api/employees', methods=['POST'])
-def api_create_employee():
-    """Create a new employee (alias for responsables)."""
-    return api_create_responsable()
-
-
-@app.route('/api/employees/<int:employee_id>', methods=['PUT'])
-def api_update_employee(employee_id):
-    """Update an employee (alias for responsables)."""
-    return api_update_responsable(employee_id)
-
-
 @app.route('/api/employees/<int:employee_id>', methods=['DELETE'])
 def api_delete_employee(employee_id):
-    """Delete an employee (alias for responsables)."""
-    return api_delete_responsable(employee_id)
+    """Delete a user/employee."""
+    if delete_user(employee_id):
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Employee not found'}), 404
 
 
 # VAT Rates API endpoints

@@ -73,8 +73,8 @@ _companies_vat_cache = {
     'ttl': 300
 }
 
-# In-memory cache for responsables
-_responsables_cache = {
+# In-memory cache for users (formerly responsables)
+_users_cache = {
     'data': None,
     'timestamp': 0,
     'ttl': 300
@@ -156,11 +156,17 @@ def clear_companies_vat_cache():
     logger.debug('Companies VAT cache cleared')
 
 
-def clear_responsables_cache():
-    """Clear the responsables cache. Call this after responsable updates."""
-    global _responsables_cache
+def clear_users_cache():
+    """Clear the users cache. Call this after user updates."""
+    global _users_cache
     with _cache_lock:
-        _responsables_cache = {'data': None, 'timestamp': 0, 'ttl': 300}
+        _users_cache = {'data': None, 'timestamp': 0, 'ttl': 300}
+
+
+# Backwards compatibility alias
+def clear_responsables_cache():
+    """Deprecated: Use clear_users_cache() instead."""
+    clear_users_cache()
     logger.debug('Responsables cache cleared')
 
 
@@ -742,6 +748,31 @@ def init_db():
         END $$;
     ''')
 
+    # Add organizational fields to users table (migrate from responsables)
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'company') THEN
+                ALTER TABLE users ADD COLUMN company TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'brand') THEN
+                ALTER TABLE users ADD COLUMN brand TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'department') THEN
+                ALTER TABLE users ADD COLUMN department TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'subdepartment') THEN
+                ALTER TABLE users ADD COLUMN subdepartment TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'org_unit_id') THEN
+                ALTER TABLE users ADD COLUMN org_unit_id INTEGER REFERENCES department_structure(id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'notify_on_allocation') THEN
+                ALTER TABLE users ADD COLUMN notify_on_allocation BOOLEAN DEFAULT TRUE;
+            END IF;
+        END $$;
+    ''')
+
     # Add can_edit_invoices column to roles table if it doesn't exist (migration)
     cursor.execute('''
         DO $$
@@ -1043,44 +1074,9 @@ def init_db():
         ON CONFLICT (name) DO NOTHING
     ''')
 
-    # Responsables table - employees/people responsible for departments
-    # Used for both notification recipients and HR event bonuses
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS responsables (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            email TEXT,
-            phone TEXT,
-            departments TEXT,
-            company TEXT,
-            brand TEXT,
-            notify_on_allocation BOOLEAN DEFAULT TRUE,
-            is_active BOOLEAN DEFAULT TRUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-
-    # Migration: Add company, brand, subdepartment columns to responsables if they don't exist
-    cursor.execute('''
-        DO $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name = 'responsables' AND column_name = 'company') THEN
-                ALTER TABLE responsables ADD COLUMN company TEXT;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name = 'responsables' AND column_name = 'brand') THEN
-                ALTER TABLE responsables ADD COLUMN brand TEXT;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name = 'responsables' AND column_name = 'subdepartment') THEN
-                ALTER TABLE responsables ADD COLUMN subdepartment TEXT;
-            END IF;
-            -- Make email nullable for HR employees who may not have email
-            ALTER TABLE responsables ALTER COLUMN email DROP NOT NULL;
-        END $$
-    ''')
+    # NOTE: responsables table has been migrated to users table - this table is no longer used
+    # All responsable data is now stored in the users table with organizational fields
+    # (company, brand, department, subdepartment, notify_on_allocation)
 
     # Notification settings table - email/SMTP configuration
     cursor.execute('''
@@ -1535,20 +1531,9 @@ def init_db():
     cursor.execute('CREATE SCHEMA IF NOT EXISTS hr')
     conn.commit()
 
-    # HR Employees table - standalone employee list with optional link to Jarvis users
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS hr.employees (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            department TEXT,
-            brand TEXT,
-            company TEXT,
-            user_id INTEGER REFERENCES public.users(id) ON DELETE SET NULL,
-            is_active BOOLEAN DEFAULT TRUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+    # NOTE: hr.employees table has been migrated to public.users table
+    # All employee data is now stored in the users table with organizational fields
+    # (company, brand, department, subdepartment, notify_on_allocation)
 
     # HR Events table - event definitions
     cursor.execute('''
@@ -1565,11 +1550,12 @@ def init_db():
         )
     ''')
 
-    # HR Events table - individual bonus records
+    # HR Event Bonuses table - individual bonus records
+    # NOTE: employee_id now references public.users(id) instead of hr.employees(id)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS hr.event_bonuses (
             id SERIAL PRIMARY KEY,
-            employee_id INTEGER NOT NULL REFERENCES hr.employees(id) ON DELETE CASCADE,
+            employee_id INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
             event_id INTEGER NOT NULL REFERENCES hr.events(id) ON DELETE CASCADE,
             year INTEGER NOT NULL,
             month INTEGER NOT NULL,
@@ -1631,61 +1617,11 @@ def init_db():
         END $$
     ''')
 
-    # HR indexes
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_employees_name ON hr.employees(name)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_employees_company ON hr.employees(company)')
+    # HR indexes (hr.employees table removed - using users table now)
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_events_dates ON hr.events(start_date, end_date)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonuses_employee ON hr.event_bonuses(employee_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonuses_event ON hr.event_bonuses(event_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonuses_year_month ON hr.event_bonuses(year, month)')
-    conn.commit()
-
-    # Migration: Migrate hr.employees to responsables table and update FK
-    # Step 1: Add hr_employee_id column to responsables to track migration
-    cursor.execute('''
-        DO $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name = 'responsables' AND column_name = 'hr_employee_id') THEN
-                ALTER TABLE responsables ADD COLUMN hr_employee_id INTEGER;
-            END IF;
-        END $$
-    ''')
-    conn.commit()
-
-    # Step 2: Migrate hr.employees to responsables (only if not already migrated)
-    cursor.execute('''
-        INSERT INTO responsables (name, departments, company, brand, is_active, hr_employee_id, created_at, updated_at)
-        SELECT e.name, e.department, e.company, e.brand, e.is_active, e.id, e.created_at, e.updated_at
-        FROM hr.employees e
-        WHERE NOT EXISTS (
-            SELECT 1 FROM responsables r WHERE r.hr_employee_id = e.id
-        )
-    ''')
-    conn.commit()
-
-    # Step 3: Update hr.event_bonuses to reference responsables instead of hr.employees
-    # First, add responsable_id column if not exists
-    cursor.execute('''
-        DO $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_schema = 'hr' AND table_name = 'event_bonuses'
-                          AND column_name = 'responsable_id') THEN
-                ALTER TABLE hr.event_bonuses ADD COLUMN responsable_id INTEGER REFERENCES responsables(id);
-            END IF;
-        END $$
-    ''')
-    conn.commit()
-
-    # Step 4: Populate responsable_id from employee_id mapping
-    cursor.execute('''
-        UPDATE hr.event_bonuses eb
-        SET responsable_id = r.id
-        FROM responsables r
-        WHERE r.hr_employee_id = eb.employee_id
-          AND eb.responsable_id IS NULL
-    ''')
     conn.commit()
 
     # Migrate existing single reinvoice data to new table (if not already migrated)
@@ -2238,12 +2174,12 @@ def save_invoice(
                     conditions.append('ds.subdepartment = %s')
                     params.append(subdept)
 
-                # Use manager_ids joined with responsables to get manager names
+                # Use manager_ids joined with users to get manager names
                 cursor.execute(f'''
                     SELECT COALESCE(
-                        (SELECT string_agg(r.name, ', ')
+                        (SELECT string_agg(u.name, ', ')
                          FROM unnest(ds.manager_ids) AS mid
-                         JOIN responsables r ON r.id = mid),
+                         JOIN users u ON u.id = mid),
                         ds.manager,
                         ''
                     ) AS manager_name
@@ -4345,10 +4281,15 @@ def get_user_by_email(email: str) -> Optional[dict]:
 
 def save_user(
     name: str,
-    email: str,
+    email: str = None,
     phone: str = None,
     role_id: int = None,
-    is_active: bool = True
+    is_active: bool = True,
+    company: str = None,
+    brand: str = None,
+    department: str = None,
+    subdepartment: str = None,
+    notify_on_allocation: bool = True
 ) -> int:
     """Save a new user. Returns user ID."""
     conn = get_db()
@@ -4356,10 +4297,10 @@ def save_user(
 
     try:
         cursor.execute('''
-            INSERT INTO users (name, email, phone, role_id, is_active)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO users (name, email, phone, role_id, is_active, company, brand, department, subdepartment, notify_on_allocation)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
-        ''', (name, email, phone, role_id, is_active))
+        ''', (name, email, phone, role_id, is_active, company, brand, department, subdepartment, notify_on_allocation))
 
         user_id = cursor.fetchone()['id']
         conn.commit()
@@ -4380,7 +4321,12 @@ def update_user(
     email: str = None,
     phone: str = None,
     role_id: int = None,
-    is_active: bool = None
+    is_active: bool = None,
+    company: str = None,
+    brand: str = None,
+    department: str = None,
+    subdepartment: str = None,
+    notify_on_allocation: bool = None
 ) -> bool:
     """Update a user. Returns True if updated."""
     conn = get_db()
@@ -4404,6 +4350,21 @@ def update_user(
     if is_active is not None:
         updates.append('is_active = %s')
         params.append(is_active)
+    if company is not None:
+        updates.append('company = %s')
+        params.append(company)
+    if brand is not None:
+        updates.append('brand = %s')
+        params.append(brand)
+    if department is not None:
+        updates.append('department = %s')
+        params.append(department)
+    if subdepartment is not None:
+        updates.append('subdepartment = %s')
+        params.append(subdepartment)
+    if notify_on_allocation is not None:
+        updates.append('notify_on_allocation = %s')
+        params.append(notify_on_allocation)
 
     if not updates:
         release_db(conn)
@@ -4441,21 +4402,25 @@ def delete_user(user_id: int) -> bool:
     return deleted
 
 
-# ============== Responsables CRUD ==============
+# ============== Responsables CRUD (now uses users table) ==============
+# NOTE: These functions now query the users table instead of the dropped responsables table.
+# The "departments" field maps to users.department for backwards compatibility.
 
 def get_all_responsables() -> list[dict]:
-    """Get all responsables (with caching)."""
-    global _responsables_cache
+    """Get all users as responsables (with caching)."""
+    global _users_cache
 
     # Return cached data if valid
-    if _is_cache_valid(_responsables_cache):
-        return _responsables_cache['data']
+    if _is_cache_valid(_users_cache):
+        return _users_cache['data']
 
     conn = get_db()
     cursor = get_cursor(conn)
 
     cursor.execute('''
-        SELECT * FROM responsables
+        SELECT id, name, email, phone, department AS departments, subdepartment,
+               company, brand, notify_on_allocation, is_active, created_at, updated_at
+        FROM users
         ORDER BY name
     ''')
 
@@ -4463,18 +4428,22 @@ def get_all_responsables() -> list[dict]:
     release_db(conn)
 
     # Cache the result
-    _responsables_cache['data'] = results
-    _responsables_cache['timestamp'] = time.time()
+    _users_cache['data'] = results
+    _users_cache['timestamp'] = time.time()
 
     return results
 
 
 def get_responsable(responsable_id: int) -> Optional[dict]:
-    """Get a specific responsable by ID."""
+    """Get a specific user as responsable by ID."""
     conn = get_db()
     cursor = get_cursor(conn)
 
-    cursor.execute('SELECT * FROM responsables WHERE id = %s', (responsable_id,))
+    cursor.execute('''
+        SELECT id, name, email, phone, department AS departments, subdepartment,
+               company, brand, notify_on_allocation, is_active, created_at, updated_at
+        FROM users WHERE id = %s
+    ''', (responsable_id,))
     row = cursor.fetchone()
 
     release_db(conn)
@@ -4482,16 +4451,18 @@ def get_responsable(responsable_id: int) -> Optional[dict]:
 
 
 def get_responsables_by_department(department: str) -> list[dict]:
-    """Get responsables assigned to a specific department (exact match)."""
+    """Get users assigned to a specific department (exact match)."""
     conn = get_db()
     cursor = get_cursor(conn)
 
     # Use exact match instead of LIKE to avoid partial matches
-    # e.g., "Marketing" should only match responsables with departments = "Marketing"
+    # e.g., "Marketing" should only match users with department = "Marketing"
     # not "Marketing Aftersales" or "Director Marketing"
     cursor.execute('''
-        SELECT * FROM responsables
-        WHERE departments = %s AND is_active = TRUE AND notify_on_allocation = TRUE
+        SELECT id, name, email, phone, department AS departments, subdepartment,
+               company, brand, notify_on_allocation, is_active, created_at, updated_at
+        FROM users
+        WHERE department = %s AND is_active = TRUE AND notify_on_allocation = TRUE
     ''', (department,))
 
     results = [dict_from_row(row) for row in cursor.fetchall()]
@@ -4502,106 +4473,43 @@ def get_responsables_by_department(department: str) -> list[dict]:
 def save_responsable(name: str, email: str, phone: str = None, departments: str = None,
                      subdepartment: str = None, company: str = None, brand: str = None,
                      notify_on_allocation: bool = True, is_active: bool = True) -> int:
-    """Create a new responsable."""
-    conn = get_db()
-    cursor = get_cursor(conn)
-
-    try:
-        cursor.execute('''
-            INSERT INTO responsables (name, email, phone, departments, subdepartment, company, brand, notify_on_allocation, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        ''', (name, email, phone, departments, subdepartment, company, brand, notify_on_allocation, is_active))
-
-        responsable_id = cursor.fetchone()['id']
-        conn.commit()
-        clear_responsables_cache()
-        return responsable_id
-    except Exception as e:
-        conn.rollback()
-        if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
-            raise ValueError(f"Responsable with email '{email}' already exists")
-        raise
-    finally:
-        release_db(conn)
+    """Create a new user as responsable."""
+    # Use the save_user function with organizational fields
+    return save_user(
+        name=name,
+        email=email,
+        phone=phone,
+        department=departments,  # Map departments → department
+        subdepartment=subdepartment,
+        company=company,
+        brand=brand,
+        notify_on_allocation=notify_on_allocation,
+        is_active=is_active
+    )
 
 
 def update_responsable(responsable_id: int, name: str = None, email: str = None, phone: str = None,
                        departments: str = None, subdepartment: str = None, company: str = None,
                        brand: str = None, notify_on_allocation: bool = None, is_active: bool = None) -> bool:
-    """Update a responsable."""
-    conn = get_db()
-    cursor = get_cursor(conn)
-
-    updates = []
-    params = []
-
-    if name is not None:
-        updates.append('name = %s')
-        params.append(name)
-    if email is not None:
-        updates.append('email = %s')
-        params.append(email)
-    if phone is not None:
-        updates.append('phone = %s')
-        params.append(phone)
-    if departments is not None:
-        updates.append('departments = %s')
-        params.append(departments)
-    if subdepartment is not None:
-        updates.append('subdepartment = %s')
-        params.append(subdepartment)
-    if company is not None:
-        updates.append('company = %s')
-        params.append(company)
-    if brand is not None:
-        updates.append('brand = %s')
-        params.append(brand)
-    if notify_on_allocation is not None:
-        updates.append('notify_on_allocation = %s')
-        params.append(notify_on_allocation)
-    if is_active is not None:
-        updates.append('is_active = %s')
-        params.append(is_active)
-
-    if not updates:
-        release_db(conn)
-        return False
-
-    updates.append('updated_at = CURRENT_TIMESTAMP')
-    params.append(responsable_id)
-
-    query = f"UPDATE responsables SET {', '.join(updates)} WHERE id = %s"
-
-    try:
-        cursor.execute(query, params)
-        updated = cursor.rowcount > 0
-        conn.commit()
-        if updated:
-            clear_responsables_cache()
-        return updated
-    except Exception as e:
-        conn.rollback()
-        if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
-            raise ValueError(f"Responsable with that email already exists")
-        raise
-    finally:
-        release_db(conn)
+    """Update a user as responsable."""
+    # Use the update_user function with organizational fields
+    return update_user(
+        user_id=responsable_id,
+        name=name,
+        email=email,
+        phone=phone,
+        department=departments,  # Map departments → department
+        subdepartment=subdepartment,
+        company=company,
+        brand=brand,
+        notify_on_allocation=notify_on_allocation,
+        is_active=is_active
+    )
 
 
 def delete_responsable(responsable_id: int) -> bool:
-    """Delete a responsable."""
-    conn = get_db()
-    cursor = get_cursor(conn)
-
-    cursor.execute('DELETE FROM responsables WHERE id = %s', (responsable_id,))
-    deleted = cursor.rowcount > 0
-
-    conn.commit()
-    release_db(conn)
-    if deleted:
-        clear_responsables_cache()
-    return deleted
+    """Delete a user (responsable)."""
+    return delete_user(responsable_id)
 
 
 # ============== Notification Settings CRUD ==============
@@ -5118,10 +5026,10 @@ def get_notification_logs(limit: int = 100) -> list[dict]:
     cursor = get_cursor(conn)
 
     cursor.execute('''
-        SELECT nl.*, r.name as responsable_name, r.email as responsable_email,
+        SELECT nl.*, u.name as responsable_name, u.email as responsable_email,
                i.invoice_number, i.supplier
         FROM notification_log nl
-        LEFT JOIN responsables r ON nl.responsable_id = r.id
+        LEFT JOIN users u ON nl.responsable_id = u.id
         LEFT JOIN invoices i ON nl.invoice_id = i.id
         ORDER BY nl.created_at DESC
         LIMIT %s
@@ -5486,9 +5394,9 @@ def get_all_department_structures() -> list[dict]:
     cursor = get_cursor(conn)
 
     cursor.execute('''
-        SELECT ds.*, r.name as responsable_name, r.email as responsable_email
+        SELECT ds.*, u.name as responsable_name, u.email as responsable_email
         FROM department_structure ds
-        LEFT JOIN responsables r ON ds.responsable_id = r.id
+        LEFT JOIN users u ON ds.responsable_id = u.id
         ORDER BY ds.company, ds.brand, ds.department, ds.subdepartment
     ''')
 
@@ -5503,9 +5411,9 @@ def get_department_structure(structure_id: int) -> Optional[dict]:
     cursor = get_cursor(conn)
 
     cursor.execute('''
-        SELECT ds.*, r.name as responsable_name, r.email as responsable_email
+        SELECT ds.*, u.name as responsable_name, u.email as responsable_email
         FROM department_structure ds
-        LEFT JOIN responsables r ON ds.responsable_id = r.id
+        LEFT JOIN users u ON ds.responsable_id = u.id
         WHERE ds.id = %s
     ''', (structure_id,))
     row = cursor.fetchone()
@@ -6399,17 +6307,17 @@ def check_permission_v2(role_id: int, module: str, entity: str, action: str) -> 
 
 def get_responsable_by_email(email: str) -> Optional[dict]:
     """
-    Find a responsable record by email address.
-    Returns the responsable with their department/brand info.
+    Find a user record by email address.
+    Returns the user with their department/brand info.
     """
     conn = get_db()
     cursor = get_cursor(conn)
 
     cursor.execute('''
-        SELECT r.id, r.name, r.email, r.phone,
-               r.company, r.brand, r.departments, r.subdepartment
-        FROM responsables r
-        WHERE LOWER(r.email) = LOWER(%s)
+        SELECT u.id, u.name, u.email, u.phone,
+               u.company, u.brand, u.department, u.subdepartment
+        FROM users u
+        WHERE LOWER(u.email) = LOWER(%s)
         LIMIT 1
     ''', (email,))
 
@@ -6424,15 +6332,105 @@ def get_responsable_by_email(email: str) -> Optional[dict]:
             'phone': row['phone'],
             'company': row['company'],
             'brand': row['brand'],
-            'department': row['departments'],
+            'department': row['department'],
             'subdepartment': row['subdepartment'],
-            'departments': row['departments'],  # Alias for profile page
+            'departments': row['department'],  # Alias for profile page
         }
     return None
 
 
+def get_responsable_by_email_or_name(email: str, name: str) -> Optional[dict]:
+    """
+    Find a user record by email address OR by name.
+    Tries multiple matching strategies:
+    1. First by email in users table
+    2. If not found, by name in users table
+    3. If still not found, check if name exists in allocations (virtual user)
+
+    Returns the user with their department/brand info.
+    """
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    # Strategy 1: Match by email
+    cursor.execute('''
+        SELECT u.id, u.name, u.email, u.phone,
+               u.company, u.brand, u.department, u.subdepartment
+        FROM users u
+        WHERE LOWER(u.email) = LOWER(%s)
+        LIMIT 1
+    ''', (email,))
+    row = cursor.fetchone()
+
+    if row:
+        release_db(conn)
+        return {
+            'id': row['id'],
+            'name': row['name'],
+            'email': row['email'],
+            'phone': row['phone'],
+            'company': row['company'],
+            'brand': row['brand'],
+            'department': row['department'],
+            'subdepartment': row['subdepartment'],
+            'departments': row['department'],
+        }
+
+    # Strategy 2: Match by name in users table
+    cursor.execute('''
+        SELECT u.id, u.name, u.email, u.phone,
+               u.company, u.brand, u.department, u.subdepartment
+        FROM users u
+        WHERE LOWER(u.name) = LOWER(%s)
+        LIMIT 1
+    ''', (name,))
+    row = cursor.fetchone()
+
+    if row:
+        release_db(conn)
+        return {
+            'id': row['id'],
+            'name': row['name'],
+            'email': row['email'],
+            'phone': row['phone'],
+            'company': row['company'],
+            'brand': row['brand'],
+            'department': row['department'],
+            'subdepartment': row['subdepartment'],
+            'departments': row['department'],
+        }
+
+    # Strategy 3: Check if name exists in allocations (virtual user)
+    cursor.execute('''
+        SELECT DISTINCT a.responsible AS name, a.company, a.department
+        FROM allocations a
+        WHERE LOWER(a.responsible) = LOWER(%s)
+        LIMIT 1
+    ''', (name,))
+    row = cursor.fetchone()
+
+    release_db(conn)
+
+    if row:
+        # Return a "virtual" user based on allocation data
+        return {
+            'id': None,  # No actual user ID
+            'name': row['name'],
+            'email': email,  # Use the user's email
+            'phone': None,
+            'company': row['company'],
+            'brand': None,
+            'department': row['department'],
+            'subdepartment': None,
+            'departments': row['department'],
+            'is_virtual': True,  # Flag to indicate this is from allocations
+        }
+
+    return None
+
+
 def get_user_invoices_by_responsible_name(
-    responsible_name: str,
+    user_email: str,
     status: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
@@ -6441,23 +6439,26 @@ def get_user_invoices_by_responsible_name(
     offset: int = 0,
 ) -> list[dict]:
     """
-    Get invoices where the user is listed as responsible in allocations.
+    Get invoices where the user (by email) is listed as responsible in allocations.
+    Matches user email -> user name -> allocation.responsible
     """
     conn = get_db()
     cursor = get_cursor(conn)
 
-    # Build query with proper joins
+    # Match by user email: find user, then match their name to allocation.responsible
     query = '''
-        SELECT DISTINCT
+        SELECT
             i.id, i.invoice_number, i.invoice_date, i.invoice_value,
-            i.currency, i.supplier, i.dedicated_to,
-            i.status, i.payment_status, i.drive_link, i.notes,
-            i.created_at, i.updated_at
+            i.currency, i.supplier, i.status, i.drive_link, i.comment,
+            i.created_at, i.updated_at,
+            a.company, a.brand, a.department, a.subdepartment,
+            a.allocation_percent, a.allocation_value
         FROM invoices i
         INNER JOIN allocations a ON i.id = a.invoice_id
-        WHERE LOWER(a.responsible) = LOWER(%s)
+        INNER JOIN users u ON LOWER(a.responsible) = LOWER(u.name)
+        WHERE LOWER(u.email) = LOWER(%s)
     '''
-    params = [responsible_name]
+    params = [user_email]
 
     if status:
         query += ' AND i.status = %s'
@@ -6475,10 +6476,9 @@ def get_user_invoices_by_responsible_name(
         query += ''' AND (
             i.invoice_number ILIKE %s
             OR i.supplier ILIKE %s
-            OR i.dedicated_to ILIKE %s
         )'''
         search_pattern = f'%{search}%'
-        params.extend([search_pattern, search_pattern, search_pattern])
+        params.extend([search_pattern, search_pattern])
 
     query += ' ORDER BY i.invoice_date DESC LIMIT %s OFFSET %s'
     params.extend([limit, offset])
@@ -6491,14 +6491,14 @@ def get_user_invoices_by_responsible_name(
 
 
 def get_user_invoices_count(
-    responsible_name: str,
+    user_email: str,
     status: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     search: Optional[str] = None,
 ) -> int:
     """
-    Count invoices where the user is listed as responsible.
+    Count invoices where the user (by email) is listed as responsible.
     """
     conn = get_db()
     cursor = get_cursor(conn)
@@ -6507,9 +6507,10 @@ def get_user_invoices_count(
         SELECT COUNT(DISTINCT i.id) as count
         FROM invoices i
         INNER JOIN allocations a ON i.id = a.invoice_id
-        WHERE LOWER(a.responsible) = LOWER(%s)
+        INNER JOIN users u ON LOWER(a.responsible) = LOWER(u.name)
+        WHERE LOWER(u.email) = LOWER(%s)
     '''
-    params = [responsible_name]
+    params = [user_email]
 
     if status:
         query += ' AND i.status = %s'
@@ -6527,10 +6528,9 @@ def get_user_invoices_count(
         query += ''' AND (
             i.invoice_number ILIKE %s
             OR i.supplier ILIKE %s
-            OR i.dedicated_to ILIKE %s
         )'''
         search_pattern = f'%{search}%'
-        params.extend([search_pattern, search_pattern, search_pattern])
+        params.extend([search_pattern, search_pattern])
 
     cursor.execute(query, params)
     row = cursor.fetchone()
@@ -6539,21 +6539,22 @@ def get_user_invoices_count(
     return row['count'] if row else 0
 
 
-def get_user_invoices_summary(responsible_name: str) -> dict:
+def get_user_invoices_summary(user_email: str) -> dict:
     """
-    Get invoice summary stats for a responsible person.
+    Get invoice summary stats for a user (by email).
     """
     conn = get_db()
     cursor = get_cursor(conn)
 
-    # Get status breakdown
+    # Get status breakdown - match by email through users table
     cursor.execute('''
         SELECT i.status, COUNT(DISTINCT i.id) as count
         FROM invoices i
         INNER JOIN allocations a ON i.id = a.invoice_id
-        WHERE LOWER(a.responsible) = LOWER(%s)
+        INNER JOIN users u ON LOWER(a.responsible) = LOWER(u.name)
+        WHERE LOWER(u.email) = LOWER(%s)
         GROUP BY i.status
-    ''', (responsible_name,))
+    ''', (user_email,))
 
     by_status = {}
     for row in cursor.fetchall():
@@ -6564,8 +6565,9 @@ def get_user_invoices_summary(responsible_name: str) -> dict:
         SELECT COUNT(DISTINCT i.id) as total, COALESCE(SUM(DISTINCT i.invoice_value), 0) as total_value
         FROM invoices i
         INNER JOIN allocations a ON i.id = a.invoice_id
-        WHERE LOWER(a.responsible) = LOWER(%s)
-    ''', (responsible_name,))
+        INNER JOIN users u ON LOWER(a.responsible) = LOWER(u.name)
+        WHERE LOWER(u.email) = LOWER(%s)
+    ''', (user_email,))
 
     totals = cursor.fetchone()
     release_db(conn)
@@ -6578,35 +6580,17 @@ def get_user_invoices_summary(responsible_name: str) -> dict:
 
 
 def get_user_event_bonuses(
-    responsable_id: int,
+    user_id: int,
     year: Optional[int] = None,
     limit: int = 20,
     offset: int = 0,
 ) -> list[dict]:
     """
-    Get HR event bonuses for a responsable.
+    Get HR event bonuses for a user.
+    Now that hr.event_bonuses.employee_id references users.id directly.
     """
     conn = get_db()
     cursor = get_cursor(conn)
-
-    # Find employee by responsable_id (via email match or user_id)
-    cursor.execute('''
-        SELECT e.id as employee_id
-        FROM hr.employees e
-        INNER JOIN responsables r ON (
-            LOWER(r.email) = (SELECT LOWER(email) FROM users WHERE id = e.user_id)
-            OR LOWER(r.name) = LOWER(e.name)
-        )
-        WHERE r.id = %s
-        LIMIT 1
-    ''', (responsable_id,))
-
-    emp_row = cursor.fetchone()
-    if not emp_row:
-        release_db(conn)
-        return []
-
-    employee_id = emp_row['employee_id']
 
     query = '''
         SELECT
@@ -6619,7 +6603,7 @@ def get_user_event_bonuses(
         INNER JOIN hr.events e ON eb.event_id = e.id
         WHERE eb.employee_id = %s
     '''
-    params = [employee_id]
+    params = [user_id]
 
     if year:
         query += ' AND eb.year = %s'
@@ -6635,31 +6619,13 @@ def get_user_event_bonuses(
     return [dict_from_row(dict(row)) for row in rows]
 
 
-def get_user_event_bonuses_summary(responsable_id: int) -> dict:
+def get_user_event_bonuses_summary(user_id: int) -> dict:
     """
-    Get summary of HR event bonuses for a responsable.
+    Get summary of HR event bonuses for a user.
+    Now that hr.event_bonuses.employee_id references users.id directly.
     """
     conn = get_db()
     cursor = get_cursor(conn)
-
-    # Find employee by responsable
-    cursor.execute('''
-        SELECT e.id as employee_id
-        FROM hr.employees e
-        INNER JOIN responsables r ON (
-            LOWER(r.email) = (SELECT LOWER(email) FROM users WHERE id = e.user_id)
-            OR LOWER(r.name) = LOWER(e.name)
-        )
-        WHERE r.id = %s
-        LIMIT 1
-    ''', (responsable_id,))
-
-    emp_row = cursor.fetchone()
-    if not emp_row:
-        release_db(conn)
-        return {'total_bonuses': 0, 'total_amount': 0, 'events_count': 0}
-
-    employee_id = emp_row['employee_id']
 
     cursor.execute('''
         SELECT
@@ -6668,7 +6634,7 @@ def get_user_event_bonuses_summary(responsable_id: int) -> dict:
             COUNT(DISTINCT event_id) as events_count
         FROM hr.event_bonuses
         WHERE employee_id = %s
-    ''', (employee_id,))
+    ''', (user_id,))
 
     row = cursor.fetchone()
     release_db(conn)
@@ -6683,21 +6649,21 @@ def get_user_event_bonuses_summary(responsable_id: int) -> dict:
 
 
 def get_user_notifications(
-    responsable_id: int,
+    user_id: int,
     limit: int = 20,
     offset: int = 0,
 ) -> list[dict]:
     """
-    Get notifications sent to a responsable.
+    Get notifications sent to a user.
     """
     conn = get_db()
     cursor = get_cursor(conn)
 
-    # Get responsable email
-    cursor.execute('SELECT email FROM responsables WHERE id = %s', (responsable_id,))
-    resp_row = cursor.fetchone()
+    # Get user email
+    cursor.execute('SELECT email FROM users WHERE id = %s', (user_id,))
+    user_row = cursor.fetchone()
 
-    if not resp_row or not resp_row['email']:
+    if not user_row or not user_row['email']:
         release_db(conn)
         return []
 
@@ -6708,7 +6674,7 @@ def get_user_notifications(
         WHERE LOWER(recipient_email) = LOWER(%s)
         ORDER BY created_at DESC
         LIMIT %s OFFSET %s
-    ''', (resp_row['email'], limit, offset))
+    ''', (user_row['email'], limit, offset))
 
     rows = cursor.fetchall()
     release_db(conn)
@@ -6716,18 +6682,18 @@ def get_user_notifications(
     return [dict_from_row(dict(row)) for row in rows]
 
 
-def get_user_notifications_summary(responsable_id: int) -> dict:
+def get_user_notifications_summary(user_id: int) -> dict:
     """
-    Get notification summary for a responsable.
+    Get notification summary for a user.
     """
     conn = get_db()
     cursor = get_cursor(conn)
 
-    # Get responsable email
-    cursor.execute('SELECT email FROM responsables WHERE id = %s', (responsable_id,))
-    resp_row = cursor.fetchone()
+    # Get user email
+    cursor.execute('SELECT email FROM users WHERE id = %s', (user_id,))
+    user_row = cursor.fetchone()
 
-    if not resp_row or not resp_row['email']:
+    if not user_row or not user_row['email']:
         release_db(conn)
         return {'total': 0, 'sent': 0, 'failed': 0}
 
@@ -6738,7 +6704,7 @@ def get_user_notifications_summary(responsable_id: int) -> dict:
             COUNT(*) FILTER (WHERE status = 'failed') as failed
         FROM notification_logs
         WHERE LOWER(recipient_email) = LOWER(%s)
-    ''', (resp_row['email'],))
+    ''', (user_row['email'],))
 
     row = cursor.fetchone()
     release_db(conn)
