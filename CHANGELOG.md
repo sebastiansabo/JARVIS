@@ -1,6 +1,14 @@
 # Changelog
 
 ## 2026-02-02
+### Profile Page Performance Optimization
+- **responsible_user_id FK**: Added indexed foreign key to allocations table
+  - Replaces slow text-based JOIN (`LOWER(a.responsible) = LOWER(u.name)`)
+  - Uses indexed integer FK lookup for fast profile page queries
+  - Migration auto-populates user_id from existing responsible names
+  - All allocation INSERT statements updated to set responsible_user_id
+  - Fallback to text matching for unmigrated data
+
 ### Shared Invoice Edit Module Enhancement
 - **invoice-edit.js**: Updated shared module to match full accounting.html functionality
   - **Smart Split Allocation**: Auto-redistribute percentages when adding/removing allocations
