@@ -16,6 +16,7 @@ from datetime import date
 from core.utils.logging_config import get_logger
 from core.database import get_db, get_cursor, release_db
 from services import match_company_by_vat, get_companies_with_vat
+from core.services.notification_service import notify_invoice_allocations, is_smtp_configured
 
 from ..config import InvoiceDirection, ArtifactType
 from ..repositories import (
@@ -1924,6 +1925,7 @@ Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
                     ])
 
             # Bulk insert allocations if any
+            allocations_created = []
             if alloc_values:
                 cursor.execute(f'''
                     INSERT INTO allocations (
@@ -1932,11 +1934,53 @@ Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
                     ) VALUES {', '.join(alloc_values)}
                 ''', alloc_params)
 
+                # Track created allocations for notifications
+                for inv, (_, jarvis_id) in zip(invoices_to_create, mappings):
+                    if inv.get('company_name') and inv.get('department'):
+                        allocations_created.append({
+                            'invoice': inv,
+                            'jarvis_id': jarvis_id,
+                        })
+
                 logger.info(
                     f"Created {len(alloc_values)} allocations for e-Factura invoices"
                 )
 
             conn.commit()
+
+            # Send notifications for created allocations (after commit)
+            if allocations_created and is_smtp_configured():
+                notifications_sent = 0
+                for alloc_info in allocations_created:
+                    inv = alloc_info['invoice']
+                    jarvis_id = alloc_info['jarvis_id']
+
+                    invoice_data = {
+                        'id': jarvis_id,
+                        'invoice_number': inv['invoice_number'],
+                        'supplier': inv['partner_name'],
+                        'invoice_date': str(inv['issue_date']),
+                        'invoice_value': inv['total_amount'],
+                        'currency': inv['currency'],
+                    }
+
+                    allocation_data = {
+                        'company': inv.get('company_name'),
+                        'brand': inv.get('brand'),
+                        'department': inv.get('department'),
+                        'subdepartment': inv.get('subdepartment'),
+                        'allocation_percent': 100.0,
+                        'allocation_value': inv.get('total_without_vat') or inv['total_amount'],
+                    }
+
+                    try:
+                        results = notify_invoice_allocations(invoice_data, [allocation_data])
+                        notifications_sent += sum(1 for r in results if r.get('success'))
+                    except Exception as e:
+                        logger.warning(f"Failed to send notification for invoice {inv['invoice_number']}: {e}")
+
+                if notifications_sent > 0:
+                    logger.info(f"Sent {notifications_sent} allocation notifications for e-Factura imports")
 
             logger.info(
                 f"Bulk created {len(mappings)} main invoices from e-Factura"
