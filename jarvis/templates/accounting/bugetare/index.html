@@ -1439,7 +1439,7 @@
             // Get the allocation value to calculate reinvoice values
             const allocationValueInput = allocationRow.querySelector('.allocation-value-input');
             const allocationValue = parseFloat(allocationValueInput?.value) || 0;
-            const currency = document.getElementById('invoiceCurrency')?.value || 'RON';
+            const currency = document.getElementById('currency')?.value || 'RON';
 
             // If redistributing, update only unlocked lines
             if (redistribute && lineCount > 0) {
