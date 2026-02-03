@@ -981,8 +981,10 @@ The `department_structure` table maps companies to brands, departments, and mana
 - `company_id` - FK to companies table (required for API)
 - `company` - Company name (denormalized for display)
 - `brand`, `department`, `subdepartment` - Text values from master tables
-- `manager`, `marketing` - Manager/marketing contact names
-- `manager_ids`, `marketing_ids` - Integer arrays for user IDs
+- `manager`, `marketing` - Manager/marketing contact names (display only)
+- `manager_ids`, `marketing_ids` - **Integer arrays for user IDs** (used for notifications)
+
+**Note**: `manager_ids` is the primary field for notification lookups. The `manager` field is kept for display purposes. When selecting a manager in the UI, both fields are populated automatically.
 
 ### API Endpoints
 | Endpoint | Methods | Notes |
@@ -1037,25 +1039,25 @@ JarvisToast.info('Processing...');
 ## Email Notification Service
 
 ### Overview
-The notification service (`jarvis/core/services/notification_service.py`) sends email notifications to responsables when invoices are allocated to their department.
+The notification service (`jarvis/core/services/notification_service.py`) sends email notifications to managers when invoices are allocated to their department.
 
-### Responsable Lookup Logic
-Notifications are sent to users based on the **company AND department** of the allocation:
+### Manager Lookup via department_structure
+Notifications are sent to managers defined in `department_structure` for the company + department combination:
 
-| Filter | Description |
-|--------|-------------|
-| `company` | Must match the allocation's target company |
-| `department` | Must match the allocation's target department |
-| `is_active` | Must be TRUE |
-| `notify_on_allocation` | Must be TRUE |
+| Step | Description |
+|------|-------------|
+| 1 | Look up `department_structure` row for company + department |
+| 2 | Use `manager_ids` array to find users (preferred) |
+| 3 | Fall back to looking up user by `manager` name if `manager_ids` is NULL |
+| 4 | Filter users by `is_active = TRUE` AND `notify_on_allocation = TRUE` |
 
-**Important**: The hierarchy is **Company > Brand > Department**. Users are only notified if they belong to BOTH the same company AND department as the allocation.
+**Important**: Managers are assigned per company + department in Settings → Company Structure. The `manager_ids` integer array stores user IDs directly for efficient lookup.
 
 ### Key Functions
 
 | Function | File | Description |
 |----------|------|-------------|
-| `get_responsables_by_department(department, company)` | database.py | Queries users table with optional company filter |
+| `get_responsables_by_department(department, company)` | database.py | Looks up managers from department_structure |
 | `find_responsables_for_allocation(allocation)` | notification_service.py | Finds all users to notify for an allocation |
 | `notify_allocation(invoice_data, allocation)` | notification_service.py | Sends notification emails |
 
