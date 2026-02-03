@@ -1,0 +1,2092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. - e-Factura Connector</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/jarvis-icon.svg') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet">
+</head>
+<body>
+    <!-- Loading overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading...</div>
+    </div>
+
+    {% set current_module = 'connectors' %}
+    {% set page_title = 'e-Factura' %}
+    {% set page_icon = 'bi-receipt' %}
+    {% include 'partials/_navbar.html' %}
+
+    <!-- Breadcrumb -->
+    <div class="container-fluid px-4 py-2 bg-body-secondary border-bottom">
+        <div class="d-flex justify-content-between align-items-center">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0 small">
+                    <li class="breadcrumb-item"><a href="/">Home</a></li>
+                    <li class="breadcrumb-item"><a href="/efactura/">Connectors</a></li>
+                    <li class="breadcrumb-item active">e-Factura</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <div class="container-fluid px-4 mt-3">
+        <!-- Mock Mode Banner -->
+        <div id="mockModeBanner" class="alert alert-warning d-none mb-3">
+            <i class="bi bi-bug"></i>
+            <strong>Development Mode:</strong> Using mock ANAF data. Set <code>EFACTURA_MOCK_MODE=false</code> and configure certificate to use real ANAF API.
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="bi bi-building"></i> Connected Companies</h6>
+                        <h2 id="totalConnections">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="bi bi-arrow-down-circle"></i> Received Invoices</h6>
+                        <h2 id="receivedInvoices">-</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="bi bi-arrow-up-circle"></i> Sent Invoices</h6>
+                        <h2 id="sentInvoices">-</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-dark">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="bi bi-clock-history"></i> Last Sync</h6>
+                        <h6 id="lastSync" class="mb-0">Never</h6>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <ul class="nav nav-tabs" id="efacturaTabs">
+            <li class="nav-item">
+                <button class="nav-link active" id="connections-tab" data-bs-toggle="tab" data-bs-target="#connections" type="button">
+                    <i class="bi bi-plug"></i> Connections
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="livefetch-tab" data-bs-toggle="tab" data-bs-target="#livefetch" type="button">
+                    <i class="bi bi-cloud-download"></i> Fetch from ANAF
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="unallocated-tab" data-bs-toggle="tab" data-bs-target="#unallocated" type="button">
+                    <i class="bi bi-inbox"></i> Unallocated Invoices
+                    <span id="unallocatedBadge" class="badge bg-warning text-dark ms-1 d-none">0</span>
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="invoices-tab" data-bs-toggle="tab" data-bs-target="#invoices" type="button">
+                    <i class="bi bi-receipt"></i> Local Invoices
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="sync-tab" data-bs-toggle="tab" data-bs-target="#sync" type="button">
+                    <i class="bi bi-arrow-repeat"></i> Sync History
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="partnertypes-tab" data-bs-toggle="tab" data-bs-target="#partnertypes" type="button">
+                    <i class="bi bi-tags"></i> Partner Types
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content mt-3" id="efacturaTabsContent">
+            <!-- Connections Tab -->
+            <div class="tab-pane fade show active" id="connections">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-building"></i> Company Connections</span>
+                        <button class="btn btn-sm btn-primary" id="addConnectionBtn">
+                            <i class="bi bi-plus"></i> Add Connection
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            <strong>Setup Required:</strong> To connect a company to e-Factura, you need:
+                            <ol class="mb-0 mt-2">
+                                <li>A qualified digital certificate (USB token or .p12/.pfx) from an accredited authority</li>
+                                <li>The certificate registered on <a href="https://www.anaf.ro/spv/" target="_blank">ANAF SPV portal</a></li>
+                                <li>e-Factura access enabled for your company's CIF</li>
+                            </ol>
+                        </div>
+
+                        <!-- OAuth Authentication Card -->
+                        <div class="card mb-3 border-primary">
+                            <div class="card-header bg-primary text-white">
+                                <i class="bi bi-shield-lock"></i> ANAF OAuth Authentication
+                            </div>
+                            <div class="card-body">
+                                <p class="card-text">
+                                    Connect to ANAF using your USB token. You'll authenticate once in your browser, then JARVIS will use the stored credentials until they expire.
+                                </p>
+                                <div class="row align-items-center">
+                                    <div class="col-md-6">
+                                        <div class="input-group">
+                                            <span class="input-group-text">Company CIF</span>
+                                            <input type="text" class="form-control" id="oauthCif" placeholder="e.g., 12345678">
+                                            <button class="btn btn-primary" id="connectAnafBtn" type="button">
+                                                <i class="bi bi-box-arrow-in-right"></i> Connect with ANAF
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div id="oauthStatusContainer" class="d-none">
+                                            <span id="oauthStatusBadge" class="badge bg-secondary me-2">Checking...</span>
+                                            <span id="oauthExpiresAt" class="text-muted small"></span>
+                                            <button class="btn btn-sm btn-outline-danger ms-2 d-none" id="disconnectAnafBtn">
+                                                <i class="bi bi-x-circle"></i> Disconnect
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-warning ms-1 d-none" id="refreshTokenBtn" title="Manually refresh token">
+                                                <i class="bi bi-arrow-clockwise"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Active OAuth Tokens Card -->
+                        <div class="card mb-3 border-success" id="oauthTokensCard" style="display: none;">
+                            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                                <span><i class="bi bi-key"></i> Active OAuth Tokens</span>
+                                <button class="btn btn-sm btn-light" onclick="loadOAuthTokens()">
+                                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                                </button>
+                            </div>
+                            <div class="card-body p-0">
+                                <table class="table table-hover mb-0" id="oauthTokensTable">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>CIF</th>
+                                            <th>Company</th>
+                                            <th>Status</th>
+                                            <th>Expires</th>
+                                            <th>Days Left</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="oauthTokensList">
+                                        <tr>
+                                            <td colspan="6" class="text-center text-muted py-3">
+                                                <i class="bi bi-hourglass-split"></i> Loading...
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <table class="table table-hover" id="connectionsTable">
+                            <thead>
+                                <tr>
+                                    <th>Company CIF</th>
+                                    <th>Display Name</th>
+                                    <th>Environment</th>
+                                    <th>Status</th>
+                                    <th>Last Sync</th>
+                                    <th>Certificate</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="connectionsList">
+                                <tr>
+                                    <td colspan="7" class="text-center text-muted">
+                                        <i class="bi bi-inbox"></i> No connections configured yet
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live Fetch Tab -->
+            <div class="tab-pane fade" id="livefetch">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-cloud-download"></i> Fetch Messages from ANAF</span>
+                        <span id="anafStatusBadge" class="badge bg-secondary">Checking status...</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-3">
+                                <label class="form-label">Company</label>
+                                <select class="form-select" id="anafCompanyFilter">
+                                    <option value="">Select company...</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Direction</label>
+                                <select class="form-select" id="anafDirectionFilter">
+                                    <option value="all">All</option>
+                                    <option value="received">Received</option>
+                                    <option value="sent">Sent</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Days Back</label>
+                                <select class="form-select" id="anafDaysFilter">
+                                    <option value="7">7 days</option>
+                                    <option value="30" selected>30 days</option>
+                                    <option value="60">60 days</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3 d-flex align-items-end">
+                                <button class="btn btn-primary" id="fetchAnafBtn">
+                                    <i class="bi bi-cloud-download"></i> Fetch Messages
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="anafMessagesInfo" class="mb-3 d-none">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span id="anafMessagesSummary" class="text-muted small"></span>
+                                <div id="anafPagination" class="btn-group btn-group-sm"></div>
+                            </div>
+                        </div>
+
+                        <div id="anafBulkActions" class="mb-3 d-none">
+                            <button class="btn btn-success" id="importSelectedBtn" disabled>
+                                <i class="bi bi-download"></i> Import Selected
+                                <span id="anafSelectedCount" class="badge bg-light text-dark ms-1">0</span>
+                            </button>
+                            <button class="btn btn-outline-secondary ms-2" id="selectAllAnafBtn">
+                                <i class="bi bi-check-all"></i> Select All
+                            </button>
+                        </div>
+
+                        <table class="table table-hover" id="anafMessagesTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"><input type="checkbox" id="selectAllAnafCheckbox" class="form-check-input"></th>
+                                    <th>ID</th>
+                                    <th>Type</th>
+                                    <th>Details</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="anafMessagesList">
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted">
+                                        <i class="bi bi-cloud-arrow-down"></i> Click "Fetch Messages" to load data from ANAF
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Unallocated Invoices Tab -->
+            <div class="tab-pane fade" id="unallocated">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-inbox"></i> Unallocated Invoices (Pending Allocation)</span>
+                        <button class="btn btn-sm btn-outline-primary" id="refreshUnallocatedBtn">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            <strong>Workflow:</strong> Invoices fetched from ANAF appear here. Select invoices and click "Send to Invoice Module" to allocate them in JARVIS.
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-md-3">
+                                <label class="form-label">Company</label>
+                                <select class="form-select" id="unallocatedCompanyFilter">
+                                    <option value="">All companies</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Direction</label>
+                                <select class="form-select" id="unallocatedDirectionFilter">
+                                    <option value="">All</option>
+                                    <option value="received" selected>Received</option>
+                                    <option value="sent">Sent</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">From Date</label>
+                                <input type="date" class="form-control" id="unallocatedStartDate">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">To Date</label>
+                                <input type="date" class="form-control" id="unallocatedEndDate">
+                            </div>
+                            <div class="col-md-3 d-flex align-items-end gap-2">
+                                <button class="btn btn-primary" id="filterUnallocatedBtn">
+                                    <i class="bi bi-search"></i> Filter
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="mb-3" id="unallocatedActions" style="display: none;">
+                            <button class="btn btn-success" id="sendToInvoiceModuleBtn" disabled>
+                                <i class="bi bi-send"></i> Send to Invoice Module
+                                <span id="selectedCount" class="badge bg-light text-dark ms-1">0</span>
+                            </button>
+                            <button class="btn btn-outline-secondary ms-2" id="selectAllUnallocatedBtn">
+                                <i class="bi bi-check-all"></i> Select All
+                            </button>
+                            <button class="btn btn-outline-secondary ms-1" id="deselectAllUnallocatedBtn">
+                                <i class="bi bi-x-square"></i> Deselect All
+                            </button>
+                        </div>
+
+                        <table class="table table-hover" id="unallocatedTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"><input type="checkbox" id="selectAllCheckbox" class="form-check-input"></th>
+                                    <th>Direction</th>
+                                    <th>Invoice #</th>
+                                    <th>Partner</th>
+                                    <th>Issue Date</th>
+                                    <th>Amount</th>
+                                    <th>Currency</th>
+                                    <th>Imported</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="unallocatedList">
+                                <tr>
+                                    <td colspan="9" class="text-center text-muted">
+                                        <i class="bi bi-inbox"></i> Loading unallocated invoices...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div id="unallocatedPaginationInfo" class="d-flex justify-content-between align-items-center mt-3" style="display: none !important;">
+                            <span id="unallocatedSummary" class="text-muted small"></span>
+                            <div id="unallocatedPagination" class="btn-group btn-group-sm"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Invoices Tab -->
+            <div class="tab-pane fade" id="invoices">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-receipt"></i> Local Invoices (Imported)
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-secondary">
+                            <i class="bi bi-info-circle"></i>
+                            Select a connected company to view invoices that have been imported into JARVIS.
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-3">
+                                <label class="form-label">Company</label>
+                                <select class="form-select" id="invoiceCompanyFilter">
+                                    <option value="">Select company...</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Direction</label>
+                                <select class="form-select" id="invoiceDirectionFilter">
+                                    <option value="">All</option>
+                                    <option value="received">Received</option>
+                                    <option value="sent">Sent</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">From Date</label>
+                                <input type="date" class="form-control" id="invoiceStartDate">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">To Date</label>
+                                <input type="date" class="form-control" id="invoiceEndDate">
+                            </div>
+                            <div class="col-md-3 d-flex align-items-end">
+                                <button class="btn btn-primary" id="filterInvoicesBtn">
+                                    <i class="bi bi-search"></i> Filter
+                                </button>
+                            </div>
+                        </div>
+                        <table class="table table-hover" id="invoicesTable">
+                            <thead>
+                                <tr>
+                                    <th>Direction</th>
+                                    <th>Invoice #</th>
+                                    <th>Partner</th>
+                                    <th>Issue Date</th>
+                                    <th>Amount</th>
+                                    <th>VAT</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="invoicesList">
+                                <tr>
+                                    <td colspan="8" class="text-center text-muted">
+                                        <i class="bi bi-funnel"></i> Use filters above to load invoices
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sync History Tab -->
+            <div class="tab-pane fade" id="sync">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-arrow-repeat"></i> Sync History</span>
+                        <button class="btn btn-sm btn-outline-primary" id="triggerSyncBtn" disabled>
+                            <i class="bi bi-arrow-clockwise"></i> Trigger Sync
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <strong>Phase 2:</strong> Background sync worker is not yet implemented.
+                            Manual sync triggers will be available once the worker is deployed.
+                        </div>
+                        <table class="table table-hover" id="syncHistoryTable">
+                            <thead>
+                                <tr>
+                                    <th>Run ID</th>
+                                    <th>Company</th>
+                                    <th>Direction</th>
+                                    <th>Started</th>
+                                    <th>Duration</th>
+                                    <th>Created</th>
+                                    <th>Skipped</th>
+                                    <th>Errors</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="syncHistoryList">
+                                <tr>
+                                    <td colspan="9" class="text-center text-muted">
+                                        <i class="bi bi-inbox"></i> No sync runs recorded yet
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Partner Types Tab -->
+            <div class="tab-pane fade" id="partnertypes">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-tags"></i> Partner Types
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">Manage partner types for supplier mappings (e.g., Service, Merchandise).</p>
+
+                        <!-- Add new type form -->
+                        <div class="card mb-3 border-primary">
+                            <div class="card-header bg-primary text-white py-2">
+                                <i class="bi bi-plus-circle"></i> Add New Partner Type
+                            </div>
+                            <div class="card-body py-2">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-md-4">
+                                        <label class="form-label small mb-1">Name <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control form-control-sm" id="newTypeName" placeholder="e.g. Service">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small mb-1">Description</label>
+                                        <input type="text" class="form-control form-control-sm" id="newTypeDescription" placeholder="Optional description">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <button class="btn btn-primary btn-sm w-100" onclick="addPartnerType()">
+                                            <i class="bi bi-plus-lg"></i> Add
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Types list -->
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Description</th>
+                                        <th>Status</th>
+                                        <th title="When enabled, invoices with this type will be hidden from the Unallocated tab">
+                                            Hide in Filter
+                                            <i class="bi bi-info-circle text-muted ms-1" style="cursor: help;"></i>
+                                        </th>
+                                        <th width="100">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="partnerTypesTableBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted py-4">
+                                            <span class="spinner-border spinner-border-sm"></span> Loading...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Save Button -->
+                        <div class="d-flex justify-content-end mt-3 pt-3 border-top">
+                            <button class="btn btn-primary" id="savePartnerTypesBtn" onclick="savePartnerTypeChanges()" disabled>
+                                <i class="bi bi-check-lg"></i> Save Changes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Connection Modal -->
+    <div class="modal fade" id="addConnectionModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Add Company Connection</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addConnectionForm">
+                        <div class="mb-3">
+                            <label class="form-label">Company CIF <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="connectionCif" placeholder="e.g., 12345678" required>
+                            <div class="form-text">Romanian VAT number without country prefix</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Display Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="connectionDisplayName" placeholder="e.g., ACME SRL" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Environment</label>
+                            <select class="form-select" id="connectionEnvironment">
+                                <option value="test">Test (sandbox)</option>
+                                <option value="production">Production</option>
+                            </select>
+                        </div>
+                        <div class="alert alert-info small">
+                            <i class="bi bi-info-circle"></i>
+                            Certificate configuration is done via environment variables:
+                            <code>EFACTURA_CERT_PATH</code> and <code>EFACTURA_CERT_PASSWORD</code>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveConnectionBtn">
+                        <i class="bi bi-check"></i> Add Connection
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/jarvis-dialogs.js') }}"></script>
+    <script>
+        // Global state for OAuth-authenticated CIFs
+        let oauthTokensList = [];
+
+        // Hide loading overlay
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('loadingOverlay').style.display = 'none';
+            // First load OAuth tokens, then connections (to know which CIFs have tokens)
+            loadOAuthTokensFirst().then(() => loadConnections());
+        });
+
+        // Load OAuth tokens first to know which CIFs are authenticated
+        async function loadOAuthTokensFirst() {
+            try {
+                const res = await fetch('/efactura/api/anaf/status');
+                const data = await res.json();
+
+                if (data.success && data.data.oauth_connections) {
+                    oauthTokensList = data.data.oauth_connections;
+                    console.log('[DEBUG] OAuth tokens:', oauthTokensList);
+
+                    // Fetch company names from ANAF for all OAuth CIFs
+                    if (oauthTokensList.length > 0) {
+                        const cifs = oauthTokensList.map(t => t.cif);
+                        try {
+                            const lookupRes = await fetch('/efactura/api/company/lookup-batch', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ cifs: cifs })
+                            });
+                            const lookupData = await lookupRes.json();
+
+                            if (lookupData.success) {
+                                // Enrich OAuth tokens with company names
+                                oauthTokensList.forEach(token => {
+                                    const company = lookupData.data[token.cif];
+                                    if (company) {
+                                        token.company_name = company.name;
+                                    }
+                                });
+                                console.log('[DEBUG] OAuth tokens with names:', oauthTokensList);
+                            }
+                        } catch (lookupErr) {
+                            console.warn('Could not fetch company names:', lookupErr);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Error loading OAuth tokens:', err);
+            }
+        }
+
+        // Load connections
+        async function loadConnections() {
+            try {
+                const res = await fetch('/efactura/api/connections');
+                const data = await res.json();
+
+                if (data.success) {
+                    renderConnections(data.data);
+                    document.getElementById('totalConnections').textContent = data.data.length;
+
+                    // Populate company filter dropdowns
+                    const select = document.getElementById('invoiceCompanyFilter');
+                    select.innerHTML = '<option value="">Select company...</option>';
+                    data.data.forEach(c => {
+                        select.innerHTML += `<option value="${c.cif}">${c.display_name} (${c.cif})</option>`;
+                    });
+
+                    // Also populate ANAF filter (only OAuth-authenticated companies)
+                    updateAnafCompanyFilter(data.data);
+
+                    // Also populate unallocated filter
+                    updateUnallocatedCompanyFilter(data.data);
+                }
+            } catch (err) {
+                console.error('Error loading connections:', err);
+            }
+        }
+
+        function renderConnections(connections) {
+            const tbody = document.getElementById('connectionsList');
+
+            if (!connections.length) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">
+                    <i class="bi bi-inbox"></i> No connections configured yet
+                </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = connections.map(c => `
+                <tr>
+                    <td><code>${c.cif}</code></td>
+                    <td>${c.display_name}</td>
+                    <td><span class="badge ${c.environment === 'production' ? 'bg-danger' : 'bg-secondary'}">${c.environment}</span></td>
+                    <td><span class="badge ${c.status === 'active' ? 'bg-success' : 'bg-warning'}">${c.status}</span></td>
+                    <td>${c.last_sync_at ? new Date(c.last_sync_at).toLocaleString() : 'Never'}</td>
+                    <td>${c.cert_expires_at ?
+                        `<span class="${c.cert_expiring_soon ? 'text-warning' : ''}">${new Date(c.cert_expires_at).toLocaleDateString()}</span>` :
+                        '<span class="text-muted">N/A</span>'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteConnection('${c.cif}')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Add connection
+        document.getElementById('addConnectionBtn').addEventListener('click', function() {
+            new bootstrap.Modal(document.getElementById('addConnectionModal')).show();
+        });
+
+        document.getElementById('saveConnectionBtn').addEventListener('click', async function() {
+            const cif = document.getElementById('connectionCif').value.trim();
+            const displayName = document.getElementById('connectionDisplayName').value.trim();
+            const environment = document.getElementById('connectionEnvironment').value;
+
+            if (!cif || !displayName) {
+                await JarvisDialog.alert('Please fill in all required fields', { type: 'warning' });
+                return;
+            }
+
+            try {
+                const res = await fetch('/efactura/api/connections', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cif, display_name: displayName, environment })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('addConnectionModal')).hide();
+                    loadConnections();
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to add connection', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        });
+
+        // Delete connection
+        async function deleteConnection(cif) {
+            const confirmed = await JarvisDialog.confirm(`Delete connection for CIF ${cif}?`, { danger: true });
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(`/efactura/api/connections/${cif}`, { method: 'DELETE' });
+                const data = await res.json();
+
+                if (data.success) {
+                    loadConnections();
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to delete connection', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        }
+
+        // Filter invoices
+        document.getElementById('filterInvoicesBtn').addEventListener('click', loadInvoices);
+
+        async function loadInvoices() {
+            const cif = document.getElementById('invoiceCompanyFilter').value;
+            if (!cif) {
+                await JarvisDialog.alert('Please select a company', { type: 'warning' });
+                return;
+            }
+
+            const direction = document.getElementById('invoiceDirectionFilter').value;
+            const startDate = document.getElementById('invoiceStartDate').value;
+            const endDate = document.getElementById('invoiceEndDate').value;
+
+            let url = `/efactura/api/invoices?cif=${cif}`;
+            if (direction) url += `&direction=${direction}`;
+            if (startDate) url += `&start_date=${startDate}`;
+            if (endDate) url += `&end_date=${endDate}`;
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data.success) {
+                    renderInvoices(data.data);
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to load invoices', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        }
+
+        function renderInvoices(invoices) {
+            const tbody = document.getElementById('invoicesList');
+
+            if (!invoices.length) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">
+                    <i class="bi bi-inbox"></i> No invoices found
+                </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = invoices.map(inv => `
+                <tr>
+                    <td><span class="badge ${inv.direction === 'received' ? 'bg-success' : 'bg-info'}">
+                        <i class="bi bi-arrow-${inv.direction === 'received' ? 'down' : 'up'}"></i> ${inv.direction}
+                    </span></td>
+                    <td><code>${inv.invoice_number}</code></td>
+                    <td>${inv.partner_name || inv.partner_cif}</td>
+                    <td>${inv.issue_date || '-'}</td>
+                    <td class="text-end">${parseFloat(inv.total_amount).toLocaleString('ro-RO', {minimumFractionDigits: 2})} ${inv.currency}</td>
+                    <td class="text-end">${parseFloat(inv.total_vat).toLocaleString('ro-RO', {minimumFractionDigits: 2})}</td>
+                    <td><span class="badge bg-secondary">${inv.status}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewInvoice(${inv.id})">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function viewInvoice(id) {
+            await JarvisDialog.alert('Invoice details view coming in Phase 2', { type: 'info' });
+        }
+
+        // ==========================================
+        // ANAF Live Fetch Functions
+        // ==========================================
+
+        let anafCurrentPage = 1;
+        let anafTotalPages = 1;
+        let isMockMode = false;
+
+        // Check ANAF status on load
+        async function checkAnafStatus() {
+            try {
+                const res = await fetch('/efactura/api/anaf/status');
+                const data = await res.json();
+
+                if (data.success) {
+                    isMockMode = data.data.mock_mode;
+                    const badge = document.getElementById('anafStatusBadge');
+                    const banner = document.getElementById('mockModeBanner');
+
+                    if (isMockMode) {
+                        badge.className = 'badge bg-warning text-dark';
+                        badge.innerHTML = '<i class="bi bi-bug"></i> Mock Mode';
+                        banner.classList.remove('d-none');
+                    } else {
+                        badge.className = 'badge bg-success';
+                        badge.innerHTML = '<i class="bi bi-check-circle"></i> Live ANAF';
+                        banner.classList.add('d-none');
+                    }
+                }
+            } catch (err) {
+                console.error('Error checking ANAF status:', err);
+            }
+        }
+
+        // Fetch messages from ANAF
+        document.getElementById('fetchAnafBtn').addEventListener('click', () => fetchAnafMessages(1));
+
+        async function fetchAnafMessages(page = 1) {
+            const cif = document.getElementById('anafCompanyFilter').value;
+            if (!cif) {
+                await JarvisDialog.alert('Please select a company first', { type: 'warning' });
+                return;
+            }
+
+            const direction = document.getElementById('anafDirectionFilter').value;
+            const days = document.getElementById('anafDaysFilter').value;
+
+            const btn = document.getElementById('fetchAnafBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Fetching...';
+
+            try {
+                let url = `/efactura/api/anaf/messages?cif=${cif}&days=${days}&page=${page}`;
+                if (direction !== 'all') url += `&filter=${direction}`;
+
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data.success) {
+                    renderAnafMessages(data.data.messages);
+                    updateAnafPagination(data.data.pagination);
+
+                    // Show info
+                    document.getElementById('anafMessagesInfo').classList.remove('d-none');
+                    const summary = document.getElementById('anafMessagesSummary');
+                    summary.innerHTML = `
+                        <span class="badge ${data.mock_mode ? 'bg-warning' : 'bg-success'} me-2">
+                            ${data.mock_mode ? 'MOCK DATA' : 'LIVE DATA'}
+                        </span>
+                        Showing page ${data.data.pagination.current_page} of ${data.data.pagination.total_pages}
+                        (${data.data.pagination.total_records} total messages)
+                    `;
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to fetch messages', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-cloud-download"></i> Fetch Messages';
+            }
+        }
+
+        let anafMessages = []; // Store current messages for import
+
+        function renderAnafMessages(messages) {
+            anafMessages = messages; // Store for import
+            const tbody = document.getElementById('anafMessagesList');
+
+            // Show bulk actions
+            document.getElementById('anafBulkActions').classList.remove('d-none');
+
+            if (!messages.length) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">
+                    <i class="bi bi-inbox"></i> No messages found
+                </td></tr>`;
+                document.getElementById('anafBulkActions').classList.add('d-none');
+                return;
+            }
+
+            tbody.innerHTML = messages.map(msg => {
+                // Parse date from ANAF format (YYYYMMDDHHmmss)
+                const dateStr = msg.data_creare;
+                let formattedDate = dateStr;
+                if (dateStr && dateStr.length === 14) {
+                    const year = dateStr.slice(0, 4);
+                    const month = dateStr.slice(4, 6);
+                    const day = dateStr.slice(6, 8);
+                    const hour = dateStr.slice(8, 10);
+                    const min = dateStr.slice(10, 12);
+                    formattedDate = `${day}.${month}.${year} ${hour}:${min}`;
+                }
+
+                const isReceived = msg.tip && msg.tip.includes('PRIMITA');
+
+                return `
+                <tr data-message-id="${msg.id}">
+                    <td><input type="checkbox" class="form-check-input anaf-checkbox" value="${msg.id}" data-details='${JSON.stringify(msg).replace(/'/g, "&#39;")}'></td>
+                    <td><code>${msg.id}</code></td>
+                    <td>
+                        <span class="badge ${isReceived ? 'bg-success' : 'bg-info'}">
+                            <i class="bi bi-arrow-${isReceived ? 'down' : 'up'}"></i>
+                            ${isReceived ? 'Received' : 'Sent'}
+                        </span>
+                    </td>
+                    <td class="small">${msg.detalii || '-'}</td>
+                    <td class="small">${formattedDate}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-success" onclick="importSingleMessage('${msg.id}')" title="Import to JARVIS">
+                                <i class="bi bi-download"></i>
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="downloadAnafMessage('${msg.id}')" title="Download ZIP">
+                                <i class="bi bi-file-zip"></i>
+                            </button>
+                            <button class="btn btn-outline-danger" onclick="exportPdf('${msg.id}')" title="Export PDF">
+                                <i class="bi bi-file-pdf"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `}).join('');
+
+            // Attach checkbox event listeners
+            document.querySelectorAll('.anaf-checkbox').forEach(cb => {
+                cb.addEventListener('change', updateAnafSelectionCount);
+            });
+        }
+
+        function updateAnafSelectionCount() {
+            const checked = document.querySelectorAll('.anaf-checkbox:checked').length;
+            const countEl = document.getElementById('anafSelectedCount');
+            if (countEl) {
+                countEl.textContent = checked;
+            }
+            document.getElementById('importSelectedBtn').disabled = checked === 0;
+        }
+
+        document.getElementById('selectAllAnafCheckbox').addEventListener('change', function() {
+            document.querySelectorAll('.anaf-checkbox').forEach(cb => {
+                cb.checked = this.checked;
+            });
+            updateAnafSelectionCount();
+        });
+
+        document.getElementById('selectAllAnafBtn').addEventListener('click', function() {
+            document.querySelectorAll('.anaf-checkbox').forEach(cb => {
+                cb.checked = true;
+            });
+            document.getElementById('selectAllAnafCheckbox').checked = true;
+            updateAnafSelectionCount();
+        });
+
+        // Import single message
+        async function importSingleMessage(messageId) {
+            const cif = document.getElementById('anafCompanyFilter').value;
+            if (!cif) {
+                await JarvisDialog.alert('Please select a company first', { type: 'warning' });
+                return;
+            }
+
+            try {
+                const res = await fetch('/efactura/api/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cif: cif,
+                        message_ids: [messageId]
+                    })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    const msg = formatImportResult(data);
+                    await JarvisDialog.alert(msg, { type: 'success', html: true });
+                    // Refresh unallocated count
+                    loadUnallocatedCount();
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to import', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        }
+
+        // Helper: Format import result message with HTML
+        function formatImportResult(data) {
+            let html = '<div style="text-align: left;">';
+
+            // Summary section
+            html += '<div style="margin-bottom: 12px;">';
+            html += `<div style="font-size: 1.1em; margin-bottom: 8px;"><strong>Import Summary</strong></div>`;
+            html += `<div style="display: flex; gap: 20px; flex-wrap: wrap;">`;
+            html += `<span><i class="bi bi-check-circle text-success"></i> <strong>${data.imported || 0}</strong> imported</span>`;
+            html += `<span><i class="bi bi-skip-forward text-secondary"></i> <strong>${data.skipped || 0}</strong> skipped</span>`;
+            if (data.errors && data.errors.length > 0) {
+                html += `<span><i class="bi bi-exclamation-triangle text-warning"></i> <strong>${data.errors.length}</strong> errors</span>`;
+            }
+            html += '</div></div>';
+
+            // Errors section (collapsible)
+            if (data.errors && data.errors.length > 0) {
+                html += '<div style="border-top: 1px solid var(--border-color, #dee2e6); padding-top: 12px;">';
+                html += '<div style="font-size: 0.9em; color: var(--text-muted, #6c757d); margin-bottom: 8px;">Skipped Details:</div>';
+                html += '<div style="max-height: 200px; overflow-y: auto; font-size: 0.85em; background: var(--bg-muted, #f8f9fa); padding: 8px; border-radius: 4px;">';
+
+                const errorsToShow = data.errors.slice(0, 10);
+                errorsToShow.forEach(err => {
+                    // Extract message ID and error type for better formatting
+                    const match = err.match(/Message (\d+) (.+)/);
+                    if (match) {
+                        html += `<div style="margin-bottom: 4px; padding: 4px 0; border-bottom: 1px solid var(--border-color, #eee);">`;
+                        html += `<span style="font-family: monospace; color: var(--text-muted, #6c757d);">${match[1]}</span>: `;
+                        html += `<span>${match[2]}</span>`;
+                        html += '</div>';
+                    } else {
+                        html += `<div style="margin-bottom: 4px;">${err}</div>`;
+                    }
+                });
+
+                if (data.errors.length > 10) {
+                    html += `<div style="color: var(--text-muted, #6c757d); font-style: italic; margin-top: 8px;">... and ${data.errors.length - 10} more</div>`;
+                }
+                html += '</div></div>';
+            }
+
+            html += '</div>';
+            return html;
+        }
+
+        // Import selected messages
+        document.getElementById('importSelectedBtn').addEventListener('click', async function() {
+            const cif = document.getElementById('anafCompanyFilter').value;
+            if (!cif) {
+                await JarvisDialog.alert('Please select a company first', { type: 'warning' });
+                return;
+            }
+
+            const selectedIds = Array.from(document.querySelectorAll('.anaf-checkbox:checked'))
+                .map(cb => cb.value);
+
+            if (selectedIds.length === 0) {
+                await JarvisDialog.alert('Please select at least one invoice', { type: 'warning' });
+                return;
+            }
+
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Importing...';
+
+            try {
+                const res = await fetch('/efactura/api/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cif: cif,
+                        message_ids: selectedIds
+                    })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    const msg = formatImportResult(data);
+                    await JarvisDialog.alert(msg, { type: 'success', html: true });
+                    // Clear checkboxes
+                    document.querySelectorAll('.anaf-checkbox').forEach(cb => cb.checked = false);
+                    document.getElementById('selectAllAnafCheckbox').checked = false;
+                    updateAnafSelectionCount();
+                    // Refresh unallocated count
+                    loadUnallocatedCount();
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to import', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            } finally {
+                this.disabled = false;
+                this.innerHTML = '<i class="bi bi-download"></i> Import Selected <span id="anafSelectedCount" class="badge bg-light text-dark ms-1">0</span>';
+            }
+        });
+
+        function updateAnafPagination(pagination) {
+            anafCurrentPage = pagination.current_page;
+            anafTotalPages = pagination.total_pages;
+
+            const container = document.getElementById('anafPagination');
+            if (anafTotalPages <= 1) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+            html += `<button class="btn btn-outline-secondary" ${anafCurrentPage <= 1 ? 'disabled' : ''} onclick="fetchAnafMessages(${anafCurrentPage - 1})">
+                <i class="bi bi-chevron-left"></i>
+            </button>`;
+            html += `<button class="btn btn-outline-secondary" disabled>Page ${anafCurrentPage} of ${anafTotalPages}</button>`;
+            html += `<button class="btn btn-outline-secondary" ${anafCurrentPage >= anafTotalPages ? 'disabled' : ''} onclick="fetchAnafMessages(${anafCurrentPage + 1})">
+                <i class="bi bi-chevron-right"></i>
+            </button>`;
+
+            container.innerHTML = html;
+        }
+
+        async function downloadAnafMessage(messageId) {
+            const cif = document.getElementById('anafCompanyFilter').value;
+            if (!cif) {
+                await JarvisDialog.alert('Please select a company first', { type: 'warning' });
+                return;
+            }
+
+            try {
+                const res = await fetch(`/efactura/api/anaf/download/${messageId}?cif=${cif}`);
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    await JarvisDialog.alert(data.error || 'Failed to download', { type: 'error' });
+                    return;
+                }
+
+                // Get the blob and download it
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `invoice_${messageId}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        }
+
+        async function exportPdf(messageId) {
+            const cif = document.getElementById('anafCompanyFilter').value;
+            if (!cif) {
+                await JarvisDialog.alert('Please select a company first', { type: 'warning' });
+                return;
+            }
+
+            try {
+                // Show loading state
+                const btn = event.target.closest('button');
+                const originalHtml = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+                const res = await fetch(`/efactura/api/anaf/export-pdf/${messageId}?cif=${cif}`);
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    await JarvisDialog.alert(data.error || 'Failed to export PDF', { type: 'error' });
+                    return;
+                }
+
+                // Get the blob and download it
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `invoice_${messageId}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            } finally {
+                // Restore button state
+                const btn = event.target.closest('button');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-file-pdf"></i>';
+                }
+            }
+        }
+
+        // Also populate ANAF company filter when connections load
+        function updateAnafCompanyFilter(connections) {
+            const select = document.getElementById('anafCompanyFilter');
+            select.innerHTML = '<option value="">Select company...</option>';
+
+            // Use OAuth tokens list (only show authenticated companies)
+            if (oauthTokensList.length > 0) {
+                oauthTokensList.forEach(token => {
+                    const displayName = token.company_name || `CIF ${token.cif}`;
+                    select.innerHTML += `<option value="${token.cif}">${displayName} (${token.cif})</option>`;
+                });
+                console.log('[DEBUG] ANAF filter populated with', oauthTokensList.length, 'OAuth-authenticated companies');
+            } else {
+                // Fallback to connections if no OAuth tokens
+                connections.forEach(c => {
+                    select.innerHTML += `<option value="${c.cif}">${c.display_name} (${c.cif})</option>`;
+                });
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAnafStatus();
+            loadUnallocatedCount();
+            initOAuthUI();
+            loadOAuthTokens();
+        });
+
+        // Load OAuth tokens list (also refreshes company names)
+        async function loadOAuthTokens() {
+            try {
+                const res = await fetch('/efactura/api/anaf/status');
+                const data = await res.json();
+
+                if (data.success && data.data.oauth_connections) {
+                    let tokens = data.data.oauth_connections;
+
+                    // Fetch company names from ANAF
+                    if (tokens.length > 0) {
+                        const cifs = tokens.map(t => t.cif);
+                        try {
+                            const lookupRes = await fetch('/efactura/api/company/lookup-batch', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ cifs: cifs })
+                            });
+                            const lookupData = await lookupRes.json();
+
+                            if (lookupData.success) {
+                                tokens.forEach(token => {
+                                    const company = lookupData.data[token.cif];
+                                    if (company) {
+                                        token.company_name = company.name;
+                                    }
+                                });
+                            }
+                        } catch (lookupErr) {
+                            console.warn('Could not fetch company names:', lookupErr);
+                        }
+                    }
+
+                    // Update global state and re-render
+                    oauthTokensList = tokens;
+                    renderOAuthTokens(tokens);
+
+                    // Also update the ANAF company filter dropdown
+                    updateAnafCompanyFilter([]);
+                }
+            } catch (err) {
+                console.error('Error loading OAuth tokens:', err);
+            }
+        }
+
+        function renderOAuthTokens(tokens) {
+            const card = document.getElementById('oauthTokensCard');
+            const tbody = document.getElementById('oauthTokensList');
+
+            if (!tokens || tokens.length === 0) {
+                card.style.display = 'none';
+                return;
+            }
+
+            card.style.display = 'block';
+
+            tbody.innerHTML = tokens.map(token => {
+                const expiresAt = token.expires_at ? new Date(token.expires_at) : null;
+                const now = new Date();
+                let daysLeft = '-';
+                let statusClass = 'bg-success';
+                let statusText = 'Active';
+
+                if (expiresAt) {
+                    const diffMs = expiresAt - now;
+                    daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+                    if (daysLeft <= 0) {
+                        statusClass = 'bg-danger';
+                        statusText = 'Expired';
+                        daysLeft = 'Expired';
+                    } else if (daysLeft <= 7) {
+                        statusClass = 'bg-danger';
+                        statusText = 'Expiring Soon';
+                    } else if (daysLeft <= 30) {
+                        statusClass = 'bg-warning text-dark';
+                        statusText = 'Active';
+                    }
+                }
+
+                const formattedDate = expiresAt ? expiresAt.toLocaleDateString('ro-RO', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }) : '-';
+
+                return `
+                <tr>
+                    <td><code>${token.cif}</code></td>
+                    <td>${token.company_name || '-'}</td>
+                    <td><span class="badge ${statusClass}">${statusText}</span></td>
+                    <td class="small">${formattedDate}</td>
+                    <td>
+                        ${typeof daysLeft === 'number' ?
+                            `<span class="${daysLeft <= 7 ? 'text-danger fw-bold' : daysLeft <= 30 ? 'text-warning' : ''}">${daysLeft} days</span>` :
+                            `<span class="text-danger">${daysLeft}</span>`
+                        }
+                    </td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-warning" onclick="refreshTokenForCif('${token.cif}')" title="Refresh Token">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                            <button class="btn btn-outline-danger" onclick="revokeTokenForCif('${token.cif}')" title="Revoke Token">
+                                <i class="bi bi-x-circle"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                `;
+            }).join('');
+        }
+
+        async function refreshTokenForCif(cif) {
+            const confirmed = await JarvisDialog.confirm(`Refresh OAuth token for CIF ${cif}?`);
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch('/efactura/oauth/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cif: cif })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    await JarvisDialog.alert('Token refreshed successfully', { type: 'success' });
+                    loadOAuthTokens();
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to refresh token', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        }
+
+        async function revokeTokenForCif(cif) {
+            const confirmed = await JarvisDialog.confirm(`Revoke OAuth token for CIF ${cif}? You'll need to re-authenticate.`, { danger: true });
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch('/efactura/oauth/revoke', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cif: cif })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    await JarvisDialog.alert('Token revoked successfully', { type: 'success' });
+                    loadOAuthTokens();
+                    loadConnections();
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to revoke token', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        }
+
+        // ==========================================
+        // OAuth Authentication Functions
+        // ==========================================
+
+        // Initialize OAuth UI
+        function initOAuthUI() {
+            // Connect button
+            document.getElementById('connectAnafBtn').addEventListener('click', initiateOAuth);
+
+            // Disconnect button
+            document.getElementById('disconnectAnafBtn').addEventListener('click', disconnectOAuth);
+
+            // Refresh token button
+            document.getElementById('refreshTokenBtn').addEventListener('click', refreshOAuthToken);
+
+            // Check status when CIF is entered
+            document.getElementById('oauthCif').addEventListener('change', function() {
+                if (this.value.trim()) {
+                    checkOAuthStatus(this.value.trim());
+                }
+            });
+        }
+
+        // Initiate OAuth flow
+        async function initiateOAuth() {
+            const cif = document.getElementById('oauthCif').value.trim();
+            if (!cif) {
+                await JarvisDialog.alert('Please enter a Company CIF', { type: 'warning' });
+                return;
+            }
+
+            // Redirect to OAuth authorize endpoint
+            window.location.href = `/efactura/oauth/authorize?cif=${encodeURIComponent(cif)}`;
+        }
+
+        // Check OAuth status for a CIF
+        async function checkOAuthStatus(cif) {
+            const statusContainer = document.getElementById('oauthStatusContainer');
+            const statusBadge = document.getElementById('oauthStatusBadge');
+            const expiresAt = document.getElementById('oauthExpiresAt');
+            const disconnectBtn = document.getElementById('disconnectAnafBtn');
+            const refreshBtn = document.getElementById('refreshTokenBtn');
+            const connectBtn = document.getElementById('connectAnafBtn');
+
+            statusContainer.classList.remove('d-none');
+            statusBadge.className = 'badge bg-secondary me-2';
+            statusBadge.textContent = 'Checking...';
+
+            try {
+                const res = await fetch(`/efactura/oauth/status?cif=${encodeURIComponent(cif)}`);
+                const data = await res.json();
+
+                if (data.success && data.data) {
+                    const status = data.data;
+
+                    if (status.authenticated) {
+                        statusBadge.className = 'badge bg-success me-2';
+                        statusBadge.innerHTML = '<i class="bi bi-check-circle"></i> Connected';
+
+                        if (status.expires_at) {
+                            const expDate = new Date(status.expires_at);
+                            const now = new Date();
+                            const hoursLeft = Math.round((expDate - now) / (1000 * 60 * 60));
+
+                            if (hoursLeft < 1) {
+                                expiresAt.innerHTML = `<span class="text-warning">Expires in ${status.expires_in_seconds} seconds</span>`;
+                            } else if (hoursLeft < 24) {
+                                expiresAt.innerHTML = `<span class="text-warning">Expires in ${hoursLeft} hours</span>`;
+                            } else {
+                                const daysLeft = Math.round(hoursLeft / 24);
+                                expiresAt.textContent = `Expires in ${daysLeft} day(s)`;
+                            }
+                        }
+
+                        disconnectBtn.classList.remove('d-none');
+                        refreshBtn.classList.remove('d-none');
+                        connectBtn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Re-authenticate';
+                    } else {
+                        statusBadge.className = 'badge bg-secondary me-2';
+                        statusBadge.innerHTML = '<i class="bi bi-x-circle"></i> Not Connected';
+                        expiresAt.textContent = '';
+                        disconnectBtn.classList.add('d-none');
+                        refreshBtn.classList.add('d-none');
+                        connectBtn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> Connect with ANAF';
+                    }
+                }
+            } catch (err) {
+                console.error('Error checking OAuth status:', err);
+                statusBadge.className = 'badge bg-danger me-2';
+                statusBadge.textContent = 'Error';
+            }
+        }
+
+        // Disconnect OAuth
+        async function disconnectOAuth() {
+            const cif = document.getElementById('oauthCif').value.trim();
+            if (!cif) {
+                await JarvisDialog.alert('Please enter a Company CIF', { type: 'warning' });
+                return;
+            }
+
+            const confirmed = await JarvisDialog.confirm(`Disconnect ANAF authentication for CIF ${cif}?`, { danger: true });
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+                const res = await fetch('/efactura/oauth/revoke', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cif: cif })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    await JarvisDialog.alert('Disconnected successfully', { type: 'success' });
+                    checkOAuthStatus(cif);
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to disconnect', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        }
+
+        // Manually refresh OAuth token
+        async function refreshOAuthToken() {
+            const cif = document.getElementById('oauthCif').value.trim();
+            if (!cif) {
+                await JarvisDialog.alert('Please enter a Company CIF', { type: 'warning' });
+                return;
+            }
+
+            const btn = document.getElementById('refreshTokenBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+            try {
+                const res = await fetch('/efactura/oauth/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cif: cif })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    await JarvisDialog.alert('Token refreshed successfully', { type: 'success' });
+                    checkOAuthStatus(cif);
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to refresh token', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+            }
+        }
+
+        // ==========================================
+        // Unallocated Invoices Functions
+        // ==========================================
+
+        let unallocatedPage = 1;
+        let unallocatedTotalPages = 1;
+
+        // Load unallocated count for badge
+        async function loadUnallocatedCount() {
+            try {
+                const res = await fetch('/efactura/api/invoices/unallocated/count');
+                const data = await res.json();
+
+                if (data.success) {
+                    const badge = document.getElementById('unallocatedBadge');
+                    if (data.count > 0) {
+                        badge.textContent = data.count;
+                        badge.classList.remove('d-none');
+                    } else {
+                        badge.classList.add('d-none');
+                    }
+                }
+            } catch (err) {
+                console.error('Error loading unallocated count:', err);
+            }
+        }
+
+        // Load unallocated invoices when tab is shown
+        document.getElementById('unallocated-tab').addEventListener('shown.bs.tab', function() {
+            loadUnallocatedInvoices(1);
+        });
+
+        // Refresh button
+        document.getElementById('refreshUnallocatedBtn').addEventListener('click', () => loadUnallocatedInvoices(1));
+
+        // Filter button
+        document.getElementById('filterUnallocatedBtn').addEventListener('click', () => loadUnallocatedInvoices(1));
+
+        async function loadUnallocatedInvoices(page = 1) {
+            const cif = document.getElementById('unallocatedCompanyFilter').value;
+            const direction = document.getElementById('unallocatedDirectionFilter').value;
+            const startDate = document.getElementById('unallocatedStartDate').value;
+            const endDate = document.getElementById('unallocatedEndDate').value;
+
+            let url = `/efactura/api/invoices/unallocated?page=${page}`;
+            if (cif) url += `&cif=${cif}`;
+            if (direction) url += `&direction=${direction}`;
+            if (startDate) url += `&start_date=${startDate}`;
+            if (endDate) url += `&end_date=${endDate}`;
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data.success) {
+                    renderUnallocatedInvoices(data.data);
+                    updateUnallocatedPagination(data.pagination);
+
+                    // Show actions if we have invoices
+                    document.getElementById('unallocatedActions').style.display = data.data.length > 0 ? 'block' : 'none';
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to load unallocated invoices', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        }
+
+        function renderUnallocatedInvoices(invoices) {
+            const tbody = document.getElementById('unallocatedList');
+
+            if (!invoices.length) {
+                tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">
+                    <i class="bi bi-check-circle"></i> No unallocated invoices! All invoices have been sent to Invoice Module.
+                </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = invoices.map(inv => {
+                const isReceived = inv.direction === 'received';
+                const formattedDate = inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('ro-RO') : '-';
+                const importedDate = inv.created_at ? new Date(inv.created_at).toLocaleDateString('ro-RO') : '-';
+
+                return `
+                <tr data-invoice-id="${inv.id}">
+                    <td><input type="checkbox" class="form-check-input unallocated-checkbox" value="${inv.id}"></td>
+                    <td>
+                        <span class="badge ${isReceived ? 'bg-success' : 'bg-info'}">
+                            <i class="bi bi-arrow-${isReceived ? 'down' : 'up'}"></i>
+                            ${isReceived ? 'Received' : 'Sent'}
+                        </span>
+                    </td>
+                    <td><code>${inv.invoice_number || '-'}</code></td>
+                    <td>${inv.partner_name || inv.partner_cif || '-'}</td>
+                    <td>${formattedDate}</td>
+                    <td class="text-end">${parseFloat(inv.total_amount).toLocaleString('ro-RO', {minimumFractionDigits: 2})}</td>
+                    <td>${inv.currency || 'RON'}</td>
+                    <td class="small text-muted">${importedDate}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-success" onclick="sendSingleToModule(${inv.id})" title="Send to Invoice Module">
+                                <i class="bi bi-send"></i>
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="viewInvoiceDetails(${inv.id})" title="View Details">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            <button class="btn btn-outline-danger" onclick="exportUnallocatedPdf(${inv.id})" title="Export PDF">
+                                <i class="bi bi-file-pdf"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `}).join('');
+
+            // Attach checkbox event listeners
+            document.querySelectorAll('.unallocated-checkbox').forEach(cb => {
+                cb.addEventListener('change', updateUnallocatedSelectionCount);
+            });
+        }
+
+        function updateUnallocatedPagination(pagination) {
+            if (!pagination) return;
+
+            unallocatedPage = pagination.current_page || 1;
+            unallocatedTotalPages = pagination.total_pages || 1;
+
+            const container = document.getElementById('unallocatedPagination');
+            const info = document.getElementById('unallocatedPaginationInfo');
+            const summary = document.getElementById('unallocatedSummary');
+
+            if (pagination.total && pagination.total > 0) {
+                info.style.display = 'flex';
+                summary.textContent = `Showing ${pagination.offset + 1}-${Math.min(pagination.offset + pagination.limit, pagination.total)} of ${pagination.total} invoices`;
+
+                if (unallocatedTotalPages > 1) {
+                    let html = '';
+                    html += `<button class="btn btn-outline-secondary" ${unallocatedPage <= 1 ? 'disabled' : ''} onclick="loadUnallocatedInvoices(${unallocatedPage - 1})">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>`;
+                    html += `<button class="btn btn-outline-secondary" disabled>Page ${unallocatedPage} of ${unallocatedTotalPages}</button>`;
+                    html += `<button class="btn btn-outline-secondary" ${unallocatedPage >= unallocatedTotalPages ? 'disabled' : ''} onclick="loadUnallocatedInvoices(${unallocatedPage + 1})">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>`;
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '';
+                }
+            } else {
+                info.style.display = 'none';
+            }
+        }
+
+        function updateUnallocatedSelectionCount() {
+            const checked = document.querySelectorAll('.unallocated-checkbox:checked').length;
+            const countEl = document.getElementById('selectedCount');
+            if (countEl) {
+                countEl.textContent = checked;
+            }
+            document.getElementById('sendToInvoiceModuleBtn').disabled = checked === 0;
+        }
+
+        // Select all checkbox
+        document.getElementById('selectAllCheckbox').addEventListener('change', function() {
+            document.querySelectorAll('.unallocated-checkbox').forEach(cb => {
+                cb.checked = this.checked;
+            });
+            updateUnallocatedSelectionCount();
+        });
+
+        document.getElementById('selectAllUnallocatedBtn').addEventListener('click', function() {
+            document.querySelectorAll('.unallocated-checkbox').forEach(cb => cb.checked = true);
+            document.getElementById('selectAllCheckbox').checked = true;
+            updateUnallocatedSelectionCount();
+        });
+
+        document.getElementById('deselectAllUnallocatedBtn').addEventListener('click', function() {
+            document.querySelectorAll('.unallocated-checkbox').forEach(cb => cb.checked = false);
+            document.getElementById('selectAllCheckbox').checked = false;
+            updateUnallocatedSelectionCount();
+        });
+
+        // Send single invoice to module
+        async function sendSingleToModule(invoiceId) {
+            const confirmed = await JarvisDialog.confirm('Send this invoice to the Invoice Module for allocation?');
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch('/efactura/api/invoices/send-to-module', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ invoice_ids: [invoiceId] })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    if (data.duplicates > 0) {
+                        await JarvisDialog.alert('Invoice already exists in Invoices module (duplicate skipped).', { type: 'warning' });
+                    } else {
+                        await JarvisDialog.alert('Invoice sent to Invoice Module successfully!', { type: 'success' });
+                    }
+                    loadUnallocatedInvoices(unallocatedPage);
+                    loadUnallocatedCount();
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to send invoice', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        }
+
+        // Send selected invoices to module
+        document.getElementById('sendToInvoiceModuleBtn').addEventListener('click', async function() {
+            const selectedIds = Array.from(document.querySelectorAll('.unallocated-checkbox:checked'))
+                .map(cb => parseInt(cb.value));
+
+            if (selectedIds.length === 0) {
+                await JarvisDialog.alert('Please select at least one invoice', { type: 'warning' });
+                return;
+            }
+
+            const confirmed = await JarvisDialog.confirm(`Send ${selectedIds.length} invoice(s) to the Invoice Module?`);
+            if (!confirmed) return;
+
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sending...';
+
+            try {
+                const res = await fetch('/efactura/api/invoices/send-to-module', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ invoice_ids: selectedIds })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    let msg = `${data.sent} invoice(s) sent to Invoice Module successfully!`;
+                    if (data.duplicates > 0) {
+                        msg += `\n\n${data.duplicates} duplicate(s) skipped (already exist in Invoices).`;
+                    }
+                    if (data.errors && data.errors.length > 0) {
+                        msg += `\n\nNotes:\n${data.errors.join('\n')}`;
+                    }
+                    await JarvisDialog.alert(msg, { type: 'success' });
+                    // Clear checkboxes
+                    document.querySelectorAll('.unallocated-checkbox').forEach(cb => cb.checked = false);
+                    document.getElementById('selectAllCheckbox').checked = false;
+                    updateUnallocatedSelectionCount();
+                    // Reload
+                    loadUnallocatedInvoices(unallocatedPage);
+                    loadUnallocatedCount();
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to send invoices', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            } finally {
+                this.disabled = false;
+                this.innerHTML = '<i class="bi bi-send"></i> Send to Invoice Module <span id="selectedCount" class="badge bg-light text-dark ms-1">0</span>';
+            }
+        });
+
+        // View invoice details
+        function viewInvoiceDetails(invoiceId) {
+            // For now, redirect to local invoice view or show modal
+            // This will be enhanced in future
+            window.location.href = `/efactura/invoices?id=${invoiceId}`;
+        }
+
+        // Export unallocated invoice as PDF
+        async function exportUnallocatedPdf(invoiceId) {
+            try {
+                const res = await fetch(`/efactura/api/invoices/${invoiceId}/pdf`);
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    await JarvisDialog.alert(data.error || 'Failed to export PDF', { type: 'error' });
+                    return;
+                }
+
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `invoice_${invoiceId}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        }
+
+        // Update company filter for unallocated tab
+        function updateUnallocatedCompanyFilter(connections) {
+            const select = document.getElementById('unallocatedCompanyFilter');
+            select.innerHTML = '<option value="">All companies</option>';
+            connections.forEach(c => {
+                select.innerHTML += `<option value="${c.cif}">${c.display_name} (${c.cif})</option>`;
+            });
+        }
+
+        // ==========================================
+        // Partner Types Management
+        // ==========================================
+
+        let partnerTypesData = []; // Original data from server
+        let pendingTypeChanges = {}; // Track pending hide_in_filter changes: {typeId: newValue}
+
+        // Load partner types when tab is shown
+        document.getElementById('partnertypes-tab').addEventListener('shown.bs.tab', function() {
+            loadPartnerTypesTable();
+        });
+
+        async function loadPartnerTypesTable() {
+            const tbody = document.getElementById('partnerTypesTableBody');
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">
+                <span class="spinner-border spinner-border-sm"></span> Loading...
+            </td></tr>`;
+
+            try {
+                const res = await fetch('/efactura/api/partner-types?active_only=false');
+                const data = await res.json();
+
+                if (data.success) {
+                    partnerTypesData = data.types || [];
+                    pendingTypeChanges = {}; // Reset pending changes
+                    updateSaveButton();
+                    renderPartnerTypesTable(partnerTypesData);
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">${data.error}</td></tr>`;
+                }
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        function renderPartnerTypesTable(types) {
+            const tbody = document.getElementById('partnerTypesTableBody');
+
+            if (!types || types.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">
+                    <i class="bi bi-info-circle"></i> No partner types yet. Add one above.
+                </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = types.map(t => {
+                const statusBadge = t.is_active
+                    ? '<span class="badge bg-success">Active</span>'
+                    : '<span class="badge bg-secondary">Inactive</span>';
+
+                // Check if there's a pending change, otherwise use original value
+                const hideValue = pendingTypeChanges.hasOwnProperty(t.id) ? pendingTypeChanges[t.id] : t.hide_in_filter;
+                const hideChecked = hideValue ? 'checked' : '';
+
+                return `<tr data-id="${t.id}">
+                    <td><strong>${t.name || '-'}</strong></td>
+                    <td class="text-muted small">${t.description || '-'}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="hideFilter${t.id}"
+                                   ${hideChecked} onchange="trackHideInFilterChange(${t.id}, this.checked)">
+                        </div>
+                    </td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-danger" onclick="deletePartnerType(${t.id})" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        function trackHideInFilterChange(typeId, hideInFilter) {
+            // Find the original value
+            const originalType = partnerTypesData.find(t => t.id === typeId);
+            const originalValue = originalType ? originalType.hide_in_filter : false;
+
+            // If new value equals original, remove from pending changes
+            if (hideInFilter === originalValue) {
+                delete pendingTypeChanges[typeId];
+            } else {
+                pendingTypeChanges[typeId] = hideInFilter;
+            }
+
+            updateSaveButton();
+        }
+
+        function updateSaveButton() {
+            const btn = document.getElementById('savePartnerTypesBtn');
+            const hasChanges = Object.keys(pendingTypeChanges).length > 0;
+            btn.disabled = !hasChanges;
+            if (hasChanges) {
+                btn.innerHTML = `<i class="bi bi-check-lg"></i> Save Changes (${Object.keys(pendingTypeChanges).length})`;
+            } else {
+                btn.innerHTML = `<i class="bi bi-check-lg"></i> Save Changes`;
+            }
+        }
+
+        async function savePartnerTypeChanges() {
+            const btn = document.getElementById('savePartnerTypesBtn');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Saving...`;
+
+            const errors = [];
+
+            // Save each pending change
+            for (const [typeId, hideInFilter] of Object.entries(pendingTypeChanges)) {
+                try {
+                    const res = await fetch(`/efactura/api/partner-types/${typeId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ hide_in_filter: hideInFilter })
+                    });
+                    const data = await res.json();
+
+                    if (!data.success) {
+                        errors.push(`Type ${typeId}: ${data.error}`);
+                    }
+                } catch (err) {
+                    errors.push(`Type ${typeId}: ${err.message}`);
+                }
+            }
+
+            if (errors.length > 0) {
+                await JarvisDialog.alert('Some changes failed to save:\n' + errors.join('\n'), { type: 'error' });
+            } else {
+                // Signal e-Factura page to refresh
+                localStorage.setItem('efacturaPartnerTypesChanged', Date.now().toString());
+
+                // Show success feedback
+                btn.innerHTML = `<i class="bi bi-check-circle"></i> Saved!`;
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-success');
+                setTimeout(() => {
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-primary');
+                    btn.innerHTML = originalText;
+                }, 2000);
+            }
+
+            // Reload to get fresh data
+            await loadPartnerTypesTable();
+        }
+
+        async function addPartnerType() {
+            const name = document.getElementById('newTypeName').value.trim();
+            const description = document.getElementById('newTypeDescription').value.trim();
+
+            if (!name) {
+                await JarvisDialog.alert('Name is required', { type: 'warning' });
+                return;
+            }
+
+            try {
+                const res = await fetch('/efactura/api/partner-types', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    document.getElementById('newTypeName').value = '';
+                    document.getElementById('newTypeDescription').value = '';
+                    loadPartnerTypesTable();
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to create partner type', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        }
+
+        async function deletePartnerType(typeId) {
+            const confirmed = await JarvisDialog.confirm('Delete this partner type? It will be soft-deleted (deactivated).', { danger: true });
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(`/efactura/api/partner-types/${typeId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    loadPartnerTypesTable();
+                } else {
+                    await JarvisDialog.alert(data.error || 'Failed to delete partner type', { type: 'error' });
+                }
+            } catch (err) {
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
+            }
+        }
+    </script>
+</body>
+</html>

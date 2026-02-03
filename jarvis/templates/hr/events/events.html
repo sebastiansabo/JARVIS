@@ -36,7 +36,12 @@
 
         <div class="card mt-3">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-calendar-event"></i> Events <span id="eventResultCount" class="badge bg-secondary ms-2">{{ events|length }}</span></span>
+                <span>
+                    <i class="bi bi-calendar-event"></i> Events <span id="eventResultCount" class="badge bg-secondary ms-2">{{ events|length }}</span>
+                    <button id="btnDeleteSelected" class="btn btn-outline-danger btn-sm ms-2 d-none">
+                        <i class="bi bi-trash"></i> Delete Selected (<span id="selectedCount">0</span>)
+                    </button>
+                </span>
                 <div class="d-flex gap-2 align-items-center">
                     <!-- Search -->
                     <div class="input-group input-group-sm" style="width: 220px;">
@@ -54,6 +59,7 @@
                 <table class="table table-hover mb-0">
                     <thead>
                         <tr>
+                            <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="selectAllEvents" title="Select All"></th>
                             <th>Event Name</th>
                             <th>Start Date</th>
                             <th>End Date</th>
@@ -71,6 +77,7 @@
                             data-company="{{ (event.company or '')|lower }}"
                             data-brand="{{ (event.brand or '')|lower }}"
                             data-description="{{ (event.description or '')|lower }}">
+                            <td><input type="checkbox" class="form-check-input event-checkbox" data-id="{{ event.id }}"></td>
                             <td><strong>{{ event.name }}</strong></td>
                             <td><span class="event-date">{{ event.start_date }}</span></td>
                             <td><span class="event-date">{{ event.end_date }}</span></td>
@@ -89,7 +96,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-4">
+                            <td colspan="9" class="text-center text-muted py-4">
                                 No events found. Click "Add Event" to create one.
                             </td>
                         </tr>
@@ -264,7 +271,7 @@
             };
 
             if (!data.name || !data.start_date || !data.end_date) {
-                alert('Name, start date, and end date are required');
+                await JarvisDialog.alert('Name, start date, and end date are required', { type: 'warning' });
                 return;
             }
 
@@ -283,14 +290,15 @@
                 eventModal.hide();
                 window.location.reload();
             } else {
-                alert('Error saving event');
+                await JarvisDialog.alert('Error saving event', { type: 'error' });
             }
         });
 
         // Delete buttons
         document.querySelectorAll('.btn-delete').forEach(btn => {
             btn.addEventListener('click', async () => {
-                if (!confirm('Delete this event? This will also delete all associated bonuses.')) return;
+                const confirmed = await JarvisDialog.confirm('Delete this event? This will also delete all associated bonuses.', { danger: true });
+                if (!confirmed) return;
 
                 const resp = await fetch(`/hr/events/api/events/${btn.dataset.id}`, {
                     method: 'DELETE'
@@ -299,7 +307,7 @@
                 if (resp.ok) {
                     window.location.reload();
                 } else {
-                    alert('Error deleting event');
+                    await JarvisDialog.alert('Error deleting event', { type: 'error' });
                 }
             });
         });
@@ -319,9 +327,84 @@
             }
         });
 
+        // ============== Select All / Bulk Delete ==============
+        const selectAllCheckbox = document.getElementById('selectAllEvents');
+        const deleteSelectedBtn = document.getElementById('btnDeleteSelected');
+        const selectedCountSpan = document.getElementById('selectedCount');
+
+        function updateSelectionUI() {
+            const checkboxes = document.querySelectorAll('.event-checkbox:not(:disabled)');
+            const visibleCheckboxes = Array.from(checkboxes).filter(cb => {
+                const row = cb.closest('tr');
+                return row && row.style.display !== 'none';
+            });
+            const checkedBoxes = visibleCheckboxes.filter(cb => cb.checked);
+            const count = checkedBoxes.length;
+
+            selectedCountSpan.textContent = count;
+
+            if (count > 0) {
+                deleteSelectedBtn.classList.remove('d-none');
+            } else {
+                deleteSelectedBtn.classList.add('d-none');
+            }
+
+            if (visibleCheckboxes.length > 0 && checkedBoxes.length === visibleCheckboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else if (checkedBoxes.length > 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            }
+        }
+
+        selectAllCheckbox.addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.event-checkbox');
+            checkboxes.forEach(cb => {
+                const row = cb.closest('tr');
+                if (row && row.style.display !== 'none') {
+                    cb.checked = this.checked;
+                }
+            });
+            updateSelectionUI();
+        });
+
+        document.querySelectorAll('.event-checkbox').forEach(cb => {
+            cb.addEventListener('change', updateSelectionUI);
+        });
+
+        deleteSelectedBtn.addEventListener('click', async function() {
+            const checkedBoxes = document.querySelectorAll('.event-checkbox:checked');
+            const ids = Array.from(checkedBoxes).map(cb => cb.dataset.id);
+
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} selected event${ids.length > 1 ? 's' : ''}? This will also delete all associated bonuses.`,
+                { danger: true }
+            );
+            if (!confirmed) return;
+
+            const resp = await fetch('/hr/events/api/events/bulk-delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: ids })
+            });
+
+            if (resp.ok) {
+                window.location.reload();
+            } else {
+                await JarvisDialog.alert('Error deleting events', { type: 'error' });
+            }
+        });
+
     </script>
     <script src="/static/js/jarvis-utils.js"></script>
     <script src="/static/js/online-users.js"></script>
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>

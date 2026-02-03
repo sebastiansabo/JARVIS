@@ -120,7 +120,12 @@
             <div class="tab-pane fade show active" id="bonuses-pane" role="tabpanel">
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <span><i class="bi bi-gift"></i> Bonuses <span id="bonusResultCount" class="badge bg-secondary ms-2">{{ bonuses|length }}</span></span>
+                        <span>
+                            <i class="bi bi-gift"></i> Bonuses <span id="bonusResultCount" class="badge bg-secondary ms-2">{{ bonuses|length }}</span>
+                            <button id="btnDeleteSelected" class="btn btn-outline-danger btn-sm ms-2 d-none">
+                                <i class="bi bi-trash"></i> Delete Selected (<span id="selectedCount">0</span>)
+                            </button>
+                        </span>
                         <div class="d-flex gap-2 align-items-center">
                             <!-- Search -->
                             <div class="input-group input-group-sm" style="width: 220px;">
@@ -147,12 +152,17 @@
                             <button id="btnClearFilter" class="btn btn-outline-secondary btn-sm">
                                 <i class="bi bi-x"></i> Clear
                             </button>
+                            <!-- Column Config -->
+                            <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#columnConfigModal">
+                                <i class="bi bi-gear"></i> Columns
+                            </button>
                         </div>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-striped table-hover mb-0" id="bonusesTableMain">
                             <thead class="table-light">
                                 <tr>
+                                    <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="selectAllBonuses" title="Select All"></th>
                                     <th class="sortable" data-sort="year" data-order="desc">Year <i class="bi bi-arrow-down sort-icon"></i></th>
                                     <th class="sortable" data-sort="month">Month <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
                                     <th class="sortable" data-sort="employee">Employee <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
@@ -183,6 +193,7 @@
                             data-hours="{{ bonus.hours_free or 0 }}"
                             data-bonus="{{ bonus.bonus_net or 0 }}"
                             data-created="{{ bonus.created_at or '' }}">
+                            <td><input type="checkbox" class="form-check-input bonus-checkbox" data-id="{{ bonus.id }}"></td>
                             <td><strong>{{ bonus.year }}</strong></td>
                             <td><span class="month-badge">{{ months.get(bonus.month, bonus.month) }}</span></td>
                             <td><strong>{{ bonus.employee_name }}</strong></td>
@@ -214,7 +225,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="{{ 13 if is_hr_manager else 12 }}" class="text-center text-muted py-4">
+                            <td colspan="{{ 14 if is_hr_manager else 13 }}" class="text-center text-muted py-4">
                                 <i class="bi bi-inbox fs-1 d-block mb-2"></i>
                                 No event bonuses found. Click "Add Bonus" to create one.
                             </td>
@@ -230,13 +241,17 @@
             <!-- By Employee Tab -->
             <div class="tab-pane fade" id="by-employee-pane" role="tabpanel">
                 <div class="card">
-                    <div class="card-header">
+                    <div class="card-header d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-people"></i> By Employee</span>
+                        <button id="btnDeleteSelectedEmployees" class="btn btn-outline-danger btn-sm d-none">
+                            <i class="bi bi-trash"></i> Delete Selected (<span id="selectedEmployeeCount">0</span>)
+                        </button>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-hover mb-0" id="employeeSummaryTable">
                             <thead>
                                 <tr>
+                                    <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="selectAllEmployees" title="Select All"></th>
                                     <th class="sortable" data-sort="name">Employee <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
                                     <th class="sortable" data-sort="dept">Department <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
                                     <th class="sortable" data-sort="brand">Brand <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
@@ -249,7 +264,8 @@
                             </thead>
                             <tbody id="employeeSummaryBody">
                                 {% for emp in employee_summary %}
-                                <tr data-name="{{ emp.name|lower }}"
+                                <tr data-employee-id="{{ emp.id }}"
+                                    data-name="{{ emp.name|lower }}"
                                     data-dept="{{ (emp.department or '')|lower }}"
                                     data-brand="{{ (emp.brand or '')|lower }}"
                                     data-company="{{ (emp.company or '')|lower }}"
@@ -257,6 +273,7 @@
                                     data-days="{{ emp.total_days or 0 }}"
                                     data-hours="{{ emp.total_hours or 0 }}"
                                     data-bonus="{{ emp.total_bonus or 0 }}">
+                                    <td><input type="checkbox" class="form-check-input employee-checkbox" data-id="{{ emp.id }}"></td>
                                     <td><strong>{{ emp.name }}</strong></td>
                                     <td>{{ emp.department or '-' }}</td>
                                     <td>{{ emp.brand or '-' }}</td>
@@ -268,7 +285,7 @@
                                 </tr>
                                 {% else %}
                                 <tr>
-                                    <td colspan="8" class="text-center text-muted py-4">
+                                    <td colspan="9" class="text-center text-muted py-4">
                                         <i class="bi bi-inbox fs-1 d-block mb-2"></i>
                                         No employee data found.
                                     </td>
@@ -277,6 +294,7 @@
                             </tbody>
                             <tfoot class="table-secondary">
                                 <tr>
+                                    <th></th>
                                     <th colspan="4">Total ({{ employee_summary|length }} employees)</th>
                                     <th style="text-align: right;">{{ employee_summary|sum(attribute='bonus_count') }}</th>
                                     <th style="text-align: right;">{{ employee_summary|sum(attribute='total_days') }}</th>
@@ -292,13 +310,17 @@
             <!-- By Event Tab -->
             <div class="tab-pane fade" id="by-event-pane" role="tabpanel">
                 <div class="card">
-                    <div class="card-header">
+                    <div class="card-header d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-calendar-event"></i> By Event</span>
+                        <button id="btnDeleteSelectedEvents" class="btn btn-outline-danger btn-sm d-none">
+                            <i class="bi bi-trash"></i> Delete Selected (<span id="selectedEventCount">0</span>)
+                        </button>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-hover mb-0" id="eventSummaryTable">
                             <thead>
                                 <tr>
+                                    <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="selectAllEvents" title="Select All"></th>
                                     <th class="sortable-event" data-sort="year" data-order="desc">Year <i class="bi bi-arrow-down sort-icon"></i></th>
                                     <th class="sortable-event" data-sort="month">Month <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
                                     <th class="sortable-event" data-sort="name">Event <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
@@ -313,7 +335,9 @@
                             </thead>
                             <tbody id="eventSummaryBody">
                                 {% for evt in event_summary %}
-                                <tr data-name="{{ evt.name|lower }}"
+                                <tr data-event-id="{{ evt.id }}"
+                                    data-year-month="{{ evt.year }}-{{ evt.month }}"
+                                    data-name="{{ evt.name|lower }}"
                                     data-year="{{ evt.year }}"
                                     data-month="{{ evt.month }}"
                                     data-company="{{ (evt.company or '')|lower }}"
@@ -322,6 +346,7 @@
                                     data-days="{{ evt.total_days or 0 }}"
                                     data-hours="{{ evt.total_hours or 0 }}"
                                     data-bonus="{{ evt.total_bonus or 0 }}">
+                                    <td><input type="checkbox" class="form-check-input event-checkbox" data-id="{{ evt.id }}" data-year="{{ evt.year }}" data-month="{{ evt.month }}"></td>
                                     <td><strong>{{ evt.year }}</strong></td>
                                     <td><span class="month-badge">{{ months.get(evt.month, evt.month) }}</span></td>
                                     <td><strong>{{ evt.name }}</strong></td>
@@ -335,7 +360,7 @@
                                 </tr>
                                 {% else %}
                                 <tr>
-                                    <td colspan="10" class="text-center text-muted py-4">
+                                    <td colspan="11" class="text-center text-muted py-4">
                                         <i class="bi bi-inbox fs-1 d-block mb-2"></i>
                                         No event data found.
                                     </td>
@@ -344,6 +369,7 @@
                             </tbody>
                             <tfoot class="table-secondary">
                                 <tr>
+                                    <th></th>
                                     <th colspan="6">Total ({{ event_summary|length }} rows)</th>
                                     <th style="text-align: right;">{{ event_summary|sum(attribute='employee_count') }}</th>
                                     <th style="text-align: right;">{{ event_summary|sum(attribute='total_days') }}</th>
@@ -477,7 +503,7 @@
                                 <select id="bonusEmployee" class="form-select" required>
                                     <option value="">Select Employee</option>
                                     {% for emp in employees %}
-                                    <option value="{{ emp.id }}">{{ emp.name }} ({{ emp.company or 'N/A' }})</option>
+                                    <option value="{{ emp.id }}">{{ emp.name }}{% if emp.departments %} ({{ emp.departments }}){% endif %}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -628,6 +654,32 @@
         </div>
     </div>
 
+    <!-- Column Configuration Modal -->
+    <div class="modal fade" id="columnConfigModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear"></i> Configure Columns</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Toggle columns visibility. Drag to reorder.</p>
+                    <div id="columnConfigList" class="border rounded">
+                        <!-- Column items will be rendered here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-warning" onclick="resetColumns()">
+                        <i class="bi bi-arrow-counterclockwise"></i> Reset to Default
+                    </button>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">
+                        <i class="bi bi-check"></i> Done
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // Month names for display
@@ -638,6 +690,173 @@
 
         // Total bonuses count for badge
         const totalBonusesCount = {{ bonuses|length }};
+
+        // Column configuration
+        const COLUMN_CONFIG_VERSION = 1;
+        const DEFAULT_COLUMNS = [
+            { id: 'year', name: 'Year', visible: true },
+            { id: 'month', name: 'Month', visible: true },
+            { id: 'employee', name: 'Employee', visible: true },
+            { id: 'dept', name: 'Dept', visible: true },
+            { id: 'company', name: 'Company', visible: true },
+            { id: 'event', name: 'Event', visible: true },
+            { id: 'participation', name: 'Participation', visible: true },
+            { id: 'days', name: 'Days', visible: true },
+            { id: 'hours', name: 'Hours', visible: true },
+            { id: 'bonus', name: 'Bonus (Net)', visible: isHrManager },
+            { id: 'details', name: 'Details', visible: true },
+            { id: 'created', name: 'Created', visible: false },
+            { id: 'actions', name: 'Actions', visible: true, fixed: true }
+        ];
+        let columnConfig = [];
+
+        function loadColumnConfig() {
+            const savedVersion = localStorage.getItem('hrBonusesColumnConfigVersion');
+            const saved = localStorage.getItem('hrBonusesColumnConfig');
+
+            if (saved && savedVersion === COLUMN_CONFIG_VERSION.toString()) {
+                try {
+                    columnConfig = JSON.parse(saved);
+                    // Ensure the bonus column respects permissions
+                    const bonusCol = columnConfig.find(c => c.id === 'bonus');
+                    if (bonusCol && !isHrManager) {
+                        bonusCol.visible = false;
+                    }
+                } catch (e) {
+                    columnConfig = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+                }
+            } else {
+                columnConfig = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+                localStorage.setItem('hrBonusesColumnConfigVersion', COLUMN_CONFIG_VERSION.toString());
+            }
+        }
+
+        function saveColumnConfig() {
+            localStorage.setItem('hrBonusesColumnConfig', JSON.stringify(columnConfig));
+            localStorage.setItem('hrBonusesColumnConfigVersion', COLUMN_CONFIG_VERSION.toString());
+        }
+
+        function toggleColumn(idx, checked) {
+            // Don't allow hiding bonus column if not HR manager
+            if (columnConfig[idx].id === 'bonus' && !isHrManager) {
+                columnConfig[idx].visible = false;
+                return;
+            }
+            columnConfig[idx].visible = checked;
+            saveColumnConfig();
+        }
+
+        function renderColumnConfigList() {
+            const container = document.getElementById('columnConfigList');
+            container.innerHTML = columnConfig.map((col, idx) => {
+                const disabled = col.fixed || (col.id === 'bonus' && !isHrManager);
+                return `
+                <div class="d-flex align-items-center p-2 border-bottom column-item ${disabled ? 'bg-light' : ''}" draggable="${!col.fixed}" data-idx="${idx}">
+                    <i class="bi bi-grip-vertical text-muted me-2" style="cursor: ${col.fixed ? 'default' : 'grab'};"></i>
+                    <div class="form-check flex-grow-1 mb-0">
+                        <input class="form-check-input" type="checkbox" id="col-${col.id}"
+                               ${col.visible ? 'checked' : ''}
+                               ${disabled ? 'disabled' : ''}
+                               onchange="toggleColumn(${idx}, this.checked)">
+                        <label class="form-check-label ${disabled ? 'text-muted' : ''}" for="col-${col.id}">
+                            ${col.name} ${col.fixed ? '<small class="text-muted">(fixed)</small>' : ''}
+                            ${col.id === 'bonus' && !isHrManager ? '<small class="text-muted">(HR only)</small>' : ''}
+                        </label>
+                    </div>
+                </div>
+            `}).join('');
+
+            setupColumnDragDrop();
+        }
+
+        function setupColumnDragDrop() {
+            const items = document.querySelectorAll('#columnConfigList .column-item[draggable="true"]');
+            let draggedItem = null;
+
+            items.forEach(item => {
+                item.addEventListener('dragstart', function(e) {
+                    draggedItem = this;
+                    e.dataTransfer.effectAllowed = 'move';
+                    this.style.opacity = '0.5';
+                });
+
+                item.addEventListener('dragend', function() {
+                    this.style.opacity = '1';
+                    const newOrder = [];
+                    document.querySelectorAll('#columnConfigList .column-item').forEach(el => {
+                        newOrder.push(columnConfig[parseInt(el.dataset.idx)]);
+                    });
+                    columnConfig = newOrder;
+                    saveColumnConfig();
+                    renderColumnConfigList();
+                });
+
+                item.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    const rect = this.getBoundingClientRect();
+                    const midY = rect.top + rect.height / 2;
+                    if (e.clientY < midY) {
+                        this.parentNode.insertBefore(draggedItem, this);
+                    } else {
+                        this.parentNode.insertBefore(draggedItem, this.nextSibling);
+                    }
+                });
+            });
+        }
+
+        function resetColumns() {
+            columnConfig = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+            saveColumnConfig();
+            renderColumnConfigList();
+            applyColumnConfig();
+        }
+
+        function applyColumnConfig() {
+            const table = document.getElementById('bonusesTableMain');
+            if (!table) return;
+
+            const thead = table.querySelector('thead tr');
+            const tbody = table.querySelector('tbody');
+            if (!thead || !tbody) return;
+
+            // Get all header cells
+            const headerCells = thead.querySelectorAll('th');
+            const rows = tbody.querySelectorAll('tr');
+
+            // Map column IDs to indices
+            const columnIds = ['year', 'month', 'employee', 'dept', 'company', 'event', 'participation', 'days', 'hours', 'bonus', 'details', 'created', 'actions'];
+
+            columnIds.forEach((colId, colIdx) => {
+                const config = columnConfig.find(c => c.id === colId);
+                const visible = config ? config.visible : true;
+
+                // Hide/show header cell
+                if (headerCells[colIdx]) {
+                    headerCells[colIdx].style.display = visible ? '' : 'none';
+                }
+
+                // Hide/show body cells
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells[colIdx]) {
+                        cells[colIdx].style.display = visible ? '' : 'none';
+                    }
+                });
+            });
+        }
+
+        // Initialize column config on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadColumnConfig();
+
+            // Setup modal handler
+            document.getElementById('columnConfigModal').addEventListener('shown.bs.modal', renderColumnConfigList);
+            document.getElementById('columnConfigModal').addEventListener('hidden.bs.modal', applyColumnConfig);
+
+            // Apply column config on load
+            applyColumnConfig();
+        });
 
         // Search functions
         function updateSearchIcon() {
@@ -759,7 +978,7 @@
             };
 
             if (!data.employee_id || !data.event_id || !data.year || !data.month) {
-                alert('Please fill in all required fields');
+                await JarvisDialog.alert('Please fill in all required fields', { type: 'warning' });
                 return;
             }
 
@@ -778,14 +997,15 @@
                 bonusModal.hide();
                 window.location.reload();
             } else {
-                alert('Error saving bonus');
+                await JarvisDialog.alert('Error saving bonus', { type: 'error' });
             }
         });
 
         // Delete handler
         document.querySelectorAll('.btn-delete').forEach(btn => {
             btn.addEventListener('click', async () => {
-                if (!confirm('Delete this bonus record?')) return;
+                const confirmed = await JarvisDialog.confirm('Delete this bonus record?', { danger: true });
+                if (!confirmed) return;
 
                 const id = btn.dataset.id;
                 const resp = await fetch(`/hr/events/api/event-bonuses/${id}`, {
@@ -795,10 +1015,236 @@
                 if (resp.ok) {
                     window.location.reload();
                 } else {
-                    alert('Error deleting bonus');
+                    await JarvisDialog.alert('Error deleting bonus', { type: 'error' });
                 }
             });
         });
+
+        // ============== Select All / Bulk Delete ==============
+        const selectAllCheckbox = document.getElementById('selectAllBonuses');
+        const deleteSelectedBtn = document.getElementById('btnDeleteSelected');
+        const selectedCountSpan = document.getElementById('selectedCount');
+
+        function updateSelectionUI() {
+            const checkboxes = document.querySelectorAll('.bonus-checkbox:not(:disabled)');
+            const visibleCheckboxes = Array.from(checkboxes).filter(cb => {
+                const row = cb.closest('tr');
+                return row && row.style.display !== 'none';
+            });
+            const checkedBoxes = visibleCheckboxes.filter(cb => cb.checked);
+            const count = checkedBoxes.length;
+
+            selectedCountSpan.textContent = count;
+
+            if (count > 0) {
+                deleteSelectedBtn.classList.remove('d-none');
+            } else {
+                deleteSelectedBtn.classList.add('d-none');
+            }
+
+            // Update select all checkbox state
+            if (visibleCheckboxes.length > 0 && checkedBoxes.length === visibleCheckboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else if (checkedBoxes.length > 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            }
+        }
+
+        // Select all handler
+        selectAllCheckbox.addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.bonus-checkbox');
+            checkboxes.forEach(cb => {
+                const row = cb.closest('tr');
+                if (row && row.style.display !== 'none') {
+                    cb.checked = this.checked;
+                }
+            });
+            updateSelectionUI();
+        });
+
+        // Individual checkbox handlers
+        document.querySelectorAll('.bonus-checkbox').forEach(cb => {
+            cb.addEventListener('change', updateSelectionUI);
+        });
+
+        // Bulk delete handler
+        deleteSelectedBtn.addEventListener('click', async function() {
+            const checkedBoxes = document.querySelectorAll('.bonus-checkbox:checked');
+            const ids = Array.from(checkedBoxes).map(cb => cb.dataset.id);
+
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} selected bonus record${ids.length > 1 ? 's' : ''}?`,
+                { danger: true }
+            );
+            if (!confirmed) return;
+
+            showLoading('Deleting bonuses...');
+
+            const resp = await fetch('/hr/events/api/event-bonuses/bulk-delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: ids })
+            });
+
+            if (resp.ok) {
+                const result = await resp.json();
+                window.location.reload();
+            } else {
+                hideLoading();
+                await JarvisDialog.alert('Error deleting bonuses', { type: 'error' });
+            }
+        });
+
+        // ============== By Employee Tab - Select All / Bulk Delete ==============
+        const selectAllEmployeesCheckbox = document.getElementById('selectAllEmployees');
+        const deleteSelectedEmployeesBtn = document.getElementById('btnDeleteSelectedEmployees');
+        const selectedEmployeeCountSpan = document.getElementById('selectedEmployeeCount');
+
+        if (selectAllEmployeesCheckbox) {
+            function updateEmployeeSelection() {
+                const checkboxes = document.querySelectorAll('.employee-checkbox');
+                const checked = document.querySelectorAll('.employee-checkbox:checked');
+                const count = checked.length;
+
+                selectedEmployeeCountSpan.textContent = count;
+                if (count > 0) {
+                    deleteSelectedEmployeesBtn.classList.remove('d-none');
+                } else {
+                    deleteSelectedEmployeesBtn.classList.add('d-none');
+                }
+
+                // Update select all checkbox state
+                if (count === checkboxes.length && checkboxes.length > 0) {
+                    selectAllEmployeesCheckbox.checked = true;
+                    selectAllEmployeesCheckbox.indeterminate = false;
+                } else if (count > 0) {
+                    selectAllEmployeesCheckbox.checked = false;
+                    selectAllEmployeesCheckbox.indeterminate = true;
+                } else {
+                    selectAllEmployeesCheckbox.checked = false;
+                    selectAllEmployeesCheckbox.indeterminate = false;
+                }
+            }
+
+            selectAllEmployeesCheckbox.addEventListener('change', function() {
+                const checkboxes = document.querySelectorAll('.employee-checkbox');
+                checkboxes.forEach(cb => cb.checked = this.checked);
+                updateEmployeeSelection();
+            });
+
+            document.querySelectorAll('.employee-checkbox').forEach(cb => {
+                cb.addEventListener('change', updateEmployeeSelection);
+            });
+
+            deleteSelectedEmployeesBtn.addEventListener('click', async function() {
+                const ids = Array.from(document.querySelectorAll('.employee-checkbox:checked'))
+                    .map(cb => parseInt(cb.dataset.id));
+
+                if (ids.length === 0) return;
+
+                const confirmed = await JarvisDialog.confirm(
+                    `Delete ALL bonuses for ${ids.length} selected employee${ids.length > 1 ? 's' : ''}?`,
+                    { danger: true }
+                );
+                if (!confirmed) return;
+
+                showLoading('Deleting bonuses...');
+
+                const resp = await fetch('/hr/events/api/event-bonuses/bulk-delete-by-employee', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ employee_ids: ids })
+                });
+
+                if (resp.ok) {
+                    window.location.reload();
+                } else {
+                    hideLoading();
+                    await JarvisDialog.alert('Error deleting bonuses', { type: 'error' });
+                }
+            });
+        }
+
+        // ============== By Event Tab - Select All / Bulk Delete ==============
+        const selectAllEventsCheckbox = document.getElementById('selectAllEvents');
+        const deleteSelectedEventsBtn = document.getElementById('btnDeleteSelectedEvents');
+        const selectedEventCountSpan = document.getElementById('selectedEventCount');
+
+        if (selectAllEventsCheckbox) {
+            function updateEventSelection() {
+                const checkboxes = document.querySelectorAll('.event-checkbox');
+                const checked = document.querySelectorAll('.event-checkbox:checked');
+                const count = checked.length;
+
+                selectedEventCountSpan.textContent = count;
+                if (count > 0) {
+                    deleteSelectedEventsBtn.classList.remove('d-none');
+                } else {
+                    deleteSelectedEventsBtn.classList.add('d-none');
+                }
+
+                // Update select all checkbox state
+                if (count === checkboxes.length && checkboxes.length > 0) {
+                    selectAllEventsCheckbox.checked = true;
+                    selectAllEventsCheckbox.indeterminate = false;
+                } else if (count > 0) {
+                    selectAllEventsCheckbox.checked = false;
+                    selectAllEventsCheckbox.indeterminate = true;
+                } else {
+                    selectAllEventsCheckbox.checked = false;
+                    selectAllEventsCheckbox.indeterminate = false;
+                }
+            }
+
+            selectAllEventsCheckbox.addEventListener('change', function() {
+                const checkboxes = document.querySelectorAll('.event-checkbox');
+                checkboxes.forEach(cb => cb.checked = this.checked);
+                updateEventSelection();
+            });
+
+            document.querySelectorAll('.event-checkbox').forEach(cb => {
+                cb.addEventListener('change', updateEventSelection);
+            });
+
+            deleteSelectedEventsBtn.addEventListener('click', async function() {
+                const selections = Array.from(document.querySelectorAll('.event-checkbox:checked'))
+                    .map(cb => ({
+                        event_id: parseInt(cb.dataset.id),
+                        year: parseInt(cb.dataset.year),
+                        month: parseInt(cb.dataset.month)
+                    }));
+
+                if (selections.length === 0) return;
+
+                const confirmed = await JarvisDialog.confirm(
+                    `Delete ALL bonuses for ${selections.length} selected event/month combination${selections.length > 1 ? 's' : ''}?`,
+                    { danger: true }
+                );
+                if (!confirmed) return;
+
+                showLoading('Deleting bonuses...');
+
+                const resp = await fetch('/hr/events/api/event-bonuses/bulk-delete-by-event', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ selections: selections })
+                });
+
+                if (resp.ok) {
+                    window.location.reload();
+                } else {
+                    hideLoading();
+                    await JarvisDialog.alert('Error deleting bonuses', { type: 'error' });
+                }
+            });
+        }
 
         // Bulk Entry
         const bulkEmployees = {{ employees|tojson }};
@@ -861,7 +1307,7 @@
             const month = document.getElementById('bulkMonth').value;
 
             if (!eventId || !year || !month) {
-                alert('Please select event, year, and month');
+                await JarvisDialog.alert('Please select event, year, and month', { type: 'warning' });
                 return;
             }
 
@@ -888,7 +1334,7 @@
             });
 
             if (bonuses.length === 0) {
-                alert('No valid rows to save');
+                await JarvisDialog.alert('No valid rows to save', { type: 'warning' });
                 return;
             }
 
@@ -900,10 +1346,10 @@
 
             if (resp.ok) {
                 const result = await resp.json();
-                alert(`Saved ${result.count} bonuses`);
+                await JarvisDialog.alert(`Saved ${result.count} bonuses`, { type: 'success' });
                 window.location.reload();
             } else {
-                alert('Error saving bonuses');
+                await JarvisDialog.alert('Error saving bonuses', { type: 'error' });
             }
         });
 
@@ -1000,7 +1446,7 @@
             const month = parseInt(document.getElementById('newEventMonth').value);
 
             if (!eventName || !eventStart || !eventEnd) {
-                alert('Please fill in event name and dates');
+                await JarvisDialog.alert('Please fill in event name and dates', { type: 'warning' });
                 return;
             }
 
@@ -1016,7 +1462,7 @@
             });
 
             if (!eventResp.ok) {
-                alert('Error creating event');
+                await JarvisDialog.alert('Error creating event', { type: 'error' });
                 return;
             }
 
@@ -1055,12 +1501,12 @@
 
                 if (bonusResp.ok) {
                     const result = await bonusResp.json();
-                    alert(`Event created with ${result.count} employee bonuses`);
+                    await JarvisDialog.alert(`Event created with ${result.count} employee bonuses`, { type: 'success' });
                 } else {
-                    alert('Event created but error saving bonuses');
+                    await JarvisDialog.alert('Event created but error saving bonuses', { type: 'warning' });
                 }
             } else {
-                alert('Event created (no employees added)');
+                await JarvisDialog.alert('Event created (no employees added)', { type: 'success' });
             }
 
             addEventModal.hide();
@@ -1382,5 +1828,6 @@
     <script src="/static/js/jarvis-utils.js"></script>
     <script src="/static/js/online-users.js"></script>
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>

@@ -1029,7 +1029,7 @@
                 }
             });
 
-            attachmentsInput.addEventListener('change', () => {
+            attachmentsInput.addEventListener('change', async () => {
                 if (attachmentsInput.files.length) {
                     const maxSize = 5 * 1024 * 1024; // 5MB
                     let skippedFiles = [];
@@ -1041,7 +1041,7 @@
                         }
                     }
                     if (skippedFiles.length > 0) {
-                        alert(`Files exceeding 5MB were skipped:\n${skippedFiles.join('\n')}`);
+                        await JarvisDialog.alert(`Files exceeding 5MB were skipped:\n${skippedFiles.join('\n')}`, { type: 'warning' });
                     }
                     renderAttachmentsList();
                     attachmentsInput.value = ''; // Clear input so same file can be re-added
@@ -1124,10 +1124,10 @@
             }
         }
 
-        function manualVatMatch() {
+        async function manualVatMatch() {
             const vatInput = document.getElementById('customerVat').value.trim();
             if (!vatInput) {
-                alert('Please enter a VAT number first');
+                await JarvisDialog.alert('Please enter a VAT number first', { type: 'warning' });
                 return;
             }
 
@@ -1166,7 +1166,7 @@
                 }
             } else {
                 document.getElementById('matchedCompany').value = '';
-                alert('No matching company found for VAT: ' + vatInput);
+                await JarvisDialog.alert('No matching company found for VAT: ' + vatInput, { type: 'warning' });
             }
         }
 
@@ -1194,9 +1194,10 @@
             document.getElementById('supplier').focus();
         }
 
-        function clearForm() {
+        async function clearForm() {
             // Confirm before clearing
-            if (!confirm('Are you sure you want to clear the form? All entered data will be lost.')) {
+            const confirmed = await JarvisDialog.confirm('Are you sure you want to clear the form? All entered data will be lost.', { danger: true });
+            if (!confirmed) {
                 return;
             }
 
@@ -1293,7 +1294,7 @@
             const templateId = templateSelect.value;
 
             if (!uploadedFile) {
-                alert('Please upload an invoice first');
+                await JarvisDialog.alert('Please upload an invoice first', { type: 'warning' });
                 return;
             }
 
@@ -1315,10 +1316,10 @@
                 if (result.success) {
                     fillFormFromParsed(result.data, templateId ? true : false);
                 } else {
-                    alert('Error parsing invoice: ' + result.error);
+                    await JarvisDialog.alert('Error parsing invoice: ' + result.error, { type: 'error' });
                 }
             } catch (e) {
-                alert('Error: ' + e.message);
+                await JarvisDialog.alert('Error: ' + e.message, { type: 'error' });
             } finally {
                 btn.classList.remove('parsing');
                 btn.disabled = false;
@@ -1438,7 +1439,7 @@
             // Get the allocation value to calculate reinvoice values
             const allocationValueInput = allocationRow.querySelector('.allocation-value-input');
             const allocationValue = parseFloat(allocationValueInput?.value) || 0;
-            const currency = document.getElementById('invoiceCurrency')?.value || 'RON';
+            const currency = document.getElementById('currency')?.value || 'RON';
 
             // If redistributing, update only unlocked lines
             if (redistribute && lineCount > 0) {
@@ -1660,9 +1661,9 @@
             // Comment button
             const commentBtn = line.querySelector('.reinvoice-comment-btn');
             const commentInput = line.querySelector('.reinvoice-comment');
-            commentBtn.addEventListener('click', () => {
+            commentBtn.addEventListener('click', async () => {
                 const currentComment = commentInput.value || '';
-                const newComment = prompt('Enter comment for this reinvoice line:', currentComment);
+                const newComment = await JarvisDialog.prompt('Enter comment for this reinvoice line:', { defaultValue: currentComment });
                 if (newComment !== null) {
                     commentInput.value = newComment;
                     // Update button appearance if comment exists
@@ -2010,6 +2011,8 @@
                     const valueInput = row.querySelector('.allocation-value-input');
                     percentInput.value = percentages[idx].toFixed(2);
                     valueInput.value = ((effectiveValue * percentages[idx]) / 100).toFixed(2);
+                    // Update reinvoice line values when allocation changes
+                    updateReinvoiceLineValues(row);
                 });
             }
             updateTotalAllocation();
@@ -2082,7 +2085,7 @@
                     const pInput = row.querySelector('.allocation-input');
                     const vInput = row.querySelector('.allocation-value-input');
                     pInput.value = perOther.toFixed(2);
-                    vInput.value = ((invoiceValue * perOther) / 100).toFixed(2);
+                    vInput.value = ((effectiveValue * perOther) / 100).toFixed(2);
                     // Update reinvoice line values for this row too
                     updateReinvoiceLineValues(row);
                 });
@@ -2121,7 +2124,7 @@
             const invoiceValue = document.getElementById('invoiceValue').value;
 
             if (!supplier || !invoiceNumber || !invoiceDate || !invoiceValue) {
-                alert('Please fill in all required fields');
+                await JarvisDialog.alert('Please fill in all required fields', { type: 'warning' });
                 return;
             }
 
@@ -2131,7 +2134,7 @@
                 const dupResult = await dupRes.json();
                 if (dupResult.exists) {
                     const existing = dupResult.invoice;
-                    alert(`Invoice number "${invoiceNumber}" already exists!\n\nExisting invoice:\n- Supplier: ${existing.supplier}\n- Date: ${existing.invoice_date}\n- Value: ${existing.invoice_value} ${existing.currency}`);
+                    await JarvisDialog.alert(`Invoice number "${invoiceNumber}" already exists!\n\nExisting invoice:\n- Supplier: ${existing.supplier}\n- Date: ${existing.invoice_date}\n- Value: ${existing.invoice_value} ${existing.currency}`, { type: 'error' });
                     return;
                 }
             } catch (e) {
@@ -2142,7 +2145,7 @@
             const dedicatedCompany = document.getElementById('dedicatedCompany').value;
 
             if (!dedicatedCompany) {
-                alert('Please select a company in "Dedicated To"');
+                await JarvisDialog.alert('Please select a company in "Dedicated To"', { type: 'warning' });
                 return;
             }
 
@@ -2162,12 +2165,12 @@
                 // Check if brand is mandatory (brands exist for this company)
                 const hasBrands = brandSelect.options.length > 1; // More than just "N/A"
                 if (hasBrands && !brand) {
-                    alert('Please select a Brand for all allocations (brands are available for this company)');
+                    await JarvisDialog.alert('Please select a Brand for all allocations (brands are available for this company)', { type: 'warning' });
                     return;
                 }
 
                 if (!dept) {
-                    alert('Please select Department for all allocations');
+                    await JarvisDialog.alert('Please select Department for all allocations', { type: 'warning' });
                     return;
                 }
 
@@ -2175,7 +2178,7 @@
                 const subdeptSelect = row.querySelector('.subdepartment-select');
                 const hasSubdepts = subdeptSelect.options.length > 1; // More than just "N/A"
                 if (hasSubdepts && !subdept) {
-                    alert('Please select Subdepartment for all allocations (subdepartments are available for this department)');
+                    await JarvisDialog.alert('Please select Subdepartment for all allocations (subdepartments are available for this department)', { type: 'warning' });
                     return;
                 }
 
@@ -2186,13 +2189,13 @@
                 if (reinvoiceCheck && reinvoiceDestinations.length > 0) {
                     const reinvoiceTotal = reinvoiceDestinations.reduce((sum, d) => sum + d.percentage, 0);
                     if (reinvoiceTotal > 100.01) {
-                        alert('Reinvoice total percentage cannot exceed 100%');
+                        await JarvisDialog.alert('Reinvoice total percentage cannot exceed 100%', { type: 'warning' });
                         return;
                     }
                     // Validate each destination has a company
                     for (const dest of reinvoiceDestinations) {
                         if (!dest.company) {
-                            alert('Please select a company for all reinvoice destinations');
+                            await JarvisDialog.alert('Please select a company for all reinvoice destinations', { type: 'warning' });
                             return;
                         }
                     }
@@ -2213,7 +2216,7 @@
             // Validate total (must be 100%, allow up to 0.1% overdraft for rounding)
             const total = distributions.reduce((sum, d) => sum + d.allocation, 0);
             if (total < 1.0 || total > 1.001) {
-                alert('Allocations must sum to 100% (max 0.1% overdraft allowed)');
+                await JarvisDialog.alert('Allocations must sum to 100% (max 0.1% overdraft allowed)', { type: 'warning' });
                 return;
             }
 
@@ -2334,7 +2337,7 @@
                     if (driveLink) successMsg += '\nUploaded to Drive!';
                     if (transactionLinked) successMsg += '\nLinked to bank transaction!';
                     if (attachmentsUploaded > 0) successMsg += `\n${attachmentsUploaded} attachment(s) uploaded.`;
-                    alert(successMsg);
+                    await JarvisDialog.alert(successMsg, { type: 'success' });
                     // Reset form
                     document.getElementById('invoiceForm').reset();
                     document.getElementById('matchedCompany').value = '';
@@ -2370,10 +2373,10 @@
                     attachmentFiles = [];
                     document.getElementById('attachmentsList').innerHTML = '';
                 } else {
-                    alert('Error: ' + result.error);
+                    await JarvisDialog.alert('Error: ' + result.error, { type: 'error' });
                 }
             } catch (e) {
-                alert('Error: ' + e.message);
+                await JarvisDialog.alert('Error: ' + e.message, { type: 'error' });
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="bi bi-check-circle"></i> Save Distribution';
@@ -2449,12 +2452,12 @@
             const confirmPassword = document.getElementById('confirmPassword').value;
 
             if (newPassword !== confirmPassword) {
-                alert('New passwords do not match');
+                await JarvisDialog.alert('New passwords do not match', { type: 'warning' });
                 return;
             }
 
             if (newPassword.length < 6) {
-                alert('Password must be at least 6 characters');
+                await JarvisDialog.alert('Password must be at least 6 characters', { type: 'warning' });
                 return;
             }
 
@@ -2469,14 +2472,14 @@
                 });
                 const result = await response.json();
                 if (result.success) {
-                    alert('Password changed successfully');
+                    await JarvisDialog.alert('Password changed successfully', { type: 'success' });
                     bootstrap.Modal.getInstance(document.getElementById('changePasswordModal')).hide();
                     document.getElementById('changePasswordForm').reset();
                 } else {
-                    alert('Error: ' + result.error);
+                    await JarvisDialog.alert('Error: ' + result.error, { type: 'error' });
                 }
             } catch (e) {
-                alert('Error: ' + e.message);
+                await JarvisDialog.alert('Error: ' + e.message, { type: 'error' });
             }
         }
     </script>
@@ -2510,5 +2513,6 @@
     <script src="/static/js/online-users.js"></script>
     {% include 'partials/_edit_profile_modal.html' %}
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>

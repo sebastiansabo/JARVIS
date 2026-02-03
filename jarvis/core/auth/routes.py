@@ -1,23 +1,17 @@
 """JARVIS Core Auth Routes.
 
 Authentication routes: login, logout, password management.
+Follows layered architecture: Routes -> Services -> Repositories -> Database
 """
 from flask import render_template, redirect, url_for, request, flash, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
-from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import auth_bp
 from .models import User
+from .services import AuthService
 
-# Import database functions - these will be migrated to core/auth/database.py later
-# For now, import from main database module for backward compatibility
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from database import (
-    authenticate_user, get_user, update_user_last_login, update_user_last_seen,
-    log_user_event, set_user_password, get_online_users_count
-)
+# Initialize service layer
+auth_service = AuthService()
 
 
 def log_event(event_type, description=None, entity_type=None, entity_id=None, details=None):
@@ -27,9 +21,9 @@ def log_event(event_type, description=None, entity_type=None, entity_id=None, de
     ip_address = request.remote_addr if request else None
     user_agent = request.headers.get('User-Agent', '')[:500] if request else None
 
-    log_user_event(
+    auth_service.log_event(
         event_type=event_type,
-        event_description=description,
+        description=description,
         user_id=user_id,
         user_email=user_email,
         entity_type=entity_type,
@@ -44,7 +38,10 @@ def log_event(event_type, description=None, entity_type=None, entity_id=None, de
 def login():
     """Login page and form handler."""
     if current_user.is_authenticated:
-        return redirect(url_for('index'))
+        # Redirect based on user permissions
+        if current_user.can_access_main_apps():
+            return redirect(url_for('apps_page'))
+        return redirect(url_for('profile.profile_page'))
 
     if request.method == 'POST':
         email = request.form.get('email', '').strip()
@@ -54,16 +51,21 @@ def login():
             flash('Please enter both email and password.', 'error')
             return render_template('core/login.html')
 
-        user_data = authenticate_user(email, password)
-        if user_data:
-            user = User(user_data)
+        result = auth_service.authenticate(email, password)
+        if result.success:
+            user = User(result.user_data)
             remember = request.form.get('remember') == 'on'
             login_user(user, remember=remember)
-            update_user_last_login(user.id)
+            auth_service.update_last_login(user.id)
             log_event('login', f'User {email} logged in')
 
+            # Redirect based on user permissions
             next_page = request.args.get('next')
-            return redirect(next_page or url_for('index'))
+            if next_page:
+                return redirect(next_page)
+            if user.can_access_main_apps():
+                return redirect(url_for('apps_page'))
+            return redirect(url_for('profile.profile_page'))
         else:
             log_event('login_failed', f'Failed login attempt for {email}')
             flash('Invalid email or password.', 'error')
@@ -117,30 +119,25 @@ def change_password():
     current_password = data.get('current_password')
     new_password = data.get('new_password')
 
-    if not current_password or not new_password:
-        return jsonify({'success': False, 'error': 'Both current and new password required'}), 400
+    result = auth_service.change_password(
+        user_id=current_user.id,
+        user_email=current_user.email,
+        current_password=current_password,
+        new_password=new_password
+    )
 
-    if len(new_password) < 6:
-        return jsonify({'success': False, 'error': 'New password must be at least 6 characters'}), 400
-
-    # Verify current password
-    user_data = authenticate_user(current_user.email, current_password)
-    if not user_data:
-        return jsonify({'success': False, 'error': 'Current password is incorrect'}), 400
-
-    # Set new password
-    if set_user_password(current_user.id, new_password):
+    if result.success:
         log_event('password_changed', f'User {current_user.email} changed their password')
         return jsonify({'success': True})
     else:
-        return jsonify({'success': False, 'error': 'Failed to update password'}), 500
+        return jsonify({'success': False, 'error': result.error}), 400
 
 
 @auth_bp.route('/api/heartbeat', methods=['POST'])
 @login_required
 def heartbeat():
     """Update user's last seen timestamp for online status tracking."""
-    update_user_last_seen(current_user.id)
+    auth_service.update_last_seen(current_user.id)
     return jsonify({'success': True})
 
 
@@ -148,5 +145,5 @@ def heartbeat():
 @login_required
 def online_users():
     """Get count and list of currently online users."""
-    result = get_online_users_count(minutes=5)
+    result = auth_service.get_online_users(minutes=5)
     return jsonify(result)

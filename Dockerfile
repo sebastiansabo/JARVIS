@@ -25,7 +25,8 @@ EXPOSE 8080
 
 # Run with gunicorn (3 workers + 3 threads each = 9 concurrent requests)
 # Optimized for 1-10 concurrent users
-# DigitalOcean DB connection limits (~25 max): 3 workers × 7 pool max = 21 connections (safe margin)
+# DigitalOcean DB connection limit: 22 max
+# Single unified pool: 3 workers × 6 pool max = 18 connections (4 reserved for admin)
 # Timeout settings prevent worker hangs after idle periods:
 #   --timeout: Kill worker if no response in 120s
 #   --graceful-timeout: Allow 30s for graceful shutdown

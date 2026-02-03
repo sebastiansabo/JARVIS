@@ -519,10 +519,10 @@
                     location.reload();
                 } else {
                     const error = await response.json();
-                    alert('Error: ' + (error.error || 'Failed to save connector'));
+                    await JarvisDialog.alert('Error: ' + (error.error || 'Failed to save connector'), { type: 'error' });
                 }
             } catch (err) {
-                alert('Error connecting: ' + err.message);
+                await JarvisDialog.alert('Error connecting: ' + err.message, { type: 'error' });
             }
         }
 
@@ -557,15 +557,16 @@
                     location.reload();
                 } else {
                     const error = await response.json();
-                    alert('Error: ' + (error.error || 'Failed to update connector'));
+                    await JarvisDialog.alert('Error: ' + (error.error || 'Failed to update connector'), { type: 'error' });
                 }
             } catch (err) {
-                alert('Error updating: ' + err.message);
+                await JarvisDialog.alert('Error updating: ' + err.message, { type: 'error' });
             }
         }
 
         async function syncConnector(connectorId) {
-            if (!confirm('Start syncing invoices from this connector?')) return;
+            const confirmed = await JarvisDialog.confirm('Start syncing invoices from this connector?');
+            if (!confirmed) return;
 
             showLoading('Syncing invoices...');
             try {
@@ -577,20 +578,21 @@
                 hideLoading();
 
                 if (response.ok) {
-                    alert(`Sync complete!\nFound: ${result.invoices_found}\nImported: ${result.invoices_imported}`);
+                    await JarvisDialog.alert(`Sync complete!\nFound: ${result.invoices_found}\nImported: ${result.invoices_imported}`, { type: 'success' });
                     location.reload();
                 } else {
-                    alert('Sync failed: ' + (result.error || 'Unknown error'));
+                    await JarvisDialog.alert('Sync failed: ' + (result.error || 'Unknown error'), { type: 'error' });
                     location.reload();
                 }
             } catch (err) {
                 hideLoading();
-                alert('Error syncing: ' + err.message);
+                await JarvisDialog.alert('Error syncing: ' + err.message, { type: 'error' });
             }
         }
 
         async function disconnectConnector(connectorId) {
-            if (!confirm('Are you sure you want to disconnect this connector? This will remove all configuration.')) return;
+            const confirmed = await JarvisDialog.confirm('Are you sure you want to disconnect this connector? This will remove all configuration.', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const response = await fetch(`/api/connectors/${connectorId}`, {
@@ -601,10 +603,10 @@
                     location.reload();
                 } else {
                     const error = await response.json();
-                    alert('Error: ' + (error.error || 'Failed to disconnect'));
+                    await JarvisDialog.alert('Error: ' + (error.error || 'Failed to disconnect'), { type: 'error' });
                 }
             } catch (err) {
-                alert('Error disconnecting: ' + err.message);
+                await JarvisDialog.alert('Error disconnecting: ' + err.message, { type: 'error' });
             }
         }
 
@@ -650,7 +652,7 @@
             const files = fileInput.files;
 
             if (files.length === 0) {
-                alert('Please select at least one invoice PDF file.');
+                await JarvisDialog.alert('Please select at least one invoice PDF file.', { type: 'warning' });
                 return;
             }
 
@@ -677,11 +679,11 @@
                     document.getElementById('anthropicParseBtn').style.display = 'none';
                     document.getElementById('anthropicSendToBulkBtn').style.display = 'inline-block';
                 } else {
-                    alert('Error parsing invoices: ' + (result.error || 'No invoices could be parsed'));
+                    await JarvisDialog.alert('Error parsing invoices: ' + (result.error || 'No invoices could be parsed'), { type: 'error' });
                 }
             } catch (err) {
                 hideLoading();
-                alert('Error: ' + err.message);
+                await JarvisDialog.alert('Error: ' + err.message, { type: 'error' });
             }
         }
 
@@ -716,9 +718,9 @@
             document.getElementById('anthropicParseResults').style.display = 'block';
         }
 
-        function sendAnthropicToBulk() {
+        async function sendAnthropicToBulk() {
             if (parsedAnthropicInvoices.length === 0) {
-                alert('No parsed invoices to send.');
+                await JarvisDialog.alert('No parsed invoices to send.', { type: 'warning' });
                 return;
             }
 
@@ -732,5 +734,6 @@
     <script src="/static/js/online-users.js"></script>
     {% include 'partials/_edit_profile_modal.html' %}
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>

@@ -10,6 +10,7 @@
         <li><span class="dropdown-item-text text-muted small">{{ current_user.email }}</span></li>
         <li><hr class="dropdown-divider"></li>
         <li><a class="dropdown-item" href="/guide"><i class="bi bi-book"></i> User Guide</a></li>
+        <li><a class="dropdown-item" href="/profile"><i class="bi bi-person-badge"></i> My Profile</a></li>
         <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#editProfileModal"><i class="bi bi-person"></i> Edit Profile</a></li>
         {% if current_user.can_access_settings %}
         <li><a class="dropdown-item" href="/settings"><i class="bi bi-gear"></i> Jarvis Settings</a></li>

@@ -2806,3 +2806,196 @@ body.dark-theme .module-menu .home-link i {
 .module-menu .current-module-dot.aftersales {
     background: var(--module-aftersales-color);
 }
+
+/* ============================================================================
+   JARVIS DIALOG SYSTEM
+   ============================================================================ */
+
+/* Dialog Overlay */
+.jarvis-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.jarvis-dialog-overlay.show {
+    opacity: 1;
+}
+
+/* Dialog Box */
+.jarvis-dialog {
+    background: var(--bg-card);
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    max-width: 500px;
+    width: 90%;
+    transform: scale(0.95);
+    transition: transform 0.2s ease;
+}
+
+.jarvis-dialog-overlay.show .jarvis-dialog {
+    transform: scale(1);
+}
+
+/* Dialog Header */
+.jarvis-dialog-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.jarvis-dialog-header i {
+    font-size: 1.5rem;
+}
+
+.jarvis-dialog-title {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Dialog Body */
+.jarvis-dialog-body {
+    padding: 20px;
+    color: var(--text-primary);
+}
+
+.jarvis-dialog-body p {
+    margin: 0 0 16px 0;
+    line-height: 1.5;
+}
+
+.jarvis-dialog-body p:last-child {
+    margin-bottom: 0;
+}
+
+.jarvis-dialog-input {
+    width: 100%;
+    margin-top: 8px;
+}
+
+/* Dialog Footer */
+.jarvis-dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border-light);
+    background: var(--bg-table-header);
+    border-radius: 0 0 12px 12px;
+}
+
+/* ============================================================================
+   JARVIS TOAST SYSTEM
+   ============================================================================ */
+
+/* Toast Container */
+.jarvis-toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10001;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Toast */
+.jarvis-toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: var(--bg-card);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    min-width: 250px;
+    max-width: 400px;
+    transform: translateX(120%);
+    transition: transform 0.3s ease;
+    color: var(--text-primary);
+}
+
+.jarvis-toast.show {
+    transform: translateX(0);
+}
+
+.jarvis-toast i {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.jarvis-toast span {
+    flex: 1;
+    font-size: 0.9rem;
+}
+
+.jarvis-toast-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+}
+
+.jarvis-toast-close:hover {
+    opacity: 1;
+}
+
+/* Toast Types */
+.jarvis-toast-success {
+    border-left: 4px solid #28a745;
+}
+
+.jarvis-toast-success i {
+    color: #28a745;
+}
+
+.jarvis-toast-error {
+    border-left: 4px solid #dc3545;
+}
+
+.jarvis-toast-error i {
+    color: #dc3545;
+}
+
+.jarvis-toast-warning {
+    border-left: 4px solid #ffc107;
+}
+
+.jarvis-toast-warning i {
+    color: #ffc107;
+}
+
+.jarvis-toast-info {
+    border-left: 4px solid #17a2b8;
+}
+
+.jarvis-toast-info i {
+    color: #17a2b8;
+}
+
+/* Dark Theme Adjustments */
+body.dark-theme .jarvis-dialog {
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+
+body.dark-theme .jarvis-toast {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}

@@ -25,10 +25,55 @@ git merge staging
 git push origin main
 ```
 
+## ⛔ CRITICAL: Protected Code Sections
+
+**NEVER DELETE OR MODIFY** the following critical sections without explicit user confirmation:
+
+### database.py - Protected Functions
+These functions are **ESSENTIAL** for the application to work. Do NOT remove them:
+
+```python
+# e-Factura OAuth Token Functions (lines ~6444-6580)
+- get_efactura_oauth_tokens(company_cif)    # Required for ANAF authentication
+- save_efactura_oauth_tokens(company_cif, tokens)  # Required for ANAF authentication
+- delete_efactura_oauth_tokens(company_cif)  # Required for ANAF authentication
+- get_efactura_oauth_status(company_cif)     # Required for ANAF authentication
+```
+
+### database.py - Protected Table Definitions in init_db()
+These CREATE TABLE statements are **ESSENTIAL**. Do NOT remove them:
+
+```sql
+-- e-Factura Connector Tables (lines ~1730-2050)
+- efactura_company_connections
+- efactura_invoices (with all migrations: ignored, deleted_at, overrides)
+- efactura_invoice_refs
+- efactura_invoice_artifacts
+- efactura_sync_runs
+- efactura_sync_errors
+- efactura_oauth_tokens
+- efactura_partner_types
+- efactura_supplier_mappings
+- efactura_supplier_mapping_types (junction table)
+```
+
+### Before Removing Any Code
+1. **Search for usages**: `grep -r "function_name" jarvis/`
+2. **Check imports**: Look for `from database import function_name`
+3. **Verify no dependencies**: Ensure no other code relies on the function
+4. **Ask user**: "This function appears to be used by X. Should I still remove it?"
+
+### Recovery Procedure
+If critical functions are accidentally removed:
+1. Check git history: `git log --oneline --all -S "function_name"`
+2. Find the last commit with the function: `git show <commit>:jarvis/database.py | grep -A50 "def function_name"`
+3. Restore from that commit
+
 ## Project Overview
 J.A.R.V.I.S. is a modular enterprise platform with multiple sections:
-- **Accounting** → Bugetare (Invoice Budget Allocation), Statements (Bank Statement Parsing)
+- **Accounting** → Bugetare (Invoice Budget Allocation), Statements (Bank Statement Parsing), e-Factura (ANAF Invoice Import)
 - **HR** → Events (Employee Event Bonus Management)
+- **Core Connectors** → e-Factura (ANAF RO e-Invoicing integration)
 - **Future**: AFS, Sales, etc.
 
 ## Tech Stack
@@ -62,6 +107,16 @@ jarvis/                           # Main application folder
 │   ├── settings/                 # Platform settings
 │   │   ├── __init__.py
 │   │   └── routes.py             # Settings routes
+│   ├── connectors/               # External service connectors
+│   │   └── efactura/             # ANAF e-Factura connector
+│   │       ├── __init__.py       # Blueprint registration
+│   │       ├── routes.py         # API endpoints
+│   │       ├── anaf_client.py    # ANAF API client (OAuth/X.509)
+│   │       ├── xml_parser.py     # UBL 2.1 XML parser
+│   │       ├── models.py         # ParsedInvoice, InvoiceLineItem
+│   │       ├── mock_client.py    # Development mock client
+│   │       └── repositories/
+│   │           └── invoice_repo.py  # Database operations
 │   └── utils/
 │       └── logging_config.py     # Structured logging
 │
@@ -102,7 +157,8 @@ jarvis/                           # Main application folder
     │   │   ├── index.html        # Add Invoice
     │   │   ├── accounting.html   # Dashboard
     │   │   ├── templates.html    # Template management
-    │   │   └── bulk.html         # Bulk processing
+    │   │   ├── bulk.html         # Bulk processing
+    │   │   └── efactura.html     # e-Factura unallocated invoices
     │   └── statements/
     │       └── index.html        # Bank statement upload & review
     └── hr/
@@ -122,6 +178,7 @@ jarvis/                           # Main application folder
 | `/accounting` | Accounting | Bugetare | Dashboard |
 | `/templates` | Accounting | Bugetare | Templates |
 | `/bulk` | Accounting | Bugetare | Bulk processor |
+| `/accounting/efactura` | Accounting | e-Factura | Unallocated invoices |
 | `/statements/` | Accounting | Statements | Bank statement upload |
 | `/statements/mappings` | Accounting | Statements | Vendor mappings |
 | `/hr/events/` | HR | Events | Event bonuses |
@@ -171,6 +228,9 @@ docker run -p 8080:8080 -e DATABASE_URL="..." -e ANTHROPIC_API_KEY="..." bugetar
 - `GOOGLE_CREDENTIALS_JSON` - Google Drive API credentials (service account)
 - `GOOGLE_OAUTH_TOKEN` - Base64-encoded OAuth token for Google Drive (production)
 - `TINYPNG_API_KEY` - TinyPNG API key for image compression (optional, has default)
+- `EFACTURA_MOCK_MODE` - Set to `true` for development without ANAF certificate
+- `PERF_MONITOR` - Set to `true` to enable performance monitoring (logs slow requests)
+- `PERF_MONITOR_MIN_MS` - Minimum request duration (ms) to log (default: 100)
 
 ## Database Schema
 
@@ -211,9 +271,13 @@ The platform uses a normalized organizational hierarchy with foreign key referen
 - `users` - Application users with bcrypt passwords and role permissions
 - `user_events` - Activity log for user actions (login, invoice operations)
 - `vat_rates` - VAT rate definitions (id, name, rate)
+- `dropdown_options` - Configurable dropdown options (invoice_status, payment_status)
+  - id, dropdown_type, value, label, color, opacity, sort_order, is_active, min_role
+  - `min_role` controls which user roles can set invoices to this status
 - `connectors` - External service connectors (Google Ads, Anthropic) - DISABLED
 - `vendor_mappings` - Regex patterns to match bank transactions to suppliers
 - `bank_statement_transactions` - Parsed transactions from bank statements
+- `efactura_invoices` - e-Factura invoices imported from ANAF (jarvis_invoice_id links to invoices table)
 
 ### HR Schema (`hr.`)
 The HR module uses a separate PostgreSQL schema for data isolation:
@@ -237,6 +301,7 @@ The HR module uses a separate PostgreSQL schema for data isolation:
 | reinvoice_destinations | org_unit_id | department_structure.id |
 | hr.employees | org_unit_id | department_structure.id |
 | hr.events | company_id | companies.id |
+| efactura_invoices | jarvis_invoice_id | invoices.id |
 
 ## Bank Statement Module
 
@@ -286,6 +351,281 @@ Vendor mappings use regex patterns to match bank transaction descriptions to sup
 4. Internal transfers auto-ignored ("alim card")
 5. Review transactions, add mappings for unmatched vendors
 6. Select matched transactions → Create invoices
+
+## e-Factura Connector
+
+### Overview
+The e-Factura connector (`jarvis/core/connectors/efactura/`) integrates with ANAF's RO e-Invoicing system to fetch invoices automatically and send them to the JARVIS Invoice Module for allocation.
+
+### Architecture
+```
+ANAF SPV API ──────┐
+(X.509 Auth)       │
+                   ▼
+            ┌──────────────┐
+            │ ANAF Client  │  anaf_client.py / mock_client.py
+            └──────┬───────┘
+                   │
+                   ▼
+            ┌──────────────┐
+            │  XML Parser  │  xml_parser.py (UBL 2.1)
+            └──────┬───────┘
+                   │
+                   ▼
+            ┌──────────────┐
+            │   Database   │  efactura_invoices table
+            └──────┬───────┘
+                   │
+    ┌──────────────┼──────────────┐
+    ▼              ▼              ▼
+Unallocated    View Details   Export PDF
+Page           (JSON)         (ANAF API)
+```
+
+### API Routes
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/efactura/` | Connector settings page |
+| POST | `/efactura/api/import` | Import invoices from ANAF |
+| GET | `/efactura/api/invoices/unallocated` | List unallocated invoices |
+| GET | `/efactura/api/invoices/unallocated/count` | Count for badge |
+| POST | `/efactura/api/invoices/send-to-module` | Send to Invoice Module |
+| GET | `/efactura/api/invoices/<id>/pdf` | Export PDF from XML |
+| GET | `/efactura/api/messages` | List ANAF messages (SPV inbox) |
+| PUT | `/efactura/api/invoices/<id>/overrides` | Update invoice overrides (type, department, subdepartment) |
+| PUT | `/efactura/api/invoices/bulk-overrides` | Bulk update overrides for multiple invoices |
+| GET | `/efactura/api/supplier-mappings` | List supplier mappings with types |
+| POST | `/efactura/api/supplier-mappings` | Create supplier mapping |
+| PUT | `/efactura/api/supplier-mappings/<id>` | Update supplier mapping |
+| DELETE | `/efactura/api/supplier-mappings/<id>` | Delete supplier mapping |
+| GET | `/efactura/api/partner-types` | List partner types (Service, Merchandise) |
+| GET | `/efactura/oauth/status?cif=X` | Get OAuth authentication status for company |
+| POST | `/efactura/oauth/refresh` | Manually refresh OAuth access token |
+| POST | `/efactura/oauth/revoke` | Revoke OAuth tokens (disconnect company) |
+
+### OAuth Token Functions (database.py) ⚠️ CRITICAL
+
+These functions manage ANAF OAuth authentication. **DO NOT DELETE**:
+
+| Function | Purpose |
+|----------|---------|
+| `get_efactura_oauth_tokens(cif)` | Get OAuth tokens from `connectors` table |
+| `save_efactura_oauth_tokens(cif, tokens)` | Save/update tokens (creates connector if needed) |
+| `delete_efactura_oauth_tokens(cif)` | Remove tokens, set connector status to disconnected |
+| `get_efactura_oauth_status(cif)` | Get auth status (authenticated, expires_at, is_expired) |
+
+**Storage**: Tokens are stored in the `connectors` table with `connector_type = 'efactura'` and `name = company_cif`. The `credentials` JSONB column contains:
+```json
+{
+  "access_token": "...",
+  "refresh_token": "...",
+  "expires_at": "2026-04-30T12:00:00",
+  "token_type": "Bearer"
+}
+```
+
+### Database Table (`efactura_invoices`)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| anaf_message_id | VARCHAR(100) | ANAF message ID (unique) |
+| upload_index | INTEGER | Index in ZIP file |
+| invoice_number | VARCHAR(100) | Invoice number |
+| issue_date | DATE | Issue date |
+| due_date | DATE | Due date |
+| seller_name | VARCHAR(255) | Supplier name |
+| seller_cif | VARCHAR(50) | Supplier VAT |
+| buyer_name | VARCHAR(255) | Customer name |
+| buyer_cif | VARCHAR(50) | Customer VAT |
+| total_amount | DECIMAL(15,2) | Total with VAT |
+| total_vat | DECIMAL(15,2) | VAT amount |
+| currency | VARCHAR(10) | Currency code |
+| direction | VARCHAR(10) | 'inbound' or 'outbound' |
+| xml_content | TEXT | Stored XML for PDF generation |
+| jarvis_invoice_id | INTEGER | FK to invoices table (NULL = unallocated) |
+| type_override | TEXT | Invoice-level type override (comma-separated type IDs) |
+| department_override | VARCHAR(255) | Invoice-level department override |
+| subdepartment_override | VARCHAR(255) | Invoice-level subdepartment override |
+| created_at | TIMESTAMP | Import timestamp |
+
+### Database Table (`efactura_supplier_mappings`)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| seller_cif | VARCHAR(50) | Supplier VAT (unique) |
+| seller_name | VARCHAR(255) | Supplier name |
+| type_ids | TEXT | Comma-separated partner type IDs (e.g., "1,2") |
+| department | VARCHAR(255) | Default department for this supplier |
+| subdepartment | VARCHAR(255) | Default subdepartment for this supplier |
+| created_at | TIMESTAMP | Creation timestamp |
+
+### Database Table (`efactura_partner_types`)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| name | VARCHAR(100) | Type name (e.g., "Service", "Merchandise") |
+| description | TEXT | Optional description |
+| is_active | BOOLEAN | Whether type is active (default true) |
+| hide_in_filter | BOOLEAN | When true, invoices with this type are hidden by "Hide Typed" filter (default true) |
+
+### Database Indexes (Performance)
+Trigram indexes (pg_trgm) for faster ILIKE text searches:
+
+| Table | Column | Index Name |
+|-------|--------|------------|
+| efactura_invoices | partner_name | idx_efactura_invoices_partner_name_trgm |
+| efactura_invoices | partner_cif | idx_efactura_invoices_partner_cif_trgm |
+| efactura_invoices | invoice_number | idx_efactura_invoices_invoice_number_trgm |
+| efactura_supplier_mappings | partner_name | idx_efactura_mappings_partner_name_trgm |
+| efactura_supplier_mappings | supplier_name | idx_efactura_mappings_supplier_name_trgm |
+| efactura_supplier_mappings | partner_cif | idx_efactura_mappings_partner_cif_trgm |
+
+These GIN indexes use the `pg_trgm` extension and significantly speed up search queries with ILIKE patterns.
+
+### Unique Constraints
+| Table | Constraint | Description |
+|-------|------------|-------------|
+| efactura_supplier_mappings | idx_efactura_supplier_mappings_partner_name_unique | Case-insensitive unique on `LOWER(partner_name)` WHERE `is_active = TRUE` - prevents duplicate supplier mappings |
+
+### XML Parser (`xml_parser.py`)
+Parses UBL 2.1 e-Factura XML documents:
+- Extracts seller/buyer info (name, CIF, address)
+- Extracts amounts (total, VAT, net)
+- Extracts payment terms and bank account
+- Parses line items with quantities and unit prices
+- Handles VAT breakdown by rate
+
+### Mock Client
+For development without ANAF certificate:
+- Set `EFACTURA_MOCK_MODE=true` in environment
+- Returns simulated messages and invoices
+- Allows testing full workflow without API access
+
+### Accounting Module Integration
+The Unallocated Invoices page (`/accounting/efactura`):
+- Shows e-Factura invoices not yet sent to Invoice Module
+- Filters: Company, Direction (Inbound/Outbound), Date range, Search
+- Bulk selection with "Send to Invoices" action
+- Individual actions: Send to Invoices, View Details, Export PDF
+- Badge in accounting navigation shows unallocated count
+
+### Workflow
+1. **Import from ANAF**: Fetch messages from SPV inbox
+2. **Parse XML**: Extract invoice data using UBL 2.1 parser
+3. **Store**: Save to `efactura_invoices` table with XML content
+4. **Detect Duplicates**: Background check for existing invoices (exact + AI matching)
+5. **Review**: View unallocated invoices in `/accounting/efactura`
+6. **Send to Module**: Create record in main `invoices` table
+7. **Mark Allocated**: Set `jarvis_invoice_id` to link records
+
+### Duplicate Detection
+Automatic detection of duplicate invoices after ANAF sync:
+
+**Two-Layer Detection:**
+1. **Exact Matching**: Finds duplicates by supplier name + invoice number (case-insensitive)
+2. **AI Fallback (Claude)**: Fuzzy matching for similar supplier names and amounts
+   - Pre-filters by amount similarity (within 5%)
+   - Pre-filters by supplier name similarity (>50% using SequenceMatcher)
+   - AI analyzes candidates with confidence threshold (70%)
+
+**API Endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/efactura/api/invoices/duplicates` | GET | Detect exact duplicates |
+| `/efactura/api/invoices/mark-duplicates` | POST | Mark exact duplicates |
+| `/efactura/api/invoices/duplicates/ai` | GET | Detect AI fuzzy duplicates |
+| `/efactura/api/invoices/mark-duplicates/ai` | POST | Mark AI duplicates with explicit mappings |
+
+**UI Features:**
+- Yellow banner appears when duplicates detected after sync
+- "View" button shows detailed list (exact vs AI-detected sections)
+- "Mark All as Duplicates" links e-Factura invoices to existing `jarvis_invoice_id`
+- Duplicates automatically removed from Unallocated tab
+
+**Send to Module Enhancements:**
+- Duplicate prevention: Checks before INSERT, skips if exists
+- Status set to "Nebugetata" for all imported invoices
+- Net value and VAT calculations preserved from e-Factura
+- PDF link points to `/efactura/api/invoices/{id}/pdf`
+
+### Supplier Mappings
+Supplier mappings define default categorization for invoices from specific suppliers:
+
+**Features:**
+- **Partner Types**: Multi-select types (Service, Merchandise) per supplier
+- **Default Department**: Pre-set department for new invoices from this supplier
+- **Default Subdepartment**: Pre-set subdepartment (filtered by department from `department_structure`)
+
+**Workflow:**
+1. When an invoice is imported, system looks for a mapping by `seller_cif`
+2. If found, the mapping's types/department/subdepartment become defaults
+3. Defaults appear in Unallocated list columns (Type, Department, Subdepartment)
+4. Users can override defaults at the invoice level without changing the mapping
+
+**Subdepartment Filtering:**
+- Subdepartment dropdown only shows options that exist for the selected department
+- Data comes from `department_structure` table (same as company org hierarchy)
+- If a department has no subdepartments in the structure, the dropdown is disabled
+
+### Invoice Overrides
+Individual invoices can have overrides that take precedence over supplier mapping defaults:
+
+**Override Fields:**
+- `type_override` - Comma-separated type IDs (e.g., "1,2" for Service + Merchandise)
+- `department_override` - Department name
+- `subdepartment_override` - Subdepartment name (filtered by department)
+
+**Display Logic:**
+- If invoice has override → show override value
+- Else if supplier mapping exists → show mapping default
+- Else → show empty
+
+**Edit Modal:**
+- Click edit icon on invoice row to open override modal
+- Shows current values (from override or mapping default)
+- Subdepartment dropdown filters based on selected department
+- Changes only affect the individual invoice, not the supplier mapping
+
+**Bulk Override:**
+- Select multiple invoices in Unallocated tab
+- Click "Set Type" dropdown → select type(s)
+- All selected invoices get the same type override
+
+### "Hide Typed" Filter
+Toggle switch to filter out invoices that have partner types with `hide_in_filter=TRUE`:
+
+**Configuration:**
+- Located next to search field in Unallocated tab
+- Server-side filtering (works across all pages, not just visible rows)
+- State persisted in localStorage as `efacturaHideTyped`
+- Each partner type has a configurable `hide_in_filter` setting (default: true)
+
+**Partner Type Settings:**
+- Configure in **Settings → Connectors → Partner Types** or **Connector Settings → Partner Types tab**
+- Toggle "Hide in Filter" per type to control visibility behavior
+- Types with `hide_in_filter=FALSE` remain visible even when "Hide Typed" is ON
+
+**Use Case:**
+- Focus on unclassified invoices that need attention
+- Quickly identify invoices without partner type assignment
+- Customize which types should be hidden (e.g., hide Service but show Merchandise)
+
+### Column Configuration Versioning
+The e-Factura page uses versioned column configurations to handle schema changes:
+
+**How it works:**
+- `COLUMN_CONFIG_VERSION` constant tracks schema version
+- When new columns are added, version is bumped
+- If user's saved config version differs, config resets to defaults
+- Prevents column mixing when new columns are added
+
+**Storage:**
+- `efacturaColumnConfig` - Column visibility and order
+- `efacturaColumnConfigVersion` - Version number for migration
 
 ## Deployment
 Configured via `.do/app.yaml` for DigitalOcean App Platform with auto-deploy on push to main branch.
@@ -641,8 +981,10 @@ The `department_structure` table maps companies to brands, departments, and mana
 - `company_id` - FK to companies table (required for API)
 - `company` - Company name (denormalized for display)
 - `brand`, `department`, `subdepartment` - Text values from master tables
-- `manager`, `marketing` - Manager/marketing contact names
-- `manager_ids`, `marketing_ids` - Integer arrays for user IDs
+- `manager`, `marketing` - Manager/marketing contact names (display only)
+- `manager_ids`, `marketing_ids` - **Integer arrays for user IDs** (used for notifications)
+
+**Note**: `manager_ids` is the primary field for notification lookups. The `manager` field is kept for display purposes. When selecting a manager in the UI, both fields are populated automatically.
 
 ### API Endpoints
 | Endpoint | Methods | Notes |
@@ -657,6 +999,85 @@ The `department_structure` table maps companies to brands, departments, and mana
 | `/hr/events/api/structure/departments` | POST | Create structure entry |
 | `/hr/events/api/structure/departments/<id>` | PUT, DELETE | Update/delete structure entry |
 
+## Custom Dialog System
+
+The platform uses custom styled dialogs instead of native browser `alert()`, `confirm()`, `prompt()`.
+
+### Files
+- `jarvis/static/js/jarvis-dialogs.js` - Dialog and toast JavaScript utilities
+- `jarvis/static/css/theme.css` - Dialog and toast CSS styles (end of file)
+
+### Usage
+```javascript
+// Alert dialog (returns Promise)
+JarvisDialog.alert('Error message', { type: 'error', title: 'Error' });
+
+// Confirm dialog (returns Promise<boolean>)
+const confirmed = await JarvisDialog.confirm('Delete this?', { danger: true });
+
+// Prompt dialog (returns Promise<string|null>)
+const value = await JarvisDialog.prompt('Enter name:', { defaultValue: 'John' });
+
+// Toast notifications (auto-dismiss)
+JarvisToast.success('Saved successfully!');
+JarvisToast.error('Failed to save');
+JarvisToast.warning('Please check inputs');
+JarvisToast.info('Processing...');
+```
+
+### Options
+| Option | Type | Description |
+|--------|------|-------------|
+| `type` | string | Icon/color: 'info', 'success', 'warning', 'error', 'confirm' |
+| `title` | string | Dialog title (default based on type) |
+| `buttonText` | string | OK button text for alert |
+| `confirmText` | string | Confirm button text for confirm |
+| `cancelText` | string | Cancel button text |
+| `danger` | boolean | Red confirm button for destructive actions |
+| `duration` | number | Toast auto-dismiss time in ms (0 = no auto-dismiss) |
+
+## Email Notification Service
+
+### Overview
+The notification service (`jarvis/core/services/notification_service.py`) sends email notifications to managers when invoices are allocated to their department.
+
+### Manager Lookup via department_structure
+Notifications are sent to managers defined in `department_structure` for the company + department combination:
+
+| Step | Description |
+|------|-------------|
+| 1 | Look up `department_structure` row for company + department |
+| 2 | Use `manager_ids` array to find users (preferred) |
+| 3 | Fall back to looking up user by `manager` name if `manager_ids` is NULL |
+| 4 | Filter users by `is_active = TRUE` AND `notify_on_allocation = TRUE` |
+
+**Important**: Managers are assigned per company + department in Settings → Company Structure. The `manager_ids` integer array stores user IDs directly for efficient lookup.
+
+### Key Functions
+
+| Function | File | Description |
+|----------|------|-------------|
+| `get_responsables_by_department(department, company)` | database.py | Looks up managers from department_structure |
+| `find_responsables_for_allocation(allocation)` | notification_service.py | Finds all users to notify for an allocation |
+| `notify_allocation(invoice_data, allocation)` | notification_service.py | Sends notification emails |
+
+### Reinvoice Notifications
+When an allocation has a `reinvoice_to` target, additional notifications are sent:
+- Uses `reinvoice_to` as the company filter
+- Uses `reinvoice_department` as the department filter
+- Same filtering rules apply (company + department + active + notify)
+
+### SMTP Configuration
+SMTP settings are stored in the `notification_settings` table:
+- `smtp_host`, `smtp_port`, `smtp_tls`
+- `smtp_username`, `smtp_password`
+- `from_email`, `from_name`
+- `global_cc` - Optional CC address for all notifications
+
 ## Disabled Features
 
-Connector infrastructure (Google Ads, Anthropic invoice fetching) is disabled. Files `google_ads_connector.py` and `anthropic_connector.py` remain for future use.
+Some connector infrastructure remains disabled:
+- **Google Ads connector** (`google_ads_connector.py`) - for future invoice auto-fetching
+- **Anthropic connector** (`anthropic_connector.py`) - for future invoice auto-fetching
+
+**Active connectors**: e-Factura (ANAF RO e-Invoicing) is fully functional in `core/connectors/efactura/`.

@@ -12,9 +12,19 @@ class User(UserMixin):
         self.id = user_data['id']
         self.email = user_data['email']
         self.name = user_data['name']
+        self.phone = user_data.get('phone')
         self.role_id = user_data.get('role_id')
         self.role_name = user_data.get('role_name')
         self.is_active_user = user_data.get('is_active', True)
+
+        # Organizational fields (from responsables migration)
+        self.company = user_data.get('company')
+        self.brand = user_data.get('brand')
+        self.department = user_data.get('department')
+        self.subdepartment = user_data.get('subdepartment')
+        self.org_unit_id = user_data.get('org_unit_id')
+        self.notify_on_allocation = user_data.get('notify_on_allocation', True)
+
         # Role permissions (backward compatible boolean properties)
         self.can_add_invoices = user_data.get('can_add_invoices', False)
         self.can_edit_invoices = user_data.get('can_edit_invoices', False)
@@ -27,6 +37,11 @@ class User(UserMixin):
         self.can_access_hr = user_data.get('can_access_hr', False)
         self.is_hr_manager = user_data.get('is_hr_manager', False)
 
+        # New module permissions
+        self.can_access_efactura = user_data.get('can_access_efactura', False)
+        self.can_access_statements = user_data.get('can_access_statements', False)
+        self.can_access_profile = user_data.get('can_access_profile', True)  # All users can access profile
+
         # Permission mapping for has_permission method
         self._permission_map = {
             'system.settings': self.can_access_settings,
@@ -37,6 +52,9 @@ class User(UserMixin):
             'accounting.dashboard': self.can_access_accounting,
             'accounting.templates': self.can_access_templates,
             'accounting.connectors': self.can_access_connectors,
+            'efactura.access': self.can_access_efactura,
+            'statements.access': self.can_access_statements,
+            'profile.access': self.can_access_profile,
             'hr.access': self.can_access_hr,
             'hr.manager': self.is_hr_manager,
         }
@@ -58,3 +76,15 @@ class User(UserMixin):
 
         perm_key = f"{module}.{permission}"
         return self._permission_map.get(perm_key, False)
+
+    def can_access_main_apps(self) -> bool:
+        """Check if user can access main application modules (accounting, invoices, HR).
+
+        Users without access to any main module should be redirected to their profile.
+        """
+        return (
+            self.can_access_accounting or
+            self.can_view_invoices or
+            self.can_add_invoices or
+            self.can_access_hr
+        )

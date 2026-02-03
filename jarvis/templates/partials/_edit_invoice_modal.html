@@ -1,0 +1,185 @@
+<!-- Edit Invoice Modal - Shared Partial Template -->
+<div class="modal fade" id="editInvoiceModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> Edit Invoice</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editInvoiceForm">
+                    <input type="hidden" id="editInvoiceId">
+
+                    <!-- Invoice Details Section -->
+                    <h6 class="border-bottom pb-2 mb-3"><i class="bi bi-receipt"></i> Invoice Details</h6>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Supplier</label>
+                            <input type="text" class="form-control" id="editSupplier" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Invoice Number</label>
+                            <input type="text" class="form-control" id="editInvoiceNumber" required>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Invoice Date</label>
+                            <input type="date" class="form-control" id="editInvoiceDate" required>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Invoice Value</label>
+                            <input type="number" step="0.01" class="form-control" id="editInvoiceValue" required>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Currency</label>
+                            <select class="form-select" id="editCurrency">
+                                <option value="RON">RON</option>
+                                <option value="EUR">EUR</option>
+                                <option value="USD">USD</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Drive Link</label>
+                            <input type="url" class="form-control" id="editDriveLink" placeholder="https://drive.google.com/...">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Notes</label>
+                            <input type="text" class="form-control" id="editComment" placeholder="Add notes...">
+                        </div>
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">Status</label>
+                            <select class="form-select" id="editStatus">
+                                <!-- Populated dynamically from dropdown_options -->
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Payment Status</label>
+                            <select class="form-select" id="editPaymentStatus">
+                                <!-- Populated dynamically from dropdown_options -->
+                            </select>
+                        </div>
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">VAT Subtract</label>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="editSubtractVat">
+                                <label class="form-check-label" for="editSubtractVat">Subtract VAT</label>
+                            </div>
+                        </div>
+                        <div class="col-md-3 mb-3" id="editVatRateCol" style="display: none;">
+                            <label class="form-label">VAT Rate</label>
+                            <select class="form-select" id="editVatRateId">
+                                <option value="">Select rate...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3" id="editNetValueCol" style="display: none;">
+                            <label class="form-label">Net Value</label>
+                            <input type="text" class="form-control" id="editNetValueDisplay" readonly>
+                            <input type="hidden" id="editNetValue">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label class="form-label">Upload Invoice File</label>
+                            <div class="input-group">
+                                <input type="file" class="form-control" id="editInvoiceFile" accept=".pdf,.jpg,.jpeg,.png">
+                                <button type="button" class="btn btn-outline-success" id="uploadEditFileBtn">
+                                    <i class="bi bi-cloud-upload"></i> Upload to Drive
+                                </button>
+                            </div>
+                            <small class="text-muted">Upload a new invoice file to Google Drive (optional)</small>
+                        </div>
+                    </div>
+
+                    <!-- Allocations Section -->
+                    <h6 class="border-bottom pb-2 mb-3 mt-4">
+                        <i class="bi bi-pie-chart"></i> Cost Allocations
+                        <span class="badge bg-secondary ms-2" id="allocationTotalBadge">0%</span>
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Dedicated To (Company) *</label>
+                            <select class="form-select" id="editDedicatedCompany" required>
+                                <option value="">Select company...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="allocationsContainer">
+                        <!-- Allocation rows will be rendered here -->
+                    </div>
+                    <button type="button" class="btn btn-outline-success btn-sm mt-2" id="addAllocationBtn">
+                        <i class="bi bi-plus-circle"></i> Add Allocation
+                    </button>
+                </form>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="sendNotificationToggle">
+                    <label class="form-check-label" for="sendNotificationToggle">
+                        <i class="bi bi-envelope"></i> Send notification to responsables
+                    </label>
+                </div>
+                <div>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveInvoiceBtn">
+                        <i class="bi bi-check"></i> Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Invoice Detail Modal -->
+<div class="modal fade" id="invoiceDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-receipt"></i> Invoice Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="invoiceDetailBody">
+                <div class="text-center"><div class="spinner-border"></div></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="editFromDetailBtn">
+                    <i class="bi bi-pencil"></i> Edit Invoice
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Allocation Comment Modal -->
+<div class="modal fade" id="allocationCommentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-chat-text"></i> Allocation Comment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="allocationCommentIndex">
+                <div class="mb-3">
+                    <label class="form-label">Allocation Details</label>
+                    <div id="allocationCommentDetails" class="small text-muted border rounded p-2 bg-light"></div>
+                </div>
+                <div class="mb-3">
+                    <label for="allocationCommentText" class="form-label">Comment</label>
+                    <textarea class="form-control" id="allocationCommentText" rows="3" placeholder="Add a comment for this allocation..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveAllocationCommentBtn">
+                    <i class="bi bi-check"></i> Save Comment
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

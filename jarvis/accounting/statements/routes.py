@@ -1,14 +1,25 @@
-"""API routes for Bank Statement module."""
+"""API routes for Bank Statement module.
+
+Routes call StatementsService for all business logic.
+"""
 import re
 import logging
 import time
-import hashlib
+import csv
+import io
 from collections import defaultdict
 from functools import wraps
+from datetime import date
 from flask import request, jsonify, render_template, Response
 from flask_login import login_required, current_user
 
 from . import statements_bp
+from .services import StatementsService
+
+logger = logging.getLogger('jarvis.statements.routes')
+
+# Initialize service
+statements_service = StatementsService()
 
 
 def api_login_required(f):
@@ -23,6 +34,7 @@ def api_login_required(f):
             }), 401
         return f(*args, **kwargs)
     return decorated_function
+
 
 # File size limits
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB per file
@@ -120,48 +132,13 @@ def get_json_or_error():
     """Get JSON from request with null check. Returns (data, error_response)."""
     data = request.get_json()
     if data is None:
-        return None, jsonify({
+        return None, (jsonify({
             'success': False,
             'error': 'Invalid or missing JSON body',
             'details': {'body': 'Request body must be valid JSON'}
-        }), 400
+        }), 400)
     return data, None
-from .parser import parse_statement
-from .vendors import match_transactions, reload_patterns, get_unmatched_vendors
-from .database import (
-    get_all_vendor_mappings,
-    get_vendor_mapping,
-    create_vendor_mapping,
-    update_vendor_mapping,
-    delete_vendor_mapping,
-    seed_vendor_mappings,
-    save_transactions_with_dedup,
-    get_transactions,
-    get_transaction,
-    update_transaction,
-    bulk_update_status,
-    get_transaction_summary,
-    # Statement management
-    create_statement,
-    get_statement,
-    get_statements,
-    get_statement_count,
-    check_duplicate_statement,
-    update_statement,
-    delete_statement,
-    # Filter options
-    get_distinct_companies,
-    get_distinct_suppliers,
-    # Transaction merging
-    merge_transactions,
-    unmerge_transaction,
-    get_merged_source_transactions
-)
 
-logger = logging.getLogger('jarvis.statements.routes')
-
-
-# ============== UPLOAD HELPER FUNCTIONS ==============
 
 def _validate_upload_files(files: list) -> tuple[bool, str, int]:
     """
@@ -188,129 +165,6 @@ def _validate_upload_files(files: list) -> tuple[bool, str, int]:
         return False, 'Total upload size exceeds maximum of 50MB', total_size
 
     return True, None, total_size
-
-
-def _process_single_statement(pdf_bytes: bytes, filename: str, user_id: int) -> dict:
-    """
-    Process a single PDF statement file.
-
-    Args:
-        pdf_bytes: Raw PDF content
-        filename: Original filename
-        user_id: ID of the uploading user
-
-    Returns:
-        Dict with processing result (success/error and details)
-    """
-    # Calculate file hash for duplicate detection
-    file_hash = hashlib.md5(pdf_bytes).hexdigest()
-
-    # Check if this exact file was already uploaded
-    existing = check_duplicate_statement(file_hash)
-    if existing:
-        return {
-            'filename': filename,
-            'error': f'This file was already uploaded on {existing["uploaded_at"]}',
-            'existing_statement_id': existing['id'],
-            'skipped': True
-        }
-
-    # Parse the statement
-    parsed = parse_statement(pdf_bytes, filename)
-
-    # Match transactions to vendors
-    transactions = match_transactions(parsed['transactions'])
-
-    # Create statement record
-    period = parsed.get('period', {})
-    statement_id = create_statement(
-        filename=filename,
-        file_hash=file_hash,
-        company_name=parsed.get('company_name'),
-        company_cui=parsed.get('company_cui'),
-        account_number=parsed.get('account_number'),
-        period_from=period.get('from'),
-        period_to=period.get('to'),
-        total_transactions=len(transactions),
-        uploaded_by=user_id
-    )
-
-    # Save transactions with duplicate detection
-    save_result = save_transactions_with_dedup(transactions, statement_id)
-
-    # Update statement with actual counts
-    update_statement(
-        statement_id,
-        new_transactions=save_result['new_count'],
-        duplicate_transactions=save_result['duplicate_count']
-    )
-
-    # Auto-match new transactions to invoices
-    invoice_matched_count = _auto_match_new_transactions(save_result['new_ids'])
-
-    # Count vendor-matched (has supplier) - for reporting
-    vendor_matched_count = sum(1 for t in transactions if t.get('matched_supplier'))
-
-    return {
-        'filename': filename,
-        'statement_id': statement_id,
-        'company_name': parsed.get('company_name'),
-        'company_cui': parsed.get('company_cui'),
-        'total_transactions': len(transactions),
-        'new_transactions': save_result['new_count'],
-        'duplicate_transactions': save_result['duplicate_count'],
-        'vendor_matched_count': vendor_matched_count,
-        'invoice_matched_count': invoice_matched_count,
-        'period': period,
-        'summary': parsed.get('summary')
-    }
-
-
-def _auto_match_new_transactions(new_ids: list) -> int:
-    """
-    Auto-match newly saved transactions to invoices.
-
-    Returns:
-        Number of transactions matched to invoices
-    """
-    if not new_ids:
-        return 0
-
-    try:
-        from .invoice_matcher import auto_match_transactions
-        from .database import get_candidate_invoices, bulk_update_transaction_matches
-
-        # Get the newly saved transactions for matching
-        new_txns = [get_transaction(txn_id) for txn_id in new_ids]
-        new_txns = [t for t in new_txns if t and t.get('status') not in ('ignored',)]
-
-        if not new_txns:
-            return 0
-
-        # Get candidate invoices
-        invoices = get_candidate_invoices(limit=200)
-        if not invoices:
-            return 0
-
-        # Run auto-match
-        match_results = auto_match_transactions(
-            transactions=new_txns,
-            invoices=invoices,
-            use_ai=False,
-            min_confidence=0.5
-        )
-
-        # Save match results
-        if match_results['results']:
-            bulk_update_transaction_matches(match_results['results'])
-
-        matched_count = match_results.get('matched', 0) + match_results.get('suggested', 0)
-        logger.info(f'Auto-matched {matched_count} transactions to invoices')
-        return matched_count
-
-    except Exception as e:
-        logger.warning(f'Auto-match failed: {e}')
-        return 0
 
 
 # ============== PAGE ROUTES ==============
@@ -345,24 +199,6 @@ def upload_statements():
     Upload and parse bank statement PDF(s).
 
     Accepts multipart/form-data with file(s) under 'files' key.
-
-    Returns:
-        {
-            'success': bool,
-            'statements': [{
-                'filename': str,
-                'statement_id': int,
-                'company_name': str,
-                'company_cui': str,
-                'total_transactions': int,
-                'new_transactions': int,
-                'duplicate_transactions': int,
-                'matched_count': int,
-                'period': {from, to}
-            }],
-            'total_new': int,
-            'total_duplicates': int
-        }
     """
     if 'files' not in request.files:
         return jsonify({'success': False, 'error': 'No files provided'}), 400
@@ -375,9 +211,6 @@ def upload_statements():
     is_valid, error_msg, _ = _validate_upload_files(files)
     if not is_valid:
         return jsonify({'success': False, 'error': error_msg}), 400
-
-    # Ensure vendor mappings are seeded
-    seed_vendor_mappings()
 
     results = []
     total_new = 0
@@ -395,15 +228,21 @@ def upload_statements():
         try:
             pdf_bytes = file.read()
 
-            # Process single statement using helper function
-            result = _process_single_statement(pdf_bytes, file.filename, user_id)
+            # Process single statement using service
+            result = statements_service.process_statement(pdf_bytes, file.filename, user_id)
 
-            # Track totals (skipped files don't have these keys)
-            if not result.get('skipped'):
-                total_new += result.get('new_transactions', 0)
-                total_duplicates += result.get('duplicate_transactions', 0)
-
-            results.append(result)
+            if result.success:
+                data = result.data
+                # Track totals (skipped files don't have these keys)
+                if not data.get('skipped'):
+                    total_new += data.get('new_transactions', 0)
+                    total_duplicates += data.get('duplicate_transactions', 0)
+                results.append(data)
+            else:
+                results.append({
+                    'filename': file.filename,
+                    'error': result.error
+                })
 
         except Exception as e:
             logger.exception(f'Error parsing {file.filename}')
@@ -425,34 +264,15 @@ def upload_statements():
 @statements_bp.route('/api/statements', methods=['GET'])
 @api_login_required
 def list_statements():
-    """
-    List all uploaded statements with pagination.
-
-    Query params:
-        - limit: max results (default 100)
-        - offset: pagination offset
-    """
+    """List all uploaded statements with pagination."""
     limit = int(request.args.get('limit', 100))
     offset = int(request.args.get('offset', 0))
 
-    statements = get_statements(limit=limit, offset=offset)
-    total = get_statement_count()
-
-    # Convert dates to strings for JSON
-    for stmt in statements:
-        if stmt.get('period_from'):
-            stmt['period_from'] = str(stmt['period_from'])
-        if stmt.get('period_to'):
-            stmt['period_to'] = str(stmt['period_to'])
-        if stmt.get('uploaded_at'):
-            stmt['uploaded_at'] = str(stmt['uploaded_at'])
+    data = statements_service.get_all_statements(limit=limit, offset=offset)
 
     return jsonify({
         'success': True,
-        'statements': statements,
-        'total': total,
-        'limit': limit,
-        'offset': offset
+        **data
     })
 
 
@@ -460,17 +280,9 @@ def list_statements():
 @api_login_required
 def get_statement_detail(statement_id):
     """Get details for a single statement."""
-    stmt = get_statement(statement_id)
+    stmt = statements_service.get_statement(statement_id)
     if not stmt:
         return jsonify({'success': False, 'error': 'Statement not found'}), 404
-
-    # Convert dates to strings
-    if stmt.get('period_from'):
-        stmt['period_from'] = str(stmt['period_from'])
-    if stmt.get('period_to'):
-        stmt['period_to'] = str(stmt['period_to'])
-    if stmt.get('uploaded_at'):
-        stmt['uploaded_at'] = str(stmt['uploaded_at'])
 
     return jsonify({'success': True, 'statement': stmt})
 
@@ -479,16 +291,11 @@ def get_statement_detail(statement_id):
 @api_login_required
 def delete_statement_route(statement_id):
     """Delete a statement and all its transactions."""
-    stmt = get_statement(statement_id)
-    if not stmt:
-        return jsonify({'success': False, 'error': 'Statement not found'}), 404
+    result = statements_service.delete_statement(statement_id)
 
-    success = delete_statement(statement_id)
-    if success:
-        logger.info(f'Deleted statement {statement_id}: {stmt["filename"]}')
+    if result.success:
         return jsonify({'success': True})
-    else:
-        return jsonify({'success': False, 'error': 'Failed to delete statement'}), 500
+    return jsonify({'success': False, 'error': result.error}), 404 if result.error == 'Statement not found' else 500
 
 
 # ============== FILTER OPTIONS ==============
@@ -496,22 +303,12 @@ def delete_statement_route(statement_id):
 @statements_bp.route('/api/filters', methods=['GET'])
 @api_login_required
 def get_filter_options():
-    """
-    Get available filter options for dropdowns.
-
-    Returns:
-        {
-            'companies': [{'company_name': str, 'company_cui': str}, ...],
-            'suppliers': [str, ...]
-        }
-    """
-    companies = get_distinct_companies()
-    suppliers = get_distinct_suppliers()
+    """Get available filter options for dropdowns."""
+    options = statements_service.get_filter_options()
 
     return jsonify({
         'success': True,
-        'companies': companies,
-        'suppliers': suppliers
+        **options
     })
 
 
@@ -520,21 +317,8 @@ def get_filter_options():
 @statements_bp.route('/api/transactions', methods=['GET'])
 @api_login_required
 def list_transactions():
-    """
-    List transactions with optional filters.
-
-    Query params:
-        - status: pending, matched, ignored, invoiced
-        - company_cui: filter by company
-        - supplier: filter by matched supplier
-        - date_from: YYYY-MM-DD
-        - date_to: YYYY-MM-DD
-        - search: search in description, vendor, supplier
-        - sort: newest, oldest, amount_high, amount_low
-        - limit: max results (default 500)
-        - offset: pagination offset
-    """
-    transactions = get_transactions(
+    """List transactions with optional filters."""
+    transactions = statements_service.get_all_transactions(
         status=request.args.get('status'),
         company_cui=request.args.get('company_cui'),
         supplier=request.args.get('supplier'),
@@ -545,21 +329,6 @@ def list_transactions():
         limit=int(request.args.get('limit', 500)),
         offset=int(request.args.get('offset', 0))
     )
-
-    # Convert dates to ISO strings for JSON
-    for txn in transactions:
-        if txn.get('transaction_date'):
-            txn['transaction_date'] = str(txn['transaction_date'])
-        if txn.get('value_date'):
-            txn['value_date'] = str(txn['value_date'])
-        if txn.get('created_at'):
-            txn['created_at'] = str(txn['created_at'])
-        # Convert linked invoice date from JOIN
-        if txn.get('linked_invoice_date'):
-            txn['linked_invoice_date'] = str(txn['linked_invoice_date'])
-        # Convert suggested invoice date from JOIN
-        if txn.get('suggested_invoice_date'):
-            txn['suggested_invoice_date'] = str(txn['suggested_invoice_date'])
 
     return jsonify({
         'success': True,
@@ -572,15 +341,9 @@ def list_transactions():
 @api_login_required
 def get_single_transaction(transaction_id):
     """Get a single transaction by ID."""
-    txn = get_transaction(transaction_id)
+    txn = statements_service.get_transaction(transaction_id)
     if not txn:
         return jsonify({'success': False, 'error': 'Transaction not found'}), 404
-
-    # Convert dates
-    if txn.get('transaction_date'):
-        txn['transaction_date'] = str(txn['transaction_date'])
-    if txn.get('value_date'):
-        txn['value_date'] = str(txn['value_date'])
 
     return jsonify({'success': True, 'transaction': txn})
 
@@ -588,11 +351,7 @@ def get_single_transaction(transaction_id):
 @statements_bp.route('/api/transactions/<int:transaction_id>', methods=['PUT'])
 @api_login_required
 def update_single_transaction(transaction_id):
-    """
-    Update a transaction.
-
-    Body can include: matched_supplier, status, vendor_name
-    """
+    """Update a transaction."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -605,41 +364,26 @@ def update_single_transaction(transaction_id):
             'details': {'status': 'Status must be one of: pending, resolved, ignored'}
         }), 422
 
-    try:
-        success = update_transaction(
-            transaction_id,
-            matched_supplier=data.get('matched_supplier'),
-            status=data.get('status'),
-            vendor_name=data.get('vendor_name')
-        )
+    result = statements_service.update_transaction(
+        transaction_id,
+        matched_supplier=data.get('matched_supplier'),
+        status=data.get('status'),
+        vendor_name=data.get('vendor_name')
+    )
 
-        if success:
-            return jsonify({'success': True})
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Transaction not found or no changes made'
-            }), 404
-    except Exception as e:
-        logger.exception(f"Failed to update transaction {transaction_id}: {e}")
-        return jsonify({
-            'success': False,
-            'error': 'Database error',
-            'details': {'message': str(e)}
-        }), 500
+    if result.success:
+        return jsonify({'success': True})
+    return jsonify({
+        'success': False,
+        'error': result.error
+    }), 404
 
 
 @statements_bp.route('/api/transactions/bulk-ignore', methods=['POST'])
 @api_login_required
 @rate_limit_bulk
 def bulk_ignore_transactions():
-    """
-    Bulk ignore transactions.
-
-    Body: { "transaction_ids": [1, 2, 3] }
-
-    Rate limited: 10 requests per minute, max 100 items per request.
-    """
+    """Bulk ignore transactions."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -672,32 +416,18 @@ def bulk_ignore_transactions():
             }
         }), 400
 
-    try:
-        count = bulk_update_status(ids, 'ignored')
-        return jsonify({
-            'success': True,
-            'updated_count': count
-        })
-    except Exception as e:
-        logger.exception(f"Failed to bulk ignore transactions: {e}")
-        return jsonify({
-            'success': False,
-            'error': 'Database error',
-            'details': {'message': str(e)}
-        }), 500
+    result = statements_service.bulk_ignore_transactions(ids)
+    return jsonify({
+        'success': True,
+        'updated_count': result.data['updated_count']
+    })
 
 
 @statements_bp.route('/api/transactions/bulk-status', methods=['POST'])
 @api_login_required
 @rate_limit_bulk
 def bulk_update_transaction_status():
-    """
-    Bulk update status for transactions.
-
-    Body: { "transaction_ids": [1, 2, 3], "status": "resolved" }
-
-    Rate limited: 10 requests per minute, max 100 items per request.
-    """
+    """Bulk update status for transactions."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -725,33 +455,18 @@ def bulk_update_transaction_status():
             'details': errors
         }), 422 if 'status' in errors and status else 400
 
-    try:
-        count = bulk_update_status(ids, status)
-        return jsonify({
-            'success': True,
-            'updated_count': count
-        })
-    except Exception as e:
-        logger.exception(f"Failed to bulk update status: {e}")
-        return jsonify({
-            'success': False,
-            'error': 'Database error',
-            'details': {'message': str(e)}
-        }), 500
+    result = statements_service.bulk_update_status(ids, status)
+    return jsonify({
+        'success': True,
+        'updated_count': result.data['updated_count']
+    })
 
 
 @statements_bp.route('/api/summary', methods=['GET'])
 @api_login_required
 def transactions_summary():
-    """Get summary statistics for transactions.
-
-    Query params (for cascading filters):
-        - company_cui: Filter suppliers by company
-        - supplier: Filter companies by supplier
-        - date_from: Filter by date range start
-        - date_to: Filter by date range end
-    """
-    summary = get_transaction_summary(
+    """Get summary statistics for transactions."""
+    summary = statements_service.get_transaction_summary(
         company_cui=request.args.get('company_cui'),
         supplier=request.args.get('supplier'),
         date_from=request.args.get('date_from'),
@@ -766,22 +481,9 @@ def transactions_summary():
 @statements_bp.route('/api/export/csv', methods=['GET'])
 @api_login_required
 def export_transactions_csv():
-    """
-    Export transactions to CSV format.
-
-    Query params (same as list_transactions):
-        - status: pending, matched, ignored, invoiced
-        - company_cui: filter by company
-        - supplier: filter by matched supplier
-        - date_from: YYYY-MM-DD
-        - date_to: YYYY-MM-DD
-    """
-    import csv
-    import io
-    from datetime import date
-
+    """Export transactions to CSV format."""
     # Get transactions with same filters as list endpoint
-    transactions = get_transactions(
+    transactions = statements_service.get_all_transactions(
         status=request.args.get('status'),
         company_cui=request.args.get('company_cui'),
         supplier=request.args.get('supplier'),
@@ -835,7 +537,7 @@ def export_transactions_csv():
 def list_mappings():
     """List all vendor mappings."""
     active_only = request.args.get('active_only', 'true').lower() == 'true'
-    mappings = get_all_vendor_mappings(active_only=active_only)
+    mappings = statements_service.get_all_mappings(active_only=active_only)
 
     return jsonify({
         'success': True,
@@ -846,16 +548,7 @@ def list_mappings():
 @statements_bp.route('/api/mappings', methods=['POST'])
 @api_login_required
 def create_mapping():
-    """
-    Create a new vendor mapping.
-
-    Body: {
-        "pattern": "VENDOR\\s*\\*",
-        "supplier_name": "Vendor Inc",
-        "supplier_vat": "RO12345678" (optional),
-        "template_id": 1 (optional)
-    }
-    """
+    """Create a new vendor mapping."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -884,35 +577,30 @@ def create_mapping():
             'details': {'pattern': regex_error}
         }), 422
 
-    try:
-        mapping_id = create_vendor_mapping(
-            pattern=data['pattern'],
-            supplier_name=data['supplier_name'],
-            supplier_vat=data.get('supplier_vat'),
-            template_id=data.get('template_id')
-        )
+    result = statements_service.create_mapping(
+        pattern=data['pattern'],
+        supplier_name=data['supplier_name'],
+        supplier_vat=data.get('supplier_vat'),
+        template_id=data.get('template_id')
+    )
 
-        # Reload patterns cache
-        reload_patterns()
-
+    if result.success:
         return jsonify({
             'success': True,
-            'mapping_id': mapping_id
+            'mapping_id': result.data['mapping_id']
         })
-    except Exception as e:
-        logger.exception(f"Failed to create mapping: {e}")
-        return jsonify({
-            'success': False,
-            'error': 'Database error',
-            'details': {'message': str(e)}
-        }), 500
+    return jsonify({
+        'success': False,
+        'error': 'Database error',
+        'details': {'message': result.error}
+    }), 500
 
 
 @statements_bp.route('/api/mappings/<int:mapping_id>', methods=['GET'])
 @api_login_required
 def get_single_mapping(mapping_id):
     """Get a single vendor mapping by ID."""
-    mapping = get_vendor_mapping(mapping_id)
+    mapping = statements_service.get_mapping(mapping_id)
     if not mapping:
         return jsonify({'success': False, 'error': 'Mapping not found'}), 404
 
@@ -922,11 +610,7 @@ def get_single_mapping(mapping_id):
 @statements_bp.route('/api/mappings/<int:mapping_id>', methods=['PUT'])
 @api_login_required
 def update_single_mapping(mapping_id):
-    """
-    Update a vendor mapping.
-
-    Body can include: pattern, supplier_name, supplier_vat, template_id, is_active
-    """
+    """Update a vendor mapping."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -942,46 +626,32 @@ def update_single_mapping(mapping_id):
                 'details': {'pattern': regex_error}
             }), 422
 
-    try:
-        success = update_vendor_mapping(
-            mapping_id,
-            pattern=data.get('pattern'),
-            supplier_name=data.get('supplier_name'),
-            supplier_vat=data.get('supplier_vat'),
-            template_id=data.get('template_id'),
-            is_active=data.get('is_active')
-        )
+    result = statements_service.update_mapping(
+        mapping_id,
+        pattern=data.get('pattern'),
+        supplier_name=data.get('supplier_name'),
+        supplier_vat=data.get('supplier_vat'),
+        template_id=data.get('template_id'),
+        is_active=data.get('is_active')
+    )
 
-        if success:
-            # Reload patterns cache
-            reload_patterns()
-            return jsonify({'success': True})
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Mapping not found or no changes made'
-            }), 404
-    except Exception as e:
-        logger.exception(f"Failed to update mapping {mapping_id}: {e}")
-        return jsonify({
-            'success': False,
-            'error': 'Database error',
-            'details': {'message': str(e)}
-        }), 500
+    if result.success:
+        return jsonify({'success': True})
+    return jsonify({
+        'success': False,
+        'error': result.error
+    }), 404 if 'not found' in (result.error or '') else 500
 
 
 @statements_bp.route('/api/mappings/<int:mapping_id>', methods=['DELETE'])
 @api_login_required
 def delete_single_mapping(mapping_id):
     """Delete a vendor mapping."""
-    success = delete_vendor_mapping(mapping_id)
+    result = statements_service.delete_mapping(mapping_id)
 
-    if success:
-        # Reload patterns cache
-        reload_patterns()
+    if result.success:
         return jsonify({'success': True})
-    else:
-        return jsonify({'success': False, 'error': 'Delete failed'}), 400
+    return jsonify({'success': False, 'error': result.error}), 400
 
 
 # ============== INVOICE LINKING ==============
@@ -989,16 +659,7 @@ def delete_single_mapping(mapping_id):
 @statements_bp.route('/api/transactions/link-invoice', methods=['POST'])
 @api_login_required
 def link_invoice_to_transaction():
-    """
-    Link an existing invoice to a bank statement transaction.
-
-    Body: {
-        "transaction_id": 123,
-        "invoice_id": 456
-    }
-
-    This marks the transaction as 'resolved' and stores the invoice_id reference.
-    """
+    """Link an existing invoice to a bank statement transaction."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1020,112 +681,45 @@ def link_invoice_to_transaction():
             'details': errors
         }), 400
 
-    # Verify transaction exists
-    txn = get_transaction(transaction_id)
-    if not txn:
+    result = statements_service.link_invoice(transaction_id, invoice_id)
+
+    if result.success:
         return jsonify({
-            'success': False,
-            'error': 'Transaction not found'
-        }), 404
+            'success': True,
+            **result.data
+        })
 
-    # Check if already linked
-    if txn.get('invoice_id'):
-        return jsonify({
-            'success': False,
-            'error': 'Transaction is already linked to an invoice',
-            'details': {'existing_invoice_id': txn['invoice_id']}
-        }), 409
+    # Determine status code based on error
+    status_code = 404
+    if 'already linked' in (result.error or ''):
+        status_code = 409
+    elif result.data and result.data.get('existing_invoice_id'):
+        status_code = 409
 
-    # Verify invoice exists (import here to avoid circular imports)
-    from database import get_invoice_with_allocations
-    invoice = get_invoice_with_allocations(invoice_id)
-    if not invoice:
-        return jsonify({
-            'success': False,
-            'error': 'Invoice not found'
-        }), 404
-
-    try:
-        # Update transaction with invoice link and set status to resolved
-        success = update_transaction(
-            transaction_id,
-            invoice_id=invoice_id,
-            status='resolved'
-        )
-
-        if success:
-            logger.info(f'Linked transaction {transaction_id} to invoice {invoice_id}')
-            return jsonify({
-                'success': True,
-                'transaction_id': transaction_id,
-                'invoice_id': invoice_id
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Failed to update transaction'
-            }), 500
-
-    except Exception as e:
-        logger.exception(f'Error linking transaction {transaction_id} to invoice {invoice_id}')
-        return jsonify({
-            'success': False,
-            'error': 'Database error',
-            'details': {'message': str(e)}
-        }), 500
+    return jsonify({
+        'success': False,
+        'error': result.error,
+        'details': result.data if result.data else None
+    }), status_code
 
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/unlink', methods=['POST'])
 @api_login_required
 def unlink_invoice_from_transaction(transaction_id):
-    """
-    Remove the invoice link from a transaction.
+    """Remove the invoice link from a transaction."""
+    result = statements_service.unlink_invoice(transaction_id)
 
-    This sets the invoice_id to NULL and changes status back to 'pending'.
-    """
-    txn = get_transaction(transaction_id)
-    if not txn:
+    if result.success:
         return jsonify({
-            'success': False,
-            'error': 'Transaction not found'
-        }), 404
+            'success': True,
+            **result.data
+        })
 
-    if not txn.get('invoice_id'):
-        return jsonify({
-            'success': False,
-            'error': 'Transaction is not linked to any invoice'
-        }), 400
-
-    try:
-        # Set status back to pending when unlinking
-        new_status = 'pending'
-
-        success = update_transaction(
-            transaction_id,
-            invoice_id=None,
-            status=new_status
-        )
-
-        if success:
-            logger.info(f'Unlinked invoice from transaction {transaction_id}')
-            return jsonify({
-                'success': True,
-                'transaction_id': transaction_id,
-                'new_status': new_status
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Failed to update transaction'
-            }), 500
-
-    except Exception as e:
-        logger.exception(f'Error unlinking invoice from transaction {transaction_id}')
-        return jsonify({
-            'success': False,
-            'error': 'Database error',
-            'details': {'message': str(e)}
-        }), 500
+    status_code = 404 if result.error == 'Transaction not found' else 400
+    return jsonify({
+        'success': False,
+        'error': result.error
+    }), status_code
 
 
 # ============== AUTO-MATCH INVOICES ==============
@@ -1133,249 +727,77 @@ def unlink_invoice_from_transaction(transaction_id):
 @statements_bp.route('/api/transactions/auto-match', methods=['POST'])
 @api_login_required
 def auto_match_invoices():
-    """
-    Run automatic invoice matching on pending transactions.
-
-    Body (all optional):
-    {
-        "transaction_ids": [1, 2, 3],  // Specific transactions to match
-        "use_ai": true,                 // Enable AI fallback (default true)
-        "min_confidence": 0.7           // Minimum confidence for suggestions
-    }
-
-    Returns:
-    {
-        "success": true,
-        "matched": 5,       // Auto-accepted matches
-        "suggested": 3,     // Suggestions for review
-        "unmatched": 2,     // No match found
-        "results": [...]    // Detailed results
-    }
-    """
-    from .invoice_matcher import auto_match_transactions
-    from .database import (
-        get_transactions_for_matching,
-        get_candidate_invoices,
-        bulk_update_transaction_matches
-    )
-
+    """Run automatic invoice matching on pending transactions."""
     data = request.get_json(silent=True) or {}
     transaction_ids = data.get('transaction_ids')
     use_ai = data.get('use_ai', True)
     min_confidence = data.get('min_confidence', 0.7)
 
-    try:
-        # Get transactions to match
-        if transaction_ids:
-            # Get specific transactions
-            transactions = []
-            for txn_id in transaction_ids:
-                txn = get_transaction(txn_id)
-                if txn and txn.get('status') not in ('resolved', 'ignored'):
-                    transactions.append(txn)
-        else:
-            # Get all pending transactions
-            transactions = get_transactions_for_matching(status='pending', limit=100)
+    result = statements_service.auto_match_invoices(
+        transaction_ids=transaction_ids,
+        use_ai=use_ai,
+        min_confidence=min_confidence
+    )
 
-        if not transactions:
-            return jsonify({
-                'success': True,
-                'matched': 0,
-                'suggested': 0,
-                'unmatched': 0,
-                'results': [],
-                'message': 'No transactions to match'
-            })
-
-        # Get candidate invoices (recent, unpaid, not deleted)
-        invoices = get_candidate_invoices(limit=200)
-
-        if not invoices:
-            return jsonify({
-                'success': True,
-                'matched': 0,
-                'suggested': 0,
-                'unmatched': len(transactions),
-                'results': [],
-                'message': 'No invoices available for matching'
-            })
-
-        # Run the matching algorithm
-        match_results = auto_match_transactions(
-            transactions=transactions,
-            invoices=invoices,
-            use_ai=use_ai,
-            min_confidence=min_confidence
-        )
-
-        # Save results to database
-        if match_results['results']:
-            bulk_update_transaction_matches(match_results['results'])
-
+    if result.success:
         return jsonify({
             'success': True,
-            'matched': match_results['matched'],
-            'suggested': match_results['suggested'],
-            'unmatched': match_results['unmatched'],
-            'results': match_results['results']
+            **result.data
         })
-
-    except Exception as e:
-        logger.exception('Error in auto-match')
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    return jsonify({
+        'success': False,
+        'error': result.error
+    }), 500
 
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/suggestions', methods=['GET'])
 @api_login_required
 def get_invoice_suggestions(transaction_id):
-    """
-    Get invoice suggestions for a specific transaction.
+    """Get invoice suggestions for a specific transaction."""
+    result = statements_service.get_invoice_suggestions(transaction_id)
 
-    Returns top candidates with scores and reasons.
-    """
-    from .invoice_matcher import score_candidates
-    from .database import get_candidate_invoices
-
-    txn = get_transaction(transaction_id)
-    if not txn:
-        return jsonify({'success': False, 'error': 'Transaction not found'}), 404
-
-    try:
-        # Get candidate invoices - use broad filter to show more options
-        amount = abs(txn.get('amount', 0))
-        currency = txn.get('currency', 'RON')
-
-        # Get broad candidate set (don't filter by supplier to show more options)
-        invoices = get_candidate_invoices(
-            supplier=None,
-            amount=amount,
-            amount_tolerance=0.2,  # 20% tolerance for suggestions
-            currency=currency,
-            limit=50
-        )
-
-        # Score candidates
-        candidates = score_candidates(txn, invoices, limit=5)
-
-        # Format for response
-        suggestions = []
-        for c in candidates:
-            inv = c['invoice']
-            suggestions.append({
-                'invoice_id': inv.get('id'),
-                'invoice_number': inv.get('invoice_number'),
-                'supplier': inv.get('supplier'),
-                'amount': inv.get('invoice_value'),
-                'currency': inv.get('currency'),
-                'date': inv.get('invoice_date'),
-                'score': c['score'],
-                'confidence': c['confidence'],
-                'reasons': c['reasons']
-            })
-
+    if result.success:
         return jsonify({
             'success': True,
-            'transaction': {
-                'id': txn.get('id'),
-                'amount': txn.get('amount'),
-                'currency': txn.get('currency'),
-                'date': str(txn.get('transaction_date')) if txn.get('transaction_date') else None,
-                'vendor': txn.get('vendor_name'),
-                'supplier': txn.get('matched_supplier'),
-                'description': txn.get('description')
-            },
-            'suggestions': suggestions
+            **result.data
         })
 
-    except Exception as e:
-        logger.exception(f'Error getting suggestions for transaction {transaction_id}')
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    status_code = 404 if result.error == 'Transaction not found' else 500
+    return jsonify({
+        'success': False,
+        'error': result.error
+    }), status_code
 
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/accept-match', methods=['POST'])
 @api_login_required
 def accept_match(transaction_id):
-    """
-    Accept a suggested invoice match.
-
-    Body (optional):
-    {
-        "invoice_id": 123  // Override suggested invoice
-    }
-    """
-    from .database import accept_suggested_match, update_transaction_match
-
-    txn = get_transaction(transaction_id)
-    if not txn:
-        return jsonify({'success': False, 'error': 'Transaction not found'}), 404
-
+    """Accept a suggested invoice match."""
     data = request.get_json(silent=True) or {}
     override_invoice_id = data.get('invoice_id')
 
-    try:
-        if override_invoice_id:
-            # Manual override - link to specified invoice
-            success = update_transaction_match(
-                transaction_id,
-                invoice_id=override_invoice_id,
-                match_method='manual',
-                status='resolved'
-            )
-        else:
-            # Accept the existing suggestion
-            success = accept_suggested_match(transaction_id)
+    result = statements_service.accept_match(transaction_id, override_invoice_id)
 
-        if success:
-            return jsonify({'success': True})
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'No suggestion to accept or update failed'
-            }), 400
-
-    except Exception as e:
-        logger.exception(f'Error accepting match for transaction {transaction_id}')
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    if result.success:
+        return jsonify({'success': True})
+    return jsonify({
+        'success': False,
+        'error': result.error
+    }), 400
 
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/reject-match', methods=['POST'])
 @api_login_required
 def reject_match(transaction_id):
-    """
-    Reject a suggested invoice match.
-    """
-    from .database import reject_suggested_match
+    """Reject a suggested invoice match."""
+    result = statements_service.reject_match(transaction_id)
 
-    txn = get_transaction(transaction_id)
-    if not txn:
-        return jsonify({'success': False, 'error': 'Transaction not found'}), 404
-
-    try:
-        success = reject_suggested_match(transaction_id)
-
-        if success:
-            return jsonify({'success': True})
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'No suggestion to reject'
-            }), 400
-
-    except Exception as e:
-        logger.exception(f'Error rejecting match for transaction {transaction_id}')
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    if result.success:
+        return jsonify({'success': True})
+    return jsonify({
+        'success': False,
+        'error': result.error
+    }), 400
 
 
 # ============== TRANSACTION MERGING ==============
@@ -1383,32 +805,7 @@ def reject_match(transaction_id):
 @statements_bp.route('/api/transactions/merge', methods=['POST'])
 @api_login_required
 def merge_transactions_route():
-    """
-    Merge multiple transactions into a single transaction.
-
-    Body: {
-        "transaction_ids": [1, 2, 3]  // At least 2 transaction IDs
-    }
-
-    Requirements:
-    - All transactions must be pending (not already merged/resolved/ignored)
-    - All transactions must have the same currency
-    - All transactions must have the same supplier
-
-    Returns:
-    {
-        "success": true,
-        "merged_transaction": {
-            "id": 123,
-            "amount": 500.00,
-            "currency": "RON",
-            "transaction_date": "2025-01-15",
-            "description": "...",
-            "merged_count": 3,
-            "merged_from_ids": [1, 2, 3]
-        }
-    }
-    """
+    """Merge multiple transactions into a single transaction."""
     data = request.get_json(silent=True) or {}
     transaction_ids = data.get('transaction_ids', [])
 
@@ -1425,97 +822,49 @@ def merge_transactions_route():
             'error': 'At least 2 transactions required for merging'
         }), 400
 
-    try:
-        result = merge_transactions(transaction_ids)
+    result = statements_service.merge_transactions(transaction_ids)
 
-        if result.get('error'):
-            return jsonify({
-                'success': False,
-                'error': result['error']
-            }), 400
-
-        logger.info(f'Merged transactions {transaction_ids} into {result["id"]}')
+    if result.success:
         return jsonify({
             'success': True,
-            'merged_transaction': result
+            'merged_transaction': result.data
         })
-
-    except Exception as e:
-        logger.exception(f'Error merging transactions {transaction_ids}')
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    return jsonify({
+        'success': False,
+        'error': result.error
+    }), 400
 
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/unmerge', methods=['POST'])
 @api_login_required
 def unmerge_transaction_route(transaction_id):
-    """
-    Unmerge a merged transaction, restoring the original transactions.
+    """Unmerge a merged transaction, restoring the original transactions."""
+    result = statements_service.unmerge_transaction(transaction_id)
 
-    The merged transaction is deleted and original transactions are restored to 'pending' status.
-
-    Returns:
-    {
-        "success": true,
-        "restored_ids": [1, 2, 3],
-        "restored_count": 3
-    }
-    """
-    try:
-        result = unmerge_transaction(transaction_id)
-
-        if result.get('error'):
-            return jsonify({
-                'success': False,
-                'error': result['error']
-            }), 400
-
-        logger.info(f'Unmerged transaction {transaction_id}, restored {result["restored_count"]} transactions')
+    if result.success:
         return jsonify({
             'success': True,
-            'restored_ids': result['restored_ids'],
-            'restored_count': result['restored_count']
+            'restored_ids': result.data['restored_ids'],
+            'restored_count': result.data['restored_count']
         })
-
-    except Exception as e:
-        logger.exception(f'Error unmerging transaction {transaction_id}')
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    return jsonify({
+        'success': False,
+        'error': result.error
+    }), 400
 
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/merged-sources', methods=['GET'])
 @api_login_required
 def get_merged_sources(transaction_id):
-    """
-    Get the original transactions that were merged into this transaction.
+    """Get the original transactions that were merged into this transaction."""
+    result = statements_service.get_merged_sources(transaction_id)
 
-    Returns:
-    {
-        "success": true,
-        "sources": [
-            {"id": 1, "amount": 100, "transaction_date": "2025-01-10", ...},
-            {"id": 2, "amount": 200, "transaction_date": "2025-01-12", ...}
-        ]
-    }
-    """
-    txn = get_transaction(transaction_id)
-    if not txn:
-        return jsonify({'success': False, 'error': 'Transaction not found'}), 404
-
-    try:
-        sources = get_merged_source_transactions(transaction_id)
+    if result.success:
         return jsonify({
             'success': True,
-            'sources': sources
+            'sources': result.data['sources']
         })
-
-    except Exception as e:
-        logger.exception(f'Error getting merged sources for transaction {transaction_id}')
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    return jsonify({
+        'success': False,
+        'error': result.error
+    }), 404

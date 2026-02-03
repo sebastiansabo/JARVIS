@@ -5,7 +5,7 @@
 Focus: Frontend improvements, UX optimization, template modifications.
 
 ### Scope
-- HTML templates in `app/templates/`
+- HTML templates in `jarvis/templates/`
 - JavaScript (inline in templates)
 - Bootstrap 5 styling
 - User interactions and feedback
@@ -23,11 +23,12 @@ Focus: Frontend improvements, UX optimization, template modifications.
 Focus: Backend development, API endpoints, database operations.
 
 ### Scope
-- Flask routes in `app/app.py`
-- Database operations in `app/database.py`
-- Business logic in `app/services.py`, `app/models.py`
-- Invoice parsing in `app/invoice_parser.py`
-- Bulk processing in `app/bulk_processor.py`
+- Flask routes in `jarvis/app.py` and section-specific routes
+- Database operations in `jarvis/database.py`
+- Business logic in `jarvis/services.py`, `jarvis/models.py`
+- Invoice parsing in `jarvis/accounting/bugetare/invoice_parser.py`
+- Bulk processing in `jarvis/accounting/bugetare/bulk_processor.py`
+- e-Factura connector in `jarvis/core/connectors/efactura/`
 
 ### Guidelines
 - Use connection pooling via `get_db()` / `release_db()`

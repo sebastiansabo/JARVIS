@@ -17,6 +17,30 @@
         .summary-stat { display: flex; align-items: center; gap: 4px; color: var(--bs-secondary-color); }
         .summary-stat i { font-size: 1rem; }
         .summary-stat strong { color: var(--bs-body-color); }
+        /* Sortable Table Headers */
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .sortable:hover {
+            background-color: rgba(0,0,0,0.05);
+        }
+        .sortable::after {
+            content: '\F282';
+            font-family: 'bootstrap-icons';
+            margin-left: 4px;
+            opacity: 0.3;
+            font-size: 0.75em;
+        }
+        .sortable.asc::after {
+            content: '\F235';
+            opacity: 1;
+        }
+        .sortable.desc::after {
+            content: '\F229';
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -113,14 +137,14 @@
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
-                        <thead class="table-light">
+                        <thead class="table-light" id="mappingsHeader">
                             <tr>
-                                <th>Pattern</th>
-                                <th>Supplier Name</th>
-                                <th>Supplier VAT</th>
-                                <th>Template</th>
-                                <th>Status</th>
-                                <th>Created</th>
+                                <th class="sortable" onclick="sortMappingsBy('pattern')">Pattern</th>
+                                <th class="sortable" onclick="sortMappingsBy('supplier_name')">Supplier Name</th>
+                                <th class="sortable" onclick="sortMappingsBy('supplier_vat')">Supplier VAT</th>
+                                <th class="sortable" onclick="sortMappingsBy('template_id')">Template</th>
+                                <th class="sortable" onclick="sortMappingsBy('is_active')">Status</th>
+                                <th class="sortable" onclick="sortMappingsBy('created_at')">Created</th>
                                 <th style="width: 120px;">Actions</th>
                             </tr>
                         </thead>
@@ -302,12 +326,41 @@
         let searchTerm = '';
         let showInactive = false;
 
+        // Sorting state
+        let sortColumn = localStorage.getItem('statementsMappingsSortColumn') || 'supplier_name';
+        let sortDirection = localStorage.getItem('statementsMappingsSortDir') || 'asc';
+
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             loadMappings();
             loadTemplates();
             loadUnmatchedTransactions();
+            updateMappingsTableHeaders();
         });
+
+        // Sorting functions
+        function sortMappingsBy(column) {
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = 'asc';
+            }
+            localStorage.setItem('statementsMappingsSortColumn', sortColumn);
+            localStorage.setItem('statementsMappingsSortDir', sortDirection);
+            updateMappingsTableHeaders();
+            renderMappings();
+        }
+
+        function updateMappingsTableHeaders() {
+            document.querySelectorAll('#mappingsHeader th.sortable').forEach(th => {
+                th.classList.remove('asc', 'desc');
+                const col = th.getAttribute('onclick')?.match(/sortMappingsBy\('(\w+)'\)/)?.[1];
+                if (col === sortColumn) {
+                    th.classList.add(sortDirection);
+                }
+            });
+        }
 
         // Search functionality
         let searchTimeout;
@@ -441,6 +494,21 @@
                 );
             }
 
+            // Sort
+            filtered = [...filtered].sort((a, b) => {
+                let valA = a[sortColumn];
+                let valB = b[sortColumn];
+                if (valA == null) valA = '';
+                if (valB == null) valB = '';
+                if (typeof valA === 'string') {
+                    valA = valA.toLowerCase();
+                    valB = (valB || '').toLowerCase();
+                }
+                if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+
             countBadge.textContent = filtered.length;
 
             if (filtered.length === 0) {
@@ -506,7 +574,7 @@
 
             // Validate regex
             if (!validateRegex(pattern)) {
-                alert('Invalid regex pattern. Please check your syntax.');
+                await JarvisDialog.alert('Invalid regex pattern. Please check your syntax.', { type: 'error' });
                 return;
             }
 
@@ -568,12 +636,12 @@
             const isActive = document.getElementById('editIsActive').checked;
 
             if (!pattern || !supplierName) {
-                alert('Pattern and Supplier Name are required');
+                await JarvisDialog.alert('Pattern and Supplier Name are required', { type: 'warning' });
                 return;
             }
 
             if (!validateRegex(pattern)) {
-                alert('Invalid regex pattern. Please check your syntax.');
+                await JarvisDialog.alert('Invalid regex pattern. Please check your syntax.', { type: 'error' });
                 return;
             }
 
@@ -614,7 +682,8 @@
             const mapping = mappings.find(m => m.id === id);
             if (!mapping) return;
 
-            if (!confirm(`Delete the mapping for "${mapping.supplier_name}"?\n\nThis action cannot be undone.`)) {
+            const confirmed = await JarvisDialog.confirm(`Delete the mapping for "${mapping.supplier_name}"?\n\nThis action cannot be undone.`, { danger: true });
+            if (!confirmed) {
                 return;
             }
 
@@ -651,7 +720,7 @@
             }
         }
 
-        function testPattern(context) {
+        async function testPattern(context) {
             currentTestContext = context;
             let pattern = '';
 
@@ -662,12 +731,12 @@
             }
 
             if (!pattern) {
-                alert('Please enter a pattern first');
+                await JarvisDialog.alert('Please enter a pattern first', { type: 'warning' });
                 return;
             }
 
             if (!validateRegex(pattern)) {
-                alert('Invalid regex pattern');
+                await JarvisDialog.alert('Invalid regex pattern', { type: 'error' });
                 return;
             }
 
@@ -713,12 +782,12 @@
             runPatternTest();
         }
 
-        function runPatternTest() {
+        async function runPatternTest() {
             const pattern = document.getElementById('testPatternInput').value;
             const testString = document.getElementById('testString').value;
 
             if (!testString) {
-                alert('Please enter a test string');
+                await JarvisDialog.alert('Please enter a test string', { type: 'warning' });
                 return;
             }
 
@@ -793,5 +862,6 @@
     <script src="/static/js/online-users.js"></script>
     {% include 'partials/_edit_profile_modal.html' %}
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>

@@ -8,6 +8,7 @@
 
 {% set nav_items = [
     {'key': 'invoices', 'url': '/accounting', 'icon': 'bi-receipt', 'label': 'Invoices'},
+    {'key': 'efactura', 'url': '/accounting/efactura/', 'icon': 'bi-cloud-download', 'label': 'e-Factura', 'badge_id': 'efacturaUnallocatedBadge'},
     {'key': 'statements', 'url': '/statements/', 'icon': 'bi-bank', 'label': 'Statements'}
 ] %}
 
@@ -15,8 +16,13 @@
     <div class="d-flex gap-3 flex-wrap align-items-center">
         {% for item in nav_items %}
         <a href="{{ item.url }}" class="module-nav-item {{ 'active' if active_page == item.key else '' }}" title="{{ item.label }}">
-            <div class="module-nav-icon">
+            <div class="module-nav-icon position-relative">
                 <i class="bi {{ item.icon }}"></i>
+                {% if item.badge_id %}
+                <span id="{{ item.badge_id }}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark d-none" style="font-size: 0.6rem;">
+                    0
+                </span>
+                {% endif %}
             </div>
             <span class="module-nav-label">{{ item.label }}</span>
         </a>
@@ -72,3 +78,29 @@
     white-space: nowrap;
 }
 </style>
+
+<script>
+// Load e-Factura unallocated count for badge
+document.addEventListener('DOMContentLoaded', function() {
+    loadEfacturaUnallocatedCount();
+});
+
+async function loadEfacturaUnallocatedCount() {
+    try {
+        const res = await fetch('/efactura/api/invoices/unallocated/count');
+        const data = await res.json();
+
+        const badge = document.getElementById('efacturaUnallocatedBadge');
+        if (badge && data.success) {
+            if (data.count > 0) {
+                badge.textContent = data.count > 99 ? '99+' : data.count;
+                badge.classList.remove('d-none');
+            } else {
+                badge.classList.add('d-none');
+            }
+        }
+    } catch (err) {
+        console.error('Error loading e-Factura count:', err);
+    }
+}
+</script>

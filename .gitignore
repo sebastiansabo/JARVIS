@@ -59,4 +59,16 @@ node_modules/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
-HR/
+/HR/
+
+# Duplicate/development modules
+
+# Backups
+backups/
+
+# Downloaded reference materials
+anaf-php-main.zip
+anaf-php-main/
+
+# Claude Code internal
+.claude-code/

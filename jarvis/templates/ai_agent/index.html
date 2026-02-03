@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. - AI Agent</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/jarvis-icon.svg') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet">
+    <style>
+        :root {
+            --chat-sidebar-width: 280px;
+            --chat-input-height: 80px;
+        }
+
+        .chat-layout {
+            display: flex;
+            height: calc(100vh - 56px); /* Navbar height */
+        }
+
+        /* Sidebar */
+        .chat-sidebar {
+            width: var(--chat-sidebar-width);
+            background: var(--bs-body-bg);
+            border-right: 1px solid var(--bs-border-color);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .chat-sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--bs-border-color);
+        }
+
+        .chat-sidebar-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem;
+        }
+
+        .conversation-item {
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            margin-bottom: 0.25rem;
+            transition: background-color 0.15s;
+        }
+
+        .conversation-item:hover {
+            background: var(--bs-tertiary-bg);
+        }
+
+        .conversation-item.active {
+            background: var(--bs-primary-bg-subtle);
+            border: 1px solid var(--bs-primary-border-subtle);
+        }
+
+        .conversation-title {
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .conversation-meta {
+            font-size: 0.75rem;
+            color: var(--bs-secondary-color);
+        }
+
+        /* Main chat area */
+        .chat-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .chat-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--bs-border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        /* Message bubbles */
+        .message {
+            max-width: 80%;
+            padding: 0.75rem 1rem;
+            border-radius: 1rem;
+            position: relative;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: var(--bs-primary);
+            color: white;
+            border-bottom-right-radius: 0.25rem;
+        }
+
+        .message.assistant {
+            align-self: flex-start;
+            background: var(--bs-tertiary-bg);
+            border-bottom-left-radius: 0.25rem;
+        }
+
+        .message-content {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .message-meta {
+            font-size: 0.7rem;
+            opacity: 0.7;
+            margin-top: 0.5rem;
+        }
+
+        .message.assistant .message-meta {
+            color: var(--bs-secondary-color);
+        }
+
+        /* Typing indicator */
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 0.5rem;
+        }
+
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: var(--bs-secondary);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-4px); opacity: 1; }
+        }
+
+        /* Input area */
+        .chat-input-container {
+            padding: 1rem;
+            border-top: 1px solid var(--bs-border-color);
+            background: var(--bs-body-bg);
+        }
+
+        .chat-input-wrapper {
+            display: flex;
+            gap: 0.5rem;
+            align-items: flex-end;
+        }
+
+        .chat-input {
+            flex: 1;
+            resize: none;
+            max-height: 150px;
+            border-radius: 1.5rem;
+            padding: 0.75rem 1rem;
+        }
+
+        .chat-send-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Empty state */
+        .chat-empty {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--bs-secondary-color);
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .chat-empty i {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        /* Model selector */
+        .model-selector {
+            min-width: 200px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .chat-sidebar {
+                position: fixed;
+                left: -100%;
+                top: 56px;
+                height: calc(100vh - 56px);
+                z-index: 1040;
+                transition: left 0.3s;
+            }
+
+            .chat-sidebar.show {
+                left: 0;
+            }
+
+            .sidebar-backdrop {
+                display: none;
+                position: fixed;
+                inset: 0;
+                top: 56px;
+                background: rgba(0,0,0,0.5);
+                z-index: 1039;
+            }
+
+            .sidebar-backdrop.show {
+                display: block;
+            }
+        }
+    </style>
+</head>
+<body>
+    {% set current_module = 'ai_agent' %}
+    {% include 'partials/_navbar.html' %}
+
+    <div class="chat-layout">
+        <!-- Sidebar backdrop (mobile) -->
+        <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
+
+        <!-- Sidebar -->
+        <aside class="chat-sidebar" id="chatSidebar">
+            <div class="chat-sidebar-header">
+                <button class="btn btn-primary w-100" onclick="createConversation()">
+                    <i class="bi bi-plus-lg me-2"></i>New Chat
+                </button>
+            </div>
+            <div class="chat-sidebar-list" id="conversationList">
+                {% for conv in conversations %}
+                <div class="conversation-item" data-id="{{ conv.id }}" onclick="loadConversation({{ conv.id }})">
+                    <div class="conversation-title">{{ conv.title or 'New Conversation' }}</div>
+                    <div class="conversation-meta">
+                        {{ conv.message_count }} messages
+                        {% if conv.updated_at %}
+                        &bull; {{ conv.updated_at.strftime('%b %d') }}
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <small>No conversations yet</small>
+                </div>
+                {% endfor %}
+            </div>
+        </aside>
+
+        <!-- Main chat area -->
+        <main class="chat-main">
+            <!-- Header -->
+            <div class="chat-header">
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-outline-secondary d-md-none" onclick="toggleSidebar()">
+                        <i class="bi bi-list"></i>
+                    </button>
+                    <h5 class="mb-0" id="chatTitle">AI Agent</h5>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <select class="form-select form-select-sm model-selector" id="modelSelector">
+                        {% for model in models %}
+                        <option value="{{ model.id }}" {% if model.is_default %}selected{% endif %}>
+                            {{ model.display_name or model.model_name }}
+                        </option>
+                        {% else %}
+                        <option value="">No models available</option>
+                        {% endfor %}
+                    </select>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="archiveConversation()" id="archiveBtn" style="display: none;">
+                        <i class="bi bi-archive"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Messages -->
+            <div class="chat-messages" id="chatMessages">
+                <div class="chat-empty" id="emptyState">
+                    <i class="bi bi-chat-dots"></i>
+                    <h5>Welcome to JARVIS AI Agent</h5>
+                    <p>Ask questions about your invoices, transactions, and company data.</p>
+                    <small class="text-muted">Start a new conversation or select one from the sidebar.</small>
+                </div>
+            </div>
+
+            <!-- Input -->
+            <div class="chat-input-container">
+                <div class="chat-input-wrapper">
+                    <textarea
+                        class="form-control chat-input"
+                        id="messageInput"
+                        placeholder="Type your message..."
+                        rows="1"
+                        onkeydown="handleInputKeydown(event)"
+                        oninput="autoResizeInput(this)"
+                    ></textarea>
+                    <button class="btn btn-primary chat-send-btn" onclick="sendMessage()" id="sendBtn">
+                        <i class="bi bi-send"></i>
+                    </button>
+                </div>
+                <div class="d-flex justify-content-between mt-2">
+                    <small class="text-muted" id="tokenCount"></small>
+                    <small class="text-muted" id="costDisplay"></small>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/jarvis-dialogs.js') }}"></script>
+    <script>
+        // State
+        let currentConversationId = null;
+        let isLoading = false;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            // Load first conversation if exists
+            const firstConv = document.querySelector('.conversation-item');
+            if (firstConv) {
+                loadConversation(parseInt(firstConv.dataset.id));
+            }
+        });
+
+        // Toggle sidebar (mobile)
+        function toggleSidebar() {
+            document.getElementById('chatSidebar').classList.toggle('show');
+            document.getElementById('sidebarBackdrop').classList.toggle('show');
+        }
+
+        // Create new conversation
+        async function createConversation() {
+            try {
+                const modelId = document.getElementById('modelSelector').value;
+                const response = await fetch('/ai-agent/api/conversations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_config_id: modelId || null }),
+                });
+
+                if (!response.ok) throw new Error('Failed to create conversation');
+
+                const data = await response.json();
+                currentConversationId = data.id;
+
+                // Add to sidebar
+                addConversationToList(data);
+
+                // Clear messages and show input
+                clearMessages();
+                document.getElementById('archiveBtn').style.display = 'block';
+                document.getElementById('chatTitle').textContent = data.title || 'New Conversation';
+
+                // Close sidebar on mobile
+                toggleSidebar();
+
+            } catch (error) {
+                JarvisToast.error('Failed to create conversation');
+                console.error(error);
+            }
+        }
+
+        // Add conversation to sidebar list
+        function addConversationToList(conv) {
+            const list = document.getElementById('conversationList');
+            const emptyMsg = list.querySelector('.text-center');
+            if (emptyMsg) emptyMsg.remove();
+
+            const item = document.createElement('div');
+            item.className = 'conversation-item active';
+            item.dataset.id = conv.id;
+            item.onclick = () => loadConversation(conv.id);
+            item.innerHTML = `
+                <div class="conversation-title">${conv.title || 'New Conversation'}</div>
+                <div class="conversation-meta">0 messages</div>
+            `;
+
+            // Deselect others
+            list.querySelectorAll('.conversation-item').forEach(el => el.classList.remove('active'));
+
+            list.prepend(item);
+        }
+
+        // Load conversation
+        async function loadConversation(conversationId) {
+            try {
+                const response = await fetch(`/ai-agent/api/conversations/${conversationId}`);
+                if (!response.ok) throw new Error('Failed to load conversation');
+
+                const data = await response.json();
+                currentConversationId = conversationId;
+
+                // Update UI
+                document.getElementById('chatTitle').textContent = data.conversation.title || 'Conversation';
+                document.getElementById('archiveBtn').style.display = 'block';
+
+                // Update sidebar selection
+                document.querySelectorAll('.conversation-item').forEach(el => {
+                    el.classList.toggle('active', parseInt(el.dataset.id) === conversationId);
+                });
+
+                // Render messages
+                renderMessages(data.messages);
+
+                // Update stats
+                updateStats(data.conversation.total_tokens, data.conversation.total_cost);
+
+                // Close sidebar on mobile
+                if (window.innerWidth < 768) toggleSidebar();
+
+            } catch (error) {
+                JarvisToast.error('Failed to load conversation');
+                console.error(error);
+            }
+        }
+
+        // Render messages
+        function renderMessages(messages) {
+            const container = document.getElementById('chatMessages');
+            container.innerHTML = '';
+
+            if (messages.length === 0) {
+                container.innerHTML = `
+                    <div class="chat-empty" id="emptyState">
+                        <i class="bi bi-chat-dots"></i>
+                        <h5>Start the conversation</h5>
+                        <p>Type a message below to begin.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            messages.forEach(msg => {
+                addMessageToUI(msg.role, msg.content, msg);
+            });
+
+            scrollToBottom();
+        }
+
+        // Add message to UI
+        function addMessageToUI(role, content, meta = {}) {
+            const container = document.getElementById('chatMessages');
+
+            // Remove empty state
+            const emptyState = document.getElementById('emptyState');
+            if (emptyState) emptyState.remove();
+
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+
+            let metaHtml = '';
+            if (meta.response_time_ms) {
+                metaHtml = `<div class="message-meta">${meta.response_time_ms}ms`;
+                if (meta.input_tokens && meta.output_tokens) {
+                    metaHtml += ` &bull; ${meta.input_tokens + meta.output_tokens} tokens`;
+                }
+                metaHtml += '</div>';
+            }
+
+            div.innerHTML = `
+                <div class="message-content">${escapeHtml(content)}</div>
+                ${metaHtml}
+            `;
+
+            container.appendChild(div);
+        }
+
+        // Show typing indicator
+        function showTypingIndicator() {
+            const container = document.getElementById('chatMessages');
+            const indicator = document.createElement('div');
+            indicator.className = 'message assistant';
+            indicator.id = 'typingIndicator';
+            indicator.innerHTML = `
+                <div class="typing-indicator">
+                    <span></span><span></span><span></span>
+                </div>
+            `;
+            container.appendChild(indicator);
+            scrollToBottom();
+        }
+
+        // Remove typing indicator
+        function removeTypingIndicator() {
+            const indicator = document.getElementById('typingIndicator');
+            if (indicator) indicator.remove();
+        }
+
+        // Send message
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (!message || isLoading) return;
+
+            // Create conversation if needed
+            if (!currentConversationId) {
+                await createConversation();
+            }
+
+            // Add user message to UI
+            addMessageToUI('user', message);
+            input.value = '';
+            autoResizeInput(input);
+
+            // Show loading
+            isLoading = true;
+            document.getElementById('sendBtn').disabled = true;
+            showTypingIndicator();
+            scrollToBottom();
+
+            try {
+                const modelId = document.getElementById('modelSelector').value;
+                const response = await fetch('/ai-agent/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        conversation_id: currentConversationId,
+                        message: message,
+                        model_config_id: modelId || null,
+                    }),
+                });
+
+                removeTypingIndicator();
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to send message');
+                }
+
+                const data = await response.json();
+
+                // Add assistant response
+                addMessageToUI('assistant', data.message.content, data.message);
+
+                // Update stats
+                updateStats(data.tokens_used, data.cost);
+
+                // Update conversation in sidebar
+                updateConversationInList(currentConversationId);
+
+            } catch (error) {
+                removeTypingIndicator();
+                JarvisToast.error(error.message);
+                console.error(error);
+            } finally {
+                isLoading = false;
+                document.getElementById('sendBtn').disabled = false;
+                scrollToBottom();
+            }
+        }
+
+        // Update stats display
+        function updateStats(tokens, cost) {
+            document.getElementById('tokenCount').textContent = `${tokens || 0} tokens`;
+            const costNum = parseFloat(cost) || 0;
+            document.getElementById('costDisplay').textContent = `$${costNum.toFixed(4)}`;
+        }
+
+        // Update conversation in sidebar after message
+        function updateConversationInList(conversationId) {
+            const item = document.querySelector(`.conversation-item[data-id="${conversationId}"]`);
+            if (item) {
+                const meta = item.querySelector('.conversation-meta');
+                const currentCount = parseInt(meta.textContent) || 0;
+                meta.textContent = `${currentCount + 2} messages`;
+            }
+        }
+
+        // Archive conversation
+        async function archiveConversation() {
+            if (!currentConversationId) return;
+
+            const confirmed = await JarvisDialog.confirm('Archive this conversation?');
+            if (!confirmed) return;
+
+            try {
+                const response = await fetch(`/ai-agent/api/conversations/${currentConversationId}/archive`, {
+                    method: 'POST',
+                });
+
+                if (!response.ok) throw new Error('Failed to archive');
+
+                // Remove from sidebar
+                const item = document.querySelector(`.conversation-item[data-id="${currentConversationId}"]`);
+                if (item) item.remove();
+
+                // Clear current
+                currentConversationId = null;
+                clearMessages();
+                document.getElementById('chatTitle').textContent = 'AI Agent';
+                document.getElementById('archiveBtn').style.display = 'none';
+
+                JarvisToast.success('Conversation archived');
+
+            } catch (error) {
+                JarvisToast.error('Failed to archive conversation');
+                console.error(error);
+            }
+        }
+
+        // Clear messages
+        function clearMessages() {
+            document.getElementById('chatMessages').innerHTML = `
+                <div class="chat-empty" id="emptyState">
+                    <i class="bi bi-chat-dots"></i>
+                    <h5>Start the conversation</h5>
+                    <p>Type a message below to begin.</p>
+                </div>
+            `;
+            updateStats(0, 0);
+        }
+
+        // Scroll to bottom
+        function scrollToBottom() {
+            const container = document.getElementById('chatMessages');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Handle input keydown
+        function handleInputKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // Auto-resize input
+        function autoResizeInput(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

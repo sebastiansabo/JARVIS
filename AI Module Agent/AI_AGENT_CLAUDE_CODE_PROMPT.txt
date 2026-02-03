@@ -1,0 +1,864 @@
+================================================================================
+JARVIS AI AGENT - CLAUDE CODE GENERATION PROMPT
+================================================================================
+
+Create the complete AI Agent module for JARVIS - a conversational AI chatbot that
+uses Retrieval Augmented Generation (RAG) to answer questions about data in the
+JARVIS platform.
+
+SPECIFICATION:
+==============
+
+## Feature Overview
+
+AI Agent Module provides a conversational interface to JARVIS data:
+1. Chat interface (web, API, or embedded)
+2. RAG-powered responses (only answers about JARVIS data)
+3. Multi-model support (Claude, ChatGPT, Gemini, Groq, LLaMA)
+4. Conversation memory (context-aware responses)
+5. Data security (only authorized data returned)
+6. Rate limiting & abuse prevention
+7. Analytics & conversation logging
+
+Core principle: AI agent ONLY answers about JARVIS data. No general knowledge.
+Everything it says is backed by data in the platform.
+
+## Module Ownership
+
+Module: ai_agent (core module)
+Owns: Conversation, Message, RAGDocument, ModelConfig, ConversationContext
+Reads: All JARVIS modules (read-only) - invoices, transactions, GL, reports, etc.
+Writes: Conversation, Message, ConversationLog, Embedding (for RAG)
+Cannot: Modify any JARVIS data (read-only RAG source)
+
+## Core Requirements
+
+### 1. Data Models (CONVERSATION RECORDS)
+
+ModelConfig:
+- owner: ai_agent
+- mutable: true (can update API keys, models, settings)
+- fields:
+  - id: UUID
+  - company_id: FK → Company
+  - provider: Enum [CLAUDE, OPENAI, GOOGLE, GROQ, LLAMA_LOCAL]
+  - model_name: String (e.g., "claude-opus-4.5", "gpt-4", "gemini-pro")
+  - api_key: Encrypted(String) [never log this]
+  - api_endpoint: String (nullable, for custom endpoints)
+  - max_tokens: Integer (default 2048)
+  - temperature: Decimal(3, 2) [0.0 to 2.0, default 0.7]
+  - top_p: Decimal(3, 2) [0.0 to 1.0, default 1.0]
+  - system_prompt: Text (base system instructions)
+  - rag_enabled: Boolean (use RAG or not)
+  - rag_embedding_model: String (e.g., "text-embedding-3-small")
+  - context_window_tokens: Integer (how much history to include)
+  - rate_limit_rpm: Integer (requests per minute)
+  - rate_limit_tpm: Integer (tokens per minute)
+  - is_primary: Boolean (which model to use by default)
+  - enabled: Boolean
+  - cost_per_1k_input_tokens: Decimal (for cost tracking)
+  - cost_per_1k_output_tokens: Decimal
+  - created_at: DateTime
+  - updated_at: DateTime
+- constraints:
+  - not_null: [company_id, provider, model_name]
+  - unique: (company_id, provider, is_primary) [only 1 primary per provider]
+- audit_required: true
+- sensitive: true (API keys encrypted)
+
+Conversation:
+- owner: ai_agent
+- mutable: true (can add messages, update status)
+- fields:
+  - id: UUID
+  - company_id: FK → Company
+  - user_id: String (user who started conversation)
+  - title: String(255) (auto-generated or custom)
+  - status: Enum [ACTIVE, ARCHIVED, DELETED]
+  - model_used: String (which model answered)
+  - total_messages: Integer (input + output)
+  - total_input_tokens: Integer (for cost tracking)
+  - total_output_tokens: Integer
+  - total_cost: Decimal(10, 4)
+  - created_at: DateTime
+  - updated_at: DateTime
+  - last_message_at: DateTime
+- constraints:
+  - not_null: [company_id, user_id, title]
+- audit_required: true
+
+Message:
+- owner: ai_agent
+- mutable: false (immutable for audit trail)
+- fields:
+  - id: UUID
+  - conversation_id: FK → Conversation
+  - sender: Enum [USER, ASSISTANT]
+  - content: Text (the actual message)
+  - role: Enum [USER, ASSISTANT, SYSTEM]
+  - tokens_used: Integer (input + output for this message)
+  - rag_context_used: Boolean (did RAG retrieve data?)
+  - rag_sources: Array[String] (which JARVIS data was referenced)
+  - model_used: String (which model answered)
+  - processing_time_ms: Integer (how long to generate response)
+  - created_at: DateTime
+- constraints:
+  - not_null: [conversation_id, sender, content]
+  - foreign_key: (conversation_id → Conversation.id, on_delete=CASCADE)
+- immutable: true
+- audit_required: true
+
+RAGDocument:
+- owner: ai_agent
+- mutable: true (can update content, status)
+- fields:
+  - id: UUID
+  - company_id: FK → Company
+  - document_type: Enum [INVOICE, TRANSACTION, GL_POSTING, REPORT, VENDOR, 
+                         CUSTOMER, GL_ACCOUNT, JOURNAL_ENTRY, RECONCILIATION]
+  - source_id: UUID (reference to actual document: invoice_id, transaction_id, etc.)
+  - source_module: String (which JARVIS module owns this data)
+  - title: String(255)
+  - content: Text (extracted text for RAG)
+  - metadata: JSON (structured data: amounts, dates, entities, etc.)
+  - embedding: Vector (semantic embedding for RAG)
+  - embedding_model: String (which embedding model created this)
+  - is_indexed: Boolean (indexed for RAG search)
+  - created_at: DateTime
+  - updated_at: DateTime
+  - last_accessed_at: DateTime
+- constraints:
+  - not_null: [company_id, document_type, source_id, content]
+  - unique: (company_id, source_id, document_type)
+- audit_required: true
+- notes: "Updated whenever source document changes"
+
+ConversationContext:
+- owner: ai_agent
+- mutable: true (can update context as conversation progresses)
+- fields:
+  - id: UUID
+  - conversation_id: FK → Conversation
+  - user_query: Text (last question from user)
+  - rag_results: Array[UUID] (RAG documents retrieved)
+  - rag_similarity_scores: Array[Decimal] (confidence scores)
+  - entities_extracted: JSON (people, vendors, amounts, dates extracted from query)
+  - intent: Enum [QUERY_DATA, ANALYSIS, REPORT, FORECAST, RECONCILIATION_STATUS, 
+                   OTHER]
+  - context_tokens: Integer (tokens used for context)
+  - created_at: DateTime
+- constraints:
+  - not_null: [conversation_id]
+
+ConversationLog:
+- owner: ai_agent
+- mutable: false (immutable for compliance)
+- fields:
+  - id: UUID
+  - conversation_id: FK → Conversation
+  - user_id: String
+  - action: Enum [START, MESSAGE_SENT, RAG_SEARCH, MODEL_CALLED, MESSAGE_RECEIVED, 
+                   EXPORT, ARCHIVE, DELETE]
+  - details: JSON
+  - timestamp: DateTime
+- constraints:
+  - not_null: [conversation_id, action]
+- immutable: true
+- audit_required: true
+
+### 2. Service: AIAgentService
+
+Purpose: Orchestrate conversational AI operations
+
+create_conversation(company_id, user_id, title=None) → Conversation:
+  Input: company_id, user_id, title (optional)
+  Process:
+    1. Create Conversation record
+    2. Set status = ACTIVE
+    3. Initialize conversation context (empty)
+    4. Create ConversationLog (START)
+    5. Return conversation
+  Returns: Conversation
+
+send_message(conversation_id, user_message, model_config_id=None) → Message:
+  Input: conversation_id, user_message (string), model_config_id (optional)
+  Process:
+    1. Load Conversation + prior Messages (for context)
+    2. Determine model:
+       - Use specified model_config_id
+       - Or use primary model for company
+    3. Check rate limits:
+       - RPM (requests per minute)
+       - TPM (tokens per minute)
+       - If exceeded: raise RateLimitExceededError
+    4. Extract entities from user_message:
+       - Amounts (€500, $1000)
+       - Dates (Jan 15, 2026-01-29)
+       - Names (vendor, customer, account)
+       - Timeframes (this month, Q4)
+    5. Determine intent:
+       - QUERY_DATA: "What invoices from ACME?" → fetch invoices
+       - ANALYSIS: "What's our cash position?" → calculate from GL
+       - REPORT: "Generate monthly P&L" → call reporting module
+       - FORECAST: "Cash forecast next 30 days" → call forecasting
+       - Other → generic response
+    6. Run RAG search (if rag_enabled):
+       - Embed user_message
+       - Find similar documents in RAGDocument
+       - Retrieve top K results (K=5 default)
+       - Score by similarity
+    7. Build context:
+       - System prompt
+       - Conversation history (last N messages, context_window_tokens limit)
+       - RAG results
+       - Entity extraction
+    8. Call LLM API:
+       - Send prompt + context
+       - Get response
+       - Track tokens_used, processing_time
+    9. Create Message records:
+       - User message
+       - Assistant response
+    10. Update Conversation:
+        - total_messages += 2
+        - total_input_tokens += input_tokens
+        - total_output_tokens += output_tokens
+        - total_cost += calculated_cost
+        - last_message_at = now()
+    11. Create ConversationLog (MESSAGE_RECEIVED)
+    12. Return assistant Message
+  Returns: Message (assistant response)
+  Error Handling:
+    - Conversation not found: raise NotFoundError
+    - Model config not found: raise ModelNotFoundError
+    - Rate limit exceeded: raise RateLimitExceededError
+    - LLM API error: raise APIError (with fallback message)
+    - RAG search timeout: continue without RAG
+
+get_conversation_history(conversation_id, limit=50) → List[Message]:
+  Input: conversation_id, limit (how many messages to return)
+  Process:
+    1. Load Conversation
+    2. Load Messages ordered by created_at DESC
+    3. Limit to most recent N messages
+    4. Return in chronological order (oldest first)
+  Returns: List of Messages
+
+archive_conversation(conversation_id) → Conversation:
+  Input: conversation_id
+  Process:
+    1. Load Conversation
+    2. Update status = ARCHIVED
+    3. Create ConversationLog (ARCHIVE)
+  Returns: Conversation
+
+### 3. Service: RAGService
+
+Purpose: Retrieve Augmented Generation - intelligent document retrieval
+
+index_rag_documents(company_id) → int:
+  Purpose: Build RAG index from JARVIS data
+  Trigger: On-demand or scheduled nightly
+  Process:
+    1. Query all financial data from JARVIS modules:
+       - Invoices (direction SENT + RECEIVED)
+       - Transactions
+       - GL postings
+       - Journal entries
+       - Vendors
+       - Customers
+       - GL accounts
+       - Reports
+    2. For each document:
+       - Extract text content
+       - Extract structured metadata (amounts, dates, entities)
+       - Generate embedding (using embedding_model)
+       - Create/update RAGDocument
+       - Mark is_indexed = true
+    3. Build vector index for fast similarity search
+    4. Return count of indexed documents
+  Returns: Count of indexed documents
+  Notes:
+    - Run nightly to keep RAG index fresh
+    - Handle incremental updates (only new/changed documents)
+
+search_rag(query_text, company_id, top_k=5, score_threshold=0.7) → List[RAGDocument]:
+  Input: user query (text), company_id, top_k (how many results), score_threshold
+  Process:
+    1. Embed query_text (using embedding_model)
+    2. Search vector database:
+       - Calculate similarity scores
+       - Filter by score_threshold
+       - Limit to top_k results
+       - Order by relevance
+    3. Load full RAGDocument records
+    4. Update last_accessed_at
+    5. Return results with confidence scores
+  Returns: List[{document, similarity_score, metadata}]
+  Example Query:
+    "How much did we spend with ACME last month?"
+    
+    RAG retrieves:
+    1. Invoice from ACME (€5,000, Jan 15) - score: 0.95
+    2. Invoice from ACME (€3,000, Jan 8) - score: 0.92
+    3. GL posting to Expense (€5,000, Jan 15) - score: 0.88
+    
+    AI can now say: "You had two invoices from ACME totaling €8,000"
+
+### 4. Service: EmbeddingService
+
+Purpose: Generate and manage semantic embeddings for RAG
+
+generate_embedding(text, embedding_model) → Vector:
+  Input: text (content to embed), embedding_model (e.g., "text-embedding-3-small")
+  Process:
+    1. Call embedding API:
+       - OpenAI: text-embedding-3-small
+       - Cohere: embed-english-v3.0
+       - Local: use sentence-transformers (CPU-friendly)
+    2. Get embedding vector (384-1536 dimensions)
+    3. Return vector
+  Returns: Embedding vector
+  Error Handling:
+    - Model not available: use fallback model
+    - API error: retry with exponential backoff
+
+batch_generate_embeddings(documents, embedding_model) → Dict:
+  Input: List of documents, embedding_model
+  Process:
+    1. Batch up to 100 documents (for API efficiency)
+    2. Generate embeddings for all
+    3. Update RAGDocument records with embeddings
+    4. Build vector index
+  Returns: {indexed_count, failed_count, processing_time}
+
+### 5. Service: ContextManagementService
+
+Purpose: Build and manage conversation context
+
+extract_entities(text) → Dict:
+  Input: user message text
+  Process:
+    1. Use NLP to extract:
+       - AMOUNTS: €500, $1000, 500 EUR
+       - DATES: Jan 15, 2026-01-29, last month, Q4 2025
+       - NAMES: vendor, customer, account
+       - TIMEFRAMES: this month, last quarter, YTD
+       - ACTIONS: calculate, forecast, analyze, report
+    2. Return structured entities
+  Returns: {amounts, dates, names, timeframes, actions}
+  Example:
+    "What's the VAT owed for January 2026?"
+    
+    Extracted:
+    {
+      amounts: [],
+      dates: ["2026-01"],
+      timeframes: ["january 2026"],
+      actions: ["query"],
+      entities: {tax_type: "VAT", period: "january"}
+    }
+
+determine_intent(user_message, entities) → Intent:
+  Input: message text, extracted entities
+  Process:
+    1. Analyze message:
+       - Query words: what, how much, when, where → QUERY_DATA
+       - Action words: calculate, analyze, forecast → ANALYSIS
+       - Report words: generate, create, send → REPORT
+       - Reconciliation words: reconcile, match → RECONCILIATION_STATUS
+    2. Return intent classification
+  Returns: Intent enum (QUERY_DATA, ANALYSIS, REPORT, etc.)
+
+build_conversation_context(conversation_id, token_limit) → String:
+  Input: conversation_id, token_limit (max tokens for context)
+  Process:
+    1. Load conversation history (most recent messages)
+    2. Truncate to fit within token_limit:
+       - Start with system prompt
+       - Add most recent messages (newest to oldest)
+       - Stop when token_limit reached
+    3. Format as chat history for LLM:
+       [
+         {role: "system", content: "You are..."},
+         {role: "user", content: "What invoices..."},
+         {role: "assistant", content: "Based on JARVIS data..."},
+         ...
+       ]
+  Returns: Formatted context string
+
+### 6. Service: ModelProviderService
+
+Purpose: Abstract model provider differences
+
+call_model(prompt, model_config, temperature=None, max_tokens=None) → Response:
+  Input: prompt, model_config (ModelConfig record), optional overrides
+  Process:
+    1. Load model_config
+    2. Route to correct API:
+       
+       IF provider == CLAUDE:
+         - Call anthropic.Anthropic(api_key)
+         - model.messages.create(model=model_name, messages=prompt)
+       
+       IF provider == OPENAI:
+         - Call openai.OpenAI(api_key)
+         - client.chat.completions.create(model=model_name, messages=prompt)
+       
+       IF provider == GOOGLE:
+         - Call google.GenerativeAI(api_key)
+         - model.generate_content(prompt)
+       
+       IF provider == GROQ:
+         - Call groq.Groq(api_key)
+         - client.chat.completions.create(model=model_name, messages=prompt)
+       
+       IF provider == LLAMA_LOCAL:
+         - Call local inference (ollama or vllm)
+         - POST to http://localhost:8000/api/generate
+    
+    3. Apply settings:
+       - temperature (creativity)
+       - top_p (diversity)
+       - max_tokens (response length)
+    
+    4. Get response
+    
+    5. Parse response:
+       - Extract text
+       - Extract token counts
+       - Extract stop reason
+    
+    6. Return structured response
+  
+  Returns: {text, input_tokens, output_tokens, stop_reason, model_used}
+  
+  Error Handling:
+    - API key invalid: raise AuthenticationError
+    - Rate limited: raise RateLimitError
+    - Model not found: raise ModelNotFoundError
+    - Timeout: raise TimeoutError (with partial response if available)
+
+estimate_cost(input_tokens, output_tokens, model_config) → Decimal:
+  Input: token counts, model_config (contains pricing)
+  Process:
+    1. Look up per-token pricing in model_config
+    2. Calculate:
+       input_cost = input_tokens / 1000 * cost_per_1k_input
+       output_cost = output_tokens / 1000 * cost_per_1k_output
+       total_cost = input_cost + output_cost
+  Returns: Decimal (cost in USD or EUR)
+
+### 7. Service: SecurityService
+
+Purpose: Ensure AI responses respect data authorization
+
+check_data_access(user_id, document_id, company_id) → bool:
+  Input: user_id, document_id (what data is being referenced), company_id
+  Process:
+    1. Load user's access control list (ACL)
+    2. Determine if user has permission to see this data:
+       - Admin: access to all data
+       - Finance: access to all financial data
+       - Vendor Manager: access only to vendor data
+       - etc.
+    3. Return bool (can access or not)
+  Returns: bool (access allowed)
+  
+  Note: If user asks "Show all invoices" but only has access to 50 of 100,
+        return only the 50 they can see
+
+filter_rag_results(rag_results, user_id, company_id) → List[RAGDocument]:
+  Input: RAG search results, user_id, company_id
+  Process:
+    1. For each RAG result:
+       - Check if user has access to source data
+       - Keep only authorized results
+       - Filter sensitive fields (internal notes, cost data if not authorized)
+    2. Return filtered results
+  Returns: Filtered list of RAGDocuments
+
+### 8. Service: ConversationAnalyticsService
+
+Purpose: Track AI agent usage, costs, quality
+
+track_message_metrics(message_id) → Dict:
+  Input: message_id
+  Process:
+    1. Calculate metrics:
+       - Response time
+       - Token efficiency (tokens per word)
+       - RAG hit rate (did it use RAG?)
+       - Cost
+       - Model used
+    2. Log metrics
+  Returns: {response_time_ms, efficiency, rag_used, cost}
+
+get_usage_analytics(company_id, date_from, date_to) → Dict:
+  Input: company_id, date range
+  Process:
+    1. Query messages in date range
+    2. Calculate:
+       - Total conversations
+       - Total messages
+       - Total tokens used
+       - Total cost
+       - Most active users
+       - Most common intents
+       - RAG hit rate
+       - Average response time
+       - Model usage distribution
+  Returns: Analytics dict
+
+### 9. Scheduler: AIAgentScheduler
+
+Purpose: Scheduled RAG indexing and maintenance
+
+reindex_rag_nightly(company_id) → int:
+  Purpose: Keep RAG index fresh with latest JARVIS data
+  Trigger: Nightly at 2 AM UTC
+  Process:
+    1. Run RAGService.index_rag_documents(company_id)
+    2. Generate embeddings for new documents
+    3. Update vector index
+    4. Log completion
+  Returns: Count of indexed documents
+
+cleanup_old_conversations(days=90) → int:
+  Purpose: Archive old conversations (retention policy)
+  Trigger: Weekly
+  Process:
+    1. Find conversations older than N days
+    2. Archive (don't delete)
+    3. Log cleanup
+  Returns: Count of archived conversations
+
+### 10. Testing Requirements (75%+ MINIMUM)
+
+Success Paths:
+  [ ] Create conversation
+  [ ] Send user message
+  [ ] AI responds using RAG
+  [ ] Response is about JARVIS data
+  [ ] Get conversation history
+  [ ] Archive conversation
+  [ ] Rate limiting works
+  [ ] Cost tracking works
+
+RAG Functionality:
+  [ ] Index JARVIS documents
+  [ ] Generate embeddings
+  [ ] Search by similarity
+  [ ] Return top K results
+  [ ] Score results by relevance
+  [ ] Filter by user authorization
+
+Model Integration:
+  [ ] Call Claude API
+  [ ] Call OpenAI API
+  [ ] Call Google Gemini API
+  [ ] Call Groq API
+  [ ] Local LLaMA inference
+  [ ] Switch between models
+  [ ] Track token usage
+  [ ] Estimate costs
+
+Context Management:
+  [ ] Extract entities (amounts, dates, names)
+  [ ] Determine intent (query, analysis, report)
+  [ ] Build conversation context
+  [ ] Truncate to token limit
+  [ ] Maintain conversation history
+
+Security:
+  [ ] Check user data access
+  [ ] Filter RAG results by authorization
+  [ ] Don't return unauthorized data
+  [ ] Never expose API keys in logs
+  [ ] Encrypt sensitive model configs
+
+Error Handling:
+  [ ] API key invalid: raise AuthenticationError
+  [ ] Rate limited: raise RateLimitError
+  [ ] Model not found: raise ModelNotFoundError
+  [ ] RAG search timeout: continue without RAG
+  [ ] LLM API error: return helpful fallback message
+
+Edge Cases:
+  [ ] Empty conversation
+  [ ] Very long conversation (context truncation)
+  [ ] RAG finds no results
+  [ ] User asks about data they can't access
+  [ ] Model returns off-topic response (should not happen with good prompt)
+  [ ] Multi-language support (if enabled)
+  [ ] Concurrent requests from same user
+  [ ] Context window exhausted
+
+Performance:
+  [ ] Generate response: < 5 seconds
+  [ ] RAG search: < 1 second
+  [ ] Embedding generation: < 500ms
+  [ ] Batch indexing 1000 docs: < 30 seconds
+
+## Code Structure
+
+jarvis/ai_agent/
+├── services/
+│   ├── ai_agent_service.py          ← Main orchestration
+│   ├── rag_service.py               ← Document retrieval
+│   ├── embedding_service.py         ← Vector embeddings
+│   ├── context_management_service.py ← Context building
+│   ├── model_provider_service.py    ← LLM abstraction
+│   ├── security_service.py          ← Authorization
+│   ├── conversation_analytics.py    ← Usage tracking
+│   └── ai_agent_scheduler.py        ← Scheduled jobs
+├── models.py                         ← Data models
+├── repositories.py                   ← Database access
+├── system_prompts.py                ← AI system prompts by role
+├── config.py                         ← Model configs, settings
+├── exceptions.py                     ← Custom exceptions
+└── tests/
+    ├── test_ai_agent_service.py
+    ├── test_rag_service.py
+    ├── test_embedding_service.py
+    ├── test_model_providers.py
+    ├── test_security.py
+    ├── test_context_management.py
+    ├── test_analytics.py
+    └── test_integration.py
+
+## Database Schema
+
+CREATE TABLE model_configs (
+    id UUID PRIMARY KEY,
+    company_id UUID NOT NULL REFERENCES companies(id),
+    provider VARCHAR(50) NOT NULL,
+    model_name VARCHAR(100) NOT NULL,
+    api_key_encrypted VARCHAR(500) NOT NULL,
+    api_endpoint VARCHAR(255),
+    max_tokens INTEGER DEFAULT 2048,
+    temperature NUMERIC(3, 2),
+    system_prompt TEXT,
+    rag_enabled BOOLEAN DEFAULT TRUE,
+    rag_embedding_model VARCHAR(100),
+    context_window_tokens INTEGER DEFAULT 8000,
+    rate_limit_rpm INTEGER,
+    rate_limit_tpm INTEGER,
+    is_primary BOOLEAN DEFAULT FALSE,
+    enabled BOOLEAN DEFAULT TRUE,
+    cost_per_1k_input NUMERIC(10, 6),
+    cost_per_1k_output NUMERIC(10, 6),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    UNIQUE(company_id, provider, is_primary WHERE is_primary = true)
+);
+
+CREATE TABLE conversations (
+    id UUID PRIMARY KEY,
+    company_id UUID NOT NULL REFERENCES companies(id),
+    user_id VARCHAR(255) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+    model_used VARCHAR(100),
+    total_messages INTEGER DEFAULT 0,
+    total_input_tokens INTEGER DEFAULT 0,
+    total_output_tokens INTEGER DEFAULT 0,
+    total_cost NUMERIC(10, 4) DEFAULT 0,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    last_message_at TIMESTAMP
+);
+
+CREATE TABLE messages (
+    id UUID PRIMARY KEY,
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    sender VARCHAR(50) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    content TEXT NOT NULL,
+    tokens_used INTEGER,
+    rag_context_used BOOLEAN DEFAULT FALSE,
+    rag_sources TEXT[],
+    model_used VARCHAR(100),
+    processing_time_ms INTEGER,
+    created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE rag_documents (
+    id UUID PRIMARY KEY,
+    company_id UUID NOT NULL REFERENCES companies(id),
+    document_type VARCHAR(50) NOT NULL,
+    source_id UUID NOT NULL,
+    source_module VARCHAR(100),
+    title VARCHAR(255),
+    content TEXT NOT NULL,
+    metadata JSONB,
+    embedding VECTOR(1536),
+    embedding_model VARCHAR(100),
+    is_indexed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    last_accessed_at TIMESTAMP,
+    UNIQUE(company_id, source_id, document_type)
+);
+
+CREATE TABLE conversation_contexts (
+    id UUID PRIMARY KEY,
+    conversation_id UUID NOT NULL REFERENCES conversations(id),
+    user_query TEXT,
+    rag_results UUID[],
+    rag_similarity_scores NUMERIC(5, 3)[],
+    entities_extracted JSONB,
+    intent VARCHAR(50),
+    context_tokens INTEGER,
+    created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE conversation_logs (
+    id UUID PRIMARY KEY,
+    conversation_id UUID NOT NULL REFERENCES conversations(id),
+    user_id VARCHAR(255),
+    action VARCHAR(50) NOT NULL,
+    details JSONB,
+    timestamp TIMESTAMP NOT NULL
+);
+
+-- Indices
+CREATE INDEX idx_conversations_company_user ON conversations(company_id, user_id);
+CREATE INDEX idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX idx_rag_documents_company ON rag_documents(company_id, document_type);
+CREATE INDEX idx_rag_documents_source ON rag_documents(source_id, document_type);
+CREATE INDEX idx_conversation_logs_action ON conversation_logs(action);
+
+-- Vector index for RAG (requires pgvector extension)
+CREATE INDEX ON rag_documents USING ivfflat (embedding vector_cosine_ops);
+
+## Golden Rules for AI Agent
+
+1. ✅ RAG-POWERED ONLY - AI only answers about JARVIS data
+2. ✅ NO GENERAL KNOWLEDGE - If it's not in JARVIS, don't answer
+3. ✅ SOURCE CITED - Every response backed by RAG results
+4. ✅ DATA AUTHORIZED - Never return data user can't access
+5. ✅ COST TRACKED - Every response tracked for cost & ROI
+6. ✅ MULTI-MODEL SUPPORT - Switch between Claude, OpenAI, Google, Groq
+7. ✅ CONTEXT-AWARE - Remember prior questions in same conversation
+8. ✅ SEMANTIC SEARCH - RAG finds relevant data by meaning, not keywords
+9. ✅ IMMUTABLE LOGS - All conversations logged for compliance
+10. ✅ RATE LIMITING - Prevent abuse & control costs
+
+## Configuration (in .claude-code/config.json)
+
+Add to modules section:
+{
+  "ai_agent": {
+    "path": "jarvis/ai_agent",
+    "test_path": "tests/ai_agent/",
+    "min_coverage": 75,
+    "core_entities": ["Conversation", "Message", "RAGDocument", "ModelConfig"],
+    "integrations": ["all modules (read-only)"],
+    "critical": false,
+    "financial": false,
+    "rag_enabled": true,
+    "notes": "Conversational AI with RAG - reads all JARVIS data"
+  }
+}
+
+Add model_configs section:
+{
+  "ai_agent_settings": {
+    "default_provider": "CLAUDE",
+    "default_model": "claude-opus-4-5-20251101",
+    "rag_enabled": true,
+    "rag_embedding_model": "text-embedding-3-small",
+    "rag_top_k": 5,
+    "rag_similarity_threshold": 0.7,
+    "context_window_tokens": 8000,
+    "max_conversation_history_messages": 20,
+    "rate_limit_rpm": 60,
+    "rate_limit_tpm": 90000,
+    "conversation_retention_days": 365,
+    "archive_after_days": 90,
+    "enable_cost_tracking": true,
+    "enable_usage_analytics": true,
+    "system_prompt_template": "You are a financial AI assistant for JARVIS...",
+    "model_configs": {
+      "claude": {
+        "api_key": "sk-ant-...",
+        "model_name": "claude-opus-4-5-20251101",
+        "max_tokens": 2048,
+        "temperature": 0.7,
+        "cost_per_1k_input": 0.015,
+        "cost_per_1k_output": 0.075
+      },
+      "openai": {
+        "api_key": "sk-...",
+        "model_name": "gpt-4",
+        "max_tokens": 2048,
+        "temperature": 0.7,
+        "cost_per_1k_input": 0.03,
+        "cost_per_1k_output": 0.06
+      },
+      "google": {
+        "api_key": "AIza...",
+        "model_name": "gemini-pro",
+        "max_tokens": 2048,
+        "temperature": 0.7
+      },
+      "groq": {
+        "api_key": "gsk_...",
+        "model_name": "mixtral-8x7b-32768",
+        "max_tokens": 2048,
+        "temperature": 0.7
+      },
+      "llama_local": {
+        "api_endpoint": "http://localhost:11434/api/generate",
+        "model_name": "mistral:latest",
+        "max_tokens": 2048,
+        "temperature": 0.7
+      }
+    }
+  }
+}
+
+## Success Criteria
+
+Code is DONE when:
+
+✅ 75%+ test coverage
+✅ Conversation creation works
+✅ User messages sent & AI responds
+✅ RAG retrieves relevant JARVIS data
+✅ Responses cite RAG sources
+✅ Multi-model support (Claude, OpenAI, Google, Groq, LLaMA)
+✅ Context management works (history truncation)
+✅ Security enforced (only authorized data returned)
+✅ Rate limiting works
+✅ Cost tracking accurate
+✅ Embedding generation & search works
+✅ Conversation history persisted
+✅ Analytics dashboard shows usage
+✅ All error paths tested
+✅ Performance: Response in <5 seconds
+✅ RAG indexing nightly
+✅ Conversation archival works
+✅ All API keys encrypted (never logged)
+✅ Ready for stakeholder use
+✅ Ready to merge
+
+## How to Use This Prompt
+
+1. Open Claude Code
+2. Load JARVIS system prompt: .claude-code/system_prompt.md
+3. Paste this entire prompt into Claude Code
+4. Claude Code will:
+   - Generate AI agent services
+   - Generate RAG indexing
+   - Generate model provider abstraction
+   - Generate security layer
+   - Generate all tests (75%+ coverage)
+   - Run validation hooks automatically
+   - Show you a report
+5. Review the report, approve, commit
+
+================================================================================
+END OF PROMPT
+================================================================================

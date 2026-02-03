@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. - Add Event</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/jarvis-icon.svg') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet">
+    <style>
+        .employee-table input[type="date"],
+        .employee-table input[type="number"] {
+            font-size: 0.85rem;
+            padding: 0.25rem 0.5rem;
+        }
+        .employee-table td {
+            vertical-align: middle;
+        }
+        .employee-name {
+            font-weight: 500;
+        }
+        .employee-company {
+            font-size: 0.8rem;
+            color: var(--bs-secondary);
+        }
+        .bonus-total {
+            font-weight: 600;
+            color: var(--bs-success);
+        }
+        /* Search dropdown styles */
+        .employee-search-wrapper {
+            position: relative;
+        }
+        .employee-search-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--bs-body-bg);
+            border: 1px solid var(--bs-border-color);
+            border-top: none;
+            border-radius: 0 0 0.375rem 0.375rem;
+            max-height: 250px;
+            overflow-y: auto;
+            z-index: 1050;
+            display: none;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .employee-search-results.show {
+            display: block;
+        }
+        .employee-search-item {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            border-bottom: 1px solid var(--bs-border-color);
+        }
+        .employee-search-item:last-child {
+            border-bottom: none;
+        }
+        .employee-search-item:hover {
+            background-color: var(--bs-tertiary-bg);
+        }
+        .employee-search-item.selected {
+            background-color: var(--bs-primary-bg-subtle);
+        }
+        .employee-search-item .name {
+            font-weight: 500;
+        }
+        .employee-search-item .company {
+            font-size: 0.8rem;
+            color: var(--bs-secondary);
+        }
+        .selected-employee-row {
+            background-color: rgba(var(--bs-primary-rgb), 0.05);
+        }
+        .btn-remove-employee {
+            padding: 0.15rem 0.4rem;
+            font-size: 0.75rem;
+        }
+        .empty-state {
+            padding: 2rem;
+            text-align: center;
+            color: var(--bs-secondary);
+        }
+        .empty-state i {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    {% set current_module = 'hr' %}
+    {% include 'partials/_navbar.html' %}
+
+    <!-- Breadcrumb -->
+    <div class="container-fluid px-4 py-2 bg-body-secondary border-bottom">
+        <div class="d-flex justify-content-between align-items-center">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0 small">
+                    <li class="breadcrumb-item"><a href="/">Home</a></li>
+                    <li class="breadcrumb-item"><a href="/hr">HR</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('hr.events.events') }}">Events</a></li>
+                    <li class="breadcrumb-item active">Add Event</li>
+                </ol>
+            </nav>
+            <a href="{{ url_for('hr.events.events') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Events
+            </a>
+        </div>
+    </div>
+
+    <div class="container-fluid px-4 mt-3">
+        {% set active_page = 'add_event' %}
+        {% set inline_nav = true %}
+        {% include 'partials/_hr_nav.html' %}
+
+        <form id="eventForm" class="mt-3">
+            <div class="row">
+                <!-- Event Details Card -->
+                <div class="col-lg-4 col-md-5 mb-3">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-calendar-plus"></i> Event Details</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Event Name *</label>
+                                <input type="text" id="eventName" class="form-control" required placeholder="Enter event name">
+                            </div>
+                            <div class="row">
+                                <div class="col-6 mb-3">
+                                    <label class="form-label">Start Date *</label>
+                                    <input type="date" id="eventStartDate" class="form-control" required>
+                                </div>
+                                <div class="col-6 mb-3">
+                                    <label class="form-label">End Date *</label>
+                                    <input type="date" id="eventEndDate" class="form-control" required>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Company</label>
+                                <select id="eventCompany" class="form-select">
+                                    <option value="">Select Company</option>
+                                    {% for company in companies %}
+                                    <option value="{{ company }}">{{ company }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Brand</label>
+                                <select id="eventBrand" class="form-select">
+                                    <option value="">Select Brand</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Description</label>
+                                <textarea id="eventDescription" class="form-control" rows="2" placeholder="Optional description"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Employee Assignment Card -->
+                <div class="col-lg-8 col-md-7 mb-3">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="bi bi-people"></i> Assign Employees</h5>
+                                <span class="badge bg-primary" id="selectedCount">0 selected</span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <!-- Employee Search -->
+                            <div class="mb-3">
+                                <label class="form-label small mb-1"><i class="bi bi-search"></i> Add Employee</label>
+                                <div class="employee-search-wrapper">
+                                    <div class="input-group">
+                                        <input type="text" id="employeeSearch" class="form-control"
+                                               placeholder="Type to search employees..." autocomplete="off">
+                                        <button type="button" class="btn btn-outline-primary" id="btnAddEmployee" title="Add selected employee">
+                                            <i class="bi bi-plus-lg"></i>
+                                        </button>
+                                    </div>
+                                    <div class="employee-search-results" id="searchResults"></div>
+                                </div>
+                            </div>
+
+                            <!-- Selected Employees Table -->
+                            <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                                <table class="table table-sm employee-table mb-0">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th style="width: 18%;">Employee</th>
+                                            <th style="width: 14%;">Start</th>
+                                            <th style="width: 14%;">End</th>
+                                            <th style="width: 6%;">Hours</th>
+                                            <th style="width: 18%;">Bonus Type</th>
+                                            <th style="width: 8%;">Days</th>
+                                            {% if is_hr_manager %}
+                                            <th style="width: 14%;" class="text-end">Bonus Net</th>
+                                            {% endif %}
+                                            <th style="width: 8%;"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="selectedEmployeesBody">
+                                        <!-- Empty state shown when no employees -->
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Empty State -->
+                            <div class="empty-state" id="emptyState">
+                                <i class="bi bi-person-plus"></i>
+                                <p class="mb-0">Search and add employees above</p>
+                            </div>
+
+                            <!-- Summary -->
+                            <div class="row mt-3 pt-3 border-top" id="summaryRow" style="display: none;">
+                                <div class="col-md-{{ '4' if is_hr_manager else '6' }}">
+                                    <div class="d-flex justify-content-between">
+                                        <span class="text-muted">Total Employees:</span>
+                                        <strong id="summaryEmployees">0</strong>
+                                    </div>
+                                </div>
+                                <div class="col-md-{{ '4' if is_hr_manager else '6' }}">
+                                    <div class="d-flex justify-content-between">
+                                        <span class="text-muted">Total Days:</span>
+                                        <strong id="summaryDays">0</strong>
+                                    </div>
+                                </div>
+                                {% if is_hr_manager %}
+                                <div class="col-md-4">
+                                    <div class="d-flex justify-content-between">
+                                        <span class="text-muted">Total Bonus:</span>
+                                        <strong class="text-success" id="summaryBonus">0.00 RON</strong>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="d-flex justify-content-end gap-2 mb-4">
+                <a href="{{ url_for('hr.events.events') }}" class="btn btn-secondary">
+                    <i class="bi bi-x-lg"></i> Cancel
+                </a>
+                <button type="submit" id="btnSaveEvent" class="btn btn-hr">
+                    <i class="bi bi-check-lg"></i> Save Event
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // All employees data
+        const allEmployees = [
+            {% for emp in employees %}
+            { id: {{ emp.id }}, name: "{{ emp.name }}", company: "{{ emp.company or '' }}" },
+            {% endfor %}
+        ];
+
+        // All bonus types for per-employee dropdown
+        const allBonusTypes = [
+            {% for bt in bonus_types %}
+            { id: {{ bt.id }}, name: "{{ bt.name }}", amount: {{ bt.amount }}, daysPerAmount: {{ bt.days_per_amount or 1 }} },
+            {% endfor %}
+        ];
+
+        // Selected employees map: employeeId -> { employee data, bonus data }
+        const selectedEmployees = new Map();
+
+        // HR Manager permission flag
+        const isHrManager = {{ 'true' if is_hr_manager else 'false' }};
+
+        // Generate bonus type options HTML
+        function getBonusTypeOptionsHtml(selectedId = '') {
+            return '<option value="">Select</option>' + allBonusTypes.map(bt =>
+                `<option value="${bt.id}" data-amount="${bt.amount}" data-days-per-amount="${bt.daysPerAmount}" ${bt.id == selectedId ? 'selected' : ''}>${bt.name}</option>`
+            ).join('');
+        }
+
+        // Get first bonus type ID as default for new employees
+        function getFirstBonusTypeId() {
+            return allBonusTypes.length > 0 ? allBonusTypes[0].id : '';
+        }
+
+        // Company change - load brands
+        document.getElementById('eventCompany').addEventListener('change', async (e) => {
+            const company = e.target.value;
+            const brandSelect = document.getElementById('eventBrand');
+            brandSelect.innerHTML = '<option value="">Select Brand</option>';
+
+            if (company) {
+                const resp = await fetch(`/hr/events/api/structure/brands/${encodeURIComponent(company)}`);
+                const brands = await resp.json();
+                brands.forEach(b => {
+                    if (b) brandSelect.innerHTML += `<option value="${b}">${b}</option>`;
+                });
+            }
+        });
+
+        // Event date change - update constraints on employee datetime inputs
+        document.getElementById('eventStartDate').addEventListener('change', updateDateConstraints);
+        document.getElementById('eventEndDate').addEventListener('change', updateDateConstraints);
+
+        function updateDateConstraints() {
+            const startDate = document.getElementById('eventStartDate').value;
+            const endDate = document.getElementById('eventEndDate').value;
+
+            // Update all employee datetime inputs with new constraints
+            document.querySelectorAll('.emp-part-start, .emp-part-end').forEach(input => {
+                if (startDate) {
+                    input.min = startDate + 'T00:00';
+                }
+                if (endDate) {
+                    input.max = endDate + 'T23:59';
+                }
+            });
+
+            // Validate and clamp existing values
+            document.querySelectorAll('#selectedEmployeesBody tr').forEach(row => {
+                const empId = parseInt(row.dataset.employeeId);
+                const empData = selectedEmployees.get(empId);
+                if (!empData) return;
+
+                const startInput = row.querySelector('.emp-part-start');
+                const endInput = row.querySelector('.emp-part-end');
+
+                // Clamp start date if outside range
+                if (startDate && startInput.value && startInput.value < startDate + 'T00:00') {
+                    startInput.value = dateToDatetimeLocal(startDate, '09:00');
+                    empData.partStart = startInput.value;
+                }
+                if (endDate && startInput.value && startInput.value > endDate + 'T23:59') {
+                    startInput.value = dateToDatetimeLocal(endDate, '09:00');
+                    empData.partStart = startInput.value;
+                }
+
+                // Clamp end date if outside range
+                if (startDate && endInput.value && endInput.value < startDate + 'T00:00') {
+                    endInput.value = dateToDatetimeLocal(startDate, '18:00');
+                    empData.partEnd = endInput.value;
+                }
+                if (endDate && endInput.value && endInput.value > endDate + 'T23:59') {
+                    endInput.value = dateToDatetimeLocal(endDate, '18:00');
+                    empData.partEnd = endInput.value;
+                }
+
+                // Recalculate hours
+                empData.hours = calculateHoursBetween(empData.partStart, empData.partEnd);
+                row.querySelector('.emp-hours').value = empData.hours;
+            });
+        }
+
+        // ============== EMPLOYEE SEARCH ==============
+        const searchInput = document.getElementById('employeeSearch');
+        const searchResults = document.getElementById('searchResults');
+        let searchTimeout;
+
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            const query = this.value.trim().toLowerCase();
+
+            if (query.length < 1) {
+                searchResults.classList.remove('show');
+                return;
+            }
+
+            searchTimeout = setTimeout(() => {
+                const matches = allEmployees.filter(emp =>
+                    !selectedEmployees.has(emp.id) &&
+                    (emp.name.toLowerCase().includes(query) ||
+                     emp.company.toLowerCase().includes(query))
+                ).slice(0, 10);
+
+                if (matches.length === 0) {
+                    searchResults.innerHTML = '<div class="employee-search-item text-muted">No matching employees found</div>';
+                } else {
+                    searchResults.innerHTML = matches.map(emp => `
+                        <div class="employee-search-item" data-id="${emp.id}" data-name="${escapeHtml(emp.name)}" data-company="${escapeHtml(emp.company)}">
+                            <div class="name">${escapeHtml(emp.name)}</div>
+                            <div class="company">${escapeHtml(emp.company) || 'N/A'}</div>
+                        </div>
+                    `).join('');
+
+                    // Add click handlers
+                    searchResults.querySelectorAll('.employee-search-item[data-id]').forEach(item => {
+                        item.addEventListener('click', () => {
+                            addEmployee(
+                                parseInt(item.dataset.id),
+                                item.dataset.name,
+                                item.dataset.company
+                            );
+                            searchInput.value = '';
+                            searchResults.classList.remove('show');
+                            searchInput.focus();
+                        });
+                    });
+                }
+
+                searchResults.classList.add('show');
+            }, 150);
+        });
+
+        // Hide search results when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.employee-search-wrapper')) {
+                searchResults.classList.remove('show');
+            }
+        });
+
+        // Keyboard navigation in search
+        searchInput.addEventListener('keydown', (e) => {
+            const items = searchResults.querySelectorAll('.employee-search-item[data-id]');
+            const current = searchResults.querySelector('.employee-search-item.selected');
+            let idx = current ? Array.from(items).indexOf(current) : -1;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (idx < items.length - 1) idx++;
+                items.forEach((item, i) => item.classList.toggle('selected', i === idx));
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (idx > 0) idx--;
+                items.forEach((item, i) => item.classList.toggle('selected', i === idx));
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (current) current.click();
+            } else if (e.key === 'Escape') {
+                searchResults.classList.remove('show');
+            }
+        });
+
+        // Plus button click - add selected employee from search results
+        document.getElementById('btnAddEmployee').addEventListener('click', async () => {
+            const selected = searchResults.querySelector('.employee-search-item.selected[data-id]');
+            if (selected) {
+                selected.click();
+            } else {
+                // Try to add first result if available
+                const first = searchResults.querySelector('.employee-search-item[data-id]');
+                if (first) {
+                    first.click();
+                } else if (searchInput.value.trim()) {
+                    // No results, show hint
+                    await JarvisDialog.alert('No matching employees found. Try a different search term.', { type: 'warning' });
+                } else {
+                    await JarvisDialog.alert('Type an employee name to search first.', { type: 'warning' });
+                }
+            }
+        });
+
+        // ============== EMPLOYEE MANAGEMENT ==============
+
+        // Convert date to datetime-local format (YYYY-MM-DDTHH:MM)
+        function dateToDatetimeLocal(dateStr, defaultTime = '09:00') {
+            if (!dateStr) return '';
+            // If already has time part, return as-is
+            if (dateStr.includes('T')) return dateStr;
+            return `${dateStr}T${defaultTime}`;
+        }
+
+        // Calculate hours between two datetime-local values
+        function calculateHoursBetween(startDatetime, endDatetime) {
+            if (!startDatetime || !endDatetime) return 0;
+            const start = new Date(startDatetime);
+            const end = new Date(endDatetime);
+            if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+            const diffMs = end - start;
+            if (diffMs < 0) return 0;
+            return Math.round(diffMs / (1000 * 60 * 60)); // milliseconds to hours
+        }
+
+        function addEmployee(id, name, company) {
+            if (selectedEmployees.has(id)) return;
+
+            const startDate = document.getElementById('eventStartDate').value;
+            const endDate = document.getElementById('eventEndDate').value;
+
+            // Convert to datetime-local with default times (09:00 start, 18:00 end)
+            const partStart = dateToDatetimeLocal(startDate, '09:00');
+            const partEnd = dateToDatetimeLocal(endDate, '18:00');
+
+            selectedEmployees.set(id, {
+                id, name, company,
+                partStart: partStart,
+                partEnd: partEnd,
+                days: '',
+                hours: calculateHoursBetween(partStart, partEnd)
+            });
+
+            renderSelectedEmployees();
+        }
+
+        function removeEmployee(id) {
+            selectedEmployees.delete(id);
+            renderSelectedEmployees();
+        }
+
+        function renderSelectedEmployees() {
+            const tbody = document.getElementById('selectedEmployeesBody');
+            const emptyState = document.getElementById('emptyState');
+            const summaryRow = document.getElementById('summaryRow');
+
+            if (selectedEmployees.size === 0) {
+                tbody.innerHTML = '';
+                emptyState.style.display = 'block';
+                summaryRow.style.display = 'none';
+                document.getElementById('selectedCount').textContent = '0 selected';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            summaryRow.style.display = 'flex';
+
+            // Get event date constraints for datetime inputs
+            const eventStartDate = document.getElementById('eventStartDate').value;
+            const eventEndDate = document.getElementById('eventEndDate').value;
+            const minDatetime = eventStartDate ? eventStartDate + 'T00:00' : '';
+            const maxDatetime = eventEndDate ? eventEndDate + 'T23:59' : '';
+
+            tbody.innerHTML = Array.from(selectedEmployees.values()).map(emp => `
+                <tr class="selected-employee-row" data-employee-id="${emp.id}">
+                    <td>
+                        <div class="employee-name">${escapeHtml(emp.name)}</div>
+                        <div class="employee-company">${escapeHtml(emp.company) || 'N/A'}</div>
+                    </td>
+                    <td>
+                        <input type="datetime-local" class="form-control form-control-sm emp-part-start" value="${emp.partStart || ''}" ${minDatetime ? `min="${minDatetime}"` : ''} ${maxDatetime ? `max="${maxDatetime}"` : ''}>
+                    </td>
+                    <td>
+                        <input type="datetime-local" class="form-control form-control-sm emp-part-end" value="${emp.partEnd || ''}" ${minDatetime ? `min="${minDatetime}"` : ''} ${maxDatetime ? `max="${maxDatetime}"` : ''}>
+                    </td>
+                    <td>
+                        <input type="number" class="form-control form-control-sm emp-hours text-center"
+                               value="${emp.hours || 0}" readonly style="background-color: var(--bs-tertiary-bg);">
+                    </td>
+                    <td>
+                        <select class="form-select form-select-sm emp-bonus-type">${getBonusTypeOptionsHtml(emp.bonusTypeId || getFirstBonusTypeId())}</select>
+                    </td>
+                    <td>
+                        <input type="number" class="form-control form-control-sm emp-days"
+                               step="0.5" min="0" max="31" placeholder="0" value="${emp.days || ''}">
+                    </td>
+                    ${isHrManager ? `<td class="text-end">
+                        <span class="emp-bonus-display bonus-total">-</span>
+                    </td>` : ''}
+                    <td class="text-end">
+                        <button type="button" class="btn btn-outline-danger btn-remove-employee" onclick="removeEmployee(${emp.id})">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+
+            // Add input listeners for datetime - start auto-fills end with +1 hour
+            tbody.querySelectorAll('.emp-part-start').forEach(input => {
+                input.addEventListener('change', function() {
+                    const row = this.closest('tr');
+                    const empId = parseInt(row.dataset.employeeId);
+                    const empData = selectedEmployees.get(empId);
+                    const endInput = row.querySelector('.emp-part-end');
+
+                    if (empData && this.value) {
+                        empData.partStart = this.value;
+                        // Auto-set end to same datetime +1 hour (using local time)
+                        const startDate = new Date(this.value);
+                        startDate.setHours(startDate.getHours() + 1);
+                        // Format as YYYY-MM-DDTHH:MM in local time
+                        const year = startDate.getFullYear();
+                        const month = String(startDate.getMonth() + 1).padStart(2, '0');
+                        const day = String(startDate.getDate()).padStart(2, '0');
+                        const hours = String(startDate.getHours()).padStart(2, '0');
+                        const mins = String(startDate.getMinutes()).padStart(2, '0');
+                        let endValue = `${year}-${month}-${day}T${hours}:${mins}`;
+
+                        // Respect event end date constraint
+                        const eventEndDate = document.getElementById('eventEndDate').value;
+                        if (eventEndDate && endValue > eventEndDate + 'T23:59') {
+                            endValue = eventEndDate + 'T23:59';
+                        }
+
+                        endInput.value = endValue;
+                        empData.partEnd = endValue;
+                        empData.hours = calculateHoursBetween(empData.partStart, empData.partEnd);
+                        row.querySelector('.emp-hours').value = empData.hours;
+                    }
+
+                    calculateRowBonus(row);
+                    updateSummary();
+                });
+            });
+
+            // End datetime listener - just update hours
+            tbody.querySelectorAll('.emp-part-end').forEach(input => {
+                input.addEventListener('change', function() {
+                    const row = this.closest('tr');
+                    const empId = parseInt(row.dataset.employeeId);
+                    const empData = selectedEmployees.get(empId);
+
+                    if (empData) {
+                        empData.partEnd = this.value;
+                        empData.hours = calculateHoursBetween(empData.partStart, empData.partEnd);
+                        row.querySelector('.emp-hours').value = empData.hours;
+                    }
+
+                    calculateRowBonus(row);
+                    updateSummary();
+                });
+            });
+
+            // Bonus type dropdown listener
+            tbody.querySelectorAll('.emp-bonus-type').forEach(select => {
+                select.addEventListener('change', function() {
+                    const row = this.closest('tr');
+                    const empId = parseInt(row.dataset.employeeId);
+                    const empData = selectedEmployees.get(empId);
+
+                    if (empData) {
+                        empData.bonusTypeId = this.value;
+                    }
+
+                    calculateRowBonus(row);
+                    updateSummary();
+                });
+            });
+
+            // Days input listener
+            tbody.querySelectorAll('.emp-days').forEach(input => {
+                input.addEventListener('input', function() {
+                    const row = this.closest('tr');
+                    const empId = parseInt(row.dataset.employeeId);
+                    const empData = selectedEmployees.get(empId);
+
+                    if (empData) {
+                        empData.days = this.value;
+                    }
+
+                    calculateRowBonus(row);
+                    updateSummary();
+                });
+            });
+
+            // Calculate all bonuses
+            tbody.querySelectorAll('tr').forEach(row => calculateRowBonus(row));
+            updateSummary();
+        }
+
+        function calculateRowBonus(row) {
+            // Use per-row bonus type dropdown
+            const bonusTypeSelect = row.querySelector('.emp-bonus-type');
+            const selectedOption = bonusTypeSelect ? bonusTypeSelect.selectedOptions[0] : null;
+            const amount = selectedOption ? parseFloat(selectedOption.dataset.amount) || 0 : 0;
+            const daysPerAmount = selectedOption ? parseFloat(selectedOption.dataset.daysPerAmount) || 1 : 1;
+
+            const days = parseFloat(row.querySelector('.emp-days').value) || 0;
+            const ratePerDay = amount / daysPerAmount;
+            const total = ratePerDay * days;
+
+            const display = row.querySelector('.emp-bonus-display');
+            if (total > 0) {
+                display.textContent = total.toFixed(2) + ' RON';
+                display.classList.add('bonus-total');
+            } else {
+                display.textContent = '-';
+                display.classList.remove('bonus-total');
+            }
+        }
+
+        // Update summary - uses per-row bonus types
+        function updateSummary() {
+            let totalEmployees = selectedEmployees.size;
+            let totalDays = 0;
+            let totalBonus = 0;
+
+            // Calculate totals from all rows using per-row bonus types
+            document.querySelectorAll('#selectedEmployeesBody tr').forEach(row => {
+                const bonusTypeSelect = row.querySelector('.emp-bonus-type');
+                const selectedOption = bonusTypeSelect ? bonusTypeSelect.selectedOptions[0] : null;
+                const amount = selectedOption ? parseFloat(selectedOption.dataset.amount) || 0 : 0;
+                const daysPerAmount = selectedOption ? parseFloat(selectedOption.dataset.daysPerAmount) || 1 : 1;
+                const ratePerDay = amount / daysPerAmount;
+
+                const days = parseFloat(row.querySelector('.emp-days').value) || 0;
+                totalDays += days;
+                totalBonus += ratePerDay * days;
+            });
+
+            document.getElementById('selectedCount').textContent = totalEmployees + ' selected';
+            document.getElementById('summaryEmployees').textContent = totalEmployees;
+            document.getElementById('summaryDays').textContent = totalDays.toFixed(1);
+            document.getElementById('summaryBonus').textContent = totalBonus.toFixed(2) + ' RON';
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Form submission
+        document.getElementById('eventForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const data = {
+                name: document.getElementById('eventName').value,
+                start_date: document.getElementById('eventStartDate').value,
+                end_date: document.getElementById('eventEndDate').value,
+                company: document.getElementById('eventCompany').value || null,
+                brand: document.getElementById('eventBrand').value || null,
+                description: document.getElementById('eventDescription').value || null
+            };
+
+            // Validation: Basic event fields
+            if (!data.name || !data.start_date || !data.end_date) {
+                await JarvisDialog.alert('Name, start date, and end date are required', { type: 'warning' });
+                return;
+            }
+
+            // Validation: At least one employee
+            if (selectedEmployees.size === 0) {
+                await JarvisDialog.alert('Please add at least one employee to the event.', { type: 'warning' });
+                return;
+            }
+
+            // Validation: At least one employee has bonus type and days filled
+            const rows = document.querySelectorAll('#selectedEmployeesBody tr');
+            let hasAnyDays = false;
+            let missingBonusType = false;
+            rows.forEach(row => {
+                const days = parseFloat(row.querySelector('.emp-days').value) || 0;
+                const bonusType = row.querySelector('.emp-bonus-type').value;
+                if (days > 0) {
+                    hasAnyDays = true;
+                    if (!bonusType) missingBonusType = true;
+                }
+            });
+            if (!hasAnyDays) {
+                await JarvisDialog.alert('Please enter bonus days for at least one employee.', { type: 'warning' });
+                return;
+            }
+            if (missingBonusType) {
+                await JarvisDialog.alert('Please select a bonus type for all employees with bonus days.', { type: 'warning' });
+                return;
+            }
+
+            try {
+                // Create the event first
+                const resp = await fetch('/hr/events/api/events', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (!resp.ok) {
+                    await JarvisDialog.alert('Error saving event', { type: 'error' });
+                    return;
+                }
+
+                const eventResult = await resp.json();
+                const eventId = eventResult.id;
+
+                // Collect bonuses from selected employees - read from DOM rows for accurate data
+                const rows = document.querySelectorAll('#selectedEmployeesBody tr');
+                if (rows.length > 0) {
+                    const bonuses = Array.from(rows).map(row => {
+                        const empId = parseInt(row.dataset.employeeId);
+                        const emp = selectedEmployees.get(empId);
+
+                        // Get per-row bonus type values
+                        const bonusTypeSelect = row.querySelector('.emp-bonus-type');
+                        const selectedOption = bonusTypeSelect ? bonusTypeSelect.selectedOptions[0] : null;
+                        const amount = selectedOption ? parseFloat(selectedOption.dataset.amount) || 0 : 0;
+                        const daysPerAmount = selectedOption ? parseFloat(selectedOption.dataset.daysPerAmount) || 1 : 1;
+                        const ratePerDay = amount / daysPerAmount;
+
+                        // Get values from row inputs
+                        const partStart = row.querySelector('.emp-part-start').value;
+                        const partEnd = row.querySelector('.emp-part-end').value;
+                        const days = parseFloat(row.querySelector('.emp-days').value) || 0;
+                        const hours = parseInt(row.querySelector('.emp-hours').value) || 0;
+                        const bonusNet = ratePerDay * days;
+
+                        // Get year/month from participation start or event start
+                        // Extract date part from datetime-local (YYYY-MM-DDTHH:MM -> YYYY-MM-DD)
+                        const partStartDate = partStart ? partStart.split('T')[0] : data.start_date;
+                        const partEndDate = partEnd ? partEnd.split('T')[0] : data.end_date;
+                        const startDateObj = new Date(partStartDate);
+                        const year = startDateObj.getFullYear();
+                        const month = startDateObj.getMonth() + 1;
+
+                        return {
+                            employee_id: empId,
+                            event_id: eventId,
+                            year: year,
+                            month: month,
+                            participation_start: partStartDate,
+                            participation_end: partEndDate,
+                            bonus_days: days > 0 ? days : null,
+                            hours_free: hours > 0 ? hours : null,
+                            bonus_net: bonusNet > 0 ? bonusNet : null
+                        };
+                    });
+
+                    // Bulk create bonuses
+                    const bonusResp = await fetch('/hr/events/api/event-bonuses/bulk', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ bonuses: bonuses })
+                    });
+
+                    if (!bonusResp.ok) {
+                        console.warn('Event created but bonus creation failed');
+                    }
+                }
+
+                window.location.href = '{{ url_for("hr.events.events") }}';
+            } catch (err) {
+                console.error('Error:', err);
+                await JarvisDialog.alert('Error saving event', { type: 'error' });
+            }
+        });
+    </script>
+    <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
+    <!-- Crafted with care by Seba - Find the hidden surprises! -->
+    <script>
+        // Seba's secret: Triple-click the page title for a surprise
+        let titleClicks = 0;
+        document.querySelector('.card-header h5').addEventListener('click', async () => {
+            titleClicks++;
+            if (titleClicks === 3) {
+                await JarvisDialog.alert('Seba says: "May your events be legendary and your bonuses generous!"', { type: 'success' });
+                titleClicks = 0;
+            }
+            setTimeout(() => titleClicks = 0, 500);
+        });
+        // Konami code easter egg - Up Up Down Down Left Right Left Right B A
+        const sebaKonami = [38,38,40,40,37,39,37,39,66,65];
+        let konamiPos = 0;
+        document.addEventListener('keydown', (e) => {
+            if (e.keyCode === sebaKonami[konamiPos]) {
+                konamiPos++;
+                if (konamiPos === sebaKonami.length) {
+                    console.log('%c Seba Mode Activated! ', 'background: #5b4b8a; color: white; font-size: 20px; padding: 10px;');
+                    document.body.style.transition = 'filter 0.3s';
+                    document.body.style.filter = 'hue-rotate(180deg)';
+                    setTimeout(() => document.body.style.filter = '', 2000);
+                    konamiPos = 0;
+                }
+            } else { konamiPos = 0; }
+        });
+    </script>
+</body>
+</html>

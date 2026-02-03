@@ -41,33 +41,27 @@
     </div>
 
     <div class="container-fluid px-4 mt-3">
-        <!-- Summary Cards -->
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card bg-primary text-white">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="bi bi-people"></i> Total Users</h6>
-                        <h2 id="totalUsers">0</h2>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-success text-white">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="bi bi-person-check"></i> Active Users</h6>
-                        <h2 id="activeUsers">0</h2>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-warning text-dark">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="bi bi-shield"></i> Roles Defined</h6>
-                        <h2 id="totalRoles">0</h2>
-                    </div>
-                </div>
-            </div>
+        <!-- Summary Stats Bar (matching accounting style) -->
+        <div class="summary-filter-bar d-flex align-items-center flex-wrap gap-3 mb-3">
+            <span class="summary-stat" title="Total Users">
+                <i class="bi bi-people text-primary"></i>
+                <strong id="totalUsers">0</strong> users
+            </span>
+            <span class="summary-stat" title="Active Users">
+                <i class="bi bi-person-check text-success"></i>
+                <strong id="activeUsers">0</strong> active
+            </span>
+            <span class="summary-stat" title="Roles Defined">
+                <i class="bi bi-shield text-warning"></i>
+                <strong id="totalRoles">0</strong> roles
+            </span>
         </div>
+        <style>
+            .summary-filter-bar { font-size: 0.85rem; }
+            .summary-stat { display: flex; align-items: center; gap: 4px; color: var(--bs-secondary-color); }
+            .summary-stat i { font-size: 1rem; }
+            .summary-stat strong { color: var(--bs-body-color); }
+        </style>
 
         <!-- Tabs for Users, Roles, and Notifications -->
         <ul class="nav nav-tabs" id="settingsTabs">
@@ -118,7 +112,12 @@
             <div class="tab-pane fade show active" id="users">
                 <div class="card border-top-0 rounded-top-0">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Users</h5>
+                        <span>
+                            <h5 class="mb-0 d-inline">Users</h5>
+                            <button id="btnDeleteSelectedUsers" class="btn btn-outline-danger btn-sm ms-2 d-none">
+                                <i class="bi bi-trash"></i> Delete Selected (<span id="selectedUsersCount">0</span>)
+                            </button>
+                        </span>
                         <button class="btn btn-primary btn-sm" onclick="showAddUserModal()">
                             <i class="bi bi-person-plus"></i> Add User
                         </button>
@@ -128,6 +127,7 @@
                             <table class="table table-hover" id="usersTable">
                                 <thead>
                                     <tr>
+                                        <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="selectAllUsers" title="Select All"></th>
                                         <th>Name</th>
                                         <th>Email</th>
                                         <th>Phone</th>
@@ -137,7 +137,7 @@
                                     </tr>
                                 </thead>
                                 <tbody id="usersTableBody">
-                                    <tr class="loading-placeholder"><td colspan="5" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading users...</td></tr>
+                                    <tr class="loading-placeholder"><td colspan="7" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading users...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -363,6 +363,7 @@
                                             <th>Color</th>
                                             <th>Opacity</th>
                                             <th>Order</th>
+                                            <th>Min Role</th>
                                             <th>Active</th>
                                             <th width="100">Actions</th>
                                         </tr>
@@ -370,30 +371,38 @@
                                     <tbody></tbody>
                                 </table>
                             </div>
-                            <div class="row g-2 mt-2">
-                                <div class="col-md-2">
-                                    <input type="text" class="form-control form-control-sm" id="newInvoiceStatusValue" placeholder="Value (e.g., pending)">
+                            <div class="row g-2 mt-2 align-items-center">
+                                <div class="col-auto">
+                                    <input type="text" class="form-control form-control-sm" id="newInvoiceStatusValue" placeholder="Value (e.g., pending)" style="width: 120px;">
                                 </div>
-                                <div class="col-md-2">
-                                    <input type="text" class="form-control form-control-sm" id="newInvoiceStatusLabel" placeholder="Label (e.g., Pending)">
+                                <div class="col-auto">
+                                    <input type="text" class="form-control form-control-sm" id="newInvoiceStatusLabel" placeholder="Label (e.g., Pending)" style="width: 130px;">
                                 </div>
-                                <div class="col-md-2">
+                                <div class="col-auto">
                                     <div class="input-group input-group-sm">
                                         <input type="color" class="form-control form-control-color" id="newInvoiceStatusColor" value="#0d6efd" title="Choose color">
-                                        <input type="text" class="form-control" id="newInvoiceStatusColorText" value="#0d6efd" placeholder="#hex">
+                                        <input type="text" class="form-control" id="newInvoiceStatusColorText" value="#0d6efd" placeholder="#hex" style="width: 75px;">
                                     </div>
                                 </div>
-                                <div class="col-md-2">
+                                <div class="col-auto">
                                     <div class="input-group input-group-sm">
-                                        <input type="range" class="form-range" id="newInvoiceStatusOpacity" min="0" max="1" step="0.1" value="0.7" style="width: 70px;">
+                                        <input type="range" class="form-range" id="newInvoiceStatusOpacity" min="0" max="1" step="0.1" value="0.7" style="width: 60px;">
                                         <span class="input-group-text small" id="newInvoiceStatusOpacityValue">70%</span>
                                     </div>
                                 </div>
-                                <div class="col-md-1">
-                                    <input type="number" class="form-control form-control-sm" id="newInvoiceStatusOrder" placeholder="Order" value="0">
+                                <div class="col-auto">
+                                    <input type="number" class="form-control form-control-sm" id="newInvoiceStatusOrder" placeholder="Order" value="0" style="width: 60px;">
                                 </div>
-                                <div class="col-md-2">
-                                    <button class="btn btn-primary btn-sm w-100" onclick="addDropdownOption('invoice_status')">
+                                <div class="col-auto">
+                                    <select class="form-select form-select-sm" id="newInvoiceStatusMinRole" style="width: 100px;">
+                                        <option value="Viewer">Viewer</option>
+                                        <option value="User">User</option>
+                                        <option value="Manager">Manager</option>
+                                        <option value="Admin">Admin</option>
+                                    </select>
+                                </div>
+                                <div class="col-auto">
+                                    <button class="btn btn-primary btn-sm" onclick="addDropdownOption('invoice_status')">
                                         <i class="bi bi-plus"></i> Add
                                     </button>
                                 </div>
@@ -412,6 +421,7 @@
                                             <th>Color</th>
                                             <th>Opacity</th>
                                             <th>Order</th>
+                                            <th>Min Role</th>
                                             <th>Active</th>
                                             <th width="100">Actions</th>
                                         </tr>
@@ -419,30 +429,38 @@
                                     <tbody></tbody>
                                 </table>
                             </div>
-                            <div class="row g-2 mt-2">
-                                <div class="col-md-2">
-                                    <input type="text" class="form-control form-control-sm" id="newPaymentStatusValue" placeholder="Value (e.g., partial)">
+                            <div class="row g-2 mt-2 align-items-center">
+                                <div class="col-auto">
+                                    <input type="text" class="form-control form-control-sm" id="newPaymentStatusValue" placeholder="Value (e.g., partial)" style="width: 120px;">
                                 </div>
-                                <div class="col-md-2">
-                                    <input type="text" class="form-control form-control-sm" id="newPaymentStatusLabel" placeholder="Label (e.g., Partial)">
+                                <div class="col-auto">
+                                    <input type="text" class="form-control form-control-sm" id="newPaymentStatusLabel" placeholder="Label (e.g., Partial)" style="width: 130px;">
                                 </div>
-                                <div class="col-md-2">
+                                <div class="col-auto">
                                     <div class="input-group input-group-sm">
                                         <input type="color" class="form-control form-control-color" id="newPaymentStatusColor" value="#0d6efd" title="Choose color">
-                                        <input type="text" class="form-control" id="newPaymentStatusColorText" value="#0d6efd" placeholder="#hex">
+                                        <input type="text" class="form-control" id="newPaymentStatusColorText" value="#0d6efd" placeholder="#hex" style="width: 75px;">
                                     </div>
                                 </div>
-                                <div class="col-md-2">
+                                <div class="col-auto">
                                     <div class="input-group input-group-sm">
-                                        <input type="range" class="form-range" id="newPaymentStatusOpacity" min="0" max="1" step="0.1" value="0.7" style="width: 70px;">
+                                        <input type="range" class="form-range" id="newPaymentStatusOpacity" min="0" max="1" step="0.1" value="0.7" style="width: 60px;">
                                         <span class="input-group-text small" id="newPaymentStatusOpacityValue">70%</span>
                                     </div>
                                 </div>
-                                <div class="col-md-1">
-                                    <input type="number" class="form-control form-control-sm" id="newPaymentStatusOrder" placeholder="Order" value="0">
+                                <div class="col-auto">
+                                    <input type="number" class="form-control form-control-sm" id="newPaymentStatusOrder" placeholder="Order" value="0" style="width: 60px;">
                                 </div>
-                                <div class="col-md-2">
-                                    <button class="btn btn-primary btn-sm w-100" onclick="addDropdownOption('payment_status')">
+                                <div class="col-auto">
+                                    <select class="form-select form-select-sm" id="newPaymentStatusMinRole" style="width: 100px;">
+                                        <option value="Viewer">Viewer</option>
+                                        <option value="User">User</option>
+                                        <option value="Manager">Manager</option>
+                                        <option value="Admin">Admin</option>
+                                    </select>
+                                </div>
+                                <div class="col-auto">
+                                    <button class="btn btn-primary btn-sm" onclick="addDropdownOption('payment_status')">
                                         <i class="bi bi-plus"></i> Add
                                     </button>
                                 </div>
@@ -974,60 +992,20 @@
                         <h5 class="mb-0"><i class="bi bi-diagram-3"></i> Company Structure</h5>
                     </div>
                     <div class="card-body">
-                        <!-- Stats Cards -->
-                        <div class="row g-3 mb-3">
-                            <div class="col-md-3">
-                                <div class="card bg-primary text-white">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <small class="text-white-50">Companies</small>
-                                                <h4 class="mb-0" id="hrStatsCompanies">-</h4>
-                                            </div>
-                                            <i class="bi bi-building" style="font-size: 1.5rem; opacity: 0.5;"></i>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card bg-success text-white">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <small class="text-white-50">Brands</small>
-                                                <h4 class="mb-0" id="hrStatsBrands">-</h4>
-                                            </div>
-                                            <i class="bi bi-tags" style="font-size: 1.5rem; opacity: 0.5;"></i>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card bg-info text-white">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <small class="text-white-50">Departments</small>
-                                                <h4 class="mb-0" id="hrStatsDepartments">-</h4>
-                                            </div>
-                                            <i class="bi bi-diagram-2" style="font-size: 1.5rem; opacity: 0.5;"></i>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card bg-warning text-dark">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <small class="opacity-75">Employees</small>
-                                                <h4 class="mb-0" id="hrStatsEmployees">-</h4>
-                                            </div>
-                                            <i class="bi bi-people" style="font-size: 1.5rem; opacity: 0.5;"></i>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        <!-- Stats Summary Bar (matching accounting style) -->
+                        <div class="summary-filter-bar d-flex align-items-center flex-wrap gap-3 mb-3">
+                            <span class="summary-stat" title="Companies">
+                                <i class="bi bi-building text-primary"></i>
+                                <strong id="hrStatsCompanies">-</strong> companies
+                            </span>
+                            <span class="summary-stat" title="Brands">
+                                <i class="bi bi-tags text-success"></i>
+                                <strong id="hrStatsBrands">-</strong> brands
+                            </span>
+                            <span class="summary-stat" title="Departments">
+                                <i class="bi bi-diagram-3 text-info"></i>
+                                <strong id="hrStatsDepartments">-</strong> departments
+                            </span>
                         </div>
 
                         <!-- Structure Sub-tabs -->
@@ -1057,33 +1035,40 @@
                                     <i class="bi bi-diagram-3"></i> Structure Mapping
                                 </button>
                             </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="hr-employees-tab" data-bs-toggle="pill" data-bs-target="#hr-employees" type="button" role="tab">
-                                    <i class="bi bi-people"></i> Employees
-                                </button>
-                            </li>
                         </ul>
 
                         <div class="tab-content" id="hrStructureTabContent">
                             <!-- Companies Sub-tab -->
                             <div class="tab-pane fade show active" id="hr-companies" role="tabpanel">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <span class="text-muted small">Manage companies and their VAT numbers</span>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="text-muted small">Companies</span>
+                                        <span id="companiesCount" class="badge bg-secondary">0</span>
+                                        <span id="companiesSelectedCount" class="badge bg-primary d-none">0 selected</span>
+                                        <button class="btn btn-danger btn-sm d-none" id="companiesDeleteSelectedBtn" onclick="bulkDeleteCompanies()">
+                                            <i class="bi bi-trash"></i> Delete Selected
+                                        </button>
+                                        <div class="input-group input-group-sm" style="width: 200px;">
+                                            <input type="text" class="form-control" id="companiesSearchInput" placeholder="Search..." oninput="filterCompanies()">
+                                            <button class="btn btn-outline-secondary" type="button" onclick="clearCompaniesSearch()"><i class="bi bi-x-lg"></i></button>
+                                        </div>
+                                    </div>
                                     <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#hrCompanyModal" onclick="openAddHrCompanyModal()">
-                                        <i class="bi bi-plus-lg"></i> Add Company
+                                        <i class="bi bi-plus-lg"></i> Add
                                     </button>
                                 </div>
-                                <div class="table-responsive">
+                                <div class="table-responsive" style="max-height: 450px; overflow-y: auto;">
                                     <table class="table table-hover table-sm mb-0">
-                                        <thead>
+                                        <thead class="table-light sticky-top">
                                             <tr>
+                                                <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="companiesSelectAll" onchange="toggleSelectAllCompanies()"></th>
                                                 <th>Company Name</th>
                                                 <th>VAT Number</th>
                                                 <th style="width: 80px;">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody id="hrCompaniesTable">
-                                            <tr class="loading-placeholder"><td colspan="3" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
+                                            <tr class="loading-placeholder"><td colspan="4" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -1092,21 +1077,33 @@
                             <!-- Brands Master Sub-tab -->
                             <div class="tab-pane fade" id="hr-brands" role="tabpanel">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <span class="text-muted small">Define brand names (used across all companies)</span>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="text-muted small">Brands</span>
+                                        <span id="brandsCount" class="badge bg-secondary">0</span>
+                                        <span id="brandsSelectedCount" class="badge bg-primary d-none">0 selected</span>
+                                        <button class="btn btn-danger btn-sm d-none" id="brandsDeleteSelectedBtn" onclick="bulkDeleteBrands()">
+                                            <i class="bi bi-trash"></i> Delete Selected
+                                        </button>
+                                        <div class="input-group input-group-sm" style="width: 200px;">
+                                            <input type="text" class="form-control" id="brandsSearchInput" placeholder="Search..." oninput="filterBrands()">
+                                            <button class="btn btn-outline-secondary" type="button" onclick="clearBrandsSearch()"><i class="bi bi-x-lg"></i></button>
+                                        </div>
+                                    </div>
                                     <button class="btn btn-primary btn-sm" onclick="openAddMasterBrandModal()">
-                                        <i class="bi bi-plus-lg"></i> Add Brand
+                                        <i class="bi bi-plus-lg"></i> Add
                                     </button>
                                 </div>
-                                <div class="table-responsive">
+                                <div class="table-responsive" style="max-height: 450px; overflow-y: auto;">
                                     <table class="table table-hover table-sm mb-0">
-                                        <thead>
+                                        <thead class="table-light sticky-top">
                                             <tr>
+                                                <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="brandsSelectAll" onchange="toggleSelectAllBrands()"></th>
                                                 <th>Brand Name</th>
                                                 <th style="width: 80px;">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody id="masterBrandsTable">
-                                            <tr class="loading-placeholder"><td colspan="2" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
+                                            <tr class="loading-placeholder"><td colspan="3" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -1115,21 +1112,33 @@
                             <!-- Departments Master Sub-tab -->
                             <div class="tab-pane fade" id="hr-depts" role="tabpanel">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <span class="text-muted small">Define department names (used across all companies)</span>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="text-muted small">Departments</span>
+                                        <span id="deptsCount" class="badge bg-secondary">0</span>
+                                        <span id="deptsSelectedCount" class="badge bg-primary d-none">0 selected</span>
+                                        <button class="btn btn-danger btn-sm d-none" id="deptsDeleteSelectedBtn" onclick="bulkDeleteDepts()">
+                                            <i class="bi bi-trash"></i> Delete Selected
+                                        </button>
+                                        <div class="input-group input-group-sm" style="width: 200px;">
+                                            <input type="text" class="form-control" id="deptsSearchInput" placeholder="Search..." oninput="filterDepts()">
+                                            <button class="btn btn-outline-secondary" type="button" onclick="clearDeptsSearch()"><i class="bi bi-x-lg"></i></button>
+                                        </div>
+                                    </div>
                                     <button class="btn btn-primary btn-sm" onclick="openAddMasterDeptModal()">
-                                        <i class="bi bi-plus-lg"></i> Add Department
+                                        <i class="bi bi-plus-lg"></i> Add
                                     </button>
                                 </div>
-                                <div class="table-responsive">
+                                <div class="table-responsive" style="max-height: 450px; overflow-y: auto;">
                                     <table class="table table-hover table-sm mb-0">
-                                        <thead>
+                                        <thead class="table-light sticky-top">
                                             <tr>
+                                                <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="deptsSelectAll" onchange="toggleSelectAllDepts()"></th>
                                                 <th>Department Name</th>
                                                 <th style="width: 80px;">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody id="masterDeptsTable">
-                                            <tr class="loading-placeholder"><td colspan="2" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
+                                            <tr class="loading-placeholder"><td colspan="3" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -1138,21 +1147,33 @@
                             <!-- Subdepartments Master Sub-tab -->
                             <div class="tab-pane fade" id="hr-subdepts" role="tabpanel">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <span class="text-muted small">Define subdepartment names (used across all companies)</span>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="text-muted small">Subdepartments</span>
+                                        <span id="subdeptsCount" class="badge bg-secondary">0</span>
+                                        <span id="subdeptsSelectedCount" class="badge bg-primary d-none">0 selected</span>
+                                        <button class="btn btn-danger btn-sm d-none" id="subdeptsDeleteSelectedBtn" onclick="bulkDeleteSubdepts()">
+                                            <i class="bi bi-trash"></i> Delete Selected
+                                        </button>
+                                        <div class="input-group input-group-sm" style="width: 200px;">
+                                            <input type="text" class="form-control" id="subdeptsSearchInput" placeholder="Search..." oninput="filterSubdepts()">
+                                            <button class="btn btn-outline-secondary" type="button" onclick="clearSubdeptsSearch()"><i class="bi bi-x-lg"></i></button>
+                                        </div>
+                                    </div>
                                     <button class="btn btn-primary btn-sm" onclick="openAddMasterSubdeptModal()">
-                                        <i class="bi bi-plus-lg"></i> Add Subdepartment
+                                        <i class="bi bi-plus-lg"></i> Add
                                     </button>
                                 </div>
-                                <div class="table-responsive">
+                                <div class="table-responsive" style="max-height: 450px; overflow-y: auto;">
                                     <table class="table table-hover table-sm mb-0">
-                                        <thead>
+                                        <thead class="table-light sticky-top">
                                             <tr>
+                                                <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="subdeptsSelectAll" onchange="toggleSelectAllSubdepts()"></th>
                                                 <th>Subdepartment Name</th>
                                                 <th style="width: 80px;">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody id="masterSubdeptsTable">
-                                            <tr class="loading-placeholder"><td colspan="2" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
+                                            <tr class="loading-placeholder"><td colspan="3" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -1162,65 +1183,55 @@
                             <div class="tab-pane fade" id="hr-structure" role="tabpanel">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                     <div class="d-flex align-items-center gap-2">
-                                        <span class="text-muted small">Map companies to brands, departments & managers</span>
-                                        <select id="hrStructureCompanyFilter" class="form-select form-select-sm" style="width: 200px;">
+                                        <span class="text-muted small">Structure</span>
+                                        <span id="structureCount" class="badge bg-secondary">0</span>
+                                        <span id="structureSelectedCount" class="badge bg-primary d-none">0 selected</span>
+                                        <button class="btn btn-danger btn-sm d-none" id="structureDeleteSelectedBtn" onclick="bulkDeleteStructure()">
+                                            <i class="bi bi-trash"></i> Delete Selected
+                                        </button>
+                                        <div class="input-group input-group-sm" style="width: 180px;">
+                                            <input type="text" class="form-control" id="structureSearchInput" placeholder="Search..." oninput="filterStructure()">
+                                            <button class="btn btn-outline-secondary" type="button" onclick="clearStructureSearch()"><i class="bi bi-x-lg"></i></button>
+                                        </div>
+                                        <select id="hrStructureCompanyFilter" class="form-select form-select-sm" style="width: 160px;" onchange="filterStructure()">
                                             <option value="">All Companies</option>
                                         </select>
+                                        <select id="structureDeptFilter" class="form-select form-select-sm" style="width: 160px;" onchange="filterStructure()">
+                                            <option value="">All Departments</option>
+                                        </select>
                                     </div>
-                                    <button class="btn btn-primary btn-sm" onclick="openAddStructureModal()">
-                                        <i class="bi bi-plus-lg"></i> Add Structure Entry
-                                    </button>
+                                    <div class="d-flex gap-2 align-items-center">
+                                        <select class="form-select form-select-sm" id="structureSortOrder" style="width: 140px;" onchange="filterStructure()">
+                                            <option value="company_asc">Company A-Z</option>
+                                            <option value="company_desc">Company Z-A</option>
+                                            <option value="dept_asc">Dept A-Z</option>
+                                            <option value="dept_desc">Dept Z-A</option>
+                                        </select>
+                                        <button class="btn btn-primary btn-sm" onclick="openAddStructureModal()">
+                                            <i class="bi bi-plus-lg"></i> Add
+                                        </button>
+                                    </div>
                                 </div>
-                                <div class="table-responsive">
+                                <div class="table-responsive" style="max-height: 450px; overflow-y: auto;">
                                     <table class="table table-hover table-sm mb-0">
-                                        <thead>
+                                        <thead class="table-light sticky-top">
                                             <tr>
-                                                <th>Company</th>
+                                                <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="structureSelectAll" onchange="toggleSelectAllStructure()"></th>
+                                                <th style="cursor: pointer;" onclick="sortStructure('company')">Company <i class="bi bi-chevron-expand text-muted" style="font-size: 0.7rem;"></i></th>
                                                 <th>Brand</th>
-                                                <th>Department</th>
+                                                <th style="cursor: pointer;" onclick="sortStructure('department')">Department <i class="bi bi-chevron-expand text-muted" style="font-size: 0.7rem;"></i></th>
                                                 <th>Subdepartment</th>
                                                 <th>Manager</th>
                                                 <th style="width: 80px;">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody id="hrStructureTable">
-                                            <tr class="loading-placeholder"><td colspan="6" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
+                                            <tr class="loading-placeholder"><td colspan="7" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
 
-                            <!-- Employees Sub-tab -->
-                            <div class="tab-pane fade" id="hr-employees" role="tabpanel">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <div class="d-flex align-items-center gap-2">
-                                        <span class="text-muted small">Manage employees (responsables)</span>
-                                        <select id="hrEmployeeCompanyFilter" class="form-select form-select-sm" style="width: 200px;">
-                                            <option value="">All Companies</option>
-                                        </select>
-                                    </div>
-                                    <div class="d-flex gap-2">
-                                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#employeeColumnConfigModal">
-                                            <i class="bi bi-gear"></i> Columns
-                                        </button>
-                                        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#hrEmployeeModal" onclick="openAddHrEmployeeModal()">
-                                            <i class="bi bi-plus-lg"></i> Add Employee
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="table-responsive">
-                                    <table class="table table-hover table-sm mb-0" id="employeesTableEl">
-                                        <thead id="employeesTableHead">
-                                            <tr>
-                                                <!-- Dynamic columns rendered by JS -->
-                                            </tr>
-                                        </thead>
-                                        <tbody id="hrEmployeesTable">
-                                            <tr class="loading-placeholder"><td colspan="9" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
                         </div>
 
                         <div class="alert alert-info mt-3 mb-0 py-2 small">
@@ -1465,7 +1476,7 @@
                                         </div>
                                         <div class="pills-dropdown" id="dsManagerDropdown"></div>
                                     </div>
-                                    <small class="text-muted">Search and select responsables as managers.</small>
+                                    <small class="text-muted">Search and select users as managers.</small>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -1482,7 +1493,7 @@
                                         </div>
                                         <div class="pills-dropdown" id="dsMarketingDropdown"></div>
                                     </div>
-                                    <small class="text-muted">Search and select responsables for marketing.</small>
+                                    <small class="text-muted">Search and select users for marketing.</small>
                                 </div>
                             </div>
                         </div>
@@ -1541,9 +1552,14 @@
                                 <option value="">Select a role...</option>
                             </select>
                         </div>
-                        <div class="form-check form-switch">
+                        <div class="form-check form-switch mb-2">
                             <input class="form-check-input" type="checkbox" id="userActive" checked>
                             <label class="form-check-label" for="userActive">Active</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="userNotifyOnAllocation" checked>
+                            <label class="form-check-label" for="userNotifyOnAllocation">Notify on Allocation</label>
+                            <small class="d-block text-muted">Receive email notifications when allocated to invoices</small>
                         </div>
                     </form>
                 </div>
@@ -1585,54 +1601,6 @@
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-primary" onclick="saveRole()">
                         <i class="bi bi-check-lg"></i> Save Role
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Add/Edit Responsable Modal -->
-    <div class="modal fade" id="responsableModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="responsableModalTitle">Add Responsable</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="responsableForm">
-                        <input type="hidden" id="responsableId">
-                        <div class="mb-3">
-                            <label class="form-label">Name <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="responsableName" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Email <span class="text-danger">*</span></label>
-                            <input type="email" class="form-control" id="responsableEmail" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Phone</label>
-                            <input type="tel" class="form-control" id="responsablePhone">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Departments</label>
-                            <input type="text" class="form-control" id="responsableDepartments" placeholder="e.g., Marketing, Sales, IT (comma-separated)">
-                            <small class="text-muted">List the departments this person is responsible for, separated by commas</small>
-                        </div>
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input" type="checkbox" id="responsableNotify" checked>
-                            <label class="form-check-label" for="responsableNotify">Receive notifications on allocation</label>
-                        </div>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="responsableActive" checked>
-                            <label class="form-check-label" for="responsableActive">Active</label>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="saveResponsable()">
-                        <i class="bi bi-check-lg"></i> Save Responsable
                     </button>
                 </div>
             </div>
@@ -1917,102 +1885,10 @@
         </div>
     </div>
 
-    <!-- Employee Column Configuration Modal -->
-    <div class="modal fade" id="employeeColumnConfigModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-layout-three-columns"></i> Configure Columns</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="text-muted small mb-3">Drag to reorder. Toggle visibility with switches.</p>
-                    <ul class="list-group" id="employeeColumnList">
-                        <!-- Columns rendered by JS -->
-                    </ul>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" onclick="resetEmployeeColumnConfig()">
-                        <i class="bi bi-arrow-counterclockwise"></i> Reset
-                    </button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- HR Employee Modal -->
-    <div class="modal fade" id="hrEmployeeModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-person"></i> <span id="hrEmployeeModalTitle">Add Employee</span></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="hrEmployeeForm">
-                        <input type="hidden" id="hrEmployeeId">
-                        <div class="mb-3">
-                            <label class="form-label">Name <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="hrEmpName" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Email <span class="text-danger">*</span></label>
-                            <input type="email" class="form-control" id="hrEmpEmail" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Phone</label>
-                            <input type="tel" class="form-control" id="hrEmpPhone">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Company</label>
-                            <select class="form-select" id="hrEmpCompany" onchange="onHrEmpCompanyChange()">
-                                <option value="">Select Company (optional)</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Brand</label>
-                            <select class="form-select" id="hrEmpBrand" onchange="onHrEmpBrandChange()">
-                                <option value="">Select Brand (optional)</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Department</label>
-                            <select class="form-select" id="hrEmpDept" onchange="onHrEmpDeptChange()">
-                                <option value="">Select Department (optional)</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Subdepartment</label>
-                            <select class="form-select" id="hrEmpSubdept">
-                                <option value="">Select Subdepartment (optional)</option>
-                            </select>
-                        </div>
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input" type="checkbox" id="hrEmpNotify" checked>
-                            <label class="form-check-label" for="hrEmpNotify">Receive notifications</label>
-                        </div>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="hrEmpIsActive" checked>
-                            <label class="form-check-label" for="hrEmpIsActive">Active</label>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="saveHrEmployee()">
-                        <i class="bi bi-check-lg"></i> Save Employee
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let users = [];
         let roles = [];
-        let responsables = [];
         let notificationSettings = {};
         let deleteType = null;
         let deleteId = null;
@@ -2024,28 +1900,25 @@
 
         // HR Company Structure data
         let hrCompaniesData = [];
+        let filteredCompaniesData = [];
         let hrDepartmentsData = [];
-        let hrEmployeesData = [];
 
         // Master Tables Data
         let masterBrandsData = [];
+        let filteredBrandsData = [];
         let masterDeptsData = [];
+        let filteredDeptsData = [];
         let masterSubdeptsData = [];
+        let filteredSubdeptsData = [];
         let structureData = [];
+        let filteredStructureData = [];
 
-        // Employee Column Configuration
-        const DEFAULT_EMPLOYEE_COLUMNS = [
-            { id: 'name', name: 'Name', visible: true },
-            { id: 'company', name: 'Company', visible: true },
-            { id: 'brand', name: 'Brand', visible: true },
-            { id: 'departments', name: 'Department', visible: true },
-            { id: 'subdepartment', name: 'Subdepartment', visible: true },
-            { id: 'email', name: 'Email', visible: true },
-            { id: 'phone', name: 'Phone', visible: false },
-            { id: 'status', name: 'Status', visible: true },
-            { id: 'actions', name: 'Actions', visible: true }
-        ];
-        let employeeColumnConfig = [];
+        // Selection state (stores IDs of selected items)
+        let selectedCompanies = new Set();
+        let selectedBrands = new Set();
+        let selectedDepts = new Set();
+        let selectedSubdepts = new Set();
+        let selectedStructure = new Set();
 
         // Permission Matrix data
         let permissionMatrix = { modules: [], roles: [], role_permissions: {} };
@@ -2102,7 +1975,6 @@
 
         const userModal = new bootstrap.Modal(document.getElementById('userModal'));
         const roleModal = new bootstrap.Modal(document.getElementById('roleModal'));
-        const responsableModal = new bootstrap.Modal(document.getElementById('responsableModal'));
         const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
         const editVatRateModal = new bootstrap.Modal(document.getElementById('editVatRateModal'));
 
@@ -2130,7 +2002,6 @@
             Promise.all([
                 loadRoles(),
                 loadUsers(),
-                loadResponsables(),
                 loadNotificationSettings(),
                 loadCompaniesWithVat(),
                 loadDepartmentStructures(),
@@ -2217,12 +2088,10 @@
             const totalUsersEl = document.getElementById('totalUsers');
             const activeUsersEl = document.getElementById('activeUsers');
             const totalRolesEl = document.getElementById('totalRoles');
-            const totalResponsablesEl = document.getElementById('totalResponsables');
 
             if (totalUsersEl) totalUsersEl.textContent = total;
             if (activeUsersEl) activeUsersEl.textContent = active;
             if (totalRolesEl) totalRolesEl.textContent = roles.length;
-            if (totalResponsablesEl) totalResponsablesEl.textContent = responsables.length;
         }
 
         // ========== USERS ==========
@@ -2240,6 +2109,7 @@
             noUsersMsg.style.display = 'none';
             tbody.innerHTML = users.map(user => `
                 <tr>
+                    <td><input type="checkbox" class="form-check-input user-checkbox" data-id="${user.id}"></td>
                     <td><strong>${escapeHtml(user.name)}</strong></td>
                     <td><a href="mailto:${escapeHtml(user.email)}">${escapeHtml(user.email)}</a></td>
                     <td>${user.phone ? escapeHtml(user.phone) : '<span class="text-muted">-</span>'}</td>
@@ -2263,7 +2133,79 @@
                     </td>
                 </tr>
             `).join('');
+
+            // Re-attach checkbox event listeners after render
+            attachUserCheckboxListeners();
         }
+
+        // ============== Users Select All / Bulk Delete ==============
+        function attachUserCheckboxListeners() {
+            document.querySelectorAll('.user-checkbox').forEach(cb => {
+                cb.addEventListener('change', updateUserSelectionUI);
+            });
+        }
+
+        function updateUserSelectionUI() {
+            const checkboxes = document.querySelectorAll('.user-checkbox');
+            const checkedBoxes = Array.from(checkboxes).filter(cb => cb.checked);
+            const count = checkedBoxes.length;
+
+            const deleteBtn = document.getElementById('btnDeleteSelectedUsers');
+            const countSpan = document.getElementById('selectedUsersCount');
+            const selectAllCheckbox = document.getElementById('selectAllUsers');
+
+            countSpan.textContent = count;
+
+            if (count > 0) {
+                deleteBtn.classList.remove('d-none');
+            } else {
+                deleteBtn.classList.add('d-none');
+            }
+
+            if (checkboxes.length > 0 && checkedBoxes.length === checkboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else if (checkedBoxes.length > 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            }
+        }
+
+        document.getElementById('selectAllUsers').addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.user-checkbox');
+            checkboxes.forEach(cb => cb.checked = this.checked);
+            updateUserSelectionUI();
+        });
+
+        document.getElementById('btnDeleteSelectedUsers').addEventListener('click', async function() {
+            const checkedBoxes = document.querySelectorAll('.user-checkbox:checked');
+            const ids = Array.from(checkedBoxes).map(cb => cb.dataset.id);
+
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} selected user${ids.length > 1 ? 's' : ''}?`,
+                { danger: true }
+            );
+            if (!confirmed) return;
+
+            const resp = await fetch('/api/users/bulk-delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: ids })
+            });
+
+            if (resp.ok) {
+                await loadUsers();
+                updateUserSelectionUI();
+                JarvisToast.success(`Deleted ${ids.length} user${ids.length > 1 ? 's' : ''}`);
+            } else {
+                await JarvisDialog.alert('Error deleting users', { type: 'error' });
+            }
+        });
 
         function populateRoleDropdown() {
             const select = document.getElementById('userRole');
@@ -2280,6 +2222,7 @@
             document.getElementById('userPassword').value = '';
             document.getElementById('userRole').value = '';
             document.getElementById('userActive').checked = true;
+            document.getElementById('userNotifyOnAllocation').checked = true;
             // Show password as required for new users
             document.getElementById('passwordRequired').style.display = 'inline';
             document.getElementById('passwordHelp').textContent = 'Required for new users';
@@ -2298,6 +2241,7 @@
             document.getElementById('userPassword').value = '';
             document.getElementById('userRole').value = user.role_id || '';
             document.getElementById('userActive').checked = user.is_active;
+            document.getElementById('userNotifyOnAllocation').checked = user.notify_on_allocation !== false;
             // Password is optional when editing
             document.getElementById('passwordRequired').style.display = 'none';
             document.getElementById('passwordHelp').textContent = 'Leave blank to keep current password';
@@ -2313,17 +2257,18 @@
                 email: document.getElementById('userEmail').value.trim(),
                 phone: document.getElementById('userPhone').value.trim() || null,
                 role_id: roleId ? parseInt(roleId) : null,
-                is_active: document.getElementById('userActive').checked
+                is_active: document.getElementById('userActive').checked,
+                notify_on_allocation: document.getElementById('userNotifyOnAllocation').checked
             };
 
             if (!userData.name || !userData.email) {
-                alert('Name and email are required');
+                await JarvisDialog.alert('Name and email are required', { type: 'warning' });
                 return;
             }
 
             // Password required for new users
             if (!userId && !password) {
-                alert('Password is required for new users');
+                await JarvisDialog.alert('Password is required for new users', { type: 'warning' });
                 return;
             }
 
@@ -2348,11 +2293,11 @@
                     userModal.hide();
                     loadUsers();
                 } else {
-                    alert(result.error || 'Failed to save user');
+                    await JarvisDialog.alert(result.error || 'Failed to save user', { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error saving user:', error);
-                alert('Failed to save user');
+                await JarvisDialog.alert('Failed to save user', { type: 'error' });
             }
         }
 
@@ -2473,7 +2418,7 @@
             const description = document.getElementById('roleDescription').value.trim() || null;
 
             if (!name) {
-                alert('Role name is required');
+                await JarvisDialog.alert('Role name is required', { type: 'warning' });
                 return;
             }
 
@@ -2491,7 +2436,7 @@
                 const result = await res.json();
 
                 if (!result.success && !result.id) {
-                    alert(result.error || 'Failed to save role');
+                    await JarvisDialog.alert(result.error || 'Failed to save role', { type: 'error' });
                     return;
                 }
 
@@ -2502,7 +2447,7 @@
 
             } catch (error) {
                 console.error('Error saving role:', error);
-                alert('Failed to save role');
+                await JarvisDialog.alert('Failed to save role', { type: 'error' });
             }
         }
 
@@ -2522,7 +2467,6 @@
                 let url;
                 if (deleteType === 'user') url = `/api/users/${deleteId}`;
                 else if (deleteType === 'role') url = `/api/roles/${deleteId}`;
-                else if (deleteType === 'responsable') url = `/api/responsables/${deleteId}`;
                 else if (deleteType === 'vat_rate') url = `/api/vat-rates/${deleteId}`;
                 const res = await fetch(url, { method: 'DELETE' });
                 const result = await res.json();
@@ -2531,138 +2475,16 @@
                     deleteModal.hide();
                     if (deleteType === 'user') loadUsers();
                     else if (deleteType === 'role') { loadRoles(); loadPermissionMatrix(); }
-                    else if (deleteType === 'responsable') loadResponsables();
                     else if (deleteType === 'vat_rate') loadVatRates();
                 } else {
-                    alert(result.error || 'Failed to delete');
+                    await JarvisDialog.alert(result.error || 'Failed to delete', { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error deleting:', error);
-                alert('Failed to delete');
+                await JarvisDialog.alert('Failed to delete', { type: 'error' });
             } finally {
                 deleteType = null;
                 deleteId = null;
-            }
-        }
-
-        // ========== RESPONSABLES ==========
-
-        async function loadResponsables() {
-            try {
-                const res = await fetch('/api/responsables');
-                responsables = await res.json();
-                renderResponsables();
-                updateSummary();
-            } catch (error) {
-                console.error('Error loading responsables:', error);
-            }
-        }
-
-        function renderResponsables() {
-            const tbody = document.getElementById('responsablesTableBody');
-            const noResponsablesMsg = document.getElementById('noResponsablesMessage');
-
-            if (!tbody) return;
-
-            if (responsables.length === 0) {
-                tbody.innerHTML = '';
-                if (noResponsablesMsg) noResponsablesMsg.style.display = 'block';
-                return;
-            }
-
-            if (noResponsablesMsg) noResponsablesMsg.style.display = 'none';
-            tbody.innerHTML = responsables.map(r => `
-                <tr>
-                    <td><strong>${escapeHtml(r.name)}</strong></td>
-                    <td><a href="mailto:${escapeHtml(r.email)}">${escapeHtml(r.email)}</a></td>
-                    <td>${r.phone ? escapeHtml(r.phone) : '<span class="text-muted">-</span>'}</td>
-                    <td>${r.departments ? escapeHtml(r.departments) : '<span class="text-muted">All</span>'}</td>
-                    <td class="text-center">
-                        ${r.notify_on_allocation
-                            ? '<i class="bi bi-bell-fill text-success"></i>'
-                            : '<i class="bi bi-bell-slash text-muted"></i>'}
-                    </td>
-                    <td>
-                        ${r.is_active
-                            ? '<span class="badge bg-success">Active</span>'
-                            : '<span class="badge bg-secondary">Inactive</span>'}
-                    </td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editResponsable(${r.id})" title="Edit" aria-label="Edit responsable">
-                            <i class="bi bi-pencil"></i>
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="showDeleteModal('responsable', ${r.id}, '${escapeHtml(r.name)}')" title="Delete" aria-label="Delete responsable">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        function showAddResponsableModal() {
-            document.getElementById('responsableModalTitle').textContent = 'Add Responsable';
-            document.getElementById('responsableId').value = '';
-            document.getElementById('responsableName').value = '';
-            document.getElementById('responsableEmail').value = '';
-            document.getElementById('responsablePhone').value = '';
-            document.getElementById('responsableDepartments').value = '';
-            document.getElementById('responsableNotify').checked = true;
-            document.getElementById('responsableActive').checked = true;
-            responsableModal.show();
-        }
-
-        function editResponsable(responsableId) {
-            const r = responsables.find(resp => resp.id === responsableId);
-            if (!r) return;
-
-            document.getElementById('responsableModalTitle').textContent = 'Edit Responsable';
-            document.getElementById('responsableId').value = r.id;
-            document.getElementById('responsableName').value = r.name;
-            document.getElementById('responsableEmail').value = r.email;
-            document.getElementById('responsablePhone').value = r.phone || '';
-            document.getElementById('responsableDepartments').value = r.departments || '';
-            document.getElementById('responsableNotify').checked = r.notify_on_allocation;
-            document.getElementById('responsableActive').checked = r.is_active;
-            responsableModal.show();
-        }
-
-        async function saveResponsable() {
-            const responsableId = document.getElementById('responsableId').value;
-            const responsableData = {
-                name: document.getElementById('responsableName').value.trim(),
-                email: document.getElementById('responsableEmail').value.trim(),
-                phone: document.getElementById('responsablePhone').value.trim() || null,
-                departments: document.getElementById('responsableDepartments').value.trim() || null,
-                notify_on_allocation: document.getElementById('responsableNotify').checked,
-                is_active: document.getElementById('responsableActive').checked
-            };
-
-            if (!responsableData.name || !responsableData.email) {
-                alert('Name and email are required');
-                return;
-            }
-
-            try {
-                const url = responsableId ? `/api/responsables/${responsableId}` : '/api/responsables';
-                const method = responsableId ? 'PUT' : 'POST';
-
-                const res = await fetch(url, {
-                    method,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(responsableData)
-                });
-
-                const result = await res.json();
-
-                if (result.success || result.id) {
-                    responsableModal.hide();
-                    loadResponsables();
-                } else {
-                    alert(result.error || 'Failed to save responsable');
-                }
-            } catch (error) {
-                console.error('Error saving responsable:', error);
-                alert('Failed to save responsable');
             }
         }
 
@@ -2715,14 +2537,14 @@
                 const result = await res.json();
 
                 if (result.success) {
-                    alert('Notification settings saved successfully!');
+                    await JarvisDialog.alert('Notification settings saved successfully!', { type: 'success' });
                     loadNotificationSettings();
                 } else {
-                    alert(result.error || 'Failed to save settings');
+                    await JarvisDialog.alert(result.error || 'Failed to save settings', { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error saving notification settings:', error);
-                alert('Failed to save settings');
+                await JarvisDialog.alert('Failed to save settings', { type: 'error' });
             }
         }
 
@@ -2769,16 +2591,11 @@
         // ========== DEPARTMENT STRUCTURE ==========
 
         let departmentStructuresData = [];
-        let responsablesForDS = [];
 
         async function loadDepartmentStructures() {
             try {
-                const [dsRes, respRes] = await Promise.all([
-                    fetch('/api/department-structures'),
-                    fetch('/api/responsables')
-                ]);
+                const dsRes = await fetch('/api/department-structures');
                 departmentStructuresData = await dsRes.json();
-                responsablesForDS = await respRes.json();
                 renderDepartmentStructuresTable();
             } catch (error) {
                 console.error('Error loading department structures:', error);
@@ -2801,14 +2618,14 @@
             tbody.innerHTML = departmentStructuresData.map(ds => {
                 // Get manager names from manager_ids
                 const managerNames = (ds.manager_ids || [])
-                    .map(id => responsablesForDS.find(r => r.id === id))
+                    .map(id => users.find(r => r.id === id))
                     .filter(r => r)
                     .map(r => r.name)
                     .join(', ') || '-';
 
                 // Get marketing names from marketing_ids
                 const marketingNames = (ds.marketing_ids || [])
-                    .map(id => responsablesForDS.find(r => r.id === id))
+                    .map(id => users.find(r => r.id === id))
                     .filter(r => r)
                     .map(r => r.name)
                     .join(', ') || '-';
@@ -2889,14 +2706,14 @@
         function renderPills(fieldName) {
             const pillsContainer = document.getElementById(`ds${capitalize(fieldName)}Pills`);
             const selectedIds = getSelectedIds(fieldName);
-            const activeResponsables = responsablesForDS.filter(r => r.is_active);
+            const activeUsers = users.filter(r => r.is_active);
 
             pillsContainer.innerHTML = selectedIds.map(id => {
-                const responsable = activeResponsables.find(r => r.id === id);
-                if (!responsable) return '';
+                const user = activeUsers.find(u => u.id === id);
+                if (!user) return '';
                 return `
                     <span class="pill" data-id="${id}">
-                        ${escapeHtml(responsable.name)}
+                        ${escapeHtml(user.name)}
                         <span class="remove-pill" onclick="removePill('${fieldName}', ${id})">&times;</span>
                     </span>
                 `;
@@ -2929,20 +2746,20 @@
             const dropdown = document.getElementById(`ds${capitalize(fieldName)}Dropdown`);
             const searchTerm = searchInput.value.toLowerCase().trim();
             const selectedIds = getSelectedIds(fieldName);
-            const activeResponsables = responsablesForDS.filter(r => r.is_active);
+            const activeUsers = users.filter(r => r.is_active);
 
             // Filter out already selected and match search term
-            const filtered = activeResponsables.filter(r =>
+            const filtered = activeUsers.filter(r =>
                 !selectedIds.includes(r.id) &&
                 r.name.toLowerCase().includes(searchTerm)
             );
 
             if (filtered.length === 0) {
-                dropdown.innerHTML = '<div class="pills-dropdown-empty">No responsables found</div>';
+                dropdown.innerHTML = '<div class="pills-dropdown-empty">No users found</div>';
             } else {
-                dropdown.innerHTML = filtered.map(r => `
-                    <div class="pills-dropdown-item" onclick="selectResponsable('${fieldName}', ${r.id})">
-                        ${escapeHtml(r.name)}
+                dropdown.innerHTML = filtered.map(u => `
+                    <div class="pills-dropdown-item" onclick="selectUser('${fieldName}', ${u.id})">
+                        ${escapeHtml(u.name)}
                     </div>
                 `).join('');
             }
@@ -2950,7 +2767,7 @@
             dropdown.classList.add('show');
         }
 
-        function selectResponsable(fieldName, id) {
+        function selectUser(fieldName, id) {
             const selectedIds = getSelectedIds(fieldName);
             if (!selectedIds.includes(id)) {
                 selectedIds.push(id);
@@ -3008,7 +2825,7 @@
             const department = document.getElementById('dsDepartment').value.trim();
 
             if (!company || !department) {
-                alert('Company and Department are required');
+                await JarvisDialog.alert('Company and Department are required', { type: 'warning' });
                 return;
             }
 
@@ -3042,16 +2859,17 @@
                     loadDepartmentStructures();
                     showToast(id ? 'Department structure updated' : 'Department structure created', 'success');
                 } else {
-                    alert(result.error || 'Failed to save department structure');
+                    await JarvisDialog.alert(result.error || 'Failed to save department structure', { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error saving department structure:', error);
-                alert('Failed to save department structure');
+                await JarvisDialog.alert('Failed to save department structure', { type: 'error' });
             }
         }
 
         async function deleteDepartmentStructure(id) {
-            if (!confirm('Are you sure you want to delete this department structure?')) return;
+            const confirmed = await JarvisDialog.confirm('Are you sure you want to delete this department structure?', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/api/department-structures/${id}`, { method: 'DELETE' });
@@ -3061,11 +2879,11 @@
                     loadDepartmentStructures();
                     showToast('Department structure deleted', 'success');
                 } else {
-                    alert(result.error || 'Failed to delete department structure');
+                    await JarvisDialog.alert(result.error || 'Failed to delete department structure', { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error deleting department structure:', error);
-                alert('Failed to delete department structure');
+                await JarvisDialog.alert('Failed to delete department structure', { type: 'error' });
             }
         }
 
@@ -3120,7 +2938,7 @@
             const vat = document.getElementById('newCompanyVat').value.trim();
 
             if (!name || !vat) {
-                alert('Company name and VAT number are required');
+                await JarvisDialog.alert('Company name and VAT number are required', { type: 'warning' });
                 return;
             }
 
@@ -3139,16 +2957,17 @@
                     await loadCompaniesWithVat();
                     showToast('Company added to VAT registry', 'success');
                 } else {
-                    alert('Error adding company: ' + result.error);
+                    await JarvisDialog.alert('Error adding company: ' + result.error, { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error adding company:', error);
-                alert('Failed to add company');
+                await JarvisDialog.alert('Failed to add company', { type: 'error' });
             }
         }
 
         async function deleteCompanyVat(company) {
-            if (!confirm(`Delete "${company}" from VAT registry?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Delete "${company}" from VAT registry?`, { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/api/companies-vat/${encodeURIComponent(company)}`, { method: 'DELETE' });
@@ -3157,11 +2976,11 @@
                     await loadCompaniesWithVat();
                     showToast('Company removed from VAT registry', 'success');
                 } else {
-                    alert('Error deleting company: ' + result.error);
+                    await JarvisDialog.alert('Error deleting company: ' + result.error, { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error deleting company:', error);
-                alert('Failed to delete company');
+                await JarvisDialog.alert('Failed to delete company', { type: 'error' });
             }
         }
 
@@ -3184,7 +3003,7 @@
             const vat = document.getElementById('editVatNumber').value.trim();
 
             if (!newCompany || !vat) {
-                alert('Company name and VAT number are required');
+                await JarvisDialog.alert('Company name and VAT number are required', { type: 'warning' });
                 return;
             }
 
@@ -3201,11 +3020,11 @@
                     await loadCompaniesWithVat();
                     showToast('Company updated successfully', 'success');
                 } else {
-                    alert('Error updating company: ' + result.error);
+                    await JarvisDialog.alert('Error updating company: ' + result.error, { type: 'error' });
                 }
             } catch (error) {
                 console.error('Error updating company:', error);
-                alert('Failed to update company');
+                await JarvisDialog.alert('Failed to update company', { type: 'error' });
             }
         }
 
@@ -3631,6 +3450,15 @@
                                    onchange="updateDropdownOption(${opt.id}, 'sort_order', parseInt(this.value))">
                         </td>
                         <td>
+                            <select class="form-select form-select-sm" style="width: 100px"
+                                    onchange="updateDropdownOption(${opt.id}, 'min_role', this.value)">
+                                <option value="Viewer" ${opt.min_role === 'Viewer' ? 'selected' : ''}>Viewer</option>
+                                <option value="User" ${opt.min_role === 'User' ? 'selected' : ''}>User</option>
+                                <option value="Manager" ${opt.min_role === 'Manager' ? 'selected' : ''}>Manager</option>
+                                <option value="Admin" ${opt.min_role === 'Admin' ? 'selected' : ''}>Admin</option>
+                            </select>
+                        </td>
+                        <td>
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" ${opt.is_active ? 'checked' : ''}
                                        onchange="updateDropdownOption(${opt.id}, 'is_active', this.checked)">
@@ -3672,6 +3500,15 @@
                         <td>
                             <input type="number" class="form-control form-control-sm" style="width: 70px" value="${opt.sort_order}"
                                    onchange="updateDropdownOption(${opt.id}, 'sort_order', parseInt(this.value))">
+                        </td>
+                        <td>
+                            <select class="form-select form-select-sm" style="width: 100px"
+                                    onchange="updateDropdownOption(${opt.id}, 'min_role', this.value)">
+                                <option value="Viewer" ${opt.min_role === 'Viewer' ? 'selected' : ''}>Viewer</option>
+                                <option value="User" ${opt.min_role === 'User' ? 'selected' : ''}>User</option>
+                                <option value="Manager" ${opt.min_role === 'Manager' ? 'selected' : ''}>Manager</option>
+                                <option value="Admin" ${opt.min_role === 'Admin' ? 'selected' : ''}>Admin</option>
+                            </select>
                         </td>
                         <td>
                             <div class="form-check form-switch">
@@ -3728,12 +3565,14 @@
             const colorInput = document.getElementById(`new${prefix}Color`);
             const opacityInput = document.getElementById(`new${prefix}Opacity`);
             const orderInput = document.getElementById(`new${prefix}Order`);
+            const minRoleInput = document.getElementById(`new${prefix}MinRole`);
 
             const value = valueInput.value.trim();
             const label = labelInput.value.trim();
             const color = colorInput.value || '#0d6efd';
             const opacity = parseFloat(opacityInput.value) || 0.7;
             const sortOrder = parseInt(orderInput.value) || 0;
+            const minRole = minRoleInput ? minRoleInput.value : 'Viewer';
 
             if (!value || !label) {
                 showToast('Please fill in both Value and Label', 'warning');
@@ -3751,7 +3590,8 @@
                         color: color,
                         opacity: opacity,
                         sort_order: sortOrder,
-                        is_active: true
+                        is_active: true,
+                        min_role: minRole
                     })
                 });
 
@@ -3801,7 +3641,8 @@
         }
 
         async function deleteDropdownOption(optionId) {
-            if (!confirm('Are you sure you want to delete this option?')) return;
+            const confirmed = await JarvisDialog.confirm('Are you sure you want to delete this option?', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/api/dropdown-options/${optionId}`, {
@@ -4067,7 +3908,7 @@
             settings.logo = logoSettings;
 
             if (!themeName) {
-                alert('Please enter a theme name');
+                await JarvisDialog.alert('Please enter a theme name', { type: 'warning' });
                 return;
             }
 
@@ -4090,20 +3931,21 @@
                 if (data.success) {
                     currentTheme = data.theme;
                     currentThemeId = data.theme.id;
-                    alert('Theme saved successfully! Refresh the page to see changes applied.');
+                    await JarvisDialog.alert('Theme saved successfully! Refresh the page to see changes applied.', { type: 'success' });
                 } else {
-                    alert('Error saving theme: ' + (data.error || 'Unknown error'));
+                    await JarvisDialog.alert('Error saving theme: ' + (data.error || 'Unknown error'), { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error saving theme:', err);
-                alert('Error saving theme: ' + err.message);
+                await JarvisDialog.alert('Error saving theme: ' + err.message, { type: 'error' });
             } finally {
                 hideLoading();
             }
         }
 
-        function resetThemeToDefault() {
-            if (confirm('Reset theme to default Jarvis colors? This will not save automatically.')) {
+        async function resetThemeToDefault() {
+            const confirmed = await JarvisDialog.confirm('Reset theme to default Jarvis colors? This will not save automatically.');
+            if (confirmed) {
                 document.getElementById('themeName').value = 'Jarvis Default';
                 populateThemeForm({ theme_name: 'Jarvis Default', settings: defaultTheme, is_active: true });
             }
@@ -4279,7 +4121,7 @@
             };
 
             if (!data.module_key || !data.name) {
-                alert('Module Key and Name are required');
+                await JarvisDialog.alert('Module Key and Name are required', { type: 'warning' });
                 return;
             }
 
@@ -4297,11 +4139,11 @@
                     loadModuleMenu();
                 } else {
                     const err = await res.json();
-                    alert(err.error || 'Failed to save module');
+                    await JarvisDialog.alert(err.error || 'Failed to save module', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error saving module:', err);
-                alert('Failed to save module');
+                await JarvisDialog.alert('Failed to save module', { type: 'error' });
             }
         }
 
@@ -4314,18 +4156,19 @@
                 msg += '\n\nWarning: This will also delete all sub-pages!';
             }
 
-            if (!confirm(msg)) return;
+            const confirmed = await JarvisDialog.confirm(msg, { danger: true });
+            if (!confirmed) return;
 
             try {
                 const res = await fetch(`/api/module-menu/${itemId}`, { method: 'DELETE' });
                 if (res.ok) {
                     loadModuleMenu();
                 } else {
-                    alert('Failed to delete module');
+                    await JarvisDialog.alert('Failed to delete module', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error deleting module:', err);
-                alert('Failed to delete module');
+                await JarvisDialog.alert('Failed to delete module', { type: 'error' });
             }
         }
 
@@ -4525,7 +4368,7 @@
         async function saveAllPermissions() {
             const roleIds = Object.keys(pendingPermissionChanges);
             if (roleIds.length === 0) {
-                alert('No changes to save.');
+                await JarvisDialog.alert('No changes to save.', { type: 'warning' });
                 return;
             }
 
@@ -4541,12 +4384,12 @@
                 }
 
                 pendingPermissionChanges = {};
-                alert('Permissions saved successfully!');
+                await JarvisDialog.alert('Permissions saved successfully!', { type: 'success' });
                 // Reload to get fresh data
                 await loadPermissionMatrix();
             } catch (err) {
                 console.error('Error saving permissions:', err);
-                alert('Error saving permissions: ' + err.message);
+                await JarvisDialog.alert('Error saving permissions: ' + err.message, { type: 'error' });
             } finally {
                 hideLoading();
             }
@@ -4613,7 +4456,7 @@
             const description = document.getElementById('addBonusTypeDescription').value.trim();
 
             if (!name || isNaN(amount)) {
-                alert('Name and Amount are required');
+                await JarvisDialog.alert('Name and Amount are required', { type: 'warning' });
                 return;
             }
 
@@ -4637,11 +4480,11 @@
                     document.getElementById('addBonusTypeDescription').value = '';
                     await loadBonusTypes();
                 } else {
-                    alert('Error saving bonus type');
+                    await JarvisDialog.alert('Error saving bonus type', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving bonus type');
+                await JarvisDialog.alert('Error saving bonus type', { type: 'error' });
             }
         }
 
@@ -4666,7 +4509,7 @@
             const isActive = document.getElementById('editBonusTypeIsActive').checked;
 
             if (!name || isNaN(amount)) {
-                alert('Name and Amount are required');
+                await JarvisDialog.alert('Name and Amount are required', { type: 'warning' });
                 return;
             }
 
@@ -4687,16 +4530,17 @@
                     bootstrap.Modal.getInstance(document.getElementById('editBonusTypeModal')).hide();
                     await loadBonusTypes();
                 } else {
-                    alert('Error updating bonus type');
+                    await JarvisDialog.alert('Error updating bonus type', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error updating bonus type');
+                await JarvisDialog.alert('Error updating bonus type', { type: 'error' });
             }
         }
 
         async function deleteBonusType(id, name) {
-            if (!confirm(`Are you sure you want to deactivate "${name}"?`)) {
+            const confirmed = await JarvisDialog.confirm(`Are you sure you want to deactivate "${name}"?`, { danger: true });
+            if (!confirmed) {
                 return;
             }
 
@@ -4708,24 +4552,22 @@
                 if (resp.ok) {
                     await loadBonusTypes();
                 } else {
-                    alert('Error deleting bonus type');
+                    await JarvisDialog.alert('Error deleting bonus type', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting bonus type');
+                await JarvisDialog.alert('Error deleting bonus type', { type: 'error' });
             }
         }
 
         // Load company structure when Company Structure tab is shown
         document.getElementById('company-structure-tab').addEventListener('shown.bs.tab', async function() {
-            initEmployeeColumnConfig();
             // Load companies first since filters depends on hrCompaniesData
             await loadHrCompanies();
             loadMasterBrands();
             loadMasterDepts();
             loadMasterSubdepts();
             loadHrDepartments();
-            loadHrEmployees();
         });
 
         // Load bonus types when HR tab is shown
@@ -4742,7 +4584,7 @@
                 }
                 hrCompaniesData = await resp.json();
                 console.log('Companies loaded:', hrCompaniesData.length);
-                renderHrCompanies();
+                filterCompanies(); // This will set filteredCompaniesData and call renderHrCompanies
                 populateHrCompanyFilters();
                 document.getElementById('hrStatsCompanies').textContent = hrCompaniesData.length;
             } catch (err) {
@@ -4754,12 +4596,14 @@
 
         function renderHrCompanies() {
             const tbody = document.getElementById('hrCompaniesTable');
-            if (hrCompaniesData.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3"><i class="bi bi-inbox"></i> No companies found</td></tr>';
+            if (filteredCompaniesData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3"><i class="bi bi-inbox"></i> No companies found</td></tr>';
+                updateCompaniesSelection();
                 return;
             }
-            tbody.innerHTML = hrCompaniesData.map(c => `
-                <tr data-company="${c.company}">
+            tbody.innerHTML = filteredCompaniesData.map(c => `
+                <tr data-company="${c.company}" class="${selectedCompanies.has(c.id) ? 'table-primary' : ''}">
+                    <td><input type="checkbox" class="form-check-input" ${selectedCompanies.has(c.id) ? 'checked' : ''} onchange="toggleCompanySelect(${c.id})"></td>
                     <td><strong>${c.company}</strong></td>
                     <td><code>${c.vat || '-'}</code></td>
                     <td>
@@ -4772,6 +4616,240 @@
                     </td>
                 </tr>
             `).join('');
+            updateCompaniesSelection();
+        }
+
+        function filterCompanies() {
+            const searchTerm = (document.getElementById('companiesSearchInput')?.value || '').toLowerCase().trim();
+            filteredCompaniesData = hrCompaniesData.filter(c => {
+                if (!searchTerm) return true;
+                const searchFields = [c.company || '', c.vat || ''].join(' ').toLowerCase();
+                return searchFields.includes(searchTerm);
+            });
+            document.getElementById('companiesCount').textContent = filteredCompaniesData.length;
+            renderHrCompanies();
+        }
+
+        function clearCompaniesSearch() {
+            document.getElementById('companiesSearchInput').value = '';
+            filterCompanies();
+        }
+
+        // ============== Selection Functions ==============
+        function toggleSelectAllCompanies() {
+            const selectAll = document.getElementById('companiesSelectAll');
+            const visibleIds = filteredCompaniesData.map(c => c.id);
+            if (selectAll.checked) {
+                visibleIds.forEach(id => selectedCompanies.add(id));
+            } else {
+                visibleIds.forEach(id => selectedCompanies.delete(id));
+            }
+            updateCompaniesSelection();
+            renderHrCompanies();
+        }
+
+        function toggleCompanySelect(id) {
+            if (selectedCompanies.has(id)) {
+                selectedCompanies.delete(id);
+            } else {
+                selectedCompanies.add(id);
+            }
+            updateCompaniesSelection();
+        }
+
+        function updateCompaniesSelection() {
+            const countEl = document.getElementById('companiesSelectedCount');
+            const deleteBtn = document.getElementById('companiesDeleteSelectedBtn');
+            const selectAll = document.getElementById('companiesSelectAll');
+            const visibleIds = filteredCompaniesData.map(c => c.id);
+            const visibleSelected = visibleIds.filter(id => selectedCompanies.has(id));
+
+            if (selectedCompanies.size > 0) {
+                countEl.textContent = `${selectedCompanies.size} selected`;
+                countEl.classList.remove('d-none');
+                deleteBtn.classList.remove('d-none');
+            } else {
+                countEl.classList.add('d-none');
+                deleteBtn.classList.add('d-none');
+            }
+
+            // Update select all checkbox state
+            if (selectAll) {
+                selectAll.checked = visibleIds.length > 0 && visibleSelected.length === visibleIds.length;
+                selectAll.indeterminate = visibleSelected.length > 0 && visibleSelected.length < visibleIds.length;
+            }
+        }
+
+        function toggleSelectAllBrands() {
+            const selectAll = document.getElementById('brandsSelectAll');
+            const visibleIds = filteredBrandsData.map(b => b.id);
+            if (selectAll.checked) {
+                visibleIds.forEach(id => selectedBrands.add(id));
+            } else {
+                visibleIds.forEach(id => selectedBrands.delete(id));
+            }
+            updateBrandsSelection();
+            renderMasterBrands();
+        }
+
+        function toggleBrandSelect(id) {
+            if (selectedBrands.has(id)) {
+                selectedBrands.delete(id);
+            } else {
+                selectedBrands.add(id);
+            }
+            updateBrandsSelection();
+        }
+
+        function updateBrandsSelection() {
+            const countEl = document.getElementById('brandsSelectedCount');
+            const deleteBtn = document.getElementById('brandsDeleteSelectedBtn');
+            const selectAll = document.getElementById('brandsSelectAll');
+            const visibleIds = filteredBrandsData.map(b => b.id);
+            const visibleSelected = visibleIds.filter(id => selectedBrands.has(id));
+
+            if (selectedBrands.size > 0) {
+                countEl.textContent = `${selectedBrands.size} selected`;
+                countEl.classList.remove('d-none');
+                deleteBtn.classList.remove('d-none');
+            } else {
+                countEl.classList.add('d-none');
+                deleteBtn.classList.add('d-none');
+            }
+
+            if (selectAll) {
+                selectAll.checked = visibleIds.length > 0 && visibleSelected.length === visibleIds.length;
+                selectAll.indeterminate = visibleSelected.length > 0 && visibleSelected.length < visibleIds.length;
+            }
+        }
+
+        function toggleSelectAllDepts() {
+            const selectAll = document.getElementById('deptsSelectAll');
+            const visibleIds = filteredDeptsData.map(d => d.id);
+            if (selectAll.checked) {
+                visibleIds.forEach(id => selectedDepts.add(id));
+            } else {
+                visibleIds.forEach(id => selectedDepts.delete(id));
+            }
+            updateDeptsSelection();
+            renderMasterDepts();
+        }
+
+        function toggleDeptSelect(id) {
+            if (selectedDepts.has(id)) {
+                selectedDepts.delete(id);
+            } else {
+                selectedDepts.add(id);
+            }
+            updateDeptsSelection();
+        }
+
+        function updateDeptsSelection() {
+            const countEl = document.getElementById('deptsSelectedCount');
+            const deleteBtn = document.getElementById('deptsDeleteSelectedBtn');
+            const selectAll = document.getElementById('deptsSelectAll');
+            const visibleIds = filteredDeptsData.map(d => d.id);
+            const visibleSelected = visibleIds.filter(id => selectedDepts.has(id));
+
+            if (selectedDepts.size > 0) {
+                countEl.textContent = `${selectedDepts.size} selected`;
+                countEl.classList.remove('d-none');
+                deleteBtn.classList.remove('d-none');
+            } else {
+                countEl.classList.add('d-none');
+                deleteBtn.classList.add('d-none');
+            }
+
+            if (selectAll) {
+                selectAll.checked = visibleIds.length > 0 && visibleSelected.length === visibleIds.length;
+                selectAll.indeterminate = visibleSelected.length > 0 && visibleSelected.length < visibleIds.length;
+            }
+        }
+
+        function toggleSelectAllSubdepts() {
+            const selectAll = document.getElementById('subdeptsSelectAll');
+            const visibleIds = filteredSubdeptsData.map(s => s.id);
+            if (selectAll.checked) {
+                visibleIds.forEach(id => selectedSubdepts.add(id));
+            } else {
+                visibleIds.forEach(id => selectedSubdepts.delete(id));
+            }
+            updateSubdeptsSelection();
+            renderMasterSubdepts();
+        }
+
+        function toggleSubdeptSelect(id) {
+            if (selectedSubdepts.has(id)) {
+                selectedSubdepts.delete(id);
+            } else {
+                selectedSubdepts.add(id);
+            }
+            updateSubdeptsSelection();
+        }
+
+        function updateSubdeptsSelection() {
+            const countEl = document.getElementById('subdeptsSelectedCount');
+            const deleteBtn = document.getElementById('subdeptsDeleteSelectedBtn');
+            const selectAll = document.getElementById('subdeptsSelectAll');
+            const visibleIds = filteredSubdeptsData.map(s => s.id);
+            const visibleSelected = visibleIds.filter(id => selectedSubdepts.has(id));
+
+            if (selectedSubdepts.size > 0) {
+                countEl.textContent = `${selectedSubdepts.size} selected`;
+                countEl.classList.remove('d-none');
+                deleteBtn.classList.remove('d-none');
+            } else {
+                countEl.classList.add('d-none');
+                deleteBtn.classList.add('d-none');
+            }
+
+            if (selectAll) {
+                selectAll.checked = visibleIds.length > 0 && visibleSelected.length === visibleIds.length;
+                selectAll.indeterminate = visibleSelected.length > 0 && visibleSelected.length < visibleIds.length;
+            }
+        }
+
+        function toggleSelectAllStructure() {
+            const selectAll = document.getElementById('structureSelectAll');
+            const visibleIds = filteredStructureData.map(s => s.id);
+            if (selectAll.checked) {
+                visibleIds.forEach(id => selectedStructure.add(id));
+            } else {
+                visibleIds.forEach(id => selectedStructure.delete(id));
+            }
+            updateStructureSelection();
+            renderStructure();
+        }
+
+        function toggleStructureSelect(id) {
+            if (selectedStructure.has(id)) {
+                selectedStructure.delete(id);
+            } else {
+                selectedStructure.add(id);
+            }
+            updateStructureSelection();
+        }
+
+        function updateStructureSelection() {
+            const countEl = document.getElementById('structureSelectedCount');
+            const deleteBtn = document.getElementById('structureDeleteSelectedBtn');
+            const selectAll = document.getElementById('structureSelectAll');
+            const visibleIds = filteredStructureData.map(s => s.id);
+            const visibleSelected = visibleIds.filter(id => selectedStructure.has(id));
+
+            if (selectedStructure.size > 0) {
+                countEl.textContent = `${selectedStructure.size} selected`;
+                countEl.classList.remove('d-none');
+                deleteBtn.classList.remove('d-none');
+            } else {
+                countEl.classList.add('d-none');
+                deleteBtn.classList.add('d-none');
+            }
+
+            if (selectAll) {
+                selectAll.checked = visibleIds.length > 0 && visibleSelected.length === visibleIds.length;
+                selectAll.indeterminate = visibleSelected.length > 0 && visibleSelected.length < visibleIds.length;
+            }
         }
 
         function populateHrCompanyFilters() {
@@ -4794,11 +4872,7 @@
         // Track brands for the current company being edited
         let currentCompanyBrands = []; // [{id: null/number, brand: string, isNew: bool, isDeleted: bool}]
 
-        async function openAddHrCompanyModal() {
-            // Ensure master brands are loaded for dropdown
-            if (masterBrandsData.length === 0) {
-                await loadMasterBrands();
-            }
+        function openAddHrCompanyModal() {
             document.getElementById('hrCompanyModalTitle').textContent = 'Add Company';
             document.getElementById('hrCompanyForm').reset();
             document.getElementById('hrCompanyId').value = '';
@@ -4807,11 +4881,7 @@
             renderCompanyBrands();
         }
 
-        async function editHrCompany(companyName) {
-            // Ensure master brands are loaded for dropdown
-            if (masterBrandsData.length === 0) {
-                await loadMasterBrands();
-            }
+        function editHrCompany(companyName) {
             const company = hrCompaniesData.find(c => c.company === companyName);
             if (!company) return;
 
@@ -4821,11 +4891,10 @@
             document.getElementById('hrCompanyName').value = company.company;
             document.getElementById('hrCompanyVat').value = company.vat || '';
 
-            // Load brands from brands_list (now uses brand_id FK)
+            // Load brands from brands_list
             currentCompanyBrands = (company.brands_list || []).map(b => ({
-                id: b.id,           // company_brands.id (for update/delete)
-                brand_id: b.brand_id,  // brands.id (FK)
-                brand: b.brand,     // brand name (for display)
+                id: b.id,
+                brand: b.brand,
                 isNew: false,
                 isDeleted: false
             }));
@@ -4844,22 +4913,12 @@
                 return;
             }
 
-            // Get brand IDs already assigned to this company (to avoid duplicates)
-            const assignedBrandIds = activeBrands.map(b => b.brand_id).filter(id => id);
-
             container.innerHTML = activeBrands.map((b, idx) => {
                 const realIdx = currentCompanyBrands.indexOf(b);
-                // Build options - include current brand_id in options even if assigned
-                const options = masterBrandsData
-                    .filter(mb => !assignedBrandIds.includes(mb.id) || mb.id === b.brand_id)
-                    .map(mb => `<option value="${mb.id}" ${mb.id === b.brand_id ? 'selected' : ''}>${escapeHtml(mb.name)}</option>`)
-                    .join('');
                 return `
                     <div class="d-flex align-items-center gap-2 mb-1" data-idx="${realIdx}">
-                        <select class="form-select form-select-sm" onchange="updateCompanyBrand(${realIdx}, this.value)">
-                            <option value="">Select brand...</option>
-                            ${options}
-                        </select>
+                        <input type="text" class="form-control form-control-sm" value="${b.brand}"
+                               onchange="updateCompanyBrand(${realIdx}, this.value)" placeholder="Brand name">
                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeCompanyBrand(${realIdx})" title="Remove">
                             <i class="bi bi-x"></i>
                         </button>
@@ -4869,23 +4928,17 @@
         }
 
         function addCompanyBrandRow() {
-            currentCompanyBrands.push({ id: null, brand_id: null, brand: '', isNew: true, isDeleted: false });
+            currentCompanyBrands.push({ id: null, brand: '', isNew: true, isDeleted: false });
             renderCompanyBrands();
-            // Focus the new select
+            // Focus the new input
             const container = document.getElementById('hrCompanyBrandsList');
-            const lastSelect = container.querySelector('select:last-of-type');
-            if (lastSelect) lastSelect.focus();
+            const lastInput = container.querySelector('input:last-of-type');
+            if (lastInput) lastInput.focus();
         }
 
         function updateCompanyBrand(idx, value) {
             if (currentCompanyBrands[idx]) {
-                const brandId = parseInt(value) || null;
-                currentCompanyBrands[idx].brand_id = brandId;
-                // Also update brand name for display purposes
-                const brand = masterBrandsData.find(b => b.id === brandId);
-                currentCompanyBrands[idx].brand = brand ? brand.name : '';
-                // Re-render to update available options in other dropdowns
-                renderCompanyBrands();
+                currentCompanyBrands[idx].brand = value.trim();
             }
         }
 
@@ -4911,7 +4964,7 @@
             };
 
             if (!data.company) {
-                alert('Company name is required');
+                await JarvisDialog.alert('Company name is required', { type: 'warning' });
                 return;
             }
 
@@ -4934,7 +4987,7 @@
 
                 if (!resp.ok) {
                     const error = await resp.json();
-                    alert(error.error || 'Error saving company');
+                    await JarvisDialog.alert(error.error || 'Error saving company', { type: 'error' });
                     return;
                 }
 
@@ -4950,24 +5003,24 @@
 
                 // Now save brands if we have a company ID
                 if (companyId) {
-                    // Process brand changes (using brand_id FK)
+                    // Process brand changes
                     for (const brand of currentCompanyBrands) {
                         if (brand.isDeleted && brand.id) {
-                            // Delete existing company-brand link
+                            // Delete existing brand
                             await fetch(`/hr/events/api/structure/company-brands/${brand.id}`, { method: 'DELETE' });
-                        } else if (brand.isNew && brand.brand_id) {
-                            // Create new company-brand link
+                        } else if (brand.isNew && brand.brand) {
+                            // Create new brand
                             await fetch('/hr/events/api/structure/company-brands', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ company_id: parseInt(companyId), brand_id: brand.brand_id })
+                                body: JSON.stringify({ company_id: parseInt(companyId), brand: brand.brand })
                             });
-                        } else if (!brand.isNew && !brand.isDeleted && brand.id && brand.brand_id) {
-                            // Update existing link (in case brand selection changed)
+                        } else if (!brand.isNew && !brand.isDeleted && brand.id && brand.brand) {
+                            // Update existing brand (in case name changed)
                             await fetch(`/hr/events/api/structure/company-brands/${brand.id}`, {
                                 method: 'PUT',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ brand_id: brand.brand_id })
+                                body: JSON.stringify({ brand: brand.brand })
                             });
                         }
                     }
@@ -4977,23 +5030,64 @@
                 loadHrCompanies();
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving company');
+                await JarvisDialog.alert('Error saving company', { type: 'error' });
             }
         }
 
         async function deleteHrCompany(companyName) {
-            if (!confirm(`Delete company "${companyName}"? This will also delete all associated brands. This cannot be undone.`)) return;
+            const confirmed = await JarvisDialog.confirm(`Delete company "${companyName}"? This will also delete all associated brands. This cannot be undone.`, { danger: true });
+            if (!confirmed) return;
 
             try {
                 const resp = await fetch(`/api/companies-vat/${encodeURIComponent(companyName)}`, { method: 'DELETE' });
                 if (resp.ok) {
                     loadHrCompanies();
                 } else {
-                    alert('Error deleting company');
+                    await JarvisDialog.alert('Error deleting company', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting company');
+                await JarvisDialog.alert('Error deleting company', { type: 'error' });
+            }
+        }
+
+        async function bulkDeleteCompanies() {
+            const ids = Array.from(selectedCompanies);
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} ${ids.length === 1 ? 'company' : 'companies'}? This will also delete all associated brands. This cannot be undone.`,
+                { danger: true, confirmText: 'Delete All' }
+            );
+            if (!confirmed) return;
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const id of ids) {
+                const company = hrCompaniesData.find(c => c.id === id);
+                if (!company) continue;
+
+                try {
+                    const resp = await fetch(`/api/companies-vat/${encodeURIComponent(company.company)}`, { method: 'DELETE' });
+                    if (resp.ok) {
+                        successCount++;
+                        selectedCompanies.delete(id);
+                    } else {
+                        errorCount++;
+                    }
+                } catch (err) {
+                    console.error('Error deleting company:', err);
+                    errorCount++;
+                }
+            }
+
+            loadHrCompanies();
+
+            if (errorCount > 0) {
+                await JarvisDialog.alert(`Deleted ${successCount} companies. ${errorCount} failed.`, { type: 'warning' });
+            } else {
+                JarvisToast.success(`Deleted ${successCount} companies`);
             }
         }
 
@@ -5108,7 +5202,7 @@
             };
 
             if (!data.company || !data.department) {
-                alert('Company and Department are required');
+                await JarvisDialog.alert('Company and Department are required', { type: 'warning' });
                 return;
             }
 
@@ -5126,453 +5220,28 @@
                     bootstrap.Modal.getInstance(document.getElementById('hrDepartmentModal')).hide();
                     loadHrDepartments();
                 } else {
-                    alert('Error saving department');
+                    await JarvisDialog.alert('Error saving department', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving department');
+                await JarvisDialog.alert('Error saving department', { type: 'error' });
             }
         }
 
         async function deleteHrDepartment(id) {
-            if (!confirm('Delete this department? This cannot be undone.')) return;
+            const confirmed = await JarvisDialog.confirm('Delete this department? This cannot be undone.', { danger: true });
+            if (!confirmed) return;
 
             try {
                 const resp = await fetch(`/api/department-structures/${id}`, { method: 'DELETE' });
                 if (resp.ok) {
                     loadHrDepartments();
                 } else {
-                    alert('Error deleting department');
+                    await JarvisDialog.alert('Error deleting department', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting department');
-            }
-        }
-
-        // ============== Employees (Core API) ==============
-        async function loadHrEmployees() {
-            try {
-                const resp = await fetch('/api/employees');
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                hrEmployeesData = await resp.json();
-                renderHrEmployees();
-                populateHrEmployeeFilters();
-                const activeCount = hrEmployeesData.filter(e => e.is_active).length;
-                document.getElementById('hrStatsEmployees').textContent = activeCount;
-            } catch (err) {
-                console.error('Error loading employees:', err);
-                document.getElementById('hrEmployeesTable').innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3"><i class="bi bi-exclamation-triangle"></i> Error loading employees</td></tr>';
-                document.getElementById('hrStatsEmployees').textContent = '-';
-            }
-        }
-
-        function initEmployeeColumnConfig() {
-            const saved = localStorage.getItem('employeeColumnConfig');
-            if (saved) {
-                employeeColumnConfig = JSON.parse(saved);
-                // Ensure all default columns exist (for migrations)
-                DEFAULT_EMPLOYEE_COLUMNS.forEach(dc => {
-                    if (!employeeColumnConfig.find(c => c.id === dc.id)) {
-                        // Insert before actions column
-                        const actionsIdx = employeeColumnConfig.findIndex(c => c.id === 'actions');
-                        if (actionsIdx >= 0) {
-                            employeeColumnConfig.splice(actionsIdx, 0, { ...dc });
-                        } else {
-                            employeeColumnConfig.push({ ...dc });
-                        }
-                    }
-                });
-            } else {
-                employeeColumnConfig = JSON.parse(JSON.stringify(DEFAULT_EMPLOYEE_COLUMNS));
-            }
-            renderEmployeeColumnList();
-        }
-
-        function saveEmployeeColumnConfig() {
-            localStorage.setItem('employeeColumnConfig', JSON.stringify(employeeColumnConfig));
-            renderHrEmployees();
-        }
-
-        function resetEmployeeColumnConfig() {
-            employeeColumnConfig = JSON.parse(JSON.stringify(DEFAULT_EMPLOYEE_COLUMNS));
-            saveEmployeeColumnConfig();
-            renderEmployeeColumnList();
-        }
-
-        function renderEmployeeColumnList() {
-            const container = document.getElementById('employeeColumnList');
-            container.innerHTML = employeeColumnConfig.map((col, idx) => `
-                <li class="list-group-item d-flex justify-content-between align-items-center ${col.visible ? '' : 'text-muted'}" data-idx="${idx}" draggable="true" style="cursor: grab;">
-                    <span>
-                        <i class="bi bi-grip-vertical me-2 text-muted"></i>
-                        ${col.name}
-                    </span>
-                    <div class="form-check form-switch mb-0">
-                        <input class="form-check-input emp-col-toggle" type="checkbox" data-idx="${idx}" ${col.visible ? 'checked' : ''} ${col.id === 'actions' ? 'disabled' : ''}>
-                    </div>
-                </li>
-            `).join('');
-
-            // Add toggle event listeners
-            container.querySelectorAll('.emp-col-toggle').forEach(toggle => {
-                toggle.addEventListener('change', (e) => {
-                    const idx = parseInt(e.target.dataset.idx);
-                    employeeColumnConfig[idx].visible = e.target.checked;
-                    saveEmployeeColumnConfig();
-                    renderEmployeeColumnList();
-                });
-            });
-
-            // Add drag-and-drop functionality
-            setupEmployeeDragAndDrop(container);
-        }
-
-        function setupEmployeeDragAndDrop(container) {
-            let draggedItem = null;
-
-            container.querySelectorAll('li').forEach(item => {
-                item.addEventListener('dragstart', (e) => {
-                    draggedItem = item;
-                    item.style.opacity = '0.5';
-                });
-
-                item.addEventListener('dragend', (e) => {
-                    item.style.opacity = '1';
-                    draggedItem = null;
-                });
-
-                item.addEventListener('dragover', (e) => {
-                    e.preventDefault();
-                });
-
-                item.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    if (draggedItem && draggedItem !== item) {
-                        const fromIdx = parseInt(draggedItem.dataset.idx);
-                        const toIdx = parseInt(item.dataset.idx);
-
-                        // Reorder array
-                        const [movedItem] = employeeColumnConfig.splice(fromIdx, 1);
-                        employeeColumnConfig.splice(toIdx, 0, movedItem);
-
-                        saveEmployeeColumnConfig();
-                        renderEmployeeColumnList();
-                    }
-                });
-            });
-        }
-
-        function renderHrEmployees() {
-            const filter = document.getElementById('hrEmployeeCompanyFilter').value;
-            // Filter by company
-            const filtered = filter
-                ? hrEmployeesData.filter(e => e.company && e.company.toLowerCase() === filter.toLowerCase())
-                : hrEmployeesData;
-
-            const thead = document.getElementById('employeesTableHead').querySelector('tr');
-            const tbody = document.getElementById('hrEmployeesTable');
-            const visibleCols = employeeColumnConfig.filter(c => c.visible);
-
-            // Render header
-            thead.innerHTML = visibleCols.map(col => {
-                if (col.id === 'actions') {
-                    return `<th style="width: 80px;">Actions</th>`;
-                }
-                return `<th>${col.name}</th>`;
-            }).join('');
-
-            if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="${visibleCols.length}" class="text-center text-muted py-3"><i class="bi bi-inbox"></i> No employees found</td></tr>`;
-                return;
-            }
-
-            tbody.innerHTML = filtered.map(e => {
-                const cells = visibleCols.map(col => {
-                    switch (col.id) {
-                        case 'name':
-                            return `<td><strong>${e.name || '-'}</strong></td>`;
-                        case 'company':
-                            return `<td>${e.company || '-'}</td>`;
-                        case 'brand':
-                            return `<td>${e.brand || '-'}</td>`;
-                        case 'departments':
-                            return `<td>${e.departments || '-'}</td>`;
-                        case 'subdepartment':
-                            return `<td>${e.subdepartment || '-'}</td>`;
-                        case 'email':
-                            return `<td>${e.email || '-'}</td>`;
-                        case 'phone':
-                            return `<td>${e.phone || '-'}</td>`;
-                        case 'status':
-                            return `<td>${e.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>`;
-                        case 'actions':
-                            return `<td>
-                                <button class="btn btn-sm btn-outline-primary" onclick="editHrEmployee(${e.id})" title="Edit">
-                                    <i class="bi bi-pencil"></i>
-                                </button>
-                                <button class="btn btn-sm btn-outline-danger" onclick="deleteHrEmployee(${e.id}, '${(e.name || '').replace(/'/g, "\\'")}')" title="Delete">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </td>`;
-                        default:
-                            return `<td>-</td>`;
-                    }
-                });
-                return `<tr data-id="${e.id}">${cells.join('')}</tr>`;
-            }).join('');
-        }
-
-        function populateHrEmployeeFilters() {
-            const select = document.getElementById('hrEmployeeCompanyFilter');
-            if (!select) return;
-            // Use companies from the companies table for consistency
-            select.innerHTML = '<option value="">All Companies</option>';
-            hrCompaniesData.forEach(c => {
-                select.innerHTML += `<option value="${c.company}">${c.company}</option>`;
-            });
-        }
-
-        document.getElementById('hrEmployeeCompanyFilter').addEventListener('change', renderHrEmployees);
-
-        function openAddHrEmployeeModal() {
-            document.getElementById('hrEmployeeModalTitle').textContent = 'Add Employee';
-            document.getElementById('hrEmployeeForm').reset();
-            document.getElementById('hrEmployeeId').value = '';
-            document.getElementById('hrEmpNotify').checked = true;
-            document.getElementById('hrEmpIsActive').checked = true;
-            // Populate company dropdown from hrCompaniesData
-            populateHrEmpCompanyDropdown();
-            // Reset brand, department, subdepartment
-            document.getElementById('hrEmpBrand').innerHTML = '<option value="">Select Brand (optional)</option>';
-            document.getElementById('hrEmpDept').innerHTML = '<option value="">Select Department (optional)</option>';
-            document.getElementById('hrEmpSubdept').innerHTML = '<option value="">Select Subdepartment (optional)</option>';
-        }
-
-        function populateHrEmpCompanyDropdown() {
-            const select = document.getElementById('hrEmpCompany');
-            select.innerHTML = '<option value="">Select Company (optional)</option>';
-            hrCompaniesData.forEach(c => {
-                select.innerHTML += `<option value="${c.company}">${c.company}</option>`;
-            });
-        }
-
-        function onHrEmpCompanyChange() {
-            const company = document.getElementById('hrEmpCompany').value;
-            const brandSelect = document.getElementById('hrEmpBrand');
-            const deptSelect = document.getElementById('hrEmpDept');
-            const subdeptSelect = document.getElementById('hrEmpSubdept');
-
-            brandSelect.innerHTML = '<option value="">Select Brand (optional)</option>';
-            deptSelect.innerHTML = '<option value="">Select Department (optional)</option>';
-            subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>';
-
-            if (!company) return;
-
-            // Get unique brands for selected company from department structure
-            const brands = [...new Set(hrDepartmentsData
-                .filter(d => d.company === company && d.brand)
-                .map(d => d.brand))];
-
-            brands.forEach(b => {
-                brandSelect.innerHTML += `<option value="${b}">${b}</option>`;
-            });
-
-            // Also populate departments without brand
-            const deptsNoBrand = [...new Set(hrDepartmentsData
-                .filter(d => d.company === company && !d.brand && d.department)
-                .map(d => d.department))];
-
-            deptsNoBrand.forEach(d => {
-                deptSelect.innerHTML += `<option value="${d}">${d}</option>`;
-            });
-        }
-
-        function onHrEmpBrandChange() {
-            const company = document.getElementById('hrEmpCompany').value;
-            const brand = document.getElementById('hrEmpBrand').value;
-            const deptSelect = document.getElementById('hrEmpDept');
-            const subdeptSelect = document.getElementById('hrEmpSubdept');
-
-            deptSelect.innerHTML = '<option value="">Select Department (optional)</option>';
-            subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>';
-
-            if (!company) return;
-
-            // Get departments for selected company and brand
-            const depts = [...new Set(hrDepartmentsData
-                .filter(d => d.company === company && (brand ? d.brand === brand : !d.brand) && d.department)
-                .map(d => d.department))];
-
-            depts.forEach(d => {
-                deptSelect.innerHTML += `<option value="${d}">${d}</option>`;
-            });
-        }
-
-        function onHrEmpDeptChange() {
-            const company = document.getElementById('hrEmpCompany').value;
-            const brand = document.getElementById('hrEmpBrand').value;
-            const dept = document.getElementById('hrEmpDept').value;
-            const subdeptSelect = document.getElementById('hrEmpSubdept');
-
-            subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>';
-
-            if (!company || !dept) return;
-
-            // Get subdepartments for selected company, brand, and department
-            const subdepts = [...new Set(hrDepartmentsData
-                .filter(d => d.company === company &&
-                            (brand ? d.brand === brand : !d.brand) &&
-                            d.department === dept &&
-                            d.subdepartment)
-                .map(d => d.subdepartment))];
-
-            subdepts.forEach(sd => {
-                subdeptSelect.innerHTML += `<option value="${sd}">${sd}</option>`;
-            });
-        }
-
-        function editHrEmployee(id) {
-            const emp = hrEmployeesData.find(e => e.id === id);
-            if (!emp) return;
-
-            document.getElementById('hrEmployeeModalTitle').textContent = 'Edit Employee';
-            document.getElementById('hrEmployeeId').value = id;
-            document.getElementById('hrEmpName').value = emp.name || '';
-            document.getElementById('hrEmpEmail').value = emp.email || '';
-            document.getElementById('hrEmpPhone').value = emp.phone || '';
-            document.getElementById('hrEmpNotify').checked = emp.notify_on_allocation !== false;
-            document.getElementById('hrEmpIsActive').checked = emp.is_active;
-
-            // Get dropdown elements
-            const companySelect = document.getElementById('hrEmpCompany');
-            const brandSelect = document.getElementById('hrEmpBrand');
-            const deptSelect = document.getElementById('hrEmpDept');
-            const subdeptSelect = document.getElementById('hrEmpSubdept');
-
-            // Populate company dropdown
-            populateHrEmpCompanyDropdown();
-
-            // Reset cascaded dropdowns
-            brandSelect.innerHTML = '<option value="">Select Brand (optional)</option>';
-            deptSelect.innerHTML = '<option value="">Select Department (optional)</option>';
-            subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>';
-
-            if (emp.company) {
-                // Add company to dropdown if not present
-                if (!Array.from(companySelect.options).find(o => o.value === emp.company)) {
-                    companySelect.innerHTML += `<option value="${emp.company}">${emp.company}</option>`;
-                }
-                companySelect.value = emp.company;
-
-                // Trigger cascade to populate brand dropdown
-                onHrEmpCompanyChange();
-
-                if (emp.brand) {
-                    // Add brand to dropdown if not present
-                    if (!Array.from(brandSelect.options).find(o => o.value === emp.brand)) {
-                        brandSelect.innerHTML += `<option value="${emp.brand}">${emp.brand}</option>`;
-                    }
-                    brandSelect.value = emp.brand;
-                    // Trigger cascade to populate department dropdown
-                    onHrEmpBrandChange();
-                }
-
-                if (emp.departments) {
-                    // Add department to dropdown if not present
-                    if (!Array.from(deptSelect.options).find(o => o.value === emp.departments)) {
-                        deptSelect.innerHTML += `<option value="${emp.departments}">${emp.departments}</option>`;
-                    }
-                    deptSelect.value = emp.departments;
-                    // Trigger cascade to populate subdepartment dropdown
-                    onHrEmpDeptChange();
-                }
-
-                if (emp.subdepartment) {
-                    // Add subdepartment to dropdown if not present
-                    if (!Array.from(subdeptSelect.options).find(o => o.value === emp.subdepartment)) {
-                        subdeptSelect.innerHTML += `<option value="${emp.subdepartment}">${emp.subdepartment}</option>`;
-                    }
-                    subdeptSelect.value = emp.subdepartment;
-                }
-            } else {
-                // No company - but still show legacy values if they exist
-                if (emp.brand) {
-                    brandSelect.innerHTML += `<option value="${emp.brand}" selected>${emp.brand}</option>`;
-                }
-                if (emp.departments) {
-                    deptSelect.innerHTML += `<option value="${emp.departments}" selected>${emp.departments}</option>`;
-                }
-                if (emp.subdepartment) {
-                    subdeptSelect.innerHTML += `<option value="${emp.subdepartment}" selected>${emp.subdepartment}</option>`;
-                }
-            }
-
-            const modal = new bootstrap.Modal(document.getElementById('hrEmployeeModal'));
-            modal.show();
-        }
-
-        async function saveHrEmployee() {
-            const id = document.getElementById('hrEmployeeId').value;
-
-            // Get all fields separately
-            const subdept = document.getElementById('hrEmpSubdept').value;
-            const dept = document.getElementById('hrEmpDept').value;
-            const brand = document.getElementById('hrEmpBrand').value;
-            const company = document.getElementById('hrEmpCompany').value;
-
-            const data = {
-                name: document.getElementById('hrEmpName').value.trim(),
-                email: document.getElementById('hrEmpEmail').value.trim() || null,
-                phone: document.getElementById('hrEmpPhone').value.trim() || null,
-                company: company || null,
-                brand: brand || null,
-                departments: dept || null,
-                subdepartment: subdept || null,
-                notify_on_allocation: document.getElementById('hrEmpNotify').checked,
-                is_active: document.getElementById('hrEmpIsActive').checked
-            };
-
-            if (!data.name) {
-                alert('Name is required');
-                return;
-            }
-
-            try {
-                const url = id ? `/api/employees/${id}` : '/api/employees';
-                const method = id ? 'PUT' : 'POST';
-
-                const resp = await fetch(url, {
-                    method: method,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-
-                if (resp.ok) {
-                    bootstrap.Modal.getInstance(document.getElementById('hrEmployeeModal')).hide();
-                    loadHrEmployees();
-                } else {
-                    alert('Error saving employee');
-                }
-            } catch (err) {
-                console.error('Error:', err);
-                alert('Error saving employee');
-            }
-        }
-
-        async function deleteHrEmployee(id, name) {
-            if (!confirm(`Delete employee "${name}"? This cannot be undone.`)) return;
-
-            try {
-                const resp = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
-                if (resp.ok) {
-                    loadHrEmployees();
-                } else {
-                    alert('Error deleting employee');
-                }
-            } catch (err) {
-                console.error('Error:', err);
-                alert('Error deleting employee');
+                await JarvisDialog.alert('Error deleting department', { type: 'error' });
             }
         }
 
@@ -5589,7 +5258,7 @@
                 const resp = await fetch('/hr/events/api/master/brands', { cache: 'no-store' });
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 masterBrandsData = await resp.json();
-                renderMasterBrands();
+                filterBrands(); // This sets filteredBrandsData and calls renderMasterBrands
                 document.getElementById('hrStatsBrands').textContent = masterBrandsData.length;
             } catch (err) {
                 console.error('Error loading brands:', err);
@@ -5597,14 +5266,31 @@
             }
         }
 
+        function filterBrands() {
+            const searchTerm = (document.getElementById('brandsSearchInput')?.value || '').toLowerCase().trim();
+            filteredBrandsData = masterBrandsData.filter(b => {
+                if (!searchTerm) return true;
+                return (b.name || '').toLowerCase().includes(searchTerm);
+            });
+            document.getElementById('brandsCount').textContent = filteredBrandsData.length;
+            renderMasterBrands();
+        }
+
+        function clearBrandsSearch() {
+            document.getElementById('brandsSearchInput').value = '';
+            filterBrands();
+        }
+
         function renderMasterBrands() {
             const tbody = document.getElementById('masterBrandsTable');
-            if (masterBrandsData.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted py-3">No brands found</td></tr>';
+            if (filteredBrandsData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">No brands found</td></tr>';
+                updateBrandsSelection();
                 return;
             }
-            tbody.innerHTML = masterBrandsData.map(b => `
-                <tr>
+            tbody.innerHTML = filteredBrandsData.map(b => `
+                <tr class="${selectedBrands.has(b.id) ? 'table-primary' : ''}">
+                    <td><input type="checkbox" class="form-check-input" ${selectedBrands.has(b.id) ? 'checked' : ''} onchange="toggleBrandSelect(${b.id})"></td>
                     <td>${b.name}</td>
                     <td>
                         <button class="btn btn-sm btn-link text-primary p-0 me-2" onclick="editMasterBrand(${b.id}, '${b.name.replace(/'/g, "\\'")}')"><i class="bi bi-pencil"></i></button>
@@ -5612,6 +5298,7 @@
                     </td>
                 </tr>
             `).join('');
+            updateBrandsSelection();
         }
 
         function openAddMasterBrandModal() {
@@ -5631,7 +5318,10 @@
         async function saveMasterBrand() {
             const id = document.getElementById('masterBrandId').value;
             const name = document.getElementById('masterBrandName').value.trim();
-            if (!name) return alert('Brand name is required');
+            if (!name) {
+                await JarvisDialog.alert('Brand name is required', { type: 'warning' });
+                return;
+            }
 
             const url = id ? `/hr/events/api/master/brands/${id}` : '/hr/events/api/master/brands';
             const method = id ? 'PUT' : 'POST';
@@ -5646,23 +5336,61 @@
                     loadMasterBrands();
                 } else {
                     const data = await resp.json();
-                    alert(data.error || 'Error saving brand');
+                    await JarvisDialog.alert(data.error || 'Error saving brand', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving brand');
+                await JarvisDialog.alert('Error saving brand', { type: 'error' });
             }
         }
 
         async function deleteMasterBrand(id, name) {
-            if (!confirm(`Delete brand "${name}"?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Delete brand "${name}"?`, { danger: true });
+            if (!confirmed) return;
             try {
                 const resp = await fetch(`/hr/events/api/master/brands/${id}`, { method: 'DELETE' });
                 if (resp.ok) loadMasterBrands();
-                else alert('Error deleting brand');
+                else await JarvisDialog.alert('Error deleting brand', { type: 'error' });
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting brand');
+                await JarvisDialog.alert('Error deleting brand', { type: 'error' });
+            }
+        }
+
+        async function bulkDeleteBrands() {
+            const ids = Array.from(selectedBrands);
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} ${ids.length === 1 ? 'brand' : 'brands'}? This cannot be undone.`,
+                { danger: true, confirmText: 'Delete All' }
+            );
+            if (!confirmed) return;
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const id of ids) {
+                try {
+                    const resp = await fetch(`/hr/events/api/master/brands/${id}`, { method: 'DELETE' });
+                    if (resp.ok) {
+                        successCount++;
+                        selectedBrands.delete(id);
+                    } else {
+                        errorCount++;
+                    }
+                } catch (err) {
+                    console.error('Error deleting brand:', err);
+                    errorCount++;
+                }
+            }
+
+            loadMasterBrands();
+
+            if (errorCount > 0) {
+                await JarvisDialog.alert(`Deleted ${successCount} brands. ${errorCount} failed.`, { type: 'warning' });
+            } else {
+                JarvisToast.success(`Deleted ${successCount} brands`);
             }
         }
 
@@ -5672,7 +5400,7 @@
                 const resp = await fetch('/hr/events/api/master/departments', { cache: 'no-store' });
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 masterDeptsData = await resp.json();
-                renderMasterDepts();
+                filterDepts(); // This sets filteredDeptsData and calls renderMasterDepts
                 document.getElementById('hrStatsDepartments').textContent = masterDeptsData.length;
             } catch (err) {
                 console.error('Error loading departments:', err);
@@ -5680,14 +5408,31 @@
             }
         }
 
+        function filterDepts() {
+            const searchTerm = (document.getElementById('deptsSearchInput')?.value || '').toLowerCase().trim();
+            filteredDeptsData = masterDeptsData.filter(d => {
+                if (!searchTerm) return true;
+                return (d.name || '').toLowerCase().includes(searchTerm);
+            });
+            document.getElementById('deptsCount').textContent = filteredDeptsData.length;
+            renderMasterDepts();
+        }
+
+        function clearDeptsSearch() {
+            document.getElementById('deptsSearchInput').value = '';
+            filterDepts();
+        }
+
         function renderMasterDepts() {
             const tbody = document.getElementById('masterDeptsTable');
-            if (masterDeptsData.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted py-3">No departments found</td></tr>';
+            if (filteredDeptsData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">No departments found</td></tr>';
+                updateDeptsSelection();
                 return;
             }
-            tbody.innerHTML = masterDeptsData.map(d => `
-                <tr>
+            tbody.innerHTML = filteredDeptsData.map(d => `
+                <tr class="${selectedDepts.has(d.id) ? 'table-primary' : ''}">
+                    <td><input type="checkbox" class="form-check-input" ${selectedDepts.has(d.id) ? 'checked' : ''} onchange="toggleDeptSelect(${d.id})"></td>
                     <td>${d.name}</td>
                     <td>
                         <button class="btn btn-sm btn-link text-primary p-0 me-2" onclick="editMasterDept(${d.id}, '${d.name.replace(/'/g, "\\'")}')"><i class="bi bi-pencil"></i></button>
@@ -5695,6 +5440,7 @@
                     </td>
                 </tr>
             `).join('');
+            updateDeptsSelection();
         }
 
         function openAddMasterDeptModal() {
@@ -5714,7 +5460,10 @@
         async function saveMasterDept() {
             const id = document.getElementById('masterDeptId').value;
             const name = document.getElementById('masterDeptName').value.trim();
-            if (!name) return alert('Department name is required');
+            if (!name) {
+                await JarvisDialog.alert('Department name is required', { type: 'warning' });
+                return;
+            }
 
             const url = id ? `/hr/events/api/master/departments/${id}` : '/hr/events/api/master/departments';
             const method = id ? 'PUT' : 'POST';
@@ -5729,23 +5478,61 @@
                     loadMasterDepts();
                 } else {
                     const data = await resp.json();
-                    alert(data.error || 'Error saving department');
+                    await JarvisDialog.alert(data.error || 'Error saving department', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving department');
+                await JarvisDialog.alert('Error saving department', { type: 'error' });
             }
         }
 
         async function deleteMasterDept(id, name) {
-            if (!confirm(`Delete department "${name}"?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Delete department "${name}"?`, { danger: true });
+            if (!confirmed) return;
             try {
                 const resp = await fetch(`/hr/events/api/master/departments/${id}`, { method: 'DELETE' });
                 if (resp.ok) loadMasterDepts();
-                else alert('Error deleting department');
+                else await JarvisDialog.alert('Error deleting department', { type: 'error' });
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting department');
+                await JarvisDialog.alert('Error deleting department', { type: 'error' });
+            }
+        }
+
+        async function bulkDeleteDepts() {
+            const ids = Array.from(selectedDepts);
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} ${ids.length === 1 ? 'department' : 'departments'}? This cannot be undone.`,
+                { danger: true, confirmText: 'Delete All' }
+            );
+            if (!confirmed) return;
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const id of ids) {
+                try {
+                    const resp = await fetch(`/hr/events/api/master/departments/${id}`, { method: 'DELETE' });
+                    if (resp.ok) {
+                        successCount++;
+                        selectedDepts.delete(id);
+                    } else {
+                        errorCount++;
+                    }
+                } catch (err) {
+                    console.error('Error deleting department:', err);
+                    errorCount++;
+                }
+            }
+
+            loadMasterDepts();
+
+            if (errorCount > 0) {
+                await JarvisDialog.alert(`Deleted ${successCount} departments. ${errorCount} failed.`, { type: 'warning' });
+            } else {
+                JarvisToast.success(`Deleted ${successCount} departments`);
             }
         }
 
@@ -5755,21 +5542,38 @@
                 const resp = await fetch('/hr/events/api/master/subdepartments', { cache: 'no-store' });
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 masterSubdeptsData = await resp.json();
-                renderMasterSubdepts();
+                filterSubdepts(); // This sets filteredSubdeptsData and calls renderMasterSubdepts
             } catch (err) {
                 console.error('Error loading subdepartments:', err);
                 document.getElementById('masterSubdeptsTable').innerHTML = '<tr><td colspan="2" class="text-center text-danger py-3">Error loading subdepartments</td></tr>';
             }
         }
 
+        function filterSubdepts() {
+            const searchTerm = (document.getElementById('subdeptsSearchInput')?.value || '').toLowerCase().trim();
+            filteredSubdeptsData = masterSubdeptsData.filter(s => {
+                if (!searchTerm) return true;
+                return (s.name || '').toLowerCase().includes(searchTerm);
+            });
+            document.getElementById('subdeptsCount').textContent = filteredSubdeptsData.length;
+            renderMasterSubdepts();
+        }
+
+        function clearSubdeptsSearch() {
+            document.getElementById('subdeptsSearchInput').value = '';
+            filterSubdepts();
+        }
+
         function renderMasterSubdepts() {
             const tbody = document.getElementById('masterSubdeptsTable');
-            if (masterSubdeptsData.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted py-3">No subdepartments found</td></tr>';
+            if (filteredSubdeptsData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">No subdepartments found</td></tr>';
+                updateSubdeptsSelection();
                 return;
             }
-            tbody.innerHTML = masterSubdeptsData.map(s => `
-                <tr>
+            tbody.innerHTML = filteredSubdeptsData.map(s => `
+                <tr class="${selectedSubdepts.has(s.id) ? 'table-primary' : ''}">
+                    <td><input type="checkbox" class="form-check-input" ${selectedSubdepts.has(s.id) ? 'checked' : ''} onchange="toggleSubdeptSelect(${s.id})"></td>
                     <td>${s.name}</td>
                     <td>
                         <button class="btn btn-sm btn-link text-primary p-0 me-2" onclick="editMasterSubdept(${s.id}, '${s.name.replace(/'/g, "\\'")}')"><i class="bi bi-pencil"></i></button>
@@ -5777,6 +5581,7 @@
                     </td>
                 </tr>
             `).join('');
+            updateSubdeptsSelection();
         }
 
         function openAddMasterSubdeptModal() {
@@ -5796,7 +5601,10 @@
         async function saveMasterSubdept() {
             const id = document.getElementById('masterSubdeptId').value;
             const name = document.getElementById('masterSubdeptName').value.trim();
-            if (!name) return alert('Subdepartment name is required');
+            if (!name) {
+                await JarvisDialog.alert('Subdepartment name is required', { type: 'warning' });
+                return;
+            }
 
             const url = id ? `/hr/events/api/master/subdepartments/${id}` : '/hr/events/api/master/subdepartments';
             const method = id ? 'PUT' : 'POST';
@@ -5811,23 +5619,61 @@
                     loadMasterSubdepts();
                 } else {
                     const data = await resp.json();
-                    alert(data.error || 'Error saving subdepartment');
+                    await JarvisDialog.alert(data.error || 'Error saving subdepartment', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving subdepartment');
+                await JarvisDialog.alert('Error saving subdepartment', { type: 'error' });
             }
         }
 
         async function deleteMasterSubdept(id, name) {
-            if (!confirm(`Delete subdepartment "${name}"?`)) return;
+            const confirmed = await JarvisDialog.confirm(`Delete subdepartment "${name}"?`, { danger: true });
+            if (!confirmed) return;
             try {
                 const resp = await fetch(`/hr/events/api/master/subdepartments/${id}`, { method: 'DELETE' });
                 if (resp.ok) loadMasterSubdepts();
-                else alert('Error deleting subdepartment');
+                else await JarvisDialog.alert('Error deleting subdepartment', { type: 'error' });
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting subdepartment');
+                await JarvisDialog.alert('Error deleting subdepartment', { type: 'error' });
+            }
+        }
+
+        async function bulkDeleteSubdepts() {
+            const ids = Array.from(selectedSubdepts);
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} ${ids.length === 1 ? 'subdepartment' : 'subdepartments'}? This cannot be undone.`,
+                { danger: true, confirmText: 'Delete All' }
+            );
+            if (!confirmed) return;
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const id of ids) {
+                try {
+                    const resp = await fetch(`/hr/events/api/master/subdepartments/${id}`, { method: 'DELETE' });
+                    if (resp.ok) {
+                        successCount++;
+                        selectedSubdepts.delete(id);
+                    } else {
+                        errorCount++;
+                    }
+                } catch (err) {
+                    console.error('Error deleting subdepartment:', err);
+                    errorCount++;
+                }
+            }
+
+            loadMasterSubdepts();
+
+            if (errorCount > 0) {
+                await JarvisDialog.alert(`Deleted ${successCount} subdepartments. ${errorCount} failed.`, { type: 'warning' });
+            } else {
+                JarvisToast.success(`Deleted ${successCount} subdepartments`);
             }
         }
 
@@ -5853,7 +5699,7 @@
                 masterSubdeptsData = await subdeptsResp.json();
                 structureData = await structResp.json();
 
-                renderStructure();
+                // populateStructureFilters calls filterStructure which calls renderStructure
                 populateStructureFilters();
             } catch (err) {
                 console.error('Error loading structure:', err);
@@ -5863,20 +5709,17 @@
 
         function renderStructure() {
             const tbody = document.getElementById('hrStructureTable');
-            const filterCompany = document.getElementById('hrStructureCompanyFilter')?.value || '';
 
-            let filtered = structureData;
-            if (filterCompany) {
-                filtered = structureData.filter(s => s.company === filterCompany);
-            }
-
-            if (filtered.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No structure entries found</td></tr>';
+            // Use filtered data (set by filterStructure())
+            if (filteredStructureData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">No structure entries found</td></tr>';
+                updateStructureSelection();
                 return;
             }
 
-            tbody.innerHTML = filtered.map(s => `
-                <tr>
+            tbody.innerHTML = filteredStructureData.map(s => `
+                <tr class="${selectedStructure.has(s.id) ? 'table-primary' : ''}">
+                    <td><input type="checkbox" class="form-check-input" ${selectedStructure.has(s.id) ? 'checked' : ''} onchange="toggleStructureSelect(${s.id})"></td>
                     <td>${s.company || '-'}</td>
                     <td>${s.brand || '-'}</td>
                     <td>${s.department || '-'}</td>
@@ -5888,18 +5731,59 @@
                     </td>
                 </tr>
             `).join('');
+            updateStructureSelection();
         }
 
         function populateStructureFilters() {
+            // Populate company filter
             const companies = [...new Set(structureData.map(s => s.company).filter(Boolean))].sort();
-            const filterSelect = document.getElementById('hrStructureCompanyFilter');
-            if (filterSelect) {
-                const currentVal = filterSelect.value;
-                filterSelect.innerHTML = '<option value="">All Companies</option>' +
+            const companySelect = document.getElementById('hrStructureCompanyFilter');
+            if (companySelect) {
+                const currentVal = companySelect.value;
+                companySelect.innerHTML = '<option value="">All Companies</option>' +
                     companies.map(c => `<option value="${c}">${c}</option>`).join('');
-                filterSelect.value = currentVal;
-                filterSelect.onchange = renderStructure;
+                companySelect.value = currentVal;
             }
+
+            // Populate department filter
+            const departments = [...new Set(structureData.map(s => s.department).filter(Boolean))].sort();
+            const deptSelect = document.getElementById('structureDeptFilter');
+            if (deptSelect) {
+                const currentVal = deptSelect.value;
+                deptSelect.innerHTML = '<option value="">All Departments</option>' +
+                    departments.map(d => `<option value="${d}">${d}</option>`).join('');
+                deptSelect.value = currentVal;
+            }
+
+            // Apply initial filter
+            filterStructure();
+        }
+
+        function filterStructure() {
+            const companyFilter = document.getElementById('hrStructureCompanyFilter')?.value || '';
+            const deptFilter = document.getElementById('structureDeptFilter')?.value || '';
+            const searchTerm = document.getElementById('structureSearchInput')?.value?.toLowerCase() || '';
+
+            filteredStructureData = structureData.filter(s => {
+                if (companyFilter && s.company !== companyFilter) return false;
+                if (deptFilter && s.department !== deptFilter) return false;
+                if (searchTerm) {
+                    const searchStr = `${s.company || ''} ${s.brand || ''} ${s.department || ''} ${s.subdepartment || ''} ${s.manager || ''}`.toLowerCase();
+                    if (!searchStr.includes(searchTerm)) return false;
+                }
+                return true;
+            });
+
+            // Update count badge
+            const countBadge = document.getElementById('structureCount');
+            if (countBadge) countBadge.textContent = filteredStructureData.length;
+
+            renderStructure();
+        }
+
+        function clearStructureSearch() {
+            document.getElementById('structureSearchInput').value = '';
+            filterStructure();
         }
 
         function openAddStructureModal() {
@@ -5912,25 +5796,37 @@
         }
 
         function populateStructureDropdowns(selected = {}) {
-            // Companies
+            // Companies - match by company_id or by name
             const companySelect = document.getElementById('structureCompany');
             companySelect.innerHTML = '<option value="">Select Company</option>' +
-                hrCompaniesData.map(c => `<option value="${c.id}" ${c.id == selected.company_id ? 'selected' : ''}>${c.company}</option>`).join('');
+                hrCompaniesData.map(c => {
+                    const isSelected = c.id == selected.company_id || (selected.company && c.company === selected.company);
+                    return `<option value="${c.id}" ${isSelected ? 'selected' : ''}>${c.company}</option>`;
+                }).join('');
 
-            // Brands
+            // Brands - match by brand_id or by name
             const brandSelect = document.getElementById('structureBrand');
             brandSelect.innerHTML = '<option value="">Select Brand (optional)</option>' +
-                masterBrandsData.map(b => `<option value="${b.id}" ${b.id == selected.brand_id ? 'selected' : ''}>${b.name}</option>`).join('');
+                masterBrandsData.map(b => {
+                    const isSelected = b.id == selected.brand_id || (selected.brand && b.name === selected.brand);
+                    return `<option value="${b.id}" ${isSelected ? 'selected' : ''}>${b.name}</option>`;
+                }).join('');
 
-            // Departments
+            // Departments - match by department_id or by name
             const deptSelect = document.getElementById('structureDept');
             deptSelect.innerHTML = '<option value="">Select Department</option>' +
-                masterDeptsData.map(d => `<option value="${d.id}" ${d.id == selected.department_id ? 'selected' : ''}>${d.name}</option>`).join('');
+                masterDeptsData.map(d => {
+                    const isSelected = d.id == selected.department_id || (selected.department && d.name === selected.department);
+                    return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${d.name}</option>`;
+                }).join('');
 
-            // Subdepartments
+            // Subdepartments - match by subdepartment_id or by name
             const subdeptSelect = document.getElementById('structureSubdept');
             subdeptSelect.innerHTML = '<option value="">Select Subdepartment (optional)</option>' +
-                masterSubdeptsData.map(s => `<option value="${s.id}" ${s.id == selected.subdepartment_id ? 'selected' : ''}>${s.name}</option>`).join('');
+                masterSubdeptsData.map(s => {
+                    const isSelected = s.id == selected.subdepartment_id || (selected.subdepartment && s.name === selected.subdepartment);
+                    return `<option value="${s.id}" ${isSelected ? 'selected' : ''}>${s.name}</option>`;
+                }).join('');
         }
 
         // ============== Manager Employee Search ==============
@@ -5948,17 +5844,17 @@
                 return;
             }
 
-            const filtered = hrEmployeesData.filter(emp =>
-                emp.name && emp.name.toLowerCase().includes(query)
+            const filtered = users.filter(user =>
+                user.name && user.name.toLowerCase().includes(query)
             ).slice(0, 10);
 
             if (filtered.length === 0) {
-                dropdown.innerHTML = '<div class="dropdown-item text-muted">No employees found</div>';
+                dropdown.innerHTML = '<div class="dropdown-item text-muted">No users found</div>';
             } else {
-                dropdown.innerHTML = filtered.map(emp => `
-                    <a class="dropdown-item manager-item" href="#" data-emp-id="${emp.id}" data-emp-name="${emp.name}">
-                        <i class="bi bi-person-badge"></i> ${emp.name}
-                        ${emp.company ? `<small class="text-muted ms-1">(${emp.company})</small>` : ''}
+                dropdown.innerHTML = filtered.map(user => `
+                    <a class="dropdown-item manager-item" href="#" data-emp-id="${user.id}" data-emp-name="${user.name}">
+                        <i class="bi bi-person-badge"></i> ${user.name}
+                        ${user.email ? `<small class="text-muted ms-1">(${user.email})</small>` : ''}
                     </a>
                 `).join('');
             }
@@ -5998,7 +5894,9 @@
 
             document.getElementById('structureId').value = id;
             document.getElementById('structureManagerSearch').value = entry.manager || '';
-            document.getElementById('structureManagerId').value = '';
+            // Set manager_id from manager_ids array (take first element)
+            const managerId = (entry.manager_ids && entry.manager_ids.length > 0) ? entry.manager_ids[0] : '';
+            document.getElementById('structureManagerId').value = managerId;
             document.getElementById('structureModalTitle').textContent = 'Edit Structure Entry';
             populateStructureDropdowns(entry);
             new bootstrap.Modal(document.getElementById('structureModal')).show();
@@ -6011,10 +5909,15 @@
             const department_id = document.getElementById('structureDept').value;
             const subdepartment_id = document.getElementById('structureSubdept').value || null;
             const manager = document.getElementById('structureManagerSearch').value.trim();
+            const managerId = document.getElementById('structureManagerId').value;
 
             if (!company_id || !department_id) {
-                return alert('Company and Department are required');
+                await JarvisDialog.alert('Company and Department are required', { type: 'warning' });
+                return;
             }
+
+            // Build manager_ids array from selected user
+            const manager_ids = managerId ? [parseInt(managerId)] : null;
 
             const url = id ? `/hr/events/api/structure/departments/${id}` : '/hr/events/api/structure/departments';
             const method = id ? 'PUT' : 'POST';
@@ -6022,29 +5925,67 @@
             try {
                 const resp = await fetch(url, {
                     method, headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ company_id, brand_id, department_id, subdepartment_id, manager })
+                    body: JSON.stringify({ company_id, brand_id, department_id, subdepartment_id, manager, manager_ids })
                 });
                 if (resp.ok) {
                     bootstrap.Modal.getInstance(document.getElementById('structureModal')).hide();
                     loadStructure();
                 } else {
-                    alert('Error saving structure entry');
+                    await JarvisDialog.alert('Error saving structure entry', { type: 'error' });
                 }
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error saving structure entry');
+                await JarvisDialog.alert('Error saving structure entry', { type: 'error' });
             }
         }
 
         async function deleteStructure(id) {
-            if (!confirm('Delete this structure entry?')) return;
+            const confirmed = await JarvisDialog.confirm('Delete this structure entry?', { danger: true });
+            if (!confirmed) return;
             try {
                 const resp = await fetch(`/hr/events/api/structure/departments/${id}`, { method: 'DELETE' });
                 if (resp.ok) loadStructure();
-                else alert('Error deleting structure entry');
+                else await JarvisDialog.alert('Error deleting structure entry', { type: 'error' });
             } catch (err) {
                 console.error('Error:', err);
-                alert('Error deleting structure entry');
+                await JarvisDialog.alert('Error deleting structure entry', { type: 'error' });
+            }
+        }
+
+        async function bulkDeleteStructure() {
+            const ids = Array.from(selectedStructure);
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} structure ${ids.length === 1 ? 'entry' : 'entries'}? This cannot be undone.`,
+                { danger: true, confirmText: 'Delete All' }
+            );
+            if (!confirmed) return;
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const id of ids) {
+                try {
+                    const resp = await fetch(`/hr/events/api/structure/departments/${id}`, { method: 'DELETE' });
+                    if (resp.ok) {
+                        successCount++;
+                        selectedStructure.delete(id);
+                    } else {
+                        errorCount++;
+                    }
+                } catch (err) {
+                    console.error('Error deleting structure:', err);
+                    errorCount++;
+                }
+            }
+
+            loadStructure();
+
+            if (errorCount > 0) {
+                await JarvisDialog.alert(`Deleted ${successCount} entries. ${errorCount} failed.`, { type: 'warning' });
+            } else {
+                JarvisToast.success(`Deleted ${successCount} structure entries`);
             }
         }
     </script>
@@ -6052,5 +5993,6 @@
     <script src="/static/js/online-users.js"></script>
     {% include 'partials/_edit_profile_modal.html' %}
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/jarvis-dialogs.js"></script>
 </body>
 </html>

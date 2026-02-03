@@ -37,44 +37,38 @@ def extract_vat_numbers(vat: str) -> str:
 def get_companies_with_vat() -> list[dict]:
     """Load companies with VAT numbers and brands from database."""
     conn = get_db()
-    try:
-        cursor = get_cursor(conn)
+    cursor = get_cursor(conn)
 
-        # Get companies with id
-        cursor.execute('SELECT id, company, vat FROM companies ORDER BY company')
-        companies = [dict(row) for row in cursor.fetchall()]
+    # Get companies with id
+    cursor.execute('SELECT id, company, vat FROM companies ORDER BY company')
+    companies = [dict(row) for row in cursor.fetchall()]
 
-        # Get brands from company_brands table (JOIN with brands to get name)
-        cursor.execute('''
-            SELECT cb.company_id, cb.id as cb_id, cb.brand_id, b.name as brand
-            FROM company_brands cb
-            JOIN brands b ON cb.brand_id = b.id
-            WHERE cb.is_active = TRUE
-            ORDER BY b.name
-        ''')
-        brands_rows = cursor.fetchall()
+    # Get brands from company_brands table (join with brands to get brand name)
+    cursor.execute('''
+        SELECT cb.company_id, b.id as brand_id, b.name as brand
+        FROM company_brands cb
+        JOIN brands b ON cb.brand_id = b.id
+        WHERE cb.is_active = TRUE AND b.is_active = TRUE
+        ORDER BY b.name
+    ''')
+    brands_rows = cursor.fetchall()
 
-        # Group brands by company_id
-        brands_by_company = {}
-        for row in brands_rows:
-            cid = row['company_id']
-            if cid not in brands_by_company:
-                brands_by_company[cid] = []
-            brands_by_company[cid].append({
-                'id': row['cb_id'],        # company_brands.id for update/delete
-                'brand_id': row['brand_id'],  # brands.id (FK)
-                'brand': row['brand']      # brand name
-            })
+    # Group brands by company_id
+    brands_by_company = {}
+    for row in brands_rows:
+        cid = row['company_id']
+        if cid not in brands_by_company:
+            brands_by_company[cid] = []
+        brands_by_company[cid].append({'id': row['brand_id'], 'brand': row['brand']})
 
-        # Add brands to companies
-        for company in companies:
-            company_brands = brands_by_company.get(company['id'], [])
-            company['brands_list'] = company_brands
-            company['brands'] = ', '.join(b['brand'] for b in company_brands) if company_brands else ''
+    # Add brands to companies
+    for company in companies:
+        company_brands = brands_by_company.get(company['id'], [])
+        company['brands_list'] = company_brands
+        company['brands'] = ', '.join(b['brand'] for b in company_brands) if company_brands else ''
 
-        return companies
-    finally:
-        release_db(conn)
+    release_db(conn)
+    return companies
 
 
 def match_company_by_vat(invoice_vat: str) -> Optional[dict]:
@@ -132,33 +126,29 @@ def add_company_with_vat(company: str, vat: str) -> bool:
 def update_company_vat(company: str, vat: str) -> bool:
     """Update VAT for an existing company."""
     conn = get_db()
-    try:
-        cursor = conn.cursor()
-        ph = get_placeholder()
+    cursor = conn.cursor()
+    ph = get_placeholder()
 
-        cursor.execute(f'''
-            UPDATE companies SET vat = {ph}
-            WHERE company = {ph}
-        ''', (vat, company))
+    cursor.execute(f'''
+        UPDATE companies SET vat = {ph}
+        WHERE company = {ph}
+    ''', (vat, company))
 
-        updated = cursor.rowcount > 0
-        conn.commit()
-        return updated
-    finally:
-        release_db(conn)
+    updated = cursor.rowcount > 0
+    conn.commit()
+    release_db(conn)
+    return updated
 
 
 def delete_company(company: str) -> bool:
     """Delete a company from the database."""
     conn = get_db()
-    try:
-        cursor = conn.cursor()
-        ph = get_placeholder()
+    cursor = conn.cursor()
+    ph = get_placeholder()
 
-        cursor.execute(f'DELETE FROM companies WHERE company = {ph}', (company,))
-        deleted = cursor.rowcount > 0
+    cursor.execute(f'DELETE FROM companies WHERE company = {ph}', (company,))
+    deleted = cursor.rowcount > 0
 
-        conn.commit()
-        return deleted
-    finally:
-        release_db(conn)
+    conn.commit()
+    release_db(conn)
+    return deleted

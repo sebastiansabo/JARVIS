@@ -63,28 +63,47 @@ Department managers who receive allocation notifications:
 
 ### Backend (Python/Flask)
 ```
-app/
-├── app.py              # Flask routes, API endpoints
-├── database.py         # PostgreSQL operations, migrations
-├── models.py           # Data models (DepartmentUnit, InvoiceAllocation)
-├── services.py         # Company VAT matching utilities
-├── invoice_parser.py   # Claude AI + regex template parsing
-├── drive_service.py    # Google Drive OAuth integration
-├── image_compressor.py # TinyPNG image compression
-├── currency_converter.py # BNR exchange rates (EUR/RON)
-├── notification_service.py # SMTP email notifications
-└── config.py           # Configuration paths
+jarvis/
+├── app.py                      # Main Flask application
+├── database.py                 # PostgreSQL operations, migrations
+├── models.py                   # Data models (DepartmentUnit, InvoiceAllocation)
+├── services.py                 # Company VAT matching utilities
+├── core/                       # Core Platform (shared across sections)
+│   ├── auth/                   # Authentication module
+│   ├── services/               # Shared services
+│   │   ├── drive_service.py    # Google Drive OAuth integration
+│   │   ├── image_compressor.py # TinyPNG image compression
+│   │   ├── currency_converter.py # BNR exchange rates (EUR/RON)
+│   │   └── notification_service.py # SMTP email notifications
+│   ├── settings/               # Platform settings
+│   └── connectors/efactura/    # ANAF e-Factura connector
+├── accounting/                 # Accounting Section
+│   ├── bugetare/               # Invoice Budget Allocation
+│   │   ├── routes.py           # Invoice routes
+│   │   ├── invoice_parser.py   # Claude AI + regex template parsing
+│   │   └── bulk_processor.py   # Bulk processing
+│   └── statements/             # Bank Statement Parsing
+└── hr/events/                  # HR Events module
 ```
 
 ### Frontend (Jinja2 + Bootstrap)
 ```
 templates/
-├── index.html          # Add Invoice page (upload, parse, allocate)
-├── accounting.html     # Dashboard (invoices, company/dept/brand views)
-├── templates.html      # Invoice parsing template management
-├── settings.html       # Users, VAT registry, notifications
-├── login.html          # Authentication
-└── connectors.html     # (Future integrations)
+├── core/                       # Core templates
+│   ├── login.html              # Authentication
+│   ├── settings.html           # Users, VAT registry, notifications
+│   ├── apps.html               # Apps landing page
+│   └── guide.html              # User guide
+├── accounting/
+│   ├── bugetare/
+│   │   ├── index.html          # Add Invoice page
+│   │   ├── accounting.html     # Dashboard
+│   │   ├── templates.html      # Template management
+│   │   ├── bulk.html           # Bulk processing
+│   │   └── efactura.html       # e-Factura unallocated invoices
+│   └── statements/
+│       └── index.html          # Bank statement upload
+└── hr/events/                  # HR templates
 ```
 
 ### Database Schema (PostgreSQL)
@@ -99,6 +118,9 @@ templates/
 - `notification_settings` - SMTP configuration
 - `user_events` - Activity audit log (login, invoice CRUD, password changes)
 - `vat_rates` - VAT rate definitions (id, name, rate)
+- `efactura_invoices` - e-Factura invoices from ANAF (with override columns)
+- `efactura_supplier_mappings` - Supplier categorization with default department/subdepartment
+- `efactura_partner_types` - Partner types (Service, Merchandise)
 
 ## Key Features
 
@@ -130,6 +152,16 @@ templates/
 - HTML + plain text format
 - Global CC option
 - Separate sections for allocation and reinvoice details
+
+### e-Factura Integration
+ANAF RO e-Invoicing connector for automatic invoice import:
+- **Sync from ANAF**: Fetches received invoices (Primite) from ANAF SPV
+- **XML Parsing**: UBL 2.1 format extraction of seller/buyer info, amounts, dates
+- **Supplier Mappings**: Categorize suppliers with types (Service, Merchandise) and default department/subdepartment
+- **Invoice Overrides**: Override type, department, subdepartment at invoice level
+- **"Hide Typed" Filter**: Toggle to hide invoices with assigned partner types
+- **Send to Module**: Transfer e-Factura invoices to main JARVIS Invoice Module for allocation
+- **Tab Caching**: Client-side caching prevents API reloads on tab switch
 
 ### Activity Logs (Admin-only)
 Audit trail for user actions in the Settings → Activity Logs tab:

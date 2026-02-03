@@ -5,4 +5,14 @@ Shared services used across all platform sections:
 - Email notifications
 - Image compression
 - Currency conversion
+- Invoice management
+- Settings management
 """
+
+from .invoice_service import InvoiceService
+from .settings_service import SettingsService
+
+__all__ = [
+    'InvoiceService',
+    'SettingsService',
+]

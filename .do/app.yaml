@@ -33,6 +33,15 @@ services:
       - key: DATABASE_URL
         type: SECRET
         scope: RUN_TIME
+      - key: ANAF_OAUTH_CLIENT_ID
+        type: SECRET
+        scope: RUN_TIME
+      - key: ANAF_OAUTH_CLIENT_SECRET
+        type: SECRET
+        scope: RUN_TIME
+      - key: ANAF_OAUTH_REDIRECT_URI
+        type: GENERAL
+        scope: RUN_TIME
 ingress:
   rules:
     - match:
