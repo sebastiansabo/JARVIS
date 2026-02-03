@@ -41,33 +41,27 @@
     </div>
 
     <div class="container-fluid px-4 mt-3">
-        <!-- Summary Cards -->
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card bg-primary text-white">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="bi bi-people"></i> Total Users</h6>
-                        <h2 id="totalUsers">0</h2>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-success text-white">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="bi bi-person-check"></i> Active Users</h6>
-                        <h2 id="activeUsers">0</h2>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-warning text-dark">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="bi bi-shield"></i> Roles Defined</h6>
-                        <h2 id="totalRoles">0</h2>
-                    </div>
-                </div>
-            </div>
+        <!-- Summary Stats Bar (matching accounting style) -->
+        <div class="summary-filter-bar d-flex align-items-center flex-wrap gap-3 mb-3">
+            <span class="summary-stat" title="Total Users">
+                <i class="bi bi-people text-primary"></i>
+                <strong id="totalUsers">0</strong> users
+            </span>
+            <span class="summary-stat" title="Active Users">
+                <i class="bi bi-person-check text-success"></i>
+                <strong id="activeUsers">0</strong> active
+            </span>
+            <span class="summary-stat" title="Roles Defined">
+                <i class="bi bi-shield text-warning"></i>
+                <strong id="totalRoles">0</strong> roles
+            </span>
         </div>
+        <style>
+            .summary-filter-bar { font-size: 0.85rem; }
+            .summary-stat { display: flex; align-items: center; gap: 4px; color: var(--bs-secondary-color); }
+            .summary-stat i { font-size: 1rem; }
+            .summary-stat strong { color: var(--bs-body-color); }
+        </style>
 
         <!-- Tabs for Users, Roles, and Notifications -->
         <ul class="nav nav-tabs" id="settingsTabs">
@@ -998,47 +992,20 @@
                         <h5 class="mb-0"><i class="bi bi-diagram-3"></i> Company Structure</h5>
                     </div>
                     <div class="card-body">
-                        <!-- Stats Cards -->
-                        <div class="row g-3 mb-3">
-                            <div class="col-md-4">
-                                <div class="card bg-primary text-white">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <small class="text-white-50">Companies</small>
-                                                <h4 class="mb-0" id="hrStatsCompanies">-</h4>
-                                            </div>
-                                            <i class="bi bi-building" style="font-size: 1.5rem; opacity: 0.5;"></i>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="card bg-success text-white">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <small class="text-white-50">Brands</small>
-                                                <h4 class="mb-0" id="hrStatsBrands">-</h4>
-                                            </div>
-                                            <i class="bi bi-tags" style="font-size: 1.5rem; opacity: 0.5;"></i>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="card bg-info text-white">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <small class="text-white-50">Departments</small>
-                                                <h4 class="mb-0" id="hrStatsDepartments">-</h4>
-                                            </div>
-                                            <i class="bi bi-diagram-2" style="font-size: 1.5rem; opacity: 0.5;"></i>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        <!-- Stats Summary Bar (matching accounting style) -->
+                        <div class="summary-filter-bar d-flex align-items-center flex-wrap gap-3 mb-3">
+                            <span class="summary-stat" title="Companies">
+                                <i class="bi bi-building text-primary"></i>
+                                <strong id="hrStatsCompanies">-</strong> companies
+                            </span>
+                            <span class="summary-stat" title="Brands">
+                                <i class="bi bi-tags text-success"></i>
+                                <strong id="hrStatsBrands">-</strong> brands
+                            </span>
+                            <span class="summary-stat" title="Departments">
+                                <i class="bi bi-diagram-3 text-info"></i>
+                                <strong id="hrStatsDepartments">-</strong> departments
+                            </span>
                         </div>
 
                         <!-- Structure Sub-tabs -->
