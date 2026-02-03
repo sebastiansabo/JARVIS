@@ -37,6 +37,11 @@ class User(UserMixin):
         self.can_access_hr = user_data.get('can_access_hr', False)
         self.is_hr_manager = user_data.get('is_hr_manager', False)
 
+        # New module permissions
+        self.can_access_efactura = user_data.get('can_access_efactura', False)
+        self.can_access_statements = user_data.get('can_access_statements', False)
+        self.can_access_profile = user_data.get('can_access_profile', True)  # All users can access profile
+
         # Permission mapping for has_permission method
         self._permission_map = {
             'system.settings': self.can_access_settings,
@@ -47,6 +52,9 @@ class User(UserMixin):
             'accounting.dashboard': self.can_access_accounting,
             'accounting.templates': self.can_access_templates,
             'accounting.connectors': self.can_access_connectors,
+            'efactura.access': self.can_access_efactura,
+            'statements.access': self.can_access_statements,
+            'profile.access': self.can_access_profile,
             'hr.access': self.can_access_hr,
             'hr.manager': self.is_hr_manager,
         }

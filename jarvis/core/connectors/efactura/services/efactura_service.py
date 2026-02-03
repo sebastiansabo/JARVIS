@@ -1787,27 +1787,27 @@ Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
         cursor = get_cursor(conn)
 
         try:
-            # Check for duplicates first (same supplier + invoice_number)
-            # Build list of (supplier, invoice_number) pairs to check
-            check_pairs = [(inv['partner_name'], inv['invoice_number']) for inv in invoices]
+            # Check for duplicates first by invoice_number (unique constraint)
+            # Build list of invoice_numbers to check
+            check_numbers = [inv['invoice_number'] for inv in invoices]
 
-            # Query existing invoices with same supplier + invoice_number (include ID for linking)
+            # Query existing invoices with same invoice_number (include ID for linking)
             cursor.execute("""
                 SELECT id, supplier, invoice_number
                 FROM invoices
-                WHERE (supplier, invoice_number) IN %s
+                WHERE invoice_number = ANY(%s)
                 AND deleted_at IS NULL
-            """, (tuple(check_pairs),))
+            """, (check_numbers,))
 
-            # Map (supplier, invoice_number) -> jarvis_invoice_id
-            existing = {(row['supplier'], row['invoice_number']): row['id'] for row in cursor.fetchall()}
+            # Map invoice_number -> jarvis_invoice_id
+            existing = {row['invoice_number']: row['id'] for row in cursor.fetchall()}
 
             # Filter out duplicates and collect duplicate mappings for marking
             invoices_to_create = []
             skipped_duplicates = []
             duplicate_mappings = []  # (efactura_id, existing_jarvis_id) for marking
             for inv in invoices:
-                key = (inv['partner_name'], inv['invoice_number'])
+                key = inv['invoice_number']
                 if key in existing:
                     skipped_duplicates.append(inv['invoice_number'])
                     duplicate_mappings.append((inv['id'], existing[key]))

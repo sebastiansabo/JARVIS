@@ -712,9 +712,30 @@ def init_db():
             can_access_settings BOOLEAN DEFAULT FALSE,
             can_access_connectors BOOLEAN DEFAULT FALSE,
             can_access_templates BOOLEAN DEFAULT FALSE,
+            can_access_hr BOOLEAN DEFAULT FALSE,
+            is_hr_manager BOOLEAN DEFAULT FALSE,
+            can_access_efactura BOOLEAN DEFAULT FALSE,
+            can_access_statements BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # Add new columns to roles table if they don't exist (migration for existing databases)
+    for col_name, col_default in [
+        ('can_access_hr', 'FALSE'),
+        ('is_hr_manager', 'FALSE'),
+        ('can_access_efactura', 'FALSE'),
+        ('can_access_statements', 'FALSE')
+    ]:
+        cursor.execute(f'''
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_name = 'roles' AND column_name = '{col_name}') THEN
+                    ALTER TABLE roles ADD COLUMN {col_name} BOOLEAN DEFAULT {col_default};
+                END IF;
+            END $$;
+        ''')
 
     # Users table - references role
     cursor.execute('''
@@ -898,6 +919,14 @@ def init_db():
             ('system', 'System', 'bi-gear-fill', 'roles', 'Roles', 'edit', 'Edit', 'Modify role permissions', FALSE, 8),
             ('system', 'System', 'bi-gear-fill', 'activity_logs', 'Activity Logs', 'view', 'View', 'View activity logs', FALSE, 9),
             ('system', 'System', 'bi-gear-fill', 'theme', 'Theme', 'edit', 'Edit', 'Customize theme settings', FALSE, 10),
+            ('system', 'System', 'bi-gear-fill', 'structure', 'Company Structure', 'view', 'View', 'View company structure', FALSE, 11),
+            ('system', 'System', 'bi-gear-fill', 'structure', 'Company Structure', 'edit', 'Edit', 'Modify company structure', FALSE, 12),
+
+            -- Profile Module (user's own data access)
+            ('profile', 'Profile', 'bi-person-circle', 'invoices', 'My Invoices', 'view', 'View', 'View own invoices in profile', FALSE, 1),
+            ('profile', 'Profile', 'bi-person-circle', 'hr_events', 'My HR Events', 'view', 'View', 'View own HR events in profile', FALSE, 2),
+            ('profile', 'Profile', 'bi-person-circle', 'notifications', 'My Notifications', 'view', 'View', 'View own notifications', FALSE, 3),
+            ('profile', 'Profile', 'bi-person-circle', 'activity', 'My Activity', 'view', 'View', 'View own activity log', FALSE, 4),
 
             -- Invoices Module
             ('invoices', 'Invoices', 'bi-receipt', 'records', 'Invoice Records', 'view', 'View', 'View invoices', TRUE, 1),
@@ -905,8 +934,10 @@ def init_db():
             ('invoices', 'Invoices', 'bi-receipt', 'records', 'Invoice Records', 'edit', 'Edit', 'Modify invoices', TRUE, 3),
             ('invoices', 'Invoices', 'bi-receipt', 'records', 'Invoice Records', 'delete', 'Delete', 'Remove invoices', TRUE, 4),
             ('invoices', 'Invoices', 'bi-receipt', 'records', 'Invoice Records', 'export', 'Export', 'Export invoice data', FALSE, 5),
-            ('invoices', 'Invoices', 'bi-receipt', 'templates', 'Templates', 'view', 'View', 'View invoice templates', FALSE, 6),
-            ('invoices', 'Invoices', 'bi-receipt', 'templates', 'Templates', 'edit', 'Edit', 'Modify invoice templates', FALSE, 7),
+            ('invoices', 'Invoices', 'bi-receipt', 'records', 'Invoice Records', 'parse', 'Parse', 'Parse invoice PDFs with AI', FALSE, 6),
+            ('invoices', 'Invoices', 'bi-receipt', 'templates', 'Templates', 'view', 'View', 'View invoice templates', FALSE, 7),
+            ('invoices', 'Invoices', 'bi-receipt', 'templates', 'Templates', 'edit', 'Edit', 'Modify invoice templates', FALSE, 8),
+            ('invoices', 'Invoices', 'bi-receipt', 'bulk', 'Bulk Processing', 'access', 'Access', 'Access bulk invoice processor', FALSE, 9),
 
             -- Accounting Module
             ('accounting', 'Accounting', 'bi-calculator', 'dashboard', 'Dashboard', 'access', 'Access', 'Access accounting dashboard', FALSE, 1),
@@ -916,19 +947,47 @@ def init_db():
             ('accounting', 'Accounting', 'bi-calculator', 'allocations', 'Allocations', 'edit', 'Edit', 'Modify allocations', TRUE, 5),
             ('accounting', 'Accounting', 'bi-calculator', 'connectors', 'Connectors', 'access', 'Access', 'Access external connectors', FALSE, 6),
 
+            -- e-Factura Module
+            ('efactura', 'e-Factura', 'bi-file-earmark-code', 'invoices', 'ANAF Invoices', 'access', 'Access', 'Access e-Factura unallocated page', FALSE, 1),
+            ('efactura', 'e-Factura', 'bi-file-earmark-code', 'invoices', 'ANAF Invoices', 'view', 'View', 'View e-Factura invoices', TRUE, 2),
+            ('efactura', 'e-Factura', 'bi-file-earmark-code', 'invoices', 'ANAF Invoices', 'edit', 'Edit', 'Edit invoice overrides', TRUE, 3),
+            ('efactura', 'e-Factura', 'bi-file-earmark-code', 'invoices', 'ANAF Invoices', 'send', 'Send', 'Send to invoice module', FALSE, 4),
+            ('efactura', 'e-Factura', 'bi-file-earmark-code', 'invoices', 'ANAF Invoices', 'delete', 'Delete', 'Delete or ignore invoices', FALSE, 5),
+            ('efactura', 'e-Factura', 'bi-file-earmark-code', 'sync', 'ANAF Sync', 'execute', 'Execute', 'Sync invoices from ANAF', FALSE, 6),
+            ('efactura', 'e-Factura', 'bi-file-earmark-code', 'mappings', 'Supplier Mappings', 'view', 'View', 'View supplier mappings', FALSE, 7),
+            ('efactura', 'e-Factura', 'bi-file-earmark-code', 'mappings', 'Supplier Mappings', 'edit', 'Edit', 'Manage supplier mappings', FALSE, 8),
+            ('efactura', 'e-Factura', 'bi-file-earmark-code', 'partner_types', 'Partner Types', 'view', 'View', 'View partner types', FALSE, 9),
+            ('efactura', 'e-Factura', 'bi-file-earmark-code', 'partner_types', 'Partner Types', 'edit', 'Edit', 'Manage partner types', FALSE, 10),
+            ('efactura', 'e-Factura', 'bi-file-earmark-code', 'oauth', 'OAuth Connection', 'manage', 'Manage', 'Manage ANAF OAuth connections', FALSE, 11),
+
+            -- Bank Statements Module
+            ('statements', 'Bank Statements', 'bi-bank', 'transactions', 'Transactions', 'access', 'Access', 'Access bank statements page', FALSE, 1),
+            ('statements', 'Bank Statements', 'bi-bank', 'transactions', 'Transactions', 'view', 'View', 'View transactions', TRUE, 2),
+            ('statements', 'Bank Statements', 'bi-bank', 'transactions', 'Transactions', 'upload', 'Upload', 'Upload bank statements', FALSE, 3),
+            ('statements', 'Bank Statements', 'bi-bank', 'transactions', 'Transactions', 'reconcile', 'Reconcile', 'Create invoices from transactions', FALSE, 4),
+            ('statements', 'Bank Statements', 'bi-bank', 'mappings', 'Vendor Mappings', 'view', 'View', 'View vendor mappings', FALSE, 5),
+            ('statements', 'Bank Statements', 'bi-bank', 'mappings', 'Vendor Mappings', 'edit', 'Edit', 'Manage vendor mappings', FALSE, 6),
+
             -- HR Module
-            ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'view', 'View', 'View employee list', TRUE, 1),
-            ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'add', 'Add', 'Create new employees', FALSE, 2),
-            ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'edit', 'Edit', 'Modify employee data', TRUE, 3),
-            ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'delete', 'Delete', 'Remove employees', FALSE, 4),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Events', 'view', 'View', 'View events', TRUE, 5),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Events', 'view_amounts', 'View Amounts', 'View bonus amounts (HR Manager)', FALSE, 6),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Events', 'add_event', 'Add Event', 'Create new events', FALSE, 7),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Events', 'add_bonus', 'Add Bonus', 'Create new bonuses', FALSE, 8),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Events', 'edit', 'Edit', 'Modify events', TRUE, 9),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Events', 'export', 'Export', 'Export event data', FALSE, 10),
-            ('hr', 'HR', 'bi-people-fill', 'payroll', 'Payroll', 'view', 'View', 'View payroll data', TRUE, 11),
-            ('hr', 'HR', 'bi-people-fill', 'payroll', 'Payroll', 'edit', 'Edit', 'Modify payroll', FALSE, 12)
+            ('hr', 'HR', 'bi-people-fill', 'module', 'HR Module', 'access', 'Access', 'Access HR module', FALSE, 1),
+            ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'view', 'View', 'View employee list', TRUE, 2),
+            ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'add', 'Add', 'Create new employees', FALSE, 3),
+            ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'edit', 'Edit', 'Modify employee data', TRUE, 4),
+            ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'delete', 'Delete', 'Remove employees', FALSE, 5),
+            ('hr', 'HR', 'bi-people-fill', 'events', 'Events', 'view', 'View', 'View events list', TRUE, 6),
+            ('hr', 'HR', 'bi-people-fill', 'events', 'Events', 'add', 'Add', 'Create new events', FALSE, 7),
+            ('hr', 'HR', 'bi-people-fill', 'events', 'Events', 'edit', 'Edit', 'Modify events', TRUE, 8),
+            ('hr', 'HR', 'bi-people-fill', 'events', 'Events', 'delete', 'Delete', 'Delete events', FALSE, 9),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'view', 'View', 'View bonuses', TRUE, 10),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'view_amounts', 'View Amounts', 'View bonus amounts (HR Manager)', FALSE, 11),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'add', 'Add', 'Create new bonuses', FALSE, 12),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'edit', 'Edit', 'Modify bonuses', TRUE, 13),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'delete', 'Delete', 'Delete bonuses', FALSE, 14),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'export', 'Export', 'Export bonus data', FALSE, 15),
+            ('hr', 'HR', 'bi-people-fill', 'structure', 'Department Structure', 'view', 'View', 'View department structure', FALSE, 16),
+            ('hr', 'HR', 'bi-people-fill', 'structure', 'Department Structure', 'edit', 'Edit', 'Manage department structure', FALSE, 17),
+            ('hr', 'HR', 'bi-people-fill', 'payroll', 'Payroll', 'view', 'View', 'View payroll data', TRUE, 18),
+            ('hr', 'HR', 'bi-people-fill', 'payroll', 'Payroll', 'edit', 'Edit', 'Modify payroll', FALSE, 19)
         ''')
 
         # Set default permissions for existing roles
@@ -4139,7 +4198,9 @@ def save_role(
     can_access_connectors: bool = False,
     can_access_templates: bool = False,
     can_access_hr: bool = False,
-    is_hr_manager: bool = False
+    is_hr_manager: bool = False,
+    can_access_efactura: bool = False,
+    can_access_statements: bool = False
 ) -> int:
     """Save a new role. Returns role ID."""
     conn = get_db()
@@ -4149,13 +4210,15 @@ def save_role(
         cursor.execute('''
             INSERT INTO roles (name, description, can_add_invoices, can_edit_invoices, can_delete_invoices,
                 can_view_invoices, can_access_accounting, can_access_settings,
-                can_access_connectors, can_access_templates, can_access_hr, is_hr_manager)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                can_access_connectors, can_access_templates, can_access_hr, is_hr_manager,
+                can_access_efactura, can_access_statements)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (
             name, description, can_add_invoices, can_edit_invoices, can_delete_invoices,
             can_view_invoices, can_access_accounting, can_access_settings,
-            can_access_connectors, can_access_templates, can_access_hr, is_hr_manager
+            can_access_connectors, can_access_templates, can_access_hr, is_hr_manager,
+            can_access_efactura, can_access_statements
         ))
 
         role_id = cursor.fetchone()['id']
@@ -4299,7 +4362,8 @@ def get_user(user_id: int) -> Optional[dict]:
             SELECT u.*, r.name as role_name, r.description as role_description,
                    r.can_add_invoices, r.can_edit_invoices, r.can_delete_invoices, r.can_view_invoices,
                    r.can_access_accounting, r.can_access_settings, r.can_access_connectors,
-                   r.can_access_templates, r.can_access_hr, r.is_hr_manager
+                   r.can_access_templates, r.can_access_hr, r.is_hr_manager,
+                   r.can_access_efactura, r.can_access_statements
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.id
             WHERE u.id = %s
@@ -4320,7 +4384,8 @@ def get_user_by_email(email: str) -> Optional[dict]:
             SELECT u.*, r.name as role_name, r.description as role_description,
                    r.can_add_invoices, r.can_edit_invoices, r.can_delete_invoices, r.can_view_invoices,
                    r.can_access_accounting, r.can_access_settings, r.can_access_connectors,
-                   r.can_access_templates, r.can_access_hr, r.is_hr_manager
+                   r.can_access_templates, r.can_access_hr, r.is_hr_manager,
+                   r.can_access_efactura, r.can_access_statements
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.id
             WHERE u.email = %s
