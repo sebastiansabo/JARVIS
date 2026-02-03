@@ -4589,20 +4589,36 @@ def get_responsable(responsable_id: int) -> Optional[dict]:
     return dict_from_row(row) if row else None
 
 
-def get_responsables_by_department(department: str) -> list[dict]:
-    """Get users assigned to a specific department (exact match)."""
+def get_responsables_by_department(department: str, company: str = None) -> list[dict]:
+    """Get users assigned to a specific department (exact match).
+
+    Args:
+        department: Department name to match
+        company: Optional company name - if provided, filters by both department AND company
+    """
     conn = get_db()
     cursor = get_cursor(conn)
 
     # Use exact match instead of LIKE to avoid partial matches
     # e.g., "Marketing" should only match users with department = "Marketing"
     # not "Marketing Aftersales" or "Director Marketing"
-    cursor.execute('''
-        SELECT id, name, email, phone, department AS departments, subdepartment,
-               company, brand, notify_on_allocation, is_active, created_at, updated_at
-        FROM users
-        WHERE department = %s AND is_active = TRUE AND notify_on_allocation = TRUE
-    ''', (department,))
+    if company:
+        # Filter by both department AND company
+        cursor.execute('''
+            SELECT id, name, email, phone, department AS departments, subdepartment,
+                   company, brand, notify_on_allocation, is_active, created_at, updated_at
+            FROM users
+            WHERE department = %s AND company = %s
+                  AND is_active = TRUE AND notify_on_allocation = TRUE
+        ''', (department, company))
+    else:
+        # Filter by department only (backward compatibility)
+        cursor.execute('''
+            SELECT id, name, email, phone, department AS departments, subdepartment,
+                   company, brand, notify_on_allocation, is_active, created_at, updated_at
+            FROM users
+            WHERE department = %s AND is_active = TRUE AND notify_on_allocation = TRUE
+        ''', (department,))
 
     results = [dict_from_row(row) for row in cursor.fetchall()]
     release_db(conn)

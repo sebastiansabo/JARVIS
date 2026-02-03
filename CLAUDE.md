@@ -1029,6 +1029,44 @@ JarvisToast.info('Processing...');
 | `danger` | boolean | Red confirm button for destructive actions |
 | `duration` | number | Toast auto-dismiss time in ms (0 = no auto-dismiss) |
 
+## Email Notification Service
+
+### Overview
+The notification service (`jarvis/core/services/notification_service.py`) sends email notifications to responsables when invoices are allocated to their department.
+
+### Responsable Lookup Logic
+Notifications are sent to users based on the **company AND department** of the allocation:
+
+| Filter | Description |
+|--------|-------------|
+| `company` | Must match the allocation's target company |
+| `department` | Must match the allocation's target department |
+| `is_active` | Must be TRUE |
+| `notify_on_allocation` | Must be TRUE |
+
+**Important**: The hierarchy is **Company > Brand > Department**. Users are only notified if they belong to BOTH the same company AND department as the allocation.
+
+### Key Functions
+
+| Function | File | Description |
+|----------|------|-------------|
+| `get_responsables_by_department(department, company)` | database.py | Queries users table with optional company filter |
+| `find_responsables_for_allocation(allocation)` | notification_service.py | Finds all users to notify for an allocation |
+| `notify_allocation(invoice_data, allocation)` | notification_service.py | Sends notification emails |
+
+### Reinvoice Notifications
+When an allocation has a `reinvoice_to` target, additional notifications are sent:
+- Uses `reinvoice_to` as the company filter
+- Uses `reinvoice_department` as the department filter
+- Same filtering rules apply (company + department + active + notify)
+
+### SMTP Configuration
+SMTP settings are stored in the `notification_settings` table:
+- `smtp_host`, `smtp_port`, `smtp_tls`
+- `smtp_username`, `smtp_password`
+- `from_email`, `from_name`
+- `global_cc` - Optional CC address for all notifications
+
 ## Disabled Features
 
 Some connector infrastructure remains disabled:

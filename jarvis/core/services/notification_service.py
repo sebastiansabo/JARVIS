@@ -367,17 +367,19 @@ def find_responsables_for_allocation(allocation: dict) -> list[dict]:
     """
     Find all responsables that should be notified for a given allocation.
 
-    Matches responsables based on their department assignments.
-    If reinvoice_to is set, also notifies the reinvoice department's responsables.
+    Matches responsables based on their company AND department assignments.
+    If reinvoice_to is set, also notifies the reinvoice company/department's responsables.
     """
     all_responsables = []
     seen_ids = set()
 
-    # Get responsables for the main department
+    # Get responsables for the main department, filtered by company
+    company = allocation.get('company', '')
     department = allocation.get('department', '')
     if department:
-        responsables = get_responsables_by_department(department)
-        logger.debug(f"Found {len(responsables)} responsables for department '{department}'")
+        # Pass company to filter responsables by both company AND department
+        responsables = get_responsables_by_department(department, company)
+        logger.debug(f"Found {len(responsables)} responsables for company '{company}', department '{department}'")
         for r in responsables:
             if r.get('is_active', True) and r.get('notify_on_allocation', True):
                 if r.get('id') not in seen_ids:
@@ -391,11 +393,13 @@ def find_responsables_for_allocation(allocation: dict) -> list[dict]:
                     f"is_active={r.get('is_active')}, notify={r.get('notify_on_allocation')}"
                 )
 
-    # If reinvoice_to is set, also get responsables for the reinvoice department
-    reinvoice_to = allocation.get('reinvoice_to', '')
+    # If reinvoice_to is set, also get responsables for the reinvoice company/department
+    reinvoice_to = allocation.get('reinvoice_to', '')  # This is the reinvoice company
     reinvoice_department = allocation.get('reinvoice_department', '')
     if reinvoice_to and reinvoice_department:
-        reinvoice_responsables = get_responsables_by_department(reinvoice_department)
+        # Pass reinvoice company to filter by both company AND department
+        reinvoice_responsables = get_responsables_by_department(reinvoice_department, reinvoice_to)
+        logger.debug(f"Found {len(reinvoice_responsables)} responsables for reinvoice company '{reinvoice_to}', department '{reinvoice_department}'")
         for r in reinvoice_responsables:
             if r.get('is_active', True) and r.get('notify_on_allocation', True):
                 if r.get('id') not in seen_ids:
