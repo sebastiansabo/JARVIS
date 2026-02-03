@@ -118,7 +118,12 @@
             <div class="tab-pane fade show active" id="users">
                 <div class="card border-top-0 rounded-top-0">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Users</h5>
+                        <span>
+                            <h5 class="mb-0 d-inline">Users</h5>
+                            <button id="btnDeleteSelectedUsers" class="btn btn-outline-danger btn-sm ms-2 d-none">
+                                <i class="bi bi-trash"></i> Delete Selected (<span id="selectedUsersCount">0</span>)
+                            </button>
+                        </span>
                         <button class="btn btn-primary btn-sm" onclick="showAddUserModal()">
                             <i class="bi bi-person-plus"></i> Add User
                         </button>
@@ -128,6 +133,7 @@
                             <table class="table table-hover" id="usersTable">
                                 <thead>
                                     <tr>
+                                        <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="selectAllUsers" title="Select All"></th>
                                         <th>Name</th>
                                         <th>Email</th>
                                         <th>Phone</th>
@@ -137,7 +143,7 @@
                                     </tr>
                                 </thead>
                                 <tbody id="usersTableBody">
-                                    <tr class="loading-placeholder"><td colspan="5" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading users...</td></tr>
+                                    <tr class="loading-placeholder"><td colspan="7" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading users...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -2131,6 +2137,7 @@
             noUsersMsg.style.display = 'none';
             tbody.innerHTML = users.map(user => `
                 <tr>
+                    <td><input type="checkbox" class="form-check-input user-checkbox" data-id="${user.id}"></td>
                     <td><strong>${escapeHtml(user.name)}</strong></td>
                     <td><a href="mailto:${escapeHtml(user.email)}">${escapeHtml(user.email)}</a></td>
                     <td>${user.phone ? escapeHtml(user.phone) : '<span class="text-muted">-</span>'}</td>
@@ -2154,7 +2161,79 @@
                     </td>
                 </tr>
             `).join('');
+
+            // Re-attach checkbox event listeners after render
+            attachUserCheckboxListeners();
         }
+
+        // ============== Users Select All / Bulk Delete ==============
+        function attachUserCheckboxListeners() {
+            document.querySelectorAll('.user-checkbox').forEach(cb => {
+                cb.addEventListener('change', updateUserSelectionUI);
+            });
+        }
+
+        function updateUserSelectionUI() {
+            const checkboxes = document.querySelectorAll('.user-checkbox');
+            const checkedBoxes = Array.from(checkboxes).filter(cb => cb.checked);
+            const count = checkedBoxes.length;
+
+            const deleteBtn = document.getElementById('btnDeleteSelectedUsers');
+            const countSpan = document.getElementById('selectedUsersCount');
+            const selectAllCheckbox = document.getElementById('selectAllUsers');
+
+            countSpan.textContent = count;
+
+            if (count > 0) {
+                deleteBtn.classList.remove('d-none');
+            } else {
+                deleteBtn.classList.add('d-none');
+            }
+
+            if (checkboxes.length > 0 && checkedBoxes.length === checkboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else if (checkedBoxes.length > 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            }
+        }
+
+        document.getElementById('selectAllUsers').addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.user-checkbox');
+            checkboxes.forEach(cb => cb.checked = this.checked);
+            updateUserSelectionUI();
+        });
+
+        document.getElementById('btnDeleteSelectedUsers').addEventListener('click', async function() {
+            const checkedBoxes = document.querySelectorAll('.user-checkbox:checked');
+            const ids = Array.from(checkedBoxes).map(cb => cb.dataset.id);
+
+            if (ids.length === 0) return;
+
+            const confirmed = await JarvisDialog.confirm(
+                `Delete ${ids.length} selected user${ids.length > 1 ? 's' : ''}?`,
+                { danger: true }
+            );
+            if (!confirmed) return;
+
+            const resp = await fetch('/api/users/bulk-delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: ids })
+            });
+
+            if (resp.ok) {
+                await loadUsers();
+                updateUserSelectionUI();
+                JarvisToast.success(`Deleted ${ids.length} user${ids.length > 1 ? 's' : ''}`);
+            } else {
+                await JarvisDialog.alert('Error deleting users', { type: 'error' });
+            }
+        });
 
         function populateRoleDropdown() {
             const select = document.getElementById('userRole');

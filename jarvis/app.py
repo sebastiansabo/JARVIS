@@ -27,7 +27,7 @@ from database import (
     restore_invoice, bulk_soft_delete_invoices, bulk_restore_invoices,
     permanently_delete_invoice, bulk_permanently_delete_invoices,
     get_invoice_drive_link, get_invoice_drive_links,
-    get_all_users, get_user, get_user_by_email, save_user, update_user, delete_user,
+    get_all_users, get_user, get_user_by_email, save_user, update_user, delete_user, delete_users_bulk,
     get_all_roles, get_role, save_role, update_role, delete_role,
     get_notification_settings, save_notification_settings_bulk, save_notification_setting, get_notification_logs,
     get_all_companies, get_company, save_company, update_company, delete_company as delete_company_db,
@@ -2167,6 +2167,25 @@ def api_delete_user(user_id):
     if delete_user(user_id):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'User not found'}), 404
+
+
+@app.route('/api/users/bulk-delete', methods=['POST'])
+@login_required
+def api_bulk_delete_users():
+    """Delete multiple users."""
+    data = request.get_json()
+    user_ids = data.get('ids', [])
+
+    if not user_ids:
+        return jsonify({'success': False, 'error': 'No IDs provided'}), 400
+
+    try:
+        user_ids = [int(id) for id in user_ids]
+    except (ValueError, TypeError):
+        return jsonify({'success': False, 'error': 'Invalid ID format'}), 400
+
+    deleted_count = delete_users_bulk(user_ids)
+    return jsonify({'success': True, 'deleted': deleted_count})
 
 
 # Employees API endpoints (uses users table)

@@ -4454,6 +4454,28 @@ def delete_user(user_id: int) -> bool:
     return deleted
 
 
+def delete_users_bulk(user_ids: list) -> int:
+    """Delete multiple users.
+
+    Args:
+        user_ids: List of user IDs to delete
+
+    Returns:
+        Number of deleted records
+    """
+    if not user_ids:
+        return 0
+
+    conn = get_db()
+    cursor = get_cursor(conn)
+    placeholders = ','.join(['%s'] * len(user_ids))
+    cursor.execute(f'DELETE FROM users WHERE id IN ({placeholders})', tuple(user_ids))
+    deleted_count = cursor.rowcount
+    conn.commit()
+    release_db(conn)
+    return deleted_count
+
+
 # ============== Responsables CRUD (now uses users table) ==============
 # NOTE: These functions now query the users table instead of the dropped responsables table.
 # The "departments" field maps to users.department for backwards compatibility.

@@ -171,6 +171,28 @@ def delete_hr_event(event_id):
     release_db(conn)
 
 
+def delete_hr_events_bulk(event_ids):
+    """Delete multiple HR events (cascades to bonuses).
+
+    Args:
+        event_ids: List of event IDs to delete
+
+    Returns:
+        Number of deleted records
+    """
+    if not event_ids:
+        return 0
+
+    conn = get_db()
+    cursor = get_cursor(conn)
+    placeholders = ','.join(['%s'] * len(event_ids))
+    cursor.execute(f'DELETE FROM hr.events WHERE id IN ({placeholders})', tuple(event_ids))
+    deleted_count = cursor.rowcount
+    conn.commit()
+    release_db(conn)
+    return deleted_count
+
+
 # ============== HR Events ==============
 
 def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None):

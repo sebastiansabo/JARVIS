@@ -7,7 +7,7 @@ from . import events_bp
 from .database import (
     get_all_hr_employees, get_hr_employee, save_hr_employee,
     update_hr_employee, delete_hr_employee, search_hr_employees,
-    get_all_hr_events, get_hr_event, save_hr_event, update_hr_event, delete_hr_event,
+    get_all_hr_events, get_hr_event, save_hr_event, update_hr_event, delete_hr_event, delete_hr_events_bulk,
     get_all_event_bonuses, get_event_bonus, save_event_bonus,
     save_event_bonuses_bulk, update_event_bonus, delete_event_bonus, delete_event_bonuses_bulk,
     get_event_bonuses_summary, get_bonuses_by_month, get_bonuses_by_employee, get_bonuses_by_event,
@@ -323,6 +323,26 @@ def api_delete_event(event_id):
     """API: Delete an event."""
     delete_hr_event(event_id)
     return jsonify({'success': True})
+
+
+@events_bp.route('/api/events/bulk-delete', methods=['POST'])
+@login_required
+@hr_required
+def api_bulk_delete_events():
+    """API: Delete multiple events."""
+    data = request.get_json()
+    event_ids = data.get('ids', [])
+
+    if not event_ids:
+        return jsonify({'success': False, 'error': 'No IDs provided'}), 400
+
+    try:
+        event_ids = [int(id) for id in event_ids]
+    except (ValueError, TypeError):
+        return jsonify({'success': False, 'error': 'Invalid ID format'}), 400
+
+    deleted_count = delete_hr_events_bulk(event_ids)
+    return jsonify({'success': True, 'deleted': deleted_count})
 
 
 # ============== Employees API Routes ==============

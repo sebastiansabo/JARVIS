@@ -12,6 +12,12 @@
   - "Delete Selected" button appears when items selected
   - API endpoint: `POST /hr/events/api/event-bonuses/bulk-delete`
 
+- **Bulk Delete for Events**: Same functionality for Events list
+  - API endpoint: `POST /hr/events/api/events/bulk-delete`
+
+- **Bulk Delete for Users**: Same functionality in Settings → Users tab
+  - API endpoint: `POST /api/users/bulk-delete`
+
 ### Profile Page Fix
 - **First Load Issue**: Fixed invoices not loading on first visit
   - Problem: When saved tab was `#invoices`, `tab.show()` didn't fire event
