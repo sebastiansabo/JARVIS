@@ -4601,35 +4601,63 @@ def get_responsable(responsable_id: int) -> Optional[dict]:
 
 
 def get_responsables_by_department(department: str, company: str = None) -> list[dict]:
-    """Get users assigned to a specific department (exact match).
+    """Get users assigned as managers for a specific company + department in department_structure.
+
+    Looks up the department_structure table to find managers for the given
+    company + department combination, then returns those users from the users table.
+
+    Priority:
+    1. Use manager_ids array if populated
+    2. Fall back to looking up user by manager name
 
     Args:
         department: Department name to match
-        company: Optional company name - if provided, filters by both department AND company
+        company: Company name (required for structure lookup)
     """
     conn = get_db()
     cursor = get_cursor(conn)
 
-    # Use exact match instead of LIKE to avoid partial matches
-    # e.g., "Marketing" should only match users with department = "Marketing"
-    # not "Marketing Aftersales" or "Director Marketing"
-    if company:
-        # Filter by both department AND company
+    if not company or not department:
+        release_db(conn)
+        return []
+
+    # Look up manager info from department_structure for this company + department
+    cursor.execute('''
+        SELECT manager_ids, manager
+        FROM department_structure
+        WHERE company = %s AND department = %s
+        LIMIT 1
+    ''', (company, department))
+
+    row = cursor.fetchone()
+    if not row:
+        release_db(conn)
+        return []
+
+    manager_ids = row['manager_ids']
+    manager_name = row['manager']
+
+    # Priority 1: Use manager_ids if populated
+    if manager_ids:
         cursor.execute('''
             SELECT id, name, email, phone, department AS departments, subdepartment,
                    company, brand, notify_on_allocation, is_active, created_at, updated_at
             FROM users
-            WHERE department = %s AND company = %s
+            WHERE id = ANY(%s)
                   AND is_active = TRUE AND notify_on_allocation = TRUE
-        ''', (department, company))
-    else:
-        # Filter by department only (backward compatibility)
+        ''', (manager_ids,))
+    # Priority 2: Look up user by manager name
+    elif manager_name:
         cursor.execute('''
             SELECT id, name, email, phone, department AS departments, subdepartment,
                    company, brand, notify_on_allocation, is_active, created_at, updated_at
             FROM users
-            WHERE department = %s AND is_active = TRUE AND notify_on_allocation = TRUE
-        ''', (department,))
+            WHERE LOWER(name) = LOWER(%s)
+                  AND is_active = TRUE AND notify_on_allocation = TRUE
+        ''', (manager_name,))
+    else:
+        release_db(conn)
+        return []
 
     results = [dict_from_row(row) for row in cursor.fetchall()]
     release_db(conn)
