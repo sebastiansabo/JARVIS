@@ -353,6 +353,8 @@ def save_transactions_with_dedup(
 
     conn = get_db()
     try:
+        # Disable autocommit to enable transaction with SAVEPOINTs
+        conn.autocommit = False
         cursor = get_cursor(conn)
 
         new_ids = []
@@ -433,6 +435,10 @@ def save_transactions_with_dedup(
             'new_count': len(new_ids),
             'duplicate_count': duplicate_count
         }
+    except Exception as e:
+        conn.rollback()
+        logger.error(f'Error saving transactions: {e}')
+        raise
     finally:
         release_db(conn)
 
