@@ -27,6 +27,13 @@
   - `hr.events.*` - View, Add, Edit, Delete events
   - `hr.bonuses.add`, `hr.bonuses.delete` - Add/delete bonuses
 
+### Permission Matrix UX Improvements
+- **Tab Persistence**: After saving permissions, stays on current module tab instead of resetting to first
+- **Allow All / Deny All Buttons**: Each role header now has quick action buttons:
+  - Green checkmark - Allow all permissions for role in current module
+  - X button - Deny all permissions for role in current module
+  - Affects only the selected module (sidebar), not all modules
+
 ## 2026-02-02
 ### HR Module Improvements
 - **Employee Dropdown Display**: Shows department instead of "N/A" in employee dropdowns
