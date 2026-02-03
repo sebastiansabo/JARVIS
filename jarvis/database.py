@@ -2114,6 +2114,17 @@ def init_db():
     except Exception:
         conn.rollback()
 
+    # Unique constraint to prevent duplicate supplier mappings (case-insensitive)
+    try:
+        cursor.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_efactura_supplier_mappings_partner_name_unique
+            ON efactura_supplier_mappings (LOWER(partner_name))
+            WHERE is_active = TRUE
+        ''')
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
     conn.commit()
 
     # Seed initial data if tables are empty
