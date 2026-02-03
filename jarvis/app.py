@@ -259,6 +259,18 @@ class User(UserMixin):
         perm_key = f"{module}.{permission}"
         return self._permission_map.get(perm_key, False)
 
+    def can_access_main_apps(self) -> bool:
+        """Check if user can access main application modules (accounting, invoices, HR).
+
+        Users without access to any main module should be redirected to their profile.
+        """
+        return (
+            self.can_access_accounting or
+            self.can_view_invoices or
+            self.can_add_invoices or
+            self.can_access_hr
+        )
+
 
 @login_manager.user_loader
 def load_user(user_id):

@@ -200,14 +200,14 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
     conn = get_db()
     cursor = get_cursor(conn)
 
-    # employee_id now references users.id directly
+    # user_id references users.id directly
     query = '''
         SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
                ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
                creator.name as created_by_name,
-               b.employee_id as effective_employee_id
+               b.user_id as effective_employee_id
         FROM hr.event_bonuses b
-        LEFT JOIN public.users u ON u.id = b.employee_id
+        LEFT JOIN public.users u ON u.id = b.user_id
         JOIN hr.events ev ON b.event_id = ev.id
         LEFT JOIN public.users creator ON b.created_by = creator.id
         WHERE 1=1
@@ -221,7 +221,7 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
         query += ' AND b.month = %s'
         params.append(month)
     if employee_id:
-        query += ' AND b.employee_id = %s'
+        query += ' AND b.user_id = %s'
         params.append(employee_id)
     if event_id:
         query += ' AND b.event_id = %s'
@@ -242,9 +242,9 @@ def get_event_bonus(bonus_id):
     cursor.execute('''
         SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
                ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
-               b.employee_id as effective_employee_id
+               b.user_id as effective_employee_id
         FROM hr.event_bonuses b
-        LEFT JOIN public.users u ON u.id = b.employee_id
+        LEFT JOIN public.users u ON u.id = b.user_id
         JOIN hr.events ev ON b.event_id = ev.id
         WHERE b.id = %s
     ''', (bonus_id,))
@@ -256,12 +256,12 @@ def get_event_bonus(bonus_id):
 def save_event_bonus(employee_id, event_id, year, month, participation_start=None,
                      participation_end=None, bonus_days=None, hours_free=None,
                      bonus_net=None, details=None, allocation_month=None, created_by=None):
-    """Create a new event bonus record using employee_id (references users.id)."""
+    """Create a new event bonus record using user_id (references users.id)."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
         INSERT INTO hr.event_bonuses
-        (employee_id, event_id, year, month, participation_start, participation_end,
+        (user_id, event_id, year, month, participation_start, participation_end,
          bonus_days, hours_free, bonus_net, details, allocation_month, created_by)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
@@ -274,7 +274,7 @@ def save_event_bonus(employee_id, event_id, year, month, participation_start=Non
 
 
 def save_event_bonuses_bulk(bonuses, created_by=None):
-    """Bulk create event bonus records using employee_id (references users.id)."""
+    """Bulk create event bonus records using user_id (references users.id)."""
     conn = get_db()
     cursor = get_cursor(conn)
 
@@ -282,7 +282,7 @@ def save_event_bonuses_bulk(bonuses, created_by=None):
     for b in bonuses:
         cursor.execute('''
             INSERT INTO hr.event_bonuses
-            (employee_id, event_id, year, month, participation_start, participation_end,
+            (user_id, event_id, year, month, participation_start, participation_end,
              bonus_days, hours_free, bonus_net, details, allocation_month, created_by)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
@@ -300,12 +300,12 @@ def save_event_bonuses_bulk(bonuses, created_by=None):
 def update_event_bonus(bonus_id, employee_id, event_id, year, month, participation_start=None,
                        participation_end=None, bonus_days=None, hours_free=None,
                        bonus_net=None, details=None, allocation_month=None):
-    """Update an event bonus record using employee_id (references users.id)."""
+    """Update an event bonus record using user_id (references users.id)."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
         UPDATE hr.event_bonuses
-        SET employee_id = %s, event_id = %s, year = %s, month = %s,
+        SET user_id = %s, event_id = %s, year = %s, month = %s,
             participation_start = %s, participation_end = %s, bonus_days = %s,
             hours_free = %s, bonus_net = %s, details = %s, allocation_month = %s,
             updated_at = CURRENT_TIMESTAMP
@@ -357,7 +357,7 @@ def get_event_bonuses_summary(year=None):
 
     query = '''
         SELECT
-            COUNT(DISTINCT b.employee_id) as total_employees,
+            COUNT(DISTINCT b.user_id) as total_employees,
             COUNT(DISTINCT b.event_id) as total_events,
             COUNT(*) as total_bonuses,
             SUM(b.bonus_net) as total_bonus_amount,
@@ -404,7 +404,7 @@ def get_bonuses_by_employee(year=None, month=None):
                COALESCE(SUM(b.hours_free), 0) as total_hours,
                COALESCE(SUM(b.bonus_net), 0) as total_bonus
         FROM hr.event_bonuses b
-        LEFT JOIN public.users u ON u.id = b.employee_id
+        LEFT JOIN public.users u ON u.id = b.user_id
         WHERE 1=1
     '''
     params = []
@@ -432,7 +432,7 @@ def get_bonuses_by_event(year=None, month=None):
         SELECT e.id, e.name, e.start_date, e.end_date, e.company, e.brand,
                b.year, b.month,
                COUNT(*) as bonus_count,
-               COUNT(DISTINCT b.employee_id) as employee_count,
+               COUNT(DISTINCT b.user_id) as employee_count,
                COALESCE(SUM(b.bonus_days), 0) as total_days,
                COALESCE(SUM(b.hours_free), 0) as total_hours,
                COALESCE(SUM(b.bonus_net), 0) as total_bonus

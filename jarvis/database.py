@@ -1640,11 +1640,11 @@ def init_db():
     ''')
 
     # HR Event Bonuses table - individual bonus records
-    # NOTE: employee_id now references public.users(id) instead of hr.employees(id)
+    # NOTE: user_id references public.users(id) (consolidated from hr.employees)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS hr.event_bonuses (
             id SERIAL PRIMARY KEY,
-            employee_id INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
             event_id INTEGER NOT NULL REFERENCES hr.events(id) ON DELETE CASCADE,
             year INTEGER NOT NULL,
             month INTEGER NOT NULL,
@@ -1708,7 +1708,7 @@ def init_db():
 
     # HR indexes (hr.employees table removed - using users table now)
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_events_dates ON hr.events(start_date, end_date)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonuses_employee ON hr.event_bonuses(employee_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonuses_employee ON hr.event_bonuses(user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonuses_event ON hr.event_bonuses(event_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonuses_year_month ON hr.event_bonuses(year, month)')
     conn.commit()
@@ -6758,7 +6758,7 @@ def get_user_event_bonuses(
 ) -> list[dict]:
     """
     Get HR event bonuses for a user.
-    employee_id in hr.event_bonuses now references users.id directly.
+    user_id in hr.event_bonuses references users.id directly.
     """
     conn = get_db()
     cursor = get_cursor(conn)
@@ -6773,7 +6773,7 @@ def get_user_event_bonuses(
             e.company, e.brand
         FROM hr.event_bonuses eb
         INNER JOIN hr.events e ON eb.event_id = e.id
-        WHERE eb.employee_id = %s
+        WHERE eb.user_id = %s
     '''
     params = [user_id]
 
@@ -6803,7 +6803,7 @@ def get_user_event_bonuses(
 def get_user_event_bonuses_summary(user_id: int) -> dict:
     """
     Get summary of HR event bonuses for a user.
-    employee_id in hr.event_bonuses now references users.id directly.
+    user_id in hr.event_bonuses references users.id directly.
     """
     conn = get_db()
     cursor = get_cursor(conn)
@@ -6814,7 +6814,7 @@ def get_user_event_bonuses_summary(user_id: int) -> dict:
             COALESCE(SUM(eb.bonus_net), 0) as total_amount,
             COUNT(DISTINCT eb.event_id) as events_count
         FROM hr.event_bonuses eb
-        WHERE eb.employee_id = %s
+        WHERE eb.user_id = %s
     ''', (user_id,))
 
     row = cursor.fetchone()
@@ -6837,7 +6837,7 @@ def get_user_event_bonuses_count(
 ) -> int:
     """
     Get count of HR event bonuses for a user with filters.
-    employee_id in hr.event_bonuses now references users.id directly.
+    user_id in hr.event_bonuses references users.id directly.
     """
     conn = get_db()
     cursor = get_cursor(conn)
@@ -6846,7 +6846,7 @@ def get_user_event_bonuses_count(
         SELECT COUNT(*) as count
         FROM hr.event_bonuses eb
         INNER JOIN hr.events e ON eb.event_id = e.id
-        WHERE eb.employee_id = %s
+        WHERE eb.user_id = %s
     '''
     params = [user_id]
 
