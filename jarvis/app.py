@@ -546,10 +546,16 @@ def api_online_users():
 @app.route('/')
 @login_required
 def index():
-    """Show applications landing page."""
-    # Redirect users without main app access to their profile
+    """Redirect to profile page (default landing page for all users)."""
+    return redirect(url_for('profile.profile_page'))
+
+
+@app.route('/apps')
+@login_required
+def apps_page():
+    """Show applications landing page (requires main app access)."""
     if not current_user.can_access_main_apps():
-        return redirect(url_for('profile.profile_page'))
+        return render_template('core/profile.html', access_denied=True, access_denied_message='You do not have access to the Applications page.')
     return render_template('core/apps.html')
 
 
@@ -558,8 +564,7 @@ def index():
 def add_invoice():
     """Invoice distribution form page."""
     if not current_user.can_add_invoices:
-        flash('You do not have permission to add invoices.', 'error')
-        return redirect(url_for('accounting'))
+        return render_template('core/profile.html', access_denied=True, access_denied_message='You do not have permission to add invoices.')
     return render_template('accounting/bugetare/index.html')
 
 

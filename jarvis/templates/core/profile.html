@@ -704,6 +704,14 @@
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', async function() {
+            // Show access denied modal if redirected due to permission
+            {% if access_denied %}
+            await JarvisDialog.alert('{{ access_denied_message|default("You do not have permission to access that page.") }}', {
+                type: 'warning',
+                title: 'Access Denied'
+            });
+            {% endif %}
+
             showLoading('Loading profile...');
             try {
                 // Set user initials
