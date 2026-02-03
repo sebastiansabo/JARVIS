@@ -40,6 +40,13 @@ def is_smtp_configured() -> bool:
     return bool(config['host'] and config['from_email'])
 
 
+def is_notifications_enabled() -> bool:
+    """Check if allocation notifications are globally enabled."""
+    settings = get_notification_settings()
+    # The setting is stored as string 'true'/'false'
+    return settings.get('notify_on_allocation', 'true').lower() == 'true'
+
+
 def send_email(
     to_email: str,
     subject: str,
@@ -423,6 +430,10 @@ def notify_allocation(invoice_data: dict, allocation: dict) -> list[dict]:
     """
     if not is_smtp_configured():
         logger.warning("SMTP not configured, skipping notifications")
+        return []
+
+    if not is_notifications_enabled():
+        logger.info("Allocation notifications are disabled globally")
         return []
 
     results = []
