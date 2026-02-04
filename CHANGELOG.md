@@ -1,6 +1,18 @@
 # Changelog
 
 ## 2026-02-04
+
+### Password Recovery (Self-Service)
+- **Forgot Password Flow**: Users can reset their password via email from the login page
+  - "Forgot password?" link on login page → email input form → reset link sent via SMTP
+  - Reset link with cryptographic token (`secrets.token_urlsafe(32)`), 1-hour expiry, single-use
+  - Anti-enumeration: always shows success message regardless of whether email exists
+  - Password reset emails skip global CC for privacy (`skip_global_cc` param added to `send_email()`)
+- **Database**: `password_reset_tokens` table (user_id, token, expires_at, used_at)
+- **Architecture**: Routes in `app.py`, business logic in `auth_service.py`, CRUD in `user_repository.py`
+- **Templates**: `forgot_password.html`, `reset_password.html` (same styling as login page)
+- **Audit**: All reset requests and completions logged to `user_events`
+
 ### HR Module Scope-Based Permissions
 - **Granular Permission Enforcement**: HR module now enforces scope values ('deny', 'own', 'department', 'all')
   - `hr_permission_required` decorator passes scope via Flask `g` object

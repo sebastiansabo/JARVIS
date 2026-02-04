@@ -344,6 +344,69 @@ def logout():
     return redirect(url_for('login'))
 
 
+# Password reset service (lazy-initialized)
+_auth_service = None
+
+def _get_auth_service():
+    global _auth_service
+    if _auth_service is None:
+        from core.auth.services import AuthService
+        _auth_service = AuthService()
+    return _auth_service
+
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    """Forgot password page and form handler."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip()
+        base_url = request.host_url
+        _get_auth_service().request_password_reset(email, base_url)
+
+        log_event('password_reset_requested', f'Password reset requested for {email}')
+
+        flash('If an account exists with that email, a reset link has been sent.', 'info')
+        return redirect(url_for('forgot_password'))
+
+    return render_template('core/forgot_password.html')
+
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    """Reset password page and form handler."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    auth_svc = _get_auth_service()
+    token_data = auth_svc.validate_reset_token(token)
+    if not token_data:
+        flash('This reset link is invalid or has expired.', 'error')
+        return redirect(url_for('forgot_password'))
+
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if new_password != confirm_password:
+            flash('Passwords do not match.', 'error')
+            return render_template('core/reset_password.html', token=token)
+
+        result = auth_svc.reset_password(token, new_password)
+        if result.success:
+            log_event('password_reset_completed',
+                      f'Password reset completed for {token_data["email"]}')
+            flash('Your password has been reset. You can now sign in.', 'success')
+            return redirect(url_for('login'))
+        else:
+            flash(result.error, 'error')
+            return render_template('core/reset_password.html', token=token)
+
+    return render_template('core/reset_password.html', token=token)
+
+
 @app.route('/api/auth/current-user')
 def api_current_user():
     """Get current user info for UI."""

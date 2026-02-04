@@ -98,7 +98,12 @@ jarvis/                           # Main application folder
 │   ├── auth/                     # Authentication module
 │   │   ├── __init__.py
 │   │   ├── models.py             # User model (Flask-Login)
-│   │   └── routes.py             # Login/logout routes
+│   │   ├── routes.py             # Auth blueprint routes (not registered - routes in app.py)
+│   │   ├── repositories/
+│   │   │   ├── user_repository.py    # User + password reset token CRUD
+│   │   │   └── event_repository.py   # Audit event logging
+│   │   └── services/
+│   │       └── auth_service.py       # Auth business logic + password reset
 │   ├── services/                 # Shared services
 │   │   ├── drive_service.py      # Google Drive integration
 │   │   ├── notification_service.py # SMTP email notifications
@@ -149,6 +154,8 @@ jarvis/                           # Main application folder
 └── templates/                    # Jinja2 templates
     ├── core/                     # Core templates
     │   ├── login.html
+    │   ├── forgot_password.html  # Password reset request
+    │   ├── reset_password.html   # Set new password
     │   ├── settings.html
     │   ├── apps.html
     │   └── guide.html
@@ -173,6 +180,8 @@ jarvis/                           # Main application folder
 |-----|---------|-----|------|
 | `/` | Core | - | Apps landing |
 | `/login` | Core | Auth | Login |
+| `/forgot-password` | Core | Auth | Request password reset |
+| `/reset-password/<token>` | Core | Auth | Set new password |
 | `/settings` | Core | Settings | Platform settings |
 | `/add-invoice` | Accounting | Bugetare | Add invoice |
 | `/accounting` | Accounting | Bugetare | Dashboard |
@@ -270,6 +279,7 @@ The platform uses a normalized organizational hierarchy with foreign key referen
 - `invoice_templates` - AI parsing templates per supplier
 - `users` - Application users with bcrypt passwords and role permissions
 - `user_events` - Activity log for user actions (login, invoice operations)
+- `password_reset_tokens` - Time-limited tokens for self-service password reset (1-hour expiry, single-use)
 - `vat_rates` - VAT rate definitions (id, name, rate)
 - `dropdown_options` - Configurable dropdown options (invoice_status, payment_status)
   - id, dropdown_type, value, label, color, opacity, sort_order, is_active, min_role
