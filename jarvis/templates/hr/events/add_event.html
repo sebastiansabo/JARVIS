@@ -267,7 +267,7 @@
         // All bonus types for per-employee dropdown
         const allBonusTypes = [
             {% for bt in bonus_types %}
-            { id: {{ bt.id }}, name: "{{ bt.name }}", amount: {{ bt.amount }}, daysPerAmount: {{ bt.days_per_amount or 1 }} },
+            { id: {{ bt.id }}, name: "{{ bt.name }}", amount: {{ bt.amount if hr_permissions.can_view_amounts else 0 }}, daysPerAmount: {{ bt.days_per_amount or 1 }} },
             {% endfor %}
         ];
 
@@ -284,7 +284,7 @@
         // Generate bonus type options HTML
         function getBonusTypeOptionsHtml(selectedId = '') {
             return '<option value="">Select</option>' + allBonusTypes.map(bt =>
-                `<option value="${bt.id}" data-amount="${bt.amount}" data-days-per-amount="${bt.daysPerAmount}" ${bt.id == selectedId ? 'selected' : ''}>${bt.name}</option>`
+                `<option value="${bt.id}" data-amount="${bt.amount}" data-days-per-amount="${bt.daysPerAmount}" ${bt.id == selectedId ? 'selected' : ''}>${bt.name}${isHrManager && bt.amount > 0 ? ` (${bt.amount.toFixed(2)} RON)` : ''}</option>`
             ).join('');
         }
 
@@ -656,6 +656,8 @@
         }
 
         function calculateRowBonus(row) {
+            if (!isHrManager) return;
+
             // Use per-row bonus type dropdown
             const bonusTypeSelect = row.querySelector('.emp-bonus-type');
             const selectedOption = bonusTypeSelect ? bonusTypeSelect.selectedOptions[0] : null;
@@ -667,12 +669,14 @@
             const total = ratePerDay * days;
 
             const display = row.querySelector('.emp-bonus-display');
-            if (total > 0) {
-                display.textContent = total.toFixed(2) + ' RON';
-                display.classList.add('bonus-total');
-            } else {
-                display.textContent = '-';
-                display.classList.remove('bonus-total');
+            if (display) {
+                if (total > 0) {
+                    display.textContent = total.toFixed(2) + ' RON';
+                    display.classList.add('bonus-total');
+                } else {
+                    display.textContent = '-';
+                    display.classList.remove('bonus-total');
+                }
             }
         }
 
@@ -698,7 +702,8 @@
             document.getElementById('selectedCount').textContent = totalEmployees + ' selected';
             document.getElementById('summaryEmployees').textContent = totalEmployees;
             document.getElementById('summaryDays').textContent = totalDays.toFixed(1);
-            document.getElementById('summaryBonus').textContent = totalBonus.toFixed(2) + ' RON';
+            const summaryBonusEl = document.getElementById('summaryBonus');
+            if (summaryBonusEl) summaryBonusEl.textContent = totalBonus.toFixed(2) + ' RON';
         }
 
         // Escape HTML
@@ -781,6 +786,7 @@
                         // Get per-row bonus type values
                         const bonusTypeSelect = row.querySelector('.emp-bonus-type');
                         const selectedOption = bonusTypeSelect ? bonusTypeSelect.selectedOptions[0] : null;
+                        const bonusTypeId = selectedOption ? parseInt(selectedOption.value) || null : null;
                         const amount = selectedOption ? parseFloat(selectedOption.dataset.amount) || 0 : 0;
                         const daysPerAmount = selectedOption ? parseFloat(selectedOption.dataset.daysPerAmount) || 1 : 1;
                         const ratePerDay = amount / daysPerAmount;
@@ -809,7 +815,8 @@
                             participation_end: partEndDate,
                             bonus_days: days > 0 ? days : null,
                             hours_free: hours > 0 ? hours : null,
-                            bonus_net: bonusNet > 0 ? bonusNet : null
+                            bonus_net: bonusNet > 0 ? bonusNet : null,
+                            bonus_type_id: bonusTypeId
                         };
                     });
 

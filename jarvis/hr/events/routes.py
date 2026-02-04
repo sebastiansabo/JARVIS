@@ -253,7 +253,34 @@ def api_get_event_bonuses():
         employee_id=employee_id, event_id=event_id,
         scope=scope, user_context=user_context
     )
+
+    # Strip monetary values if user cannot view amounts
+    is_hr_manager = getattr(current_user, 'is_hr_manager', False)
+    role_id = getattr(current_user, 'role_id', None)
+    can_view = is_hr_manager
+    if not can_view and role_id:
+        perm = check_permission_v2(role_id, 'hr', 'bonuses', 'view_amounts')
+        can_view = perm.get('has_permission', False)
+    if not can_view:
+        for b in bonuses:
+            b.pop('bonus_net', None)
+
     return jsonify(bonuses)
+
+
+def _compute_bonus_net(data):
+    """Compute bonus_net from bonus_type_id and bonus_days if not provided."""
+    bonus_net = data.get('bonus_net')
+    if bonus_net:
+        return bonus_net
+    bonus_type_id = data.get('bonus_type_id')
+    bonus_days = data.get('bonus_days')
+    if bonus_type_id and bonus_days:
+        bt = get_bonus_type(int(bonus_type_id))
+        if bt:
+            rate = bt['amount'] / (bt.get('days_per_amount') or 1)
+            return round(rate * float(bonus_days), 2)
+    return bonus_net
 
 
 @events_bp.route('/api/event-bonuses', methods=['POST'])
@@ -272,7 +299,7 @@ def api_create_event_bonus():
         participation_end=data.get('participation_end'),
         bonus_days=data.get('bonus_days'),
         hours_free=data.get('hours_free'),
-        bonus_net=data.get('bonus_net'),
+        bonus_net=_compute_bonus_net(data),
         details=data.get('details'),
         allocation_month=data.get('allocation_month'),
         created_by=current_user.id
@@ -291,6 +318,10 @@ def api_create_event_bonuses_bulk():
 
     if not bonuses:
         return jsonify({'success': False, 'error': 'No bonuses provided'}), 400
+
+    # Compute bonus_net server-side for each bonus if not provided
+    for bonus in bonuses:
+        bonus['bonus_net'] = _compute_bonus_net(bonus)
 
     created_ids = save_event_bonuses_bulk(bonuses, created_by=current_user.id)
     return jsonify({'success': True, 'ids': created_ids, 'count': len(created_ids)})
@@ -1168,6 +1199,19 @@ def api_get_bonus_types():
     """API: Get all bonus types."""
     active_only = request.args.get('active_only', 'true').lower() == 'true'
     bonus_types = get_all_bonus_types(active_only=active_only)
+
+    # Strip monetary values if user cannot view amounts
+    is_hr_manager = getattr(current_user, 'is_hr_manager', False)
+    role_id = getattr(current_user, 'role_id', None)
+    can_view = is_hr_manager
+    if not can_view and role_id:
+        perm = check_permission_v2(role_id, 'hr', 'bonuses', 'view_amounts')
+        can_view = perm.get('has_permission', False)
+
+    if not can_view:
+        for bt in bonus_types:
+            bt.pop('amount', None)
+
     return jsonify(bonus_types)
 
 
@@ -1196,6 +1240,17 @@ def api_get_bonus_type(bonus_type_id):
     bonus_type = get_bonus_type(bonus_type_id)
     if not bonus_type:
         return jsonify({'error': 'Bonus type not found'}), 404
+
+    # Strip monetary values if user cannot view amounts
+    is_hr_manager = getattr(current_user, 'is_hr_manager', False)
+    role_id = getattr(current_user, 'role_id', None)
+    can_view = is_hr_manager
+    if not can_view and role_id:
+        perm = check_permission_v2(role_id, 'hr', 'bonuses', 'view_amounts')
+        can_view = perm.get('has_permission', False)
+    if not can_view:
+        bonus_type.pop('amount', None)
+
     return jsonify(bonus_type)
 
 
