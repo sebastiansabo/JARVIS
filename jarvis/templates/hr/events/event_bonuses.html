@@ -55,7 +55,7 @@
                     <i class="bi bi-calendar-event text-warning"></i>
                     <strong>{{ summary.total_events or 0 }}</strong> events
                 </span>
-                {% if is_hr_manager %}
+                {% if hr_permissions.can_view_amounts %}
                 <span class="summary-stat text-success" title="Total Amount (Net)">
                     <i class="bi bi-cash-stack"></i>
                     <strong>{{ '{:,.0f}'.format(summary.total_bonus_amount or 0) }}</strong> RON
@@ -87,7 +87,7 @@
                         <i class="bi bi-list-ul"></i> Bonuses List
                     </button>
                 </li>
-                {% if is_hr_manager %}
+                {% if hr_permissions.can_view_amounts %}
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="by-employee-tab" data-bs-toggle="tab" data-bs-target="#by-employee-pane" type="button" role="tab">
                         <i class="bi bi-people"></i> By Employee
@@ -107,7 +107,7 @@
                 <a href="{{ url_for('hr.events.add_bonus') }}" class="btn btn-outline-info btn-sm">
                     <i class="bi bi-plus-lg"></i> Add Bonus
                 </a>
-                {% if is_hr_manager %}
+                {% if hr_permissions.can_export %}
                 <button id="btnExport" class="btn btn-outline-success btn-sm">
                     <i class="bi bi-download"></i> Export
                 </button>
@@ -172,7 +172,7 @@
                                     <th>Participation</th>
                                     <th class="sortable" data-sort="days">Days <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
                                     <th class="sortable" data-sort="hours">Hours <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
-                                    {% if is_hr_manager %}
+                                    {% if hr_permissions.can_view_amounts %}
                                     <th class="sortable" data-sort="bonus">Bonus (Net) <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
                                     {% endif %}
                                     <th>Details</th>
@@ -209,7 +209,7 @@
                             </td>
                             <td>{{ bonus.bonus_days or 0 }}</td>
                             <td>{{ bonus.hours_free or 0 }}</td>
-                            {% if is_hr_manager %}
+                            {% if hr_permissions.can_view_amounts %}
                             <td><strong>{{ '{:,.0f}'.format(bonus.bonus_net or 0) }}</strong> RON</td>
                             {% endif %}
                             <td>{{ bonus.details or '-' }}</td>
@@ -225,7 +225,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="{{ 14 if is_hr_manager else 13 }}" class="text-center text-muted py-4">
+                            <td colspan="{{ 14 if hr_permissions.can_view_amounts else 13 }}" class="text-center text-muted py-4">
                                 <i class="bi bi-inbox fs-1 d-block mb-2"></i>
                                 No event bonuses found. Click "Add Bonus" to create one.
                             </td>
@@ -237,7 +237,7 @@
                 </div>
             </div>
 
-            {% if is_hr_manager %}
+            {% if hr_permissions.can_view_amounts %}
             <!-- By Employee Tab -->
             <div class="tab-pane fade" id="by-employee-pane" role="tabpanel">
                 <div class="card">
@@ -430,7 +430,7 @@
                         <div class="col-12">
                             <h6 class="text-info mb-3"><i class="bi bi-people"></i> Employees</h6>
                         </div>
-                        {% if is_hr_manager %}
+                        {% if hr_permissions.can_view_amounts %}
                         <div class="col-md-2">
                             <label class="form-label">Default Bonus</label>
                             <input type="number" id="newEventDefaultBonus" class="form-control" value="150">
@@ -464,7 +464,7 @@
                                     <th>Part. End</th>
                                     <th style="width: 80px;">Days</th>
                                     <th style="width: 80px;">Hours</th>
-                                    {% if is_hr_manager %}<th style="width: 100px;">Bonus</th>{% endif %}
+                                    {% if hr_permissions.can_view_amounts %}<th style="width: 100px;">Bonus</th>{% endif %}
                                     <th>Details</th>
                                     <th style="width: 40px;"></th>
                                 </tr>
@@ -544,7 +544,7 @@
                                 <label class="form-label">Hours Free</label>
                                 <input type="number" id="bonusHours" class="form-control" min="0" max="100">
                             </div>
-                            {% if is_hr_manager %}
+                            {% if hr_permissions.can_view_amounts %}
                             <div class="col-md-3">
                                 <label class="form-label">Bonus (Net)</label>
                                 <input type="number" id="bonusNet" class="form-control" step="0.01" min="0">
@@ -604,7 +604,7 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        {% if is_hr_manager %}
+                        {% if hr_permissions.can_view_amounts %}
                         <div class="col-md-2">
                             <label class="form-label">Default Bonus</label>
                             <input type="number" id="bulkDefaultBonus" class="form-control" value="150">
@@ -634,7 +634,7 @@
                                     <th>Part. End</th>
                                     <th>Days</th>
                                     <th>Hours</th>
-                                    {% if is_hr_manager %}<th>Bonus</th>{% endif %}
+                                    {% if hr_permissions.can_view_amounts %}<th>Bonus</th>{% endif %}
                                     <th>Details</th>
                                     <th></th>
                                 </tr>
@@ -685,8 +685,17 @@
         // Month names for display
         const MONTHS = {{ months|tojson }};
 
-        // HR Manager permission flag for conditional bonus display
-        const isHrManager = {{ 'true' if is_hr_manager else 'false' }};
+        // HR permissions for conditional display (granular permissions)
+        const hrPermissions = {
+            canAddBonuses: {{ 'true' if hr_permissions.can_add_bonuses else 'false' }},
+            canEditBonuses: {{ 'true' if hr_permissions.can_edit_bonuses else 'false' }},
+            canDeleteBonuses: {{ 'true' if hr_permissions.can_delete_bonuses else 'false' }},
+            canViewAmounts: {{ 'true' if hr_permissions.can_view_amounts else 'false' }},
+            canExport: {{ 'true' if hr_permissions.can_export else 'false' }},
+            canBulkDelete: {{ 'true' if hr_permissions.can_bulk_delete else 'false' }}
+        };
+        // Legacy alias for backward compatibility
+        const isHrManager = hrPermissions.canViewAmounts;
 
         // Total bonuses count for badge
         const totalBonusesCount = {{ bonuses|length }};

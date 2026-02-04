@@ -1875,6 +1875,11 @@
                                 <div id="structureManagerDropdown" class="dropdown-menu w-100" style="max-height: 200px; overflow-y: auto; position: absolute; top: 100%; left: 0; z-index: 1050;"></div>
                             </div>
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label">CC Email</label>
+                            <input type="email" class="form-control" id="structureCcEmail" placeholder="department-cc@example.com">
+                            <small class="text-muted">Optional. Will be CC'd on all allocation notifications for this department.</small>
+                        </div>
                     </form>
                 </div>
                 <div class="modal-footer">
@@ -4256,8 +4261,14 @@
                         <div class="d-flex flex-column align-items-center">
                             <span>${escapeHtml(role.name)}</span>
                             <small class="text-muted">${escapeHtml(role.description || '')}</small>
-                            <div class="mt-1">
-                                <button class="btn btn-link btn-sm p-0 me-1" onclick="editRole(${role.id})" title="Edit role name" aria-label="Edit role">
+                            <div class="mt-1 d-flex gap-1 justify-content-center">
+                                <button class="btn btn-outline-success btn-sm px-1 py-0" onclick="allowAllForRole(${role.id})" title="Allow all in this module" style="font-size: 0.65rem;">
+                                    <i class="bi bi-check-all"></i>
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm px-1 py-0" onclick="denyAllForRole(${role.id})" title="Deny all in this module" style="font-size: 0.65rem;">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                                <button class="btn btn-link btn-sm p-0" onclick="editRole(${role.id})" title="Edit role name" aria-label="Edit role">
                                     <i class="bi bi-pencil text-primary" style="font-size: 0.75rem;"></i>
                                 </button>
                                 <button class="btn btn-link btn-sm p-0" onclick="showDeleteModal('role', ${role.id}, '${escapeHtml(role.name)}')" title="Delete role" aria-label="Delete role">
@@ -4372,6 +4383,9 @@
                 return;
             }
 
+            // Save current module to restore after reload
+            const currentModule = selectedModule;
+
             showLoading('Saving permissions...');
             try {
                 for (const roleId of roleIds) {
@@ -4387,12 +4401,79 @@
                 await JarvisDialog.alert('Permissions saved successfully!', { type: 'success' });
                 // Reload to get fresh data
                 await loadPermissionMatrix();
+                // Restore the module tab user was on
+                if (currentModule) {
+                    selectModule(currentModule);
+                }
             } catch (err) {
                 console.error('Error saving permissions:', err);
                 await JarvisDialog.alert('Error saving permissions: ' + err.message, { type: 'error' });
             } finally {
                 hideLoading();
             }
+        }
+
+        function allowAllForRole(roleId) {
+            // Enable all permissions for this role in the current module
+            const module = permissionMatrix.modules.find(m => m.key === selectedModule);
+            if (!module) return;
+
+            if (!pendingPermissionChanges[roleId]) {
+                pendingPermissionChanges[roleId] = {};
+            }
+
+            module.entities.forEach(entity => {
+                entity.actions.forEach(action => {
+                    if (action.is_scope_based) {
+                        pendingPermissionChanges[roleId][action.id] = { scope: 'all' };
+                        // Update in-memory state
+                        if (!permissionMatrix.role_permissions[roleId]) {
+                            permissionMatrix.role_permissions[roleId] = {};
+                        }
+                        permissionMatrix.role_permissions[roleId][action.id] = { scope: 'all', granted: true };
+                    } else {
+                        pendingPermissionChanges[roleId][action.id] = { granted: true };
+                        if (!permissionMatrix.role_permissions[roleId]) {
+                            permissionMatrix.role_permissions[roleId] = {};
+                        }
+                        permissionMatrix.role_permissions[roleId][action.id] = { scope: 'all', granted: true };
+                    }
+                });
+            });
+
+            // Re-render to show updated values
+            renderPermissionMatrix();
+        }
+
+        function denyAllForRole(roleId) {
+            // Deny all permissions for this role in the current module
+            const module = permissionMatrix.modules.find(m => m.key === selectedModule);
+            if (!module) return;
+
+            if (!pendingPermissionChanges[roleId]) {
+                pendingPermissionChanges[roleId] = {};
+            }
+
+            module.entities.forEach(entity => {
+                entity.actions.forEach(action => {
+                    if (action.is_scope_based) {
+                        pendingPermissionChanges[roleId][action.id] = { scope: 'deny' };
+                        if (!permissionMatrix.role_permissions[roleId]) {
+                            permissionMatrix.role_permissions[roleId] = {};
+                        }
+                        permissionMatrix.role_permissions[roleId][action.id] = { scope: 'deny', granted: false };
+                    } else {
+                        pendingPermissionChanges[roleId][action.id] = { granted: false };
+                        if (!permissionMatrix.role_permissions[roleId]) {
+                            permissionMatrix.role_permissions[roleId] = {};
+                        }
+                        permissionMatrix.role_permissions[roleId][action.id] = { scope: 'deny', granted: false };
+                    }
+                });
+            });
+
+            // Re-render to show updated values
+            renderPermissionMatrix();
         }
 
         // Theme toggle is handled by theme.js with unified localStorage key 'jarvisTheme'
@@ -5790,6 +5871,7 @@
             document.getElementById('structureId').value = '';
             document.getElementById('structureManagerSearch').value = '';
             document.getElementById('structureManagerId').value = '';
+            document.getElementById('structureCcEmail').value = '';
             document.getElementById('structureModalTitle').textContent = 'Add Structure Entry';
             populateStructureDropdowns();
             new bootstrap.Modal(document.getElementById('structureModal')).show();
@@ -5897,6 +5979,7 @@
             // Set manager_id from manager_ids array (take first element)
             const managerId = (entry.manager_ids && entry.manager_ids.length > 0) ? entry.manager_ids[0] : '';
             document.getElementById('structureManagerId').value = managerId;
+            document.getElementById('structureCcEmail').value = entry.cc_email || '';
             document.getElementById('structureModalTitle').textContent = 'Edit Structure Entry';
             populateStructureDropdowns(entry);
             new bootstrap.Modal(document.getElementById('structureModal')).show();
@@ -5910,6 +5993,7 @@
             const subdepartment_id = document.getElementById('structureSubdept').value || null;
             const manager = document.getElementById('structureManagerSearch').value.trim();
             const managerId = document.getElementById('structureManagerId').value;
+            const cc_email = document.getElementById('structureCcEmail').value.trim() || null;
 
             if (!company_id || !department_id) {
                 await JarvisDialog.alert('Company and Department are required', { type: 'warning' });
@@ -5925,7 +6009,7 @@
             try {
                 const resp = await fetch(url, {
                     method, headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ company_id, brand_id, department_id, subdepartment_id, manager, manager_ids })
+                    body: JSON.stringify({ company_id, brand_id, department_id, subdepartment_id, manager, manager_ids, cc_email })
                 });
                 if (resp.ok) {
                     bootstrap.Modal.getInstance(document.getElementById('structureModal')).hide();

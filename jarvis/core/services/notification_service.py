@@ -52,7 +52,8 @@ def send_email(
     subject: str,
     html_body: str,
     text_body: Optional[str] = None,
-    department_cc: Optional[str] = None
+    department_cc: Optional[str] = None,
+    skip_global_cc: bool = False
 ) -> tuple[bool, str]:
     """
     Send an email using configured SMTP settings.
@@ -63,6 +64,7 @@ def send_email(
         html_body: HTML email content
         text_body: Optional plain text email content
         department_cc: Optional department-specific CC email address
+        skip_global_cc: If True, skip the global CC (for private emails like password resets)
 
     Returns:
         tuple: (success: bool, error_message: str)
@@ -84,7 +86,7 @@ def send_email(
         # Build CC list from global CC and department CC
         cc_addresses = []
         global_cc = config.get('global_cc', '').strip()
-        if global_cc:
+        if global_cc and not skip_global_cc:
             cc_addresses.append(global_cc)
         if department_cc and department_cc.strip():
             dept_cc = department_cc.strip()

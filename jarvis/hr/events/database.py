@@ -8,8 +8,14 @@ from database import get_db, get_cursor, release_db, dict_from_row
 
 # ============== HR Employees (now using users table) ==============
 
-def get_all_hr_employees(active_only=True):
-    """Get all HR employees from users table."""
+def get_all_hr_employees(active_only=True, scope='all', user_context=None):
+    """Get all HR employees from users table with scope-based filtering.
+
+    Args:
+        active_only: If True, only return active employees
+        scope: Permission scope ('own', 'department', 'all')
+        user_context: Dict with user_id, company, department for scope filtering
+    """
     conn = get_db()
     cursor = get_cursor(conn)
 
@@ -17,12 +23,29 @@ def get_all_hr_employees(active_only=True):
         SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
                notify_on_allocation, is_active, created_at, updated_at
         FROM users
+        WHERE 1=1
     '''
+    params = []
+
     if active_only:
-        query += ' WHERE is_active = TRUE'
+        query += ' AND is_active = TRUE'
+
+    # Apply scope-based filtering
+    if scope == 'own' and user_context:
+        # User can only see themselves
+        query += ' AND id = %s'
+        params.append(user_context.get('user_id'))
+    elif scope == 'department' and user_context:
+        # User can see employees in same company + department
+        if user_context.get('department') and user_context.get('company'):
+            query += ' AND department = %s AND company = %s'
+            params.append(user_context['department'])
+            params.append(user_context['company'])
+    # 'all' scope = no additional filtering
+
     query += ' ORDER BY name'
 
-    cursor.execute(query)
+    cursor.execute(query, params)
     rows = cursor.fetchall()
     release_db(conn)
     return [dict_from_row(row) for row in rows]
@@ -195,8 +218,18 @@ def delete_hr_events_bulk(event_ids):
 
 # ============== HR Events ==============
 
-def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None):
-    """Get event bonuses with optional filters."""
+def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None,
+                          scope='all', user_context=None):
+    """Get event bonuses with optional filters and scope-based access control.
+
+    Args:
+        year: Filter by year
+        month: Filter by month
+        employee_id: Filter by employee
+        event_id: Filter by event
+        scope: Permission scope ('own', 'department', 'all')
+        user_context: Dict with user_id, company, department for scope filtering
+    """
     conn = get_db()
     cursor = get_cursor(conn)
 
@@ -227,6 +260,19 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
         query += ' AND b.event_id = %s'
         params.append(event_id)
 
+    # Apply scope-based filtering
+    if scope == 'own' and user_context:
+        # User can only see bonuses for themselves
+        query += ' AND b.user_id = %s'
+        params.append(user_context.get('user_id'))
+    elif scope == 'department' and user_context:
+        # User can see bonuses for users in same company + department
+        if user_context.get('department') and user_context.get('company'):
+            query += ' AND u.department = %s AND u.company = %s'
+            params.append(user_context['department'])
+            params.append(user_context['company'])
+    # 'all' scope = no additional filtering
+
     query += ' ORDER BY b.year DESC, b.month DESC, u.name'
 
     cursor.execute(query, params)
@@ -251,6 +297,66 @@ def get_event_bonus(bonus_id):
     row = cursor.fetchone()
     release_db(conn)
     return dict_from_row(row) if row else None
+
+
+def can_access_bonus(bonus_id, scope, user_context):
+    """Check if user can access a bonus based on their scope.
+
+    Args:
+        bonus_id: The bonus ID to check
+        scope: Permission scope ('own', 'department', 'all')
+        user_context: Dict with user_id, company, department
+
+    Returns:
+        True if user can access, False otherwise
+    """
+    if scope == 'all':
+        return True
+
+    bonus = get_event_bonus(bonus_id)
+    if not bonus:
+        return False
+
+    if scope == 'own':
+        # User can only access their own bonuses
+        return bonus.get('user_id') == user_context.get('user_id')
+
+    if scope == 'department':
+        # User can access bonuses in their company + department
+        return (bonus.get('company') == user_context.get('company') and
+                bonus.get('department') == user_context.get('department'))
+
+    return False
+
+
+def can_access_employee(employee_id, scope, user_context):
+    """Check if user can access an employee based on their scope.
+
+    Args:
+        employee_id: The employee ID to check
+        scope: Permission scope ('own', 'department', 'all')
+        user_context: Dict with user_id, company, department
+
+    Returns:
+        True if user can access, False otherwise
+    """
+    if scope == 'all':
+        return True
+
+    employee = get_hr_employee(employee_id)
+    if not employee:
+        return False
+
+    if scope == 'own':
+        # User can only access their own record
+        return employee.get('id') == user_context.get('user_id')
+
+    if scope == 'department':
+        # User can access employees in their company + department
+        return (employee.get('company') == user_context.get('company') and
+                employee.get('departments') == user_context.get('department'))
+
+    return False
 
 
 def save_event_bonus(employee_id, event_id, year, month, participation_start=None,
@@ -715,7 +821,7 @@ def get_all_department_structures():
     cursor = get_cursor(conn)
     cursor.execute("""
         SELECT ds.id, ds.company, ds.brand, ds.department, ds.subdepartment,
-               ds.manager, ds.company_id, ds.manager_ids
+               ds.manager, ds.company_id, ds.manager_ids, ds.cc_email
         FROM department_structure ds
         ORDER BY ds.company, ds.brand, ds.department
     """)
@@ -724,31 +830,31 @@ def get_all_department_structures():
     return [dict_from_row(r) for r in rows]
 
 
-def create_department_structure(company_id, manager, company, brand, department, subdepartment, manager_ids=None):
+def create_department_structure(company_id, manager, company, brand, department, subdepartment, manager_ids=None, cc_email=None):
     """Create a new department structure entry."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute("""
-        INSERT INTO department_structure (company_id, manager, company, brand, department, subdepartment, manager_ids)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO department_structure (company_id, manager, company, brand, department, subdepartment, manager_ids, cc_email)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
-    """, (company_id, manager, company, brand, department, subdepartment, manager_ids))
+    """, (company_id, manager, company, brand, department, subdepartment, manager_ids, cc_email))
     struct_id = cursor.fetchone()['id']
     conn.commit()
     release_db(conn)
     return struct_id
 
 
-def update_department_structure(struct_id, company_id, manager, company, brand, department, subdepartment, manager_ids=None):
+def update_department_structure(struct_id, company_id, manager, company, brand, department, subdepartment, manager_ids=None, cc_email=None):
     """Update a department structure entry."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute("""
         UPDATE department_structure
         SET company_id = %s, manager = %s, company = %s, brand = %s,
-            department = %s, subdepartment = %s, manager_ids = %s
+            department = %s, subdepartment = %s, manager_ids = %s, cc_email = %s
         WHERE id = %s
-    """, (company_id, manager, company, brand, department, subdepartment, manager_ids, struct_id))
+    """, (company_id, manager, company, brand, department, subdepartment, manager_ids, cc_email, struct_id))
     conn.commit()
     release_db(conn)
 

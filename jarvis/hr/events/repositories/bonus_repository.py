@@ -20,15 +20,19 @@ class BonusRepository:
         year: int = None,
         month: int = None,
         employee_id: int = None,
-        event_id: int = None
+        event_id: int = None,
+        scope: str = 'all',
+        user_context: Dict[str, Any] = None
     ) -> List[Dict[str, Any]]:
-        """Get event bonuses with optional filters.
+        """Get event bonuses with optional filters and scope-based access control.
 
         Args:
             year: Filter by year
             month: Filter by month
             employee_id: Filter by employee
             event_id: Filter by event
+            scope: Permission scope ('own', 'department', 'all')
+            user_context: Dict with user_id, company, department for scope filtering
 
         Returns:
             List of bonus dictionaries
@@ -62,6 +66,19 @@ class BonusRepository:
             query += ' AND b.event_id = %s'
             params.append(event_id)
 
+        # Apply scope-based filtering
+        if scope == 'own' and user_context:
+            # User can only see bonuses for themselves
+            query += ' AND b.user_id = %s'
+            params.append(user_context.get('user_id'))
+        elif scope == 'department' and user_context:
+            # User can see bonuses for users in same company + department
+            if user_context.get('department') and user_context.get('company'):
+                query += ' AND u.department = %s AND u.company = %s'
+                params.append(user_context['department'])
+                params.append(user_context['company'])
+        # 'all' scope = no additional filtering
+
         query += ' ORDER BY b.year DESC, b.month DESC, u.name'
 
         cursor.execute(query, params)
@@ -92,6 +109,40 @@ class BonusRepository:
         row = cursor.fetchone()
         release_db(conn)
         return dict_from_row(row) if row else None
+
+    def can_access(
+        self,
+        bonus_id: int,
+        scope: str,
+        user_context: Dict[str, Any]
+    ) -> bool:
+        """Check if user can access a bonus based on their scope.
+
+        Args:
+            bonus_id: The bonus ID to check
+            scope: Permission scope ('own', 'department', 'all')
+            user_context: Dict with user_id, company, department
+
+        Returns:
+            True if user can access, False otherwise
+        """
+        if scope == 'all':
+            return True
+
+        bonus = self.get_by_id(bonus_id)
+        if not bonus:
+            return False
+
+        if scope == 'own':
+            # User can only access their own bonuses
+            return bonus.get('user_id') == user_context.get('user_id')
+
+        if scope == 'department':
+            # User can access bonuses in their company + department
+            return (bonus.get('company') == user_context.get('company') and
+                    bonus.get('department') == user_context.get('department'))
+
+        return False
 
     def create(
         self,

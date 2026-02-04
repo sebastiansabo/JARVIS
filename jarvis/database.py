@@ -922,12 +922,6 @@ def init_db():
             ('system', 'System', 'bi-gear-fill', 'structure', 'Company Structure', 'view', 'View', 'View company structure', FALSE, 11),
             ('system', 'System', 'bi-gear-fill', 'structure', 'Company Structure', 'edit', 'Edit', 'Modify company structure', FALSE, 12),
 
-            -- Profile Module (user's own data access)
-            ('profile', 'Profile', 'bi-person-circle', 'invoices', 'My Invoices', 'view', 'View', 'View own invoices in profile', FALSE, 1),
-            ('profile', 'Profile', 'bi-person-circle', 'hr_events', 'My HR Events', 'view', 'View', 'View own HR events in profile', FALSE, 2),
-            ('profile', 'Profile', 'bi-person-circle', 'notifications', 'My Notifications', 'view', 'View', 'View own notifications', FALSE, 3),
-            ('profile', 'Profile', 'bi-person-circle', 'activity', 'My Activity', 'view', 'View', 'View own activity log', FALSE, 4),
-
             -- Invoices Module
             ('invoices', 'Invoices', 'bi-receipt', 'records', 'Invoice Records', 'view', 'View', 'View invoices', TRUE, 1),
             ('invoices', 'Invoices', 'bi-receipt', 'records', 'Invoice Records', 'add', 'Add', 'Create new invoices', TRUE, 2),
@@ -968,26 +962,18 @@ def init_db():
             ('statements', 'Bank Statements', 'bi-bank', 'mappings', 'Vendor Mappings', 'view', 'View', 'View vendor mappings', FALSE, 5),
             ('statements', 'Bank Statements', 'bi-bank', 'mappings', 'Vendor Mappings', 'edit', 'Edit', 'Manage vendor mappings', FALSE, 6),
 
-            -- HR Module
+            -- HR Module (user management is in System section)
             ('hr', 'HR', 'bi-people-fill', 'module', 'HR Module', 'access', 'Access', 'Access HR module', FALSE, 1),
-            ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'view', 'View', 'View employee list', TRUE, 2),
-            ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'add', 'Add', 'Create new employees', FALSE, 3),
-            ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'edit', 'Edit', 'Modify employee data', TRUE, 4),
-            ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'delete', 'Delete', 'Remove employees', FALSE, 5),
-            ('hr', 'HR', 'bi-people-fill', 'events', 'Events', 'view', 'View', 'View events list', TRUE, 6),
-            ('hr', 'HR', 'bi-people-fill', 'events', 'Events', 'add', 'Add', 'Create new events', FALSE, 7),
-            ('hr', 'HR', 'bi-people-fill', 'events', 'Events', 'edit', 'Edit', 'Modify events', TRUE, 8),
-            ('hr', 'HR', 'bi-people-fill', 'events', 'Events', 'delete', 'Delete', 'Delete events', FALSE, 9),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'view', 'View', 'View bonuses', TRUE, 10),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'view_amounts', 'View Amounts', 'View bonus amounts (HR Manager)', FALSE, 11),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'add', 'Add', 'Create new bonuses', FALSE, 12),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'edit', 'Edit', 'Modify bonuses', TRUE, 13),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'delete', 'Delete', 'Delete bonuses', FALSE, 14),
-            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'export', 'Export', 'Export bonus data', FALSE, 15),
-            ('hr', 'HR', 'bi-people-fill', 'structure', 'Department Structure', 'view', 'View', 'View department structure', FALSE, 16),
-            ('hr', 'HR', 'bi-people-fill', 'structure', 'Department Structure', 'edit', 'Edit', 'Manage department structure', FALSE, 17),
-            ('hr', 'HR', 'bi-people-fill', 'payroll', 'Payroll', 'view', 'View', 'View payroll data', TRUE, 18),
-            ('hr', 'HR', 'bi-people-fill', 'payroll', 'Payroll', 'edit', 'Edit', 'Modify payroll', FALSE, 19)
+            ('hr', 'HR', 'bi-people-fill', 'events', 'Events', 'view', 'View', 'View events list', TRUE, 2),
+            ('hr', 'HR', 'bi-people-fill', 'events', 'Events', 'add', 'Add', 'Create new events', FALSE, 3),
+            ('hr', 'HR', 'bi-people-fill', 'events', 'Events', 'edit', 'Edit', 'Modify events', TRUE, 4),
+            ('hr', 'HR', 'bi-people-fill', 'events', 'Events', 'delete', 'Delete', 'Delete events', FALSE, 5),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'view', 'View', 'View bonuses', TRUE, 6),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'view_amounts', 'View Amounts', 'View bonus amounts (HR Manager)', FALSE, 7),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'add', 'Add', 'Create new bonuses', FALSE, 8),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'edit', 'Edit', 'Modify bonuses', TRUE, 9),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'delete', 'Delete', 'Delete bonuses', FALSE, 10),
+            ('hr', 'HR', 'bi-people-fill', 'bonuses', 'Bonuses', 'export', 'Export', 'Export bonus data', FALSE, 11)
         ''')
 
         # Set default permissions for existing roles
@@ -1180,6 +1166,19 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # Password reset tokens table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            token TEXT NOT NULL UNIQUE,
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token)')
 
     # VAT rates table - configurable VAT percentages
     cursor.execute('''
@@ -6459,7 +6458,7 @@ def _sync_v2_permissions_to_booleans(cursor, role_id: int):
         'can_access_accounting': perms.get('accounting.dashboard.access', False),
         'can_access_templates': perms.get('invoices.templates.edit', False),
         'can_access_connectors': perms.get('accounting.connectors.access', False),
-        'can_access_hr': perms.get('hr.employees.view', False) or perms.get('hr.bonuses.view', False),
+        'can_access_hr': perms.get('hr.module.access', False) or perms.get('hr.bonuses.view', False),
         'is_hr_manager': perms.get('hr.bonuses.view_amounts', False),
     }
 

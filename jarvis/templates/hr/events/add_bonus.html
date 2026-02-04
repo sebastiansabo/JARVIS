@@ -89,8 +89,8 @@
                                     <select id="bonusType" class="form-select">
                                         <option value="">Select Bonus Type</option>
                                         {% for bt in bonus_types %}
-                                        <option value="{{ bt.id }}" data-amount="{{ bt.amount }}" data-days-per-amount="{{ bt.days_per_amount or 1 }}">
-                                            {{ bt.name }} ({{ "%.2f"|format(bt.amount) }} RON{% if bt.days_per_amount and bt.days_per_amount != 1 %}/{{ bt.days_per_amount }} days{% endif %})
+                                        <option value="{{ bt.id }}" data-amount="{{ bt.amount if hr_permissions.can_view_amounts else 0 }}" data-days-per-amount="{{ bt.days_per_amount or 1 }}">
+                                            {{ bt.name }}{% if hr_permissions.can_view_amounts %} ({{ "%.2f"|format(bt.amount) }} RON{% if bt.days_per_amount and bt.days_per_amount != 1 %}/{{ bt.days_per_amount }} days{% endif %}){% endif %}
                                         </option>
                                         {% endfor %}
                                     </select>
@@ -103,7 +103,7 @@
                                     <label class="form-label">Hours Free</label>
                                     <input type="number" id="bonusHours" class="form-control" min="0" max="100" placeholder="e.g., 6">
                                 </div>
-                                {% if is_hr_manager %}
+                                {% if hr_permissions.can_view_amounts %}
                                 <div class="col-md-4">
                                     <label class="form-label">Bonus (Net)</label>
                                     <div class="input-group">
@@ -156,7 +156,11 @@
         });
 
         // Auto-calculate bonus when bonus type or days change
+        const canViewAmounts = {{ 'true' if hr_permissions.can_view_amounts else 'false' }};
+
         function calculateBonus() {
+            if (!canViewAmounts) return;
+
             const bonusTypeSelect = document.getElementById('bonusType');
             const daysInput = document.getElementById('bonusDays');
             const netInput = document.getElementById('bonusNet');
@@ -192,6 +196,7 @@
         document.getElementById('bonusForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const bonusTypeVal = document.getElementById('bonusType').value;
             const data = {
                 employee_id: parseInt(document.getElementById('bonusEmployee').value),
                 event_id: parseInt(document.getElementById('bonusEvent').value),
@@ -202,6 +207,7 @@
                 bonus_days: parseFloat(document.getElementById('bonusDays').value) || null,
                 hours_free: parseInt(document.getElementById('bonusHours').value) || null,
                 bonus_net: parseFloat(document.getElementById('bonusNet').value) || null,
+                bonus_type_id: bonusTypeVal ? parseInt(bonusTypeVal) : null,
                 allocation_month: document.getElementById('bonusAllocation').value || null,
                 details: document.getElementById('bonusDetails').value || null
             };

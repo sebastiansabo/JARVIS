@@ -1,5 +1,62 @@
 # Changelog
 
+## 2026-02-04
+
+### HR View Amounts Permission Enforcement
+- **Bonus type dropdowns**: Amount values (RON) hidden in `add_bonus.html` and `add_event.html` when `view_amounts` permission is off
+- **API responses**: `bonus_net` stripped from event-bonuses API, `amount` stripped from bonus-types API for unauthorized users
+- **Server-side computation**: `_compute_bonus_net()` helper computes bonus from `bonus_type_id` + `bonus_days` when client cannot provide the value
+- **JS guards**: `canViewAmounts` flag prevents client-side calculation display; null guards on DOM elements
+
+### Department CC Email in Structure Mapping
+- **CC Email field** added to the Structure Mapping modal in Settings → Company Structure
+- Wired through HR API routes (`/hr/events/api/structure/departments`) and database functions
+- The `cc_email` column already existed in `department_structure` and was used by the notification module; this change exposes it in the UI
+
+### Password Recovery (Self-Service)
+- **Forgot Password Flow**: Users can reset their password via email from the login page
+  - "Forgot password?" link on login page → email input form → reset link sent via SMTP
+  - Reset link with cryptographic token (`secrets.token_urlsafe(32)`), 1-hour expiry, single-use
+  - Anti-enumeration: always shows success message regardless of whether email exists
+  - Password reset emails skip global CC for privacy (`skip_global_cc` param added to `send_email()`)
+- **Database**: `password_reset_tokens` table (user_id, token, expires_at, used_at)
+- **Architecture**: Routes in `app.py`, business logic in `auth_service.py`, CRUD in `user_repository.py`
+- **Templates**: `forgot_password.html`, `reset_password.html` (same styling as login page)
+- **Audit**: All reset requests and completions logged to `user_events`
+
+### HR Module Scope-Based Permissions
+- **Granular Permission Enforcement**: HR module now enforces scope values ('deny', 'own', 'department', 'all')
+  - `hr_permission_required` decorator passes scope via Flask `g` object
+  - Repository methods filter data based on user's permission scope
+  - Route handlers pass scope to repositories for data filtering
+  - `/hr/events/api/permissions` endpoint provides frontend permission flags
+
+- **Template Permission Updates**: Replaced legacy `is_hr_manager` checks with granular permissions
+  - `event_bonuses.html`: Uses `hr_permissions.can_view_amounts`, `can_export`, `can_bulk_delete`
+  - `add_bonus.html`: Uses `hr_permissions.can_view_amounts` for bonus net field
+  - `add_event.html`: Uses `hr_permissions.can_view_amounts` for amount fields
+  - JavaScript `hrPermissions` object for client-side permission checks
+
+- **Bulk Operations Scope Verification**: Bulk delete validates each item against user's scope
+
+### Permission Cleanup
+- **Removed unused permissions** from database and seed data:
+  - Profile module (4 permissions) - uses `@login_required` only
+  - HR > Department Structure (2 permissions) - duplicate of System > Company Structure
+  - HR > Payroll (2 permissions) - not implemented
+
+- **Added missing HR permissions** to database:
+  - `hr.module.access` - Access HR module
+  - `hr.events.*` - View, Add, Edit, Delete events
+  - `hr.bonuses.add`, `hr.bonuses.delete` - Add/delete bonuses
+
+### Permission Matrix UX Improvements
+- **Tab Persistence**: After saving permissions, stays on current module tab instead of resetting to first
+- **Allow All / Deny All Buttons**: Each role header now has quick action buttons:
+  - Green checkmark - Allow all permissions for role in current module
+  - X button - Deny all permissions for role in current module
+  - Affects only the selected module (sidebar), not all modules
+
 ## 2026-02-02
 ### HR Module Improvements
 - **Employee Dropdown Display**: Shows department instead of "N/A" in employee dropdowns
