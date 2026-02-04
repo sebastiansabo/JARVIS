@@ -41,8 +41,13 @@
                     <button id="btnDeleteSelected" class="btn btn-outline-danger btn-sm ms-2 d-none">
                         <i class="bi bi-trash"></i> Delete Selected (<span id="selectedCount">0</span>)
                     </button>
+                    <button id="btnBulkTag" class="btn btn-outline-info btn-sm ms-1 d-none" onclick="JarvisTags.openBulkTagDropdown('event', getSelectedEventIds())">
+                        <i class="bi bi-tags"></i> Tag
+                    </button>
                 </span>
                 <div class="d-flex gap-2 align-items-center">
+                    <!-- Tag Filter -->
+                    <div id="tagFilterContainer"></div>
                     <!-- Search -->
                     <div class="input-group input-group-sm" style="width: 220px;">
                         <input type="text" class="form-control" id="searchInput" placeholder="Search events..." oninput="updateSearchIcon(); filterEvents();">
@@ -67,6 +72,7 @@
                             <th>Brand</th>
                             <th>Description</th>
                             <th>Created By</th>
+                            <th>Tags</th>
                             <th style="width: 100px;">Actions</th>
                         </tr>
                     </thead>
@@ -85,6 +91,7 @@
                             <td>{{ event.brand or '-' }}</td>
                             <td>{{ event.description or '-' }}</td>
                             <td>{{ event.created_by_name or '-' }}</td>
+                            <td class="tags-cell" data-event-id="{{ event.id }}"></td>
                             <td>
                                 <button class="btn btn-sm btn-outline-primary btn-edit" data-id="{{ event.id }}" title="Edit">
                                     <i class="bi bi-pencil"></i>
@@ -96,7 +103,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="9" class="text-center text-muted py-4">
+                            <td colspan="10" class="text-center text-muted py-4">
                                 No events found. Click "Add Event" to create one.
                             </td>
                         </tr>
@@ -169,6 +176,34 @@
         // Total events count for badge
         const totalEventsCount = {{ events|length }};
 
+        // Tag helpers
+        const eventTagsMap = {};
+
+        function getSelectedEventIds() {
+            return Array.from(document.querySelectorAll('.event-checkbox:checked')).map(cb => parseInt(cb.dataset.id));
+        }
+
+        async function loadEventTags() {
+            const rows = document.querySelectorAll('#eventsTable .event-row');
+            if (!rows.length) return;
+            try {
+                const ids = Array.from(rows).map(r => r.dataset.id);
+                const resp = await fetch(`/api/entity-tags/bulk?entity_type=event&entity_ids=${ids.join(',')}`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const tagsMap = data.tags || {};
+                rows.forEach(row => {
+                    const id = row.dataset.id;
+                    const tags = tagsMap[id] || [];
+                    eventTagsMap[id] = tags;
+                    const cell = row.querySelector('.tags-cell');
+                    if (cell) {
+                        cell.innerHTML = JarvisTags.renderTagBadges(tags, { editable: true, entityType: 'event', entityId: parseInt(id) });
+                    }
+                });
+            } catch (err) { console.error('Error loading event tags:', err); }
+        }
+
         // Search functions
         function updateSearchIcon() {
             const input = document.getElementById('searchInput');
@@ -199,6 +234,10 @@
             const rows = document.querySelectorAll('#eventsTable .event-row');
             let visibleCount = 0;
 
+            // Tag filter
+            const selectedTagIds = window.jarvisTags ? window.jarvisTags.getSelectedTags() : [];
+            const hasTagFilter = selectedTagIds && selectedTagIds.length > 0;
+
             rows.forEach(row => {
                 const name = row.dataset.name || '';
                 const company = row.dataset.company || '';
@@ -211,7 +250,14 @@
                     brand.includes(searchTerm) ||
                     description.includes(searchTerm);
 
-                if (matchesSearch) {
+                let matchesTags = true;
+                if (hasTagFilter) {
+                    const rowTags = eventTagsMap[row.dataset.id] || [];
+                    const rowTagIds = rowTags.map(t => t.id);
+                    matchesTags = selectedTagIds.some(id => rowTagIds.includes(id));
+                }
+
+                if (matchesSearch && matchesTags) {
                     row.style.display = '';
                     visibleCount++;
                 } else {
@@ -221,7 +267,7 @@
 
             // Update result count badge
             const countBadge = document.getElementById('eventResultCount');
-            if (searchTerm) {
+            if (searchTerm || hasTagFilter) {
                 countBadge.textContent = `${visibleCount} / ${totalEventsCount}`;
             } else {
                 countBadge.textContent = totalEventsCount;
@@ -343,10 +389,13 @@
 
             selectedCountSpan.textContent = count;
 
+            const bulkTagBtn = document.getElementById('btnBulkTag');
             if (count > 0) {
                 deleteSelectedBtn.classList.remove('d-none');
+                if (bulkTagBtn) bulkTagBtn.classList.remove('d-none');
             } else {
                 deleteSelectedBtn.classList.add('d-none');
+                if (bulkTagBtn) bulkTagBtn.classList.add('d-none');
             }
 
             if (visibleCheckboxes.length > 0 && checkedBoxes.length === visibleCheckboxes.length) {
@@ -406,5 +455,27 @@
     <script src="/static/js/online-users.js"></script>
     <script src="/static/js/theme.js"></script>
     <script src="/static/js/jarvis-dialogs.js"></script>
+    <script src="/static/js/jarvis-tags.js"></script>
+    <script>
+        // Initialize tags after jarvis-tags.js loads
+        const jarvisTags = new JarvisTags({
+            entityType: 'event',
+            containerId: 'tagFilterContainer',
+            onFilterChange: (selectedTagIds) => {
+                filterEvents();
+            }
+        });
+        window.jarvisTags = jarvisTags;
+
+        // Load tags for all event rows
+        loadEventTags();
+
+        // Listen for tag changes
+        document.addEventListener('jarvis-tags-changed', async (e) => {
+            if (e.detail?.entityType === 'event') {
+                await loadEventTags();
+            }
+        });
+    </script>
 </body>
 </html>

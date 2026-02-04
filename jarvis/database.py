@@ -1196,6 +1196,81 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_filter_presets_user_page ON user_filter_presets(user_id, page_key)')
     cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_filter_presets_unique_name ON user_filter_presets(user_id, page_key, LOWER(name))")
 
+    # ============== TAGGING SYSTEM ==============
+    # Tag groups - optional groupings (e.g., "Priority", "Status", "Category")
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tag_groups (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            color VARCHAR(7) DEFAULT '#6c757d',
+            sort_order INTEGER DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    ''')
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_groups_name_unique ON tag_groups(LOWER(name)) WHERE is_active = TRUE")
+
+    # Tags - tag definitions (global or private per user)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tags (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            group_id INTEGER REFERENCES tag_groups(id) ON DELETE SET NULL,
+            color VARCHAR(7) DEFAULT '#0d6efd',
+            icon VARCHAR(50),
+            is_global BOOLEAN NOT NULL DEFAULT FALSE,
+            created_by INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            sort_order INTEGER DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    ''')
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_global_name_unique ON tags(LOWER(name)) WHERE is_global = TRUE AND is_active = TRUE")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_user_name_unique ON tags(created_by, LOWER(name)) WHERE is_global = FALSE AND is_active = TRUE")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tags_visibility ON tags(is_global, created_by) WHERE is_active = TRUE")
+
+    # Entity tags - polymorphic junction table linking tags to any entity
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS entity_tags (
+            id SERIAL PRIMARY KEY,
+            tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            entity_type VARCHAR(30) NOT NULL,
+            entity_id INTEGER NOT NULL,
+            tagged_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            UNIQUE(tag_id, entity_type, entity_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_entity_tags_entity ON entity_tags(entity_type, entity_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_entity_tags_tag ON entity_tags(tag_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_entity_tags_tagged_by ON entity_tags(tagged_by)')
+
+    # Seed default tag groups (only if table is empty)
+    cursor.execute('SELECT COUNT(*) FROM tag_groups')
+    if cursor.fetchone()[0] == 0:
+        cursor.execute('''
+            INSERT INTO tag_groups (name, description, color, sort_order) VALUES
+                ('Priority', 'Priority level indicators', '#dc3545', 1),
+                ('Status', 'Custom status markers', '#198754', 2),
+                ('Category', 'Business categorization', '#0d6efd', 3)
+        ''')
+
+    # Seed default global tags (only if tags table is empty)
+    cursor.execute('SELECT COUNT(*) FROM tags')
+    if cursor.fetchone()[0] == 0:
+        cursor.execute('''
+            INSERT INTO tags (name, group_id, color, is_global, sort_order) VALUES
+                ('High',   (SELECT id FROM tag_groups WHERE name='Priority'), '#dc3545', TRUE, 1),
+                ('Medium', (SELECT id FROM tag_groups WHERE name='Priority'), '#fd7e14', TRUE, 2),
+                ('Low',    (SELECT id FROM tag_groups WHERE name='Priority'), '#198754', TRUE, 3),
+                ('Review', (SELECT id FROM tag_groups WHERE name='Status'), '#ffc107', TRUE, 1),
+                ('Done',   (SELECT id FROM tag_groups WHERE name='Status'), '#198754', TRUE, 2),
+                ('Urgent', NULL, '#dc3545', TRUE, 0)
+        ''')
+
     # VAT rates table - configurable VAT percentages
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS vat_rates (
@@ -7212,6 +7287,304 @@ def get_efactura_oauth_status(company_cif: str) -> dict:
         'is_expired': is_expired,
         'cif': company_cif,
     }
+
+
+# ============== TAGGING SYSTEM ==============
+
+def get_tag_groups(active_only=True):
+    """Get all tag groups, optionally filtered by active status."""
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        if active_only:
+            cursor.execute('SELECT * FROM tag_groups WHERE is_active = TRUE ORDER BY sort_order, name')
+        else:
+            cursor.execute('SELECT * FROM tag_groups ORDER BY sort_order, name')
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        release_db(conn)
+
+
+def save_tag_group(name, description=None, color='#6c757d', sort_order=0):
+    """Create a new tag group. Returns the group ID."""
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO tag_groups (name, description, color, sort_order)
+            VALUES (%s, %s, %s, %s) RETURNING id
+        ''', (name.strip(), description, color, sort_order))
+        group_id = cursor.fetchone()[0]
+        conn.commit()
+        return group_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        release_db(conn)
+
+
+def update_tag_group(group_id, **kwargs):
+    """Update a tag group. Returns True if updated."""
+    allowed = {'name', 'description', 'color', 'sort_order', 'is_active'}
+    updates = []
+    params = []
+    for key, val in kwargs.items():
+        if key in allowed and val is not None:
+            if key == 'name':
+                val = val.strip()
+            updates.append(f'{key} = %s')
+            params.append(val)
+    if not updates:
+        return False
+    updates.append('updated_at = NOW()')
+    params.append(group_id)
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f'UPDATE tag_groups SET {", ".join(updates)} WHERE id = %s', params)
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        release_db(conn)
+
+
+def delete_tag_group(group_id):
+    """Soft-delete a tag group (set is_active=FALSE)."""
+    return update_tag_group(group_id, is_active=False)
+
+
+def get_tags(user_id, group_id=None, active_only=True):
+    """Get tags visible to a user (global + user's private), joined with group info."""
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        conditions = ['(t.is_global = TRUE OR t.created_by = %s)']
+        params = [user_id]
+        if active_only:
+            conditions.append('t.is_active = TRUE')
+        if group_id is not None:
+            conditions.append('t.group_id = %s')
+            params.append(group_id)
+        where = ' AND '.join(conditions)
+        cursor.execute(f'''
+            SELECT t.*, g.name as group_name, g.color as group_color
+            FROM tags t
+            LEFT JOIN tag_groups g ON g.id = t.group_id AND g.is_active = TRUE
+            WHERE {where}
+            ORDER BY g.sort_order NULLS LAST, g.name NULLS LAST, t.sort_order, t.name
+        ''', params)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        release_db(conn)
+
+
+def get_tag(tag_id):
+    """Get a single tag by ID with group info."""
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT t.*, g.name as group_name, g.color as group_color
+            FROM tags t
+            LEFT JOIN tag_groups g ON g.id = t.group_id
+            WHERE t.id = %s
+        ''', (tag_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        release_db(conn)
+
+
+def save_tag(name, is_global, created_by, group_id=None, color='#0d6efd', icon=None, sort_order=0):
+    """Create a new tag. Returns the tag ID."""
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO tags (name, group_id, color, icon, is_global, created_by, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+        ''', (name.strip(), group_id, color, icon, is_global, created_by, sort_order))
+        tag_id = cursor.fetchone()[0]
+        conn.commit()
+        return tag_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        release_db(conn)
+
+
+def update_tag(tag_id, **kwargs):
+    """Update a tag. Returns True if updated."""
+    allowed = {'name', 'group_id', 'color', 'icon', 'sort_order', 'is_active'}
+    updates = []
+    params = []
+    for key, val in kwargs.items():
+        if key in allowed:
+            if key == 'name' and val is not None:
+                val = val.strip()
+            updates.append(f'{key} = %s')
+            params.append(val)
+    if not updates:
+        return False
+    updates.append('updated_at = NOW()')
+    params.append(tag_id)
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f'UPDATE tags SET {", ".join(updates)} WHERE id = %s', params)
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        release_db(conn)
+
+
+def delete_tag(tag_id):
+    """Soft-delete a tag (set is_active=FALSE). Entity tags with CASCADE will remain but tag won't be visible."""
+    return update_tag(tag_id, is_active=False)
+
+
+def get_entity_tags(entity_type, entity_id, user_id):
+    """Get all tags for an entity visible to the user."""
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT t.id, t.name, t.color, t.icon, t.is_global, t.group_id,
+                   g.name as group_name, g.color as group_color,
+                   et.tagged_by, et.created_at as tagged_at
+            FROM entity_tags et
+            JOIN tags t ON t.id = et.tag_id AND t.is_active = TRUE
+            LEFT JOIN tag_groups g ON g.id = t.group_id AND g.is_active = TRUE
+            WHERE et.entity_type = %s AND et.entity_id = %s
+            AND (t.is_global = TRUE OR t.created_by = %s)
+            ORDER BY g.sort_order NULLS LAST, t.sort_order, t.name
+        ''', (entity_type, entity_id, user_id))
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        release_db(conn)
+
+
+def get_entities_tags_bulk(entity_type, entity_ids, user_id):
+    """Bulk fetch tags for multiple entities. Returns dict {entity_id: [tags]}."""
+    if not entity_ids:
+        return {}
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT et.entity_id, t.id, t.name, t.color, t.icon, t.is_global, t.group_id,
+                   g.name as group_name, g.color as group_color
+            FROM entity_tags et
+            JOIN tags t ON t.id = et.tag_id AND t.is_active = TRUE
+            LEFT JOIN tag_groups g ON g.id = t.group_id AND g.is_active = TRUE
+            WHERE et.entity_type = %s AND et.entity_id = ANY(%s)
+            AND (t.is_global = TRUE OR t.created_by = %s)
+            ORDER BY et.entity_id, g.sort_order NULLS LAST, t.sort_order, t.name
+        ''', (entity_type, entity_ids, user_id))
+        result = {}
+        for row in cursor.fetchall():
+            row_dict = dict(row)
+            eid = row_dict.pop('entity_id')
+            if eid not in result:
+                result[eid] = []
+            result[eid].append(row_dict)
+        return result
+    finally:
+        release_db(conn)
+
+
+def add_entity_tag(tag_id, entity_type, entity_id, tagged_by):
+    """Tag an entity. Returns True if added, False if already exists."""
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO entity_tags (tag_id, entity_type, entity_id, tagged_by)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (tag_id, entity_type, entity_id) DO NOTHING
+            RETURNING id
+        ''', (tag_id, entity_type, entity_id, tagged_by))
+        result = cursor.fetchone()
+        conn.commit()
+        return result is not None
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        release_db(conn)
+
+
+def remove_entity_tag(tag_id, entity_type, entity_id):
+    """Remove a tag from an entity."""
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM entity_tags
+            WHERE tag_id = %s AND entity_type = %s AND entity_id = %s
+        ''', (tag_id, entity_type, entity_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        release_db(conn)
+
+
+def bulk_add_entity_tags(tag_id, entity_type, entity_ids, tagged_by):
+    """Tag multiple entities at once. Returns count of newly tagged entities."""
+    if not entity_ids:
+        return 0
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        values = [(tag_id, entity_type, eid, tagged_by) for eid in entity_ids]
+        from psycopg2.extras import execute_values
+        execute_values(cursor, '''
+            INSERT INTO entity_tags (tag_id, entity_type, entity_id, tagged_by)
+            VALUES %s
+            ON CONFLICT (tag_id, entity_type, entity_id) DO NOTHING
+        ''', values)
+        count = cursor.rowcount
+        conn.commit()
+        return count
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        release_db(conn)
+
+
+def bulk_remove_entity_tags(tag_id, entity_type, entity_ids):
+    """Remove a tag from multiple entities at once."""
+    if not entity_ids:
+        return 0
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM entity_tags
+            WHERE tag_id = %s AND entity_type = %s AND entity_id = ANY(%s)
+        ''', (tag_id, entity_type, entity_ids))
+        count = cursor.rowcount
+        conn.commit()
+        return count
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        release_db(conn)
 
 
 # ============== USER FILTER PRESETS ==============

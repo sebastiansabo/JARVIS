@@ -125,8 +125,13 @@
                             <button id="btnDeleteSelected" class="btn btn-outline-danger btn-sm ms-2 d-none">
                                 <i class="bi bi-trash"></i> Delete Selected (<span id="selectedCount">0</span>)
                             </button>
+                            <button id="btnBulkTag" class="btn btn-outline-info btn-sm ms-1 d-none" onclick="JarvisTags.openBulkTagDropdown('event_bonus', getSelectedBonusIds())">
+                                <i class="bi bi-tags"></i> Tag
+                            </button>
                         </span>
                         <div class="d-flex gap-2 align-items-center">
+                            <!-- Tag Filter -->
+                            <div id="tagFilterContainer"></div>
                             <!-- Presets -->
                             <div id="presetContainer"></div>
                             <!-- Search -->
@@ -179,6 +184,7 @@
                                     {% endif %}
                                     <th>Details</th>
                                     <th class="sortable" data-sort="created">Created <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
+                                    <th>Tags</th>
                                     <th style="width: 100px;">Actions</th>
                                 </tr>
                             </thead>
@@ -216,6 +222,7 @@
                             {% endif %}
                             <td>{{ bonus.details or '-' }}</td>
                             <td class="text-muted small timestamp-cell">{{ bonus.created_at[:16].replace('T', ' ') if bonus.created_at else '-' }}</td>
+                            <td class="tags-cell" data-bonus-id="{{ bonus.id }}"></td>
                             <td>
                                 <button class="btn btn-sm btn-outline-primary btn-edit" data-id="{{ bonus.id }}" title="Edit">
                                     <i class="bi bi-pencil"></i>
@@ -227,7 +234,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="{{ 14 if hr_permissions.can_view_amounts else 13 }}" class="text-center text-muted py-4">
+                            <td colspan="{{ 15 if hr_permissions.can_view_amounts else 14 }}" class="text-center text-muted py-4">
                                 <i class="bi bi-inbox fs-1 d-block mb-2"></i>
                                 No event bonuses found. Click "Add Bonus" to create one.
                             </td>
@@ -703,7 +710,7 @@
         const totalBonusesCount = {{ bonuses|length }};
 
         // Column configuration
-        const COLUMN_CONFIG_VERSION = 1;
+        const COLUMN_CONFIG_VERSION = 2;
         const DEFAULT_COLUMNS = [
             { id: 'year', name: 'Year', visible: true },
             { id: 'month', name: 'Month', visible: true },
@@ -717,6 +724,7 @@
             { id: 'bonus', name: 'Bonus (Net)', visible: isHrManager },
             { id: 'details', name: 'Details', visible: true },
             { id: 'created', name: 'Created', visible: false },
+            { id: 'tags', name: 'Tags', visible: false },
             { id: 'actions', name: 'Actions', visible: true, fixed: true }
         ];
         let columnConfig = [];
@@ -836,7 +844,7 @@
             const rows = tbody.querySelectorAll('tr');
 
             // Map column IDs to indices
-            const columnIds = ['year', 'month', 'employee', 'dept', 'company', 'event', 'participation', 'days', 'hours', 'bonus', 'details', 'created', 'actions'];
+            const columnIds = ['year', 'month', 'employee', 'dept', 'company', 'event', 'participation', 'days', 'hours', 'bonus', 'details', 'created', 'tags', 'actions'];
 
             columnIds.forEach((colId, colIdx) => {
                 const config = columnConfig.find(c => c.id === colId);
@@ -868,6 +876,26 @@
             // Apply column config on load
             applyColumnConfig();
 
+            // Initialize tags
+            const jarvisTags = new JarvisTags({
+                entityType: 'event_bonus',
+                containerId: 'tagFilterContainer',
+                onFilterChange: (selectedTagIds) => {
+                    filterBonuses();
+                }
+            });
+            window.jarvisTags = jarvisTags;
+
+            // Load tags for all bonus rows
+            loadBonusTags();
+
+            // Listen for tag changes
+            document.addEventListener('jarvis-tags-changed', async (e) => {
+                if (e.detail?.entityType === 'event_bonus') {
+                    await loadBonusTags();
+                }
+            });
+
             // Initialize preset manager
             new JarvisPresets({
                 pageKey: 'hr_bonuses',
@@ -876,7 +904,8 @@
                     filters: {
                         year: document.getElementById('filterYear')?.value || '',
                         month: document.getElementById('filterMonth')?.value || '',
-                        search: document.getElementById('searchInput')?.value || ''
+                        search: document.getElementById('searchInput')?.value || '',
+                        tags: jarvisTags.getSelectedTags()
                     },
                     columns: columnConfig
                 }),
@@ -886,6 +915,7 @@
                         if (document.getElementById('searchInput')) document.getElementById('searchInput').value = f.search || '';
                         if (document.getElementById('filterYear')) document.getElementById('filterYear').value = f.year || '';
                         if (document.getElementById('filterMonth')) document.getElementById('filterMonth').value = f.month || '';
+                        if (f.tags) jarvisTags.setSelectedTags(f.tags);
                     }
                     if (data.columns) {
                         columnConfig = data.columns;
@@ -921,6 +951,35 @@
             });
         });
 
+        // Tag helpers
+        function getSelectedBonusIds() {
+            return Array.from(document.querySelectorAll('.bonus-checkbox:checked')).map(cb => parseInt(cb.dataset.id));
+        }
+
+        // Store tags per bonus ID for filtering
+        const bonusTagsMap = {};
+
+        async function loadBonusTags() {
+            const rows = document.querySelectorAll('#bonusesTable .bonus-row');
+            if (!rows.length) return;
+            try {
+                const ids = Array.from(rows).map(r => r.dataset.id);
+                const resp = await fetch(`/api/entity-tags/bulk?entity_type=event_bonus&entity_ids=${ids.join(',')}`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const tagsMap = data.tags || {};
+                rows.forEach(row => {
+                    const id = row.dataset.id;
+                    const tags = tagsMap[id] || [];
+                    bonusTagsMap[id] = tags;
+                    const cell = row.querySelector('.tags-cell');
+                    if (cell) {
+                        cell.innerHTML = JarvisTags.renderTagBadges(tags, { editable: true, entityType: 'event_bonus', entityId: parseInt(id) });
+                    }
+                });
+            } catch (err) { console.error('Error loading bonus tags:', err); }
+        }
+
         // Search functions
         function updateSearchIcon() {
             const input = document.getElementById('searchInput');
@@ -951,6 +1010,10 @@
             const rows = document.querySelectorAll('#bonusesTable .bonus-row');
             let visibleCount = 0;
 
+            // Tag filter
+            const selectedTagIds = window.jarvisTags ? window.jarvisTags.getSelectedTags() : [];
+            const hasTagFilter = selectedTagIds && selectedTagIds.length > 0;
+
             rows.forEach(row => {
                 const employee = row.dataset.employee || '';
                 const event = row.dataset.event || '';
@@ -963,7 +1026,14 @@
                     dept.includes(searchTerm) ||
                     company.includes(searchTerm);
 
-                if (matchesSearch) {
+                let matchesTags = true;
+                if (hasTagFilter) {
+                    const rowTags = bonusTagsMap[row.dataset.id] || [];
+                    const rowTagIds = rowTags.map(t => t.id);
+                    matchesTags = selectedTagIds.some(id => rowTagIds.includes(id));
+                }
+
+                if (matchesSearch && matchesTags) {
                     row.style.display = '';
                     visibleCount++;
                 } else {
@@ -973,7 +1043,7 @@
 
             // Update result count badge
             const countBadge = document.getElementById('bonusResultCount');
-            if (searchTerm) {
+            if (searchTerm || hasTagFilter) {
                 countBadge.textContent = `${visibleCount} / ${totalBonusesCount}`;
             } else {
                 countBadge.textContent = totalBonusesCount;
@@ -1099,10 +1169,13 @@
 
             selectedCountSpan.textContent = count;
 
+            const bulkTagBtn = document.getElementById('btnBulkTag');
             if (count > 0) {
                 deleteSelectedBtn.classList.remove('d-none');
+                if (bulkTagBtn) bulkTagBtn.classList.remove('d-none');
             } else {
                 deleteSelectedBtn.classList.add('d-none');
+                if (bulkTagBtn) bulkTagBtn.classList.add('d-none');
             }
 
             // Update select all checkbox state
@@ -1893,5 +1966,6 @@
     <script src="/static/js/theme.js"></script>
     <script src="/static/js/jarvis-dialogs.js"></script>
     <script src="/static/js/jarvis-presets.js"></script>
+    <script src="/static/js/jarvis-tags.js"></script>
 </body>
 </html>

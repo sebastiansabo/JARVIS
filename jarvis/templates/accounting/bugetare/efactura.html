@@ -231,6 +231,7 @@
                         <div class="d-flex justify-content-between align-items-center">
                             <span><i class="bi bi-table"></i> Unallocated Invoices</span>
                             <div class="d-flex gap-2 align-items-center">
+                                <div id="tagFilterContainer"></div>
                                 <div id="presetContainer"></div>
                                 <div class="input-group input-group-sm" style="width: 200px;">
                                     <input type="text" class="form-control" id="searchInput" placeholder="Search supplier or invoice #..." onkeypress="if(event.key==='Enter') loadUnallocatedInvoices()">
@@ -317,6 +318,9 @@
                                 </button>
                                 <button class="btn btn-warning btn-sm" onclick="openBulkSetOverridesModal()">
                                     <i class="bi bi-pencil-square"></i> Set Type/Dept
+                                </button>
+                                <button class="btn btn-outline-info btn-sm" onclick="JarvisTags.openBulkTagDropdown('efactura_invoice', Array.from(selectedInvoices))">
+                                    <i class="bi bi-tags"></i> Tag
                                 </button>
                                 <button class="btn btn-outline-secondary btn-sm" onclick="bulkHideSelected()">
                                     <i class="bi bi-eye-slash"></i> Hide
@@ -1118,6 +1122,7 @@
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
     <script src="{{ url_for('static', filename='js/jarvis-dialogs.js') }}"></script>
     <script src="{{ url_for('static', filename='js/jarvis-presets.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/jarvis-tags.js') }}"></script>
     <script src="{{ url_for('static', filename='js/online-users.js') }}"></script>
     <script>
         let currentPage = 1;
@@ -1180,11 +1185,12 @@
             { id: 'vat', label: 'VAT', visible: true, align: 'end' },
             { id: 'currency', label: 'Currency', visible: true },
             { id: 'imported', label: 'Imported', visible: true },
+            { id: 'tags', label: 'Tags', visible: false },
             { id: 'actions', label: 'Actions', fixed: true, width: '180px' }
         ];
 
         // Column config version - increment when columns are added/removed to reset user configs
-        const COLUMN_CONFIG_VERSION = 2; // Bumped for department/subdepartment columns
+        const COLUMN_CONFIG_VERSION = 3; // Bumped for tags column
 
         // Load column config from localStorage
         function getColumnConfig() {
@@ -1959,6 +1965,23 @@
                 }
             });
 
+            // Initialize tag filter
+            const jarvisTags = new JarvisTags({
+                entityType: 'efactura_invoice',
+                containerId: 'tagFilterContainer',
+                onFilterChange: () => {
+                    loadUnallocatedInvoices(1, true);
+                }
+            });
+
+            // Listen for tag changes to refresh
+            document.addEventListener('jarvis-tags-changed', (e) => {
+                if (e.detail?.entityType === 'efactura_invoice') {
+                    loadEfacturaInvoiceTags(invoicesCache);
+                    sortAndRenderInvoices();
+                }
+            });
+
             // Initialize filter presets
             new JarvisPresets({
                 pageKey: 'efactura',
@@ -1970,6 +1993,7 @@
                         startDate: document.getElementById('startDate')?.value || '',
                         endDate: document.getElementById('endDate')?.value || '',
                         search: document.getElementById('searchInput')?.value || '',
+                        tags: jarvisTags.getSelectedTags(),
                     },
                     sort: { column: sortColumn, direction: sortDirection },
                     pageSize: pageSize,
@@ -1982,6 +2006,7 @@
                         if (f.startDate !== undefined) document.getElementById('startDate').value = f.startDate;
                         if (f.endDate !== undefined) document.getElementById('endDate').value = f.endDate;
                         if (f.search !== undefined) document.getElementById('searchInput').value = f.search;
+                        if (f.tags) jarvisTags.setSelectedTags(f.tags);
                     }
                     if (data.sort) {
                         sortColumn = data.sort.column || 'issue_date';
@@ -2149,6 +2174,7 @@
                     }
 
                     invoicesCache = data.data || [];
+                    await loadEfacturaInvoiceTags(invoicesCache);
                     sortAndRenderInvoices();
                     updatePagination(data.pagination);
                     updateSummary(data.data, data.pagination);
@@ -2162,6 +2188,22 @@
                 tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-center text-danger py-4">
                     <i class="bi bi-exclamation-triangle"></i> Error: ${err.message}
                 </td></tr>`;
+            }
+        }
+
+        async function loadEfacturaInvoiceTags(invoices) {
+            if (!invoices || !invoices.length) return;
+            try {
+                const ids = invoices.map(inv => inv.id);
+                const resp = await fetch(`/api/entity-tags/bulk?entity_type=efactura_invoice&entity_ids=${ids.join(',')}`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const tagsMap = data.tags || {};
+                invoices.forEach(inv => {
+                    inv.tags = tagsMap[inv.id] || [];
+                });
+            } catch (err) {
+                console.error('Error loading efactura invoice tags:', err);
             }
         }
 
@@ -2319,6 +2361,7 @@
                     vat: vatAmount,
                     currency: inv.currency || 'RON',
                     imported: `<span class="small text-muted">${importedDate}</span>`,
+                    tags: JarvisTags.renderTagBadges(inv.tags || [], { editable: true, entityType: 'efactura_invoice', entityId: inv.id }),
                     actions: `<div class="btn-group btn-group-sm">
                         <button class="btn btn-outline-success" onclick="restoreFromHidden(${inv.id})" title="Restore">
                             <i class="bi bi-arrow-counterclockwise"></i>
@@ -2988,6 +3031,7 @@
                     vat: vat,
                     currency: inv.currency || 'RON',
                     imported: `<span class="small text-muted">${importedDate}</span>`,
+                    tags: JarvisTags.renderTagBadges(inv.tags || [], { editable: true, entityType: 'efactura_invoice', entityId: inv.id }),
                     actions: `<div class="btn-group btn-group-sm">
                         <button class="btn btn-outline-success" onclick="sendSingleToInvoices(${inv.id})" title="Send to Invoices">
                             <i class="bi bi-send"></i>

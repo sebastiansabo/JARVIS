@@ -206,6 +206,8 @@
                         <div class="d-flex justify-content-between align-items-center">
                             <span><i class="bi bi-table"></i> Invoice Data <span id="invoiceResultCount" class="badge bg-secondary ms-2"></span></span>
                             <div class="d-flex gap-2 align-items-center">
+                                <!-- Tags Filter -->
+                                <div id="tagFilterContainer"></div>
                                 <!-- Presets -->
                                 <div id="presetContainer"></div>
                                 <!-- Search -->
@@ -241,6 +243,9 @@
                                     <option value="">Change Status...</option>
                                     <!-- Populated dynamically from dropdown_options -->
                                 </select>
+                                <button class="btn btn-outline-info btn-sm" onclick="JarvisTags.openBulkTagDropdown('invoice', Array.from(selectedInvoices))">
+                                    <i class="bi bi-tags"></i> Tag
+                                </button>
                                 <button class="btn btn-outline-success btn-sm" onclick="exportSelectedToCSV()">
                                     <i class="bi bi-download"></i> Export CSV
                                 </button>
@@ -1230,6 +1235,7 @@
             { id: 'reinvoice_to', name: 'Reinvoice To', source: 'computed.reinvoice_list', format: 'reinvoice', visible: false, custom: false },
             { id: 'split_values', name: 'Split Values', source: 'computed.split_values', format: 'split', visible: false, custom: false },
             { id: 'comment', name: 'Notes', source: 'invoice.comment', format: 'text', visible: false, custom: false },
+            { id: 'tags', name: 'Tags', source: 'invoice.tags', format: 'tags', visible: false, custom: false },
             { id: 'actions', name: 'Actions', source: 'special.actions', format: 'special', visible: true, custom: false },
             { id: 'drive', name: 'Drive', source: 'special.drive', format: 'special', visible: true, custom: false }
         ];
@@ -1300,6 +1306,24 @@
                 initOnlineUsersTracking();
                 await loadData();
                 setupEventListeners();
+                // Initialize tag filter
+                const jarvisTags = new JarvisTags({
+                    entityType: 'invoice',
+                    containerId: 'tagFilterContainer',
+                    onFilterChange: (selectedTagIds) => {
+                        currentPage = 1;
+                        applyFiltersOnly();
+                    }
+                });
+
+                // Listen for tag changes to refresh tags on invoices
+                document.addEventListener('jarvis-tags-changed', async (e) => {
+                    if (e.detail?.entityType === 'invoice') {
+                        await loadInvoiceTags(allInvoices);
+                        renderInvoicesTable(allInvoices);
+                    }
+                });
+
                 // Initialize filter presets (after filters/columns are loaded)
                 new JarvisPresets({
                     pageKey: 'accounting',
@@ -1316,6 +1340,7 @@
                             endDate: document.getElementById('endDate')?.value || '',
                             search: document.getElementById('searchInput')?.value || '',
                             quickFilter: document.getElementById('quickFilter')?.value || '',
+                            tags: jarvisTags.getSelectedTags(),
                         },
                         columns: columnConfig,
                         sort: document.getElementById('sortOrder')?.value || 'newest',
@@ -1340,6 +1365,7 @@
                             if (f.endDate !== undefined) document.getElementById('endDate').value = f.endDate;
                             if (f.search !== undefined) document.getElementById('searchInput').value = f.search;
                             if (f.quickFilter !== undefined) document.getElementById('quickFilter').value = f.quickFilter;
+                            if (f.tags) jarvisTags.setSelectedTags(f.tags);
                         }
                         if (data.columns && Array.isArray(data.columns)) {
                             columnConfig = data.columns;
@@ -1429,6 +1455,16 @@
                         columnConfig.splice(statusIdx + 1, 0, paymentCol);
                     } else {
                         columnConfig.push(paymentCol);
+                    }
+                }
+                // Ensure tags column exists (for migration from old configs)
+                if (!columnConfig.find(c => c.id === 'tags')) {
+                    const commentIdx = columnConfig.findIndex(c => c.id === 'comment');
+                    const tagsCol = { id: 'tags', name: 'Tags', source: 'invoice.tags', format: 'tags', visible: false, custom: false };
+                    if (commentIdx >= 0) {
+                        columnConfig.splice(commentIdx + 1, 0, tagsCol);
+                    } else {
+                        columnConfig.push(tagsCol);
                     }
                 }
                 // Ensure net_value column exists (for migration from old configs)
@@ -2194,10 +2230,33 @@
                     });
                 }
 
+                // Bulk-fetch tags for all loaded invoices
+                await loadInvoiceTags(allInvoices);
+
                 renderInvoicesTable(allInvoices);
                 updateSummaryCards();
             } catch (e) {
                 console.error('Error loading invoices:', e);
+            }
+        }
+
+        async function loadInvoiceTags(invoices) {
+            if (!invoices || !invoices.length) return;
+            try {
+                const ids = invoices.map(inv => inv.id);
+                const resp = await fetch(`/api/entity-tags/bulk?entity_type=invoice&entity_ids=${ids.join(',')}`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const tagsMap = data.tags || {};
+                invoices.forEach(inv => {
+                    inv.tags = tagsMap[inv.id] || [];
+                    // Also update allocation cache
+                    if (invoicesWithAllocations[inv.id]) {
+                        invoicesWithAllocations[inv.id].tags = inv.tags;
+                    }
+                });
+            } catch (err) {
+                console.error('Error loading invoice tags:', err);
             }
         }
 
@@ -2662,6 +2721,8 @@
                         </div>`;
                     }
                     return '-';
+                case 'tags':
+                    return JarvisTags.renderTagBadges(inv.tags || [], { editable: true, entityType: 'invoice', entityId: inv.id });
                 case 'special':
                     if (col.source === 'special.actions') {
                         return `<div class="d-flex">
@@ -2694,6 +2755,18 @@
         }
 
         function renderInvoicesTable(invoices) {
+            // Client-side tag filter
+            if (typeof jarvisTags !== 'undefined') {
+                const selectedTagIds = jarvisTags.getSelectedTags();
+                if (selectedTagIds && selectedTagIds.length > 0) {
+                    invoices = invoices.filter(inv => {
+                        if (!inv.tags || !inv.tags.length) return false;
+                        const invTagIds = inv.tags.map(t => t.id);
+                        return selectedTagIds.some(id => invTagIds.includes(id));
+                    });
+                }
+            }
+
             const thead = document.getElementById('invoicesTableHead').querySelector('tr');
             const tbody = document.getElementById('invoicesTable');
             const visibleCols = columnConfig.filter(c => c.visible);
@@ -5064,6 +5137,7 @@
     <script src="/static/js/jarvis-utils.js"></script>
     <script src="/static/js/jarvis-dialogs.js"></script>
     <script src="/static/js/jarvis-presets.js"></script>
+    <script src="/static/js/jarvis-tags.js"></script>
     <script src="/static/js/online-users.js"></script>
     {% include 'partials/_edit_profile_modal.html' %}
     <script src="/static/js/theme.js"></script>

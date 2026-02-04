@@ -197,6 +197,8 @@
                     <div class="d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-table"></i> Transactions <span id="transactionResultCount" class="badge bg-secondary ms-2"></span></span>
                         <div class="d-flex gap-2 align-items-center">
+                            <!-- Tags Filter -->
+                            <div id="tagFilterContainer"></div>
                             <!-- Presets -->
                             <div id="presetContainer"></div>
                             <!-- Search -->
@@ -255,6 +257,9 @@
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-info" onclick="autoMatchInvoices()" title="Auto-match">
                                 <i class="bi bi-magic"></i> Auto-Match
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-info" onclick="JarvisTags.openBulkTagDropdown('transaction', Array.from(selectedTransactionIds))">
+                                <i class="bi bi-tags"></i> Tag
                             </button>
                             <div class="vr"></div>
                             <button type="button" class="btn btn-sm btn-outline-primary" onclick="exportCSV()">
@@ -458,6 +463,7 @@
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
     <script src="{{ url_for('static', filename='js/jarvis-dialogs.js') }}"></script>
     <script src="{{ url_for('static', filename='js/jarvis-presets.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/jarvis-tags.js') }}"></script>
     <script>
         // State
         let transactions = [];
@@ -500,6 +506,7 @@
             { id: 'type', name: 'Type', source: 'transaction_type', format: 'type', visible: true },
             { id: 'status', name: 'Status', source: 'status', format: 'status', visible: true },
             { id: 'invoice', name: 'Invoice', source: 'special.invoice', format: 'special', visible: true },
+            { id: 'tags', name: 'Tags', source: 'tags', format: 'tags', visible: false },
             { id: 'actions', name: 'Actions', source: 'special.actions', format: 'special', visible: true }
         ];
         let columnConfig = [];
@@ -733,6 +740,8 @@
                     } else {
                         return `<td><span class="text-muted">-</span></td>`;
                     }
+                case 'tags':
+                    return `<td>${JarvisTags.renderTagBadges(txn.tags || [], { editable: true, entityType: 'transaction', entityId: txn.id })}</td>`;
                 case 'actions':
                     let actionsHtml = `<td><div class="btn-group btn-group-sm">`;
                     if (txn.invoice_id) {
@@ -807,6 +816,18 @@
             document.getElementById('pageSize').value = pageSize;
             // Initialize hide ignored toggle state
             initHideIgnoredToggle();
+            // Initialize tag filter
+            window.jarvisTags = new JarvisTags({
+                entityType: 'transaction',
+                containerId: 'tagFilterContainer',
+                onFilterChange: () => { currentPage = 1; loadTransactions(); }
+            });
+            // Listen for tag changes
+            document.addEventListener('jarvis-tags-changed', (e) => {
+                if (e.detail?.entityType === 'transaction') {
+                    loadTransactionTags(transactions).then(() => renderTransactions());
+                }
+            });
             loadFilterOptions();
             loadTransactions();
 
@@ -822,7 +843,8 @@
                         dateFrom: document.getElementById('filterDateFrom')?.value || '',
                         dateTo: document.getElementById('filterDateTo')?.value || '',
                         search: document.getElementById('searchInput')?.value || '',
-                        hideIgnored: hideIgnored
+                        hideIgnored: hideIgnored,
+                        tags: window.jarvisTags ? window.jarvisTags.getSelectedTags() : []
                     },
                     columns: columnConfig,
                     sort: { column: sortColumn, direction: sortDirection },
@@ -842,6 +864,7 @@
                             localStorage.setItem('statementsHideIgnored', hideIgnored);
                             initHideIgnoredToggle();
                         }
+                        if (f.tags && window.jarvisTags) window.jarvisTags.setSelectedTags(f.tags);
                     }
                     if (data.columns) {
                         columnConfig = data.columns;
@@ -975,6 +998,20 @@
         }
 
         // Load Transactions
+        async function loadTransactionTags(txns) {
+            if (!txns || !txns.length) return;
+            try {
+                const ids = txns.map(t => t.id);
+                const resp = await fetch(`/api/entity-tags/bulk?entity_type=transaction&entity_ids=${ids.join(',')}`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const tagsMap = data.tags || {};
+                txns.forEach(t => { t.tags = tagsMap[t.id] || []; });
+            } catch (err) {
+                console.error('Error loading transaction tags:', err);
+            }
+        }
+
         async function loadTransactions(resetPage = true) {
             if (resetPage) currentPage = 1;
 
@@ -1006,6 +1043,7 @@
 
                 if (data.success) {
                     transactions = data.transactions;
+                    await loadTransactionTags(transactions);
                     renderTransactions();
                     loadSummary();
                     updateFilterOptions();

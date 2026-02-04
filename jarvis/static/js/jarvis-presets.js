@@ -133,8 +133,9 @@ class JarvisPresets {
                 const preset = this.presets.find(p => p.id === id);
                 if (preset) this.applyPreset(preset);
             } else {
+                // "No Preset" selected — refresh page to reset all filters
                 this.activePresetId = null;
-                this.render();
+                window.location.href = window.location.pathname;
             }
         });
 

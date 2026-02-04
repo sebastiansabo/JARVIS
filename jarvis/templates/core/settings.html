@@ -105,6 +105,11 @@
                     <i class="bi bi-people"></i> HR
                 </button>
             </li>
+            <li class="nav-item">
+                <button class="nav-link" id="tags-tab" data-bs-toggle="tab" data-bs-target="#tags-settings" type="button">
+                    <i class="bi bi-tags"></i> Tags
+                </button>
+            </li>
         </ul>
 
         <div class="tab-content">
@@ -1241,6 +1246,83 @@
                 </div>
             </div>
 
+            <!-- Tags Tab -->
+            <div class="tab-pane fade" id="tags-settings">
+                <div class="card border-top-0 rounded-top-0">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-tags"></i> Tag Management</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Tag Groups Section -->
+                        <div class="card mb-4">
+                            <div class="card-header bg-body-tertiary d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0"><i class="bi bi-collection"></i> Tag Groups</h6>
+                                <button class="btn btn-primary btn-sm" onclick="showAddTagGroupForm()">
+                                    <i class="bi bi-plus-lg"></i> Add Group
+                                </button>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-hover table-sm mb-0" id="tagGroupsTable">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:30px">Color</th>
+                                                <th>Name</th>
+                                                <th>Description</th>
+                                                <th class="text-center" style="width:70px">Order</th>
+                                                <th class="text-center" style="width:70px">Status</th>
+                                                <th class="text-end" style="width:100px">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tagGroupsTableBody">
+                                            <tr><td colspan="6" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div id="noTagGroupsMessage" class="text-center text-muted py-4" style="display: none;">
+                                    <i class="bi bi-collection display-4 d-block mb-2"></i>
+                                    No tag groups yet. Groups are optional — tags can exist without a group.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tags Section -->
+                        <div class="card">
+                            <div class="card-header bg-body-tertiary d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0"><i class="bi bi-tag"></i> Tags</h6>
+                                <button class="btn btn-primary btn-sm" onclick="showAddTagForm()">
+                                    <i class="bi bi-plus-lg"></i> Add Tag
+                                </button>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-hover table-sm mb-0" id="tagsTable">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:30px">Color</th>
+                                                <th>Name</th>
+                                                <th>Group</th>
+                                                <th class="text-center" style="width:70px">Scope</th>
+                                                <th class="text-center" style="width:70px">Order</th>
+                                                <th class="text-center" style="width:70px">Status</th>
+                                                <th class="text-end" style="width:100px">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tagsTableBody">
+                                            <tr><td colspan="7" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div id="noTagsMessage" class="text-center text-muted py-4" style="display: none;">
+                                    <i class="bi bi-tag display-4 d-block mb-2"></i>
+                                    No tags configured. Click "Add Tag" to create one.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- HR Tab -->
             <div class="tab-pane fade" id="hr-settings">
                 <div class="card border-top-0 rounded-top-0">
@@ -1890,6 +1972,108 @@
         </div>
     </div>
 
+    <!-- Tag Group Modal -->
+    <div class="modal fade" id="tagGroupModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-collection"></i> <span id="tagGroupModalTitle">Add Tag Group</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="tagGroupForm">
+                        <input type="hidden" id="tagGroupId">
+                        <div class="mb-3">
+                            <label class="form-label">Name <span class="text-danger">*</span></label>
+                            <input type="text" id="tagGroupName" class="form-control" required placeholder="e.g., Priority, Status, Category">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <input type="text" id="tagGroupDescription" class="form-control" placeholder="Optional description">
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Color</label>
+                                <input type="color" id="tagGroupColor" class="form-control form-control-color" value="#6c757d">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Sort Order</label>
+                                <input type="number" id="tagGroupSortOrder" class="form-control" value="0" min="0">
+                            </div>
+                        </div>
+                        <div class="form-check form-switch" id="tagGroupActiveWrapper" style="display:none;">
+                            <input class="form-check-input" type="checkbox" id="tagGroupIsActive" checked>
+                            <label class="form-check-label" for="tagGroupIsActive">Active</label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveTagGroup()">
+                        <i class="bi bi-check-lg"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tag Modal -->
+    <div class="modal fade" id="tagModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-tag"></i> <span id="tagModalTitle">Add Tag</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="tagForm">
+                        <input type="hidden" id="tagId">
+                        <div class="mb-3">
+                            <label class="form-label">Name <span class="text-danger">*</span></label>
+                            <input type="text" id="tagName" class="form-control" required placeholder="e.g., Urgent, Review, Done">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Group</label>
+                            <select id="tagGroupSelect" class="form-select">
+                                <option value="">No group (ungrouped)</option>
+                            </select>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Color</label>
+                                <input type="color" id="tagColor" class="form-control form-control-color" value="#0d6efd">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Icon</label>
+                                <input type="text" id="tagIcon" class="form-control" placeholder="bi-star">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Sort Order</label>
+                                <input type="number" id="tagSortOrder" class="form-control" value="0" min="0">
+                            </div>
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="tagIsGlobal" checked>
+                            <label class="form-check-label" for="tagIsGlobal">
+                                Global tag <small class="text-muted">(visible to all users)</small>
+                            </label>
+                        </div>
+                        <div class="form-check form-switch" id="tagActiveWrapper" style="display:none;">
+                            <input class="form-check-input" type="checkbox" id="tagIsActive" checked>
+                            <label class="form-check-label" for="tagIsActive">Active</label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveTag()">
+                        <i class="bi bi-check-lg"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let users = [];
@@ -2013,7 +2197,9 @@
                 loadVatRates(),
                 loadDropdownOptions(),
                 loadThemeSettings(),
-                loadPermissionMatrix()
+                loadPermissionMatrix(),
+                loadTagGroups(),
+                loadSettingsTags()
             ]).finally(() => {
                 hideLoading();
             });
@@ -6071,6 +6257,252 @@
             } else {
                 JarvisToast.success(`Deleted ${successCount} structure entries`);
             }
+        }
+
+        // ============== TAG MANAGEMENT ==============
+        let tagGroups = [];
+        let settingsTags = [];
+
+        async function loadTagGroups() {
+            try {
+                const resp = await fetch('/api/tag-groups');
+                if (!resp.ok) throw new Error('Failed to load tag groups');
+                const data = await resp.json();
+                tagGroups = data.groups || [];
+                renderTagGroupsTable();
+                populateTagGroupDropdown();
+            } catch (err) {
+                console.error('Error loading tag groups:', err);
+            }
+        }
+
+        function renderTagGroupsTable() {
+            const tbody = document.getElementById('tagGroupsTableBody');
+            const noMsg = document.getElementById('noTagGroupsMessage');
+            if (!tagGroups.length) {
+                tbody.innerHTML = '';
+                noMsg.style.display = '';
+                return;
+            }
+            noMsg.style.display = 'none';
+            tbody.innerHTML = tagGroups.map(g => `
+                <tr class="${!g.is_active ? 'text-muted' : ''}">
+                    <td><span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${_esc(g.color)};"></span></td>
+                    <td><strong>${_esc(g.name)}</strong></td>
+                    <td class="text-muted small">${_esc(g.description || '')}</td>
+                    <td class="text-center">${g.sort_order}</td>
+                    <td class="text-center">${g.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary" onclick="editTagGroup(${g.id})" title="Edit"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteTagGroup(${g.id})" title="Delete"><i class="bi bi-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function populateTagGroupDropdown() {
+            const sel = document.getElementById('tagGroupSelect');
+            if (!sel) return;
+            const current = sel.value;
+            sel.innerHTML = '<option value="">No group (ungrouped)</option>' +
+                tagGroups.filter(g => g.is_active).map(g => `<option value="${g.id}">${_esc(g.name)}</option>`).join('');
+            if (current) sel.value = current;
+        }
+
+        function showAddTagGroupForm() {
+            document.getElementById('tagGroupModalTitle').textContent = 'Add Tag Group';
+            document.getElementById('tagGroupId').value = '';
+            document.getElementById('tagGroupName').value = '';
+            document.getElementById('tagGroupDescription').value = '';
+            document.getElementById('tagGroupColor').value = '#6c757d';
+            document.getElementById('tagGroupSortOrder').value = '0';
+            document.getElementById('tagGroupIsActive').checked = true;
+            document.getElementById('tagGroupActiveWrapper').style.display = 'none';
+            new bootstrap.Modal(document.getElementById('tagGroupModal')).show();
+        }
+
+        function editTagGroup(id) {
+            const g = tagGroups.find(x => x.id === id);
+            if (!g) return;
+            document.getElementById('tagGroupModalTitle').textContent = 'Edit Tag Group';
+            document.getElementById('tagGroupId').value = g.id;
+            document.getElementById('tagGroupName').value = g.name;
+            document.getElementById('tagGroupDescription').value = g.description || '';
+            document.getElementById('tagGroupColor').value = g.color || '#6c757d';
+            document.getElementById('tagGroupSortOrder').value = g.sort_order || 0;
+            document.getElementById('tagGroupIsActive').checked = g.is_active;
+            document.getElementById('tagGroupActiveWrapper').style.display = '';
+            new bootstrap.Modal(document.getElementById('tagGroupModal')).show();
+        }
+
+        async function saveTagGroup() {
+            const id = document.getElementById('tagGroupId').value;
+            const payload = {
+                name: document.getElementById('tagGroupName').value.trim(),
+                description: document.getElementById('tagGroupDescription').value.trim(),
+                color: document.getElementById('tagGroupColor').value,
+                sort_order: parseInt(document.getElementById('tagGroupSortOrder').value) || 0
+            };
+            if (!payload.name) { JarvisToast.warning('Name is required'); return; }
+            if (id) payload.is_active = document.getElementById('tagGroupIsActive').checked;
+
+            try {
+                const url = id ? `/api/tag-groups/${id}` : '/api/tag-groups';
+                const method = id ? 'PUT' : 'POST';
+                const resp = await fetch(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    JarvisToast.error(err.error || 'Failed to save');
+                    return;
+                }
+                bootstrap.Modal.getInstance(document.getElementById('tagGroupModal'))?.hide();
+                JarvisToast.success(id ? 'Group updated' : 'Group created');
+                loadTagGroups();
+            } catch (err) {
+                JarvisToast.error('Error saving tag group');
+            }
+        }
+
+        async function deleteTagGroup(id) {
+            const confirmed = await JarvisDialog.confirm('Delete this tag group? Tags in this group will become ungrouped.', { danger: true });
+            if (!confirmed) return;
+            try {
+                const resp = await fetch(`/api/tag-groups/${id}`, { method: 'DELETE' });
+                if (!resp.ok) {
+                    JarvisToast.error('Failed to delete');
+                    return;
+                }
+                JarvisToast.success('Group deleted');
+                loadTagGroups();
+                loadSettingsTags();
+            } catch (err) {
+                JarvisToast.error('Error deleting tag group');
+            }
+        }
+
+        async function loadSettingsTags() {
+            try {
+                const resp = await fetch('/api/tags');
+                if (!resp.ok) throw new Error('Failed to load tags');
+                const data = await resp.json();
+                settingsTags = data.tags || [];
+                renderTagsTable();
+            } catch (err) {
+                console.error('Error loading tags:', err);
+            }
+        }
+
+        function renderTagsTable() {
+            const tbody = document.getElementById('tagsTableBody');
+            const noMsg = document.getElementById('noTagsMessage');
+            if (!settingsTags.length) {
+                tbody.innerHTML = '';
+                noMsg.style.display = '';
+                return;
+            }
+            noMsg.style.display = 'none';
+            tbody.innerHTML = settingsTags.map(t => `
+                <tr class="${!t.is_active ? 'text-muted' : ''}">
+                    <td><span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${_esc(t.color)};"></span></td>
+                    <td>
+                        <strong>${_esc(t.name)}</strong>
+                        ${t.icon ? `<i class="bi ${_esc(t.icon)} ms-1"></i>` : ''}
+                    </td>
+                    <td class="text-muted small">${_esc(t.group_name || '—')}</td>
+                    <td class="text-center">${t.is_global ? '<span class="badge bg-primary">Global</span>' : '<span class="badge bg-info">Private</span>'}</td>
+                    <td class="text-center">${t.sort_order}</td>
+                    <td class="text-center">${t.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary" onclick="editTag(${t.id})" title="Edit"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteTag(${t.id})" title="Delete"><i class="bi bi-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function showAddTagForm() {
+            document.getElementById('tagModalTitle').textContent = 'Add Tag';
+            document.getElementById('tagId').value = '';
+            document.getElementById('tagName').value = '';
+            document.getElementById('tagGroupSelect').value = '';
+            document.getElementById('tagColor').value = '#0d6efd';
+            document.getElementById('tagIcon').value = '';
+            document.getElementById('tagSortOrder').value = '0';
+            document.getElementById('tagIsGlobal').checked = true;
+            document.getElementById('tagIsActive').checked = true;
+            document.getElementById('tagActiveWrapper').style.display = 'none';
+            populateTagGroupDropdown();
+            new bootstrap.Modal(document.getElementById('tagModal')).show();
+        }
+
+        function editTag(id) {
+            const t = settingsTags.find(x => x.id === id);
+            if (!t) return;
+            document.getElementById('tagModalTitle').textContent = 'Edit Tag';
+            document.getElementById('tagId').value = t.id;
+            document.getElementById('tagName').value = t.name;
+            document.getElementById('tagColor').value = t.color || '#0d6efd';
+            document.getElementById('tagIcon').value = t.icon || '';
+            document.getElementById('tagSortOrder').value = t.sort_order || 0;
+            document.getElementById('tagIsGlobal').checked = t.is_global;
+            document.getElementById('tagIsActive').checked = t.is_active;
+            document.getElementById('tagActiveWrapper').style.display = '';
+            populateTagGroupDropdown();
+            document.getElementById('tagGroupSelect').value = t.group_id || '';
+            new bootstrap.Modal(document.getElementById('tagModal')).show();
+        }
+
+        async function saveTag() {
+            const id = document.getElementById('tagId').value;
+            const payload = {
+                name: document.getElementById('tagName').value.trim(),
+                group_id: document.getElementById('tagGroupSelect').value || null,
+                color: document.getElementById('tagColor').value,
+                icon: document.getElementById('tagIcon').value.trim() || null,
+                sort_order: parseInt(document.getElementById('tagSortOrder').value) || 0,
+                is_global: document.getElementById('tagIsGlobal').checked
+            };
+            if (!payload.name) { JarvisToast.warning('Name is required'); return; }
+            if (id) payload.is_active = document.getElementById('tagIsActive').checked;
+
+            try {
+                const url = id ? `/api/tags/${id}` : '/api/tags';
+                const method = id ? 'PUT' : 'POST';
+                const resp = await fetch(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    JarvisToast.error(err.error || 'Failed to save');
+                    return;
+                }
+                bootstrap.Modal.getInstance(document.getElementById('tagModal'))?.hide();
+                JarvisToast.success(id ? 'Tag updated' : 'Tag created');
+                loadSettingsTags();
+            } catch (err) {
+                JarvisToast.error('Error saving tag');
+            }
+        }
+
+        async function deleteTag(id) {
+            const confirmed = await JarvisDialog.confirm('Delete this tag? It will be removed from all tagged entities.', { danger: true });
+            if (!confirmed) return;
+            try {
+                const resp = await fetch(`/api/tags/${id}`, { method: 'DELETE' });
+                if (!resp.ok) {
+                    JarvisToast.error('Failed to delete');
+                    return;
+                }
+                JarvisToast.success('Tag deleted');
+                loadSettingsTags();
+            } catch (err) {
+                JarvisToast.error('Error deleting tag');
+            }
+        }
+
+        function _esc(str) {
+            if (!str) return '';
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
         }
     </script>
 
