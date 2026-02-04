@@ -1693,11 +1693,11 @@
 
             badge.textContent = total.toFixed(2) + '%';
 
-            // Update badge color based on total
+            // Update badge color based on total (allow 1% tolerance)
             badge.classList.remove('bg-secondary', 'bg-success', 'bg-danger');
             if (total === 0) {
                 badge.classList.add('bg-secondary');
-            } else if (total <= 100) {
+            } else if (total <= 101) {
                 badge.classList.add('bg-success');
             } else {
                 badge.classList.add('bg-danger');
@@ -2185,10 +2185,10 @@
                 // Get reinvoice destinations using the helper function
                 const reinvoiceDestinations = reinvoiceCheck ? getReinvoiceDestinations(row) : [];
 
-                // Validate reinvoice total doesn't exceed 100%
+                // Validate reinvoice total doesn't exceed 100% (1% tolerance)
                 if (reinvoiceCheck && reinvoiceDestinations.length > 0) {
                     const reinvoiceTotal = reinvoiceDestinations.reduce((sum, d) => sum + d.percentage, 0);
-                    if (reinvoiceTotal > 100.01) {
+                    if (reinvoiceTotal > 101) {
                         await JarvisDialog.alert('Reinvoice total percentage cannot exceed 100%', { type: 'warning' });
                         return;
                     }
@@ -2213,10 +2213,10 @@
                 });
             }
 
-            // Validate total (must be 100%, allow up to 0.1% overdraft for rounding)
+            // Validate total (must be 100%, allow up to 1% tolerance for rounding)
             const total = distributions.reduce((sum, d) => sum + d.allocation, 0);
-            if (total < 1.0 || total > 1.001) {
-                await JarvisDialog.alert('Allocations must sum to 100% (max 0.1% overdraft allowed)', { type: 'warning' });
+            if (total < 0.99 || total > 1.01) {
+                await JarvisDialog.alert('Allocations must sum to 100% (max 1% tolerance allowed)', { type: 'warning' });
                 return;
             }
 

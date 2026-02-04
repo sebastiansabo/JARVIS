@@ -811,7 +811,7 @@ const InvoiceEdit = {
         });
 
         badge.textContent = `${total.toFixed(1)}%`;
-        badge.className = total <= 100 ? 'reinvoice-total-badge badge bg-success ms-2' : 'reinvoice-total-badge badge bg-danger ms-2';
+        badge.className = total <= 101 ? 'reinvoice-total-badge badge bg-success ms-2' : 'reinvoice-total-badge badge bg-danger ms-2';
     },
 
     // Get reinvoice destinations for an allocation
@@ -1051,8 +1051,8 @@ const InvoiceEdit = {
 
         if (badge) {
             badge.textContent = `${totalPercent.toFixed(2)}% | ${this.formatCurrencyNoSymbol(totalValue)} ${currency}`;
-            // Valid if 100% to 100.1% (allow small overdraft for rounding)
-            badge.className = 'badge ms-2 ' + ((totalPercent >= 100 && totalPercent <= 100.1) ? 'bg-success' : 'bg-danger');
+            // Valid if 99% to 101% (allow 1% tolerance for rounding)
+            badge.className = 'badge ms-2 ' + ((totalPercent >= 99 && totalPercent <= 101) ? 'bg-success' : 'bg-danger');
         }
     },
 
@@ -1109,8 +1109,8 @@ const InvoiceEdit = {
         const totalPercent = this.editAllocations.reduce((sum, a) => sum + (a.allocation_percent || 0), 0);
 
         // Validate allocations
-        if (totalPercent < 100 || totalPercent > 100.1) {
-            JarvisDialog.alert(`Allocations must sum to 100% (max 0.1% overdraft allowed). Current total: ${totalPercent.toFixed(2)}%`, { type: 'warning', title: 'Validation Error' });
+        if (totalPercent < 99 || totalPercent > 101) {
+            JarvisDialog.alert(`Allocations must sum to 100% (max 1% tolerance allowed). Current total: ${totalPercent.toFixed(2)}%`, { type: 'warning', title: 'Validation Error' });
             return;
         }
 

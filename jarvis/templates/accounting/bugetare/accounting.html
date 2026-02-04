@@ -3534,10 +3534,10 @@
                 }
             }
 
-            // Validate allocations (must be 100%, allow up to 0.1% overdraft for rounding)
+            // Validate allocations (must be 100%, allow up to 1% tolerance for rounding)
             const totalPercent = editAllocations.reduce((sum, a) => sum + (parseFloat(a.allocation_percent) || 0), 0);
-            if (totalPercent < 100 || totalPercent > 100.1) {
-                await JarvisDialog.alert(`Allocations must sum to 100% (max 0.1% overdraft allowed). Current total: ${totalPercent.toFixed(2)}%`, { type: 'warning', title: 'Invalid Allocation' });
+            if (totalPercent < 99 || totalPercent > 101) {
+                await JarvisDialog.alert(`Allocations must sum to 100% (max 1% tolerance allowed). Current total: ${totalPercent.toFixed(2)}%`, { type: 'warning', title: 'Invalid Allocation' });
                 return;
             }
 
@@ -3552,10 +3552,10 @@
                 // Get reinvoice destinations from the DOM
                 const reinvoiceDestinations = getEditReinvoiceDestinations(idx);
 
-                // Validate reinvoice total percentage if any destinations exist
+                // Validate reinvoice total percentage if any destinations exist (1% tolerance)
                 if (reinvoiceDestinations.length > 0) {
                     const totalReinvoicePercent = reinvoiceDestinations.reduce((sum, d) => sum + d.percentage, 0);
-                    if (totalReinvoicePercent > 100) {
+                    if (totalReinvoicePercent > 101) {
                         await JarvisDialog.alert(`Allocation #${idx + 1}: Reinvoice total percentage (${totalReinvoicePercent.toFixed(2)}%) cannot exceed 100%`, { type: 'warning', title: 'Invalid Reinvoice' });
                         return;
                     }
@@ -3999,7 +3999,7 @@
             });
 
             badge.textContent = `${total.toFixed(1)}%`;
-            badge.className = total <= 100 ? 'reinvoice-total-badge badge bg-success ms-2' : 'reinvoice-total-badge badge bg-danger ms-2';
+            badge.className = total <= 101 ? 'reinvoice-total-badge badge bg-success ms-2' : 'reinvoice-total-badge badge bg-danger ms-2';
         }
 
         function getEditReinvoiceDestinations(allocIdx) {
@@ -4034,8 +4034,8 @@
             const currency = document.getElementById('editCurrency').value || 'RON';
             const badge = document.getElementById('allocationTotalBadge');
             badge.textContent = `${totalPercent.toFixed(2)}% | ${formatCurrency(totalValue)} ${currency}`;
-            // Valid if 100% to 100.1% (allow small overdraft for rounding)
-            badge.className = (totalPercent >= 100 && totalPercent <= 100.1) ? 'badge bg-success ms-2' : 'badge bg-danger ms-2';
+            // Valid if 99% to 101% (allow 1% tolerance for rounding)
+            badge.className = (totalPercent >= 99 && totalPercent <= 101) ? 'badge bg-success ms-2' : 'badge bg-danger ms-2';
         }
 
         function onDedicatedCompanyChange() {

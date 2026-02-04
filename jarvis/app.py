@@ -1398,9 +1398,9 @@ def api_db_update_allocations(invoice_id):
     if not allocations:
         return jsonify({'success': False, 'error': 'At least one allocation is required'}), 400
 
-    # Validate allocations sum to 100% (allow 0.1% tolerance for floating-point errors)
+    # Validate allocations sum to 100% (allow 1% tolerance for floating-point errors)
     total_percent = sum(float(a.get('allocation_percent', 0)) for a in allocations)
-    if abs(total_percent - 100) > 0.1:
+    if abs(total_percent - 100) > 1.0:
         return jsonify({'success': False, 'error': f'Allocations must sum to 100%, got {round(total_percent, 2)}%'}), 400
 
     try:
