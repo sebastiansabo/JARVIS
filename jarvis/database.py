@@ -7295,7 +7295,7 @@ def get_tag_groups(active_only=True):
     """Get all tag groups, optionally filtered by active status."""
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         if active_only:
             cursor.execute('SELECT * FROM tag_groups WHERE is_active = TRUE ORDER BY sort_order, name')
         else:
@@ -7310,7 +7310,7 @@ def save_tag_group(name, description=None, color='#6c757d', sort_order=0):
     """Create a new tag group. Returns the group ID."""
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         cursor.execute('''
             INSERT INTO tag_groups (name, description, color, sort_order)
             VALUES (%s, %s, %s, %s) RETURNING id
@@ -7342,7 +7342,7 @@ def update_tag_group(group_id, **kwargs):
     params.append(group_id)
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         cursor.execute(f'UPDATE tag_groups SET {", ".join(updates)} WHERE id = %s', params)
         conn.commit()
         return cursor.rowcount > 0
@@ -7362,7 +7362,7 @@ def get_tags(user_id, group_id=None, active_only=True):
     """Get tags visible to a user (global + user's private), joined with group info."""
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         conditions = ['(t.is_global = TRUE OR t.created_by = %s)']
         params = [user_id]
         if active_only:
@@ -7388,7 +7388,7 @@ def get_tag(tag_id):
     """Get a single tag by ID with group info."""
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         cursor.execute('''
             SELECT t.*, g.name as group_name, g.color as group_color
             FROM tags t
@@ -7405,7 +7405,7 @@ def save_tag(name, is_global, created_by, group_id=None, color='#0d6efd', icon=N
     """Create a new tag. Returns the tag ID."""
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         cursor.execute('''
             INSERT INTO tags (name, group_id, color, icon, is_global, created_by, sort_order)
             VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
@@ -7437,7 +7437,7 @@ def update_tag(tag_id, **kwargs):
     params.append(tag_id)
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         cursor.execute(f'UPDATE tags SET {", ".join(updates)} WHERE id = %s', params)
         conn.commit()
         return cursor.rowcount > 0
@@ -7457,7 +7457,7 @@ def get_entity_tags(entity_type, entity_id, user_id):
     """Get all tags for an entity visible to the user."""
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         cursor.execute('''
             SELECT t.id, t.name, t.color, t.icon, t.is_global, t.group_id,
                    g.name as group_name, g.color as group_color,
@@ -7480,7 +7480,7 @@ def get_entities_tags_bulk(entity_type, entity_ids, user_id):
         return {}
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         cursor.execute('''
             SELECT et.entity_id, t.id, t.name, t.color, t.icon, t.is_global, t.group_id,
                    g.name as group_name, g.color as group_color
@@ -7507,7 +7507,7 @@ def add_entity_tag(tag_id, entity_type, entity_id, tagged_by):
     """Tag an entity. Returns True if added, False if already exists."""
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         cursor.execute('''
             INSERT INTO entity_tags (tag_id, entity_type, entity_id, tagged_by)
             VALUES (%s, %s, %s, %s)
@@ -7528,7 +7528,7 @@ def remove_entity_tag(tag_id, entity_type, entity_id):
     """Remove a tag from an entity."""
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         cursor.execute('''
             DELETE FROM entity_tags
             WHERE tag_id = %s AND entity_type = %s AND entity_id = %s
@@ -7548,7 +7548,7 @@ def bulk_add_entity_tags(tag_id, entity_type, entity_ids, tagged_by):
         return 0
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         values = [(tag_id, entity_type, eid, tagged_by) for eid in entity_ids]
         from psycopg2.extras import execute_values
         execute_values(cursor, '''
@@ -7572,7 +7572,7 @@ def bulk_remove_entity_tags(tag_id, entity_type, entity_ids):
         return 0
     conn = get_db()
     try:
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)
         cursor.execute('''
             DELETE FROM entity_tags
             WHERE tag_id = %s AND entity_type = %s AND entity_id = ANY(%s)
