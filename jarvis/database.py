@@ -1249,8 +1249,8 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_entity_tags_tagged_by ON entity_tags(tagged_by)')
 
     # Seed default tag groups (only if table is empty)
-    cursor.execute('SELECT COUNT(*) FROM tag_groups')
-    if cursor.fetchone()[0] == 0:
+    cursor.execute('SELECT COUNT(*) as cnt FROM tag_groups')
+    if cursor.fetchone()['cnt'] == 0:
         cursor.execute('''
             INSERT INTO tag_groups (name, description, color, sort_order) VALUES
                 ('Priority', 'Priority level indicators', '#dc3545', 1),
@@ -1259,8 +1259,8 @@ def init_db():
         ''')
 
     # Seed default global tags (only if tags table is empty)
-    cursor.execute('SELECT COUNT(*) FROM tags')
-    if cursor.fetchone()[0] == 0:
+    cursor.execute('SELECT COUNT(*) as cnt FROM tags')
+    if cursor.fetchone()['cnt'] == 0:
         cursor.execute('''
             INSERT INTO tags (name, group_id, color, is_global, sort_order) VALUES
                 ('High',   (SELECT id FROM tag_groups WHERE name='Priority'), '#dc3545', TRUE, 1),
