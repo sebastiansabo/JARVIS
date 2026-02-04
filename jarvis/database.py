@@ -5488,7 +5488,7 @@ def add_vat_rate(name: str, rate: float, is_default: bool = False, is_active: bo
             RETURNING id
         ''', (name, rate, is_default, is_active))
 
-        rate_id = cursor.fetchone()[0]
+        rate_id = cursor.fetchone()['id']
         conn.commit()
         return rate_id
     except Exception as e:
@@ -7315,7 +7315,7 @@ def save_tag_group(name, description=None, color='#6c757d', sort_order=0):
             INSERT INTO tag_groups (name, description, color, sort_order)
             VALUES (%s, %s, %s, %s) RETURNING id
         ''', (name.strip(), description, color, sort_order))
-        group_id = cursor.fetchone()[0]
+        group_id = cursor.fetchone()['id']
         conn.commit()
         return group_id
     except Exception:
@@ -7410,7 +7410,7 @@ def save_tag(name, is_global, created_by, group_id=None, color='#0d6efd', icon=N
             INSERT INTO tags (name, group_id, color, icon, is_global, created_by, sort_order)
             VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
         ''', (name.strip(), group_id, color, icon, is_global, created_by, sort_order))
-        tag_id = cursor.fetchone()[0]
+        tag_id = cursor.fetchone()['id']
         conn.commit()
         return tag_id
     except Exception:

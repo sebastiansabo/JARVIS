@@ -6268,7 +6268,7 @@
                 const resp = await fetch('/api/tag-groups');
                 if (!resp.ok) throw new Error('Failed to load tag groups');
                 const data = await resp.json();
-                tagGroups = data.groups || [];
+                tagGroups = Array.isArray(data) ? data : (data.groups || []);
                 renderTagGroupsTable();
                 populateTagGroupDropdown();
             } catch (err) {
@@ -6385,7 +6385,7 @@
                 const resp = await fetch('/api/tags');
                 if (!resp.ok) throw new Error('Failed to load tags');
                 const data = await resp.json();
-                settingsTags = data.tags || [];
+                settingsTags = Array.isArray(data) ? data : (data.tags || []);
                 renderTagsTable();
             } catch (err) {
                 console.error('Error loading tags:', err);

@@ -3812,53 +3812,96 @@
             const lineCount = container.children.length;
             let newPercentage = existingData ? existingData.percentage : 100;
 
-            // If redistributing, update all existing lines to equal percentage
+            // Get allocation value for calculating reinvoice value
+            const allocValueInput = document.querySelector(`.alloc-value[data-idx="${allocIdx}"]`);
+            const allocationValue = parseFloat(allocValueInput?.value) || 0;
+            const currency = document.getElementById('editCurrency')?.value || 'RON';
+
+            // If redistributing, update only unlocked lines
             if (redistribute && lineCount > 0) {
-                newPercentage = 100 / (lineCount + 1);
-                container.querySelectorAll('.reinvoice-percent').forEach(input => {
-                    input.value = newPercentage.toFixed(2);
+                const allLines = container.querySelectorAll('.reinvoice-line');
+                const lockedLines = container.querySelectorAll('.reinvoice-line.reinvoice-locked');
+                const unlockedLines = container.querySelectorAll('.reinvoice-line:not(.reinvoice-locked)');
+
+                let lockedPercent = 0;
+                lockedLines.forEach(line => {
+                    lockedPercent += parseFloat(line.querySelector('.reinvoice-percent').value) || 0;
                 });
+
+                const remainingPercent = Math.max(0, 100 - lockedPercent);
+                const unlockedCount = unlockedLines.length + 1;
+                const perUnlockedLine = remainingPercent / unlockedCount;
+                const perUnlockedValue = ((allocationValue * perUnlockedLine) / 100).toFixed(2);
+
+                unlockedLines.forEach(line => {
+                    line.querySelector('.reinvoice-percent').value = perUnlockedLine.toFixed(2);
+                    line.querySelector('.reinvoice-value').value = perUnlockedValue;
+                });
+
+                newPercentage = perUnlockedLine;
             }
+
+            const initialValue = existingData?.value != null
+                ? parseFloat(existingData.value).toFixed(2)
+                : ((allocationValue * newPercentage) / 100).toFixed(2);
+            const isLocked = existingData?.locked || false;
+            const commentVal = existingData?.comment || '';
 
             const lineId = `reinvoice-line-${allocIdx}-${Date.now()}`;
             const line = document.createElement('div');
-            line.className = 'reinvoice-line row mb-1 align-items-center';
+            line.className = 'reinvoice-line row mb-1 align-items-center gx-1' + (isLocked ? ' reinvoice-locked' : '');
             line.id = lineId;
 
             line.innerHTML = `
-                <div class="col-md-2">
+                <div class="col reinvoice-company-col">
                     <select class="form-select form-select-sm reinvoice-company" onchange="onEditReinvoiceCompanyChange('${lineId}', ${allocIdx})">
                         <option value="">Company...</option>
                         ${companies.map(c => `<option value="${c}" ${existingData && c === existingData.company ? 'selected' : ''}>${c}</option>`).join('')}
                     </select>
                 </div>
-                <div class="col-md-2">
+                <div class="col reinvoice-brand-col">
                     <select class="form-select form-select-sm reinvoice-brand">
                         <option value="">Brand...</option>
                     </select>
                 </div>
-                <div class="col-md-2">
+                <div class="col reinvoice-dept-col">
                     <select class="form-select form-select-sm reinvoice-dept" onchange="onEditReinvoiceDeptChange('${lineId}', ${allocIdx})">
                         <option value="">Dept...</option>
                     </select>
                 </div>
-                <div class="col-md-2">
+                <div class="col reinvoice-subdept-col">
                     <select class="form-select form-select-sm reinvoice-subdept" onchange="updateEditReinvoiceTotalBadge(${allocIdx})">
                         <option value="">N/A</option>
                     </select>
                 </div>
-                <div class="col-md-2">
+                <div class="col reinvoice-value-col">
                     <div class="input-group input-group-sm">
+                        <input type="number" class="form-control reinvoice-value" value="${initialValue}" min="0" step="0.01"
+                               onchange="onEditReinvoiceValueChange('${lineId}', ${allocIdx})">
+                        <span class="input-group-text reinvoice-currency-label">${currency}</span>
+                    </div>
+                </div>
+                <div class="col-auto reinvoice-percent-col">
+                    <div class="input-group input-group-sm" style="width: 90px;">
                         <input type="number" class="form-control reinvoice-percent" value="${newPercentage.toFixed(2)}"
-                               min="0" max="100" step="0.01" onchange="updateEditReinvoiceTotalBadge(${allocIdx})">
+                               min="0" max="100" step="0.01" onchange="onEditReinvoicePercentChange('${lineId}', ${allocIdx})">
                         <span class="input-group-text">%</span>
                     </div>
                 </div>
-                <div class="col-md-2">
+                <div class="col-auto d-flex align-items-center gap-1">
+                    <button type="button" class="btn btn-outline-secondary btn-sm reinvoice-lock-btn ${isLocked ? 'active' : ''}" title="${isLocked ? 'Unlock' : 'Lock'} this line"
+                            onclick="toggleEditReinvoiceLock('${lineId}')" ${isLocked ? 'style="background-color: var(--bs-warning); border-color: var(--bs-warning);"' : ''}>
+                        <i class="bi bi-${isLocked ? 'lock' : 'unlock'}"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm reinvoice-comment-btn ${commentVal ? 'text-primary border-primary' : ''}"
+                            title="${commentVal || 'Add comment'}" onclick="editReinvoiceComment('${lineId}')">
+                        <i class="bi bi-chat${commentVal ? '-fill' : ''}"></i>
+                    </button>
                     <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeEditReinvoiceLine('${lineId}', ${allocIdx})">
                         <i class="bi bi-trash"></i>
                     </button>
                 </div>
+                <input type="hidden" class="reinvoice-comment" value="${commentVal.replace(/"/g, '&quot;')}">
             `;
 
             container.appendChild(line);
@@ -3988,6 +4031,80 @@
             updateEditReinvoiceTotalBadge(allocIdx);
         }
 
+        function onEditReinvoiceValueChange(lineId, allocIdx) {
+            const line = document.getElementById(lineId);
+            if (!line) return;
+            const valueInput = line.querySelector('.reinvoice-value');
+            const percentInput = line.querySelector('.reinvoice-percent');
+            const allocValueInput = document.querySelector(`.alloc-value[data-idx="${allocIdx}"]`);
+            const allocationValue = parseFloat(allocValueInput?.value) || 0;
+            const reinvoiceValue = parseFloat(valueInput.value) || 0;
+            if (allocationValue > 0) {
+                percentInput.value = ((reinvoiceValue / allocationValue) * 100).toFixed(2);
+            }
+            updateEditReinvoiceTotalBadge(allocIdx);
+        }
+
+        function onEditReinvoicePercentChange(lineId, allocIdx) {
+            const line = document.getElementById(lineId);
+            if (!line) return;
+            const valueInput = line.querySelector('.reinvoice-value');
+            const percentInput = line.querySelector('.reinvoice-percent');
+            const allocValueInput = document.querySelector(`.alloc-value[data-idx="${allocIdx}"]`);
+            const allocationValue = parseFloat(allocValueInput?.value) || 0;
+            const percent = parseFloat(percentInput.value) || 0;
+            valueInput.value = ((allocationValue * percent) / 100).toFixed(2);
+            updateEditReinvoiceTotalBadge(allocIdx);
+        }
+
+        function toggleEditReinvoiceLock(lineId) {
+            const line = document.getElementById(lineId);
+            if (!line) return;
+            const lockBtn = line.querySelector('.reinvoice-lock-btn');
+            const icon = lockBtn.querySelector('i');
+            if (line.classList.contains('reinvoice-locked')) {
+                line.classList.remove('reinvoice-locked');
+                icon.className = 'bi bi-unlock';
+                lockBtn.style.backgroundColor = '';
+                lockBtn.style.borderColor = '';
+                lockBtn.title = 'Lock this line';
+            } else {
+                line.classList.add('reinvoice-locked');
+                icon.className = 'bi bi-lock';
+                lockBtn.style.backgroundColor = 'var(--bs-warning)';
+                lockBtn.style.borderColor = 'var(--bs-warning)';
+                lockBtn.title = 'Unlock this line';
+            }
+        }
+
+        async function editReinvoiceComment(lineId) {
+            const line = document.getElementById(lineId);
+            if (!line) return;
+            const commentInput = line.querySelector('.reinvoice-comment');
+            const commentBtn = line.querySelector('.reinvoice-comment-btn');
+            const currentComment = commentInput.value || '';
+
+            const newComment = await JarvisDialog.prompt('Reinvoice comment:', {
+                defaultValue: currentComment,
+                title: 'Comment',
+                confirmText: 'Save'
+            });
+
+            if (newComment !== null) {
+                commentInput.value = newComment;
+                const icon = commentBtn.querySelector('i');
+                if (newComment) {
+                    commentBtn.classList.add('text-primary', 'border-primary');
+                    icon.className = 'bi bi-chat-fill';
+                    commentBtn.title = newComment;
+                } else {
+                    commentBtn.classList.remove('text-primary', 'border-primary');
+                    icon.className = 'bi bi-chat';
+                    commentBtn.title = 'Add comment';
+                }
+            }
+        }
+
         function updateEditReinvoiceTotalBadge(allocIdx) {
             const container = document.querySelector(`.reinvoice-lines-container[data-idx="${allocIdx}"]`);
             const badge = document.querySelector(`.reinvoice-total-badge[data-idx="${allocIdx}"]`);
@@ -4013,6 +4130,9 @@
                 const department = line.querySelector('.reinvoice-dept').value;
                 const subdepartment = line.querySelector('.reinvoice-subdept').value;
                 const percentage = parseFloat(line.querySelector('.reinvoice-percent').value) || 0;
+                const value = parseFloat(line.querySelector('.reinvoice-value')?.value) || 0;
+                const locked = line.classList.contains('reinvoice-locked');
+                const comment = line.querySelector('.reinvoice-comment')?.value || '';
 
                 if (company && percentage > 0) {
                     destinations.push({
@@ -4020,7 +4140,10 @@
                         brand: brand || null,
                         department: department || null,
                         subdepartment: subdepartment || null,
-                        percentage
+                        percentage,
+                        value,
+                        locked,
+                        comment: comment || null
                     });
                 }
             });

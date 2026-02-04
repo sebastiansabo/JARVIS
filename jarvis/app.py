@@ -1406,18 +1406,29 @@ def api_db_update_allocations(invoice_id):
     try:
         update_invoice_allocations(invoice_id, allocations)
 
+        # Auto-set status to "Bugetata" when allocations are edited
+        current_invoice = get_invoice_with_allocations(invoice_id)
+        old_status = current_invoice.get('status') if current_invoice else None
+        if old_status != 'Bugetata':
+            update_invoice(invoice_id, status='Bugetata')
+            log_event('status_changed',
+                      f'Invoice #{current_invoice.get("invoice_number", invoice_id)} status auto-changed to "Bugetata" after allocation edit',
+                      entity_type='invoice', entity_id=invoice_id,
+                      details={'old_status': old_status, 'new_status': 'Bugetata'})
+
         # Send email notifications to responsables only if explicitly requested
         notifications_sent = 0
         if send_notification and NOTIFICATIONS_ENABLED and is_smtp_configured():
-            invoice = get_invoice_with_allocations(invoice_id)
-            if invoice:
+            if not current_invoice:
+                current_invoice = get_invoice_with_allocations(invoice_id)
+            if current_invoice:
                 invoice_data = {
                     'id': invoice_id,
-                    'invoice_number': invoice.get('invoice_number'),
-                    'supplier': invoice.get('supplier'),
-                    'invoice_date': invoice.get('invoice_date'),
-                    'invoice_value': invoice.get('invoice_value'),
-                    'currency': invoice.get('currency', 'RON'),
+                    'invoice_number': current_invoice.get('invoice_number'),
+                    'supplier': current_invoice.get('supplier'),
+                    'invoice_date': current_invoice.get('invoice_date'),
+                    'invoice_value': current_invoice.get('invoice_value'),
+                    'currency': current_invoice.get('currency', 'RON'),
                 }
                 results = notify_invoice_allocations(invoice_data, allocations)
                 notifications_sent = sum(1 for r in results if r.get('success'))
