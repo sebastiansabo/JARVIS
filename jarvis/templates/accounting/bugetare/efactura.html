@@ -1927,11 +1927,20 @@
                 loadUnallocatedInvoices();
             }
 
-            // Save active tab when changed
+            // Save active tab when changed and force reload data
             document.querySelectorAll('#mainTabs a[data-bs-toggle="tab"]').forEach(tab => {
                 tab.addEventListener('shown.bs.tab', function(e) {
                     const tabId = e.target.getAttribute('href').substring(1);
                     localStorage.setItem('efacturaActiveTab', tabId);
+                    // Force reload data when switching tabs to ensure fresh data
+                    if (tabId === 'unallocatedTab') {
+                        loadUnallocatedInvoices(1, true);
+                    } else if (tabId === 'hiddenTab') {
+                        loadHiddenInvoices(1, true);
+                    } else if (tabId === 'binTab') {
+                        loadBinInvoices(1, true);
+                    }
+                    loadBadgeCounts();
                 });
             });
 

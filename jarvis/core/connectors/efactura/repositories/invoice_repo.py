@@ -508,13 +508,15 @@ class InvoiceRepository:
 
     def partner_has_hidden_types(self, partner_name: str) -> bool:
         """
-        Check if a partner has supplier mapping with types that have hide_in_filter=TRUE.
+        Check if a partner has ONLY hidden types (all types have hide_in_filter=TRUE).
+
+        Returns False if the partner has any non-hidden type (mixed types = not hidden).
 
         Args:
             partner_name: Name of the partner (supplier/customer)
 
         Returns:
-            True if partner has mapping with hidden types, False otherwise
+            True if partner has types AND all are hidden, False otherwise
         """
         if not partner_name:
             return False
@@ -523,19 +525,33 @@ class InvoiceRepository:
         try:
             cursor = get_cursor(conn)
             cursor.execute("""
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM efactura_supplier_mappings sm
-                    JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm.id
-                    JOIN efactura_partner_types pt ON pt.id = smt.type_id
-                    WHERE LOWER(sm.partner_name) = LOWER(%s)
-                        AND sm.is_active = TRUE
-                        AND pt.is_active = TRUE
-                        AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
-                ) as has_hidden_types
-            """, (partner_name,))
+                SELECT
+                    EXISTS (
+                        SELECT 1
+                        FROM efactura_supplier_mappings sm
+                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm.id
+                        JOIN efactura_partner_types pt ON pt.id = smt.type_id
+                        WHERE LOWER(sm.partner_name) = LOWER(%s)
+                            AND sm.is_active = TRUE
+                            AND pt.is_active = TRUE
+                            AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                    ) as has_hidden_types,
+                    EXISTS (
+                        SELECT 1
+                        FROM efactura_supplier_mappings sm
+                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm.id
+                        JOIN efactura_partner_types pt ON pt.id = smt.type_id
+                        WHERE LOWER(sm.partner_name) = LOWER(%s)
+                            AND sm.is_active = TRUE
+                            AND pt.is_active = TRUE
+                            AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
+                    ) as has_visible_types
+            """, (partner_name, partner_name))
             result = cursor.fetchone()
-            return result['has_hidden_types'] if result else False
+            if not result:
+                return False
+            # Only hidden if has hidden types AND no visible types
+            return result['has_hidden_types'] and not result['has_visible_types']
         except Exception as e:
             logger.error(f"Failed to check partner hidden types: {e}")
             return False
@@ -800,20 +816,25 @@ class InvoiceRepository:
                     params[param_name] = f'%{word}%'
 
             if hide_typed:
-                # Hide invoices that have types with hide_in_filter=TRUE
-                # Type comes from: type_override (if set) OR supplier mapping types
+                # Hide invoices where ALL types have hide_in_filter=TRUE
+                # If partner has mixed types (some hidden, some not), don't hide
                 # Note: Use %% to escape % in psycopg2 with named parameters
                 conditions.append("""
                     NOT (
-                        -- Has a hidden type via override
+                        -- All types are hidden via override (has hidden AND no non-hidden)
                         (i.type_override IS NOT NULL AND EXISTS (
                             SELECT 1 FROM efactura_partner_types pt
                             WHERE pt.is_active = TRUE
                                 AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
                                 AND i.type_override ILIKE '%%' || pt.name || '%%'
+                        ) AND NOT EXISTS (
+                            SELECT 1 FROM efactura_partner_types pt
+                            WHERE pt.is_active = TRUE
+                                AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
+                                AND i.type_override ILIKE '%%' || pt.name || '%%'
                         ))
                         OR
-                        -- Has a hidden type via supplier mapping (only when no override)
+                        -- All types are hidden via supplier mapping (has hidden AND no non-hidden)
                         (i.type_override IS NULL AND EXISTS (
                             SELECT 1 FROM efactura_supplier_mappings sm2
                             JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
@@ -822,6 +843,14 @@ class InvoiceRepository:
                                 AND sm2.is_active = TRUE
                                 AND pt.is_active = TRUE
                                 AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                        ) AND NOT EXISTS (
+                            SELECT 1 FROM efactura_supplier_mappings sm2
+                            JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
+                            JOIN efactura_partner_types pt ON pt.id = smt.type_id
+                            WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
+                                AND sm2.is_active = TRUE
+                                AND pt.is_active = TRUE
+                                AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
                         ))
                     )
                 """)
@@ -975,13 +1004,19 @@ class InvoiceRepository:
                 params['search'] = f"%{search}%"
 
             if hide_typed:
-                # Hide invoices that have types with hide_in_filter=TRUE
+                # Hide invoices where ALL types have hide_in_filter=TRUE
+                # If partner has mixed types (some hidden, some not), don't hide
                 where_clauses.append("""
                     NOT (
                         (i.type_override IS NOT NULL AND EXISTS (
                             SELECT 1 FROM efactura_partner_types pt
                             WHERE pt.is_active = TRUE
                                 AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                                AND i.type_override ILIKE '%%' || pt.name || '%%'
+                        ) AND NOT EXISTS (
+                            SELECT 1 FROM efactura_partner_types pt
+                            WHERE pt.is_active = TRUE
+                                AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
                                 AND i.type_override ILIKE '%%' || pt.name || '%%'
                         ))
                         OR
@@ -993,6 +1028,14 @@ class InvoiceRepository:
                                 AND sm2.is_active = TRUE
                                 AND pt.is_active = TRUE
                                 AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                        ) AND NOT EXISTS (
+                            SELECT 1 FROM efactura_supplier_mappings sm2
+                            JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
+                            JOIN efactura_partner_types pt ON pt.id = smt.type_id
+                            WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
+                                AND sm2.is_active = TRUE
+                                AND pt.is_active = TRUE
+                                AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
                         ))
                     )
                 """)
@@ -1032,19 +1075,27 @@ class InvoiceRepository:
             conditions = ['i.deleted_at IS NULL', 'i.jarvis_invoice_id IS NULL']
             params = {'limit': limit, 'offset': offset}
 
-            # Hidden = has a type with hide_in_filter = TRUE
-            # Type comes from: type_override (if set) OR supplier mapping types
+            # Hidden = manually ignored OR has ONLY hidden types (all types have hide_in_filter=TRUE)
+            # If partner has mixed types (some hidden, some not), don't count as hidden
             conditions.append("""
                 (
-                    -- Has a hidden type via override
+                    -- Manually ignored by user
+                    i.ignored = TRUE
+                    OR
+                    -- All types are hidden via override (has hidden type AND no non-hidden type)
                     (i.type_override IS NOT NULL AND EXISTS (
                         SELECT 1 FROM efactura_partner_types pt
                         WHERE pt.is_active = TRUE
                             AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
                             AND i.type_override ILIKE '%%' || pt.name || '%%'
+                    ) AND NOT EXISTS (
+                        SELECT 1 FROM efactura_partner_types pt
+                        WHERE pt.is_active = TRUE
+                            AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
+                            AND i.type_override ILIKE '%%' || pt.name || '%%'
                     ))
                     OR
-                    -- Has a hidden type via supplier mapping (only when no override)
+                    -- All types are hidden via supplier mapping (has hidden type AND no non-hidden type)
                     (i.type_override IS NULL AND EXISTS (
                         SELECT 1 FROM efactura_supplier_mappings sm2
                         JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
@@ -1053,6 +1104,14 @@ class InvoiceRepository:
                             AND sm2.is_active = TRUE
                             AND pt.is_active = TRUE
                             AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                    ) AND NOT EXISTS (
+                        SELECT 1 FROM efactura_supplier_mappings sm2
+                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
+                        JOIN efactura_partner_types pt ON pt.id = smt.type_id
+                        WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
+                            AND sm2.is_active = TRUE
+                            AND pt.is_active = TRUE
+                            AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
                     ))
                 )
             """)
@@ -1127,7 +1186,7 @@ class InvoiceRepository:
             release_db(conn)
 
     def count_hidden(self) -> int:
-        """Count hidden invoices (based on type settings)."""
+        """Count hidden invoices (manually ignored OR all types hidden)."""
         conn = get_db()
         try:
             cursor = get_cursor(conn)
@@ -1136,15 +1195,23 @@ class InvoiceRepository:
                 WHERE i.deleted_at IS NULL
                     AND i.jarvis_invoice_id IS NULL
                     AND (
-                        -- Has a hidden type via override
+                        -- Manually ignored by user
+                        i.ignored = TRUE
+                        OR
+                        -- All types are hidden via override (has hidden AND no non-hidden)
                         (i.type_override IS NOT NULL AND EXISTS (
                             SELECT 1 FROM efactura_partner_types pt
                             WHERE pt.is_active = TRUE
                                 AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
                                 AND i.type_override ILIKE '%%' || pt.name || '%%'
+                        ) AND NOT EXISTS (
+                            SELECT 1 FROM efactura_partner_types pt
+                            WHERE pt.is_active = TRUE
+                                AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
+                                AND i.type_override ILIKE '%%' || pt.name || '%%'
                         ))
                         OR
-                        -- Has a hidden type via supplier mapping (only when no override)
+                        -- All types are hidden via supplier mapping (has hidden AND no non-hidden)
                         (i.type_override IS NULL AND EXISTS (
                             SELECT 1 FROM efactura_supplier_mappings sm2
                             JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
@@ -1153,6 +1220,14 @@ class InvoiceRepository:
                                 AND sm2.is_active = TRUE
                                 AND pt.is_active = TRUE
                                 AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                        ) AND NOT EXISTS (
+                            SELECT 1 FROM efactura_supplier_mappings sm2
+                            JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
+                            JOIN efactura_partner_types pt ON pt.id = smt.type_id
+                            WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
+                                AND sm2.is_active = TRUE
+                                AND pt.is_active = TRUE
+                                AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
                         ))
                     )
             """)
