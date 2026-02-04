@@ -1529,6 +1529,8 @@ class EFacturaService:
                         amount_diff = abs(ef_amount - main_amount) / main_amount * 100
                         if amount_diff > 5:
                             continue
+                    else:
+                        amount_diff = 100.0
 
                     # Check supplier name similarity (at least 50%)
                     similarity = SequenceMatcher(
