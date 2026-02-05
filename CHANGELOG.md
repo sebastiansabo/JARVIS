@@ -26,6 +26,10 @@
 
 ### Bug Fixes
 - **Company dropdown empty**: Fixed to use non-HR-protected endpoints (`/api/companies`, `/api/brands/<company>`, etc.)
+- **User org fields not saving**: Added missing company, brand, department, subdepartment parameters to `/api/users/<id>` PUT endpoint
+- **Auto-detect company from department**: When editing a user with department but no company, system now auto-detects company via `/api/company-for-department/<dept>` endpoint
+- **HR Bonuses column reordering**: Fixed `applyColumnConfig()` to actually reorder DOM elements, not just toggle visibility
+- **Company brands dropdown**: Changed from text input to dropdown that fetches from master `brands` table
 
 ## 2026-02-04 (continued)
 
