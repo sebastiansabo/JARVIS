@@ -2470,15 +2470,15 @@
             document.getElementById('passwordRequired').style.display = 'none';
             document.getElementById('passwordHelp').textContent = 'Leave blank to keep current password';
 
-            // Populate org fields (async - loads data if needed)
+            // Populate org fields (async - loads data on demand)
             await populateUserCompanyDropdown();
             document.getElementById('userCompany').value = user.company || '';
             if (user.company) {
-                onUserCompanyChange();
+                await onUserCompanyChange();
                 document.getElementById('userBrand').value = user.brand || '';
                 document.getElementById('userDepartment').value = user.departments || user.department || '';
                 if (user.departments || user.department) {
-                    onUserDepartmentChange();
+                    await onUserDepartmentChange();
                     document.getElementById('userSubdepartment').value = user.subdepartment || '';
                 }
             }
@@ -2486,33 +2486,31 @@
             userModal.show();
         }
 
-        // Populate user company dropdown from companies data
+        // Populate user company dropdown - uses non-HR-protected /api/companies
         async function populateUserCompanyDropdown() {
             const select = document.getElementById('userCompany');
             select.innerHTML = '<option value="">-- Loading... --</option>';
 
-            // Load data if not already loaded
-            if (hrCompaniesData.length === 0) {
-                try {
-                    const resp = await fetch('/hr/events/api/structure/companies-full');
-                    if (resp.ok) hrCompaniesData = await resp.json();
-                } catch (e) { console.error('Failed to load companies:', e); }
+            try {
+                const resp = await fetch('/api/companies');
+                if (resp.ok) {
+                    const companies = await resp.json();
+                    select.innerHTML = '<option value="">-- None --</option>';
+                    companies.forEach(c => {
+                        select.innerHTML += `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`;
+                    });
+                } else {
+                    select.innerHTML = '<option value="">-- None --</option>';
+                    console.error('Failed to load companies:', resp.status);
+                }
+            } catch (e) {
+                select.innerHTML = '<option value="">-- None --</option>';
+                console.error('Failed to load companies:', e);
             }
-            if (structureData.length === 0) {
-                try {
-                    const resp = await fetch('/hr/events/api/structure/departments-full');
-                    if (resp.ok) structureData = await resp.json();
-                } catch (e) { console.error('Failed to load structure:', e); }
-            }
-
-            select.innerHTML = '<option value="">-- None --</option>';
-            hrCompaniesData.forEach(c => {
-                select.innerHTML += `<option value="${escapeHtml(c.company)}">${escapeHtml(c.company)}</option>`;
-            });
         }
 
-        // User company change - populate brand and department dropdowns
-        function onUserCompanyChange() {
+        // User company change - fetch brands and departments for selected company
+        async function onUserCompanyChange() {
             const company = document.getElementById('userCompany').value;
             const brandSelect = document.getElementById('userBrand');
             const deptSelect = document.getElementById('userDepartment');
@@ -2530,28 +2528,35 @@
                 return;
             }
 
-            // Get unique brands for this company from structureData
-            const brands = [...new Set(structureData
-                .filter(s => s.company === company && s.brand)
-                .map(s => s.brand))].sort();
-            brands.forEach(b => {
-                brandSelect.innerHTML += `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`;
-            });
-            brandSelect.disabled = brands.length === 0;
+            // Fetch brands for this company
+            try {
+                const brandsResp = await fetch(`/api/brands/${encodeURIComponent(company)}`);
+                if (brandsResp.ok) {
+                    const brands = await brandsResp.json();
+                    brands.forEach(b => {
+                        brandSelect.innerHTML += `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`;
+                    });
+                    brandSelect.disabled = brands.length === 0;
+                }
+            } catch (e) { console.error('Failed to load brands:', e); }
 
-            // Get unique departments for this company from structureData
-            const depts = [...new Set(structureData
-                .filter(s => s.company === company && s.department)
-                .map(s => s.department))].sort();
-            depts.forEach(d => {
-                deptSelect.innerHTML += `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`;
-            });
-            deptSelect.disabled = depts.length === 0;
+            // Fetch departments for this company
+            try {
+                const deptsResp = await fetch(`/api/departments/${encodeURIComponent(company)}`);
+                if (deptsResp.ok) {
+                    const depts = await deptsResp.json();
+                    depts.forEach(d => {
+                        deptSelect.innerHTML += `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`;
+                    });
+                    deptSelect.disabled = depts.length === 0;
+                }
+            } catch (e) { console.error('Failed to load departments:', e); }
+
             subdeptSelect.disabled = true;
         }
 
-        // User department change - populate subdepartment dropdown
-        function onUserDepartmentChange() {
+        // User department change - fetch subdepartments for selected company + department
+        async function onUserDepartmentChange() {
             const company = document.getElementById('userCompany').value;
             const dept = document.getElementById('userDepartment').value;
             const subdeptSelect = document.getElementById('userSubdepartment');
@@ -2563,14 +2568,17 @@
                 return;
             }
 
-            // Get unique subdepartments for this company + department from structureData
-            const subdepts = [...new Set(structureData
-                .filter(s => s.company === company && s.department === dept && s.subdepartment)
-                .map(s => s.subdepartment))].sort();
-            subdepts.forEach(sd => {
-                subdeptSelect.innerHTML += `<option value="${escapeHtml(sd)}">${escapeHtml(sd)}</option>`;
-            });
-            subdeptSelect.disabled = subdepts.length === 0;
+            // Fetch subdepartments for this company + department
+            try {
+                const resp = await fetch(`/api/subdepartments/${encodeURIComponent(company)}/${encodeURIComponent(dept)}`);
+                if (resp.ok) {
+                    const subdepts = await resp.json();
+                    subdepts.forEach(sd => {
+                        subdeptSelect.innerHTML += `<option value="${escapeHtml(sd)}">${escapeHtml(sd)}</option>`;
+                    });
+                    subdeptSelect.disabled = subdepts.length === 0;
+                }
+            } catch (e) { console.error('Failed to load subdepartments:', e); }
         }
 
         // Reset user org fields for add modal
