@@ -116,16 +116,27 @@
             <!-- Users Tab -->
             <div class="tab-pane fade show active" id="users">
                 <div class="card border-top-0 rounded-top-0">
-                    <div class="card-header d-flex justify-content-between align-items-center">
+                    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <span>
                             <h5 class="mb-0 d-inline">Users</h5>
                             <button id="btnDeleteSelectedUsers" class="btn btn-outline-danger btn-sm ms-2 d-none">
                                 <i class="bi bi-trash"></i> Delete Selected (<span id="selectedUsersCount">0</span>)
                             </button>
                         </span>
-                        <button class="btn btn-primary btn-sm" onclick="showAddUserModal()">
-                            <i class="bi bi-person-plus"></i> Add User
-                        </button>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="text" id="userSearchInput" class="form-control form-control-sm" placeholder="Search users..." style="width: 200px;" oninput="filterUsers()">
+                            <div class="dropdown">
+                                <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">
+                                    <i class="bi bi-layout-three-columns"></i> Columns
+                                </button>
+                                <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 200px;" id="userColumnConfig">
+                                    <!-- Column checkboxes rendered by JS -->
+                                </div>
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="showAddUserModal()">
+                                <i class="bi bi-person-plus"></i> Add User
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
@@ -133,16 +144,20 @@
                                 <thead>
                                     <tr>
                                         <th style="width: 40px;"><input type="checkbox" class="form-check-input" id="selectAllUsers" title="Select All"></th>
-                                        <th>Name</th>
-                                        <th>Email</th>
-                                        <th>Phone</th>
-                                        <th>Role</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
+                                        <th data-col="name">Name</th>
+                                        <th data-col="email">Email</th>
+                                        <th data-col="phone">Phone</th>
+                                        <th data-col="company">Company</th>
+                                        <th data-col="brand">Brand</th>
+                                        <th data-col="department">Department</th>
+                                        <th data-col="subdepartment">Subdept</th>
+                                        <th data-col="role">Role</th>
+                                        <th data-col="status">Status</th>
+                                        <th data-col="actions">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="usersTableBody">
-                                    <tr class="loading-placeholder"><td colspan="7" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading users...</td></tr>
+                                    <tr class="loading-placeholder"><td colspan="11" class="text-center text-muted py-3"><i class="bi bi-hourglass-split"></i> Loading users...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -2284,6 +2299,7 @@
             try {
                 const res = await fetch('/api/users');
                 users = await res.json();
+                loadUserColumnConfig();
                 renderUsers();
                 updateSummary();
             } catch (error) {
@@ -2318,34 +2334,39 @@
 
         // ========== USERS ==========
 
-        function renderUsers() {
+        function renderUsers(filteredUsers = null) {
             const tbody = document.getElementById('usersTableBody');
             const noUsersMsg = document.getElementById('noUsersMessage');
+            const displayUsers = filteredUsers !== null ? filteredUsers : users;
 
-            if (users.length === 0) {
+            if (displayUsers.length === 0) {
                 tbody.innerHTML = '';
                 noUsersMsg.style.display = 'block';
                 return;
             }
 
             noUsersMsg.style.display = 'none';
-            tbody.innerHTML = users.map(user => `
+            tbody.innerHTML = displayUsers.map(user => `
                 <tr>
                     <td><input type="checkbox" class="form-check-input user-checkbox" data-id="${user.id}"></td>
-                    <td><strong>${escapeHtml(user.name)}</strong></td>
-                    <td><a href="mailto:${escapeHtml(user.email)}">${escapeHtml(user.email)}</a></td>
-                    <td>${user.phone ? escapeHtml(user.phone) : '<span class="text-muted">-</span>'}</td>
-                    <td>
+                    <td data-col="name"><strong>${escapeHtml(user.name)}</strong></td>
+                    <td data-col="email"><a href="mailto:${escapeHtml(user.email)}">${escapeHtml(user.email)}</a></td>
+                    <td data-col="phone">${user.phone ? escapeHtml(user.phone) : '<span class="text-muted">-</span>'}</td>
+                    <td data-col="company">${user.company ? escapeHtml(user.company) : '<span class="text-muted">-</span>'}</td>
+                    <td data-col="brand">${user.brand ? escapeHtml(user.brand) : '<span class="text-muted">-</span>'}</td>
+                    <td data-col="department">${user.department ? escapeHtml(user.department) : '<span class="text-muted">-</span>'}</td>
+                    <td data-col="subdepartment">${user.subdepartment ? escapeHtml(user.subdepartment) : '<span class="text-muted">-</span>'}</td>
+                    <td data-col="role">
                         ${user.role_name
                             ? `<span class="badge bg-primary role-badge">${escapeHtml(user.role_name)}</span>`
                             : '<span class="badge bg-secondary role-badge">No Role</span>'}
                     </td>
-                    <td>
+                    <td data-col="status">
                         ${user.is_active
                             ? '<span class="badge bg-success">Active</span>'
                             : '<span class="badge bg-secondary">Inactive</span>'}
                     </td>
-                    <td>
+                    <td data-col="actions">
                         <button class="btn btn-sm btn-outline-primary me-1" onclick="editUser(${user.id})" title="Edit" aria-label="Edit user">
                             <i class="bi bi-pencil"></i>
                         </button>
@@ -2358,6 +2379,109 @@
 
             // Re-attach checkbox event listeners after render
             attachUserCheckboxListeners();
+            // Apply column visibility
+            applyUserColumnVisibility();
+        }
+
+        // ============== Users Search Filter ==============
+        function filterUsers() {
+            const searchTerm = document.getElementById('userSearchInput').value.toLowerCase().trim();
+            if (!searchTerm) {
+                renderUsers(users);
+                return;
+            }
+            const filtered = users.filter(user => {
+                return (user.name && user.name.toLowerCase().includes(searchTerm)) ||
+                       (user.email && user.email.toLowerCase().includes(searchTerm)) ||
+                       (user.phone && user.phone.toLowerCase().includes(searchTerm)) ||
+                       (user.company && user.company.toLowerCase().includes(searchTerm)) ||
+                       (user.brand && user.brand.toLowerCase().includes(searchTerm)) ||
+                       (user.department && user.department.toLowerCase().includes(searchTerm)) ||
+                       (user.subdepartment && user.subdepartment.toLowerCase().includes(searchTerm)) ||
+                       (user.role_name && user.role_name.toLowerCase().includes(searchTerm));
+            });
+            renderUsers(filtered);
+        }
+
+        // ============== Users Column Configuration ==============
+        const USER_COLUMN_CONFIG_KEY = 'settingsUserColumnConfig';
+        const DEFAULT_USER_COLUMNS = [
+            { id: 'name', name: 'Name', visible: true },
+            { id: 'email', name: 'Email', visible: true },
+            { id: 'phone', name: 'Phone', visible: true },
+            { id: 'company', name: 'Company', visible: false },
+            { id: 'brand', name: 'Brand', visible: false },
+            { id: 'department', name: 'Department', visible: false },
+            { id: 'subdepartment', name: 'Subdept', visible: false },
+            { id: 'role', name: 'Role', visible: true },
+            { id: 'status', name: 'Status', visible: true },
+            { id: 'actions', name: 'Actions', visible: true, fixed: true }
+        ];
+        let userColumnConfig = [];
+
+        function loadUserColumnConfig() {
+            const saved = localStorage.getItem(USER_COLUMN_CONFIG_KEY);
+            if (saved) {
+                try {
+                    userColumnConfig = JSON.parse(saved);
+                    // Ensure all default columns exist
+                    DEFAULT_USER_COLUMNS.forEach(defCol => {
+                        if (!userColumnConfig.find(c => c.id === defCol.id)) {
+                            userColumnConfig.push({ ...defCol });
+                        }
+                    });
+                } catch (e) {
+                    userColumnConfig = JSON.parse(JSON.stringify(DEFAULT_USER_COLUMNS));
+                }
+            } else {
+                userColumnConfig = JSON.parse(JSON.stringify(DEFAULT_USER_COLUMNS));
+            }
+            renderUserColumnConfig();
+            applyUserColumnVisibility();
+        }
+
+        function saveUserColumnConfig() {
+            localStorage.setItem(USER_COLUMN_CONFIG_KEY, JSON.stringify(userColumnConfig));
+        }
+
+        function renderUserColumnConfig() {
+            const container = document.getElementById('userColumnConfig');
+            container.innerHTML = userColumnConfig.map((col, idx) => {
+                const disabled = col.fixed;
+                return `
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="userCol-${col.id}"
+                               ${col.visible ? 'checked' : ''} ${disabled ? 'disabled' : ''}
+                               onchange="toggleUserColumn('${col.id}', this.checked)">
+                        <label class="form-check-label" for="userCol-${col.id}">${col.name}</label>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleUserColumn(colId, visible) {
+            const col = userColumnConfig.find(c => c.id === colId);
+            if (col && !col.fixed) {
+                col.visible = visible;
+                saveUserColumnConfig();
+                applyUserColumnVisibility();
+            }
+        }
+
+        function applyUserColumnVisibility() {
+            const table = document.getElementById('usersTable');
+            if (!table) return;
+
+            userColumnConfig.forEach(col => {
+                const display = col.visible ? '' : 'none';
+                // Header
+                const th = table.querySelector(`thead th[data-col="${col.id}"]`);
+                if (th) th.style.display = display;
+                // Body cells
+                table.querySelectorAll(`tbody td[data-col="${col.id}"]`).forEach(td => {
+                    td.style.display = display;
+                });
+            });
         }
 
         // ============== Users Select All / Bulk Delete ==============
