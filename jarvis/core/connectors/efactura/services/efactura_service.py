@@ -646,6 +646,7 @@ class EFacturaService:
             cif: Company CIF
             message_ids: List of ANAF message IDs to import
         """
+        import traceback
         from ..xml_parser import parse_invoice_xml
 
         # Get ANAF client
@@ -663,9 +664,14 @@ class EFacturaService:
         else:
             logger.warning("No matching company found for CIF", extra={'cif': cif})
 
+        # Create sync run to track this import operation
+        sync_run = self.sync_repo.create_run(company_cif=cif, direction='received')
+        run_id = sync_run.run_id
+
         imported = 0
         skipped = 0
         errors = []
+        errors_count = 0
 
         for message_id in message_ids:
             try:
@@ -689,7 +695,16 @@ class EFacturaService:
                             break
 
                 if not xml_content:
-                    errors.append(f"No XML in message {message_id}")
+                    error_msg = f"No XML in message {message_id}"
+                    errors.append(error_msg)
+                    errors_count += 1
+                    self.sync_repo.record_error(
+                        run_id=run_id,
+                        error_type='PARSE',
+                        error_message=error_msg,
+                        message_id=message_id,
+                        is_retryable=True,
+                    )
                     continue
 
                 # Parse XML to extract invoice data
@@ -699,9 +714,18 @@ class EFacturaService:
                 if not parsed.invoice_number:
                     # Check if it's a signature XML
                     if '<Signature' in xml_content or '<ds:Signature' in xml_content:
-                        errors.append(f"Message {message_id} contains signature XML, not invoice")
+                        error_msg = f"Message {message_id} contains signature XML, not invoice"
                     else:
-                        errors.append(f"Message {message_id} contains invalid/empty invoice XML")
+                        error_msg = f"Message {message_id} contains invalid/empty invoice XML"
+                    errors.append(error_msg)
+                    errors_count += 1
+                    self.sync_repo.record_error(
+                        run_id=run_id,
+                        error_type='PARSE',
+                        error_message=error_msg,
+                        message_id=message_id,
+                        is_retryable=False,
+                    )
                     continue
 
                 # Determine direction based on CIF
@@ -753,16 +777,49 @@ class EFacturaService:
                     # Note: No auto-hide here - visibility is now controlled dynamically
                     # by partner type settings (hide_in_filter flag)
                 else:
-                    errors.append(f"Failed to save message {message_id}")
+                    error_msg = f"Failed to save message {message_id}"
+                    errors.append(error_msg)
+                    errors_count += 1
+                    self.sync_repo.record_error(
+                        run_id=run_id,
+                        error_type='SYSTEM',
+                        error_message=error_msg,
+                        message_id=message_id,
+                        invoice_ref=parsed.invoice_number,
+                        is_retryable=True,
+                    )
 
             except Exception as e:
                 logger.error(f"Error importing message {message_id}: {e}")
-                errors.append(f"Error with {message_id}: {str(e)}")
+                error_msg = f"Error with {message_id}: {str(e)}"
+                errors.append(error_msg)
+                errors_count += 1
+                self.sync_repo.record_error(
+                    run_id=run_id,
+                    error_type='SYSTEM',
+                    error_message=error_msg,
+                    message_id=message_id,
+                    stack_trace=traceback.format_exc(),
+                    is_retryable=True,
+                )
+
+        # Complete the sync run with statistics
+        sync_run.messages_checked = len(message_ids)
+        sync_run.invoices_created = imported
+        sync_run.invoices_skipped = skipped
+        sync_run.errors_count = errors_count
+        self.sync_repo.complete_run(
+            run=sync_run,
+            success=errors_count == 0,
+            error_summary=f"{errors_count} errors" if errors_count > 0 else None,
+        )
 
         return ServiceResult(success=True, data={
             'imported': imported,
             'skipped': skipped,
             'errors': errors if errors else None,
+            'errors_count': errors_count,
+            'sync_run_id': run_id,
             'company_matched': matched_company.get('company') if matched_company else None,
             'company_id': company_id,
         })
