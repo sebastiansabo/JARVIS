@@ -44,8 +44,10 @@ def get_companies_with_vat() -> list[dict]:
     companies = [dict(row) for row in cursor.fetchall()]
 
     # Get brands from company_brands table (join with brands to get brand name)
+    # IMPORTANT: cb.id is the company_brands row ID (used for delete/update operations)
+    # b.id is the brands table ID (used for brand lookup)
     cursor.execute('''
-        SELECT cb.company_id, b.id as brand_id, b.name as brand
+        SELECT cb.id as cb_id, cb.company_id, b.id as brand_id, b.name as brand
         FROM company_brands cb
         JOIN brands b ON cb.brand_id = b.id
         WHERE cb.is_active = TRUE AND b.is_active = TRUE
@@ -59,7 +61,9 @@ def get_companies_with_vat() -> list[dict]:
         cid = row['company_id']
         if cid not in brands_by_company:
             brands_by_company[cid] = []
-        brands_by_company[cid].append({'id': row['brand_id'], 'brand': row['brand']})
+        # id = company_brands row ID (for CRUD operations)
+        # brand_id = brands table ID (for reference)
+        brands_by_company[cid].append({'id': row['cb_id'], 'brand_id': row['brand_id'], 'brand': row['brand']})
 
     # Add brands to companies
     for company in companies:
