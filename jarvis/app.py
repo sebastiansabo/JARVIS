@@ -12,7 +12,7 @@ logger = setup_logging(level=os.environ.get('LOG_LEVEL', 'INFO'))
 app_logger = get_logger('jarvis.app')
 from flask_compress import Compress
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
-from models import load_structure, get_companies, get_brands_for_company, get_departments_for_company, get_subdepartments, get_manager
+from models import load_structure, get_companies, get_brands_for_company, get_departments_for_company, get_subdepartments, get_manager, get_company_for_department
 from services import (
     get_companies_with_vat, match_company_by_vat, add_company_with_vat, update_company_vat, delete_company
 )
@@ -707,6 +707,14 @@ def api_departments(company):
 def api_subdepartments(company, department):
     """Get subdepartments for a company and department."""
     return jsonify(get_subdepartments(company, department))
+
+
+@app.route('/api/company-for-department/<department>')
+@login_required
+def api_company_for_department(department):
+    """Look up which company a department belongs to."""
+    company = get_company_for_department(department)
+    return jsonify({'company': company})
 
 
 @app.route('/api/manager')

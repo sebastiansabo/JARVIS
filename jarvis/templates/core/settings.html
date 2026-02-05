@@ -2596,12 +2596,30 @@
 
             // Populate org fields (async - loads data on demand)
             await populateUserCompanyDropdown();
-            document.getElementById('userCompany').value = user.company || '';
-            if (user.company) {
+
+            // Determine company - use user's company, or auto-detect from department
+            let effectiveCompany = user.company || '';
+            const userDept = user.departments || user.department || '';
+
+            // If user has department but no company, try to auto-detect company
+            if (!effectiveCompany && userDept) {
+                try {
+                    const resp = await fetch(`/api/company-for-department/${encodeURIComponent(userDept)}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.company) {
+                            effectiveCompany = data.company;
+                        }
+                    }
+                } catch (e) { console.error('Failed to auto-detect company:', e); }
+            }
+
+            document.getElementById('userCompany').value = effectiveCompany;
+            if (effectiveCompany) {
                 await onUserCompanyChange();
                 document.getElementById('userBrand').value = user.brand || '';
-                document.getElementById('userDepartment').value = user.departments || user.department || '';
-                if (user.departments || user.department) {
+                document.getElementById('userDepartment').value = userDept;
+                if (userDept) {
                     await onUserDepartmentChange();
                     document.getElementById('userSubdepartment').value = user.subdepartment || '';
                 }

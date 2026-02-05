@@ -256,6 +256,32 @@ def get_subdepartments(company: str, department: str) -> list[str]:
         release_db(conn)
 
 
+def get_company_for_department(department: str) -> Optional[str]:
+    """Look up which company a department belongs to.
+
+    Used to auto-detect company when editing users who have department but no company.
+    Returns the first matching company, or None if not found.
+    """
+    if not department:
+        return None
+
+    conn = get_db()
+    try:
+        cursor = get_cursor(conn)
+        ph = get_placeholder()
+
+        cursor.execute(f'''
+            SELECT DISTINCT company FROM department_structure
+            WHERE department = {ph} AND company IS NOT NULL AND company != ''
+            LIMIT 1
+        ''', (department,))
+
+        row = cursor.fetchone()
+        return row['company'] if row else None
+    finally:
+        release_db(conn)
+
+
 def get_manager(company: str, department: str, subdepartment: Optional[str] = None, brand: Optional[str] = None) -> str:
     """Get the manager for a specific department, optionally filtered by brand.
 
