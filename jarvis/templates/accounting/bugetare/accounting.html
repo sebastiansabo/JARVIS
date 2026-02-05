@@ -3450,6 +3450,10 @@
 
             // Load allocations (preserve locked state from database, default to false if not set)
             editAllocations = (invoice.allocations || []).map(a => ({...a, locked: a.locked || false}));
+
+            // Recalculate allocation values based on current VAT settings
+            // This ensures values use net_value when VAT subtraction is enabled
+            recalcAllEditAllocationValues();
             renderEditAllocations();
 
             // Close the detail modal and open the edit modal
@@ -4348,7 +4352,8 @@
             const count = editAllocations.length;
             if (count === 0) return;
 
-            const invoiceValue = parseFloat(document.getElementById('editInvoiceValue').value) || 0;
+            // Use net value when VAT subtraction is enabled, otherwise gross value
+            const baseValue = getEditBaseValue();
 
             // Separate locked and unlocked allocations
             const lockedAllocs = editAllocations.filter(a => a.locked);
@@ -4372,13 +4377,13 @@
 
                 unlockedAllocs.forEach((alloc, idx) => {
                     alloc.allocation_percent = percentages[idx];
-                    alloc.allocation_value = (invoiceValue * percentages[idx]) / 100;
+                    alloc.allocation_value = (baseValue * percentages[idx]) / 100;
                 });
             }
 
-            // Update locked allocation values (in case invoice value changed)
+            // Update locked allocation values (in case base value changed)
             lockedAllocs.forEach(alloc => {
-                alloc.allocation_value = (invoiceValue * (parseFloat(alloc.allocation_percent) || 0)) / 100;
+                alloc.allocation_value = (baseValue * (parseFloat(alloc.allocation_percent) || 0)) / 100;
             });
 
             renderEditAllocations();
