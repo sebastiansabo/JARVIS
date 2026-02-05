@@ -175,6 +175,7 @@
                                     <th class="sortable" data-sort="employee">Employee <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
                                     <th class="sortable" data-sort="dept">Dept <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
                                     <th class="sortable" data-sort="company">Company <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
+                                    <th class="sortable" data-sort="brand">Brand <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
                                     <th class="sortable" data-sort="event">Event <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
                                     <th>Participation</th>
                                     <th class="sortable" data-sort="days">Days <i class="bi bi-arrow-down-up sort-icon text-muted"></i></th>
@@ -196,6 +197,7 @@
                             data-employee="{{ bonus.employee_name|lower }}"
                             data-dept="{{ (bonus.department or '')|lower }}"
                             data-company="{{ (bonus.company or '')|lower }}"
+                            data-brand="{{ (bonus.brand or '')|lower }}"
                             data-event="{{ bonus.event_name|lower }}"
                             data-days="{{ bonus.bonus_days or 0 }}"
                             data-hours="{{ bonus.hours_free or 0 }}"
@@ -207,6 +209,7 @@
                             <td><strong>{{ bonus.employee_name }}</strong></td>
                             <td>{{ bonus.department or '-' }}</td>
                             <td>{{ bonus.company or '-' }}</td>
+                            <td>{{ bonus.brand or '-' }}</td>
                             <td>{{ bonus.event_name }}</td>
                             <td>
                                 {% if bonus.participation_start %}
@@ -710,13 +713,14 @@
         const totalBonusesCount = {{ bonuses|length }};
 
         // Column configuration
-        const COLUMN_CONFIG_VERSION = 2;
+        const COLUMN_CONFIG_VERSION = 3;
         const DEFAULT_COLUMNS = [
             { id: 'year', name: 'Year', visible: true },
             { id: 'month', name: 'Month', visible: true },
             { id: 'employee', name: 'Employee', visible: true },
             { id: 'dept', name: 'Dept', visible: true },
             { id: 'company', name: 'Company', visible: true },
+            { id: 'brand', name: 'Brand', visible: true },
             { id: 'event', name: 'Event', visible: true },
             { id: 'participation', name: 'Participation', visible: true },
             { id: 'days', name: 'Days', visible: true },
@@ -844,7 +848,7 @@
             const rows = tbody.querySelectorAll('tr');
 
             // Map column IDs to indices
-            const columnIds = ['year', 'month', 'employee', 'dept', 'company', 'event', 'participation', 'days', 'hours', 'bonus', 'details', 'created', 'tags', 'actions'];
+            const columnIds = ['year', 'month', 'employee', 'dept', 'company', 'brand', 'event', 'participation', 'days', 'hours', 'bonus', 'details', 'created', 'tags', 'actions'];
 
             columnIds.forEach((colId, colIdx) => {
                 const config = columnConfig.find(c => c.id === colId);
