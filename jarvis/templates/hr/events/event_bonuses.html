@@ -843,30 +843,68 @@
             const tbody = table.querySelector('tbody');
             if (!thead || !tbody) return;
 
-            // Get all header cells
-            const headerCells = thead.querySelectorAll('th');
-            const rows = tbody.querySelectorAll('tr');
+            // Map column IDs to their original DOM index (0 = checkbox, 1+ = configurable columns)
+            const columnIds = ['checkbox', 'year', 'month', 'employee', 'dept', 'company', 'brand', 'event', 'participation', 'days', 'hours', 'bonus', 'details', 'created', 'tags', 'actions'];
 
-            // Map column IDs to indices
-            const columnIds = ['year', 'month', 'employee', 'dept', 'company', 'brand', 'event', 'participation', 'days', 'hours', 'bonus', 'details', 'created', 'tags', 'actions'];
-
-            columnIds.forEach((colId, colIdx) => {
-                const config = columnConfig.find(c => c.id === colId);
-                const visible = config ? config.visible : true;
-
-                // Hide/show header cell
-                if (headerCells[colIdx]) {
-                    headerCells[colIdx].style.display = visible ? '' : 'none';
+            // Build the desired order: checkbox first, then columnConfig order
+            const orderedIds = ['checkbox'];
+            columnConfig.forEach(col => {
+                if (columnIds.includes(col.id)) {
+                    orderedIds.push(col.id);
                 }
+            });
 
-                // Hide/show body cells
-                rows.forEach(row => {
-                    const cells = row.querySelectorAll('td');
-                    if (cells[colIdx]) {
-                        cells[colIdx].style.display = visible ? '' : 'none';
+            // Reorder header cells
+            const headerCells = Array.from(thead.querySelectorAll('th'));
+            const headerMap = {};
+            headerCells.forEach((cell, idx) => {
+                headerMap[columnIds[idx]] = cell;
+            });
+
+            // Clear and re-append in order
+            thead.innerHTML = '';
+            orderedIds.forEach(colId => {
+                if (headerMap[colId]) {
+                    const config = columnConfig.find(c => c.id === colId);
+                    const visible = colId === 'checkbox' || (config ? config.visible : true);
+                    headerMap[colId].style.display = visible ? '' : 'none';
+                    thead.appendChild(headerMap[colId]);
+                }
+            });
+
+            // Reorder body cells for each row
+            const rows = tbody.querySelectorAll('tr.bonus-row');
+            rows.forEach(row => {
+                const cells = Array.from(row.querySelectorAll('td'));
+                const cellMap = {};
+                cells.forEach((cell, idx) => {
+                    cellMap[columnIds[idx]] = cell;
+                });
+
+                // Clear and re-append in order
+                row.innerHTML = '';
+                orderedIds.forEach(colId => {
+                    if (cellMap[colId]) {
+                        const config = columnConfig.find(c => c.id === colId);
+                        const visible = colId === 'checkbox' || (config ? config.visible : true);
+                        cellMap[colId].style.display = visible ? '' : 'none';
+                        row.appendChild(cellMap[colId]);
                     }
                 });
             });
+
+            // Also handle empty state row if present
+            const emptyRow = tbody.querySelector('tr:not(.bonus-row)');
+            if (emptyRow) {
+                const cell = emptyRow.querySelector('td');
+                if (cell) {
+                    cell.colSpan = orderedIds.filter(id => {
+                        if (id === 'checkbox') return true;
+                        const config = columnConfig.find(c => c.id === id);
+                        return config ? config.visible : true;
+                    }).length;
+                }
+            }
         }
 
         // Initialize column config on page load
