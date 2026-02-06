@@ -905,6 +905,14 @@ body.dark-theme input[type="date"]::placeholder {
     color: var(--text-warning-custom) !important;
 }
 
+/* Reinvoice indicator color (blue/purple) */
+.text-reinvoice {
+    color: rgb(54, 7, 255) !important;
+}
+.border-reinvoice {
+    border-color: rgb(54, 7, 255) !important;
+}
+
 /* Summary card values in dark theme */
 body.dark-theme .text-primary {
     color: #64b5f6 !important;

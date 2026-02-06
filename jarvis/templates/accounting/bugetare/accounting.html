@@ -2696,10 +2696,9 @@
                                     if (dest.brand) str += ` (${dest.brand})`;
                                     if (dest.department) str += ` / ${dest.department}`;
                                     if (dest.subdepartment) str += ` / ${dest.subdepartment}`;
-                                    return `<div class="small text-warning">
+                                    return `<div class="small text-reinvoice">
                                         <i class="bi bi-arrow-right"></i> ${str}<br>
                                         <strong>${formatCurrency(dest.value)} ${reinvCurrency}</strong>
-                                        <span class="badge bg-warning text-dark">${dest.percentage}%</span>
                                     </div>`;
                                 }).join('');
                             } else if (r.reinvoice_to) {
@@ -2708,7 +2707,7 @@
                                     dest += ` / ${r.reinvoice_department}`;
                                     if (r.reinvoice_subdepartment) dest += ` / ${r.reinvoice_subdepartment}`;
                                 }
-                                return `<div class="small text-warning">
+                                return `<div class="small text-reinvoice">
                                     <i class="bi bi-arrow-right"></i> ${dest}
                                 </div>`;
                             }
@@ -2718,7 +2717,7 @@
                         // Single allocation - show destinations only
                         if (value.length === 1) {
                             const r = value[0];
-                            return `<div class="border-start border-warning ps-2">
+                            return `<div class="border-start border-reinvoice ps-2">
                                 ${renderDestinationsWithValue(r)}
                             </div>`;
                         }
@@ -2734,13 +2733,13 @@
                         const summaryText = `${value.length} reinvoices • ${formatCurrency(totalReinvoiceValue)} ${reinvCurrency}`;
 
                         const reinvoiceDetails = value.map(r =>
-                            `<div class="border-start border-warning ps-2 mb-1">
+                            `<div class="border-start border-reinvoice ps-2 mb-1">
                                 ${renderDestinationsWithValue(r)}
                             </div>`
                         ).join('');
 
                         return `<div>
-                            <a class="text-warning small text-decoration-none" data-bs-toggle="collapse" href="#${reinvCollapseId}" role="button" aria-expanded="false">
+                            <a class="text-reinvoice small text-decoration-none" data-bs-toggle="collapse" href="#${reinvCollapseId}" role="button" aria-expanded="false">
                                 <i class="bi bi-plus-circle toggle-icon"></i> ${summaryText}
                             </a>
                             <div class="collapse" id="${reinvCollapseId}">
@@ -3359,8 +3358,8 @@
                                     <div class="fw-bold text-success">${formatCurrency(a.allocation_value)} ${invoice.currency || 'RON'}</div>
                                     <div class="small">Responsible: ${a.responsible || '-'}</div>
                                     ${(a.reinvoice_destinations && a.reinvoice_destinations.length > 0) ?
-                                        a.reinvoice_destinations.map(rd => `<div class="small text-warning"><i class="bi bi-arrow-right"></i> Reinvoice to: ${rd.company}${rd.brand ? ' (' + rd.brand + ')' : ''}${rd.department ? ' / ' + rd.department : ''}${rd.subdepartment ? ' / ' + rd.subdepartment : ''} <span class="badge bg-warning text-dark">${rd.percentage}%</span> - <strong>${formatCurrency(rd.value)} ${invoice.currency || 'RON'}</strong></div>`).join('')
-                                        : (a.reinvoice_to ? `<div class="small text-warning"><i class="bi bi-arrow-right"></i> Reinvoice to: ${a.reinvoice_to}${a.reinvoice_brand ? ' (' + a.reinvoice_brand + ')' : ''}${a.reinvoice_department ? ' / ' + a.reinvoice_department : ''}${a.reinvoice_subdepartment ? ' / ' + a.reinvoice_subdepartment : ''}</div>` : '')}
+                                        a.reinvoice_destinations.map(rd => `<div class="small text-reinvoice"><i class="bi bi-arrow-right"></i> Reinvoice to: ${rd.company}${rd.brand ? ' (' + rd.brand + ')' : ''}${rd.department ? ' / ' + rd.department : ''}${rd.subdepartment ? ' / ' + rd.subdepartment : ''} - <strong>${formatCurrency(rd.value)} ${invoice.currency || 'RON'}</strong></div>`).join('')
+                                        : (a.reinvoice_to ? `<div class="small text-reinvoice"><i class="bi bi-arrow-right"></i> Reinvoice to: ${a.reinvoice_to}${a.reinvoice_brand ? ' (' + a.reinvoice_brand + ')' : ''}${a.reinvoice_department ? ' / ' + a.reinvoice_department : ''}${a.reinvoice_subdepartment ? ' / ' + a.reinvoice_subdepartment : ''}</div>` : '')}
                                 </div>
                             `).join('')}
                             <div class="border-top mt-3 pt-2">
