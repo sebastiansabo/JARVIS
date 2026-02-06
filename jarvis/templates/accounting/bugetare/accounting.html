@@ -2587,7 +2587,8 @@
                         };
 
                         // Determine currency to use (toggle currency takes precedence)
-                        const displayCurrency = inv.useCurrency || inv.currency || 'RON';
+                        // Uses global sanitizeCurrency() to prevent duplicates like "RON RON"
+                        const displayCurrency = sanitizeCurrency(inv.useCurrency || inv.currency);
 
                         // Single allocation - show inline (no collapse)
                         if (value.length === 1) {
@@ -2703,7 +2704,7 @@
                             return '';
                         };
 
-                        const reinvCurrency = inv.currency || 'RON';
+                        const reinvCurrency = sanitizeCurrency(inv.currency);
 
                         // Helper to render destinations with values (uses stored reinvoice values)
                         const renderDestinationsWithValue = (r) => {
@@ -3334,6 +3335,9 @@
                 // Cache full invoice data
                 invoicesWithAllocations[id] = invoice;
 
+                // Sanitize currency to prevent display issues like "RON RON"
+                const invCurrency = sanitizeCurrency(invoice.currency);
+
                 const statusDropdown = getModalStatusDropdownHtml(invoice.id, invoice.status);
                 const paymentStatusDropdown = getModalPaymentStatusDropdownHtml(invoice.id, invoice.payment_status);
 
@@ -3352,10 +3356,10 @@
                                 <tr><th>Company</th><td>${invoice.allocations && invoice.allocations.length > 0 ? invoice.allocations[0].company : '-'}</td></tr>
                                 <tr><th>Invoice #</th><td><code>${invoice.invoice_number}</code></td></tr>
                                 <tr><th>Date</th><td>${formatDateRomanian(invoice.invoice_date)}</td></tr>
-                                <tr><th>Total Value</th><td><strong>${formatCurrency(invoice.invoice_value)} ${invoice.currency || 'RON'}</strong></td></tr>
+                                <tr><th>Total Value</th><td><strong>${formatCurrency(invoice.invoice_value)} ${invCurrency}</strong></td></tr>
                                 ${invoice.subtract_vat && invoice.net_value ? `
-                                <tr><th>VAT (${invoice.vat_rate ? invoice.vat_rate + '%' : ''})</th><td>${formatCurrency(invoice.invoice_value - invoice.net_value)} ${invoice.currency || 'RON'}</td></tr>
-                                <tr><th>Net Value (excl. VAT)</th><td><strong>${formatCurrency(invoice.net_value)} ${invoice.currency || 'RON'}</strong></td></tr>` : ''}
+                                <tr><th>VAT (${invoice.vat_rate ? invoice.vat_rate + '%' : ''})</th><td>${formatCurrency(invoice.invoice_value - invoice.net_value)} ${invCurrency}</td></tr>
+                                <tr><th>Net Value (excl. VAT)</th><td><strong>${formatCurrency(invoice.net_value)} ${invCurrency}</strong></td></tr>` : ''}
                                 <tr><th>Created</th><td>${invoice.created_at}</td></tr>
                                 ${invoice.comment ? `<tr><th>Notes</th><td><em>${invoice.comment}</em></td></tr>` : ''}
                                 <tr><th>Invoice File</th><td>${driveButtons}</td></tr>
@@ -3376,23 +3380,23 @@
                                 <div class="allocation-row">
                                     ${a.comment ? `<div class="small text-info mb-1"><i class="bi bi-chat-text-fill"></i> ${a.comment}</div>` : ''}
                                     <div class="d-flex justify-content-between align-items-center">
-                                        <strong>${formatCurrency(a.allocation_value)} ${invoice.currency || 'RON'}</strong>
+                                        <strong>${formatCurrency(a.allocation_value)} ${invCurrency}</strong>
                                         <span class="badge bg-primary">${a.allocation_percent}%</span>
                                     </div>
                                     ${hasReinvoice ? `
-                                        <div class="small text-success ms-2">└ ${formatCurrency(retainedValue)} ${invoice.currency || 'RON'} - ${a.department}${a.brand ? ' (' + a.brand + ')' : ''}</div>
+                                        <div class="small text-success ms-2">└ ${formatCurrency(retainedValue)} ${invCurrency} - ${a.department}${a.brand ? ' (' + a.brand + ')' : ''}</div>
                                     ` : `
                                         <div class="small text-muted ms-2">└ ${a.department}${a.subdepartment ? ' > ' + a.subdepartment : ''}${a.brand ? ' (' + a.brand + ')' : ''}</div>
                                     `}
                                     ${(a.reinvoice_destinations && a.reinvoice_destinations.length > 0) ?
-                                        a.reinvoice_destinations.map(rd => `<div class="small text-reinvoice ms-2">└ ${formatCurrency(rd.value)} ${invoice.currency || 'RON'} - ${rd.company}${rd.brand ? ' (' + rd.brand + ')' : ''}${rd.department ? ' / ' + rd.department : ''}${rd.comment ? ` <span class="text-info"><i class="bi bi-chat-text"></i></span>` : ''}</div>`).join('')
+                                        a.reinvoice_destinations.map(rd => `<div class="small text-reinvoice ms-2">└ ${formatCurrency(rd.value)} ${invCurrency} - ${rd.company}${rd.brand ? ' (' + rd.brand + ')' : ''}${rd.department ? ' / ' + rd.department : ''}${rd.comment ? ` <span class="text-info"><i class="bi bi-chat-text"></i></span>` : ''}</div>`).join('')
                                         : (a.reinvoice_to ? `<div class="small text-reinvoice ms-2">└ Reinvoice to: ${a.reinvoice_to}${a.reinvoice_brand ? ' (' + a.reinvoice_brand + ')' : ''}${a.reinvoice_department ? ' / ' + a.reinvoice_department : ''}${a.reinvoice_subdepartment ? ' / ' + a.reinvoice_subdepartment : ''}</div>` : '')}
                                 </div>
                             `}).join('')}
                             <div class="border-top mt-3 pt-2">
                                 <div class="d-flex justify-content-between fw-bold">
                                     <span>Total (${invoice.allocations.length} allocation${invoice.allocations.length !== 1 ? 's' : ''})${invoice.subtract_vat ? ' <small class="text-muted fw-normal">excl. VAT</small>' : ''}</span>
-                                    <span class="text-success">${formatCurrency(invoice.allocations.reduce((sum, a) => sum + (a.allocation_value || 0), 0))} ${invoice.currency || 'RON'}</span>
+                                    <span class="text-success">${formatCurrency(invoice.allocations.reduce((sum, a) => sum + (a.allocation_value || 0), 0))} ${invCurrency}</span>
                                 </div>
                             </div>
                         </div>
@@ -4788,12 +4792,22 @@
             return new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
         }
 
+        // Sanitize currency to ensure it's a valid 3-letter code (prevents duplicates like "RON RON")
+        function sanitizeCurrency(cur) {
+            if (!cur) return 'RON';
+            const clean = String(cur).trim().toUpperCase();
+            // Extract first valid currency code (3 letters)
+            const match = clean.match(/^([A-Z]{3})/);
+            return match ? match[1] : 'RON';
+        }
+
         function formatCurrencyWithSign(value, currency = 'RON') {
             const formatted = formatCurrency(value);
+            const safeCurrency = sanitizeCurrency(currency);
             if (value < 0) {
-                return `<span class="text-negative">${formatted} ${currency}</span>`;
+                return `<span class="text-negative">${formatted} ${safeCurrency}</span>`;
             }
-            return `${formatted} ${currency}`;
+            return `${formatted} ${safeCurrency}`;
         }
 
         function formatDateRomanian(dateStr) {
@@ -5125,7 +5139,7 @@
                 (inv.supplier || '').replace(/"/g, '""'),
                 (inv.invoice_number || '').replace(/"/g, '""'),
                 inv.invoice_value || 0,
-                inv.currency || 'RON',
+                sanitizeCurrency(inv.currency),
                 inv.status || 'new'
             ]);
 
@@ -5194,7 +5208,7 @@
                         <td>${formatDateRomanian(inv.invoice_date)}</td>
                         <td>${inv.supplier || '-'}</td>
                         <td><code>${inv.invoice_number || '-'}</code></td>
-                        <td>${formatCurrency(inv.invoice_value)} ${inv.currency || 'RON'}</td>
+                        <td>${formatCurrency(inv.invoice_value)} ${sanitizeCurrency(inv.currency)}</td>
                         <td>${deletedAt}</td>
                         <td>
                             <button class="btn btn-outline-success btn-sm" onclick="restoreInvoice(${inv.id})" title="Restore" aria-label="Restore invoice">
