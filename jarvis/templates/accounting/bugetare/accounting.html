@@ -2598,10 +2598,19 @@
                             const borderColor = hasReinvoice(s) ? 'border-reinvoice' : 'border-primary';
                             const reinvoiceLine = formatReinvoiceDisplay(s, displayCurrency);
                             const commentIcon = s.id ? `<a href="#" class="allocation-comment-btn ms-1 ${s.comment ? 'text-info' : 'text-muted'}" data-allocation-id="${s.id}" data-department="${location}" data-brand="${s.brand || ''}" data-value="${displayValue}" data-percent="${s.percent}" data-comment="${(s.comment || '').replace(/"/g, '&quot;')}" title="${s.comment ? 'View/Edit comment' : 'Add comment'}"><i class="bi bi-chat-text${s.comment ? '-fill' : ''}"></i></a>` : '';
+
+                            // Option 1: When has reinvoice, show only percentage + reinvoice destination
+                            if (hasReinvoice(s)) {
+                                return `<div class="small border-start ${borderColor} ps-2">
+                                    <span class="badge bg-secondary">${s.percent}%</span>${commentIcon}${reinvoiceLine}
+                                </div>`;
+                            }
+
+                            // No reinvoice: show full details
                             return `<div class="small border-start ${borderColor} ps-2">
                                 <span class="text-muted">${location}${brandPart}</span>${commentIcon}<br>
                                 <strong>${formatCurrency(displayValue)} ${displayCurrency}</strong>
-                                <span class="badge bg-secondary">${s.percent}%</span>${reinvoiceLine}
+                                <span class="badge bg-secondary">${s.percent}%</span>
                             </div>`;
                         }
 
@@ -2631,10 +2640,19 @@
                             const borderColor = hasReinvoice(s) ? 'border-reinvoice' : 'border-primary';
                             const reinvoiceLine = formatReinvoiceDisplay(s, currency);
                             const commentIcon = s.id ? `<a href="#" class="allocation-comment-btn ms-1 ${s.comment ? 'text-info' : 'text-muted'}" data-allocation-id="${s.id}" data-department="${location}" data-brand="${s.brand || ''}" data-value="${displayValue}" data-percent="${s.percent}" data-comment="${(s.comment || '').replace(/"/g, '&quot;')}" title="${s.comment ? 'View/Edit comment' : 'Add comment'}"><i class="bi bi-chat-text${s.comment ? '-fill' : ''}"></i></a>` : '';
+
+                            // Option 1: When has reinvoice, show only percentage + reinvoice destination
+                            if (hasReinvoice(s)) {
+                                return `<div class="small border-start ${borderColor} ps-2 mb-1">
+                                    <span class="badge bg-secondary">${s.percent}%</span>${commentIcon}${reinvoiceLine}
+                                </div>`;
+                            }
+
+                            // No reinvoice: show full details
                             return `<div class="small border-start ${borderColor} ps-2 mb-1">
                                 <span class="text-muted">${location}${brandPart}</span>${commentIcon}<br>
                                 <strong>${formatCurrency(displayValue)} ${currency}</strong>
-                                <span class="badge bg-secondary">${s.percent}%</span>${reinvoiceLine}
+                                <span class="badge bg-secondary">${s.percent}%</span>
                             </div>`;
                         }).join('');
 
