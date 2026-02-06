@@ -2040,9 +2040,8 @@ Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
                 for inv, (_, jarvis_id) in zip(invoices_to_create, mappings):
                     has_company = bool(inv.get('company_name'))
                     has_dept = bool(inv.get('department'))
-                    has_second_dept = bool(inv.get('department_override_2'))
-                    # Only notify if allocation was created (no second dept = single dept allocation)
-                    if has_company and has_dept and not has_second_dept:
+                    # Notify for all invoices with allocations (single or multi-dept)
+                    if has_company and has_dept:
                         allocations_created.append({
                             'invoice': inv,
                             'jarvis_id': jarvis_id,
@@ -2050,8 +2049,7 @@ Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
                     else:
                         logger.debug(
                             f"Invoice {inv['invoice_number']} skipped for notification: "
-                            f"company={inv.get('company_name')}, dept={inv.get('department')}, "
-                            f"has_second_dept={has_second_dept}"
+                            f"company={inv.get('company_name')}, dept={inv.get('department')}"
                         )
 
                 logger.info(
