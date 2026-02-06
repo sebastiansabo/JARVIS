@@ -1683,41 +1683,65 @@
         function updateReinvoiceTotalBadge(allocationRow) {
             const container = allocationRow.querySelector('.reinvoice-lines-container');
             const badge = allocationRow.querySelector('.reinvoice-total-badge');
+            const allocationValueInput = allocationRow.querySelector('.allocation-value-input');
 
             if (!container || !badge) return;
 
-            let total = 0;
+            let totalReinvoicePercent = 0;
             container.querySelectorAll('.reinvoice-percent').forEach(input => {
-                total += parseFloat(input.value) || 0;
+                totalReinvoicePercent += parseFloat(input.value) || 0;
             });
 
-            badge.textContent = total.toFixed(2) + '%';
+            badge.textContent = totalReinvoicePercent.toFixed(2) + '%';
 
             // Update badge color based on total (allow 1% tolerance)
             badge.classList.remove('bg-secondary', 'bg-success', 'bg-danger');
-            if (total === 0) {
+            if (totalReinvoicePercent === 0) {
                 badge.classList.add('bg-secondary');
-            } else if (total <= 101) {
+            } else if (totalReinvoicePercent <= 101) {
                 badge.classList.add('bg-success');
             } else {
                 badge.classList.add('bg-danger');
             }
+
+            // Update allocation value to show NET (after reinvoice deduction - Variant 2)
+            if (allocationValueInput) {
+                // Get or calculate gross allocation value
+                let grossValue = parseFloat(allocationValueInput.dataset.grossValue);
+                if (!grossValue || isNaN(grossValue)) {
+                    grossValue = parseFloat(allocationValueInput.value) || 0;
+                    allocationValueInput.dataset.grossValue = grossValue;
+                }
+
+                // Calculate net value
+                const netPercent = Math.max(0, 100 - totalReinvoicePercent);
+                const netValue = grossValue * netPercent / 100;
+                allocationValueInput.value = netValue.toFixed(2);
+            }
         }
 
         // Update reinvoice line values when allocation value changes (keeps percentage, updates value)
+        // Uses GROSS allocation value (stored in data-gross-value attribute)
         function updateReinvoiceLineValues(allocationRow) {
             const container = allocationRow.querySelector('.reinvoice-lines-container');
             if (!container) return;
 
             const allocationValueInput = allocationRow.querySelector('.allocation-value-input');
-            const allocationValue = parseFloat(allocationValueInput?.value) || 0;
+            // Use gross value for reinvoice calculation, fall back to current value
+            const grossValue = parseFloat(allocationValueInput?.dataset?.grossValue) ||
+                               parseFloat(allocationValueInput?.value) || 0;
+
+            // Update the stored gross value if not set
+            if (allocationValueInput && !allocationValueInput.dataset.grossValue) {
+                allocationValueInput.dataset.grossValue = grossValue;
+            }
 
             container.querySelectorAll('.reinvoice-line').forEach(line => {
                 const percentInput = line.querySelector('.reinvoice-percent');
                 const valueInput = line.querySelector('.reinvoice-value');
                 const percent = parseFloat(percentInput.value) || 0;
 
-                valueInput.value = ((allocationValue * percent) / 100).toFixed(2);
+                valueInput.value = ((grossValue * percent) / 100).toFixed(2);
             });
         }
 
@@ -1965,7 +1989,15 @@
                 const percentInput = row.querySelector('.allocation-input');
                 const valueInput = row.querySelector('.allocation-value-input');
                 const percent = parseFloat(percentInput.value) || 0;
-                valueInput.value = ((effectiveValue * percent) / 100).toFixed(2);
+                const grossValue = (effectiveValue * percent) / 100;
+
+                // Store gross value for reinvoice calculations (Variant 2)
+                valueInput.dataset.grossValue = grossValue.toFixed(2);
+                valueInput.value = grossValue.toFixed(2);
+
+                // Update reinvoice line values and badge (which will also update to NET value)
+                updateReinvoiceLineValues(row);
+                updateReinvoiceTotalBadge(row);
             });
             updateTotalAllocation();
         }

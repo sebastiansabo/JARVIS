@@ -2374,7 +2374,14 @@ def save_invoice(
         # Use net_value for allocation calculations if VAT subtraction is enabled
         base_value = net_value if subtract_vat and net_value else invoice_value
         for dist in distributions:
-            allocation_value = base_value * dist['allocation']
+            # Calculate gross allocation value
+            gross_allocation_value = base_value * dist['allocation']
+
+            # Calculate net allocation value (after reinvoice deduction - Variant 2)
+            reinvoice_dests = dist.get('reinvoice_destinations', [])
+            total_reinvoice_percent = sum(rd.get('percentage', 0) for rd in reinvoice_dests)
+            net_percent = max(0, 100 - total_reinvoice_percent)
+            allocation_value = gross_allocation_value * net_percent / 100
 
             # Look up the responsible (manager) from department_structure if not provided
             responsible = dist.get('responsible', '')
@@ -2436,10 +2443,9 @@ def save_invoice(
             ))
             allocation_id = cursor.fetchone()['id']
 
-            # Insert reinvoice destinations if provided
-            reinvoice_dests = dist.get('reinvoice_destinations', [])
+            # Insert reinvoice destinations if provided (value calculated from gross allocation)
             for rd in reinvoice_dests:
-                rd_value = allocation_value * (rd['percentage'] / 100)
+                rd_value = gross_allocation_value * (rd['percentage'] / 100)
                 cursor.execute('''
                     INSERT INTO reinvoice_destinations
                     (allocation_id, company, brand, department, subdepartment, percentage, value)
@@ -3721,8 +3727,14 @@ def update_invoice_allocations(invoice_id: int, allocations: list[dict]) -> bool
         # Insert new allocations
         for alloc in allocations:
             allocation_percent = alloc['allocation_percent']
-            # Calculate value from percent if not provided (use base_value which is net_value when VAT subtraction enabled)
-            allocation_value = alloc.get('allocation_value') or (base_value * allocation_percent / 100)
+            # Calculate gross allocation value
+            gross_allocation_value = base_value * allocation_percent / 100
+
+            # Calculate net allocation value (after reinvoice deduction - Variant 2)
+            reinvoice_dests = alloc.get('reinvoice_destinations', [])
+            total_reinvoice_percent = sum(rd.get('percentage', 0) for rd in reinvoice_dests)
+            net_percent = max(0, 100 - total_reinvoice_percent)
+            allocation_value = gross_allocation_value * net_percent / 100
 
             # Look up responsible_user_id from responsible name
             responsible = alloc.get('responsible')
@@ -3757,10 +3769,9 @@ def update_invoice_allocations(invoice_id: int, allocations: list[dict]) -> bool
             ))
             allocation_id = cursor.fetchone()['id']
 
-            # Insert reinvoice destinations if provided
-            reinvoice_dests = alloc.get('reinvoice_destinations', [])
+            # Insert reinvoice destinations if provided (value calculated from gross allocation)
             for rd in reinvoice_dests:
-                rd_value = allocation_value * (rd['percentage'] / 100)
+                rd_value = gross_allocation_value * (rd['percentage'] / 100)
                 cursor.execute('''
                     INSERT INTO reinvoice_destinations
                     (allocation_id, company, brand, department, subdepartment, percentage, value)

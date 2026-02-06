@@ -799,19 +799,47 @@ const InvoiceEdit = {
         this.updateReinvoiceTotalBadge(allocIdx);
     },
 
-    // Update reinvoice total badge
+    // Update reinvoice total badge and recalculate net allocation value
     updateReinvoiceTotalBadge(allocIdx) {
         const container = document.querySelector(`.reinvoice-lines-container[data-idx="${allocIdx}"]`);
         const badge = document.querySelector(`.reinvoice-total-badge[data-idx="${allocIdx}"]`);
         if (!container || !badge) return;
 
-        let total = 0;
+        let totalReinvoicePercent = 0;
         container.querySelectorAll('.reinvoice-percent').forEach(input => {
-            total += parseFloat(input.value) || 0;
+            totalReinvoicePercent += parseFloat(input.value) || 0;
         });
 
-        badge.textContent = `${total.toFixed(1)}%`;
-        badge.className = total <= 101 ? 'reinvoice-total-badge badge bg-success ms-2' : 'reinvoice-total-badge badge bg-danger ms-2';
+        badge.textContent = `${totalReinvoicePercent.toFixed(1)}%`;
+        badge.className = totalReinvoicePercent <= 101 ? 'reinvoice-total-badge badge bg-success ms-2' : 'reinvoice-total-badge badge bg-danger ms-2';
+
+        // Update allocation value to show net amount (after reinvoice deduction)
+        const alloc = this.editAllocations[allocIdx];
+        if (alloc) {
+            const baseValue = this.getBaseValue();
+            const grossValue = (baseValue * (parseFloat(alloc.allocation_percent) || 0)) / 100;
+            const netPercent = Math.max(0, 100 - totalReinvoicePercent);
+            const netValue = grossValue * netPercent / 100;
+
+            // Update the allocation percent to reflect net (remaining) percent
+            const percentInput = document.querySelector(`.alloc-percent[data-idx="${allocIdx}"]`);
+            const valueInput = document.querySelector(`.alloc-value[data-idx="${allocIdx}"]`);
+
+            // Store original allocation percent and calculate net
+            if (!alloc._originalPercent) {
+                alloc._originalPercent = alloc.allocation_percent;
+            }
+            const originalPercent = alloc._originalPercent || alloc.allocation_percent;
+            const netAllocPercent = originalPercent * netPercent / 100;
+
+            // Update display to show net values
+            if (valueInput) {
+                valueInput.value = netValue.toFixed(2);
+            }
+
+            // Update total badge to reflect NET values
+            this.updateAllocationTotalBadge();
+        }
     },
 
     // Get reinvoice destinations for an allocation
@@ -1045,7 +1073,11 @@ const InvoiceEdit = {
 
     updateAllocationTotalBadge() {
         const totalPercent = this.editAllocations.reduce((sum, a) => sum + (parseFloat(a.allocation_percent) || 0), 0);
-        const totalValue = this.editAllocations.reduce((sum, a) => sum + (parseFloat(a.allocation_value) || 0), 0);
+        // Read NET values from displayed inputs (after reinvoice deduction - Variant 2)
+        let totalValue = 0;
+        document.querySelectorAll('.alloc-value').forEach(input => {
+            totalValue += parseFloat(input.value) || 0;
+        });
         const currency = document.getElementById('editCurrency').value || 'RON';
         const badge = document.getElementById('allocationTotalBadge');
 
@@ -1146,18 +1178,29 @@ const InvoiceEdit = {
         };
 
         // Collect reinvoice destinations for each allocation
-        const allocationsData = this.editAllocations.map((a, idx) => ({
-            company: dedicatedCompany,
-            brand: a.brand || null,
-            department: a.department,
-            subdepartment: a.subdepartment || null,
-            allocation_percent: a.allocation_percent,
-            allocation_value: a.allocation_value,
-            responsible: a.responsible || null,
-            reinvoice_destinations: this.getReinvoiceDestinations(idx),
-            comment: a.comment || null,
-            locked: a.locked || false
-        }));
+        // Calculate net allocation value (after reinvoice deduction - Variant 2)
+        const allocationsData = this.editAllocations.map((a, idx) => {
+            const reinvoiceDestinations = this.getReinvoiceDestinations(idx);
+            const totalReinvoicePercent = reinvoiceDestinations.reduce((sum, d) => sum + (d.percentage || 0), 0);
+            const netPercent = Math.max(0, 100 - totalReinvoicePercent);
+            // Gross allocation value (from base value * allocation %)
+            const grossAllocationValue = a.allocation_value;
+            // Net allocation value = gross * (remaining % after reinvoice)
+            const netAllocationValue = grossAllocationValue * netPercent / 100;
+
+            return {
+                company: dedicatedCompany,
+                brand: a.brand || null,
+                department: a.department,
+                subdepartment: a.subdepartment || null,
+                allocation_percent: a.allocation_percent,
+                allocation_value: netAllocationValue,  // Store net value after reinvoice deduction
+                responsible: a.responsible || null,
+                reinvoice_destinations: reinvoiceDestinations,
+                comment: a.comment || null,
+                locked: a.locked || false
+            };
+        });
 
         if (typeof showLoading === 'function') showLoading('Saving invoice...');
 
