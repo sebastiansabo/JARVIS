@@ -9,12 +9,12 @@
 | `staging` | Development & testing | bugetare-staging app | Direct push OK |
 | `main` | Production | bugetare app | **REQUIRES DOUBLE CONFIRMATION** |
 
-### Backup Branches
-| Branch | Date | Source |
-|--------|------|--------|
-| `main-backup-2026-01-13` | 2026-01-13 | main |
-| `staging-backup-2026-01-13` | 2026-01-13 | staging |
-| `production-backup-2026-02-04` | 2026-02-04 | production |
+### Backup Tags
+| Tag | Date | Source |
+|-----|------|--------|
+| `backup-main-2026-01-13` | 2026-01-13 | main |
+| `backup-staging-2026-01-13` | 2026-01-13 | staging |
+| `backup-production-2026-02-04` | 2026-02-04 | production |
 
 ### Database Backups
 Located in `backups/` directory (not committed to git):
@@ -1150,6 +1150,16 @@ SMTP settings are stored in the `notification_settings` table:
 - `smtp_username`, `smtp_password`
 - `from_email`, `from_name`
 - `global_cc` - Optional CC address for all notifications
+
+### HR Bonus Lock Configuration
+The `notification_settings` table also stores:
+- `hr_bonus_lock_day` - Day of month when bonuses lock (default: 5)
+
+**Lock Logic** (`jarvis/hr/events/utils.py`):
+- Bonuses for month X are editable until day Y of month X+1
+- Example: January bonuses lock on February 5th
+- Admin users can bypass the lock
+- `get_lock_day()` reads from DB, falls back to DEFAULT_LOCK_DAY=5
 
 ## Tagging System
 

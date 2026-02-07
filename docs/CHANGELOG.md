@@ -1,5 +1,63 @@
 # Changelog
 
+## 2026-02-07
+
+### Documentation Structure Cleanup
+- **New docs/ Directory**: Moved project documentation to centralized `docs/` folder
+  - `docs/CLAUDE.md` - Project instructions for Claude Code
+  - `docs/CHANGELOG.md` - Version history
+  - `README.md` - Project overview (root level for GitHub)
+- **Created README.md**: New project overview file at repository root
+- **Deleted Temporary Files**: Removed 13 obsolete files
+  - PLAN.md, PLAN-efactura-multi-department.md, PLAN-multi-dept-50-50.md
+  - CONTEXT.md, context_state.md
+  - MIGRATION_PLAN.md, STATEMENTS_UPGRADE_PROMPT.md
+  - AGENTS.md, docs/REFACTORING_PLAN.md
+  - AI Module Agent/ directory (4 .md files, 2 .txt files)
+
+### Documentation Validation Hook
+- **New Hook**: Added `hooks/documentation_hook.py` to validation system
+- **Validates**:
+  - Required files exist (`docs/CLAUDE.md`, `docs/CHANGELOG.md`, `README.md`)
+  - No temporary PLAN*.md or CONTEXT*.md files lingering
+  - README.md files only in allowed module directories
+- **Integration**: Added to master_hook.py as 8th validation hook
+
+### Git Branch Cleanup
+- **Deleted Branches**: Removed `production`, `dev`, `feature/auth-refactoring` (redundant)
+- **Converted to Tags**: Backup branches are now lightweight tags
+  - `backup-main-2026-01-13`
+  - `backup-staging-2026-01-13`
+  - `backup-production-2026-02-04`
+- **Active Branches**: Only `main` and `staging` remain
+
+### Hooks System
+- **Fixed Deprecation**: Changed `datetime.utcnow()` to `datetime.now(timezone.utc)` in master_hook.py
+- **RON RON Bug Fix**: Added `sanitizeCurrency()` function in accounting.html to prevent duplicate currency display
+
+## 2026-02-06
+
+### Invoice Details Modal Improvements
+- **Allocation Display Rearrangement**: Reordered allocation information display for better readability:
+  1. Comment (if exists) - shown first for context
+  2. Value and percentage
+  3. Retained value line (if allocation is locked)
+  4. Reinvoice destinations (if any)
+- **Company in Invoice Information**: Added Company field to the Invoice Information section at the top of the modal
+
+### Split Values Column Enhancement
+- **Summary Text Change**: Changed "X allocations" to "Split" in the Split Values column summary for cleaner display
+- Reinvoice indicator (→) still appears when allocations have reinvoice targets
+
+### Database Configuration
+- **HR Bonus Lock Day Setting**: Added `hr_bonus_lock_day` setting (value: 5) to notification_settings table in local, staging, and production databases
+- **Configurable Lock Day**: The HR Bonus Monthly Lock System now reads lock day from database setting, falling back to DEFAULT_LOCK_DAY=5 if not configured
+- **Legacy Table Cleanup**: Dropped deprecated `responsables` table from local database (was already removed from staging/production)
+
+### Database Schema Synchronization
+- Verified local, staging, and production PostgreSQL schemas are now identical
+- All environments use the same table structures and data types
+
 ## 2026-02-05
 
 ### User Organization Assignment

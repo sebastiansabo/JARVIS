@@ -5,9 +5,9 @@ Documentation Hook for JARVIS
 Validates markdown file structure follows the approved documentation plan.
 
 Allowed MD Structure:
-- CLAUDE.md        (Project instructions for Claude Code)
-- CHANGELOG.md     (Version history)
-- README.md        (Project overview)
+- docs/CLAUDE.md   (Project instructions for Claude Code)
+- docs/CHANGELOG.md (Version history)
+- README.md        (Project overview - root level for GitHub)
 - jarvis/**/README.md (Module-specific docs, optional)
 
 Forbidden/Temporary:
@@ -45,25 +45,30 @@ class DocumentationHook(BaseHook):
     description = "Validates markdown file structure"
     blocking_on_failure = False  # Warnings only, not blocking
 
-    # Essential files that MUST exist at project root
-    REQUIRED_FILES = [
-        "CLAUDE.md",
-        "CHANGELOG.md",
+    # Essential files that MUST exist in docs/ directory
+    REQUIRED_DOCS_FILES = [
+        "docs/CLAUDE.md",
+        "docs/CHANGELOG.md",
     ]
 
-    # Recommended files (warning if missing, not blocking)
-    RECOMMENDED_FILES = [
+    # Required files at project root
+    REQUIRED_ROOT_FILES = [
         "README.md",
     ]
 
-    # Allowed markdown files at project root
+    # Allowed markdown files at project root (minimal set)
     ALLOWED_ROOT_FILES = {
-        "CLAUDE.md",
-        "CHANGELOG.md",
         "README.md",
         "LICENSE.md",
         "CONTRIBUTING.md",
         "SECURITY.md",
+    }
+
+    # Allowed files in docs/ directory
+    ALLOWED_DOCS_FILES = {
+        "CLAUDE.md",
+        "CHANGELOG.md",
+        "USER_GUIDE.md",
     }
 
     # Patterns that indicate temporary/plan files (should be cleaned up)
@@ -81,11 +86,16 @@ class DocumentationHook(BaseHook):
         "jarvis/core/connectors",
         "jarvis/core/connectors/efactura",
         "jarvis/accounting",
+        "jarvis/accounting/bugetare",
+        "jarvis/accounting/statements",
+        "jarvis/accounting/efactura",
         "jarvis/hr",
+        "jarvis/hr/events",
         "hooks",
+        "docs",
     ]
 
-    # Directories to skip (generated/cache)
+    # Directories to skip (generated/cache/third-party)
     SKIP_DIRS = {
         ".git",
         ".claude-code",
@@ -95,6 +105,7 @@ class DocumentationHook(BaseHook):
         "__pycache__",
         "venv",
         "backups",
+        "anaf-php-main",
     }
 
     def run(self) -> HookResult:
@@ -114,11 +125,6 @@ class DocumentationHook(BaseHook):
                 f"Missing required documentation: {', '.join(missing)}",
                 [f"Create missing file: {f}" for f in missing],
             )
-
-        # Check recommended files
-        missing_recommended = self._check_recommended_files()
-        for f in missing_recommended:
-            warnings.append(f"Recommended file missing: {f}")
 
         # Check for temporary/plan files that should be cleaned up
         temp_files = self._find_temporary_files(all_md_files)
@@ -170,20 +176,15 @@ class DocumentationHook(BaseHook):
         missing = []
         project_root = self.target_path.parent
 
-        for required in self.REQUIRED_FILES:
+        # Check docs/ files
+        for required in self.REQUIRED_DOCS_FILES:
             if not (project_root / required).exists():
                 missing.append(required)
 
-        return missing
-
-    def _check_recommended_files(self) -> List[str]:
-        """Check for recommended files (warning if missing)."""
-        missing = []
-        project_root = self.target_path.parent
-
-        for recommended in self.RECOMMENDED_FILES:
-            if not (project_root / recommended).exists():
-                missing.append(recommended)
+        # Check root files
+        for required in self.REQUIRED_ROOT_FILES:
+            if not (project_root / required).exists():
+                missing.append(required)
 
         return missing
 
@@ -209,12 +210,13 @@ class DocumentationHook(BaseHook):
         return temp_files
 
     def _find_unexpected_root_files(self, files: List[Path]) -> List[str]:
-        """Find markdown files at root that aren't in the allowed list."""
+        """Find markdown files at root or docs/ that aren't in the allowed list."""
         unexpected = []
         project_root = self.target_path.parent
+        docs_dir = project_root / "docs"
 
         for filepath in files:
-            # Only check files directly in project root
+            # Check files directly in project root
             if filepath.parent == project_root:
                 if filepath.name not in self.ALLOWED_ROOT_FILES:
                     # Skip if it's a temporary file (already reported)
@@ -222,6 +224,15 @@ class DocumentationHook(BaseHook):
                                   for p in self.TEMPORARY_PATTERNS)
                     if not is_temp:
                         unexpected.append(filepath.name)
+
+            # Check files in docs/ directory
+            elif filepath.parent == docs_dir:
+                if filepath.name not in self.ALLOWED_DOCS_FILES:
+                    # Skip if it's a temporary file (already reported)
+                    is_temp = any(p.upper() in filepath.name.upper()
+                                  for p in self.TEMPORARY_PATTERNS)
+                    if not is_temp:
+                        unexpected.append(f"docs/{filepath.name}")
 
         return unexpected
 
