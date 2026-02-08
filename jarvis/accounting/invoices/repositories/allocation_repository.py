@@ -1,0 +1,294 @@
+"""Allocation repository - CRUD, reinvoice destinations."""
+import logging
+
+from database import get_db, get_cursor, release_db, dict_from_row
+
+logger = logging.getLogger('jarvis.allocations')
+
+
+class AllocationRepository:
+
+    def get_by_company(self, company):
+        """Get all allocations for a specific company."""
+        conn = get_db()
+        cursor = get_cursor(conn)
+
+        cursor.execute('''
+            SELECT a.*, i.supplier, i.invoice_number, i.invoice_date
+            FROM allocations a
+            JOIN invoices i ON a.invoice_id = i.id
+            WHERE a.company = %s
+            ORDER BY i.invoice_date DESC
+        ''', (company,))
+
+        results = [dict_from_row(row) for row in cursor.fetchall()]
+        release_db(conn)
+        return results
+
+    def get_by_department(self, company, department):
+        """Get all allocations for a specific department."""
+        conn = get_db()
+        cursor = get_cursor(conn)
+
+        cursor.execute('''
+            SELECT a.*, i.supplier, i.invoice_number, i.invoice_date
+            FROM allocations a
+            JOIN invoices i ON a.invoice_id = i.id
+            WHERE a.company = %s AND a.department = %s
+            ORDER BY i.invoice_date DESC
+        ''', (company, department))
+
+        results = [dict_from_row(row) for row in cursor.fetchall()]
+        release_db(conn)
+        return results
+
+    def update(self, allocation_id, company=None, brand=None, department=None,
+               subdepartment=None, allocation_percent=None, allocation_value=None,
+               responsible=None, reinvoice_to=None, reinvoice_brand=None,
+               reinvoice_department=None, reinvoice_subdepartment=None, comment=None):
+        """Update an existing allocation."""
+        conn = get_db()
+        cursor = get_cursor(conn)
+
+        updates = []
+        params = []
+
+        field_map = {
+            'company': company, 'brand': brand, 'department': department,
+            'subdepartment': subdepartment, 'allocation_percent': allocation_percent,
+            'allocation_value': allocation_value, 'responsible': responsible,
+            'reinvoice_to': reinvoice_to, 'reinvoice_brand': reinvoice_brand,
+            'reinvoice_department': reinvoice_department,
+            'reinvoice_subdepartment': reinvoice_subdepartment, 'comment': comment,
+        }
+
+        for field, value in field_map.items():
+            if value is not None:
+                updates.append(f'{field} = %s')
+                params.append(value)
+
+        if not updates:
+            release_db(conn)
+            return False
+
+        params.append(allocation_id)
+        query = f"UPDATE allocations SET {', '.join(updates)} WHERE id = %s"
+        cursor.execute(query, params)
+        updated = cursor.rowcount > 0
+
+        conn.commit()
+        release_db(conn)
+        return updated
+
+    def delete(self, allocation_id):
+        """Delete an allocation."""
+        conn = get_db()
+        cursor = get_cursor(conn)
+
+        cursor.execute('DELETE FROM allocations WHERE id = %s', (allocation_id,))
+        deleted = cursor.rowcount > 0
+
+        conn.commit()
+        release_db(conn)
+        return deleted
+
+    def update_comment(self, allocation_id, comment):
+        """Update just the comment for an allocation."""
+        conn = get_db()
+        cursor = get_cursor(conn)
+
+        cursor.execute('UPDATE allocations SET comment = %s WHERE id = %s', (comment, allocation_id))
+        updated = cursor.rowcount > 0
+
+        conn.commit()
+        release_db(conn)
+        return updated
+
+    def add(self, invoice_id, company, department, allocation_percent,
+            allocation_value, brand=None, subdepartment=None, responsible=None,
+            reinvoice_to=None, reinvoice_brand=None, reinvoice_department=None,
+            reinvoice_subdepartment=None):
+        """Add a new allocation to an invoice. Returns allocation ID."""
+        conn = get_db()
+        cursor = get_cursor(conn)
+
+        try:
+            responsible_user_id = None
+            if responsible:
+                cursor.execute('SELECT id FROM users WHERE LOWER(name) = LOWER(%s) LIMIT 1', (responsible,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    responsible_user_id = user_row['id']
+
+            cursor.execute('''
+                INSERT INTO allocations (invoice_id, company, brand, department, subdepartment,
+                    allocation_percent, allocation_value, responsible, responsible_user_id, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            ''', (invoice_id, company, brand, department, subdepartment,
+                  allocation_percent, allocation_value, responsible, responsible_user_id, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment))
+            allocation_id = cursor.fetchone()['id']
+
+            conn.commit()
+            return allocation_id
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            release_db(conn)
+
+    def update_invoice_allocations(self, invoice_id, allocations):
+        """Replace all allocations for an invoice with new ones (transactional)."""
+        conn = get_db()
+        cursor = get_cursor(conn)
+
+        try:
+            cursor.execute('SELECT invoice_value, subtract_vat, net_value FROM invoices WHERE id = %s', (invoice_id,))
+            result = cursor.fetchone()
+            if not result:
+                raise ValueError(f"Invoice {invoice_id} not found")
+            invoice_value = result['invoice_value']
+            base_value = result['net_value'] if result['subtract_vat'] and result['net_value'] else invoice_value
+
+            cursor.execute('DELETE FROM allocations WHERE invoice_id = %s', (invoice_id,))
+
+            for alloc in allocations:
+                allocation_percent = alloc['allocation_percent']
+                gross_allocation_value = base_value * allocation_percent / 100
+
+                reinvoice_dests = alloc.get('reinvoice_destinations', [])
+                total_reinvoice_percent = sum(rd.get('percentage', 0) for rd in reinvoice_dests)
+                net_percent = max(0, 100 - total_reinvoice_percent)
+                allocation_value = gross_allocation_value * net_percent / 100
+
+                responsible = alloc.get('responsible')
+                responsible_user_id = None
+                if responsible:
+                    cursor.execute('SELECT id FROM users WHERE LOWER(name) = LOWER(%s) LIMIT 1', (responsible,))
+                    user_row = cursor.fetchone()
+                    if user_row:
+                        responsible_user_id = user_row['id']
+
+                cursor.execute('''
+                    INSERT INTO allocations (invoice_id, company, brand, department, subdepartment,
+                        allocation_percent, allocation_value, responsible, responsible_user_id, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment, locked, comment)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                ''', (
+                    invoice_id,
+                    alloc['company'],
+                    alloc.get('brand'),
+                    alloc['department'],
+                    alloc.get('subdepartment'),
+                    allocation_percent,
+                    allocation_value,
+                    responsible,
+                    responsible_user_id,
+                    alloc.get('reinvoice_to'),
+                    alloc.get('reinvoice_brand'),
+                    alloc.get('reinvoice_department'),
+                    alloc.get('reinvoice_subdepartment'),
+                    alloc.get('locked', False),
+                    alloc.get('comment')
+                ))
+                allocation_id = cursor.fetchone()['id']
+
+                for rd in reinvoice_dests:
+                    rd_value = gross_allocation_value * (rd['percentage'] / 100)
+                    cursor.execute('''
+                        INSERT INTO reinvoice_destinations
+                        (allocation_id, company, brand, department, subdepartment, percentage, value)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        allocation_id,
+                        rd['company'],
+                        rd.get('brand'),
+                        rd.get('department'),
+                        rd.get('subdepartment'),
+                        rd['percentage'],
+                        rd_value
+                    ))
+
+            conn.commit()
+            from accounting.invoices.repositories.invoice_repository import clear_invoices_cache
+            clear_invoices_cache()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            release_db(conn)
+
+    def get_reinvoice_destinations(self, allocation_id):
+        """Get all reinvoice destinations for an allocation."""
+        conn = get_db()
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            SELECT * FROM reinvoice_destinations WHERE allocation_id = %s ORDER BY id
+        ''', (allocation_id,))
+        results = [dict_from_row(row) for row in cursor.fetchall()]
+        release_db(conn)
+        return results
+
+    def save_reinvoice_destinations(self, allocation_id, destinations, allocation_value=None):
+        """Replace all reinvoice destinations for an allocation."""
+        conn = get_db()
+        cursor = get_cursor(conn)
+        try:
+            cursor.execute('DELETE FROM reinvoice_destinations WHERE allocation_id = %s', (allocation_id,))
+
+            for dest in destinations:
+                dest_value = None
+                if allocation_value is not None and dest.get('percentage'):
+                    dest_value = allocation_value * (dest['percentage'] / 100)
+                cursor.execute('''
+                    INSERT INTO reinvoice_destinations
+                    (allocation_id, company, brand, department, subdepartment, percentage, value)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    allocation_id,
+                    dest['company'],
+                    dest.get('brand'),
+                    dest.get('department'),
+                    dest.get('subdepartment'),
+                    dest['percentage'],
+                    dest_value or dest.get('value')
+                ))
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            release_db(conn)
+
+    def save_reinvoice_destinations_batch(self, allocation_destinations):
+        """Save reinvoice destinations for multiple allocations in a single transaction."""
+        conn = get_db()
+        cursor = get_cursor(conn)
+        try:
+            for allocation_id, destinations, allocation_value in allocation_destinations:
+                cursor.execute('DELETE FROM reinvoice_destinations WHERE allocation_id = %s', (allocation_id,))
+
+                for dest in destinations:
+                    dest_value = allocation_value * (dest['percentage'] / 100) if allocation_value else dest.get('value')
+                    cursor.execute('''
+                        INSERT INTO reinvoice_destinations
+                        (allocation_id, company, brand, department, subdepartment, percentage, value)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        allocation_id,
+                        dest['company'],
+                        dest.get('brand'),
+                        dest.get('department'),
+                        dest.get('subdepartment'),
+                        dest['percentage'],
+                        dest_value
+                    ))
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            release_db(conn)

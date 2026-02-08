@@ -40,8 +40,8 @@ Thumbs.db
 *.log
 logs/
 
-# Invoices folder (contains private data)
-Invoices/
+# Invoices folder (contains private data - top-level only)
+/Invoices/
 
 # Template folder (contains private data)
 Template/
