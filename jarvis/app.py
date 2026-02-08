@@ -488,7 +488,7 @@ def react_app(path=''):
     return redirect('/apps')
 
 
-@app.route('/react-assets/<path:filename>')
+@app.route('/assets/<path:filename>')
 def react_assets(filename):
     """Serve React build assets (JS, CSS, etc.)."""
     return send_from_directory(os.path.join(_react_dir, 'assets'), filename)
