@@ -2371,6 +2371,44 @@ class SupplierMappingRepository:
         finally:
             release_db(conn)
 
+    # ── Cleanup ─────────────────────────────────────────────
+
+    def delete_old_unallocated(self, days: int = 15, cif_owner: str = None) -> int:
+        """Permanently delete unallocated invoices older than N days.
+
+        Only deletes invoices that are:
+        - Not allocated (jarvis_invoice_id IS NULL)
+        - Not hidden (ignored = FALSE)
+        - Not already in bin (deleted_at IS NULL)
+        - Created more than `days` ago
+        """
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            sql = """
+                DELETE FROM efactura_invoices
+                WHERE jarvis_invoice_id IS NULL
+                  AND ignored = FALSE
+                  AND deleted_at IS NULL
+                  AND created_at < NOW() - INTERVAL '%s days'
+            """
+            params = [days]
+            if cif_owner:
+                sql += " AND cif_owner = %s"
+                params.append(cif_owner)
+            sql += " RETURNING id"
+            cursor.execute(sql, params)
+            count = cursor.rowcount
+            conn.commit()
+            logger.info(f"Cleaned up {count} old unallocated invoices (>{days} days, cif={cif_owner or 'all'})")
+            return count
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to clean up old unallocated invoices: {e}")
+            return 0
+        finally:
+            release_db(conn)
+
 
 class PartnerTypeRepository:
     """Repository for e-Factura partner types (Service, Merchandise, etc.)."""
@@ -2566,40 +2604,3 @@ class PartnerTypeRepository:
         finally:
             release_db(conn)
 
-    # ── Cleanup ─────────────────────────────────────────────
-
-    def delete_old_unallocated(self, days: int = 15, cif_owner: str = None) -> int:
-        """Permanently delete unallocated invoices older than N days.
-
-        Only deletes invoices that are:
-        - Not allocated (jarvis_invoice_id IS NULL)
-        - Not hidden (ignored = FALSE)
-        - Not already in bin (deleted_at IS NULL)
-        - Created more than `days` ago
-        """
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            sql = """
-                DELETE FROM efactura_invoices
-                WHERE jarvis_invoice_id IS NULL
-                  AND ignored = FALSE
-                  AND deleted_at IS NULL
-                  AND created_at < NOW() - INTERVAL '%s days'
-            """
-            params = [days]
-            if cif_owner:
-                sql += " AND cif_owner = %s"
-                params.append(cif_owner)
-            sql += " RETURNING id"
-            cursor.execute(sql, params)
-            count = cursor.rowcount
-            conn.commit()
-            logger.info(f"Cleaned up {count} old unallocated invoices (>{days} days, cif={cif_owner or 'all'})")
-            return count
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Failed to clean up old unallocated invoices: {e}")
-            return 0
-        finally:
-            release_db(conn)
