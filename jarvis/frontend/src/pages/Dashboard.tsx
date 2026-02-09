@@ -18,28 +18,25 @@ const apps = [
     icon: Bot,
   },
   {
-    path: '/accounting',
+    path: '/app/accounting',
     label: 'Accounting',
     description: 'Invoices, statements, e-Factura',
     icon: Calculator,
     permission: 'can_access_accounting' as const,
-    external: true,
   },
   {
-    path: '/hr/',
+    path: '/app/hr',
     label: 'HR',
     description: 'Events and bonuses',
     icon: Users,
     permission: 'can_access_hr' as const,
-    external: true,
   },
   {
-    path: '/settings',
+    path: '/app/settings',
     label: 'Settings',
     description: 'Users, roles, configuration',
     icon: Settings,
     permission: 'can_access_settings' as const,
-    external: true,
   },
 ]
 
@@ -66,7 +63,7 @@ export default function Dashboard() {
   })
 
   const totalInvoices = companySummary?.reduce((sum, c) => sum + c.invoice_count, 0) ?? 0
-  const totalValue = companySummary?.reduce((sum, c) => sum + c.total_value, 0) ?? 0
+  const totalValue = companySummary?.reduce((sum, c) => sum + (c.total_value_ron ?? 0), 0) ?? 0
 
   const visibleApps = apps.filter((app) => {
     if (!('permission' in app) || !app.permission) return true
@@ -84,10 +81,10 @@ export default function Dashboard() {
         <div className="flex gap-2">
           {user?.can_add_invoices && (
             <Button asChild size="sm">
-              <a href="/accounting">
+              <Link to="/app/accounting/add">
                 <Plus className="mr-1.5 h-4 w-4" />
                 Add Invoice
-              </a>
+              </Link>
             </Button>
           )}
           <Button variant="outline" size="sm" asChild>
@@ -147,9 +144,7 @@ export default function Dashboard() {
               </CardHeader>
             </Card>
           )
-          return 'external' in app && app.external ? (
-            <a key={app.path} href={app.path}>{inner}</a>
-          ) : (
+          return (
             <Link key={app.path} to={app.path}>{inner}</Link>
           )
         })}
@@ -164,9 +159,9 @@ export default function Dashboard() {
               <CardTitle className="text-base">Recent Invoices</CardTitle>
               {user?.can_access_accounting && (
                 <Button variant="ghost" size="sm" asChild>
-                  <a href="/accounting" className="text-xs">
+                  <Link to="/app/accounting" className="text-xs">
                     View all <ArrowRight className="ml-1 h-3 w-3" />
-                  </a>
+                  </Link>
                 </Button>
               )}
             </div>
@@ -232,8 +227,8 @@ export default function Dashboard() {
                       <p className="text-xs text-muted-foreground">{cs.invoice_count} invoices</p>
                     </div>
                     <CurrencyDisplay
-                      value={cs.total_value}
-                      currency={cs.currency || 'RON'}
+                      value={cs.total_value_ron ?? 0}
+                      currency="RON"
                       className="text-sm"
                     />
                   </div>

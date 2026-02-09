@@ -407,10 +407,8 @@ def api_online_users():
 @app.route('/')
 @login_required
 def index():
-    """Redirect based on user permissions."""
-    if current_user.can_access_main_apps():
-        return redirect(url_for('apps_page'))
-    return redirect(url_for('profile.profile_page'))
+    """Redirect to React dashboard."""
+    return redirect('/app/dashboard')
 
 
 @app.route('/apps')

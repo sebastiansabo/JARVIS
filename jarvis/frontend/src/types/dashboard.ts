@@ -28,6 +28,7 @@ export interface OnlineUsersResponse {
 export interface CompanySummary {
   company: string
   invoice_count: number
-  total_value: number
-  currency: string
+  total_value_ron: number
+  total_value_eur: number
+  avg_exchange_rate: number
 }
