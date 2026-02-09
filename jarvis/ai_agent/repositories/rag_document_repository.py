@@ -8,6 +8,7 @@ Supports both pgvector (semantic search) and text search fallback.
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
+from psycopg2.extras import Json
 from core.database import get_db, get_cursor, release_db
 from core.utils.logging_config import get_logger
 from ..models import RAGDocument, RAGSourceType
@@ -75,7 +76,7 @@ class RAGDocumentRepository:
                     document.content,
                     document.content_hash,
                     document.embedding,
-                    document.metadata,
+                    Json(document.metadata) if document.metadata else None,
                     document.company_id,
                     document.is_active,
                 ))
@@ -93,7 +94,7 @@ class RAGDocumentRepository:
                     document.source_table,
                     document.content,
                     document.content_hash,
-                    document.metadata,
+                    Json(document.metadata) if document.metadata else None,
                     document.company_id,
                     document.is_active,
                 ))
