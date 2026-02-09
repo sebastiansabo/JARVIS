@@ -8,7 +8,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from functools import wraps
 from typing import Optional
-from flask import request, jsonify, render_template
+from flask import request, jsonify, redirect
 from flask_login import login_required, current_user
 
 from core.utils.logging_config import get_logger
@@ -52,29 +52,29 @@ def json_serial(obj):
 @accounting_efactura_bp.route('/')
 @login_required
 def index():
-    """e-Factura dashboard page."""
-    return render_template('accounting/bugetare/efactura.html')
+    """Redirect to React e-Factura page."""
+    return redirect('/app/efactura')
 
 
 @accounting_efactura_bp.route('/connections')
 @login_required
 def connections_page():
-    """Company connections management page."""
-    return render_template('accounting/efactura/connections.html')
+    """Redirect to React e-Factura connections."""
+    return redirect('/app/efactura/connections')
 
 
 @accounting_efactura_bp.route('/invoices')
 @login_required
 def invoices_page():
-    """Invoices list page."""
-    return render_template('accounting/efactura/invoices.html')
+    """Redirect to React e-Factura invoices."""
+    return redirect('/app/efactura/invoices')
 
 
 @accounting_efactura_bp.route('/sync-history')
 @login_required
 def sync_history_page():
-    """Sync history page."""
-    return render_template('accounting/efactura/sync_history.html')
+    """Redirect to React e-Factura sync."""
+    return redirect('/app/efactura/sync')
 
 
 # ============================================================

@@ -4,7 +4,7 @@ API endpoints and page routes for the user profile page.
 Uses user data directly (organizational fields stored in users table).
 """
 import traceback
-from flask import render_template, jsonify, request
+from flask import jsonify, request, redirect
 from flask_login import login_required, current_user
 
 from . import profile_bp
@@ -18,8 +18,8 @@ _profile_repo = ProfileRepository()
 @profile_bp.route('/')
 @login_required
 def profile_page():
-    """Render the profile page."""
-    return render_template('core/profile.html')
+    """Redirect to React profile page."""
+    return redirect('/app/profile')
 
 
 # ============== API Endpoints ==============

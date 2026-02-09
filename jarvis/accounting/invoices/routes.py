@@ -52,21 +52,15 @@ def _user_can_set_status(user_role_name, status_value, dropdown_type='invoice_st
 @invoices_bp.route('/add-invoice')
 @login_required
 def add_invoice():
-    """Invoice distribution form page."""
-    if not current_user.can_add_invoices:
-        flash('You do not have permission to add invoices.', 'warning')
-        return redirect(url_for('profile.profile_page'))
-    return render_template('accounting/bugetare/index.html')
+    """Redirect to React add invoice page."""
+    return redirect('/app/accounting/add')
 
 
 @invoices_bp.route('/accounting')
 @login_required
 def accounting():
-    """Accounting dashboard for viewing all allocations."""
-    if not current_user.can_access_accounting:
-        flash('You do not have permission to access the accounting dashboard.', 'error')
-        return redirect(url_for('invoices.add_invoice'))
-    return render_template('accounting/bugetare/accounting.html')
+    """Redirect to React accounting dashboard."""
+    return redirect('/app/accounting')
 
 
 # ============== INVOICE SUBMISSION ==============

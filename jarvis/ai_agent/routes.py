@@ -5,7 +5,7 @@ API endpoints and page routes for AI Agent module.
 """
 
 from functools import wraps
-from flask import render_template, request, jsonify, redirect, url_for, flash, Response, stream_with_context
+from flask import request, jsonify, redirect, url_for, Response, stream_with_context
 from flask_login import login_required, current_user
 
 from core.utils.logging_config import get_logger
@@ -43,56 +43,16 @@ def ai_agent_required(f):
 
 @ai_agent_bp.route('/')
 @login_required
-@ai_agent_required
 def index():
-    """AI Agent chat interface page."""
-    service = get_service()
-
-    # Get user's recent conversations
-    result = service.list_conversations(
-        user_id=current_user.id,
-        status=ConversationStatus.ACTIVE,
-        limit=20,
-    )
-
-    conversations = result.data if result.success else []
-
-    # Get available models
-    models_result = service.get_available_models()
-    models = models_result.data if models_result.success else []
-
-    return render_template(
-        'ai_agent/index.html',
-        conversations=conversations,
-        models=models,
-    )
+    """Redirect to React AI Agent page."""
+    return redirect('/app/ai-agent')
 
 
 @ai_agent_bp.route('/conversations')
 @login_required
-@ai_agent_required
 def conversations_page():
-    """Conversation history page."""
-    service = get_service()
-
-    # Get all user conversations (including archived)
-    active_result = service.list_conversations(
-        user_id=current_user.id,
-        status=ConversationStatus.ACTIVE,
-        limit=100,
-    )
-
-    archived_result = service.list_conversations(
-        user_id=current_user.id,
-        status=ConversationStatus.ARCHIVED,
-        limit=100,
-    )
-
-    return render_template(
-        'ai_agent/conversations.html',
-        active_conversations=active_result.data if active_result.success else [],
-        archived_conversations=archived_result.data if archived_result.success else [],
-    )
+    """Redirect to React AI Agent page."""
+    return redirect('/app/ai-agent')
 
 
 # ============== API Routes ==============

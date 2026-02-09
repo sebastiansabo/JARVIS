@@ -1,6 +1,6 @@
 """Invoice templates API routes."""
-from flask import jsonify, request, render_template, redirect, url_for, flash
-from flask_login import login_required, current_user
+from flask import jsonify, request, redirect
+from flask_login import login_required
 
 from . import templates_bp
 from .repositories import TemplateRepository
@@ -11,11 +11,8 @@ _template_repo = TemplateRepository()
 @templates_bp.route('/templates')
 @login_required
 def templates_page():
-    """Invoice templates management page."""
-    if not current_user.can_access_templates:
-        flash('You do not have permission to access invoice templates.', 'error')
-        return redirect(url_for('accounting'))
-    return render_template('accounting/bugetare/templates.html')
+    """Redirect to React accounting page."""
+    return redirect('/app/accounting')
 
 
 @templates_bp.route('/api/templates')

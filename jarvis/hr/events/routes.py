@@ -174,64 +174,9 @@ MONTH_NAMES = {
 @events_bp.route('/')
 @events_bp.route('/event-bonuses')
 @login_required
-@hr_required
 def event_bonuses():
-    """Events main page with scope-based filtering."""
-    year = request.args.get('year', type=int)
-    month = request.args.get('month', type=int)
-
-    # Get scope from decorator
-    scope = getattr(g, 'permission_scope', 'all')
-    user_context = getattr(g, 'user_context', None)
-
-    bonuses = get_all_event_bonuses(year=year, month=month, scope=scope, user_context=user_context)
-    events = get_all_hr_events()
-    employees = get_all_hr_employees(scope=scope, user_context=user_context)
-    summary = get_event_bonuses_summary(year=year)
-    employee_summary = get_bonuses_by_employee(year=year, month=month)
-    event_summary = get_bonuses_by_event(year=year, month=month)
-
-    # Get unique years from bonuses for filter
-    years = sorted(set(b['year'] for b in bonuses), reverse=True) if bonuses else [2025]
-
-    # Build permissions for template
-    role_id = getattr(current_user, 'role_id', None)
-    is_hr_manager = getattr(current_user, 'is_hr_manager', False)
-
-    # Helper to check permission
-    def has_perm(entity, action):
-        if role_id:
-            perm = check_permission_v2(role_id, 'hr', entity, action)
-            if perm['has_permission']:
-                return True
-        # Fallback to is_hr_manager
-        if action in ('add', 'edit', 'delete', 'view_amounts', 'export') and is_hr_manager:
-            return True
-        return False
-
-    hr_permissions = {
-        'can_add_bonuses': has_perm('bonuses', 'add'),
-        'can_edit_bonuses': has_perm('bonuses', 'edit'),
-        'can_delete_bonuses': has_perm('bonuses', 'delete'),
-        'can_view_amounts': has_perm('bonuses', 'view_amounts') or is_hr_manager,
-        'can_export': has_perm('bonuses', 'export') or is_hr_manager,
-        'can_bulk_delete': has_perm('bonuses', 'delete'),
-    }
-
-    return render_template('event_bonuses.html',
-                           bonuses=bonuses,
-                           events=events,
-                           employees=employees,
-                           summary=summary,
-                           employee_summary=employee_summary,
-                           event_summary=event_summary,
-                           years=years,
-                           months=MONTH_NAMES,
-                           selected_year=year,
-                           selected_month=month,
-                           is_hr_manager=is_hr_manager,
-                           hr_permissions=hr_permissions,
-                           user_role=getattr(current_user, 'role_name', 'User'))
+    """Redirect to React HR page."""
+    return redirect('/app/hr')
 
 
 @events_bp.route('/api/event-bonuses', methods=['GET'])
@@ -595,84 +540,23 @@ def api_update_hr_settings():
 
 @events_bp.route('/events')
 @login_required
-@hr_required
 def events():
-    """Events management page."""
-    all_events = get_all_hr_events()
-    companies = get_companies()
-    return render_template('events.html', events=all_events, companies=companies)
+    """Redirect to React HR page."""
+    return redirect('/app/hr')
 
 
 @events_bp.route('/events/new')
 @login_required
-@hr_required
 def add_event():
-    """Add new event page."""
-    companies = get_companies()
-    employees = get_all_hr_employees(active_only=True)
-    bonus_types = get_all_bonus_types(active_only=True)
-
-    # Build hr_permissions for template
-    is_hr_manager = getattr(current_user, 'is_hr_manager', False)
-    role_id = getattr(current_user, 'role_id', None)
-
-    def has_perm(entity, action):
-        if role_id:
-            perm = check_permission_v2(role_id, 'hr', entity, action)
-            if perm['has_permission']:
-                return True
-        if action in ('add', 'edit', 'delete', 'view_amounts', 'export') and is_hr_manager:
-            return True
-        return False
-
-    hr_permissions = {
-        'can_view_amounts': has_perm('bonuses', 'view_amounts') or is_hr_manager,
-    }
-
-    return render_template('add_event.html',
-                           companies=companies,
-                           employees=employees,
-                           bonus_types=bonus_types,
-                           is_hr_manager=is_hr_manager,
-                           hr_permissions=hr_permissions)
+    """Redirect to React HR add event page."""
+    return redirect('/app/hr/add-event')
 
 
 @events_bp.route('/bonuses/new')
 @login_required
-@hr_required
 def add_bonus():
-    """Add new bonus page."""
-    from datetime import datetime
-    events = get_all_hr_events()
-    employees = get_all_hr_employees()
-    bonus_types = get_all_bonus_types(active_only=True)
-
-    # Build hr_permissions for template
-    is_hr_manager = getattr(current_user, 'is_hr_manager', False)
-    role_id = getattr(current_user, 'role_id', None)
-
-    def has_perm(entity, action):
-        if role_id:
-            perm = check_permission_v2(role_id, 'hr', entity, action)
-            if perm['has_permission']:
-                return True
-        if action in ('add', 'edit', 'delete', 'view_amounts', 'export') and is_hr_manager:
-            return True
-        return False
-
-    hr_permissions = {
-        'can_view_amounts': has_perm('bonuses', 'view_amounts') or is_hr_manager,
-    }
-
-    return render_template('add_bonus.html',
-                           events=events,
-                           employees=employees,
-                           bonus_types=bonus_types,
-                           months=MONTH_NAMES,
-                           current_year=datetime.now().year,
-                           current_month=datetime.now().month,
-                           is_hr_manager=is_hr_manager,
-                           hr_permissions=hr_permissions)
+    """Redirect to React HR page."""
+    return redirect('/app/hr')
 
 
 @events_bp.route('/api/events', methods=['GET'])

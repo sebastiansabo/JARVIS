@@ -414,18 +414,15 @@ def index():
 @app.route('/apps')
 @login_required
 def apps_page():
-    """Show applications landing page (requires main app access)."""
-    if not current_user.can_access_main_apps():
-        flash('You do not have access to the Applications page.', 'warning')
-        return redirect(url_for('profile.profile_page'))
-    return render_template('core/apps.html')
+    """Redirect to React dashboard."""
+    return redirect('/app/dashboard')
 
 
 @app.route('/guide')
 @login_required
 def user_guide():
-    """User guide and documentation page."""
-    return render_template('core/guide.html')
+    """Redirect to React dashboard."""
+    return redirect('/app/dashboard')
 
 
 @app.route('/api/structure')
@@ -457,18 +454,8 @@ def get_data():
 @app.route('/settings')
 @login_required
 def settings():
-    """Settings page for managing users and permissions."""
-    if not current_user.can_access_settings:
-        flash('You do not have permission to access settings.', 'error')
-        return redirect(url_for('index'))
-
-    can_edit_hr_settings = False
-    role_id = getattr(current_user, 'role_id', None)
-    if role_id:
-        perm = check_permission_v2(role_id, 'hr', 'settings', 'edit')
-        can_edit_hr_settings = perm.get('has_permission', False)
-
-    return render_template('core/settings.html', can_edit_hr_settings=can_edit_hr_settings)
+    """Redirect to React settings."""
+    return redirect('/app/settings')
 
 
 # ============== React SPA Routes ==============

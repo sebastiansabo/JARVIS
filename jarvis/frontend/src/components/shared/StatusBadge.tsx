@@ -22,11 +22,12 @@ const statusColors: Record<string, string> = {
 }
 
 interface StatusBadgeProps {
-  status: string
+  status: string | undefined | null
   className?: string
 }
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
+  if (!status) return null
   const colorClass = statusColors[status.toLowerCase()] ?? statusColors.pending
   return (
     <Badge variant="secondary" className={cn('font-normal', colorClass, className)}>

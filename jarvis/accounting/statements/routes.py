@@ -10,7 +10,7 @@ import io
 from collections import defaultdict
 from functools import wraps
 from datetime import date
-from flask import request, jsonify, render_template, Response
+from flask import request, jsonify, redirect, Response
 from flask_login import login_required, current_user
 
 from . import statements_bp
@@ -172,22 +172,22 @@ def _validate_upload_files(files: list) -> tuple[bool, str, int]:
 @statements_bp.route('/')
 @login_required
 def index():
-    """Bank statement upload and review page."""
-    return render_template('index.html')
+    """Redirect to React statements page."""
+    return redirect('/app/statements')
 
 
 @statements_bp.route('/mappings')
 @login_required
 def mappings_page():
-    """Vendor mappings management page."""
-    return render_template('mappings.html')
+    """Redirect to React statements page."""
+    return redirect('/app/statements')
 
 
 @statements_bp.route('/files')
 @login_required
 def files_page():
-    """Statement files management page."""
-    return render_template('files.html')
+    """Redirect to React statements page."""
+    return redirect('/app/statements')
 
 
 # ============== UPLOAD & PARSE ==============

@@ -18,11 +18,8 @@ from . import bugetare_bp
 @bugetare_bp.route('/bulk')
 @login_required
 def bulk_processor():
-    """Bulk invoice processor page for uploading and analyzing multiple invoices."""
-    if not current_user.can_view_invoices:
-        flash('You do not have permission to access the bulk processor.', 'error')
-        return redirect(url_for('add_invoice'))
-    return render_template('accounting/bugetare/bulk.html')
+    """Redirect to React accounting dashboard."""
+    return redirect('/app/accounting')
 
 
 # ============== API Routes ==============
