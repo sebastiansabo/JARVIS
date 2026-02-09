@@ -29,7 +29,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
@@ -139,13 +138,13 @@ export default function Accounting() {
   })
 
   const statusOptions = useMemo(
-    () => dropdownOptions.filter((d) => d.dropdown_type === 'invoice_status').map((d) => ({ value: d.value, label: d.label })),
+    () => dropdownOptions.filter((d) => d.dropdown_type === 'invoice_status').map((d) => ({ value: d.value, label: d.label, color: d.color })),
     [dropdownOptions],
   )
 
   const paymentOptions = useMemo(
     () =>
-      dropdownOptions.filter((d) => d.dropdown_type === 'payment_status').map((d) => ({ value: d.value, label: d.label })),
+      dropdownOptions.filter((d) => d.dropdown_type === 'payment_status').map((d) => ({ value: d.value, label: d.label, color: d.color })),
     [dropdownOptions],
   )
 
@@ -206,37 +205,44 @@ export default function Accounting() {
 
   // Build active columns with inline dropdowns for status/payment
   const activeCols = useMemo(() => {
+    const buildDropdown = (
+      options: { value: string; label: string; color: string | null }[],
+      field: string,
+    ) => (inv: Invoice) => {
+      const current = inv[field as keyof Invoice] as string
+      const currentOpt = options.find((o) => o.value === current)
+      return (
+        <Select
+          value={current}
+          onValueChange={(v) => updateFieldMutation.mutate({ id: inv.id, field, value: v })}
+        >
+          <SelectTrigger className="h-7 w-[130px] text-xs border-none bg-transparent shadow-none px-1.5">
+            <span className="flex items-center gap-1.5">
+              {currentOpt?.color && (
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: currentOpt.color }} />
+              )}
+              <span className="truncate">{currentOpt?.label ?? current}</span>
+            </span>
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                <span className="flex items-center gap-1.5">
+                  {o.color && (
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: o.color }} />
+                  )}
+                  {o.label}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )
+    }
+
     const overrides: Record<string, (inv: Invoice) => React.ReactNode> = {
-      status: (inv) => (
-        <Select
-          value={inv.status}
-          onValueChange={(v) => updateFieldMutation.mutate({ id: inv.id, field: 'status', value: v })}
-        >
-          <SelectTrigger className="h-7 w-[130px] text-xs border-none bg-transparent shadow-none">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {statusOptions.map((o) => (
-              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ),
-      payment_status: (inv) => (
-        <Select
-          value={inv.payment_status}
-          onValueChange={(v) => updateFieldMutation.mutate({ id: inv.id, field: 'payment_status', value: v })}
-        >
-          <SelectTrigger className="h-7 w-[130px] text-xs border-none bg-transparent shadow-none">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {paymentOptions.map((o) => (
-              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ),
+      status: buildDropdown(statusOptions, 'status'),
+      payment_status: buildDropdown(paymentOptions, 'payment_status'),
     }
     return visibleColumns
       .map((k) => columnDefMap.get(k))
