@@ -440,6 +440,11 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
   const hasUnallocSelected = selectedInvoices.some((i) => !i._hidden)
   const hasHiddenSelected = selectedInvoices.some((i) => i._hidden)
 
+  /** Invoice can be sent to accounting only if it has Type + Department (from override or mapping) */
+  const canSend = (inv: InvoiceRow) =>
+    !!(inv.type_override || inv.mapped_type_names?.length) &&
+    !!(inv.department_override || inv.mapped_department)
+
   const executeAction = () => {
     if (!confirmAction) return
     const { action, ids } = confirmAction
@@ -557,14 +562,22 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
         <div className="flex flex-wrap items-center gap-2 rounded border bg-muted/30 px-3 py-2">
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
 
-          {hasUnallocSelected && (
+          {hasUnallocSelected && (() => {
+            const sendable = selectedInvoices.filter((i) => !i._hidden && canSend(i))
+            const unsendable = selectedInvoices.filter((i) => !i._hidden && !canSend(i))
+            return (
             <>
-              <Button size="sm" onClick={() => setConfirmAction({
+              <Button size="sm" disabled={sendable.length === 0} onClick={() => setConfirmAction({
                 action: 'send',
-                ids: selectedInvoices.filter((i) => !i._hidden).map((i) => i.id),
+                ids: sendable.map((i) => i.id),
               })}>
-                <Send className="mr-1 h-3 w-3" /> Send to Module
+                <Send className="mr-1 h-3 w-3" /> Send to Module{sendable.length > 0 ? ` (${sendable.length})` : ''}
               </Button>
+              {unsendable.length > 0 && (
+                <span className="text-xs text-amber-600 dark:text-amber-400">
+                  {unsendable.length} missing Type/Dept
+                </span>
+              )}
               <Button size="sm" variant="outline" onClick={() => setConfirmAction({
                 action: 'hide',
                 ids: selectedInvoices.filter((i) => !i._hidden).map((i) => i.id),
@@ -578,7 +591,8 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                 <Trash2 className="mr-1 h-3 w-3" /> Delete
               </Button>
             </>
-          )}
+            )
+          })()}
           {hasHiddenSelected && (
             <Button size="sm" variant="outline" onClick={() => setConfirmAction({
               action: 'restore-hidden',
@@ -675,7 +689,8 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                             size="icon"
                             variant="ghost"
                             className="h-7 w-7 text-green-600 dark:text-green-400"
-                            title="Send to Module"
+                            title={canSend(inv) ? 'Send to Module' : 'Set Type and Department before sending'}
+                            disabled={!canSend(inv)}
                             onClick={() => setConfirmAction({ action: 'send', ids: [inv.id] })}
                           >
                             <Send className="h-3.5 w-3.5" />
@@ -916,64 +931,57 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
               </div>
 
               {/* Department 1 */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">Department</Label>
-                  {departments.length > 0 ? (
-                    <Select
-                      value={overrides.department_override || '__default__'}
-                      onValueChange={(v) => setOverrides((o) => ({
-                        ...o,
-                        department_override: v === '__default__' ? '' : v,
-                        subdepartment_override: '',
-                      }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__default__">-- Use Mapping Default --</SelectItem>
-                        {departments.map((d) => (
-                          <SelectItem key={d} value={d}>{d}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      value={overrides.department_override}
-                      onChange={(e) => setOverrides((o) => ({ ...o, department_override: e.target.value }))}
-                      placeholder="Department"
-                    />
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Subdepartment</Label>
-                  {subdepartments1.length > 0 ? (
-                    <Select
-                      value={overrides.subdepartment_override || '__default__'}
-                      onValueChange={(v) => setOverrides((o) => ({
-                        ...o,
-                        subdepartment_override: v === '__default__' ? '' : v,
-                      }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__default__">-- Use Mapping Default --</SelectItem>
-                        {subdepartments1.map((s) => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      value={overrides.subdepartment_override}
-                      onChange={(e) => setOverrides((o) => ({ ...o, subdepartment_override: e.target.value }))}
-                      placeholder="Subdepartment"
-                    />
-                  )}
-                </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Department Override</Label>
+                {departments.length > 0 ? (
+                  <Select
+                    value={overrides.department_override || '__default__'}
+                    onValueChange={(v) => setOverrides((o) => ({
+                      ...o,
+                      department_override: v === '__default__' ? '' : v,
+                      subdepartment_override: '',
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__default__">-- Use Mapping Default --</SelectItem>
+                      {departments.map((d) => (
+                        <SelectItem key={d} value={d}>{d}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={overrides.department_override}
+                    onChange={(e) => setOverrides((o) => ({ ...o, department_override: e.target.value }))}
+                    placeholder="Department"
+                  />
+                )}
+                <p className="text-[11px] text-muted-foreground">Leave empty to use the supplier mapping default</p>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs">Subdepartment Override</Label>
+                <Select
+                  value={overrides.subdepartment_override || '__default__'}
+                  onValueChange={(v) => setOverrides((o) => ({
+                    ...o,
+                    subdepartment_override: v === '__default__' ? '' : v,
+                  }))}
+                  disabled={!overrides.department_override || subdepartments1.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default__">-- Use Mapping Default --</SelectItem>
+                    {subdepartments1.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Split between two departments */}
@@ -993,14 +1001,19 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                     }
                   }}
                 />
-                <Label htmlFor="split-dept" className="text-xs font-normal cursor-pointer">
-                  Split between two departments
-                </Label>
+                <div>
+                  <Label htmlFor="split-dept" className="text-xs font-normal cursor-pointer">
+                    Split between two departments
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    When enabled, the invoice will be sent to Accounting without auto-allocation
+                  </p>
+                </div>
               </div>
 
               {/* Department 2 (conditional) */}
               {splitDept && (
-                <div className="grid grid-cols-2 gap-3">
+                <>
                   <div className="space-y-1">
                     <Label className="text-xs">Department 2</Label>
                     {departments.length > 0 ? (
@@ -1032,33 +1045,26 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Subdepartment 2</Label>
-                    {subdepartments2.length > 0 ? (
-                      <Select
-                        value={overrides.subdepartment_override_2 || '__default__'}
-                        onValueChange={(v) => setOverrides((o) => ({
-                          ...o,
-                          subdepartment_override_2: v === '__default__' ? '' : v,
-                        }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__default__">-- Select --</SelectItem>
-                          {subdepartments2.map((s) => (
-                            <SelectItem key={s} value={s}>{s}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        value={overrides.subdepartment_override_2}
-                        onChange={(e) => setOverrides((o) => ({ ...o, subdepartment_override_2: e.target.value }))}
-                        placeholder="Subdepartment 2"
-                      />
-                    )}
+                    <Select
+                      value={overrides.subdepartment_override_2 || '__default__'}
+                      onValueChange={(v) => setOverrides((o) => ({
+                        ...o,
+                        subdepartment_override_2: v === '__default__' ? '' : v,
+                      }))}
+                      disabled={!overrides.department_override_2 || subdepartments2.length === 0}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__default__">-- Select --</SelectItem>
+                        {subdepartments2.map((s) => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                </div>
+                </>
               )}
             </div>
           )}
