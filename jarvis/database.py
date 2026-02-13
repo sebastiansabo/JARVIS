@@ -18,13 +18,13 @@ if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is required. Set it to your PostgreSQL connection string.")
 
 # Connection pool configuration
-# DigitalOcean managed DB limit: 22 connections
-# 3 Gunicorn workers × 6 max = 18 connections (4 reserved for admin/health)
+# DigitalOcean managed DB limit: 47 connections (Basic 1vCPU/2GB)
+# 3 Gunicorn workers × 8 max = 24 connections (~50% of limit, rest for admin/health/scheduler)
 _connection_pool = None
 _pool_lock = threading.Lock()
 
 POOL_MIN_CONN = int(os.environ.get('DB_POOL_MIN_CONN', '2'))
-POOL_MAX_CONN = int(os.environ.get('DB_POOL_MAX_CONN', '6'))
+POOL_MAX_CONN = int(os.environ.get('DB_POOL_MAX_CONN', '8'))
 POOL_GETCONN_TIMEOUT = int(os.environ.get('DB_POOL_TIMEOUT', '10'))
 
 
@@ -182,20 +182,33 @@ def refresh_connection_pool():
                 pass
 
 
+_ping_cache = {'ok': False, 'ts': 0}
+
 def ping_db():
     """Ping the database to keep connections alive.
 
+    Caches result for 5 seconds to avoid pool churn from frequent health checks
+    (3 workers × 10s interval = checks every ~3s).
+
     Returns True if successful, False otherwise.
     """
+    import time
+    now = time.time()
+    if _ping_cache['ok'] and (now - _ping_cache['ts']) < 5:
+        return True
+
     try:
         conn = get_db()
         try:
             with conn.cursor() as cur:
                 cur.execute('SELECT 1')
+            _ping_cache['ok'] = True
+            _ping_cache['ts'] = now
             return True
         finally:
             release_db(conn)
     except Exception:
+        _ping_cache['ok'] = False
         return False
 
 
@@ -225,14 +238,28 @@ def init_db():
 
     Delegates to migrations.init_schema.create_schema() which contains
     all CREATE TABLE, ALTER TABLE, CREATE INDEX, and INSERT statements.
-    """
-    from migrations.init_schema import create_schema
 
+    Skips if schema already exists (checks for 'invoices' table) to avoid
+    running ~100 SQL statements on every worker startup.
+    """
     conn = get_db()
     cursor = get_cursor(conn)
     try:
+        # Quick check: if core table exists, schema is already initialized
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'invoices'
+            )
+        """)
+        if cursor.fetchone()['exists']:
+            logger.info('Database schema already initialized — skipping init_db()')
+            return
+
+        from migrations.init_schema import create_schema
         create_schema(conn, cursor)
         conn.commit()
+        logger.info('Database schema initialized successfully')
     finally:
         release_db(conn)
 

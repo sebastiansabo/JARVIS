@@ -125,17 +125,23 @@ if not os.environ.get('TESTING'):
 @app.after_request
 def add_cache_headers(response):
     """Add Cache-Control and ETag headers for better caching."""
-    import hashlib
 
+    # Long-term cache for versioned static assets (Vite adds content hash to filenames)
+    if request.path.startswith('/assets/'):
+        response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        return response
+
+    # ETag for JSON responses — only hash if client sends If-None-Match
     if response.content_type and 'application/json' in response.content_type:
         if response.status_code == 200 and response.data:
-            etag = hashlib.md5(response.data).hexdigest()
-            response.headers['ETag'] = f'"{etag}"'
-
             if_none_match = request.headers.get('If-None-Match')
-            if if_none_match and if_none_match == f'"{etag}"':
-                response.status_code = 304
-                response.data = b''
+            if if_none_match:
+                import hashlib
+                etag = hashlib.md5(response.data).hexdigest()
+                response.headers['ETag'] = f'"{etag}"'
+                if if_none_match == f'"{etag}"':
+                    response.status_code = 304
+                    response.data = b''
 
     if request.path == '/login' and response.status_code == 200:
         response.headers['Cache-Control'] = 'private, max-age=3600'

@@ -42,7 +42,7 @@ WORKDIR /app/jarvis
 EXPOSE 8080
 
 # Gunicorn: 3 workers × 3 threads = 9 concurrent requests
-# DB pool: 3 workers × 6 max = 18 connections (DO limit: 22, 4 reserved for admin)
+# DB pool: 3 workers × 8 max = 24 connections (DO limit: 47, rest for admin/health/scheduler)
 # Timeout: 120s request, 30s graceful shutdown, 5s keep-alive
-# Worker recycling: every ~2000 requests (high to reduce connection drops)
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "3", "--threads", "3", "--worker-class", "gthread", "--timeout", "120", "--graceful-timeout", "30", "--keep-alive", "5", "--max-requests", "2000", "--max-requests-jitter", "200", "app:app"]
+# Worker recycling: every ~1000 requests with jitter for memory leak prevention
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "3", "--threads", "3", "--worker-class", "gthread", "--timeout", "120", "--graceful-timeout", "30", "--keep-alive", "5", "--max-requests", "1000", "--max-requests-jitter", "200", "app:app"]
