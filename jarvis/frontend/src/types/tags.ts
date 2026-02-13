@@ -21,9 +21,29 @@ export interface Tag {
   created_by?: number
 }
 
+export interface RuleCondition {
+  field: string
+  operator: string
+  value: string
+}
+
+export interface AutoTagRule {
+  id: number
+  name: string
+  entity_type: string
+  tag_id: number
+  tag_name?: string
+  tag_color?: string
+  conditions: RuleCondition[]
+  is_active: boolean
+  run_on_create: boolean
+  created_by?: number
+  created_by_name?: string
+  created_at?: string
+}
+
 export interface EntityTag {
   id: number
-  tag_id: number
   name: string
   color: string | null
   group_name?: string

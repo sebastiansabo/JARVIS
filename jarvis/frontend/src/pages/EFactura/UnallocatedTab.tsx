@@ -49,6 +49,7 @@ import { efacturaApi } from '@/api/efactura'
 import { organizationApi } from '@/api/organization'
 import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
+import { TagFilter } from '@/components/shared/TagFilter'
 import { tagsApi } from '@/api/tags'
 import type { EFacturaInvoice, EFacturaInvoiceFilters } from '@/types/efactura'
 
@@ -298,6 +299,7 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
   const [savedLimit, setSavedLimit] = usePersistedState('efactura-page-size', 50)
   const [filters, setFilters] = useState<EFacturaInvoiceFilters>({ page: 1, limit: savedLimit })
   const [search, setSearch] = useState('')
+  const [filterTagIds, setFilterTagIds] = useState<number[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [confirmAction, setConfirmAction] = useState<{ action: string; ids: number[] } | null>(null)
   const [viewInvoice, setViewInvoice] = useState<InvoiceRow | null>(null)
@@ -431,6 +433,15 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
     enabled: efacturaIds.length > 0,
   })
 
+  // Apply tag filter client-side
+  const displayedInvoices = useMemo(() => {
+    if (filterTagIds.length === 0) return invoices
+    return invoices.filter((inv) => {
+      const tags = efacturaTagsMap[String(inv.id)] ?? []
+      return tags.some((t) => filterTagIds.includes(t.id))
+    })
+  }, [invoices, filterTagIds, efacturaTagsMap])
+
   const toggleSelect = (id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -441,11 +452,11 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
   }
 
   const toggleAll = () => {
-    if (selectedIds.size === invoices.length) setSelectedIds(new Set())
-    else setSelectedIds(new Set(invoices.map((i) => i.id)))
+    if (selectedIds.size === displayedInvoices.length) setSelectedIds(new Set())
+    else setSelectedIds(new Set(displayedInvoices.map((i) => i.id)))
   }
 
-  const selectedInvoices = invoices.filter((i) => selectedIds.has(i.id))
+  const selectedInvoices = displayedInvoices.filter((i) => selectedIds.has(i.id))
   const hasUnallocSelected = selectedInvoices.some((i) => !i._hidden)
   const hasHiddenSelected = selectedInvoices.some((i) => i._hidden)
 
@@ -573,6 +584,8 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
           className="w-[200px]"
         />
 
+        <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
+
         <div className="ml-auto">
           <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
         </div>
@@ -682,7 +695,7 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                   </td>
                 </tr>
               )}
-              {invoices.map((inv) => (
+              {displayedInvoices.map((inv) => (
                 <tr
                   key={inv.id}
                   className={`border-b hover:bg-muted/30 ${inv._hidden ? 'opacity-60' : ''}`}

@@ -200,7 +200,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
             >
               <div className="flex flex-wrap items-center gap-1 min-h-[32px] rounded-md border px-3 py-1.5 cursor-pointer hover:bg-accent/50">
                 {invoiceTags.length > 0 ? (
-                  invoiceTags.map((t) => <TagBadge key={t.tag_id} tag={t} />)
+                  invoiceTags.map((t) => <TagBadge key={t.id} tag={t} />)
                 ) : (
                   <span className="text-xs text-muted-foreground">Click to add tags...</span>
                 )}

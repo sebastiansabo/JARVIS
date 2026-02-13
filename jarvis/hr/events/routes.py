@@ -585,6 +585,13 @@ def api_create_event():
         created_by=current_user.id
     )
 
+    # Auto-tag rules (fire-and-forget)
+    try:
+        from core.tags.auto_tag_service import AutoTagService
+        AutoTagService().evaluate_rules_for_entity('event', event_id, current_user.id)
+    except Exception:
+        pass
+
     return jsonify({'success': True, 'id': event_id})
 
 

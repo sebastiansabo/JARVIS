@@ -112,6 +112,13 @@ def submit_invoice():
         except ImportError:
             pass
 
+        # Auto-tag rules (fire-and-forget)
+        try:
+            from core.tags.auto_tag_service import AutoTagService
+            AutoTagService().evaluate_rules_for_entity('invoice', invoice_id, current_user.id)
+        except Exception:
+            pass
+
         _log_event('invoice_created',
                    f'Created invoice {data["invoice_number"]} from {data["supplier"]}',
                    entity_type='invoice', entity_id=invoice_id)

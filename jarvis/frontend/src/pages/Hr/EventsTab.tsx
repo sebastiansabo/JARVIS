@@ -24,6 +24,7 @@ import { hrApi } from '@/api/hr'
 import { toast } from 'sonner'
 import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
+import { TagFilter } from '@/components/shared/TagFilter'
 import { tagsApi } from '@/api/tags'
 import { cn } from '@/lib/utils'
 import type { HrEvent } from '@/types/hr'
@@ -40,6 +41,7 @@ function EventsList() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const [filterTagIds, setFilterTagIds] = useState<number[]>([])
   const [selected, setSelected] = useState<number[]>([])
   const [editEvent, setEditEvent] = useState<HrEvent | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -69,6 +71,15 @@ function EventsList() {
     enabled: eventIds.length > 0,
   })
 
+  // Apply tag filter client-side
+  const displayedEvents = useMemo(() => {
+    if (filterTagIds.length === 0) return filtered
+    return filtered.filter((e) => {
+      const tags = eventTagsMap[String(e.id)] ?? []
+      return tags.some((t) => filterTagIds.includes(t.id))
+    })
+  }, [filtered, filterTagIds, eventTagsMap])
+
   const deleteMutation = useMutation({
     mutationFn: (ids: number[]) => hrApi.bulkDeleteEvents(ids),
     onSuccess: () => {
@@ -80,8 +91,8 @@ function EventsList() {
     onError: () => toast.error('Delete failed'),
   })
 
-  const allSelected = filtered.length > 0 && filtered.every((e) => selected.includes(e.id))
-  const someSelected = filtered.some((e) => selected.includes(e.id))
+  const allSelected = displayedEvents.length > 0 && displayedEvents.every((e) => selected.includes(e.id))
+  const someSelected = displayedEvents.some((e) => selected.includes(e.id))
 
   const toggleSelect = (id: number) =>
     setSelected((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
@@ -93,7 +104,8 @@ function EventsList() {
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input className="pl-8" placeholder="Search events..." value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <span className="text-xs text-muted-foreground">{filtered.length} events</span>
+        <span className="text-xs text-muted-foreground">{displayedEvents.length} events</span>
+        <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
         <div className="ml-auto flex items-center gap-2">
           {selected.length > 0 && (
             <>
@@ -125,7 +137,7 @@ function EventsList() {
             <div key={i} className="h-10 animate-pulse rounded bg-muted mb-2" />
           ))}
         </Card>
-      ) : filtered.length === 0 ? (
+      ) : displayedEvents.length === 0 ? (
         <EmptyState icon={<CalendarDays className="h-8 w-8" />} title="No events" description="Create your first event." />
       ) : (
         <Card>
@@ -138,7 +150,7 @@ function EventsList() {
                       checked={allSelected ? true : someSelected ? 'indeterminate' : false}
                       onCheckedChange={() => {
                         if (allSelected) setSelected([])
-                        else setSelected(filtered.map((e) => e.id))
+                        else setSelected(displayedEvents.map((e) => e.id))
                       }}
                     />
                   </TableHead>
@@ -154,7 +166,7 @@ function EventsList() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((ev) => (
+                {displayedEvents.map((ev) => (
                   <TableRow key={ev.id} className={cn(selected.includes(ev.id) && 'bg-muted/50')}>
                     <TableCell>
                       <Checkbox checked={selected.includes(ev.id)} onCheckedChange={() => toggleSelect(ev.id)} />

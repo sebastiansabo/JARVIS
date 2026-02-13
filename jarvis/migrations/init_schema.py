@@ -942,6 +942,24 @@ def create_schema(conn, cursor):
                 ('Urgent', NULL, '#dc3545', TRUE, 0)
         ''')
 
+    # Auto-tag rules — rule-based automatic tag assignment
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS auto_tag_rules (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(200) NOT NULL,
+            entity_type VARCHAR(30) NOT NULL,
+            tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            conditions JSONB NOT NULL DEFAULT '[]',
+            is_active BOOLEAN DEFAULT TRUE,
+            run_on_create BOOLEAN DEFAULT TRUE,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_auto_tag_rules_entity_type ON auto_tag_rules(entity_type) WHERE is_active = TRUE')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_auto_tag_rules_tag ON auto_tag_rules(tag_id)')
+
     # VAT rates table - configurable VAT percentages
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS vat_rates (

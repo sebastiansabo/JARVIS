@@ -44,6 +44,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
+import { TagFilter } from '@/components/shared/TagFilter'
 import { invoicesApi } from '@/api/invoices'
 import { organizationApi } from '@/api/organization'
 import { settingsApi } from '@/api/settings'
@@ -81,6 +82,7 @@ export default function Accounting() {
   const [deleteIds, setDeleteIds] = useState<number[] | null>(null)
   const [permanentDeleteIds, setPermanentDeleteIds] = useState<number[] | null>(null)
   const [sort, setSort] = usePersistedState<SortState | null>('accounting-sort', null)
+  const [filterTagIds, setFilterTagIds] = useState<number[]>([])
 
   const {
     filters,
@@ -286,6 +288,12 @@ export default function Accounting() {
           inv.id.toString().includes(q),
       )
     }
+    if (filterTagIds.length > 0) {
+      list = list.filter((inv) => {
+        const tags = entityTagsMap[String(inv.id)] ?? []
+        return tags.some((t) => filterTagIds.includes(t.id))
+      })
+    }
     if (sort) {
       const colDef = columnDefMap.get(sort.key)
       if (colDef?.sortValue) {
@@ -301,7 +309,7 @@ export default function Accounting() {
       }
     }
     return list
-  }, [invoices, binInvoices, activeTab, search, sort])
+  }, [invoices, binInvoices, activeTab, search, sort, filterTagIds, entityTagsMap])
 
   const totalRon = useMemo(
     () => companySummary.reduce((sum, c) => sum + Number(c.total_value_ron ?? 0), 0),
@@ -432,6 +440,7 @@ export default function Accounting() {
             endDate={filters.end_date ?? ''}
             onChange={(s, e) => handleFilterChange({ ...filterValues, start_date: s, end_date: e })}
           />
+          <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
           <div className="ml-auto flex items-center gap-2">
             <SearchInput
               value={search}

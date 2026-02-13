@@ -36,7 +36,7 @@ export function TagPicker({
     staleTime: 30_000,
   })
 
-  const currentTagIds = useMemo(() => new Set(currentTags.map((t) => t.tag_id)), [currentTags])
+  const currentTagIds = useMemo(() => new Set(currentTags.map((t) => t.id)), [currentTags])
 
   const filtered = useMemo(() => {
     if (!search) return allTags

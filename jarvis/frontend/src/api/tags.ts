@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { TagGroup, Tag, EntityTag } from '@/types/tags'
+import type { TagGroup, Tag, EntityTag, AutoTagRule } from '@/types/tags'
 
 export const tagsApi = {
   // Tag groups
@@ -53,4 +53,18 @@ export const tagsApi = {
       tag_id: tagId,
       action,
     }),
+
+  // Auto-tag rules
+  getAutoTagRules: (entityType?: string) =>
+    api.get<AutoTagRule[]>(`/api/auto-tag-rules${entityType ? `?entity_type=${entityType}` : ''}`),
+  createAutoTagRule: (data: Partial<AutoTagRule>) =>
+    api.post<{ success: boolean; id: number }>('/api/auto-tag-rules', data),
+  updateAutoTagRule: (id: number, data: Partial<AutoTagRule>) =>
+    api.put<{ success: boolean }>(`/api/auto-tag-rules/${id}`, data),
+  deleteAutoTagRule: (id: number) =>
+    api.delete<{ success: boolean }>(`/api/auto-tag-rules/${id}`),
+  runAutoTagRule: (id: number) =>
+    api.post<{ success: boolean; matched: number; tagged: number }>(`/api/auto-tag-rules/${id}/run`, {}),
+  getEntityFields: () =>
+    api.get<Record<string, string[]>>('/api/auto-tag-rules/entity-fields'),
 }

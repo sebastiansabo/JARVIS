@@ -30,6 +30,7 @@ import { toast } from 'sonner'
 import { cn, usePersistedState } from '@/lib/utils'
 import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
+import { TagFilter } from '@/components/shared/TagFilter'
 import { tagsApi } from '@/api/tags'
 import type { EntityTag } from '@/types/tags'
 import type { Transaction, TransactionFilters } from '@/types/statements'
@@ -75,6 +76,7 @@ export default function TransactionsTab() {
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState('newest')
   const [hideIgnored, setHideIgnored] = useState(false)
+  const [filterTagIds, setFilterTagIds] = useState<number[]>([])
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = usePersistedState('statements-page-size', 100)
 
@@ -130,6 +132,15 @@ export default function TransactionsTab() {
     queryFn: () => tagsApi.getEntityTagsBulk('transaction', txnIds),
     enabled: txnIds.length > 0,
   })
+
+  // Apply tag filter client-side
+  const displayedTxns = useMemo(() => {
+    if (filterTagIds.length === 0) return visibleTxns
+    return visibleTxns.filter((t) => {
+      const tags = txnTagsMap[String(t.id)] ?? []
+      return tags.some((tag) => filterTagIds.includes(tag.id))
+    })
+  }, [visibleTxns, filterTagIds, txnTagsMap])
 
   // Mutations
   const updateStatusMutation = useMutation({
@@ -224,12 +235,12 @@ export default function TransactionsTab() {
     })
   }, [])
 
-  const allSelected = visibleTxns.length > 0 && visibleTxns.every((t) => selected.has(t.id))
-  const someSelected = visibleTxns.some((t) => selected.has(t.id))
+  const allSelected = displayedTxns.length > 0 && displayedTxns.every((t) => selected.has(t.id))
+  const someSelected = displayedTxns.some((t) => selected.has(t.id))
 
   const toggleSelectAll = () => {
     if (allSelected) setSelected(new Set())
-    else setSelected(new Set(visibleTxns.map((t) => t.id)))
+    else setSelected(new Set(displayedTxns.map((t) => t.id)))
   }
 
   const clearFilters = () => {
@@ -244,7 +255,7 @@ export default function TransactionsTab() {
   }
 
   // Can merge: 2+ selected, all pending
-  const selectedTxns = visibleTxns.filter((t) => selected.has(t.id))
+  const selectedTxns = displayedTxns.filter((t) => selected.has(t.id))
   const canMerge = selectedTxns.length >= 2 && selectedTxns.every((t) => t.status === 'pending')
 
   const totalPages = Math.ceil(totalCount / pageSize)
@@ -321,6 +332,8 @@ export default function TransactionsTab() {
           {hideIgnored ? 'Showing non-ignored' : 'Hide ignored'}
         </Button>
 
+        <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
+
         <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
       </div>
 
@@ -362,7 +375,7 @@ export default function TransactionsTab() {
             ))}
           </CardContent>
         </Card>
-      ) : visibleTxns.length === 0 ? (
+      ) : displayedTxns.length === 0 ? (
         <EmptyState
           icon={<ArrowLeftRight className="h-8 w-8" />}
           title="No transactions found"
@@ -393,7 +406,7 @@ export default function TransactionsTab() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleTxns.map((txn) => (
+                {displayedTxns.map((txn) => (
                   <TransactionRow
                     key={txn.id}
                     txn={txn}
@@ -421,7 +434,7 @@ export default function TransactionsTab() {
 
           {/* Pagination */}
           <div className="flex items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground">
-            <span>{visibleTxns.length} of {totalCount} transactions</span>
+            <span>{displayedTxns.length} of {totalCount} transactions</span>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-muted-foreground">Rows</span>

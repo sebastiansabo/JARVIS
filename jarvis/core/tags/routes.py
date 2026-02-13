@@ -6,9 +6,12 @@ from flask import jsonify, request
 from flask_login import login_required, current_user
 
 from . import tags_bp
-from .repositories import TagRepository
+from .repositories import TagRepository, AutoTagRepository
+from .auto_tag_service import AutoTagService, ENTITY_FIELDS
 
 _tag_repo = TagRepository()
+_auto_tag_repo = AutoTagRepository()
+_auto_tag_service = AutoTagService()
 
 VALID_ENTITY_TYPES = {'invoice', 'efactura_invoice', 'transaction', 'employee', 'event', 'event_bonus'}
 
@@ -229,3 +232,81 @@ def api_bulk_entity_tags():
             return jsonify({'success': False, 'error': 'Tag not found'}), 404
         count = _tag_repo.bulk_add_entity_tags(tag_id, entity_type, entity_ids, current_user.id)
     return jsonify({'success': True, 'count': count})
+
+
+# ============== AUTO-TAG RULE ENDPOINTS ==============
+
+@tags_bp.route('/api/auto-tag-rules', methods=['GET'])
+@login_required
+def api_get_auto_tag_rules():
+    entity_type = request.args.get('entity_type')
+    rules = _auto_tag_repo.get_rules(entity_type=entity_type, active_only=False)
+    return jsonify(rules)
+
+
+@tags_bp.route('/api/auto-tag-rules', methods=['POST'])
+@login_required
+def api_create_auto_tag_rule():
+    if not current_user.can_access_settings:
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    data = request.get_json()
+    name = (data.get('name') or '').strip()
+    entity_type = data.get('entity_type', '')
+    tag_id = data.get('tag_id')
+    conditions = data.get('conditions', [])
+    if not name:
+        return jsonify({'success': False, 'error': 'Name is required'}), 400
+    if entity_type not in VALID_ENTITY_TYPES:
+        return jsonify({'success': False, 'error': 'Invalid entity_type'}), 400
+    if not tag_id:
+        return jsonify({'success': False, 'error': 'tag_id is required'}), 400
+    rule_id = _auto_tag_repo.create_rule(
+        name=name,
+        entity_type=entity_type,
+        tag_id=tag_id,
+        conditions=conditions,
+        run_on_create=data.get('run_on_create', True),
+        created_by=current_user.id,
+    )
+    return jsonify({'success': True, 'id': rule_id})
+
+
+@tags_bp.route('/api/auto-tag-rules/<int:rule_id>', methods=['PUT'])
+@login_required
+def api_update_auto_tag_rule(rule_id):
+    if not current_user.can_access_settings:
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    data = request.get_json()
+    allowed = {k: v for k, v in data.items()
+               if k in ('name', 'entity_type', 'tag_id', 'conditions', 'is_active', 'run_on_create')}
+    if not allowed:
+        return jsonify({'success': False, 'error': 'No valid fields'}), 400
+    updated = _auto_tag_repo.update_rule(rule_id, **allowed)
+    if updated:
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Rule not found'}), 404
+
+
+@tags_bp.route('/api/auto-tag-rules/<int:rule_id>', methods=['DELETE'])
+@login_required
+def api_delete_auto_tag_rule(rule_id):
+    if not current_user.can_access_settings:
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    if _auto_tag_repo.delete_rule(rule_id):
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Rule not found'}), 404
+
+
+@tags_bp.route('/api/auto-tag-rules/<int:rule_id>/run', methods=['POST'])
+@login_required
+def api_run_auto_tag_rule(rule_id):
+    if not current_user.can_access_settings:
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    result = _auto_tag_service.run_rule(rule_id, current_user.id)
+    return jsonify({'success': True, **result})
+
+
+@tags_bp.route('/api/auto-tag-rules/entity-fields', methods=['GET'])
+@login_required
+def api_get_entity_fields():
+    return jsonify(ENTITY_FIELDS)

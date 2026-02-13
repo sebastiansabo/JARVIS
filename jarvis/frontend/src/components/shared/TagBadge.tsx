@@ -68,7 +68,7 @@ export const TagBadgeList = forwardRef<HTMLDivElement, TagBadgeListProps>(
     return (
       <div ref={ref} className={cn('flex flex-wrap items-center gap-1 cursor-pointer', className)} {...rest}>
         {visible.map((t) => (
-          <TagBadge key={t.tag_id} tag={t} />
+          <TagBadge key={t.id} tag={t} />
         ))}
         {overflow > 0 && (
           <span className="text-[11px] text-muted-foreground">+{overflow}</span>
