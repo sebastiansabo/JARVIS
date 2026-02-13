@@ -43,6 +43,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
 import { efacturaApi } from '@/api/efactura'
 import { organizationApi } from '@/api/organization'
 import type { EFacturaInvoice, EFacturaInvoiceFilters } from '@/types/efactura'
@@ -155,17 +156,12 @@ const columnDefs: ColumnDef[] = [
     label: 'Kod Konto',
     render: (inv) => <span className="font-mono text-xs">{inv.mapped_kod_konto || '—'}</span>,
   },
-  {
-    key: 'status',
-    label: 'Status',
-    render: (inv) => <StatusBadge status={inv.status} />,
-  },
 ]
 
 const columnDefMap = new Map(columnDefs.map((c) => [c.key, c]))
 
 const defaultColumns = [
-  'supplier', 'invoice_number', 'date', 'direction', 'amount', 'company', 'type', 'status',
+  'supplier', 'invoice_number', 'date', 'direction', 'amount', 'company', 'type',
 ]
 
 const STORAGE_KEY = 'efactura-unallocated-columns'
@@ -526,6 +522,18 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
         </div>
 
         <div className="space-y-1">
+          <Label className="text-xs">Period</Label>
+          <DatePresetSelect
+            startDate={filters.start_date ?? ''}
+            endDate={filters.end_date ?? ''}
+            onChange={(s, e) => {
+              setFilters((f) => ({ ...f, start_date: s || undefined, end_date: e || undefined, page: 1 }))
+              setSelectedIds(new Set())
+            }}
+          />
+        </div>
+
+        <div className="space-y-1">
           <Label className="text-xs">From</Label>
           <Input
             type="date"
@@ -751,29 +759,47 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
         </div>
       )}
 
-      {/* Pagination (unallocated only) */}
-      {pagination && pagination.total_pages > 1 && (
+      {/* Pagination */}
+      {pagination && (
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">
             Page {pagination.page} of {pagination.total_pages} ({pagination.total} invoices)
           </span>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!pagination.has_prev}
-              onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) - 1 }))}
-            >
-              Previous
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!pagination.has_next}
-              onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) + 1 }))}
-            >
-              Next
-            </Button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Rows</span>
+              <Select
+                value={String(filters.limit ?? 50)}
+                onValueChange={(v) => setFilters((f) => ({ ...f, limit: Number(v), page: 1 }))}
+              >
+                <SelectTrigger className="h-8 w-[70px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[25, 50, 100, 200].map((n) => (
+                    <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!pagination.has_prev}
+                onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) - 1 }))}
+              >
+                Previous
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!pagination.has_next}
+                onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) + 1 }))}
+              >
+                Next
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -825,9 +851,6 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
 
               <div className="text-muted-foreground">Direction</div>
               <div><StatusBadge status={viewInvoice.direction} /></div>
-
-              <div className="text-muted-foreground">Status</div>
-              <div><StatusBadge status={viewInvoice.status} /></div>
 
               <div className="col-span-2 mt-2 border-t pt-2" />
 

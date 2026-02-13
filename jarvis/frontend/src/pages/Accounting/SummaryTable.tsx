@@ -15,9 +15,9 @@ export function SummaryTable({ data, nameKey, label }: SummaryTableProps) {
     return <EmptyState title={`No ${label.toLowerCase()} data`} description="Try adjusting your filters." />
   }
 
-  const totalRon = data.reduce((sum, d) => sum + (d.total_value_ron ?? 0), 0)
-  const totalEur = data.reduce((sum, d) => sum + (d.total_value_eur ?? 0), 0)
-  const totalInvoices = data.reduce((sum, d) => sum + d.invoice_count, 0)
+  const totalRon = data.reduce((sum, d) => sum + Number(d.total_value_ron ?? 0), 0)
+  const totalEur = data.reduce((sum, d) => sum + Number(d.total_value_eur ?? 0), 0)
+  const totalInvoices = data.reduce((sum, d) => sum + Number(d.invoice_count ?? 0), 0)
 
   return (
     <Card>

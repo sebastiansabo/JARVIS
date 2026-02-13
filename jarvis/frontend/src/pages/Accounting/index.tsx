@@ -36,6 +36,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
+import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { invoicesApi } from '@/api/invoices'
@@ -264,12 +265,12 @@ export default function Accounting() {
   }, [invoices, binInvoices, activeTab, search])
 
   const totalRon = useMemo(
-    () => companySummary.reduce((sum, c) => sum + (c.total_value_ron ?? 0), 0),
+    () => companySummary.reduce((sum, c) => sum + Number(c.total_value_ron ?? 0), 0),
     [companySummary],
   )
 
   const totalEur = useMemo(
-    () => companySummary.reduce((sum, c) => sum + (c.total_value_eur ?? 0), 0),
+    () => companySummary.reduce((sum, c) => sum + Number(c.total_value_eur ?? 0), 0),
     [companySummary],
   )
 
@@ -387,6 +388,11 @@ export default function Accounting() {
       {(activeTab === 'invoices' || activeTab === 'bin') && (
         <div className="flex flex-wrap items-center gap-2">
           <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} />
+          <DatePresetSelect
+            startDate={filters.start_date ?? ''}
+            endDate={filters.end_date ?? ''}
+            onChange={(s, e) => handleFilterChange({ ...filterValues, start_date: s, end_date: e })}
+          />
           <div className="ml-auto flex items-center gap-2">
             <SearchInput
               value={search}

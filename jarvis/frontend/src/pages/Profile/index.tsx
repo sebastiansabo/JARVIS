@@ -18,6 +18,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
@@ -182,7 +183,7 @@ export default function Profile() {
 function InvoicesPanel() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const perPage = 25
+  const [perPage, setPerPage] = useState(25)
 
   const { data, isLoading } = useQuery({
     queryKey: ['profile', 'invoices', { search, page, perPage }],
@@ -272,9 +273,7 @@ function InvoicesPanel() {
               </Table>
             </div>
 
-            {totalPages > 1 && (
-              <Pagination page={page} totalPages={totalPages} total={total} perPage={perPage} onPageChange={setPage} />
-            )}
+            <Pagination page={page} totalPages={totalPages} total={total} perPage={perPage} onPageChange={setPage} onPerPageChange={(n) => { setPerPage(n); setPage(1) }} />
           </>
         )}
       </CardContent>
@@ -287,7 +286,7 @@ function InvoicesPanel() {
 function HrEventsPanel() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const perPage = 25
+  const [perPage, setPerPage] = useState(25)
 
   const { data, isLoading } = useQuery({
     queryKey: ['profile', 'hr-events', { search, page, perPage }],
@@ -362,9 +361,7 @@ function HrEventsPanel() {
               </TableBody>
             </Table>
 
-            {totalPages > 1 && (
-              <Pagination page={page} totalPages={totalPages} total={total} perPage={perPage} onPageChange={setPage} />
-            )}
+            <Pagination page={page} totalPages={totalPages} total={total} perPage={perPage} onPageChange={setPage} onPerPageChange={(n) => { setPerPage(n); setPage(1) }} />
           </>
         )}
       </CardContent>
@@ -376,7 +373,7 @@ function HrEventsPanel() {
 
 function ActivityPanel() {
   const [page, setPage] = useState(1)
-  const perPage = 30
+  const [perPage, setPerPage] = useState(25)
 
   const { data, isLoading } = useQuery({
     queryKey: ['profile', 'activity', { page, perPage }],
@@ -430,9 +427,7 @@ function ActivityPanel() {
               ))}
             </div>
 
-            {totalPages > 1 && (
-              <Pagination page={page} totalPages={totalPages} total={total} perPage={perPage} onPageChange={setPage} />
-            )}
+            <Pagination page={page} totalPages={totalPages} total={total} perPage={perPage} onPageChange={setPage} onPerPageChange={(n) => { setPerPage(n); setPage(1) }} />
           </>
         )}
       </CardContent>
@@ -462,12 +457,14 @@ function Pagination({
   total,
   perPage,
   onPageChange,
+  onPerPageChange,
 }: {
   page: number
   totalPages: number
   total: number
   perPage: number
   onPageChange: (p: number) => void
+  onPerPageChange?: (n: number) => void
 }) {
   const from = (page - 1) * perPage + 1
   const to = Math.min(page * perPage, total)
@@ -477,13 +474,33 @@ function Pagination({
       <span className="text-xs text-muted-foreground">
         {from}-{to} of {total}
       </span>
-      <div className="flex gap-1">
-        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
-          <ChevronRight className="h-4 w-4" />
-        </Button>
+      <div className="flex items-center gap-3">
+        {onPerPageChange && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Rows</span>
+            <Select
+              value={String(perPage)}
+              onValueChange={(v) => onPerPageChange(Number(v))}
+            >
+              <SelectTrigger className="h-8 w-[70px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[25, 50, 100, 200].map((n) => (
+                  <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        <div className="flex gap-1">
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </div>
   )

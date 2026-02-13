@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
 import { statementsApi } from '@/api/statements'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -71,7 +72,7 @@ export default function TransactionsTab() {
   const [sort, setSort] = useState('newest')
   const [hideIgnored, setHideIgnored] = useState(false)
   const [page, setPage] = useState(0)
-  const pageSize = 100
+  const [pageSize, setPageSize] = useState(100)
 
   // Selection
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -275,6 +276,11 @@ export default function TransactionsTab() {
           </SelectContent>
         </Select>
 
+        <DatePresetSelect
+          startDate={dateFrom}
+          endDate={dateTo}
+          onChange={(s, e) => { setDateFrom(s); setDateTo(e); setPage(0) }}
+        />
         <Input type="date" className="w-36" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }} />
         <Input type="date" className="w-36" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }} />
 
@@ -397,14 +403,32 @@ export default function TransactionsTab() {
           {/* Pagination */}
           <div className="flex items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground">
             <span>{visibleTxns.length} of {totalCount} transactions</span>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>
-                Prev
-              </Button>
-              <span>Page {page + 1} of {Math.max(1, totalPages)}</span>
-              <Button variant="outline" size="sm" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)}>
-                Next
-              </Button>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">Rows</span>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => { setPageSize(Number(v)); setPage(0) }}
+                >
+                  <SelectTrigger className="h-8 w-[70px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[25, 50, 100, 200].map((n) => (
+                      <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>
+                  Prev
+                </Button>
+                <span>Page {page + 1} of {Math.max(1, totalPages)}</span>
+                <Button variant="outline" size="sm" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)}>
+                  Next
+                </Button>
+              </div>
             </div>
           </div>
         </Card>
