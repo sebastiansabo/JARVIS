@@ -13,6 +13,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -23,6 +30,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { efacturaApi } from '@/api/efactura'
+import { organizationApi } from '@/api/organization'
 import type { SupplierMapping, SupplierType } from '@/types/efactura'
 
 type ViewMode = 'mappings' | 'types'
@@ -40,6 +48,7 @@ function MappingFormDialog({
   supplierTypes: SupplierType[]
 }) {
   const qc = useQueryClient()
+  const [company, setCompany] = useState('')
   const [form, setForm] = useState({
     partner_name: mapping?.partner_name ?? '',
     partner_cif: mapping?.partner_cif ?? '',
@@ -61,6 +70,30 @@ function MappingFormDialog({
       type_ids: f.type_ids.includes(id) ? f.type_ids.filter((t) => t !== id) : [...f.type_ids, id],
     }))
   }
+
+  // ── Company structure queries ──
+  const { data: companies = [] } = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => organizationApi.getCompanies(),
+  })
+
+  const { data: brands = [] } = useQuery({
+    queryKey: ['brands', company],
+    queryFn: () => organizationApi.getBrands(company),
+    enabled: !!company,
+  })
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments', company],
+    queryFn: () => organizationApi.getDepartments(company),
+    enabled: !!company,
+  })
+
+  const { data: subdepartments = [] } = useQuery({
+    queryKey: ['subdepartments', company, form.department],
+    queryFn: () => organizationApi.getSubdepartments(company, form.department),
+    enabled: !!company && !!form.department,
+  })
 
   const createMut = useMutation({
     mutationFn: () => efacturaApi.createMapping(form),
@@ -105,59 +138,142 @@ function MappingFormDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Kod Konto</Label>
-              <Input value={form.kod_konto} onChange={(e) => set('kod_konto', e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Brand</Label>
-              <Input value={form.brand} onChange={(e) => set('brand', e.target.value)} />
-            </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Kod Konto</Label>
+            <Input value={form.kod_konto} onChange={(e) => set('kod_konto', e.target.value)} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Department</Label>
-              <Input value={form.department} onChange={(e) => set('department', e.target.value)} />
+          {/* Supplier Types — prominent toggle buttons */}
+          {supplierTypes.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Supplier Types *</Label>
+              <div className="flex flex-wrap gap-2">
+                {supplierTypes.map((pt) => {
+                  const active = form.type_ids.includes(pt.id)
+                  return (
+                    <button
+                      key={pt.id}
+                      type="button"
+                      onClick={() => toggleType(pt.id)}
+                      className={`rounded-md border-2 px-4 py-2 text-sm font-semibold transition-all ${
+                        active
+                          ? 'border-primary bg-primary text-primary-foreground shadow-sm'
+                          : 'border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground'
+                      }`}
+                    >
+                      {pt.name}
+                    </button>
+                  )
+                })}
+              </div>
+              {form.type_ids.length === 0 && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">Select at least one type</p>
+              )}
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Subdepartment</Label>
-              <Input value={form.subdepartment} onChange={(e) => set('subdepartment', e.target.value)} />
-            </div>
+          )}
+
+          {/* Company selector for structure lookups */}
+          <div className="space-y-1">
+            <Label className="text-xs">Company (for Brand/Dept lookups)</Label>
+            <Select
+              value={company || '__none__'}
+              onValueChange={(v) => {
+                setCompany(v === '__none__' ? '' : v)
+                set('brand', '')
+                set('department', '')
+                set('subdepartment', '')
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">-- Select Company --</SelectItem>
+                {companies.map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">Select a company to populate Brand, Department, Subdepartment dropdowns</p>
+          </div>
+
+          {/* Brand */}
+          <div className="space-y-1">
+            <Label className="text-xs">Brand</Label>
+            {company && brands.length > 0 ? (
+              <Select
+                value={form.brand || '__none__'}
+                onValueChange={(v) => set('brand', v === '__none__' ? '' : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">-- None --</SelectItem>
+                  {brands.map((b) => (
+                    <SelectItem key={b} value={b}>{b}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input value={form.brand} onChange={(e) => set('brand', e.target.value)} placeholder={company ? 'No brands found' : 'Select company first'} />
+            )}
+          </div>
+
+          {/* Department */}
+          <div className="space-y-1">
+            <Label className="text-xs">Department</Label>
+            {company && departments.length > 0 ? (
+              <Select
+                value={form.department || '__none__'}
+                onValueChange={(v) => {
+                  set('department', v === '__none__' ? '' : v)
+                  set('subdepartment', '')
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">-- None --</SelectItem>
+                  {departments.map((d) => (
+                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input value={form.department} onChange={(e) => set('department', e.target.value)} placeholder={company ? 'No departments found' : 'Select company first'} />
+            )}
+          </div>
+
+          {/* Subdepartment */}
+          <div className="space-y-1">
+            <Label className="text-xs">Subdepartment</Label>
+            {company && form.department ? (
+              <Select
+                value={form.subdepartment || '__none__'}
+                onValueChange={(v) => set('subdepartment', v === '__none__' ? '' : v)}
+                disabled={subdepartments.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">-- None --</SelectItem>
+                  {subdepartments.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input value={form.subdepartment} onChange={(e) => set('subdepartment', e.target.value)} placeholder={!form.department ? 'Select department first' : 'Select company first'} disabled={!company || !form.department} />
+            )}
           </div>
 
           <div className="space-y-1">
             <Label className="text-xs">Note</Label>
             <Input value={form.supplier_note} onChange={(e) => set('supplier_note', e.target.value)} />
           </div>
-
-          {/* Type checkboxes */}
-          {supplierTypes.length > 0 && (
-            <div className="space-y-1">
-              <Label className="text-xs">Supplier Types</Label>
-              <div className="flex flex-wrap gap-2">
-                {supplierTypes.map((pt) => (
-                  <label
-                    key={pt.id}
-                    className={`cursor-pointer rounded border px-2.5 py-1 text-xs font-medium transition-colors ${
-                      form.type_ids.includes(pt.id)
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-muted text-muted-foreground hover:border-foreground'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={form.type_ids.includes(pt.id)}
-                      onChange={() => toggleType(pt.id)}
-                    />
-                    {pt.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         <DialogFooter>
