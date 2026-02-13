@@ -504,7 +504,7 @@ function ImportSuppliersDialog({
                         className="border-b hover:bg-muted/30 cursor-pointer"
                         onClick={() => toggle(s.partner_name)}
                       >
-                        <td className="p-2">
+                        <td className="p-2" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             checked={selected.has(s.partner_name)}
                             onCheckedChange={() => toggle(s.partner_name)}

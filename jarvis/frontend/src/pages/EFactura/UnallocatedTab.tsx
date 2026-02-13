@@ -44,6 +44,7 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
+import { usePersistedState } from '@/lib/utils'
 import { efacturaApi } from '@/api/efactura'
 import { organizationApi } from '@/api/organization'
 import type { EFacturaInvoice, EFacturaInvoiceFilters } from '@/types/efactura'
@@ -291,7 +292,8 @@ function ColumnToggle({
 // ── Main Component ──────────────────────────────────────────
 export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) {
   const qc = useQueryClient()
-  const [filters, setFilters] = useState<EFacturaInvoiceFilters>({ page: 1, limit: 50 })
+  const [savedLimit, setSavedLimit] = usePersistedState('efactura-page-size', 50)
+  const [filters, setFilters] = useState<EFacturaInvoiceFilters>({ page: 1, limit: savedLimit })
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [confirmAction, setConfirmAction] = useState<{ action: string; ids: number[] } | null>(null)
@@ -770,7 +772,7 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
               <span className="text-xs text-muted-foreground">Rows</span>
               <Select
                 value={String(filters.limit ?? 50)}
-                onValueChange={(v) => setFilters((f) => ({ ...f, limit: Number(v), page: 1 }))}
+                onValueChange={(v) => { const n = Number(v); setSavedLimit(n); setFilters((f) => ({ ...f, limit: n, page: 1 })) }}
               >
                 <SelectTrigger className="h-8 w-[70px]">
                   <SelectValue />

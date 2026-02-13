@@ -5,14 +5,12 @@ import {
   FileStack,
   RefreshCw,
   Tags,
-  EyeOff,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { StatCard } from '@/components/shared/StatCard'
 import { efacturaApi } from '@/api/efactura'
 import { cn } from '@/lib/utils'
 import { SyncDialog } from './SyncDialog'
@@ -39,7 +37,7 @@ export default function EFactura() {
   const [syncOpen, setSyncOpen] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
 
-  const { data: unallocatedCount, isLoading: unallocLoading } = useQuery({
+  const { data: unallocatedCount } = useQuery({
     queryKey: ['efactura-unallocated-count'],
     queryFn: () => efacturaApi.getUnallocatedCount(),
   })
@@ -47,11 +45,6 @@ export default function EFactura() {
   const { data: hiddenCount } = useQuery({
     queryKey: ['efactura-hidden-count'],
     queryFn: () => efacturaApi.getHiddenCount(),
-  })
-
-  const { data: anafStatus } = useQuery({
-    queryKey: ['efactura-anaf-status'],
-    queryFn: () => efacturaApi.getAnafStatus(),
   })
 
   return (
@@ -65,28 +58,6 @@ export default function EFactura() {
           <RefreshCw className="mr-1.5 h-4 w-4" />
           Sync
         </Button>
-      </div>
-
-      {/* Summary stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard
-          title="Unallocated"
-          value={unallocatedCount ?? 0}
-          icon={<FileStack className="h-4 w-4" />}
-          isLoading={unallocLoading}
-        />
-        <StatCard
-          title="Hidden"
-          value={hiddenCount ?? 0}
-          icon={<EyeOff className="h-4 w-4" />}
-          isLoading={false}
-        />
-        <StatCard
-          title="Mode"
-          value={anafStatus?.mock_mode ? 'Mock' : 'Live'}
-          icon={<RefreshCw className="h-4 w-4" />}
-          isLoading={false}
-        />
       </div>
 
       {/* Tab nav */}

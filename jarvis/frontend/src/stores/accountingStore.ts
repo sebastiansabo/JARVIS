@@ -16,12 +16,14 @@ interface AccountingState {
   setShowRecycleBin: (show: boolean) => void
 }
 
+const STORAGE_KEY = 'accounting-columns'
+
 const defaultColumns = [
   'supplier',
   'invoice_number',
   'invoice_date',
+  'net_value',
   'invoice_value',
-  'currency',
   'company',
   'department',
   'status',
@@ -29,10 +31,32 @@ const defaultColumns = [
   'drive_link',
 ]
 
+/** Columns that cannot be hidden by the user. */
+export const lockedColumns = new Set(['net_value'])
+
+function loadColumns(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const cols: string[] = JSON.parse(raw)
+      // Ensure locked columns are always present
+      for (const lc of lockedColumns) {
+        if (!cols.includes(lc)) cols.push(lc)
+      }
+      return cols
+    }
+  } catch { /* ignore */ }
+  return defaultColumns
+}
+
+function saveColumns(cols: string[]) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cols)) } catch { /* ignore */ }
+}
+
 export const useAccountingStore = create<AccountingState>((set) => ({
   filters: {},
   selectedInvoiceIds: [],
-  visibleColumns: defaultColumns,
+  visibleColumns: loadColumns(),
   showRecycleBin: false,
   setFilters: (filters) => set({ filters }),
   updateFilter: (key, value) =>
@@ -46,6 +70,9 @@ export const useAccountingStore = create<AccountingState>((set) => ({
         : [...s.selectedInvoiceIds, id],
     })),
   clearSelected: () => set({ selectedInvoiceIds: [] }),
-  setVisibleColumns: (columns) => set({ visibleColumns: columns }),
+  setVisibleColumns: (columns) => {
+    saveColumns(columns)
+    set({ visibleColumns: columns })
+  },
   setShowRecycleBin: (show) => set({ showRecycleBin: show, selectedInvoiceIds: [] }),
 }))

@@ -18,6 +18,9 @@ import {
   GripVertical,
   Eye,
   EyeOff,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -42,8 +45,8 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { invoicesApi } from '@/api/invoices'
 import { organizationApi } from '@/api/organization'
 import { settingsApi } from '@/api/settings'
-import { useAccountingStore } from '@/stores/accountingStore'
-import { cn } from '@/lib/utils'
+import { useAccountingStore, lockedColumns } from '@/stores/accountingStore'
+import { cn, usePersistedState } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { Invoice, InvoiceFilters } from '@/types/invoices'
 import { EditInvoiceDialog } from './EditInvoiceDialog'
@@ -74,6 +77,7 @@ export default function Accounting() {
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
   const [deleteIds, setDeleteIds] = useState<number[] | null>(null)
   const [permanentDeleteIds, setPermanentDeleteIds] = useState<number[] | null>(null)
+  const [sort, setSort] = usePersistedState<SortState | null>('accounting-sort', null)
 
   const {
     filters,
@@ -253,16 +257,32 @@ export default function Accounting() {
 
   // Derived data
   const displayedInvoices = useMemo(() => {
-    const list = activeTab === 'bin' ? binInvoices : invoices
-    if (!search) return list
-    const q = search.toLowerCase()
-    return list.filter(
-      (inv) =>
-        inv.supplier.toLowerCase().includes(q) ||
-        inv.invoice_number.toLowerCase().includes(q) ||
-        inv.id.toString().includes(q),
-    )
-  }, [invoices, binInvoices, activeTab, search])
+    let list = activeTab === 'bin' ? binInvoices : invoices
+    if (search) {
+      const q = search.toLowerCase()
+      list = list.filter(
+        (inv) =>
+          inv.supplier.toLowerCase().includes(q) ||
+          inv.invoice_number.toLowerCase().includes(q) ||
+          inv.id.toString().includes(q),
+      )
+    }
+    if (sort) {
+      const colDef = columnDefMap.get(sort.key)
+      if (colDef?.sortValue) {
+        const getter = colDef.sortValue
+        const dir = sort.dir === 'asc' ? 1 : -1
+        list = [...list].sort((a, b) => {
+          const va = getter(a)
+          const vb = getter(b)
+          if (va < vb) return -dir
+          if (va > vb) return dir
+          return 0
+        })
+      }
+    }
+    return list
+  }, [invoices, binInvoices, activeTab, search, sort])
 
   const totalRon = useMemo(
     () => companySummary.reduce((sum, c) => sum + Number(c.total_value_ron ?? 0), 0),
@@ -452,6 +472,8 @@ export default function Accounting() {
           onToggleExpand={(id) => setExpandedRow(expandedRow === id ? null : id)}
           isBin={activeTab === 'bin'}
           activeCols={activeCols}
+          sort={sort}
+          onSort={setSort}
         />
       ) : activeTab === 'company' ? (
         <SummaryTable data={companySummary} nameKey="company" label="Company" />
@@ -499,10 +521,15 @@ export default function Accounting() {
 
 /* ──── Column Definitions ──── */
 
+type SortDir = 'asc' | 'desc'
+interface SortState { key: string; dir: SortDir }
+
 interface ColumnDef {
   key: string
   label: string
   headerClass?: string
+  sortable?: boolean
+  sortValue?: (inv: Invoice) => string | number
   render: (inv: Invoice) => React.ReactNode
 }
 
@@ -510,32 +537,44 @@ const columnDefs: ColumnDef[] = [
   {
     key: 'status',
     label: 'Status',
+    sortable: true,
+    sortValue: (inv) => inv.status,
     render: (inv) => <StatusBadge status={inv.status} />,
   },
   {
     key: 'payment_status',
     label: 'Payment',
+    sortable: true,
+    sortValue: (inv) => inv.payment_status,
     render: (inv) => <StatusBadge status={inv.payment_status} />,
   },
   {
     key: 'invoice_date',
     label: 'Date',
+    sortable: true,
+    sortValue: (inv) => inv.invoice_date,
     render: (inv) => <span className="whitespace-nowrap text-sm">{formatDate(inv.invoice_date)}</span>,
   },
   {
     key: 'supplier',
     label: 'Supplier',
+    sortable: true,
+    sortValue: (inv) => inv.supplier.toLowerCase(),
     render: (inv) => <span className="block max-w-[200px] truncate text-sm">{inv.supplier}</span>,
   },
   {
     key: 'invoice_number',
     label: 'Invoice #',
+    sortable: true,
+    sortValue: (inv) => inv.invoice_number.toLowerCase(),
     render: (inv) => <span className="text-sm font-medium">{inv.invoice_number}</span>,
   },
   {
     key: 'net_value',
     label: 'Net Value',
     headerClass: 'text-right',
+    sortable: true,
+    sortValue: (inv) => Number(inv.net_value ?? 0),
     render: (inv) => (
       <div className="text-right">
         {inv.net_value != null ? (
@@ -550,6 +589,8 @@ const columnDefs: ColumnDef[] = [
     key: 'invoice_value',
     label: 'Total',
     headerClass: 'text-right',
+    sortable: true,
+    sortValue: (inv) => Number(inv.invoice_value),
     render: (inv) => (
       <div className="text-right">
         <CurrencyDisplay value={inv.invoice_value} currency={inv.currency} />
@@ -571,11 +612,15 @@ const columnDefs: ColumnDef[] = [
   {
     key: 'company',
     label: 'Company',
+    sortable: true,
+    sortValue: (inv) => (inv.allocations?.[0]?.company ?? '').toLowerCase(),
     render: (inv) => <span className="text-sm">{inv.allocations?.[0]?.company ?? '-'}</span>,
   },
   {
     key: 'department',
     label: 'Department',
+    sortable: true,
+    sortValue: (inv) => (inv.allocations?.[0]?.department ?? '').toLowerCase(),
     render: (inv) => <span className="text-sm">{inv.allocations?.[0]?.department ?? '-'}</span>,
   },
 ]
@@ -591,7 +636,7 @@ function ColumnToggle({
   visibleColumns: string[]
   onChange: (cols: string[]) => void
 }) {
-  const hiddenColumns = columnDefs.filter((c) => !visibleColumns.includes(c.key))
+  const hiddenColumns = columnDefs.filter((c) => !visibleColumns.includes(c.key) && !lockedColumns.has(c.key))
 
   const moveUp = (idx: number) => {
     if (idx <= 0) return
@@ -608,6 +653,7 @@ function ColumnToggle({
   }
 
   const toggle = (key: string) => {
+    if (lockedColumns.has(key)) return
     if (visibleColumns.includes(key)) {
       onChange(visibleColumns.filter((c) => c !== key))
     } else {
@@ -628,6 +674,7 @@ function ColumnToggle({
           {visibleColumns.map((key, idx) => {
             const col = columnDefMap.get(key)
             if (!col) return null
+            const isLocked = lockedColumns.has(key)
             return (
               <div key={key} className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-accent/50">
                 <GripVertical className="h-3 w-3 text-muted-foreground/50 shrink-0" />
@@ -646,9 +693,15 @@ function ColumnToggle({
                 >
                   <ChevronDown className="h-3 w-3" />
                 </button>
-                <button onClick={() => toggle(key)} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-                  <EyeOff className="h-3 w-3" />
-                </button>
+                {isLocked ? (
+                  <span className="p-0.5 text-muted-foreground/40" title="Always visible">
+                    <EyeOff className="h-3 w-3" />
+                  </span>
+                ) : (
+                  <button onClick={() => toggle(key)} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+                    <EyeOff className="h-3 w-3" />
+                  </button>
+                )}
               </div>
             )
           })}
@@ -692,6 +745,8 @@ function InvoiceTable({
   onToggleExpand,
   isBin,
   activeCols,
+  sort,
+  onSort,
 }: {
   invoices: Invoice[]
   isLoading: boolean
@@ -708,6 +763,8 @@ function InvoiceTable({
   onToggleExpand: (id: number) => void
   isBin: boolean
   activeCols: ColumnDef[]
+  sort: SortState | null
+  onSort: (s: SortState | null) => void
 }) {
   const colCount = 2 + activeCols.length + 1 // checkbox + ID + visible cols + actions
 
@@ -748,11 +805,32 @@ function InvoiceTable({
                   />
                 </TableHead>
                 <TableHead className="w-14">ID</TableHead>
-                {activeCols.map((col) => (
-                  <TableHead key={col.key} className={col.headerClass}>
-                    {col.label}
-                  </TableHead>
-                ))}
+                {activeCols.map((col) => {
+                  const isSorted = sort?.key === col.key
+                  const handleSort = col.sortable ? () => {
+                    if (!isSorted) onSort({ key: col.key, dir: 'asc' })
+                    else if (sort.dir === 'asc') onSort({ key: col.key, dir: 'desc' })
+                    else onSort(null)
+                  } : undefined
+                  return (
+                    <TableHead
+                      key={col.key}
+                      className={cn(col.headerClass, col.sortable && 'cursor-pointer select-none')}
+                      onClick={handleSort}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {col.label}
+                        {col.sortable && (
+                          isSorted
+                            ? sort.dir === 'asc'
+                              ? <ArrowUp className="h-3 w-3" />
+                              : <ArrowDown className="h-3 w-3" />
+                            : <ArrowUpDown className="h-3 w-3 opacity-30" />
+                        )}
+                      </span>
+                    </TableHead>
+                  )
+                })}
                 <TableHead className="w-20">Actions</TableHead>
               </TableRow>
             </TableHeader>

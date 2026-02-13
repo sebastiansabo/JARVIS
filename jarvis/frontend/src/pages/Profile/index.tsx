@@ -27,7 +27,7 @@ import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { profileApi } from '@/api/profile'
-import { cn } from '@/lib/utils'
+import { cn, usePersistedState } from '@/lib/utils'
 import type { ProfileInvoice, ProfileActivity, ProfileBonus } from '@/types/profile'
 
 type Tab = 'invoices' | 'hr-events' | 'activity'
@@ -183,7 +183,7 @@ export default function Profile() {
 function InvoicesPanel() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState(25)
+  const [perPage, setPerPage] = usePersistedState('profile-invoices-page-size', 25)
 
   const { data, isLoading } = useQuery({
     queryKey: ['profile', 'invoices', { search, page, perPage }],
@@ -286,7 +286,7 @@ function InvoicesPanel() {
 function HrEventsPanel() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState(25)
+  const [perPage, setPerPage] = usePersistedState('profile-hr-page-size', 25)
 
   const { data, isLoading } = useQuery({
     queryKey: ['profile', 'hr-events', { search, page, perPage }],
@@ -373,7 +373,7 @@ function HrEventsPanel() {
 
 function ActivityPanel() {
   const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState(25)
+  const [perPage, setPerPage] = usePersistedState('profile-activity-page-size', 25)
 
   const { data, isLoading } = useQuery({
     queryKey: ['profile', 'activity', { page, perPage }],

@@ -27,7 +27,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
 import { statementsApi } from '@/api/statements'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
+import { cn, usePersistedState } from '@/lib/utils'
 import type { Transaction, TransactionFilters } from '@/types/statements'
 
 const SORT_OPTIONS = [
@@ -72,7 +72,7 @@ export default function TransactionsTab() {
   const [sort, setSort] = useState('newest')
   const [hideIgnored, setHideIgnored] = useState(false)
   const [page, setPage] = useState(0)
-  const [pageSize, setPageSize] = useState(100)
+  const [pageSize, setPageSize] = usePersistedState('statements-page-size', 100)
 
   // Selection
   const [selected, setSelected] = useState<Set<number>>(new Set())
