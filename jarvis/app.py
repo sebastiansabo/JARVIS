@@ -16,7 +16,6 @@ from models import load_structure
 from core.auth.models import User
 from core.auth.repositories import UserRepository, EventRepository
 from core.roles.repositories import PermissionRepository
-from core.cache import cleanup_expired_caches
 from database import ping_db
 
 _user_repo = UserRepository()
@@ -362,8 +361,11 @@ def api_change_password():
 
 @app.route('/health')
 def health_check():
-    """Application health check endpoint for orchestrator probes."""
-    cleanup_expired_caches()
+    """Application health check endpoint for orchestrator probes.
+
+    Kept lightweight — runs every 10s per worker. Only checks DB connectivity.
+    Cache cleanup runs on the scheduler instead.
+    """
     checks = {}
 
     try:
@@ -373,25 +375,14 @@ def health_check():
         checks['database'] = False
         app_logger.error(f'Health check - database failed: {e}')
 
-    # Google Drive check (if enabled)
-    from core.drive.routes import is_drive_enabled, is_drive_authenticated
-    if is_drive_enabled():
-        try:
-            checks['drive'] = is_drive_authenticated()
-        except Exception:
-            checks['drive'] = False
-    else:
-        checks['drive'] = None
-
-    critical_checks = [checks.get('database', False)]
-    status = 'healthy' if all(critical_checks) else 'unhealthy'
+    status = 'healthy' if checks.get('database') else 'unhealthy'
     http_code = 200 if status == 'healthy' else 503
 
     return jsonify({
         'status': status,
         'checks': checks,
         'service': 'jarvis',
-        'version': '2026-02-08'
+        'version': '2026-02-13'
     }), http_code
 
 

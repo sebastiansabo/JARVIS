@@ -1,6 +1,6 @@
 import os
-import json
 import logging
+import threading
 from contextlib import contextmanager
 
 import psycopg2
@@ -18,36 +18,65 @@ if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is required. Set it to your PostgreSQL connection string.")
 
 # Connection pool configuration
-# minconn: minimum connections kept open
-# maxconn: maximum connections allowed
-# Note: DigitalOcean managed DB has ~25 max connections total
-# With multiple workers, keep pool small: 2 workers × 3 min = 6 connections
+# DigitalOcean managed DB limit: 22 connections
+# 3 Gunicorn workers × 6 max = 18 connections (4 reserved for admin/health)
 _connection_pool = None
+_pool_lock = threading.Lock()
 
-# Pool size configuration - can be tuned via environment variables
-# Defaults optimized for 3 Gunicorn workers × 3 threads (gthread)
-# DigitalOcean managed DB limit: 25 connections
-# Safe max per worker: 25 / 3 workers ≈ 7 (leaves headroom for migrations/admin)
 POOL_MIN_CONN = int(os.environ.get('DB_POOL_MIN_CONN', '2'))
-POOL_MAX_CONN = int(os.environ.get('DB_POOL_MAX_CONN', '7'))
+POOL_MAX_CONN = int(os.environ.get('DB_POOL_MAX_CONN', '6'))
+POOL_GETCONN_TIMEOUT = int(os.environ.get('DB_POOL_TIMEOUT', '10'))
 
 
 def _get_pool():
-    """Get or create the connection pool (lazy initialization)."""
+    """Get or create the connection pool (lazy initialization, thread-safe)."""
     global _connection_pool
     if _connection_pool is None:
-        # Add keepalive options to prevent connections from being dropped
-        # by the server after idle timeout
-        _connection_pool = pool.ThreadedConnectionPool(
-            minconn=POOL_MIN_CONN,
-            maxconn=POOL_MAX_CONN,
-            dsn=DATABASE_URL,
-            keepalives=1,           # Enable keepalives
-            keepalives_idle=30,     # Seconds before sending keepalive
-            keepalives_interval=10, # Seconds between keepalives
-            keepalives_count=5      # Failed keepalives before disconnect
-        )
+        with _pool_lock:
+            if _connection_pool is None:
+                _connection_pool = pool.ThreadedConnectionPool(
+                    minconn=POOL_MIN_CONN,
+                    maxconn=POOL_MAX_CONN,
+                    dsn=DATABASE_URL,
+                    keepalives=1,
+                    keepalives_idle=30,
+                    keepalives_interval=10,
+                    keepalives_count=5,
+                    connect_timeout=5,
+                )
+                logger.info(f'Connection pool created: min={POOL_MIN_CONN}, max={POOL_MAX_CONN}')
     return _connection_pool
+
+
+def _getconn_with_timeout(timeout=None):
+    """Get connection from pool with timeout to prevent indefinite blocking.
+
+    ThreadedConnectionPool.getconn() blocks forever when pool is exhausted.
+    This wrapper uses a thread to enforce a timeout, preventing request hangs.
+    """
+    if timeout is None:
+        timeout = POOL_GETCONN_TIMEOUT
+
+    result = [None]
+    error = [None]
+
+    def _get():
+        try:
+            result[0] = _get_pool().getconn()
+        except Exception as e:
+            error[0] = e
+
+    t = threading.Thread(target=_get, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+
+    if t.is_alive():
+        raise psycopg2.OperationalError(
+            f"Connection pool exhausted — timed out after {timeout}s waiting for available connection"
+        )
+    if error[0]:
+        raise error[0]
+    return result[0]
 
 
 def get_db():
@@ -61,44 +90,49 @@ def get_db():
     last_error = None
 
     for attempt in range(max_retries):
-        conn = _get_pool().getconn()
+        conn = _getconn_with_timeout()
 
         # Check if connection is still alive
         try:
-            # Use a lightweight query to test connection
             with conn.cursor() as cur:
                 cur.execute('SELECT 1')
-            # End the implicit transaction started by health check
             conn.rollback()
-            # Set autocommit mode so each query sees the latest committed data
-            # without needing explicit transaction management
             conn.autocommit = True
-            # Connection is good, return it
             return conn
         except (psycopg2.OperationalError, psycopg2.InterfaceError, psycopg2.DatabaseError) as e:
             last_error = e
-            # Connection is dead - close it and try again
+            logger.warning(f'Stale connection discarded (attempt {attempt + 1}/{max_retries}): {e}')
             try:
                 _get_pool().putconn(conn, close=True)
             except Exception:
                 pass
-            # Continue to next attempt
 
-    # All retries failed, raise the last error
     raise psycopg2.OperationalError(f"Failed to get valid connection after {max_retries} attempts: {last_error}")
 
 
 def release_db(conn):
     """Return connection to pool.
 
-    Resets autocommit to False before returning to pool.
+    Handles stale/broken connections gracefully — closes them instead of
+    returning broken connections back to the pool.
     """
     if conn and _connection_pool:
         try:
-            conn.autocommit = False  # Reset for next user
+            # Check if connection is still usable before returning to pool
+            if conn.closed:
+                try:
+                    _connection_pool.putconn(conn, close=True)
+                except Exception:
+                    pass
+                return
+            conn.autocommit = False
+            _connection_pool.putconn(conn)
         except Exception:
-            pass  # Ignore errors on closed connections
-        _connection_pool.putconn(conn)
+            # Connection is in bad state — close it to prevent pool corruption
+            try:
+                _connection_pool.putconn(conn, close=True)
+            except Exception:
+                pass
 
 
 @contextmanager
@@ -111,13 +145,9 @@ def transaction():
             cursor.execute('INSERT INTO ...')
             cursor.execute('UPDATE ...')
         # Auto-commits on success, auto-rollbacks on exception
-
-    For multi-step operations (invoice + allocations), wrap all DB
-    operations in a single transaction block to ensure atomicity.
     """
     conn = get_db()
     try:
-        # Disable autocommit for explicit transaction control
         conn.autocommit = False
         yield conn
         conn.commit()
@@ -131,23 +161,16 @@ def transaction():
 
 
 def refresh_connection_pool():
-    """Refresh all connections in the pool to ensure they're healthy.
-
-    Call this after heavy operations (file uploads, bulk processing) to
-    prevent stale connections. Gets and releases multiple connections
-    to cycle through the pool and validate each one.
-    """
+    """Refresh all connections in the pool to ensure they're healthy."""
     global _connection_pool
     if _connection_pool is None:
         return
 
-    # Get and release connections to validate them
-    # This forces the pool to check each connection's health
     connections = []
     try:
         for _ in range(POOL_MIN_CONN):
             try:
-                conn = get_db()  # get_db validates the connection
+                conn = get_db()
                 connections.append(conn)
             except Exception:
                 pass
@@ -163,7 +186,6 @@ def ping_db():
     """Ping the database to keep connections alive.
 
     Returns True if successful, False otherwise.
-    Use this for health checks or keep-alive operations.
     """
     try:
         conn = get_db()
@@ -220,15 +242,11 @@ def dict_from_row(row):
     if row is None:
         return None
     result = dict(row)
-    # Convert date/datetime objects to ISO format strings for JSON serialization
     for key, value in result.items():
         if hasattr(value, 'isoformat'):
-            # For date objects, just return YYYY-MM-DD
             if hasattr(value, 'hour'):
-                # datetime object - keep full ISO format
                 result[key] = value.isoformat()
             else:
-                # date object - just YYYY-MM-DD
                 result[key] = value.isoformat()
     return result
 

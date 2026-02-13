@@ -2,15 +2,20 @@
 Scheduled cleanup tasks for JARVIS.
 
 Uses APScheduler BackgroundScheduler to run periodic maintenance jobs.
+Only one worker starts the scheduler (file-lock guard) to avoid
+duplicate execution and wasted DB connections.
 """
 
+import os
 import atexit
+import fcntl
 from apscheduler.schedulers.background import BackgroundScheduler
 from core.utils.logging_config import get_logger
 
 logger = get_logger('jarvis.tasks.cleanup')
 
 scheduler = BackgroundScheduler(daemon=True)
+_lock_file = None
 
 
 def cleanup_old_unallocated_invoices():
@@ -37,9 +42,34 @@ def reindex_rag_documents():
         logger.error(f"RAG reindex task failed: {e}")
 
 
+def _acquire_scheduler_lock():
+    """Try to acquire an exclusive file lock. Returns True if this process won."""
+    global _lock_file
+    try:
+        lock_path = os.path.join(os.path.dirname(__file__), '..', '.scheduler.lock')
+        _lock_file = open(lock_path, 'w')
+        fcntl.flock(_lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_file.write(str(os.getpid()))
+        _lock_file.flush()
+        return True
+    except (IOError, OSError):
+        if _lock_file:
+            _lock_file.close()
+            _lock_file = None
+        return False
+
+
 def start_scheduler():
-    """Start the background scheduler with all cleanup jobs."""
+    """Start the background scheduler with all cleanup jobs.
+
+    Uses a file lock so only one gunicorn worker runs the scheduler.
+    Other workers skip silently.
+    """
     if scheduler.running:
+        return
+
+    if not _acquire_scheduler_lock():
+        logger.debug(f"Scheduler lock held by another worker, skipping (pid={os.getpid()})")
         return
 
     scheduler.add_job(
@@ -48,6 +78,8 @@ def start_scheduler():
         hours=6,
         id='cleanup_old_unallocated',
         replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
     )
 
     scheduler.add_job(
@@ -57,11 +89,13 @@ def start_scheduler():
         minute=0,
         id='rag_reindex_daily',
         replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
     )
 
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown(wait=False))
-    logger.info("Background scheduler started with cleanup jobs")
+    logger.info(f"Background scheduler started (pid={os.getpid()})")
 
 
 def stop_scheduler():

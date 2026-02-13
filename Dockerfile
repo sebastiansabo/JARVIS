@@ -41,15 +41,8 @@ WORKDIR /app/jarvis
 # Expose port
 EXPOSE 8080
 
-# Run with gunicorn (3 workers + 3 threads each = 9 concurrent requests)
-# Optimized for 1-10 concurrent users
-# DigitalOcean DB connection limit: 22 max
-# Single unified pool: 3 workers × 6 pool max = 18 connections (4 reserved for admin)
-# Timeout settings prevent worker hangs after idle periods:
-#   --timeout: Kill worker if no response in 120s
-#   --graceful-timeout: Allow 30s for graceful shutdown
-#   --keep-alive: Keep HTTP connections open for 5s (reduces reconnects)
-# Worker recycling prevents memory accumulation:
-#   --max-requests: Recycle worker after N requests
-#   --max-requests-jitter: Stagger recycling to avoid simultaneous restarts
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "3", "--threads", "3", "--worker-class", "gthread", "--timeout", "120", "--graceful-timeout", "30", "--keep-alive", "5", "--max-requests", "500", "--max-requests-jitter", "50", "app:app"]
+# Gunicorn: 3 workers × 3 threads = 9 concurrent requests
+# DB pool: 3 workers × 6 max = 18 connections (DO limit: 22, 4 reserved for admin)
+# Timeout: 120s request, 30s graceful shutdown, 5s keep-alive
+# Worker recycling: every ~2000 requests (high to reduce connection drops)
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "3", "--threads", "3", "--worker-class", "gthread", "--timeout", "120", "--graceful-timeout", "30", "--keep-alive", "5", "--max-requests", "2000", "--max-requests-jitter", "200", "app:app"]
