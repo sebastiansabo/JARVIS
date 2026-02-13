@@ -1,3 +1,4 @@
+import { forwardRef } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { EntityTag } from '@/types/tags'
@@ -42,36 +43,37 @@ export function TagBadge({ tag, onRemove, className }: TagBadgeProps) {
   )
 }
 
-interface TagBadgeListProps {
+interface TagBadgeListProps extends React.HTMLAttributes<HTMLDivElement> {
   tags: EntityTag[]
   maxVisible?: number
-  onClick?: () => void
-  className?: string
 }
 
-export function TagBadgeList({ tags, maxVisible = 3, onClick, className }: TagBadgeListProps) {
-  if (tags.length === 0) {
+export const TagBadgeList = forwardRef<HTMLDivElement, TagBadgeListProps>(
+  function TagBadgeList({ tags, maxVisible = 3, className, ...rest }, ref) {
+    if (tags.length === 0) {
+      return (
+        <div
+          ref={ref}
+          className={cn('text-xs text-muted-foreground/50 cursor-pointer hover:text-muted-foreground', className)}
+          {...rest}
+        >
+          +
+        </div>
+      )
+    }
+
+    const visible = tags.slice(0, maxVisible)
+    const overflow = tags.length - maxVisible
+
     return (
-      <span
-        onClick={onClick}
-        className={cn('text-xs text-muted-foreground/50 cursor-pointer hover:text-muted-foreground', className)}
-      >
-        +
-      </span>
+      <div ref={ref} className={cn('flex flex-wrap items-center gap-1 cursor-pointer', className)} {...rest}>
+        {visible.map((t) => (
+          <TagBadge key={t.tag_id} tag={t} />
+        ))}
+        {overflow > 0 && (
+          <span className="text-[11px] text-muted-foreground">+{overflow}</span>
+        )}
+      </div>
     )
-  }
-
-  const visible = tags.slice(0, maxVisible)
-  const overflow = tags.length - maxVisible
-
-  return (
-    <div onClick={onClick} className={cn('flex flex-wrap items-center gap-1 cursor-pointer', className)}>
-      {visible.map((t) => (
-        <TagBadge key={t.tag_id} tag={t} />
-      ))}
-      {overflow > 0 && (
-        <span className="text-[11px] text-muted-foreground">+{overflow}</span>
-      )}
-    </div>
-  )
-}
+  },
+)
