@@ -11,39 +11,8 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { toast } from 'sonner'
-import { api } from '@/api/client'
-
-interface TagGroup {
-  id: number
-  name: string
-  description: string | null
-  color: string | null
-  sort_order: number
-  is_active: boolean
-}
-
-interface Tag {
-  id: number
-  name: string
-  group_id: number | null
-  group_name?: string
-  color: string | null
-  icon: string | null
-  sort_order: number
-  is_global: boolean
-  is_active: boolean
-}
-
-const tagsApiLocal = {
-  getGroups: () => api.get<TagGroup[]>('/api/tag-groups'),
-  createGroup: (data: Partial<TagGroup>) => api.post<{ success: boolean; id: number }>('/api/tag-groups', data),
-  updateGroup: (id: number, data: Partial<TagGroup>) => api.put<{ success: boolean }>(`/api/tag-groups/${id}`, data),
-  deleteGroup: (id: number) => api.delete<{ success: boolean }>(`/api/tag-groups/${id}`),
-  getTags: () => api.get<Tag[]>('/api/tags'),
-  createTag: (data: Partial<Tag>) => api.post<{ success: boolean; id: number }>('/api/tags', data),
-  updateTag: (id: number, data: Partial<Tag>) => api.put<{ success: boolean }>(`/api/tags/${id}`, data),
-  deleteTag: (id: number) => api.delete<{ success: boolean }>(`/api/tags/${id}`),
-}
+import { tagsApi } from '@/api/tags'
+import type { TagGroup, Tag } from '@/types/tags'
 
 export default function TagsTab() {
   return (
@@ -62,11 +31,11 @@ function TagGroupsSection() {
 
   const { data: groups = [], isLoading } = useQuery({
     queryKey: ['settings', 'tagGroups'],
-    queryFn: tagsApiLocal.getGroups,
+    queryFn: () => tagsApi.getGroups(),
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: Partial<TagGroup>) => tagsApiLocal.createGroup(data),
+    mutationFn: (data: Partial<TagGroup>) => tagsApi.createGroup(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'tagGroups'] })
       setShowAdd(false)
@@ -76,7 +45,7 @@ function TagGroupsSection() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<TagGroup> }) => tagsApiLocal.updateGroup(id, data),
+    mutationFn: ({ id, data }: { id: number; data: Partial<TagGroup> }) => tagsApi.updateGroup(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'tagGroups'] })
       setEditGroup(null)
@@ -86,7 +55,7 @@ function TagGroupsSection() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => tagsApiLocal.deleteGroup(id),
+    mutationFn: (id: number) => tagsApi.deleteGroup(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'tagGroups'] })
       setDeleteId(null)
@@ -243,11 +212,11 @@ function TagsSection() {
 
   const { data: tags = [], isLoading } = useQuery({
     queryKey: ['settings', 'tags'],
-    queryFn: tagsApiLocal.getTags,
+    queryFn: () => tagsApi.getTags(),
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: Partial<Tag>) => tagsApiLocal.createTag(data),
+    mutationFn: (data: Partial<Tag>) => tagsApi.createTag(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'tags'] })
       setShowAdd(false)
@@ -257,7 +226,7 @@ function TagsSection() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<Tag> }) => tagsApiLocal.updateTag(id, data),
+    mutationFn: ({ id, data }: { id: number; data: Partial<Tag> }) => tagsApi.updateTag(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'tags'] })
       setEditTag(null)
@@ -267,7 +236,7 @@ function TagsSection() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => tagsApiLocal.deleteTag(id),
+    mutationFn: (id: number) => tagsApi.deleteTag(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'tags'] })
       setDeleteId(null)

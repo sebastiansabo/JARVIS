@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +8,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { invoicesApi } from '@/api/invoices'
+import { tagsApi } from '@/api/tags'
+import { TagBadge } from '@/components/shared/TagBadge'
+import { TagPicker } from '@/components/shared/TagPicker'
 import { toast } from 'sonner'
 import type { Invoice } from '@/types/invoices'
 import { AllocationEditor, type AllocationEditorRef, allocationsToRows, rowsToApiPayload } from './AllocationEditor'
@@ -41,6 +44,11 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
   const [comment, setComment] = useState(invoice.comment || '')
   const [driveLink, setDriveLink] = useState(invoice.drive_link || '')
   const [saving, setSaving] = useState(false)
+
+  const { data: invoiceTags = [] } = useQuery({
+    queryKey: ['entity-tags', 'invoice', invoice.id],
+    queryFn: () => tagsApi.getEntityTags('invoice', invoice.id),
+  })
 
   const effectiveValue = useMemo(() => {
     const gross = parseFloat(invoiceValue) || 0
@@ -179,6 +187,25 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
           <div className="space-y-1.5">
             <Label className="text-xs">Comment</Label>
             <Textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={2} />
+          </div>
+
+          {/* Tags */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Tags</Label>
+            <TagPicker
+              entityType="invoice"
+              entityId={invoice.id}
+              currentTags={invoiceTags}
+              onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
+            >
+              <div className="flex flex-wrap items-center gap-1 min-h-[32px] rounded-md border px-3 py-1.5 cursor-pointer hover:bg-accent/50">
+                {invoiceTags.length > 0 ? (
+                  invoiceTags.map((t) => <TagBadge key={t.tag_id} tag={t} />)
+                ) : (
+                  <span className="text-xs text-muted-foreground">Click to add tags...</span>
+                )}
+              </div>
+            </TagPicker>
           </div>
 
           {/* Allocations */}

@@ -42,9 +42,12 @@ import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
 import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { TagBadgeList } from '@/components/shared/TagBadge'
+import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
 import { invoicesApi } from '@/api/invoices'
 import { organizationApi } from '@/api/organization'
 import { settingsApi } from '@/api/settings'
+import { tagsApi } from '@/api/tags'
 import { useAccountingStore, lockedColumns } from '@/stores/accountingStore'
 import { cn, usePersistedState } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -129,6 +132,14 @@ export default function Accounting() {
     queryKey: ['invoices', 'summary', 'supplier', filters],
     queryFn: () => invoicesApi.getSupplierSummary(filters),
     enabled: activeTab === 'supplier',
+  })
+
+  // Entity tags for invoices
+  const invoiceIds = useMemo(() => invoices.map((i) => i.id), [invoices])
+  const { data: entityTagsMap = {} } = useQuery({
+    queryKey: ['entity-tags', 'invoice', invoiceIds],
+    queryFn: () => tagsApi.getEntityTagsBulk('invoice', invoiceIds),
+    enabled: invoiceIds.length > 0 && activeTab === 'invoices',
   })
 
   // Filter options
@@ -248,12 +259,20 @@ export default function Accounting() {
     const overrides: Record<string, (inv: Invoice) => React.ReactNode> = {
       status: buildDropdown(statusOptions, 'status'),
       payment_status: buildDropdown(paymentOptions, 'payment_status'),
+      tags: (inv: Invoice) => {
+        const invTags = entityTagsMap[String(inv.id)] ?? []
+        return (
+          <TagPicker entityType="invoice" entityId={inv.id} currentTags={invTags} onTagsChanged={() => {}}>
+            <TagBadgeList tags={invTags} />
+          </TagPicker>
+        )
+      },
     }
     return visibleColumns
       .map((k) => columnDefMap.get(k))
       .filter(Boolean)
       .map((col) => (col && overrides[col.key] ? { ...col, render: overrides[col.key] } : col)) as ColumnDef[]
-  }, [visibleColumns, statusOptions, paymentOptions])
+  }, [visibleColumns, statusOptions, paymentOptions, entityTagsMap])
 
   // Derived data
   const displayedInvoices = useMemo(() => {
@@ -431,10 +450,17 @@ export default function Accounting() {
           <span className="text-sm font-medium">{selectedInvoiceIds.length} selected</span>
           <div className="flex-1" />
           {activeTab === 'invoices' && (
-            <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selectedInvoiceIds)}>
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
-              Delete
-            </Button>
+            <>
+              <TagPickerButton
+                entityType="invoice"
+                entityIds={selectedInvoiceIds}
+                onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
+              />
+              <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selectedInvoiceIds)}>
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                Delete
+              </Button>
+            </>
           )}
           {activeTab === 'bin' && (
             <>
@@ -622,6 +648,11 @@ const columnDefs: ColumnDef[] = [
     sortable: true,
     sortValue: (inv) => (inv.allocations?.[0]?.department ?? '').toLowerCase(),
     render: (inv) => <span className="text-sm">{inv.allocations?.[0]?.department ?? '-'}</span>,
+  },
+  {
+    key: 'tags',
+    label: 'Tags',
+    render: () => null,
   },
 ]
 
@@ -931,7 +962,7 @@ function InvoiceRow({
         {activeCols.map((col) => (
           <TableCell
             key={col.key}
-            onClick={col.key === 'status' || col.key === 'payment_status' ? (e) => e.stopPropagation() : undefined}
+            onClick={col.key === 'status' || col.key === 'payment_status' || col.key === 'tags' ? (e) => e.stopPropagation() : undefined}
           >
             {col.render(inv)}
           </TableCell>

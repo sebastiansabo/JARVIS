@@ -47,6 +47,9 @@ import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
 import { usePersistedState } from '@/lib/utils'
 import { efacturaApi } from '@/api/efactura'
 import { organizationApi } from '@/api/organization'
+import { TagBadgeList } from '@/components/shared/TagBadge'
+import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
+import { tagsApi } from '@/api/tags'
 import type { EFacturaInvoice, EFacturaInvoiceFilters } from '@/types/efactura'
 
 type InvoiceRow = EFacturaInvoice & { _hidden?: boolean }
@@ -318,8 +321,8 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
     () => visibleColumns.map((k) => columnDefMap.get(k)).filter(Boolean) as ColumnDef[],
     [visibleColumns],
   )
-  // +2 for checkbox + actions columns
-  const totalColSpan = activeCols.length + 2
+  // +3 for checkbox + tags + actions columns
+  const totalColSpan = activeCols.length + 3
 
   const updateFilter = (key: string, value: string | number | boolean | undefined) => {
     setFilters((f) => ({ ...f, [key]: value || undefined, page: 1 }))
@@ -419,6 +422,14 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
   ]
   const isLoading = unallocLoading || (showHidden && hiddenLoading)
   const pagination = unallocData?.pagination
+
+  // Entity tags for e-factura invoices
+  const efacturaIds = useMemo(() => invoices.map((i) => i.id), [invoices])
+  const { data: efacturaTagsMap = {} } = useQuery({
+    queryKey: ['entity-tags', 'efactura_invoice', efacturaIds],
+    queryFn: () => tagsApi.getEntityTagsBulk('efactura_invoice', efacturaIds),
+    enabled: efacturaIds.length > 0,
+  })
 
   const toggleSelect = (id: number) => {
     setSelectedIds((prev) => {
@@ -612,6 +623,11 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
             </Button>
           )}
 
+          <TagPickerButton
+            entityType="efactura_invoice"
+            entityIds={Array.from(selectedIds)}
+            onTagsChanged={() => qc.invalidateQueries({ queryKey: ['entity-tags'] })}
+          />
           <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear</Button>
         </div>
       )}
@@ -652,6 +668,7 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                     {col.label}
                   </th>
                 ))}
+                <th className="p-2 text-left">Tags</th>
                 <th className="p-2 text-right">Actions</th>
               </tr>
             </thead>
@@ -681,6 +698,11 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                       {col.render(inv)}
                     </td>
                   ))}
+                  <td className="p-2">
+                    <TagPicker entityType="efactura_invoice" entityId={inv.id} currentTags={efacturaTagsMap[String(inv.id)] ?? []} onTagsChanged={() => {}}>
+                      <TagBadgeList tags={efacturaTagsMap[String(inv.id)] ?? []} />
+                    </TagPicker>
+                  </td>
                   <td className="p-2">
                     <div className="flex justify-end gap-0.5">
                       {inv._hidden ? (

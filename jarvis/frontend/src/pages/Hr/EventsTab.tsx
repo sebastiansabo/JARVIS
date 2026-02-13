@@ -22,6 +22,9 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { hrApi } from '@/api/hr'
 import { toast } from 'sonner'
+import { TagBadgeList } from '@/components/shared/TagBadge'
+import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
+import { tagsApi } from '@/api/tags'
 import { cn } from '@/lib/utils'
 import type { HrEvent } from '@/types/hr'
 import AddEventPage from './AddEventPage'
@@ -58,6 +61,14 @@ function EventsList() {
     )
   }, [events, search])
 
+  // Entity tags for events
+  const eventIds = useMemo(() => filtered.map((e) => e.id), [filtered])
+  const { data: eventTagsMap = {} } = useQuery({
+    queryKey: ['entity-tags', 'event', eventIds],
+    queryFn: () => tagsApi.getEntityTagsBulk('event', eventIds),
+    enabled: eventIds.length > 0,
+  })
+
   const deleteMutation = useMutation({
     mutationFn: (ids: number[]) => hrApi.bulkDeleteEvents(ids),
     onSuccess: () => {
@@ -85,10 +96,17 @@ function EventsList() {
         <span className="text-xs text-muted-foreground">{filtered.length} events</span>
         <div className="ml-auto flex items-center gap-2">
           {selected.length > 0 && (
-            <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selected)}>
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
-              Delete ({selected.length})
-            </Button>
+            <>
+              <TagPickerButton
+                entityType="event"
+                entityIds={selected}
+                onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
+              />
+              <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selected)}>
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                Delete ({selected.length})
+              </Button>
+            </>
           )}
           <Button size="sm" variant="outline" onClick={() => { setEditEvent(null); setDialogOpen(true) }}>
             <Plus className="mr-1 h-3.5 w-3.5" />
@@ -131,6 +149,7 @@ function EventsList() {
                   <TableHead>Brand</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Created By</TableHead>
+                  <TableHead>Tags</TableHead>
                   <TableHead className="w-20">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -147,6 +166,11 @@ function EventsList() {
                     <TableCell className="text-sm text-muted-foreground">{ev.brand ?? '—'}</TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-[180px] truncate">{ev.description ?? ''}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{ev.created_by_name ?? '—'}</TableCell>
+                    <TableCell>
+                      <TagPicker entityType="event" entityId={ev.id} currentTags={eventTagsMap[String(ev.id)] ?? []} onTagsChanged={() => {}}>
+                        <TagBadgeList tags={eventTagsMap[String(ev.id)] ?? []} />
+                      </TagPicker>
+                    </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditEvent(ev); setDialogOpen(true) }}>

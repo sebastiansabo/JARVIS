@@ -28,6 +28,10 @@ import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
 import { statementsApi } from '@/api/statements'
 import { toast } from 'sonner'
 import { cn, usePersistedState } from '@/lib/utils'
+import { TagBadgeList } from '@/components/shared/TagBadge'
+import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
+import { tagsApi } from '@/api/tags'
+import type { EntityTag } from '@/types/tags'
 import type { Transaction, TransactionFilters } from '@/types/statements'
 
 const SORT_OPTIONS = [
@@ -118,6 +122,14 @@ export default function TransactionsTab() {
     if (!hideIgnored) return transactions
     return transactions.filter((t) => t.status !== 'ignored')
   }, [transactions, hideIgnored])
+
+  // Entity tags for transactions
+  const txnIds = useMemo(() => visibleTxns.map((t) => t.id), [visibleTxns])
+  const { data: txnTagsMap = {} } = useQuery({
+    queryKey: ['entity-tags', 'transaction', txnIds],
+    queryFn: () => tagsApi.getEntityTagsBulk('transaction', txnIds),
+    enabled: txnIds.length > 0,
+  })
 
   // Mutations
   const updateStatusMutation = useMutation({
@@ -331,6 +343,11 @@ export default function TransactionsTab() {
               <Wand2 className="mr-1 h-3.5 w-3.5" />
               Auto-Match
             </Button>
+            <TagPickerButton
+              entityType="transaction"
+              entityIds={Array.from(selected)}
+              onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
+            />
             <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Deselect</Button>
           </div>
         </div>
@@ -370,6 +387,7 @@ export default function TransactionsTab() {
                   <TableHead className="max-w-[200px]">Description</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Tags</TableHead>
                   <TableHead>Invoice</TableHead>
                   <TableHead className="w-28">Actions</TableHead>
                 </TableRow>
@@ -380,6 +398,7 @@ export default function TransactionsTab() {
                     key={txn.id}
                     txn={txn}
                     isSelected={selected.has(txn.id)}
+                    tags={txnTagsMap[String(txn.id)] ?? []}
                     onToggleSelect={toggleSelect}
                     onStatusChange={(newStatus) => updateStatusMutation.mutate({ id: txn.id, newStatus })}
                     onLink={() => setLinkTxnId(txn.id)}
@@ -465,11 +484,12 @@ export default function TransactionsTab() {
 /* ──── Transaction Row ──── */
 
 function TransactionRow({
-  txn, isSelected, onToggleSelect, onStatusChange, onLink, onUnlink, onUnmerge,
+  txn, isSelected, tags, onToggleSelect, onStatusChange, onLink, onUnlink, onUnmerge,
   onAcceptMatch, onRejectMatch, isExpanded, onToggleExpand,
 }: {
   txn: Transaction
   isSelected: boolean
+  tags: EntityTag[]
   onToggleSelect: (id: number) => void
   onStatusChange: (status: string) => void
   onLink: () => void
@@ -516,6 +536,11 @@ function TransactionRow({
           <Badge variant="outline" className={cn('text-xs', statusColors[txn.status])}>
             {txn.status}
           </Badge>
+        </TableCell>
+        <TableCell>
+          <TagPicker entityType="transaction" entityId={txn.id} currentTags={tags} onTagsChanged={() => {}}>
+            <TagBadgeList tags={tags} />
+          </TagPicker>
         </TableCell>
         <TableCell className="text-xs">
           {txn.invoice_id ? (
@@ -578,6 +603,7 @@ function TransactionRow({
           <TableCell className={cn('text-right text-xs', src.amount < 0 ? 'text-red-400' : 'text-green-400')}>
             {formatAmount(src.amount, src.currency)}
           </TableCell>
+          <TableCell />
           <TableCell />
           <TableCell />
           <TableCell />
