@@ -66,7 +66,6 @@ export default function Approvals() {
   const { data: myRequestsData, isLoading: myRequestsLoading } = useQuery({
     queryKey: ['approval-my-requests'],
     queryFn: () => approvalsApi.getMyRequests(),
-    enabled: activeTab === 'my-requests' || activeTab === 'all',
   })
 
   const { data: allRequestsData, isLoading: allLoading } = useQuery({

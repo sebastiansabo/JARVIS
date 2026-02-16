@@ -109,10 +109,24 @@ class ApprovalEngine:
 
         # Advance to first step
         steps = self._flow_repo.get_steps_for_flow(flow['id'])
+
+        if not steps:
+            # Flow has no steps configured — reject submission
+            self._request_repo.update_status(
+                request_id, 'cancelled',
+                resolved_at=datetime.now(timezone.utc),
+                resolution_note='Flow has no approval steps configured',
+            )
+            self._audit_repo.log(request_id, 'cancelled', actor_type='system', details={
+                'reason': 'Flow has no approval steps configured',
+            })
+            raise ApprovalError(
+                f"Flow '{flow['name']}' has no approval steps configured")
+
         first_step = self._find_next_eligible_step(steps, 0, context)
 
         if first_step is None:
-            # All steps skipped — auto-approve
+            # All steps skipped by conditions — auto-approve
             self._request_repo.update_status(
                 request_id, 'approved', resolved_at=datetime.now(timezone.utc))
             self._audit_repo.log(request_id, 'auto_approved', actor_type='system', details={

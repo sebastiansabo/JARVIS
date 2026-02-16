@@ -244,6 +244,8 @@ class RequestRepository:
                         SELECT d.delegator_id FROM approval_delegations d
                         WHERE d.delegate_id = %s AND d.is_active = TRUE
                         AND NOW() BETWEEN d.starts_at AND d.ends_at
+                        AND (d.entity_type IS NULL OR d.entity_type = r.entity_type)
+                        AND (d.flow_id IS NULL OR d.flow_id = r.flow_id)
                     )
                 )
                 AND NOT EXISTS (
