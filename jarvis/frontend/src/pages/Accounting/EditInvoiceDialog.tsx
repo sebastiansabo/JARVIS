@@ -14,6 +14,7 @@ import { TagPicker } from '@/components/shared/TagPicker'
 import { toast } from 'sonner'
 import type { Invoice } from '@/types/invoices'
 import { AllocationEditor, type AllocationEditorRef, allocationsToRows, rowsToApiPayload } from './AllocationEditor'
+import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
 
 interface SelectOption {
   value: string
@@ -207,6 +208,9 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
               </div>
             </TagPicker>
           </div>
+
+          {/* Approval */}
+          <ApprovalWidget entityType="invoice" entityId={invoice.id} />
 
           {/* Allocations */}
           <div className="border-t pt-4">

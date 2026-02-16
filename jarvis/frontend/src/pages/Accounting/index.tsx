@@ -56,6 +56,7 @@ import type { Invoice, InvoiceFilters } from '@/types/invoices'
 import { EditInvoiceDialog } from './EditInvoiceDialog'
 import { SummaryTable } from './SummaryTable'
 import { AllocationEditor, allocationsToRows, rowsToApiPayload } from './AllocationEditor'
+import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
 
 type TabKey = 'invoices' | 'company' | 'department' | 'brand' | 'supplier' | 'bin'
 
@@ -1070,6 +1071,9 @@ const InvoiceRow = memo(function InvoiceRow({
                       )})}
                     </tbody>
                   </table>
+                  <div className="mt-3 border-t pt-3">
+                    <ApprovalWidget entityType="invoice" entityId={inv.id} compact />
+                  </div>
                 </>
               )}
             </div>

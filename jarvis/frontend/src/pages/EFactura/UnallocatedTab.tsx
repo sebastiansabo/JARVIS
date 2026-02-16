@@ -51,6 +51,7 @@ import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
 import { TagFilter } from '@/components/shared/TagFilter'
 import { tagsApi } from '@/api/tags'
+import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
 import type { EFacturaInvoice, EFacturaInvoiceFilters } from '@/types/efactura'
 
 type InvoiceRow = EFacturaInvoice & { _hidden?: boolean }
@@ -925,6 +926,11 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
 
               <div className="text-muted-foreground">Kod Konto</div>
               <div>{viewInvoice.mapped_kod_konto || '—'}</div>
+
+              <div className="col-span-2 mt-2 border-t pt-2" />
+              <div className="col-span-2">
+                <ApprovalWidget entityType="efactura_invoice" entityId={viewInvoice.id} />
+              </div>
             </div>
           )}
           <DialogFooter>

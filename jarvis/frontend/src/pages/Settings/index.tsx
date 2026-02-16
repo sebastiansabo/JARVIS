@@ -13,6 +13,7 @@ import {
   Briefcase,
   Bot,
   Plug,
+  ClipboardCheck,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -30,6 +31,7 @@ const TagsTab = lazy(() => import('./TagsTab'))
 const HrTab = lazy(() => import('./HrTab'))
 const AiTab = lazy(() => import('./AiTab'))
 const ConnectorsTab = lazy(() => import('./ConnectorsTab'))
+const ApprovalsTab = lazy(() => import('./ApprovalsTab'))
 
 const tabs = [
   // Access
@@ -47,6 +49,8 @@ const tabs = [
   // Monitoring
   { path: 'notifications', label: 'Notifications', icon: Bell },
   { path: 'activity', label: 'Activity', icon: Activity },
+  // Workflows
+  { path: 'approvals', label: 'Approvals', icon: ClipboardCheck },
   // Connectors
   { path: 'connectors', label: 'Connectors', icon: Plug },
   // AI
@@ -110,6 +114,7 @@ export default function Settings() {
               <Route path="activity" element={<ActivityTab />} />
               <Route path="tags" element={<TagsTab />} />
               <Route path="hr" element={<HrTab />} />
+              <Route path="approvals" element={<ApprovalsTab />} />
               <Route path="connectors" element={<ConnectorsTab />} />
               <Route path="ai" element={<AiTab />} />
               <Route path="*" element={<Navigate to="users" replace />} />

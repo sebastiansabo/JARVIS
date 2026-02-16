@@ -42,6 +42,21 @@ def reindex_rag_documents():
         logger.error(f"RAG reindex task failed: {e}")
 
 
+def process_approval_tasks():
+    """Run approval engine scheduled tasks: timeouts, reminders, expirations, delegation cleanup."""
+    try:
+        from core.approvals.engine import ApprovalEngine
+        from core.approvals.repositories import DelegationRepository
+        engine = ApprovalEngine()
+        engine.process_timeouts()
+        engine.process_reminders()
+        engine.process_expirations()
+        DelegationRepository().deactivate_expired()
+        logger.debug("Approval engine scheduled tasks completed")
+    except Exception as e:
+        logger.error(f"Approval engine scheduled tasks failed: {e}")
+
+
 def _acquire_scheduler_lock():
     """Try to acquire an exclusive file lock. Returns True if this process won."""
     global _lock_file
@@ -88,6 +103,16 @@ def start_scheduler():
         hour=0,
         minute=0,
         id='rag_reindex_daily',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        process_approval_tasks,
+        'interval',
+        hours=1,
+        id='approval_engine_tasks',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,

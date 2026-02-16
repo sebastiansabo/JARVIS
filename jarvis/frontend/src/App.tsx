@@ -12,6 +12,7 @@ const AddInvoice = lazy(() => import('./pages/Accounting/AddInvoice'))
 const Hr = lazy(() => import('./pages/Hr'))
 const Statements = lazy(() => import('./pages/Statements'))
 const EFactura = lazy(() => import('./pages/EFactura'))
+const Approvals = lazy(() => import('./pages/Approvals'))
 
 function PageLoader() {
   return (
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="hr/*" element={<SuspensePage><Hr /></SuspensePage>} />
         <Route path="statements/*" element={<SuspensePage><Statements /></SuspensePage>} />
         <Route path="efactura/*" element={<SuspensePage><EFactura /></SuspensePage>} />
+        <Route path="approvals" element={<SuspensePage><Approvals /></SuspensePage>} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Route>
     </Routes>

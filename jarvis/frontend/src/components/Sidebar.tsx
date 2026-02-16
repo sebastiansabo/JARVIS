@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ApprovalBadge } from './ApprovalBadge'
 
 interface NavItem {
   path: string
@@ -15,6 +16,7 @@ interface NavItem {
   permission?: string
   external?: boolean
   children?: NavItem[]
+  badge?: React.ComponentType
 }
 
 const navItems: NavItem[] = [
@@ -32,6 +34,7 @@ const navItems: NavItem[] = [
     ],
   },
   { path: '/app/hr', label: 'HR', icon: Users, permission: 'can_access_hr' },
+  { path: '/app/approvals', label: 'Approvals', icon: ClipboardCheck, badge: ApprovalBadge },
   { path: '/app/settings', label: 'Settings', icon: Settings, permission: 'can_access_settings' },
 ]
 
@@ -190,10 +193,12 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
         : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
     )
 
+    const BadgeComp = item.badge
     const linkContent = (
       <>
         <Icon className="h-4 w-4 shrink-0" />
-        {!collapsed && <span>{item.label}</span>}
+        {!collapsed && <span className="flex-1">{item.label}</span>}
+        {!collapsed && BadgeComp && <BadgeComp />}
       </>
     )
 
