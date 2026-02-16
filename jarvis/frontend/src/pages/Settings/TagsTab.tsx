@@ -431,6 +431,7 @@ function AutoTagRulesSection() {
     mutationFn: ({ id, data }: { id: number; data: Partial<AutoTagRule> }) => tagsApi.updateAutoTagRule(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'autoTagRules'] })
+      setShowForm(false)
       setEditRule(null)
       toast.success('Rule updated')
     },
