@@ -950,6 +950,7 @@ def create_schema(conn, cursor):
             entity_type VARCHAR(30) NOT NULL,
             tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
             conditions JSONB NOT NULL DEFAULT '[]',
+            match_mode VARCHAR(10) NOT NULL DEFAULT 'all',
             is_active BOOLEAN DEFAULT TRUE,
             run_on_create BOOLEAN DEFAULT TRUE,
             created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -959,6 +960,16 @@ def create_schema(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_auto_tag_rules_entity_type ON auto_tag_rules(entity_type) WHERE is_active = TRUE')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_auto_tag_rules_tag ON auto_tag_rules(tag_id)')
+
+    # Add match_mode column if it doesn't exist (migration)
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'auto_tag_rules' AND column_name = 'match_mode') THEN
+                ALTER TABLE auto_tag_rules ADD COLUMN match_mode VARCHAR(10) NOT NULL DEFAULT 'all';
+            END IF;
+        END $$;
+    ''')
 
     # VAT rates table - configurable VAT percentages
     cursor.execute('''

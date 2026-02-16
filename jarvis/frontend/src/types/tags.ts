@@ -35,6 +35,7 @@ export interface AutoTagRule {
   tag_name?: string
   tag_color?: string
   conditions: RuleCondition[]
+  match_mode?: 'all' | 'any'
   is_active: boolean
   run_on_create: boolean
   created_by?: number

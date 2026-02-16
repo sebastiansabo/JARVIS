@@ -512,7 +512,7 @@ function AutoTagRulesSection() {
                   <TableCell className="text-xs text-muted-foreground max-w-[200px]">
                     {(rule.conditions || []).map((c, i) => (
                       <span key={i}>
-                        {i > 0 && ' AND '}
+                        {i > 0 && (rule.match_mode === 'any' ? ' OR ' : ' AND ')}
                         {c.field} {OPERATOR_LABELS[c.operator] ?? c.operator} "{c.value}"
                       </span>
                     ))}
@@ -580,6 +580,7 @@ function AutoTagRuleFormDialog({ open, rule, onClose, onSave, isPending }: {
   const [entityType, setEntityType] = useState('invoice')
   const [tagId, setTagId] = useState<number | null>(null)
   const [conditions, setConditions] = useState<RuleCondition[]>([])
+  const [matchMode, setMatchMode] = useState<'all' | 'any'>('all')
   const [runOnCreate, setRunOnCreate] = useState(true)
 
   const { data: allTags = [] } = useQuery({
@@ -603,12 +604,14 @@ function AutoTagRuleFormDialog({ open, rule, onClose, onSave, isPending }: {
       setEntityType(rule.entity_type)
       setTagId(rule.tag_id)
       setConditions(rule.conditions || [])
+      setMatchMode(rule.match_mode ?? 'all')
       setRunOnCreate(rule.run_on_create)
     } else {
       setName('')
       setEntityType('invoice')
       setTagId(null)
       setConditions([])
+      setMatchMode('all')
       setRunOnCreate(true)
     }
   }
@@ -633,6 +636,7 @@ function AutoTagRuleFormDialog({ open, rule, onClose, onSave, isPending }: {
       entity_type: entityType,
       tag_id: tagId,
       conditions,
+      match_mode: matchMode,
       run_on_create: runOnCreate,
     })
   }
@@ -683,7 +687,13 @@ function AutoTagRuleFormDialog({ open, rule, onClose, onSave, isPending }: {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-xs">Conditions (all must match)</Label>
+              <button
+                type="button"
+                className="text-xs font-medium cursor-pointer hover:text-primary transition-colors"
+                onClick={() => setMatchMode(matchMode === 'all' ? 'any' : 'all')}
+              >
+                Conditions ({matchMode === 'all' ? 'all must match' : 'any must match'})
+              </button>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={addCondition}>
                 <Plus className="mr-1 h-3 w-3" /> Add
               </Button>

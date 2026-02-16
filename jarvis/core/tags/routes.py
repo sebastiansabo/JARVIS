@@ -265,6 +265,7 @@ def api_create_auto_tag_rule():
         entity_type=entity_type,
         tag_id=tag_id,
         conditions=conditions,
+        match_mode=data.get('match_mode', 'all'),
         run_on_create=data.get('run_on_create', True),
         created_by=current_user.id,
     )
@@ -278,7 +279,7 @@ def api_update_auto_tag_rule(rule_id):
         return jsonify({'success': False, 'error': 'Admin access required'}), 403
     data = request.get_json()
     allowed = {k: v for k, v in data.items()
-               if k in ('name', 'entity_type', 'tag_id', 'conditions', 'is_active', 'run_on_create')}
+               if k in ('name', 'entity_type', 'tag_id', 'conditions', 'match_mode', 'is_active', 'run_on_create')}
     if not allowed:
         return jsonify({'success': False, 'error': 'No valid fields'}), 400
     updated = _auto_tag_repo.update_rule(rule_id, **allowed)

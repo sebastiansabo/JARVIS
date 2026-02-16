@@ -55,18 +55,19 @@ class AutoTagRepository:
             release_db(conn)
 
     def create_rule(self, name: str, entity_type: str, tag_id: int,
-                    conditions: list, run_on_create: bool = True,
+                    conditions: list, match_mode: str = 'all',
+                    run_on_create: bool = True,
                     created_by: int = None) -> int:
         """Create a new auto-tag rule. Returns rule ID."""
         conn = get_db()
         try:
             cursor = get_cursor(conn)
             cursor.execute('''
-                INSERT INTO auto_tag_rules (name, entity_type, tag_id, conditions, run_on_create, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO auto_tag_rules (name, entity_type, tag_id, conditions, match_mode, run_on_create, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             ''', (name.strip(), entity_type, tag_id,
-                  json.dumps(conditions), run_on_create, created_by))
+                  json.dumps(conditions), match_mode, run_on_create, created_by))
             rule_id = cursor.fetchone()['id']
             conn.commit()
             return rule_id
@@ -78,7 +79,7 @@ class AutoTagRepository:
 
     def update_rule(self, rule_id: int, **kwargs) -> bool:
         """Update a rule. Returns True if updated."""
-        allowed = {'name', 'entity_type', 'tag_id', 'conditions', 'is_active', 'run_on_create'}
+        allowed = {'name', 'entity_type', 'tag_id', 'conditions', 'match_mode', 'is_active', 'run_on_create'}
         updates = []
         params = []
         for key, val in kwargs.items():

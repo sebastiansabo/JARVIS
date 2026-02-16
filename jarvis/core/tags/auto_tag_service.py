@@ -69,7 +69,7 @@ class AutoTagService:
             if isinstance(conditions, str):
                 import json
                 conditions = json.loads(conditions)
-            if self._check_conditions(entity_data, conditions):
+            if self._check_conditions(entity_data, conditions, rule.get('match_mode', 'all')):
                 tagged_by = user_id or rule.get('created_by')
                 if tagged_by:
                     added = self._tag_repo.add_entity_tag(
@@ -94,7 +94,7 @@ class AutoTagService:
         matched = 0
         tagged = 0
         for entity in entities:
-            if self._check_conditions(entity, conditions):
+            if self._check_conditions(entity, conditions, rule.get('match_mode', 'all')):
                 matched += 1
                 added = self._tag_repo.add_entity_tag(
                     rule['tag_id'], rule['entity_type'], entity['id'], user_id
@@ -103,8 +103,8 @@ class AutoTagService:
                     tagged += 1
         return {'matched': matched, 'tagged': tagged}
 
-    def _check_conditions(self, entity_data: dict, conditions: list) -> bool:
-        """Evaluate all conditions (AND logic). Returns True if all match."""
+    def _check_conditions(self, entity_data: dict, conditions: list, match_mode: str = 'all') -> bool:
+        """Evaluate conditions. match_mode='all' (AND) or 'any' (OR)."""
         if not conditions:
             return True
         for cond in conditions:
@@ -118,11 +118,15 @@ class AutoTagService:
             if not op_fn:
                 continue
             try:
-                if not op_fn(entity_value, value):
-                    return False
+                result = op_fn(entity_value, value)
             except Exception:
+                result = False
+            if match_mode == 'any' and result:
+                return True
+            if match_mode != 'any' and not result:
                 return False
-        return True
+        # 'all': all passed → True; 'any': none matched → False
+        return match_mode != 'any'
 
     def _fetch_entity(self, entity_type: str, entity_id: int) -> dict | None:
         """Fetch a single entity by type and ID."""
