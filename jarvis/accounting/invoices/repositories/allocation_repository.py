@@ -1,5 +1,6 @@
 """Allocation repository - CRUD, reinvoice destinations."""
 import logging
+from decimal import Decimal
 
 from database import get_db, get_cursor, release_db, dict_from_row
 
@@ -147,17 +148,17 @@ class AllocationRepository:
             result = cursor.fetchone()
             if not result:
                 raise ValueError(f"Invoice {invoice_id} not found")
-            invoice_value = result['invoice_value']
-            base_value = result['net_value'] if result['subtract_vat'] and result['net_value'] else invoice_value
+            invoice_value = Decimal(str(result['invoice_value']))
+            base_value = Decimal(str(result['net_value'])) if result['subtract_vat'] and result['net_value'] else invoice_value
 
             cursor.execute('DELETE FROM allocations WHERE invoice_id = %s', (invoice_id,))
 
             for alloc in allocations:
-                allocation_percent = alloc['allocation_percent']
+                allocation_percent = Decimal(str(alloc['allocation_percent']))
                 gross_allocation_value = base_value * allocation_percent / 100
 
                 reinvoice_dests = alloc.get('reinvoice_destinations', [])
-                total_reinvoice_percent = sum(rd.get('percentage', 0) for rd in reinvoice_dests)
+                total_reinvoice_percent = sum(Decimal(str(rd.get('percentage', 0))) for rd in reinvoice_dests)
                 net_percent = max(0, 100 - total_reinvoice_percent)
                 allocation_value = gross_allocation_value * net_percent / 100
 
@@ -194,7 +195,7 @@ class AllocationRepository:
                 allocation_id = cursor.fetchone()['id']
 
                 for rd in reinvoice_dests:
-                    rd_value = gross_allocation_value * (rd['percentage'] / 100)
+                    rd_value = gross_allocation_value * Decimal(str(rd['percentage'])) / 100
                     cursor.execute('''
                         INSERT INTO reinvoice_destinations
                         (allocation_id, company, brand, department, subdepartment, percentage, value)
@@ -240,7 +241,7 @@ class AllocationRepository:
             for dest in destinations:
                 dest_value = None
                 if allocation_value is not None and dest.get('percentage'):
-                    dest_value = allocation_value * (dest['percentage'] / 100)
+                    dest_value = Decimal(str(allocation_value)) * Decimal(str(dest['percentage'])) / 100
                 cursor.execute('''
                     INSERT INTO reinvoice_destinations
                     (allocation_id, company, brand, department, subdepartment, percentage, value)
@@ -271,7 +272,7 @@ class AllocationRepository:
                 cursor.execute('DELETE FROM reinvoice_destinations WHERE allocation_id = %s', (allocation_id,))
 
                 for dest in destinations:
-                    dest_value = allocation_value * (dest['percentage'] / 100) if allocation_value else dest.get('value')
+                    dest_value = Decimal(str(allocation_value)) * Decimal(str(dest['percentage'])) / 100 if allocation_value else dest.get('value')
                     cursor.execute('''
                         INSERT INTO reinvoice_destinations
                         (allocation_id, company, brand, department, subdepartment, percentage, value)
