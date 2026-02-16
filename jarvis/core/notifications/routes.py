@@ -1,15 +1,17 @@
 """Notification routes.
 
-Notification settings, logs, test email, and default column configuration.
+Notification settings, logs, test email, default column configuration,
+and in-app notification center (universal — used by all modules).
 """
 from flask import jsonify, request
 from flask_login import login_required, current_user
 
 from . import notifications_bp
-from .repositories import NotificationRepository
+from .repositories import NotificationRepository, InAppNotificationRepository
 from core.utils.api_helpers import safe_error_response
 
 _notif_repo = NotificationRepository()
+_in_app_repo = InAppNotificationRepository()
 
 
 @notifications_bp.route('/api/notification-settings', methods=['GET'])
@@ -105,3 +107,40 @@ def api_set_default_columns():
         return jsonify({'success': True, 'message': f'Default columns set for {tab} tab'})
     except Exception as e:
         return safe_error_response(e)
+
+
+# ============== In-App Notification Center ==============
+
+@notifications_bp.route('/notifications/api/list', methods=['GET'])
+@login_required
+def api_get_in_app_notifications():
+    """Get current user's in-app notifications."""
+    limit = request.args.get('limit', 20, type=int)
+    offset = request.args.get('offset', 0, type=int)
+    unread_only = request.args.get('unread_only', 'false').lower() == 'true'
+    notifications = _in_app_repo.get_for_user(current_user.id, limit=limit, offset=offset, unread_only=unread_only)
+    return jsonify({'notifications': notifications})
+
+
+@notifications_bp.route('/notifications/api/unread-count', methods=['GET'])
+@login_required
+def api_get_unread_count():
+    """Get count of unread notifications for current user."""
+    count = _in_app_repo.get_unread_count(current_user.id)
+    return jsonify({'count': count})
+
+
+@notifications_bp.route('/notifications/api/mark-read/<int:notification_id>', methods=['POST'])
+@login_required
+def api_mark_read(notification_id):
+    """Mark a single notification as read."""
+    updated = _in_app_repo.mark_read(notification_id, current_user.id)
+    return jsonify({'success': updated})
+
+
+@notifications_bp.route('/notifications/api/mark-all-read', methods=['POST'])
+@login_required
+def api_mark_all_read():
+    """Mark all notifications as read for current user."""
+    count = _in_app_repo.mark_all_read(current_user.id)
+    return jsonify({'success': True, 'count': count})

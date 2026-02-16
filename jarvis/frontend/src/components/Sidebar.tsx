@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ApprovalBadge } from './ApprovalBadge'
+import { NotificationBell } from './NotificationBell'
 
 interface NavItem {
   path: string
@@ -228,11 +229,12 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
     <TooltipProvider delayDuration={collapsed ? 100 : 400}>
       <div className="flex h-full flex-col">
         {/* Header */}
-        <div className={cn('flex h-14 items-center border-b', collapsed ? 'justify-center px-2' : 'px-4')}>
+        <div className={cn('flex h-14 items-center border-b', collapsed ? 'justify-center px-2' : 'justify-between px-4')}>
           <Link to="/app/dashboard" className="flex items-center gap-2 text-lg font-semibold">
             <Bot className="h-5 w-5 shrink-0 text-primary" />
             {!collapsed && <span>JARVIS</span>}
           </Link>
+          {!collapsed && <NotificationBell />}
         </div>
 
         {/* Navigation */}

@@ -121,6 +121,10 @@ app.register_blueprint(connectors_bp)
 from core.approvals import approvals_bp
 app.register_blueprint(approvals_bp, url_prefix='/approvals')
 
+# Register approval notification hooks
+from core.approvals.handlers import register_approval_hooks
+register_approval_hooks()
+
 app_logger.info(f'JARVIS startup complete — {len(app.url_map._rules)} routes registered')
 
 # ============== Global Error Handlers ==============

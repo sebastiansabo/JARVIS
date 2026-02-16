@@ -57,6 +57,18 @@ def process_approval_tasks():
         logger.error(f"Approval engine scheduled tasks failed: {e}")
 
 
+def cleanup_old_notifications():
+    """Delete in-app notifications older than 30 days."""
+    try:
+        from core.notifications.repositories.in_app_repo import InAppNotificationRepository
+        repo = InAppNotificationRepository()
+        count = repo.delete_old(days=30)
+        if count > 0:
+            logger.info(f"Cleanup: deleted {count} old notifications (>30 days)")
+    except Exception as e:
+        logger.error(f"Notification cleanup task failed: {e}")
+
+
 def _acquire_scheduler_lock():
     """Try to acquire an exclusive file lock. Returns True if this process won."""
     global _lock_file
@@ -113,6 +125,17 @@ def start_scheduler():
         'interval',
         hours=1,
         id='approval_engine_tasks',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        cleanup_old_notifications,
+        'cron',
+        hour=1,
+        minute=0,
+        id='cleanup_old_notifications',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,

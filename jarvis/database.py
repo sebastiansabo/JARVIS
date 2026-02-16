@@ -249,7 +249,7 @@ def init_db():
         cursor.execute("""
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'approval_delegations'
+                WHERE table_schema = 'public' AND table_name = 'notifications'
             )
         """)
         if cursor.fetchone()['exists']:
@@ -263,11 +263,19 @@ def init_db():
                     END IF;
                 END $$;
             ''')
+            # Ensure 'approved' invoice status exists
+            cursor.execute('''
+                INSERT INTO dropdown_options (dropdown_type, value, label, color, sort_order, is_active, min_role)
+                SELECT 'invoice_status', 'approved', 'Approved', '#22c55e', 5, TRUE, 'Viewer'
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM dropdown_options WHERE dropdown_type = 'invoice_status' AND value = 'approved'
+                )
+            ''')
             conn.commit()
             logger.info('Database schema already initialized — skipping init_db()')
             return
 
-        # Check if base schema exists but approval tables are missing (incremental migration)
+        # Check if base schema exists but newer tables are missing (incremental migration)
         cursor.execute("""
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
@@ -275,11 +283,11 @@ def init_db():
             )
         """)
         if cursor.fetchone()['exists']:
-            logger.info('Base schema exists but approval tables missing — running incremental migration')
+            logger.info('Base schema exists but newer tables missing — running incremental migration')
             from migrations.init_schema import create_schema
             create_schema(conn, cursor)
             conn.commit()
-            logger.info('Incremental migration complete — approval tables created')
+            logger.info('Incremental migration complete')
             return
 
         from migrations.init_schema import create_schema

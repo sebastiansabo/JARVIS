@@ -412,12 +412,12 @@ export function AllocationRowComponent({
     <div className="rounded-lg border p-2 space-y-2">
       <div className="grid grid-cols-12 gap-2 items-center">
         {hasBrands && (
-          <div className="col-span-2">
+          <div className="col-span-2 min-w-0">
             <Select
               value={row.brand || '__none__'}
               onValueChange={(v) => onUpdate({ brand: v === '__none__' ? '' : v })}
             >
-              <SelectTrigger className="h-8 text-xs">
+              <SelectTrigger className="h-8 w-full text-xs">
                 <SelectValue placeholder="Brand" />
               </SelectTrigger>
               <SelectContent>
@@ -429,7 +429,7 @@ export function AllocationRowComponent({
             </Select>
           </div>
         )}
-        <div className={hasBrands ? 'col-span-3' : 'col-span-4'}>
+        <div className={cn(hasBrands ? 'col-span-3' : 'col-span-4', 'min-w-0')}>
           <Select
             value={row.department || '__none__'}
             onValueChange={(v) =>
@@ -439,7 +439,7 @@ export function AllocationRowComponent({
               })
             }
           >
-            <SelectTrigger className="h-8 text-xs">
+            <SelectTrigger className="h-8 w-full text-xs">
               <SelectValue placeholder="Select..." />
             </SelectTrigger>
             <SelectContent>
@@ -450,13 +450,13 @@ export function AllocationRowComponent({
             </SelectContent>
           </Select>
         </div>
-        <div className="col-span-2">
+        <div className="col-span-2 min-w-0">
           <Select
             value={row.subdepartment || '__none__'}
             onValueChange={(v) => onUpdate({ subdepartment: v === '__none__' ? '' : v })}
             disabled={subdepartments.length === 0}
           >
-            <SelectTrigger className="h-8 text-xs">
+            <SelectTrigger className="h-8 w-full text-xs">
               <SelectValue placeholder="N/A" />
             </SelectTrigger>
             <SelectContent>
@@ -467,7 +467,7 @@ export function AllocationRowComponent({
             </SelectContent>
           </Select>
         </div>
-        <div className="col-span-1">
+        <div className="col-span-1 min-w-0">
           <Input
             type="number"
             min={0}

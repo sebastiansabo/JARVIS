@@ -2138,6 +2138,24 @@ def create_schema(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_delegations_delegate ON approval_delegations(delegate_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_delegations_active ON approval_delegations(is_active, starts_at, ends_at)')
 
+    # In-app notifications table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            type TEXT NOT NULL DEFAULT 'info',
+            title TEXT NOT NULL,
+            message TEXT,
+            link TEXT,
+            entity_type TEXT,
+            entity_id INTEGER,
+            is_read BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read) WHERE is_read = FALSE')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC)')
+
     conn.commit()
 
     # Seed approval permissions_v2 if not already present

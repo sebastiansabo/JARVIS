@@ -504,6 +504,23 @@ def notify_allocation(invoice_data: dict, allocation: dict) -> list[dict]:
         else:
             update_notification_status(log_id, 'failed', error_message)
 
+        # In-app notification (always, regardless of email success)
+        try:
+            from core.notifications.notify import notify_user
+            inv_num = invoice_data.get('invoice_number', '')
+            supplier = invoice_data.get('supplier', '')
+            notify_user(
+                responsable_id,
+                f'New allocation: {inv_num} ({supplier})',
+                message=f'{company} / {department} — {allocation.get("allocation_percent", 0)}%',
+                link='/app/accounting',
+                entity_type='invoice',
+                entity_id=invoice_id,
+                type='info',
+            )
+        except Exception as e:
+            logger.warning(f'In-app notification failed for user {responsable_id}: {e}')
+
         results.append({
             'responsable_id': responsable_id,
             'responsable_name': responsable_name,

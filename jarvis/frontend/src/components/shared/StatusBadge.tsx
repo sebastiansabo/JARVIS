@@ -19,6 +19,7 @@ const statusColors: Record<string, string> = {
   eronata: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
   nebugetata: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
   bugetata: 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
+  approved: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
 }
 
 interface StatusBadgeProps {
