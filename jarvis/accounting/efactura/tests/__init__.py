@@ -1,3 +1,0 @@
-"""
-e-Factura Connector Tests
-"""
