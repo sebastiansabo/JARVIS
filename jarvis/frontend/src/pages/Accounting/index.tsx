@@ -1023,7 +1023,7 @@ const InvoiceRow = memo(function InvoiceRow({
                       </Button>
                     )}
                   </div>
-                  <table className="w-full text-xs">
+                  <table className="w-full text-xs border-separate border-spacing-x-3 border-spacing-y-0">
                     <thead>
                       <tr className="text-muted-foreground">
                         <th className="pb-1 text-left font-medium">Company</th>
