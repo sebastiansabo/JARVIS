@@ -1,5 +1,42 @@
 # J.A.R.V.I.S. - Enterprise Platform
 
+## Stack Details
+- **Backend**: Python/Flask (NOT Django, NOT FastAPI)
+- **Frontend**: React 19 SPA (Vite + TypeScript + Tailwind 4 + shadcn/ui) — NOT Jinja2 templates
+- **Database**: PostgreSQL (required, no SQLite fallback)
+- **React app** served at `/app/*`, builds to `static/react/`. Jinja2 templates still serve legacy routes during transition
+- **macOS dev**: Port 5000 conflicts with ControlCenter — always use port 5001
+- **API envelope**: Backend wraps responses (e.g., `{invoices: [...]}`) — frontend must unwrap before using data
+- **Frontend dev server**: Vite on port 5173, proxies API calls to Flask on 5001
+
+## Important Conventions
+- When asked for a "plan" → produce ONLY a planning document. Do NOT start implementing unless explicitly asked
+- Keep explanations concise. No filler, no preamble
+- When user says "yes" or confirms → re-read preceding context to understand WHAT they're confirming
+- Always target the React frontend (`frontend/src/`) unless explicitly told to modify Jinja2 templates
+
+## Deployment Workflow
+Before pushing to staging or production:
+1. Run `npm run build` in `jarvis/frontend/` — verify zero TypeScript/build errors
+2. Run `pytest tests/ -x -q` — verify all tests pass
+3. Run `git status` — ensure all new files are committed (no untracked source files)
+4. Verify all Python imports resolve: `python3 -m py_compile jarvis/app.py`
+5. Never remove/rename database tables without first verifying all dependent code is updated
+6. After push, verify staging health: `curl -s https://jarvis-staging-*.ondigitalocean.app/health`
+
+## Database Safety Rules
+- NEVER drop or remove existing tables without first `grep -r "table_name" jarvis/` to find all references
+- When consolidating/merging tables: create replacement FIRST, migrate all references, THEN remove old table
+- When deploying: verify target DB has all required tables/columns before running the app
+- `pg_dump` version must match remote PostgreSQL version (use `/opt/homebrew/opt/postgresql@17/bin/pg_dump` for DO)
+- Always create a backup before destructive operations: `pg_dump > backup_$(date +%Y%m%d).sql`
+
+## Data Cleanup Rules
+- When merging duplicate records: do a COMPLETE pass listing ALL duplicates for user confirmation before declaring done
+- Standardize names, trim whitespace, check typos in a single pass
+- After any merge/cleanup: run a verification query to confirm zero duplicates remain
+- Never declare "done" without a final COUNT/GROUP BY proof query
+
 ## ⚠️ IMPORTANT: Branch Workflow
 
 **DEFAULT BRANCH: `staging`** - All development work happens here first.

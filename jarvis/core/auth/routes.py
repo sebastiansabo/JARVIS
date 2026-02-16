@@ -10,6 +10,7 @@ from flask_login import login_required, current_user
 
 from . import auth_bp
 from .repositories import UserRepository, EventRepository
+from core.utils.api_helpers import admin_required, safe_error_response
 
 _user_repo = UserRepository()
 _event_repo = EventRepository()
@@ -36,7 +37,7 @@ def api_get_user(user_id):
 
 
 @auth_bp.route('/api/users', methods=['POST'])
-@login_required
+@admin_required
 def api_create_user():
     """Create a new user."""
     data = request.get_json()
@@ -62,11 +63,11 @@ def api_create_user():
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @auth_bp.route('/api/users/<int:user_id>', methods=['PUT'])
-@login_required
+@admin_required
 def api_update_user(user_id):
     """Update a user."""
     data = request.get_json()
@@ -93,11 +94,11 @@ def api_update_user(user_id):
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @auth_bp.route('/api/users/<int:user_id>', methods=['DELETE'])
-@login_required
+@admin_required
 def api_delete_user(user_id):
     """Delete a user."""
     if _user_repo.delete(user_id):
@@ -106,7 +107,7 @@ def api_delete_user(user_id):
 
 
 @auth_bp.route('/api/users/bulk-delete', methods=['POST'])
-@login_required
+@admin_required
 def api_bulk_delete_users():
     """Delete multiple users."""
     data = request.get_json()
@@ -145,7 +146,7 @@ def api_get_employee(employee_id):
 
 
 @auth_bp.route('/api/employees', methods=['POST'])
-@login_required
+@admin_required
 def api_create_employee():
     """Create a new user/employee."""
     data = request.get_json()
@@ -177,11 +178,11 @@ def api_create_employee():
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @auth_bp.route('/api/employees/<int:employee_id>', methods=['PUT'])
-@login_required
+@admin_required
 def api_update_employee(employee_id):
     """Update a user/employee."""
     data = request.get_json()
@@ -205,11 +206,11 @@ def api_update_employee(employee_id):
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @auth_bp.route('/api/employees/<int:employee_id>', methods=['DELETE'])
-@login_required
+@admin_required
 def api_delete_employee(employee_id):
     """Delete a user/employee."""
     if _user_repo.delete(employee_id):

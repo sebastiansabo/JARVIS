@@ -4,6 +4,7 @@ from flask_login import login_required
 
 from . import roles_bp
 from .repositories import RoleRepository, PermissionRepository
+from core.utils.api_helpers import admin_required, safe_error_response
 
 _role_repo = RoleRepository()
 _perm_repo = PermissionRepository()
@@ -32,7 +33,7 @@ def api_get_role(role_id):
 
 
 @roles_bp.route('/api/roles', methods=['POST'])
-@login_required
+@admin_required
 def api_create_role():
     """Create a new role."""
     data = request.get_json()
@@ -58,11 +59,11 @@ def api_create_role():
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @roles_bp.route('/api/roles/<int:role_id>', methods=['PUT'])
-@login_required
+@admin_required
 def api_update_role(role_id):
     """Update a role."""
     data = request.get_json()
@@ -88,11 +89,11 @@ def api_update_role(role_id):
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @roles_bp.route('/api/roles/<int:role_id>', methods=['DELETE'])
-@login_required
+@admin_required
 def api_delete_role(role_id):
     """Delete a role."""
     try:
@@ -130,7 +131,7 @@ def api_get_role_perms(role_id):
 
 
 @roles_bp.route('/api/roles/<int:role_id>/permissions', methods=['PUT'])
-@login_required
+@admin_required
 def api_set_role_perms(role_id):
     """Set permissions for a role."""
     data = request.get_json()
@@ -139,7 +140,7 @@ def api_set_role_perms(role_id):
         _perm_repo.set_role_permissions(role_id, permissions)
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 # ============== PERMISSIONS v2 (Matrix) ==============
@@ -166,7 +167,7 @@ def api_get_role_perms_v2(role_id):
 
 
 @roles_bp.route('/api/roles/<int:role_id>/permissions/v2', methods=['PUT'])
-@login_required
+@admin_required
 def api_set_role_perms_v2(role_id):
     """Set v2 permissions for a role."""
     data = request.get_json()
@@ -175,11 +176,11 @@ def api_set_role_perms_v2(role_id):
         _perm_repo.set_role_permissions_v2_bulk(role_id, permissions)
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @roles_bp.route('/api/permissions/v2/<int:permission_id>/role/<int:role_id>', methods=['PUT'])
-@login_required
+@admin_required
 def api_set_single_permission_v2(permission_id, role_id):
     """Set a single v2 permission for a role."""
     data = request.get_json()
@@ -192,4 +193,4 @@ def api_set_single_permission_v2(permission_id, role_id):
         )
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)

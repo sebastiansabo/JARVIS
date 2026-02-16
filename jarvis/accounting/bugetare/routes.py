@@ -11,6 +11,7 @@ from flask import render_template, jsonify, request, redirect, url_for, flash, R
 from flask_login import login_required, current_user
 
 from . import bugetare_bp
+from core.utils.api_helpers import safe_error_response
 
 
 # ============== Page Routes ==============
@@ -76,7 +77,7 @@ def api_bulk_process():
             }
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @bugetare_bp.route('/api/bulk/export', methods=['POST'])
@@ -115,7 +116,7 @@ def api_bulk_export():
             headers={'Content-Disposition': f'attachment; filename={filename}'}
         )
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @bugetare_bp.route('/api/bulk/export-json', methods=['POST'])
@@ -150,7 +151,7 @@ def api_bulk_export_json():
             headers={'Content-Disposition': f'attachment; filename={filename}'}
         )
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @bugetare_bp.route('/api/bulk/match-campaigns', methods=['POST'])
@@ -176,7 +177,7 @@ def api_bulk_match_campaigns():
             'mapping': mapping
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @bugetare_bp.route('/api/bulk/group-similar-items', methods=['POST'])
@@ -252,4 +253,4 @@ This means: items 0 and 3 should be merged together, items 1, 4, and 7 should be
             return jsonify({'success': True, 'groups': []})
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)

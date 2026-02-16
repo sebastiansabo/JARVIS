@@ -8,6 +8,7 @@ from flask import jsonify, request
 from flask_login import login_required
 
 from . import drive_bp
+from core.utils.api_helpers import safe_error_response
 
 # Google Drive integration (optional)
 try:
@@ -105,7 +106,7 @@ def api_drive_upload():
     except FileNotFoundError as e:
         return jsonify({'success': False, 'error': str(e), 'need_auth': True}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @drive_bp.route('/api/drive/upload-attachment', methods=['POST'])
@@ -164,7 +165,7 @@ def api_drive_upload_attachment():
             return jsonify({'success': False, 'error': 'Failed to upload attachment'}), 500
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @drive_bp.route('/api/drive/folder-link', methods=['GET'])
@@ -185,4 +186,4 @@ def api_drive_folder_link():
         else:
             return jsonify({'success': False, 'error': 'Could not determine folder'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)

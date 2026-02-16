@@ -17,6 +17,9 @@ from core.auth.models import User
 from core.auth.repositories import UserRepository, EventRepository
 from core.roles.repositories import PermissionRepository
 from database import ping_db
+from core.utils.api_helpers import RateLimiter
+
+_auth_limiter = RateLimiter()
 
 _user_repo = UserRepository()
 _event_repo = EventRepository()
@@ -33,7 +36,16 @@ check_permission_v2 = _perm_repo.check_permission_v2
 
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production'))
+
+# Secret key — required in production, dev fallback only when FLASK_DEBUG=true
+_secret_key = os.environ.get('FLASK_SECRET_KEY', os.environ.get('SECRET_KEY'))
+if not _secret_key:
+    if os.environ.get('FLASK_DEBUG', 'false').lower() == 'true':
+        _secret_key = 'dev-secret-key-for-local-only'
+        app_logger.warning('Using development secret key — set FLASK_SECRET_KEY for production')
+    else:
+        raise RuntimeError('FLASK_SECRET_KEY environment variable is required')
+app.secret_key = _secret_key
 
 # Flask-Compress for gzip/brotli compression (60-70% size reduction)
 compress = Compress()
@@ -52,6 +64,11 @@ app.config['REMEMBER_COOKIE_SECURE'] = True  # Only send over HTTPS
 app.config['REMEMBER_COOKIE_HTTPONLY'] = True  # Not accessible via JavaScript
 app.config['REMEMBER_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
 
+# Session cookie hardening
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
 # ============== Blueprint Registrations ==============
 
 from hr import hr_bp
@@ -68,9 +85,6 @@ app.register_blueprint(profile_bp)
 
 from core.connectors.efactura import efactura_bp
 app.register_blueprint(efactura_bp)
-
-from accounting.efactura import accounting_efactura_bp
-app.register_blueprint(accounting_efactura_bp)
 
 from core.settings import settings_bp
 app.register_blueprint(settings_bp)
@@ -108,7 +122,29 @@ app.register_blueprint(drive_bp)
 from core.connectors import connectors_bp
 app.register_blueprint(connectors_bp)
 
+from core.approvals import approvals_bp
+app.register_blueprint(approvals_bp, url_prefix='/approvals')
+
 app_logger.info(f'JARVIS startup complete — {len(app.url_map._rules)} routes registered')
+
+# ============== Global Error Handlers ==============
+
+@app.errorhandler(404)
+def handle_404(e):
+    if request.path.startswith('/api/'):
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    return redirect('/app/dashboard')
+
+@app.errorhandler(405)
+def handle_405(e):
+    return jsonify({'success': False, 'error': 'Method not allowed'}), 405
+
+@app.errorhandler(500)
+def handle_500(e):
+    app_logger.exception('Unhandled 500 error')
+    if request.path.startswith('/api/'):
+        return jsonify({'success': False, 'error': 'An internal error occurred'}), 500
+    return redirect('/app/dashboard')
 
 # ============== Background Scheduler ==============
 # Start cleanup scheduler (only in main process or reloader child, not both)
@@ -213,6 +249,13 @@ def login():
         return redirect(url_for('index'))
 
     if request.method == 'POST':
+        # Rate limit: 10 attempts per 5 minutes per IP
+        allowed, retry_after = _auth_limiter.is_allowed(
+            f'login:{request.remote_addr}', max_requests=10, window_seconds=300)
+        if not allowed:
+            flash(f'Too many login attempts. Try again in {retry_after} seconds.', 'error')
+            return render_template('core/login.html')
+
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
 
@@ -229,6 +272,8 @@ def login():
             log_event('login', f'User {email} logged in')
 
             next_page = request.args.get('next')
+            if next_page and (not next_page.startswith('/') or next_page.startswith('//')):
+                next_page = None
             return redirect(next_page or url_for('index'))
         else:
             log_event('login_failed', f'Failed login attempt for {email}')
@@ -265,6 +310,13 @@ def forgot_password():
         return redirect(url_for('index'))
 
     if request.method == 'POST':
+        # Rate limit: 5 attempts per 15 minutes per IP
+        allowed, retry_after = _auth_limiter.is_allowed(
+            f'forgot:{request.remote_addr}', max_requests=5, window_seconds=900)
+        if not allowed:
+            flash(f'Too many requests. Try again in {retry_after} seconds.', 'error')
+            return redirect(url_for('forgot_password'))
+
         email = request.form.get('email', '').strip()
         base_url = request.host_url
         _get_auth_service().request_password_reset(email, base_url)
@@ -492,6 +544,6 @@ def react_assets(filename):
 
 if __name__ == '__main__':
     import os
-    debug = os.environ.get('FLASK_DEBUG', 'true').lower() == 'true'
+    debug = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=debug, host='0.0.0.0', port=port)

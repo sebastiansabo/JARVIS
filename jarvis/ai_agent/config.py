@@ -2,7 +2,7 @@
 AI Agent Configuration
 
 Environment variables and settings for the AI Agent module.
-Following pattern from accounting/efactura/config.py.
+Following pattern from core/connectors/efactura/config.py.
 """
 
 import os

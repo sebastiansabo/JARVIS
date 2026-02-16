@@ -8,6 +8,7 @@ from flask_login import login_required, current_user
 from . import tags_bp
 from .repositories import TagRepository, AutoTagRepository
 from .auto_tag_service import AutoTagService, ENTITY_FIELDS
+from core.utils.api_helpers import safe_error_response
 
 _tag_repo = TagRepository()
 _auto_tag_repo = AutoTagRepository()
@@ -46,7 +47,7 @@ def api_create_tag_group():
     except Exception as e:
         if 'idx_tag_groups_name_unique' in str(e):
             return jsonify({'success': False, 'error': f'A group named "{name}" already exists'}), 409
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @tags_bp.route('/api/tag-groups/<int:group_id>', methods=['PUT'])
@@ -63,7 +64,7 @@ def api_update_tag_group(group_id):
     except Exception as e:
         if 'idx_tag_groups_name_unique' in str(e):
             return jsonify({'success': False, 'error': f'A group with that name already exists'}), 409
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @tags_bp.route('/api/tag-groups/<int:group_id>', methods=['DELETE'])
@@ -110,7 +111,7 @@ def api_create_tag():
     except Exception as e:
         if 'idx_tags_global_name_unique' in str(e) or 'idx_tags_user_name_unique' in str(e):
             return jsonify({'success': False, 'error': f'A tag named "{name}" already exists'}), 409
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @tags_bp.route('/api/tags/<int:tag_id>', methods=['PUT'])
@@ -132,7 +133,7 @@ def api_update_tag(tag_id):
     except Exception as e:
         if 'idx_tags_global_name_unique' in str(e) or 'idx_tags_user_name_unique' in str(e):
             return jsonify({'success': False, 'error': 'A tag with that name already exists'}), 409
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @tags_bp.route('/api/tags/<int:tag_id>', methods=['DELETE'])

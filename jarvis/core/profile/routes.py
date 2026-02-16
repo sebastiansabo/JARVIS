@@ -3,12 +3,12 @@
 API endpoints and page routes for the user profile page.
 Uses user data directly (organizational fields stored in users table).
 """
-import traceback
 from flask import jsonify, request, redirect
 from flask_login import login_required, current_user
 
 from . import profile_bp
 from core.profile.repositories import ProfileRepository
+from core.utils.api_helpers import safe_error_response
 
 _profile_repo = ProfileRepository()
 
@@ -57,9 +57,7 @@ def api_profile_summary():
             'activity': {'total_events': activity_count},
         })
     except Exception as e:
-        print(f"Profile summary API error: {e}")
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @profile_bp.route('/api/invoices')
@@ -109,9 +107,7 @@ def api_profile_invoices():
             'per_page': per_page,
         })
     except Exception as e:
-        print(f"Profile invoices API error: {e}")
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @profile_bp.route('/api/hr-events')
@@ -162,9 +158,7 @@ def api_profile_hr_events():
             'per_page': per_page,
         })
     except Exception as e:
-        print(f"Profile HR events API error: {e}")
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @profile_bp.route('/api/notifications')
@@ -181,9 +175,7 @@ def api_profile_notifications():
             'per_page': 20,
         })
     except Exception as e:
-        print(f"Profile notifications API error: {e}")
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @profile_bp.route('/api/activity')
@@ -219,6 +211,4 @@ def api_profile_activity():
             'per_page': per_page,
         })
     except Exception as e:
-        print(f"Profile activity API error: {e}")
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return safe_error_response(e)

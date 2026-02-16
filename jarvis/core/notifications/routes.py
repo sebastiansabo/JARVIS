@@ -7,6 +7,7 @@ from flask_login import login_required, current_user
 
 from . import notifications_bp
 from .repositories import NotificationRepository
+from core.utils.api_helpers import safe_error_response
 
 _notif_repo = NotificationRepository()
 
@@ -28,7 +29,7 @@ def api_save_notification_settings():
         _notif_repo.save_settings_bulk(data)
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @notifications_bp.route('/api/notification-logs', methods=['GET'])
@@ -103,4 +104,4 @@ def api_set_default_columns():
         EventRepository().log_event('default_columns_set', event_description=f'Set default column config for {tab} tab')
         return jsonify({'success': True, 'message': f'Default columns set for {tab} tab'})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)

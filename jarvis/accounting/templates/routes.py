@@ -4,6 +4,7 @@ from flask_login import login_required
 
 from . import templates_bp
 from .repositories import TemplateRepository
+from core.utils.api_helpers import safe_error_response
 
 _template_repo = TemplateRepository()
 
@@ -36,7 +37,7 @@ def api_get_template(template_id):
 @login_required
 def api_create_template():
     """Create a new invoice template."""
-    data = request.json
+    data = request.get_json()
 
     try:
         template_id = _template_repo.save(
@@ -61,14 +62,14 @@ def api_create_template():
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @templates_bp.route('/api/templates/<int:template_id>', methods=['PUT'])
 @login_required
 def api_update_template(template_id):
     """Update an invoice template."""
-    data = request.json
+    data = request.get_json()
 
     try:
         updated = _template_repo.update(
@@ -94,7 +95,7 @@ def api_update_template(template_id):
             return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'Template not found'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @templates_bp.route('/api/templates/<int:template_id>', methods=['DELETE'])
@@ -140,4 +141,4 @@ def api_generate_template():
         return jsonify(response_data)
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)

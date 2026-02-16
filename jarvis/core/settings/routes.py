@@ -9,6 +9,7 @@ from . import settings_bp
 from .themes.repositories import ThemeRepository
 from .menus.repositories import MenuRepository
 from .dropdowns.repositories import DropdownRepository
+from core.utils.api_helpers import admin_required, safe_error_response
 
 _theme_repo = ThemeRepository()
 _menu_repo = MenuRepository()
@@ -43,7 +44,7 @@ def api_get_theme(theme_id):
 
 
 @settings_bp.route('/api/themes', methods=['POST'])
-@login_required
+@admin_required
 def api_create_theme():
     """Create a new theme."""
     data = request.get_json()
@@ -59,7 +60,7 @@ def api_create_theme():
 
 
 @settings_bp.route('/api/themes/<int:theme_id>', methods=['PUT'])
-@login_required
+@admin_required
 def api_update_theme(theme_id):
     """Update a theme."""
     data = request.get_json()
@@ -77,7 +78,7 @@ def api_update_theme(theme_id):
 
 
 @settings_bp.route('/api/themes/<int:theme_id>', methods=['DELETE'])
-@login_required
+@admin_required
 def api_delete_theme(theme_id):
     """Delete a theme."""
     if _theme_repo.delete(theme_id):
@@ -86,7 +87,7 @@ def api_delete_theme(theme_id):
 
 
 @settings_bp.route('/api/themes/<int:theme_id>/activate', methods=['POST'])
-@login_required
+@admin_required
 def api_activate_theme(theme_id):
     """Activate a theme."""
     if _theme_repo.activate(theme_id):
@@ -144,7 +145,7 @@ def api_get_module_menu_item(item_id):
 
 
 @settings_bp.route('/api/module-menu', methods=['POST'])
-@login_required
+@admin_required
 def api_create_module_menu_item():
     """Create a new module menu item."""
     data = request.get_json()
@@ -157,7 +158,7 @@ def api_create_module_menu_item():
 
 
 @settings_bp.route('/api/module-menu/<int:item_id>', methods=['PUT'])
-@login_required
+@admin_required
 def api_update_module_menu_item(item_id):
     """Update a module menu item."""
     data = request.get_json()
@@ -172,7 +173,7 @@ def api_update_module_menu_item(item_id):
 
 
 @settings_bp.route('/api/module-menu/<int:item_id>', methods=['DELETE'])
-@login_required
+@admin_required
 def api_delete_module_menu_item(item_id):
     """Delete a module menu item."""
     if _menu_repo.delete(item_id):
@@ -181,7 +182,7 @@ def api_delete_module_menu_item(item_id):
 
 
 @settings_bp.route('/api/module-menu/reorder', methods=['POST'])
-@login_required
+@admin_required
 def api_reorder_module_menu():
     """Reorder module menu items."""
     data = request.get_json()
@@ -207,7 +208,7 @@ def api_get_vat_rates():
 
 
 @settings_bp.route('/api/vat-rates', methods=['POST'])
-@login_required
+@admin_required
 def api_create_vat_rate():
     """Create a new VAT rate."""
     data = request.get_json()
@@ -226,11 +227,11 @@ def api_create_vat_rate():
         )
         return jsonify({'success': True, 'id': rate_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @settings_bp.route('/api/vat-rates/<int:rate_id>', methods=['PUT'])
-@login_required
+@admin_required
 def api_update_vat_rate(rate_id):
     """Update a VAT rate."""
     data = request.get_json()
@@ -246,11 +247,11 @@ def api_update_vat_rate(rate_id):
             return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'VAT rate not found'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @settings_bp.route('/api/vat-rates/<int:rate_id>', methods=['DELETE'])
-@login_required
+@admin_required
 def api_delete_vat_rate(rate_id):
     """Delete a VAT rate."""
     if _dropdown_repo.delete_vat_rate(rate_id):
@@ -291,7 +292,7 @@ def api_add_dropdown_option():
         )
         return jsonify({'success': True, 'id': option_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return safe_error_response(e)
 
 
 @settings_bp.route('/api/dropdown-options/<int:option_id>', methods=['PUT'])
@@ -317,7 +318,7 @@ def api_update_dropdown_option(option_id):
             return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'Option not found'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return safe_error_response(e)
 
 
 @settings_bp.route('/api/dropdown-options/<int:option_id>', methods=['DELETE'])

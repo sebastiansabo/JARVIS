@@ -6,6 +6,7 @@ from flask_login import login_required, current_user
 
 from . import events_bp
 from .utils import can_edit_bonus, get_lock_status
+from core.utils.api_helpers import safe_error_response
 
 from core.roles.repositories import PermissionRepository
 check_permission_v2 = PermissionRepository().check_permission_v2
@@ -964,7 +965,7 @@ def api_create_company_brand():
         clear_structure_cache()
         return jsonify({'success': True, 'id': brand_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return safe_error_response(e)
 
 
 @events_bp.route('/api/structure/company-brands/<int:brand_id>', methods=['PUT'])
@@ -1096,7 +1097,7 @@ def api_create_master_brand():
         clear_structure_cache()
         return jsonify({'success': True, 'id': brand_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return safe_error_response(e)
 
 
 @events_bp.route('/api/master/brands/<int:brand_id>', methods=['PUT'])
@@ -1145,7 +1146,7 @@ def api_create_master_department():
         clear_structure_cache()
         return jsonify({'success': True, 'id': dept_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return safe_error_response(e)
 
 
 @events_bp.route('/api/master/departments/<int:dept_id>', methods=['PUT'])
@@ -1194,7 +1195,7 @@ def api_create_master_subdepartment():
         clear_structure_cache()
         return jsonify({'success': True, 'id': subdept_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return safe_error_response(e)
 
 
 @events_bp.route('/api/master/subdepartments/<int:subdept_id>', methods=['PUT'])

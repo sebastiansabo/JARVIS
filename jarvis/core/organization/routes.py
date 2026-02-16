@@ -7,6 +7,7 @@ from flask_login import login_required
 
 from . import org_bp
 from .repositories import CompanyRepository, StructureRepository
+from core.utils.api_helpers import safe_error_response
 
 _company_repo = CompanyRepository()
 _structure_repo = StructureRepository()
@@ -80,7 +81,7 @@ def api_companies_vat():
 @login_required
 def api_add_company_vat():
     """Add a new company with VAT."""
-    data = request.json
+    data = request.get_json()
     company = data.get('company', '').strip()
     vat = data.get('vat', '').strip()
 
@@ -91,14 +92,14 @@ def api_add_company_vat():
         _company_repo.add_with_vat(company, vat)
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @org_bp.route('/api/companies-vat/<company>', methods=['PUT'])
 @login_required
 def api_update_company_vat(company):
     """Update company VAT."""
-    data = request.json
+    data = request.get_json()
     vat = data.get('vat', '').strip()
 
     if not vat:

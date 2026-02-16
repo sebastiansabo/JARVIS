@@ -5,6 +5,7 @@ from flask_login import login_required, current_user
 
 from . import invoices_bp
 from .repositories import InvoiceRepository, AllocationRepository, SummaryRepository
+from core.utils.api_helpers import safe_error_response
 
 _invoice_repo = InvoiceRepository()
 _allocation_repo = AllocationRepository()
@@ -72,7 +73,9 @@ def submit_invoice():
     if not current_user.can_add_invoices:
         return jsonify({'success': False, 'error': 'You do not have permission to add invoices'}), 403
 
-    data = request.json
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'Invalid or missing JSON body'}), 400
 
     try:
         invoice_id = _invoice_repo.save(
@@ -137,7 +140,7 @@ def submit_invoice():
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 # ============== INVOICE PARSING ==============
@@ -146,6 +149,8 @@ def submit_invoice():
 @login_required
 def api_parse_invoice():
     """Parse an uploaded invoice using AI or template (with auto-detection)."""
+    if not current_user.can_add_invoices:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file uploaded'}), 400
 
@@ -200,7 +205,7 @@ def api_parse_invoice():
         refresh_connection_pool()
         return jsonify({'success': True, 'data': result})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @invoices_bp.route('/api/parse-existing/<path:filepath>')
@@ -218,7 +223,7 @@ def api_parse_existing(filepath):
         result = parse_invoice(file_path)
         return jsonify({'success': True, 'data': result})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @invoices_bp.route('/api/invoices')
@@ -344,7 +349,7 @@ def api_db_bulk_delete_invoices():
     """Soft delete multiple invoices."""
     if not current_user.can_delete_invoices:
         return jsonify({'success': False, 'error': 'You do not have permission to delete invoices'}), 403
-    data = request.json
+    data = request.get_json()
     invoice_ids = data.get('invoice_ids', [])
     if not invoice_ids:
         return jsonify({'error': 'No invoice IDs provided'}), 400
@@ -358,7 +363,7 @@ def api_db_bulk_restore_invoices():
     """Restore multiple soft-deleted invoices."""
     if not current_user.can_delete_invoices:
         return jsonify({'success': False, 'error': 'You do not have permission to restore invoices'}), 403
-    data = request.json
+    data = request.get_json()
     invoice_ids = data.get('invoice_ids', [])
     if not invoice_ids:
         return jsonify({'error': 'No invoice IDs provided'}), 400
@@ -372,7 +377,7 @@ def api_db_bulk_permanently_delete_invoices():
     """Permanently delete multiple invoices. Also deletes from Google Drive."""
     if not current_user.can_delete_invoices:
         return jsonify({'success': False, 'error': 'You do not have permission to delete invoices'}), 403
-    data = request.json
+    data = request.get_json()
     invoice_ids = data.get('invoice_ids', [])
     if not invoice_ids:
         return jsonify({'error': 'No invoice IDs provided'}), 400
@@ -409,7 +414,7 @@ def api_db_update_invoice(invoice_id):
     if not current_user.can_edit_invoices:
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
-    data = request.json
+    data = request.get_json()
 
     try:
         current_invoice = _invoice_repo.get_with_allocations(invoice_id)
@@ -478,7 +483,7 @@ def api_db_update_invoice(invoice_id):
             return jsonify({'success': True})
         return jsonify({'error': 'Invoice not found or no changes made'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 # ============== ALLOCATION ROUTES ==============
@@ -490,7 +495,7 @@ def api_db_update_allocations(invoice_id):
     if not current_user.can_edit_invoices:
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
-    data = request.json
+    data = request.get_json()
     allocations = data.get('allocations', [])
     send_notification = data.get('send_notification', False)
 
@@ -542,14 +547,16 @@ def api_db_update_allocations(invoice_id):
                    entity_type='invoice', entity_id=invoice_id)
         return jsonify({'success': True, 'notifications_sent': notifications_sent})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @invoices_bp.route('/api/allocations/<int:allocation_id>/comment', methods=['PUT'])
 @login_required
 def api_update_allocation_comment(allocation_id):
     """Update the comment for a specific allocation."""
-    data = request.json
+    if not current_user.can_edit_invoices:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json()
     comment = data.get('comment', '')
 
     try:
@@ -558,14 +565,16 @@ def api_update_allocation_comment(allocation_id):
             return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'Allocation not found'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @invoices_bp.route('/api/invoices/<int:invoice_id>/drive-link', methods=['PUT'])
 @login_required
 def api_update_invoice_drive_link(invoice_id):
     """Update only the drive_link for an invoice."""
-    data = request.json
+    if not current_user.can_edit_invoices:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json()
     drive_link = data.get('drive_link')
 
     if not drive_link:
@@ -577,7 +586,7 @@ def api_update_invoice_drive_link(invoice_id):
             return jsonify({'success': True})
         return jsonify({'error': 'Invoice not found'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 # ============== SEARCH ==============
@@ -651,6 +660,8 @@ def api_check_invoice_number():
 @login_required
 def api_db_summary_company():
     """Get summary grouped by company."""
+    if not current_user.can_view_invoices:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     department = request.args.get('department')
@@ -664,6 +675,8 @@ def api_db_summary_company():
 @login_required
 def api_db_summary_department():
     """Get summary grouped by department."""
+    if not current_user.can_view_invoices:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
     company = request.args.get('company')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
@@ -678,6 +691,8 @@ def api_db_summary_department():
 @login_required
 def api_db_summary_brand():
     """Get summary grouped by brand (Linie de business)."""
+    if not current_user.can_view_invoices:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
     company = request.args.get('company')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
@@ -692,6 +707,8 @@ def api_db_summary_brand():
 @login_required
 def api_db_summary_supplier():
     """Get summary grouped by supplier."""
+    if not current_user.can_view_invoices:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
     company = request.args.get('company')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')

@@ -11,6 +11,7 @@ from flask import request, jsonify, render_template, Response, redirect, session
 from flask_login import login_required, current_user
 
 from core.utils.logging_config import get_logger
+from core.utils.api_helpers import safe_error_response
 
 from . import efactura_bp
 from .config import InvoiceDirection, ArtifactType
@@ -61,11 +62,7 @@ def migrate_junction_table():
             'message': f'Junction table created/verified. {count} type mappings exist.'
         })
     except Exception as e:
-        logger.error(f"Junction table migration failed: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/connections')
@@ -105,11 +102,7 @@ def list_connections():
         })
 
     except Exception as e:
-        logger.error(f"Error listing connections: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/connections/<cif>', methods=['GET'])
@@ -131,11 +124,7 @@ def get_connection(cif: str):
         })
 
     except Exception as e:
-        logger.error(f"Error getting connection: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/connections', methods=['POST'])
@@ -179,11 +168,7 @@ def create_connection():
         }), 201
 
     except Exception as e:
-        logger.error(f"Error creating connection: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/connections/<cif>', methods=['DELETE'])
@@ -205,11 +190,7 @@ def delete_connection(cif: str):
         })
 
     except Exception as e:
-        logger.error(f"Error deleting connection: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 # ============================================================
@@ -273,11 +254,7 @@ def list_invoices():
             'error': f"Invalid parameter: {e}",
         }), 400
     except Exception as e:
-        logger.error(f"Error listing invoices: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>', methods=['GET'])
@@ -299,11 +276,7 @@ def get_invoice(invoice_id: int):
         })
 
     except Exception as e:
-        logger.error(f"Error getting invoice: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/download/<artifact_type>', methods=['GET'])
@@ -336,11 +309,7 @@ def download_artifact(invoice_id: int, artifact_type: str):
         })
 
     except Exception as e:
-        logger.error(f"Error downloading artifact: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/summary', methods=['GET'])
@@ -369,11 +338,7 @@ def get_invoice_summary():
         })
 
     except Exception as e:
-        logger.error(f"Error getting summary: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 # ============================================================
@@ -403,11 +368,7 @@ def trigger_sync():
         })
 
     except Exception as e:
-        logger.error(f"Error triggering sync: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/sync/history', methods=['GET'])
@@ -426,11 +387,7 @@ def get_sync_history():
         })
 
     except Exception as e:
-        logger.error(f"Error getting sync history: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/sync/errors/<run_id>', methods=['GET'])
@@ -446,11 +403,7 @@ def get_sync_errors(run_id: str):
         })
 
     except Exception as e:
-        logger.error(f"Error getting sync errors: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/sync/stats', methods=['GET'])
@@ -469,11 +422,7 @@ def get_error_stats():
         })
 
     except Exception as e:
-        logger.error(f"Error getting stats: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 # ============================================================
@@ -496,11 +445,7 @@ def get_rate_limit():
         })
 
     except Exception as e:
-        logger.error(f"Error getting rate limit: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 # ============================================================
@@ -559,11 +504,7 @@ def fetch_anaf_messages():
         })
 
     except Exception as e:
-        logger.error(f"Error fetching ANAF messages: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/anaf/download/<message_id>', methods=['GET'])
@@ -601,11 +542,7 @@ def download_anaf_message(message_id: str):
             'error': f"Configuration error: {e}",
         }), 400
     except Exception as e:
-        logger.error(f"Error downloading ANAF message: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/anaf/debug/<message_id>', methods=['GET'])
@@ -657,11 +594,7 @@ def debug_anaf_message(message_id: str):
         })
 
     except Exception as e:
-        logger.error(f"Error debugging ANAF message: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/anaf/status', methods=['GET'])
@@ -677,11 +610,7 @@ def anaf_status():
         })
 
     except Exception as e:
-        logger.error(f"Error getting ANAF status: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/company/lookup', methods=['GET'])
@@ -719,11 +648,7 @@ def lookup_company():
         })
 
     except Exception as e:
-        logger.error(f"Error looking up company: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/company/lookup-batch', methods=['POST'])
@@ -761,11 +686,7 @@ def lookup_companies_batch():
         })
 
     except Exception as e:
-        logger.error(f"Error looking up companies: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 # ============================================================
@@ -811,11 +732,7 @@ def import_from_anaf():
         })
 
     except Exception as e:
-        logger.error(f"Error importing from ANAF: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/sync', methods=['POST'])
@@ -853,11 +770,7 @@ def sync_all():
         })
 
     except Exception as e:
-        logger.error(f"Error in sync_all: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/sync/companies', methods=['GET'])
@@ -885,11 +798,7 @@ def get_sync_companies():
         })
 
     except Exception as e:
-        logger.error(f"Error getting sync companies: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/sync/company', methods=['POST'])
@@ -930,11 +839,7 @@ def sync_single_company():
         })
 
     except Exception as e:
-        logger.error(f"Error syncing company: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 # ============================================================
@@ -1005,11 +910,7 @@ def list_unallocated_invoices():
         })
 
     except Exception as e:
-        logger.error(f"Error listing unallocated invoices: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/unallocated/count', methods=['GET'])
@@ -1025,11 +926,7 @@ def get_unallocated_count():
         })
 
     except Exception as e:
-        logger.error(f"Error getting unallocated count: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/unallocated/ids', methods=['GET'])
@@ -1060,11 +957,7 @@ def get_unallocated_ids():
         })
 
     except Exception as e:
-        logger.error(f"Error getting unallocated IDs: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/overrides', methods=['PUT'])
@@ -1106,11 +999,7 @@ def update_invoice_overrides(invoice_id):
             return jsonify({'success': False, 'error': 'Failed to update overrides'}), 500
 
     except Exception as e:
-        logger.error(f"Error updating invoice overrides: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/bulk-overrides', methods=['PUT'])
@@ -1164,11 +1053,7 @@ def bulk_update_invoice_overrides():
         })
 
     except Exception as e:
-        logger.error(f"Error bulk updating invoice overrides: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/send-to-module', methods=['POST'])
@@ -1208,11 +1093,7 @@ def send_to_invoice_module():
         })
 
     except Exception as e:
-        logger.error(f"Error sending to invoice module: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/duplicates', methods=['GET'])
@@ -1234,11 +1115,7 @@ def get_duplicate_invoices():
         })
 
     except Exception as e:
-        logger.error(f"Error detecting duplicates: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/mark-duplicates', methods=['POST'])
@@ -1270,11 +1147,7 @@ def mark_duplicate_invoices():
         })
 
     except Exception as e:
-        logger.error(f"Error marking duplicates: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/duplicates/ai', methods=['GET'])
@@ -1300,11 +1173,7 @@ def get_ai_duplicate_invoices():
         })
 
     except Exception as e:
-        logger.error(f"Error detecting AI duplicates: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/mark-duplicates/ai', methods=['POST'])
@@ -1337,11 +1206,7 @@ def mark_ai_duplicate_invoices():
         })
 
     except Exception as e:
-        logger.error(f"Error marking AI duplicates: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/ignore', methods=['POST'])
@@ -1376,11 +1241,7 @@ def ignore_invoice(invoice_id: int):
         })
 
     except Exception as e:
-        logger.error(f"Error ignoring invoice: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 # ============================================================
@@ -1435,11 +1296,7 @@ def list_hidden_invoices():
         })
 
     except Exception as e:
-        logger.error(f"Error listing hidden invoices: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/hidden/count', methods=['GET'])
@@ -1455,11 +1312,7 @@ def get_hidden_count():
         })
 
     except Exception as e:
-        logger.error(f"Error getting hidden count: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/bulk-hide', methods=['POST'])
@@ -1489,11 +1342,7 @@ def bulk_hide_invoices():
         })
 
     except Exception as e:
-        logger.error(f"Error bulk hiding invoices: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/bulk-restore-hidden', methods=['POST'])
@@ -1523,11 +1372,7 @@ def bulk_restore_from_hidden():
         })
 
     except Exception as e:
-        logger.error(f"Error bulk restoring invoices: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 # ============================================================
@@ -1582,11 +1427,7 @@ def list_deleted_invoices():
         })
 
     except Exception as e:
-        logger.error(f"Error listing deleted invoices: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/bin/count', methods=['GET'])
@@ -1602,11 +1443,7 @@ def get_bin_count():
         })
 
     except Exception as e:
-        logger.error(f"Error getting bin count: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/delete', methods=['POST'])
@@ -1631,11 +1468,7 @@ def delete_invoice(invoice_id: int):
         })
 
     except Exception as e:
-        logger.error(f"Error deleting invoice: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/restore', methods=['POST'])
@@ -1660,11 +1493,7 @@ def restore_invoice(invoice_id: int):
         })
 
     except Exception as e:
-        logger.error(f"Error restoring invoice: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/permanent-delete', methods=['POST'])
@@ -1689,11 +1518,7 @@ def permanent_delete_invoice(invoice_id: int):
         })
 
     except Exception as e:
-        logger.error(f"Error permanently deleting invoice: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/bulk-delete', methods=['POST'])
@@ -1723,11 +1548,7 @@ def bulk_delete_invoices():
         })
 
     except Exception as e:
-        logger.error(f"Error bulk deleting invoices: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/bulk-restore-bin', methods=['POST'])
@@ -1757,11 +1578,7 @@ def bulk_restore_from_bin():
         })
 
     except Exception as e:
-        logger.error(f"Error bulk restoring invoices: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/bulk-permanent-delete', methods=['POST'])
@@ -1791,11 +1608,7 @@ def bulk_permanent_delete_invoices():
         })
 
     except Exception as e:
-        logger.error(f"Error bulk permanently deleting invoices: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/cleanup-old', methods=['POST'])
@@ -1827,11 +1640,7 @@ def cleanup_old_unallocated():
         })
 
     except Exception as e:
-        logger.error(f"Error cleaning up old unallocated invoices: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/pdf', methods=['GET'])
@@ -1860,11 +1669,7 @@ def get_invoice_pdf(invoice_id: int):
         )
 
     except Exception as e:
-        logger.error(f"Error getting invoice PDF: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/anaf/export-pdf/<message_id>', methods=['GET'])
@@ -1917,11 +1722,7 @@ def export_invoice_pdf(message_id: str):
         )
 
     except Exception as e:
-        logger.error(f"Error exporting PDF: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 # ============================================================
@@ -1968,11 +1769,7 @@ def oauth_authorize():
         return redirect(auth_url)
 
     except Exception as e:
-        logger.error(f"Error initiating OAuth: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/oauth/callback', methods=['GET'])
@@ -2080,11 +1877,11 @@ def oauth_callback():
             error=str(e),
         )
     except Exception as e:
-        logger.error(f"OAuth callback error: {e}")
+        logger.exception('OAuth callback error')
         return render_template(
             'core/connectors/efactura/oauth_result.html',
             success=False,
-            error=f"An unexpected error occurred: {e}",
+            error='An unexpected error occurred',
         )
 
 
@@ -2140,11 +1937,7 @@ def oauth_revoke():
             }), 404
 
     except Exception as e:
-        logger.error(f"Error revoking OAuth tokens: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/oauth/status', methods=['GET'])
@@ -2183,11 +1976,7 @@ def oauth_status():
         })
 
     except Exception as e:
-        logger.error(f"Error getting OAuth status: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/oauth/refresh', methods=['POST'])
@@ -2247,17 +2036,12 @@ def oauth_refresh():
         })
 
     except ValueError as e:
-        logger.error(f"Token refresh failed: {e}")
         return jsonify({
             'success': False,
             'error': str(e),
         }), 400
     except Exception as e:
-        logger.error(f"Error refreshing OAuth token: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 # ============================================================
@@ -2290,11 +2074,7 @@ def list_supplier_mappings():
         })
 
     except Exception as e:
-        logger.error(f"Error listing supplier mappings: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/mappings/<int:mapping_id>', methods=['GET'])
@@ -2316,11 +2096,7 @@ def get_supplier_mapping(mapping_id: int):
         })
 
     except Exception as e:
-        logger.error(f"Error getting supplier mapping: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/mappings', methods=['POST'])
@@ -2401,17 +2177,12 @@ def create_supplier_mapping():
         }), 201
 
     except Exception as e:
-        logger.error(f"Error creating supplier mapping: {e}")
-        # Check for unique constraint violation
         if 'unique constraint' in str(e).lower() or 'duplicate' in str(e).lower():
             return jsonify({
                 'success': False,
                 'error': 'A mapping for this partner already exists',
             }), 409
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/mappings/<int:mapping_id>', methods=['PUT'])
@@ -2484,11 +2255,7 @@ def update_supplier_mapping(mapping_id: int):
         })
 
     except Exception as e:
-        logger.error(f"Error updating supplier mapping: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/mappings/<int:mapping_id>', methods=['DELETE'])
@@ -2510,11 +2277,7 @@ def delete_supplier_mapping(mapping_id: int):
         })
 
     except Exception as e:
-        logger.error(f"Error deleting supplier mapping: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/suppliers/distinct', methods=['GET'])
@@ -2536,11 +2299,7 @@ def get_distinct_suppliers():
         })
 
     except Exception as e:
-        logger.error(f"Error getting distinct suppliers: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/mappings/lookup', methods=['GET'])
@@ -2575,11 +2334,7 @@ def lookup_supplier_mapping():
         })
 
     except Exception as e:
-        logger.error(f"Error looking up supplier mapping: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/mappings/bulk-delete', methods=['POST'])
@@ -2618,11 +2373,7 @@ def bulk_delete_supplier_mappings():
         })
 
     except Exception as e:
-        logger.error(f"Error bulk deleting supplier mappings: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/mappings/bulk-set-type', methods=['POST'])
@@ -2675,11 +2426,7 @@ def bulk_set_mappings_type():
         })
 
     except Exception as e:
-        logger.error(f"Error bulk setting type for mappings: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 # ============================================================
@@ -2717,11 +2464,7 @@ def list_supplier_types():
         })
 
     except Exception as e:
-        logger.error(f"Error listing supplier types: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/supplier-types/<int:type_id>', methods=['GET'])
@@ -2744,11 +2487,7 @@ def get_supplier_type(type_id: int):
         })
 
     except Exception as e:
-        logger.error(f"Error getting supplier type: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/supplier-types', methods=['POST'])
@@ -2798,17 +2537,12 @@ def create_supplier_type():
         }), 201
 
     except Exception as e:
-        logger.error(f"Error creating supplier type: {e}")
-        # Check for unique constraint violation
         if 'unique constraint' in str(e).lower() or 'duplicate' in str(e).lower():
             return jsonify({
                 'success': False,
                 'error': 'A supplier type with this name already exists',
             }), 409
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/supplier-types/<int:type_id>', methods=['PUT'])
@@ -2853,11 +2587,7 @@ def update_supplier_type(type_id: int):
         })
 
     except Exception as e:
-        logger.error(f"Error updating supplier type: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)
 
 
 @efactura_bp.route('/api/supplier-types/<int:type_id>', methods=['DELETE'])
@@ -2880,8 +2610,4 @@ def delete_supplier_type(type_id: int):
         })
 
     except Exception as e:
-        logger.error(f"Error deleting supplier type: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-        }), 500
+        return safe_error_response(e)

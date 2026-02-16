@@ -2010,6 +2010,185 @@ def create_schema(conn, cursor):
     except Exception:
         conn.rollback()
 
+    # ============== Approval Engine Tables ==============
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS approval_flows (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            slug TEXT NOT NULL UNIQUE,
+            description TEXT,
+            entity_type TEXT NOT NULL,
+            trigger_conditions JSONB DEFAULT '{}',
+            is_active BOOLEAN DEFAULT TRUE,
+            priority INTEGER DEFAULT 0,
+            allow_parallel_steps BOOLEAN DEFAULT FALSE,
+            auto_approve_below NUMERIC(15,2),
+            auto_reject_after_hours INTEGER,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_flows_entity_type ON approval_flows(entity_type)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_flows_active ON approval_flows(is_active)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS approval_steps (
+            id SERIAL PRIMARY KEY,
+            flow_id INTEGER NOT NULL REFERENCES approval_flows(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            step_order INTEGER NOT NULL,
+            approver_type TEXT NOT NULL,
+            approver_user_id INTEGER REFERENCES users(id),
+            approver_role_name TEXT,
+            requires_all BOOLEAN DEFAULT FALSE,
+            min_approvals INTEGER DEFAULT 1,
+            skip_conditions JSONB DEFAULT '{}',
+            timeout_hours INTEGER,
+            escalation_step_id INTEGER REFERENCES approval_steps(id),
+            escalation_user_id INTEGER REFERENCES users(id),
+            notify_on_pending BOOLEAN DEFAULT TRUE,
+            notify_on_decision BOOLEAN DEFAULT TRUE,
+            reminder_after_hours INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_steps_flow ON approval_steps(flow_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS approval_requests (
+            id SERIAL PRIMARY KEY,
+            entity_type TEXT NOT NULL,
+            entity_id INTEGER NOT NULL,
+            flow_id INTEGER NOT NULL REFERENCES approval_flows(id),
+            current_step_id INTEGER REFERENCES approval_steps(id),
+            status TEXT NOT NULL DEFAULT 'pending',
+            context_snapshot JSONB DEFAULT '{}',
+            requested_by INTEGER NOT NULL REFERENCES users(id),
+            requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            resolved_at TIMESTAMP,
+            resolution_note TEXT,
+            priority TEXT DEFAULT 'normal',
+            due_by TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT chk_approval_status CHECK (
+                status IN ('pending','in_progress','approved','rejected','cancelled','expired','escalated','on_hold')
+            ),
+            CONSTRAINT chk_approval_priority CHECK (
+                priority IN ('low','normal','high','urgent')
+            )
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_entity ON approval_requests(entity_type, entity_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_status ON approval_requests(status)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_step_status ON approval_requests(current_step_id, status)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_requested_by ON approval_requests(requested_by)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS approval_decisions (
+            id SERIAL PRIMARY KEY,
+            request_id INTEGER NOT NULL REFERENCES approval_requests(id) ON DELETE CASCADE,
+            step_id INTEGER NOT NULL REFERENCES approval_steps(id),
+            decided_by INTEGER NOT NULL REFERENCES users(id),
+            decision TEXT NOT NULL,
+            comment TEXT,
+            delegated_to INTEGER REFERENCES users(id),
+            delegation_reason TEXT,
+            conditions JSONB,
+            decided_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT chk_decision_type CHECK (
+                decision IN ('approved','rejected','returned','delegated','abstained')
+            )
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_decisions_request ON approval_decisions(request_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_decisions_step ON approval_decisions(step_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS approval_audit_log (
+            id SERIAL PRIMARY KEY,
+            request_id INTEGER NOT NULL REFERENCES approval_requests(id),
+            action TEXT NOT NULL,
+            actor_id INTEGER REFERENCES users(id),
+            actor_type TEXT DEFAULT 'user',
+            details JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_audit_request ON approval_audit_log(request_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_audit_timestamp ON approval_audit_log(created_at)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS approval_delegations (
+            id SERIAL PRIMARY KEY,
+            delegator_id INTEGER NOT NULL REFERENCES users(id),
+            delegate_id INTEGER NOT NULL REFERENCES users(id),
+            entity_type TEXT,
+            flow_id INTEGER REFERENCES approval_flows(id),
+            starts_at TIMESTAMP NOT NULL,
+            ends_at TIMESTAMP NOT NULL,
+            reason TEXT,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_delegations_delegate ON approval_delegations(delegate_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_approval_delegations_active ON approval_delegations(is_active, starts_at, ends_at)')
+
+    conn.commit()
+
+    # Seed approval permissions_v2 if not already present
+    cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'approvals'")
+    if cursor.fetchone()['cnt'] == 0:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order) VALUES
+            ('approvals', 'Approvals', 'bi-check2-square', 'queue', 'Approval Queue', 'access', 'Access', 'Access approval queue', FALSE, 1),
+            ('approvals', 'Approvals', 'bi-check2-square', 'queue', 'Approval Queue', 'decide', 'Decide', 'Approve or reject requests', FALSE, 2),
+            ('approvals', 'Approvals', 'bi-check2-square', 'requests', 'Requests', 'submit', 'Submit', 'Submit entities for approval', FALSE, 3),
+            ('approvals', 'Approvals', 'bi-check2-square', 'requests', 'Requests', 'view_all', 'View All', 'View all approval requests', FALSE, 4),
+            ('approvals', 'Approvals', 'bi-check2-square', 'flows', 'Flows', 'view', 'View', 'View approval flows', FALSE, 5),
+            ('approvals', 'Approvals', 'bi-check2-square', 'flows', 'Flows', 'manage', 'Manage', 'Create and edit flows', FALSE, 6),
+            ('approvals', 'Approvals', 'bi-check2-square', 'delegations', 'Delegations', 'manage', 'Manage', 'Manage approval delegations', FALSE, 7),
+            ('approvals', 'Approvals', 'bi-check2-square', 'audit', 'Audit Log', 'view', 'View', 'View approval audit log', FALSE, 8)
+        ''')
+
+        # Grant to existing roles
+        cursor.execute('SELECT id, name FROM roles')
+        for role in cursor.fetchall():
+            role_name = role['name']
+            cursor.execute("SELECT id FROM permissions_v2 WHERE module_key = 'approvals'")
+            perm_rows = cursor.fetchall()
+            for p in perm_rows:
+                if role_name == 'Admin':
+                    cursor.execute('''
+                        INSERT INTO role_permissions_v2 (role_id, permission_id, granted)
+                        VALUES (%s, %s, TRUE)
+                        ON CONFLICT (role_id, permission_id) DO NOTHING
+                    ''', (role['id'], p['id']))
+                elif role_name == 'Manager':
+                    cursor.execute("SELECT action_key FROM permissions_v2 WHERE id = %s", (p['id'],))
+                    action = cursor.fetchone()['action_key']
+                    if action in ('access', 'decide', 'submit', 'view_all', 'manage'):
+                        cursor.execute('''
+                            INSERT INTO role_permissions_v2 (role_id, permission_id, granted)
+                            VALUES (%s, %s, TRUE)
+                            ON CONFLICT (role_id, permission_id) DO NOTHING
+                        ''', (role['id'], p['id']))
+                else:
+                    cursor.execute("SELECT action_key FROM permissions_v2 WHERE id = %s", (p['id'],))
+                    action = cursor.fetchone()['action_key']
+                    if action in ('access', 'decide', 'submit'):
+                        cursor.execute('''
+                            INSERT INTO role_permissions_v2 (role_id, permission_id, granted)
+                            VALUES (%s, %s, TRUE)
+                            ON CONFLICT (role_id, permission_id) DO NOTHING
+                        ''', (role['id'], p['id']))
+
+        conn.commit()
+
     # Seed initial data if tables are empty
     cursor.execute('SELECT COUNT(*) FROM department_structure')
     result = cursor.fetchone()

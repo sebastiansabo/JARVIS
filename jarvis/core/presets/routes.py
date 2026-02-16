@@ -4,6 +4,7 @@ from flask_login import login_required, current_user
 
 from . import presets_bp
 from .repositories import PresetRepository
+from core.utils.api_helpers import safe_error_response
 
 _preset_repo = PresetRepository()
 
@@ -40,7 +41,7 @@ def api_create_preset():
     except Exception as e:
         if 'idx_user_filter_presets_unique_name' in str(e):
             return jsonify({'success': False, 'error': f'A preset named "{name}" already exists'}), 409
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @presets_bp.route('/api/presets/<int:preset_id>', methods=['PUT'])
@@ -62,7 +63,7 @@ def api_update_preset(preset_id):
     except Exception as e:
         if 'idx_user_filter_presets_unique_name' in str(e):
             return jsonify({'success': False, 'error': 'A preset with that name already exists'}), 409
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return safe_error_response(e)
 
 
 @presets_bp.route('/api/presets/<int:preset_id>', methods=['DELETE'])

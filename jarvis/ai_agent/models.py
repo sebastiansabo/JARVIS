@@ -2,7 +2,7 @@
 AI Agent Data Models
 
 Data classes representing AI Agent entities.
-Following JARVIS pattern from accounting/efactura/models.py.
+Following JARVIS pattern from core/connectors/efactura/models.py.
 """
 
 from dataclasses import dataclass, field
