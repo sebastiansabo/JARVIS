@@ -249,7 +249,7 @@ def init_db():
         cursor.execute("""
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'auto_tag_rules'
+                WHERE table_schema = 'public' AND table_name = 'approval_delegations'
             )
         """)
         if cursor.fetchone()['exists']:
@@ -265,6 +265,21 @@ def init_db():
             ''')
             conn.commit()
             logger.info('Database schema already initialized — skipping init_db()')
+            return
+
+        # Check if base schema exists but approval tables are missing (incremental migration)
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'auto_tag_rules'
+            )
+        """)
+        if cursor.fetchone()['exists']:
+            logger.info('Base schema exists but approval tables missing — running incremental migration')
+            from migrations.init_schema import create_schema
+            create_schema(conn, cursor)
+            conn.commit()
+            logger.info('Incremental migration complete — approval tables created')
             return
 
         from migrations.init_schema import create_schema
