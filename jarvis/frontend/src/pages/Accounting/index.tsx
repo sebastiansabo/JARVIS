@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, memo } from 'react'
+import React, { useState, useMemo, useCallback, memo } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -1004,7 +1004,7 @@ const InvoiceRow = memo(function InvoiceRow({
               {editingAllocations ? (
                 <AllocationEditor
                   initialCompany={inv.allocations?.[0]?.company}
-                  initialRows={inv.allocations ? allocationsToRows(inv.allocations) : undefined}
+                  initialRows={inv.allocations ? allocationsToRows(inv.allocations, effectiveValue) : undefined}
                   effectiveValue={effectiveValue}
                   currency={inv.currency}
                   onSave={(company, rows) => saveMutation.mutate({ company, rows })}
@@ -1037,17 +1037,34 @@ const InvoiceRow = memo(function InvoiceRow({
                     </thead>
                     <tbody>
                       {inv.allocations!.map((alloc) => (
-                        <tr key={alloc.id} className="border-t border-border/50">
-                          <td className="py-1">{alloc.company}</td>
-                          <td className="py-1">{alloc.brand || '-'}</td>
-                          <td className="py-1">{alloc.department}</td>
-                          <td className="py-1">{alloc.subdepartment || '-'}</td>
-                          <td className="py-1 text-right">{alloc.allocation_percent}%</td>
-                          <td className="py-1 text-right">
-                            <CurrencyDisplay value={alloc.allocation_value} currency={inv.currency} />
-                          </td>
-                          <td className="py-1">{alloc.responsible || '-'}</td>
-                        </tr>
+                        <React.Fragment key={alloc.id}>
+                          <tr className="border-t border-border/50">
+                            <td className="py-1">{alloc.company}</td>
+                            <td className="py-1">{alloc.brand || '-'}</td>
+                            <td className="py-1">{alloc.department}</td>
+                            <td className="py-1">{alloc.subdepartment || '-'}</td>
+                            <td className="py-1 text-right">{alloc.allocation_percent}%</td>
+                            <td className="py-1 text-right">
+                              <CurrencyDisplay value={alloc.allocation_value} currency={inv.currency} />
+                            </td>
+                            <td className="py-1">{alloc.responsible || '-'}</td>
+                          </tr>
+                          {alloc.reinvoice_destinations?.length > 0 && (
+                            <tr>
+                              <td colSpan={7} className="py-1 pl-6">
+                                <div className="text-[11px] text-muted-foreground">
+                                  <span className="font-medium">Reinvoiced to:</span>
+                                  {alloc.reinvoice_destinations.map((rd) => (
+                                    <span key={rd.id} className="ml-2">
+                                      {rd.company}{rd.brand ? ` / ${rd.brand}` : ''} / {rd.department}{rd.subdepartment ? ` / ${rd.subdepartment}` : ''}{' '}
+                                      ({rd.percentage}% — <CurrencyDisplay value={rd.value} currency={inv.currency} />)
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>

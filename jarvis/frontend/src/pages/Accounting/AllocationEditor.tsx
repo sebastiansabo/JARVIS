@@ -62,14 +62,15 @@ function newReinvoiceDest(): ReinvoiceDest {
 
 /* ──── Helpers ──── */
 
-export function allocationsToRows(allocations: Allocation[]): AllocationRow[] {
+export function allocationsToRows(allocations: Allocation[], effectiveValue?: number): AllocationRow[] {
   return allocations.map((a) => ({
     id: crypto.randomUUID(),
     brand: a.brand || '',
     department: a.department,
     subdepartment: a.subdepartment || '',
     percent: a.allocation_percent,
-    value: a.allocation_value,
+    // DB stores NET value (after reinvoice). Editor needs GROSS.
+    value: effectiveValue != null ? effectiveValue * a.allocation_percent / 100 : a.allocation_value,
     locked: a.locked,
     comment: a.comment || '',
     reinvoiceDestinations: (a.reinvoice_destinations || []).map((rd) => ({

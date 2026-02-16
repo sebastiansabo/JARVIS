@@ -214,7 +214,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
             <AllocationEditor
               ref={allocRef}
               initialCompany={invoice.allocations?.[0]?.company}
-              initialRows={invoice.allocations ? allocationsToRows(invoice.allocations) : undefined}
+              initialRows={invoice.allocations ? allocationsToRows(invoice.allocations, effectiveValue) : undefined}
               effectiveValue={effectiveValue}
               currency={currency}
               compact
