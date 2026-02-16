@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, memo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search,
@@ -260,6 +260,25 @@ export default function TransactionsTab() {
 
   const totalPages = Math.ceil(totalCount / pageSize)
 
+  // Stable callbacks for memoized TransactionRow
+  const handleStatusChange = useCallback((id: number, newStatus: string) => {
+    updateStatusMutation.mutate({ id, newStatus })
+  }, [updateStatusMutation])
+
+  const handleLink = useCallback((id: number) => setLinkTxnId(id), [])
+  const handleUnlink = useCallback((id: number) => unlinkMutation.mutate(id), [unlinkMutation])
+  const handleUnmerge = useCallback((id: number) => unmergeMutation.mutate(id), [unmergeMutation])
+  const handleAcceptMatch = useCallback((id: number) => acceptMatchMutation.mutate(id), [acceptMatchMutation])
+  const handleRejectMatch = useCallback((id: number) => rejectMatchMutation.mutate(id), [rejectMatchMutation])
+  const handleToggleExpand = useCallback((id: number) => {
+    setExpandedMerged((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
   return (
     <div className="space-y-4">
       {/* Filters row */}
@@ -413,19 +432,14 @@ export default function TransactionsTab() {
                     isSelected={selected.has(txn.id)}
                     tags={txnTagsMap[String(txn.id)] ?? []}
                     onToggleSelect={toggleSelect}
-                    onStatusChange={(newStatus) => updateStatusMutation.mutate({ id: txn.id, newStatus })}
-                    onLink={() => setLinkTxnId(txn.id)}
-                    onUnlink={() => unlinkMutation.mutate(txn.id)}
-                    onUnmerge={() => unmergeMutation.mutate(txn.id)}
-                    onAcceptMatch={() => acceptMatchMutation.mutate(txn.id)}
-                    onRejectMatch={() => rejectMatchMutation.mutate(txn.id)}
+                    onStatusChange={handleStatusChange}
+                    onLink={handleLink}
+                    onUnlink={handleUnlink}
+                    onUnmerge={handleUnmerge}
+                    onAcceptMatch={handleAcceptMatch}
+                    onRejectMatch={handleRejectMatch}
                     isExpanded={expandedMerged.has(txn.id)}
-                    onToggleExpand={() => setExpandedMerged((prev) => {
-                      const next = new Set(prev)
-                      if (next.has(txn.id)) next.delete(txn.id)
-                      else next.add(txn.id)
-                      return next
-                    })}
+                    onToggleExpand={handleToggleExpand}
                   />
                 ))}
               </TableBody>
@@ -496,7 +510,7 @@ export default function TransactionsTab() {
 
 /* ──── Transaction Row ──── */
 
-function TransactionRow({
+const TransactionRow = memo(function TransactionRow({
   txn, isSelected, tags, onToggleSelect, onStatusChange, onLink, onUnlink, onUnmerge,
   onAcceptMatch, onRejectMatch, isExpanded, onToggleExpand,
 }: {
@@ -504,14 +518,14 @@ function TransactionRow({
   isSelected: boolean
   tags: EntityTag[]
   onToggleSelect: (id: number) => void
-  onStatusChange: (status: string) => void
-  onLink: () => void
-  onUnlink: () => void
-  onUnmerge: () => void
-  onAcceptMatch: () => void
-  onRejectMatch: () => void
+  onStatusChange: (id: number, status: string) => void
+  onLink: (id: number) => void
+  onUnlink: (id: number) => void
+  onUnmerge: (id: number) => void
+  onAcceptMatch: (id: number) => void
+  onRejectMatch: (id: number) => void
   isExpanded: boolean
-  onToggleExpand: () => void
+  onToggleExpand: (id: number) => void
 }) {
   const isMerged = txn.merged_from_id !== null
 
@@ -536,7 +550,7 @@ function TransactionRow({
         <TableCell className="text-sm font-medium">{txn.matched_supplier ?? '—'}</TableCell>
         <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={txn.description}>
           {isMerged && (
-            <button onClick={onToggleExpand} className="mr-1 inline-flex">
+            <button onClick={() => onToggleExpand(txn.id)} className="mr-1 inline-flex">
               {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             </button>
           )}
@@ -559,7 +573,7 @@ function TransactionRow({
           {txn.invoice_id ? (
             <div className="flex items-center gap-1">
               <Badge variant="secondary" className="text-xs">{txn.invoice_number || `#${txn.invoice_id}`}</Badge>
-              <button onClick={onUnlink} className="text-muted-foreground hover:text-destructive" title="Unlink">
+              <button onClick={() => onUnlink(txn.id)} className="text-muted-foreground hover:text-destructive" title="Unlink">
                 <Link2Off className="h-3 w-3" />
               </button>
             </div>
@@ -568,10 +582,10 @@ function TransactionRow({
               <Badge variant="outline" className="text-xs border-yellow-500/50 text-yellow-600">
                 Suggested ({Math.round((txn.suggested_confidence ?? 0) * 100)}%)
               </Badge>
-              <button onClick={onAcceptMatch} className="text-green-600 hover:text-green-700" title="Accept">
+              <button onClick={() => onAcceptMatch(txn.id)} className="text-green-600 hover:text-green-700" title="Accept">
                 <Link2 className="h-3 w-3" />
               </button>
-              <button onClick={onRejectMatch} className="text-muted-foreground hover:text-destructive" title="Reject">
+              <button onClick={() => onRejectMatch(txn.id)} className="text-muted-foreground hover:text-destructive" title="Reject">
                 <Link2Off className="h-3 w-3" />
               </button>
             </div>
@@ -582,21 +596,21 @@ function TransactionRow({
         <TableCell>
           <div className="flex gap-0.5">
             {!txn.invoice_id && txn.status !== 'ignored' && (
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onLink} title="Link invoice">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onLink(txn.id)} title="Link invoice">
                 <Link2 className="h-3.5 w-3.5" />
               </Button>
             )}
             {txn.status !== 'ignored' ? (
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => onStatusChange('ignored')} title="Ignore">
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => onStatusChange(txn.id, 'ignored')} title="Ignore">
                 <EyeOff className="h-3.5 w-3.5" />
               </Button>
             ) : (
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onStatusChange('pending')} title="Restore">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onStatusChange(txn.id, 'pending')} title="Restore">
                 <Eye className="h-3.5 w-3.5" />
               </Button>
             )}
             {isMerged && (
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onUnmerge} title="Unmerge">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onUnmerge(txn.id)} title="Unmerge">
                 <Split className="h-3.5 w-3.5" />
               </Button>
             )}
@@ -624,7 +638,7 @@ function TransactionRow({
       ))}
     </>
   )
-}
+})
 
 /* ──── Link Invoice Dialog ──── */
 

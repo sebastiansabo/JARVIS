@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Bot, User } from 'lucide-react'
@@ -8,7 +9,29 @@ interface MessageBubbleProps {
   message: Message
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+const markdownComponents = {
+  pre: ({ children }: { children?: React.ReactNode }) => (
+    <pre className="overflow-x-auto rounded-md bg-background/50 p-3 text-xs">
+      {children}
+    </pre>
+  ),
+  code: ({ className, children, ...props }: { className?: string; children?: React.ReactNode }) => {
+    const isInline = !className
+    return isInline ? (
+      <code className="rounded bg-background/50 px-1 py-0.5 text-xs" {...props}>
+        {children}
+      </code>
+    ) : (
+      <code className={className} {...props}>
+        {children}
+      </code>
+    )
+  },
+}
+
+const remarkPlugins = [remarkGfm]
+
+export const MessageBubble = memo(function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user'
 
   return (
@@ -34,26 +57,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           ) : (
             <div className="prose prose-sm dark:prose-invert max-w-none">
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  pre: ({ children }) => (
-                    <pre className="overflow-x-auto rounded-md bg-background/50 p-3 text-xs">
-                      {children}
-                    </pre>
-                  ),
-                  code: ({ className, children, ...props }) => {
-                    const isInline = !className
-                    return isInline ? (
-                      <code className="rounded bg-background/50 px-1 py-0.5 text-xs" {...props}>
-                        {children}
-                      </code>
-                    ) : (
-                      <code className={className} {...props}>
-                        {children}
-                      </code>
-                    )
-                  },
-                }}
+                remarkPlugins={remarkPlugins}
+                components={markdownComponents}
               >
                 {message.content}
               </ReactMarkdown>
@@ -71,4 +76,4 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       </div>
     </div>
   )
-}
+})

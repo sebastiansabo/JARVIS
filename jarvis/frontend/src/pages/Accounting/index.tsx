@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback, memo } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -84,16 +84,14 @@ export default function Accounting() {
   const [sort, setSort] = usePersistedState<SortState | null>('accounting-sort', null)
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
 
-  const {
-    filters,
-    selectedInvoiceIds,
-    setSelectedInvoiceIds,
-    toggleInvoiceSelected,
-    clearSelected,
-    updateFilter,
-    visibleColumns,
-    setVisibleColumns,
-  } = useAccountingStore()
+  const filters = useAccountingStore((s) => s.filters)
+  const selectedInvoiceIds = useAccountingStore((s) => s.selectedInvoiceIds)
+  const setSelectedInvoiceIds = useAccountingStore((s) => s.setSelectedInvoiceIds)
+  const toggleInvoiceSelected = useAccountingStore((s) => s.toggleInvoiceSelected)
+  const clearSelected = useAccountingStore((s) => s.clearSelected)
+  const updateFilter = useAccountingStore((s) => s.updateFilter)
+  const visibleColumns = useAccountingStore((s) => s.visibleColumns)
+  const setVisibleColumns = useAccountingStore((s) => s.setVisibleColumns)
 
   // Data queries
   const apiFilters: InvoiceFilters & { include_allocations?: boolean } = {
@@ -116,6 +114,7 @@ export default function Accounting() {
   const { data: companySummary = [] } = useQuery({
     queryKey: ['invoices', 'summary', 'company', filters],
     queryFn: () => invoicesApi.getCompanySummary(filters),
+    enabled: activeTab === 'invoices' || activeTab === 'company',
   })
 
   const { data: departmentSummary = [] } = useQuery({
@@ -148,11 +147,13 @@ export default function Accounting() {
   const { data: companies = [] } = useQuery({
     queryKey: ['companies'],
     queryFn: () => organizationApi.getCompanies(),
+    staleTime: 5 * 60 * 1000,
   })
 
   const { data: dropdownOptions = [] } = useQuery({
     queryKey: ['settings', 'dropdowns'],
     queryFn: () => settingsApi.getDropdownOptions(),
+    staleTime: 5 * 60 * 1000,
   })
 
   const statusOptions = useMemo(
@@ -324,27 +325,27 @@ export default function Accounting() {
   const allSelected = displayedInvoices.length > 0 && selectedInvoiceIds.length === displayedInvoices.length
   const someSelected = selectedInvoiceIds.length > 0 && !allSelected
 
-  const filterFields: FilterField[] = [
-    { key: 'company', label: 'Company', type: 'select', options: companyOptions },
-    { key: 'department', label: 'Department', type: 'select', options: departmentOptions },
-    { key: 'status', label: 'Status', type: 'select', options: statusOptions },
-    { key: 'start_date', label: 'Start Date', type: 'date' },
-    { key: 'end_date', label: 'End Date', type: 'date' },
-  ]
+  const filterFields: FilterField[] = useMemo(() => [
+    { key: 'company', label: 'Company', type: 'select' as const, options: companyOptions },
+    { key: 'department', label: 'Department', type: 'select' as const, options: departmentOptions },
+    { key: 'status', label: 'Status', type: 'select' as const, options: statusOptions },
+    { key: 'start_date', label: 'Start Date', type: 'date' as const },
+    { key: 'end_date', label: 'End Date', type: 'date' as const },
+  ], [companyOptions, departmentOptions, statusOptions])
 
-  const filterValues: Record<string, string> = {
+  const filterValues: Record<string, string> = useMemo(() => ({
     company: filters.company ?? '',
     department: filters.department ?? '',
     status: filters.status ?? '',
     start_date: filters.start_date ?? '',
     end_date: filters.end_date ?? '',
-  }
+  }), [filters.company, filters.department, filters.status, filters.start_date, filters.end_date])
 
-  const handleFilterChange = (values: Record<string, string>) => {
+  const handleFilterChange = useCallback((values: Record<string, string>) => {
     Object.entries(values).forEach(([key, value]) => {
       updateFilter(key as keyof InvoiceFilters, value || undefined)
     })
-  }
+  }, [updateFilter])
 
   const handleSelectAll = () => {
     if (allSelected) {
@@ -384,7 +385,7 @@ export default function Accounting() {
         />
         <StatCard
           title="Departments"
-          value={new Set(invoices.flatMap((i) => i.allocations?.map((a) => a.department) ?? [])).size}
+          value={departmentOptions.length}
           icon={<FolderTree className="h-4 w-4" />}
           isLoading={isLoading}
         />
@@ -875,27 +876,23 @@ function InvoiceTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {invoices.map((inv) => {
-                const isSelected = selectedIds.includes(inv.id)
-                const isExpanded = expandedRow === inv.id
-                return (
+              {invoices.map((inv) => (
                   <InvoiceRow
                     key={inv.id}
                     invoice={inv}
-                    isSelected={isSelected}
-                    isExpanded={isExpanded}
-                    onToggleSelect={() => onToggleSelect(inv.id)}
-                    onToggleExpand={() => onToggleExpand(inv.id)}
-                    onEdit={() => onEdit(inv)}
-                    onDelete={() => onDelete(inv.id)}
-                    onRestore={() => onRestore(inv.id)}
-                    onPermanentDelete={() => onPermanentDelete(inv.id)}
+                    isSelected={selectedIds.includes(inv.id)}
+                    isExpanded={expandedRow === inv.id}
+                    onToggleSelect={onToggleSelect}
+                    onToggleExpand={onToggleExpand}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    onRestore={onRestore}
+                    onPermanentDelete={onPermanentDelete}
                     isBin={isBin}
                     activeCols={activeCols}
                     colCount={colCount}
                   />
-                )
-              })}
+              ))}
             </TableBody>
           </Table>
         </div>
@@ -909,7 +906,7 @@ function InvoiceTable({
 
 /* ──── Invoice Row + Allocation Expansion ──── */
 
-function InvoiceRow({
+const InvoiceRow = memo(function InvoiceRow({
   invoice: inv,
   isSelected,
   isExpanded,
@@ -926,12 +923,12 @@ function InvoiceRow({
   invoice: Invoice
   isSelected: boolean
   isExpanded: boolean
-  onToggleSelect: () => void
-  onToggleExpand: () => void
-  onEdit: () => void
-  onDelete: () => void
-  onRestore: () => void
-  onPermanentDelete: () => void
+  onToggleSelect: (id: number) => void
+  onToggleExpand: (id: number) => void
+  onEdit: (inv: Invoice) => void
+  onDelete: (id: number) => void
+  onRestore: (id: number) => void
+  onPermanentDelete: (id: number) => void
   isBin: boolean
   activeCols: ColumnDef[]
   colCount: number
@@ -957,9 +954,9 @@ function InvoiceRow({
 
   return (
     <>
-      <TableRow className={cn('cursor-pointer hover:bg-muted/40', isSelected && 'bg-muted/50')} onClick={onToggleExpand}>
+      <TableRow className={cn('cursor-pointer hover:bg-muted/40', isSelected && 'bg-muted/50')} onClick={() => onToggleExpand(inv.id)}>
         <TableCell onClick={(e) => e.stopPropagation()}>
-          <Checkbox checked={isSelected} onCheckedChange={onToggleSelect} />
+          <Checkbox checked={isSelected} onCheckedChange={() => onToggleSelect(inv.id)} />
         </TableCell>
         <TableCell>
           <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
@@ -980,19 +977,19 @@ function InvoiceRow({
           <div className="flex items-center gap-1">
             {isBin ? (
               <>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onRestore} title="Restore">
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onRestore(inv.id)} title="Restore">
                   <RotateCcw className="h-3.5 w-3.5" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={onPermanentDelete} title="Delete permanently">
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onPermanentDelete(inv.id)} title="Delete permanently">
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </>
             ) : (
               <>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit} title="Edit">
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(inv)} title="Edit">
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={onDelete} title="Delete">
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(inv.id)} title="Delete">
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </>
@@ -1062,4 +1059,4 @@ function InvoiceRow({
       )}
     </>
   )
-}
+})

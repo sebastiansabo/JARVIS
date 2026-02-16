@@ -17,7 +17,8 @@ import type { Conversation } from '@/types/aiAgent'
 
 export function ConversationList() {
   const queryClient = useQueryClient()
-  const { selectedConversationId, setConversation } = useAiAgentStore()
+  const selectedConversationId = useAiAgentStore((s) => s.selectedConversationId)
+  const setConversation = useAiAgentStore((s) => s.setConversation)
 
   const { data: conversations, isLoading } = useQuery({
     queryKey: ['conversations'],

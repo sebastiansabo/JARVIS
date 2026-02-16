@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 
 export default function AiAgent() {
-  const { isSidebarOpen, setSidebarOpen, toggleSidebar } = useAiAgentStore()
+  const isSidebarOpen = useAiAgentStore((s) => s.isSidebarOpen)
+  const setSidebarOpen = useAiAgentStore((s) => s.setSidebarOpen)
+  const toggleSidebar = useAiAgentStore((s) => s.toggleSidebar)
 
   return (
     <div className="-m-6 flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh)]">

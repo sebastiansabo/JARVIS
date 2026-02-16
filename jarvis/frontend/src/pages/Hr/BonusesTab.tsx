@@ -31,7 +31,12 @@ const MONTH_SHORT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
 
 export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean }) {
   const queryClient = useQueryClient()
-  const { filters, updateFilter, selectedBonusIds, setSelectedBonusIds, toggleBonusSelected, clearSelected } = useHrStore()
+  const filters = useHrStore((s) => s.filters)
+  const updateFilter = useHrStore((s) => s.updateFilter)
+  const selectedBonusIds = useHrStore((s) => s.selectedBonusIds)
+  const setSelectedBonusIds = useHrStore((s) => s.setSelectedBonusIds)
+  const toggleBonusSelected = useHrStore((s) => s.toggleBonusSelected)
+  const clearSelected = useHrStore((s) => s.clearSelected)
   const [subTab, setSubTab] = useState<'list' | 'by-employee' | 'by-event'>('list')
   const [search, setSearch] = useState('')
   const [editBonus, setEditBonus] = useState<EventBonus | null>(null)

@@ -19,7 +19,9 @@ import type { Message, RagSource as RagSourceType } from '@/types/aiAgent'
 
 export function ChatWindow() {
   const queryClient = useQueryClient()
-  const { selectedConversationId, selectedModel, setModel } = useAiAgentStore()
+  const selectedConversationId = useAiAgentStore((s) => s.selectedConversationId)
+  const selectedModel = useAiAgentStore((s) => s.selectedModel)
+  const setModel = useAiAgentStore((s) => s.setModel)
   const [input, setInput] = useState('')
   const [ragSources, setRagSources] = useState<Record<number, RagSourceType[]>>({})
   const [isStreaming, setIsStreaming] = useState(false)

@@ -131,6 +131,11 @@ def add_cache_headers(response):
         response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
         return response
 
+    # Cache legacy static files (CSS, JS, images) for 1 hour
+    if request.path.startswith('/static/'):
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+        return response
+
     # ETag for JSON responses — only hash if client sends If-None-Match
     if response.content_type and 'application/json' in response.content_type:
         if response.status_code == 200 and response.data:

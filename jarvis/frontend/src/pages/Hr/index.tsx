@@ -33,7 +33,7 @@ function TabLoader() {
 }
 
 export default function Hr() {
-  const { filters } = useHrStore()
+  const filters = useHrStore((s) => s.filters)
 
   const { data: summary } = useQuery({
     queryKey: ['hr-summary', filters.year],
