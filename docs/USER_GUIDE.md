@@ -1,6 +1,6 @@
 # J.A.R.V.I.S. User Guide
 
-> Last updated: 2026-02-07
+> Last updated: 2026-02-16
 
 ## Table of Contents
 
@@ -14,6 +14,10 @@
 - [👥 HR](#-hr)
   - [Event Bonuses](#event-bonuses)
   - [Events Management](#events-management)
+- [✅ Approvals](#-approvals)
+  - [Approval Queue](#approval-queue)
+  - [Delegations](#delegations)
+  - [Flow Configuration](#flow-configuration)
 - [⚙️ Core](#️-core)
   - [Settings](#settings)
   - [Profile](#profile)
@@ -98,11 +102,8 @@ Import and process invoices from ANAF's e-Factura system.
 **Tabs:**
 | Tab | Description |
 |-----|-------------|
-| Unallocated | Invoices pending allocation |
-| Allocated | Invoices sent to accounting |
-| Ignored | Invoices marked as ignored |
-| Deleted | Soft-deleted invoices |
-| Connector Settings | OAuth and partner type config |
+| Unallocated | Invoices pending allocation (includes hidden) |
+| Mappings | Supplier mapping rules (type, dept, brand) |
 
 **Features:**
 - **Sync from ANAF:** Fetch new invoices via OAuth
@@ -245,6 +246,111 @@ Create and manage events.
 
 ---
 
+## ✅ Approvals
+
+### Approval Queue
+
+**URL:** `/approvals`
+
+Review and process approval requests assigned to you.
+
+**Tabs:**
+| Tab | Description |
+|-----|-------------|
+| My Queue | Requests waiting for your decision |
+| My Requests | Requests you submitted |
+| All Requests | All requests across the organization |
+| Delegations | Manage approval delegations |
+
+**Stat Cards:**
+- Pending Queue (items awaiting your action)
+- My Pending (your submitted requests still in progress)
+- My Approved (your approved submissions)
+- Total requests
+
+**Queue Actions:**
+| Action | Description |
+|--------|-------------|
+| Approve | Advance to next step (or final approval) |
+| Reject | Reject the request (comment required) |
+| Return | Send back to submitter for changes (comment required) |
+| Escalate | Bump to next step's approver |
+| Cancel | Cancel your own submitted request |
+
+**Request Detail Dialog:**
+- Click any request to open full details
+- Shows: entity context, step progress bar, decision timeline, audit trail
+- Action buttons at the bottom
+
+**Sidebar Badge:**
+- Red badge on the Approvals menu item shows your pending queue count
+- Updates every 30 seconds
+
+---
+
+### Delegations
+
+**URL:** `/approvals` → Delegations tab
+
+Delegate your approval authority to another user (e.g. vacation coverage).
+
+**Fields:**
+| Field | Description |
+|-------|-------------|
+| Delegate To | User who will receive your approvals |
+| Start Date | When delegation begins |
+| End Date | When delegation expires |
+| Reason | Optional note (e.g. "On vacation") |
+
+- Active delegations are shown in a list with a Revoke button
+- Expired delegations are automatically cleaned up by the system (hourly)
+
+---
+
+### Flow Configuration
+
+**URL:** `/settings` → Approvals tab (Admin only)
+
+Define approval workflows that control how entities get approved.
+
+**Concepts:**
+- **Flow** = a named workflow for a specific entity type (e.g. "Invoice Approval")
+- **Step** = one stage in the flow (e.g. "Manager Review" → "Finance Approval")
+- Steps are executed in order; each must be approved before the next begins
+
+**Creating a Flow:**
+1. Go to Settings → Approvals
+2. Click **New Flow**
+3. Fill in: Name, Entity Type (Invoice, e-Factura Invoice, etc.), Priority
+4. Optionally set Auto-reject timeout (hours)
+5. Save, then add Steps
+
+**Adding Steps to a Flow:**
+1. Expand the flow row
+2. Click **Add Step**
+3. Choose approver type:
+
+| Approver Type | Description |
+|---------------|-------------|
+| Specific User | A named user must approve |
+| Role | Any user with that role can approve |
+| Department Manager | The manager of the entity's department |
+
+4. Set optional: Min approvals, Requires all, Timeout hours, Reminder hours
+5. Save — steps execute in the order shown
+
+**How Matching Works:**
+- When a user submits an entity, the engine finds all active flows for that entity type
+- The flow with the highest priority is selected
+- If no flow matches, submission fails with an error
+
+**Entity Widget:**
+- The ApprovalWidget appears on invoices (expanded row, edit dialog) and e-Factura detail dialog
+- Shows current approval status, submit button, and history
+- Compact mode (accounting rows) shows just a status badge
+
+---
+
 ## ⚙️ Core
 
 ### Settings
@@ -256,17 +362,19 @@ Platform configuration.
 **Tabs:**
 | Tab | Description |
 |-----|-------------|
-| Companies | Manage company registry |
-| Brands | Brand name vocabulary |
-| Departments | Department vocabulary |
-| Subdepartments | Subdepartment vocabulary |
-| Structure | Company → Brand → Dept mapping |
 | Users | User accounts and permissions |
-| VAT Rates | Tax rate definitions |
-| Dropdown Options | Invoice/payment status options |
+| Roles | Role definitions and permission matrix |
+| Structure | Company → Brand → Dept mapping |
+| Accounting | VAT rates, dropdown options, invoice config |
+| HR | HR-specific settings |
+| Themes | UI theme customization |
+| Menus | Navigation menu configuration |
 | Tags | Tag groups and definitions |
 | Notifications | SMTP and email settings |
-| Connectors | e-Factura partner types |
+| Activity | System activity log |
+| Approvals | Approval flow builder (see [Flow Configuration](#flow-configuration)) |
+| Connectors | e-Factura OAuth and supplier types |
+| AI Agent | LLM models, RAG config, data sources |
 
 **User Roles:**
 | Role | Permissions |
@@ -316,6 +424,20 @@ Personal dashboard and activity.
 3. Review matched transactions
 4. Add mappings for unknown vendors
 5. Select → **Create Invoices**
+
+### Submitting for Approval
+1. Open an invoice (expand row or edit dialog) or e-Factura detail
+2. Find the **Approval** widget
+3. Click **Submit for Approval**
+4. Optionally add a note
+5. Click **Submit** — request enters the approval queue
+6. Track status in **Approvals** → **My Requests**
+
+### Approving a Request
+1. Go to **Approvals** (`/approvals`)
+2. Review items in **My Queue**
+3. Click **Approve** for quick approval, or click the row for details
+4. In the detail dialog: review context, add comment, then Approve/Reject/Return
 
 ### Managing Allocations
 1. Go to **Accounting** (`/accounting`)
