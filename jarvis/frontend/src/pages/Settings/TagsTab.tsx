@@ -510,14 +510,24 @@ function AutoTagRulesSection() {
                       {rule.tag_name}
                     </span>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[200px]">
-                    {(rule.conditions || []).map((c, i) => (
-                      <span key={i}>
-                        {i > 0 && (rule.match_mode === 'any' ? ' OR ' : ' AND ')}
-                        {c.field} {OPERATOR_LABELS[c.operator] ?? c.operator} "{c.value}"
-                      </span>
-                    ))}
-                    {(!rule.conditions || rule.conditions.length === 0) && <span className="italic">No conditions (matches all)</span>}
+                  <TableCell className="text-xs text-muted-foreground">
+                    <div className="flex flex-col gap-0.5">
+                      {(rule.conditions || []).map((c, i) => (
+                        <div key={i} className="flex items-center gap-1 flex-wrap">
+                          {i > 0 && (
+                            <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase">
+                              {rule.match_mode === 'any' ? 'or' : 'and'}
+                            </span>
+                          )}
+                          <span className="truncate max-w-[300px]">
+                            {c.field} {OPERATOR_LABELS[c.operator] ?? c.operator} &ldquo;{c.value}&rdquo;
+                          </span>
+                        </div>
+                      ))}
+                      {(!rule.conditions || rule.conditions.length === 0) && (
+                        <span className="italic">No conditions (matches all)</span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>{rule.run_on_create ? 'Yes' : 'No'}</TableCell>
                   <TableCell>
