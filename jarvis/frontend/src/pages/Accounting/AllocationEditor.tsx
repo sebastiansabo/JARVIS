@@ -19,6 +19,7 @@ export interface ReinvoiceDest {
   department: string
   subdepartment: string
   percentage: number
+  locked: boolean
 }
 
 export interface AllocationRow {
@@ -55,6 +56,7 @@ function newReinvoiceDest(): ReinvoiceDest {
     department: '',
     subdepartment: '',
     percentage: 100,
+    locked: false,
   }
 }
 
@@ -77,6 +79,7 @@ export function allocationsToRows(allocations: Allocation[]): AllocationRow[] {
       department: rd.department,
       subdepartment: rd.subdepartment || '',
       percentage: rd.percentage,
+      locked: false,
     })),
   }))
 }
@@ -368,17 +371,29 @@ export function AllocationRowComponent({
   }
 
   const addDest = () => {
-    const newCount = row.reinvoiceDestinations.length + 1
-    const perDest = 100 / newCount
-    const redistributed = row.reinvoiceDestinations.map((d) => ({ ...d, percentage: perDest }))
+    const lockedTotal = row.reinvoiceDestinations.filter((d) => d.locked).reduce((s, d) => s + d.percentage, 0)
+    const remaining = 100 - lockedTotal
+    const unlocked = row.reinvoiceDestinations.filter((d) => !d.locked)
+    const newCount = unlocked.length + 1
+    const perDest = remaining / newCount
+    const redistributed = row.reinvoiceDestinations.map((d) =>
+      d.locked ? d : { ...d, percentage: perDest },
+    )
     onUpdate({ reinvoiceDestinations: [...redistributed, { ...newReinvoiceDest(), percentage: perDest }] })
   }
 
   const removeDest = (destId: string) => {
     const remaining = row.reinvoiceDestinations.filter((d) => d.id !== destId)
     if (remaining.length > 0) {
-      const perDest = 100 / remaining.length
-      onUpdate({ reinvoiceDestinations: remaining.map((d) => ({ ...d, percentage: perDest })) })
+      const lockedTotal = remaining.filter((d) => d.locked).reduce((s, d) => s + d.percentage, 0)
+      const availablePercent = 100 - lockedTotal
+      const unlocked = remaining.filter((d) => !d.locked)
+      if (unlocked.length > 0) {
+        const perDest = availablePercent / unlocked.length
+        onUpdate({ reinvoiceDestinations: remaining.map((d) => d.locked ? d : { ...d, percentage: perDest }) })
+      } else {
+        onUpdate({ reinvoiceDestinations: remaining })
+      }
     } else {
       onUpdate({ reinvoiceDestinations: [] })
     }
@@ -662,12 +677,26 @@ function ReinvoiceDestRow({
         onChange={(e) => onUpdate({ percentage: parseFloat(e.target.value) || 0 })}
       />
       <span className="text-[11px] text-muted-foreground shrink-0">%</span>
-      <span className="text-xs text-right w-24 tabular-nums">
-        {new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
-          rowValue * (dest.percentage / 100),
-        )}
-      </span>
+      <Input
+        type="number"
+        step={0.01}
+        className="h-7 text-xs text-right w-24"
+        value={(rowValue * (dest.percentage / 100)).toFixed(2)}
+        onChange={(e) => {
+          const v = parseFloat(e.target.value) || 0
+          onUpdate({ percentage: rowValue > 0 ? (v / rowValue) * 100 : 0 })
+        }}
+      />
       <span className="text-[11px] text-muted-foreground shrink-0">{currency}</span>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 shrink-0"
+        onClick={() => onUpdate({ locked: !dest.locked })}
+        title={dest.locked ? 'Unlock' : 'Lock'}
+      >
+        {dest.locked ? <Lock className="h-3 w-3 text-amber-500" /> : <Unlock className="h-3 w-3" />}
+      </Button>
       {canRemove && (
         <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0" onClick={onRemove}>
           <Trash2 className="h-3 w-3" />
