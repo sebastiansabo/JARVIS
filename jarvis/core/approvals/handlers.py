@@ -36,7 +36,7 @@ def _on_submitted(payload):
             approver_ids,
             f'New approval request: {entity_type} #{entity_id}',
             message=f'Flow: {flow_name}. Please review and approve.',
-            link='/app/approvals',
+            link=_entity_link(entity_type, entity_id),
             entity_type=entity_type,
             entity_id=entity_id,
             type='approval',
@@ -57,7 +57,7 @@ def _on_approved(payload):
             requester_id,
             f'{entity_type.replace("_", " ").title()} #{entity_id} approved',
             message=msg,
-            link='/app/approvals',
+            link=_entity_link(entity_type, entity_id),
             entity_type=entity_type,
             entity_id=entity_id,
             type='approval',
@@ -109,7 +109,7 @@ def _on_rejected(payload):
             requester_id,
             f'{entity_type.replace("_", " ").title()} #{entity_id} rejected',
             message=note or 'Your request was rejected.',
-            link='/app/approvals',
+            link=_entity_link(entity_type, entity_id),
             entity_type=entity_type,
             entity_id=entity_id,
             type='approval',
@@ -139,11 +139,21 @@ def _on_returned(payload):
             requester_id,
             f'{entity_type.replace("_", " ").title()} #{entity_id} returned',
             message=comment or 'Please review and resubmit.',
-            link='/app/approvals',
+            link=_entity_link(entity_type, entity_id),
             entity_type=entity_type,
             entity_id=entity_id,
             type='approval',
         )
+
+    # Revert marketing project to draft on return
+    if entity_type == 'mkt_project' and entity_id:
+        try:
+            from marketing.repositories import ProjectRepository, ActivityRepository
+            ProjectRepository().update_status(entity_id, 'draft')
+            ActivityRepository().log(entity_id, 'approval_decided', actor_type='system',
+                                     details={'decision': 'returned', 'comment': comment})
+        except Exception as e:
+            logger.error(f'Failed to revert mkt_project status on return: {e}')
 
 
 def _on_step_advanced(payload):
@@ -159,7 +169,7 @@ def _on_step_advanced(payload):
             approver_ids,
             f'Approval request awaiting your review',
             message=f'{entity_type.replace("_", " ").title()} #{entity_id} — Step: {step_name}',
-            link='/app/approvals',
+            link=_entity_link(entity_type, entity_id),
             entity_type=entity_type,
             entity_id=entity_id,
             type='approval',
@@ -181,6 +191,16 @@ def _on_reminder(payload):
 
 
 # ── Helpers ──
+
+
+def _entity_link(entity_type, entity_id):
+    """Get the frontend link for an entity."""
+    if entity_type == 'mkt_project' and entity_id:
+        return f'/app/marketing/projects/{entity_id}'
+    if entity_type == 'invoice':
+        return '/app/accounting'
+    return '/app/approvals'
+
 
 def _get_requester(request_id):
     """Get the user_id of who submitted the request."""
