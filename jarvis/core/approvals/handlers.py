@@ -30,6 +30,14 @@ def _on_submitted(payload):
     entity_id = payload.get('entity_id')
     flow_name = payload.get('flow_name', '')
 
+    # Ensure mkt_project status is pending_approval (covers resubmit path)
+    if entity_type == 'mkt_project' and entity_id:
+        try:
+            from marketing.repositories import ProjectRepository
+            ProjectRepository().update_status(entity_id, 'pending_approval')
+        except Exception as e:
+            logger.error(f'Failed to set mkt_project pending_approval on submit: {e}')
+
     approver_ids = _get_current_step_approvers(request_id)
     if approver_ids:
         notify_users(

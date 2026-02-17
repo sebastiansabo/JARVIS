@@ -182,7 +182,7 @@ def api_submit_approval(project_id):
     project = _project_repo.get_by_id(project_id)
     if not project:
         return jsonify({'success': False, 'error': 'Project not found'}), 404
-    if project['status'] not in ('draft', 'cancelled'):
+    if project['status'] not in ('draft', 'cancelled', 'pending_approval'):
         return jsonify({'success': False, 'error': f"Cannot submit from status '{project['status']}'"}), 400
 
     # Accept optional approver_id from request body (for context_approver flow)
