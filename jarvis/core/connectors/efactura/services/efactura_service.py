@@ -1170,6 +1170,7 @@ class EFacturaService:
                 'subdepartment': inv.get('subdepartment'),
                 'subdepartment_override': inv.get('subdepartment_override'),
                 'mapping_subdepartment': inv.get('mapping_subdepartment'),
+                'mapped_brand': inv.get('mapping_brand'),
             })
 
         return ServiceResult(success=True, data={

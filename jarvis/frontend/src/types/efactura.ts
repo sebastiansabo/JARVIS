@@ -21,6 +21,7 @@ export interface EFacturaInvoice {
   id: number
   cif_owner: string
   company_id: number | null
+  company_name: string | null
   direction: 'received' | 'sent'
   partner_cif: string
   partner_name: string

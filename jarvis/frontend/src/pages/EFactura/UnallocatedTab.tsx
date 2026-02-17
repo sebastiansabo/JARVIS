@@ -130,7 +130,7 @@ const columnDefs: ColumnDef[] = [
   {
     key: 'company',
     label: 'Company',
-    render: (inv) => <span className="text-xs text-muted-foreground">{inv.cif_owner}</span>,
+    render: (inv) => <span className="text-xs text-muted-foreground">{inv.company_name || inv.cif_owner}</span>,
   },
   {
     key: 'type',

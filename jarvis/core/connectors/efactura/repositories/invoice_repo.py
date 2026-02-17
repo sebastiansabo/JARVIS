@@ -901,7 +901,8 @@ class InvoiceRepository:
                 SELECT i.*,
                     sm.id as mapping_id,
                     sm.department as mapping_department,
-                    sm.subdepartment as mapping_subdepartment
+                    sm.subdepartment as mapping_subdepartment,
+                    sm.brand as mapping_brand
                 FROM efactura_invoices i
                 LEFT JOIN efactura_supplier_mappings sm
                     ON LOWER(i.partner_name) = LOWER(sm.partner_name) AND sm.is_active = TRUE
