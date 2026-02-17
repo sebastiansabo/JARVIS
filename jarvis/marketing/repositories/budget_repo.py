@@ -125,9 +125,12 @@ class BudgetRepository:
         try:
             cursor = get_cursor(conn)
             cursor.execute('''
-                SELECT t.*, u.name as recorded_by_name
+                SELECT t.*, u.name as recorded_by_name,
+                       i.supplier as invoice_supplier,
+                       i.invoice_number as invoice_number_ref
                 FROM mkt_budget_transactions t
                 JOIN users u ON u.id = t.recorded_by
+                LEFT JOIN invoices i ON i.id = t.invoice_id
                 WHERE t.budget_line_id = %s
                 ORDER BY t.transaction_date DESC, t.created_at DESC
             ''', (budget_line_id,))
@@ -157,6 +160,51 @@ class BudgetRepository:
             conn.commit()
             return tx_id
         except Exception as e:
+            conn.rollback()
+            raise
+        finally:
+            release_db(conn)
+
+    def update_transaction(self, tx_id, **kwargs):
+        """Update editable fields of a transaction."""
+        allowed = {'amount', 'transaction_date', 'description', 'direction'}
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            updates = []
+            params = []
+            for key, val in kwargs.items():
+                if key in allowed:
+                    updates.append(f'{key} = %s')
+                    params.append(val)
+            if not updates:
+                return False
+            params.append(tx_id)
+            cursor.execute(f'UPDATE mkt_budget_transactions SET {", ".join(updates)} WHERE id = %s', params)
+            # Recalc spent_amount on budget line
+            cursor.execute('SELECT budget_line_id FROM mkt_budget_transactions WHERE id = %s', (tx_id,))
+            row = cursor.fetchone()
+            if row:
+                self._recalc_line_spent(cursor, row['budget_line_id'])
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            release_db(conn)
+
+    def link_transaction_invoice(self, tx_id, invoice_id):
+        """Set or clear invoice_id on a transaction."""
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute('''
+                UPDATE mkt_budget_transactions SET invoice_id = %s WHERE id = %s
+            ''', (invoice_id, tx_id))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception:
             conn.rollback()
             raise
         finally:

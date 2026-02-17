@@ -141,6 +141,36 @@ def api_create_transaction(line_id):
         return safe_error_response(e)
 
 
+@marketing_bp.route('/api/budget-transactions/<int:tx_id>/link-invoice', methods=['PUT'])
+@login_required
+@mkt_permission_required('budget', 'edit')
+def api_link_transaction_invoice(tx_id):
+    """Link or unlink an invoice to a budget transaction."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+    invoice_id = data.get('invoice_id')  # null to unlink
+    if _budget_repo.link_transaction_invoice(tx_id, invoice_id):
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Transaction not found'}), 404
+
+
+@marketing_bp.route('/api/budget-transactions/<int:tx_id>', methods=['PUT'])
+@login_required
+@mkt_permission_required('budget', 'edit')
+def api_update_transaction(tx_id):
+    """Update a budget transaction (amount, date, description)."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+    try:
+        if _budget_repo.update_transaction(tx_id, **data):
+            return jsonify({'success': True})
+        return jsonify({'success': False, 'error': 'Transaction not found or no changes'}), 404
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @marketing_bp.route('/api/budget-transactions/<int:tx_id>', methods=['DELETE'])
 @login_required
 @mkt_permission_required('budget', 'edit')

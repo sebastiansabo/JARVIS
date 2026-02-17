@@ -105,6 +105,12 @@ export const marketingApi = {
   deleteTransaction: (txId: number) =>
     api.delete<{ success: boolean }>(`${BASE}/budget-transactions/${txId}`),
 
+  linkTransactionInvoice: (txId: number, invoiceId: number | null) =>
+    api.put<{ success: boolean }>(`${BASE}/budget-transactions/${txId}/link-invoice`, { invoice_id: invoiceId }),
+
+  updateTransaction: (txId: number, data: { amount?: number; transaction_date?: string; description?: string }) =>
+    api.put<{ success: boolean }>(`${BASE}/budget-transactions/${txId}`, data),
+
   // ---- KPIs ----
 
   getProjectKpis: (projectId: number) =>
@@ -204,13 +210,22 @@ export const marketingApi = {
   searchInvoices: (q?: string, company?: string, limit = 20) =>
     api.get<{ invoices: InvoiceSearchResult[] }>(`${BASE}/invoices/search${toQs({ q, company, limit })}`),
 
+  uploadFile: (projectId: number, file: File, description?: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    if (description) form.append('description', description)
+    return api.post<{ success: boolean; id: number; drive_link: string; file_name: string; file_size: number }>(
+      `${BASE}/projects/${projectId}/files/upload`, form,
+    )
+  },
+
   // ---- KPI ↔ Budget Line linking ----
 
   getKpiBudgetLines: (kpiId: number) =>
     api.get<{ budget_lines: MktKpiBudgetLine[] }>(`${BASE}/kpis/${kpiId}/budget-lines`),
 
-  linkKpiBudgetLine: (kpiId: number, budgetLineId: number) =>
-    api.post<{ success: boolean; id: number }>(`${BASE}/kpis/${kpiId}/budget-lines`, { budget_line_id: budgetLineId }),
+  linkKpiBudgetLine: (kpiId: number, budgetLineId: number, role: string = 'input') =>
+    api.post<{ success: boolean; id: number }>(`${BASE}/kpis/${kpiId}/budget-lines`, { budget_line_id: budgetLineId, role }),
 
   unlinkKpiBudgetLine: (kpiId: number, lineId: number) =>
     api.delete<{ success: boolean }>(`${BASE}/kpis/${kpiId}/budget-lines/${lineId}`),
@@ -230,4 +245,12 @@ export const marketingApi = {
 
   syncKpi: (kpiId: number) =>
     api.post<{ success: boolean; synced: boolean; value?: number }>(`${BASE}/kpis/${kpiId}/sync`),
+
+  syncAllKpis: (projectId: number) =>
+    api.post<{ success: boolean; synced_count: number }>(`${BASE}/projects/${projectId}/kpis/sync-all`),
+
+  // ---- Formula validation ----
+
+  validateFormula: (formula: string) =>
+    api.post<{ valid: boolean; error: string | null; variables: string[] }>(`${BASE}/kpi-formulas/validate`, { formula }),
 }

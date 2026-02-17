@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useTabParam } from '@/hooks/useTabParam'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,6 +18,7 @@ import {
   ArrowLeft, Pencil, Play, Pause, CheckCircle, Send, Copy, Check, RefreshCw,
   DollarSign, Target, Users, Clock, FileText, MessageSquare,
   Plus, Trash2, BarChart3, CalendarDays, Link2, Search,
+  ChevronDown, ChevronRight, Upload,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { usersApi } from '@/api/users'
@@ -71,7 +73,7 @@ export default function ProjectDetail() {
   const queryClient = useQueryClient()
   const id = Number(projectId)
 
-  const [activeTab, setActiveTab] = useState<Tab>('overview')
+  const [activeTab, setActiveTab] = useTabParam<Tab>('overview')
   const [showEditDialog, setShowEditDialog] = useState(false)
 
   const { data: project, isLoading } = useQuery({
@@ -426,6 +428,13 @@ function BudgetTab({ projectId, currency }: { projectId: number; currency: strin
   const [linkedInvoiceIds, setLinkedInvoiceIds] = useState<Set<number>>(new Set())
   const [spendLineId, setSpendLineId] = useState<number | null>(null)
   const [spendForm, setSpendForm] = useState({ amount: '', transaction_date: '', description: '' })
+  const [expandedLineId, setExpandedLineId] = useState<number | null>(null)
+  const [linkTxId, setLinkTxId] = useState<number | null>(null)
+  const [txInvoiceSearch, setTxInvoiceSearch] = useState('')
+  const [txInvoiceResults, setTxInvoiceResults] = useState<InvoiceSearchResult[]>([])
+  const [isTxSearching, setIsTxSearching] = useState(false)
+  const [editTxId, setEditTxId] = useState<number | null>(null)
+  const [editTxForm, setEditTxForm] = useState({ amount: '', transaction_date: '', description: '' })
 
   const { data } = useQuery({
     queryKey: ['mkt-budget-lines', projectId],
@@ -467,6 +476,7 @@ function BudgetTab({ projectId, currency }: { projectId: number; currency: strin
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-budget-lines', projectId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-transactions'] })
       setSpendLineId(null)
       setSpendForm({ amount: '', transaction_date: '', description: '' })
     },
@@ -484,9 +494,62 @@ function BudgetTab({ projectId, currency }: { projectId: number; currency: strin
     onSuccess: (_data, inv) => {
       queryClient.invalidateQueries({ queryKey: ['mkt-budget-lines', projectId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-transactions'] })
       setLinkedInvoiceIds((prev) => new Set(prev).add(inv.id))
     },
   })
+
+  const { data: txData } = useQuery({
+    queryKey: ['mkt-transactions', expandedLineId],
+    queryFn: () => marketingApi.getTransactions(expandedLineId!),
+    enabled: !!expandedLineId,
+  })
+  const transactions = txData?.transactions ?? []
+
+  const deleteTxMut = useMutation({
+    mutationFn: (txId: number) => marketingApi.deleteTransaction(txId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-transactions', expandedLineId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-budget-lines', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
+    },
+  })
+
+  const linkTxInvoiceMut = useMutation({
+    mutationFn: ({ txId, invoiceId }: { txId: number; invoiceId: number | null }) =>
+      marketingApi.linkTransactionInvoice(txId, invoiceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-transactions', expandedLineId] })
+      setLinkTxId(null)
+      setTxInvoiceSearch('')
+      setTxInvoiceResults([])
+    },
+  })
+
+  const editTxMut = useMutation({
+    mutationFn: () => marketingApi.updateTransaction(editTxId!, {
+      amount: Number(editTxForm.amount),
+      transaction_date: editTxForm.transaction_date,
+      description: editTxForm.description || undefined,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-transactions', expandedLineId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-budget-lines', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
+      setEditTxId(null)
+    },
+  })
+
+  async function searchTxInvoices(q: string) {
+    setTxInvoiceSearch(q)
+    if (q.length < 2) { setTxInvoiceResults([]); return }
+    setIsTxSearching(true)
+    try {
+      const res = await marketingApi.searchInvoices(q)
+      setTxInvoiceResults(res?.invoices ?? [])
+    } catch { setTxInvoiceResults([]) }
+    setIsTxSearching(false)
+  }
 
   async function searchInvoices(q: string) {
     setInvoiceSearch(q)
@@ -523,6 +586,7 @@ function BudgetTab({ projectId, currency }: { projectId: number; currency: strin
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-6 px-2" />
                 <TableHead>Channel</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead>Period</TableHead>
@@ -538,43 +602,156 @@ function BudgetTab({ projectId, currency }: { projectId: number; currency: strin
                 const planned = Number(l.planned_amount) || 0
                 const spent = Number(l.spent_amount) || 0
                 const util = planned ? Math.round((spent / planned) * 100) : 0
+                const isExpanded = expandedLineId === l.id
                 return (
-                  <TableRow key={l.id}>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">{(l.channel ?? '').replace('_', ' ')}</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm max-w-[200px] truncate">{l.description || '—'}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{l.period_type}</TableCell>
-                    <TableCell className="text-right text-sm tabular-nums">{fmt(l.planned_amount, currency)}</TableCell>
-                    <TableCell className="text-right text-sm tabular-nums">{fmt(l.approved_amount, currency)}</TableCell>
-                    <TableCell className="text-right text-sm tabular-nums">{fmt(l.spent_amount, currency)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${util > 90 ? 'bg-red-500' : util > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
-                            style={{ width: `${Math.min(util, 100)}%` }}
-                          />
+                  <>
+                    <TableRow
+                      key={l.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => setExpandedLineId(isExpanded ? null : l.id)}
+                    >
+                      <TableCell className="w-6 px-2">
+                        {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">{(l.channel ?? '').replace('_', ' ')}</Badge>
+                      </TableCell>
+                      <TableCell className="text-sm max-w-[200px] truncate">{l.description || '—'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{l.period_type}</TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">{fmt(l.planned_amount, currency)}</TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">{fmt(l.approved_amount, currency)}</TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">{fmt(l.spent_amount, currency)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${util > 90 ? 'bg-red-500' : util > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
+                              style={{ width: `${Math.min(util, 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground">{util}%</span>
                         </div>
-                        <span className="text-xs text-muted-foreground">{util}%</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-0.5">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Record Spend"
-                          onClick={() => { setSpendLineId(l.id); setSpendForm({ amount: '', transaction_date: new Date().toISOString().slice(0, 10), description: '' }) }}>
-                          <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Link Invoice"
-                          onClick={() => { setLinkLineId(l.id); setInvoiceSearch(''); setInvoiceResults([]); setLinkedInvoiceIds(new Set()) }}>
-                          <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete" onClick={() => deleteMut.mutate(l.id)}>
-                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Record Spend"
+                            onClick={() => { setSpendLineId(l.id); setSpendForm({ amount: '', transaction_date: new Date().toISOString().slice(0, 10), description: '' }) }}>
+                            <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Link Invoice"
+                            onClick={() => { setLinkLineId(l.id); setInvoiceSearch(''); setInvoiceResults([]); setLinkedInvoiceIds(new Set()) }}>
+                            <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete" onClick={() => deleteMut.mutate(l.id)}>
+                            <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {isExpanded && (
+                      <TableRow key={`${l.id}-expand`} className="bg-muted/30 hover:bg-muted/30">
+                        <TableCell colSpan={9} className="p-0">
+                          <div className="px-6 py-3 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Transactions</span>
+                              <div className="flex gap-1.5">
+                                <Button variant="outline" size="sm" className="h-7 text-xs"
+                                  onClick={(e) => { e.stopPropagation(); setSpendLineId(l.id); setSpendForm({ amount: '', transaction_date: new Date().toISOString().slice(0, 10), description: '' }) }}>
+                                  <DollarSign className="h-3 w-3 mr-1" /> Record Spend
+                                </Button>
+                                <Button variant="outline" size="sm" className="h-7 text-xs"
+                                  onClick={(e) => { e.stopPropagation(); setLinkLineId(l.id); setInvoiceSearch(''); setInvoiceResults([]); setLinkedInvoiceIds(new Set()) }}>
+                                  <Link2 className="h-3 w-3 mr-1" /> Link Invoice
+                                </Button>
+                              </div>
+                            </div>
+                            {transactions.length === 0 ? (
+                              <div className="text-xs text-muted-foreground text-center py-3">No transactions recorded yet.</div>
+                            ) : (
+                              <div className="rounded-md border bg-background">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="text-xs">Date</TableHead>
+                                      <TableHead className="text-xs text-right">Amount</TableHead>
+                                      <TableHead className="text-xs">Direction</TableHead>
+                                      <TableHead className="text-xs">Source</TableHead>
+                                      <TableHead className="text-xs">Description</TableHead>
+                                      <TableHead className="text-xs">Invoice</TableHead>
+                                      <TableHead className="text-xs">Recorded By</TableHead>
+                                      <TableHead className="w-14" />
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {transactions.map((tx) => (
+                                      <TableRow key={tx.id}>
+                                        <TableCell className="text-xs">{fmtDate(tx.transaction_date)}</TableCell>
+                                        <TableCell className="text-xs text-right tabular-nums font-medium">{fmt(tx.amount, currency)}</TableCell>
+                                        <TableCell>
+                                          <Badge variant="outline" className={cn('text-[10px]', tx.direction === 'debit' ? 'border-red-300 text-red-600' : 'border-green-300 text-green-600')}>
+                                            {tx.direction}
+                                          </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-xs text-muted-foreground">{tx.source}</TableCell>
+                                        <TableCell className="text-xs max-w-[200px] truncate">{tx.description || '—'}</TableCell>
+                                        <TableCell className="text-xs">
+                                          {tx.invoice_id ? (
+                                            <div className="flex items-center gap-1">
+                                              <Badge variant="secondary" className="text-[10px] gap-0.5 max-w-[160px]">
+                                                <span className="truncate">{tx.invoice_supplier || ''} #{tx.invoice_number_ref || tx.invoice_id}</span>
+                                                {tx.source !== 'invoice' && (
+                                                  <button
+                                                    className="ml-0.5 hover:text-destructive"
+                                                    onClick={(e) => { e.stopPropagation(); linkTxInvoiceMut.mutate({ txId: tx.id, invoiceId: null }) }}
+                                                  >
+                                                    <Trash2 className="h-2.5 w-2.5" />
+                                                  </button>
+                                                )}
+                                              </Badge>
+                                            </div>
+                                          ) : (
+                                            <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5 text-muted-foreground"
+                                              onClick={(e) => { e.stopPropagation(); setLinkTxId(tx.id); setTxInvoiceSearch(''); setTxInvoiceResults([]) }}>
+                                              <Link2 className="h-3 w-3 mr-0.5" /> Link
+                                            </Button>
+                                          )}
+                                        </TableCell>
+                                        <TableCell className="text-xs text-muted-foreground">{tx.recorded_by_name || '—'}</TableCell>
+                                        <TableCell>
+                                          <div className="flex items-center gap-0.5">
+                                            {tx.source !== 'invoice' && (
+                                              <Button variant="ghost" size="icon" className="h-6 w-6" title="Edit"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  setEditTxId(tx.id)
+                                                  setEditTxForm({
+                                                    amount: String(tx.amount),
+                                                    transaction_date: tx.transaction_date?.slice(0, 10) || '',
+                                                    description: tx.description || '',
+                                                  })
+                                                }}>
+                                                <Pencil className="h-3 w-3 text-muted-foreground" />
+                                              </Button>
+                                            )}
+                                            {!tx.invoice_id && (
+                                              <Button variant="ghost" size="icon" className="h-6 w-6"
+                                                onClick={(e) => { e.stopPropagation(); deleteTxMut.mutate(tx.id) }}>
+                                                <Trash2 className="h-3 w-3 text-muted-foreground" />
+                                              </Button>
+                                            )}
+                                          </div>
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
                 )
               })}
             </TableBody>
@@ -648,6 +825,96 @@ function BudgetTab({ projectId, currency }: { projectId: number; currency: strin
           </div>
           <div className="flex justify-end">
             <Button variant="outline" size="sm" onClick={() => setLinkLineId(null)}>Done</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Link Invoice to Transaction Dialog */}
+      <Dialog open={!!linkTxId} onOpenChange={(open) => { if (!open) { setLinkTxId(null); setTxInvoiceSearch(''); setTxInvoiceResults([]) } }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Link Invoice to Transaction</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Search by supplier or invoice number..."
+                value={txInvoiceSearch}
+                onChange={(e) => searchTxInvoices(e.target.value)}
+                autoFocus
+              />
+            </div>
+            {isTxSearching && <div className="text-center text-xs text-muted-foreground py-2">Searching...</div>}
+            {txInvoiceResults.length > 0 && (
+              <div className="rounded-md border max-h-72 overflow-y-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      <TableHead className="text-xs min-w-[180px]">Supplier</TableHead>
+                      <TableHead className="text-xs min-w-[180px]">Invoice Number</TableHead>
+                      <TableHead className="text-xs w-28">Date</TableHead>
+                      <TableHead className="text-xs text-right w-28">Value</TableHead>
+                      <TableHead className="w-14" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {txInvoiceResults.map((inv) => (
+                      <TableRow key={inv.id}>
+                        <TableCell className="text-xs">{inv.supplier}</TableCell>
+                        <TableCell className="text-xs font-mono">{inv.invoice_number}</TableCell>
+                        <TableCell className="text-xs">{fmtDate(inv.invoice_date)}</TableCell>
+                        <TableCell className="text-right text-xs tabular-nums whitespace-nowrap">{fmt(inv.invoice_value, inv.currency)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" className="h-6 text-xs px-2"
+                            disabled={linkTxInvoiceMut.isPending}
+                            onClick={() => linkTxInvoiceMut.mutate({ txId: linkTxId!, invoiceId: inv.id })}>
+                            Link
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            {txInvoiceSearch.length >= 2 && !isTxSearching && txInvoiceResults.length === 0 && (
+              <div className="text-center text-xs text-muted-foreground py-4">No invoices found.</div>
+            )}
+          </div>
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => { setLinkTxId(null); setTxInvoiceSearch(''); setTxInvoiceResults([]) }}>Cancel</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Transaction Dialog */}
+      <Dialog open={!!editTxId} onOpenChange={(open) => { if (!open) setEditTxId(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Edit Transaction</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Amount *</Label>
+              <Input type="number" value={editTxForm.amount} onChange={(e) => setEditTxForm((f) => ({ ...f, amount: e.target.value }))} autoFocus />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date *</Label>
+              <Input type="date" value={editTxForm.transaction_date} onChange={(e) => setEditTxForm((f) => ({ ...f, transaction_date: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Input value={editTxForm.description} onChange={(e) => setEditTxForm((f) => ({ ...f, description: e.target.value }))} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditTxId(null)}>Cancel</Button>
+              <Button
+                disabled={!editTxForm.amount || !editTxForm.transaction_date || editTxMut.isPending}
+                onClick={() => editTxMut.mutate()}
+              >
+                {editTxMut.isPending ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -772,12 +1039,14 @@ function KpisTab({ projectId }: { projectId: number }) {
   const [showAdd, setShowAdd] = useState(false)
   const [addDefId, setAddDefId] = useState('')
   const [addTarget, setAddTarget] = useState('')
+  const [addCurrency, setAddCurrency] = useState('RON')
   const [snapKpiId, setSnapKpiId] = useState<number | null>(null)
   const [snapValue, setSnapValue] = useState('')
   const [historyKpiId, setHistoryKpiId] = useState<number | null>(null)
   const [linkBudgetKpiId, setLinkBudgetKpiId] = useState<number | null>(null)
+  const [blRole, setBlRole] = useState<string>('input')
   const [linkDepKpiId, setLinkDepKpiId] = useState<number | null>(null)
-  const [depRole, setDepRole] = useState<string>('numerator')
+  const [depRole, setDepRole] = useState<string>('input')
 
   const { data } = useQuery({
     queryKey: ['mkt-project-kpis', projectId],
@@ -794,7 +1063,7 @@ function KpisTab({ projectId }: { projectId: number }) {
   const { data: defsData } = useQuery({
     queryKey: ['mkt-kpi-definitions'],
     queryFn: () => marketingApi.getKpiDefinitions(),
-    enabled: showAdd,
+    enabled: showAdd || !!linkBudgetKpiId || !!linkDepKpiId || kpis.length > 0,
   })
   const definitions = defsData?.definitions ?? []
 
@@ -824,15 +1093,20 @@ function KpisTab({ projectId }: { projectId: number }) {
   const linkedDepIds = new Set(linkedDeps.map((d) => d.depends_on_kpi_id))
 
   const addMut = useMutation({
-    mutationFn: () => marketingApi.addProjectKpi(projectId, {
-      kpi_definition_id: Number(addDefId),
-      target_value: Number(addTarget) || null,
-    } as Partial<MktProjectKpi>),
+    mutationFn: () => {
+      const def = definitions.find((d) => String(d.id) === addDefId)
+      return marketingApi.addProjectKpi(projectId, {
+        kpi_definition_id: Number(addDefId),
+        target_value: Number(addTarget) || null,
+        ...(def?.unit === 'currency' ? { currency: addCurrency } : {}),
+      } as Partial<MktProjectKpi>)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-project-kpis', projectId] })
       setShowAdd(false)
       setAddDefId('')
       setAddTarget('')
+      setAddCurrency('RON')
     },
   })
 
@@ -855,7 +1129,8 @@ function KpisTab({ projectId }: { projectId: number }) {
   })
 
   const linkBLMut = useMutation({
-    mutationFn: (lineId: number) => marketingApi.linkKpiBudgetLine(linkBudgetKpiId!, lineId),
+    mutationFn: ({ lineId, role }: { lineId: number; role: string }) =>
+      marketingApi.linkKpiBudgetLine(linkBudgetKpiId!, lineId, role),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-kpi-budget-lines', linkBudgetKpiId] })
     },
@@ -891,6 +1166,14 @@ function KpisTab({ projectId }: { projectId: number }) {
     },
   })
 
+  const syncAllMut = useMutation({
+    mutationFn: () => marketingApi.syncAllKpis(projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-project-kpis', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-kpi-snapshots'] })
+    },
+  })
+
   const kpiStatusColors: Record<string, string> = {
     on_track: 'text-green-600', exceeded: 'text-blue-600',
     at_risk: 'text-yellow-600', behind: 'text-red-600', no_data: 'text-gray-400',
@@ -900,7 +1183,12 @@ function KpisTab({ projectId }: { projectId: number }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        {kpis.length > 0 && (
+          <Button size="sm" variant="outline" onClick={() => syncAllMut.mutate()} disabled={syncAllMut.isPending}>
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncAllMut.isPending ? 'animate-spin' : ''}`} /> Refresh All
+          </Button>
+        )}
         <Button size="sm" onClick={() => setShowAdd(true)}>
           <Plus className="h-3.5 w-3.5 mr-1.5" /> Add KPI
         </Button>
@@ -910,20 +1198,24 @@ function KpisTab({ projectId }: { projectId: number }) {
         <div className="text-center py-8 text-muted-foreground">No KPIs configured.</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {kpis.map((k) => (
-            <KpiCard
-              key={k.id}
-              kpi={k}
-              statusColors={kpiStatusColors}
-              onRecord={() => { setSnapKpiId(k.id); setSnapValue('') }}
-              onHistory={() => setHistoryKpiId(k.id)}
-              onDelete={() => deleteMut.mutate(k.id)}
-              onLinkBudget={() => setLinkBudgetKpiId(k.id)}
-              onLinkKpi={() => { setLinkDepKpiId(k.id); setDepRole('numerator') }}
-              onSync={() => syncMut.mutate(k.id)}
-              isSyncing={syncMut.isPending}
-            />
-          ))}
+          {kpis.map((k) => {
+            const def = definitions.find((d) => d.id === k.kpi_definition_id)
+            return (
+              <KpiCard
+                key={k.id}
+                kpi={k}
+                statusColors={kpiStatusColors}
+                formula={def?.formula}
+                onRecord={() => { setSnapKpiId(k.id); setSnapValue('') }}
+                onHistory={() => setHistoryKpiId(k.id)}
+                onDelete={() => deleteMut.mutate(k.id)}
+                onLinkBudget={() => { setLinkBudgetKpiId(k.id); if (def?.variables?.length) setBlRole(def.variables[0]) }}
+                onLinkKpi={() => { setLinkDepKpiId(k.id); setDepRole(def?.variables?.[0] ?? 'input') }}
+                onSync={() => syncMut.mutate(k.id)}
+                isSyncing={syncMut.isPending}
+              />
+            )
+          })}
         </div>
       )}
 
@@ -944,8 +1236,30 @@ function KpisTab({ projectId }: { projectId: number }) {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Target Value</Label>
-              <Input type="number" value={addTarget} onChange={(e) => setAddTarget(e.target.value)} placeholder="0" />
+              <Label>Target Value {addDefId && (() => {
+                const def = definitions.find((d) => String(d.id) === addDefId)
+                if (!def) return null
+                const labels: Record<string, string> = { percentage: '(%)', ratio: '(ratio)', number: '' }
+                if (def.unit === 'currency') return <span className="text-xs text-muted-foreground">({addCurrency})</span>
+                return <span className="text-xs text-muted-foreground">{labels[def.unit] || `(${def.unit})`}</span>
+              })()}</Label>
+              <div className="flex gap-2">
+                <Input type="number" className="flex-1" value={addTarget} onChange={(e) => setAddTarget(e.target.value)}
+                  placeholder={(() => {
+                    const def = definitions.find((d) => String(d.id) === addDefId)
+                    const ph: Record<string, string> = { currency: '0.00', percentage: '0-100', ratio: '0.00', number: '0' }
+                    return def ? ph[def.unit] || '0' : '0'
+                  })()} />
+                {addDefId && definitions.find((d) => String(d.id) === addDefId)?.unit === 'currency' && (
+                  <Select value={addCurrency} onValueChange={setAddCurrency}>
+                    <SelectTrigger className="w-[90px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="RON">RON</SelectItem>
+                      <SelectItem value="EUR">EUR</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
@@ -1025,44 +1339,74 @@ function KpisTab({ projectId }: { projectId: number }) {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Link Budget Lines</DialogTitle>
-            <p className="text-sm text-muted-foreground">Select budget lines whose spend feeds this KPI</p>
+            {(() => {
+              const editKpi = kpis.find((k) => k.id === linkBudgetKpiId)
+              const def = editKpi ? definitions.find((d) => d.id === editKpi.kpi_definition_id) : null
+              return def?.formula
+                ? <p className="text-sm text-muted-foreground font-mono">{def.formula}</p>
+                : <p className="text-sm text-muted-foreground">Select budget lines whose spend feeds this KPI</p>
+            })()}
           </DialogHeader>
-          <div className="space-y-2 max-h-72 overflow-y-auto">
-            {budgetLines.length === 0 ? (
-              <div className="text-center py-4 text-sm text-muted-foreground">No budget lines. Add lines in the Budget tab first.</div>
-            ) : budgetLines.map((bl) => {
-              const isLinked = linkedBLIds.has(bl.id)
-              return (
-                <div
-                  key={bl.id}
-                  className={cn(
-                    'flex items-center justify-between rounded-md border px-3 py-2 cursor-pointer transition-colors',
-                    isLinked ? 'border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/30' : 'hover:bg-muted/50',
-                  )}
-                  onClick={() => {
-                    if (isLinked) unlinkBLMut.mutate(bl.id)
-                    else linkBLMut.mutate(bl.id)
-                  }}
-                >
-                  <div>
-                    <div className="text-sm font-medium">{(bl.channel ?? '').replace('_', ' ')}</div>
-                    {bl.description && <div className="text-xs text-muted-foreground">{bl.description}</div>}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {fmt(bl.spent_amount, bl.currency)} spent
-                    </span>
-                    {isLinked && <Check className="h-4 w-4 text-blue-500" />}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          {/* Linked budget lines with role badges */}
           {linkedBudgetLines.length > 0 && (
-            <div className="text-xs text-muted-foreground">
-              Total linked spend: <strong>{fmt(linkedBudgetLines.reduce((s, l) => s + Number(l.spent_amount), 0), 'RON')}</strong>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Linked</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {linkedBudgetLines.map((l) => (
+                  <Badge key={l.budget_line_id} variant="secondary" className="gap-1 pr-1">
+                    {(l.channel ?? '').replace('_', ' ')}
+                    <span className="text-[10px] opacity-60">({l.role})</span>
+                    <button
+                      className="ml-0.5 hover:text-destructive"
+                      onClick={() => unlinkBLMut.mutate(l.budget_line_id)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
             </div>
           )}
+          {/* Variable / role selector */}
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground">Variable:</Label>
+            <Select value={blRole} onValueChange={setBlRole}>
+              <SelectTrigger className="w-36 h-7 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(() => {
+                  const editKpi = kpis.find((k) => k.id === linkBudgetKpiId)
+                  const def = editKpi ? definitions.find((d) => d.id === editKpi.kpi_definition_id) : null
+                  const vars = def?.variables?.length ? def.variables : ['input']
+                  return vars.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)
+                })()}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2 max-h-56 overflow-y-auto">
+            {budgetLines.length === 0 ? (
+              <div className="text-center py-4 text-sm text-muted-foreground">No budget lines. Add lines in the Budget tab first.</div>
+            ) : budgetLines.filter((bl) => !linkedBLIds.has(bl.id)).map((bl) => (
+              <div
+                key={bl.id}
+                className="flex items-center justify-between rounded-md border px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => linkBLMut.mutate({ lineId: bl.id, role: blRole })}
+              >
+                <div>
+                  <div className="text-sm font-medium">{(bl.channel ?? '').replace('_', ' ')}</div>
+                  {bl.description && <div className="text-xs text-muted-foreground">{bl.description}</div>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {fmt(bl.spent_amount, bl.currency)} spent
+                  </span>
+                  <Plus className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </div>
+            ))}
+            {budgetLines.filter((bl) => !linkedBLIds.has(bl.id)).length === 0 && budgetLines.length > 0 && (
+              <div className="text-center py-3 text-sm text-muted-foreground">All budget lines are linked.</div>
+            )}
+          </div>
           <div className="flex justify-end">
             <Button variant="outline" onClick={() => setLinkBudgetKpiId(null)}>Done</Button>
           </div>
@@ -1074,7 +1418,13 @@ function KpisTab({ projectId }: { projectId: number }) {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Link KPI Dependencies</DialogTitle>
-            <p className="text-sm text-muted-foreground">Select KPIs this metric depends on (e.g. ROAS = Revenue / Spend)</p>
+            {(() => {
+              const editKpi = kpis.find((k) => k.id === linkDepKpiId)
+              const def = editKpi ? definitions.find((d) => d.id === editKpi.kpi_definition_id) : null
+              return def?.formula
+                ? <p className="text-sm text-muted-foreground font-mono">{def.formula}</p>
+                : <p className="text-sm text-muted-foreground">Select KPIs this metric depends on</p>
+            })()}
           </DialogHeader>
           {/* Linked deps */}
           {linkedDeps.length > 0 && (
@@ -1100,13 +1450,16 @@ function KpisTab({ projectId }: { projectId: number }) {
           <div className="space-y-1.5">
             <Label className="text-xs">Available KPIs</Label>
             <div className="flex items-center gap-2 mb-2">
-              <Label className="text-xs text-muted-foreground">Role:</Label>
+              <Label className="text-xs text-muted-foreground">Variable:</Label>
               <Select value={depRole} onValueChange={setDepRole}>
                 <SelectTrigger className="w-36 h-7 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="numerator">Numerator</SelectItem>
-                  <SelectItem value="denominator">Denominator</SelectItem>
-                  <SelectItem value="input">Input</SelectItem>
+                  {(() => {
+                    const editKpi = kpis.find((k) => k.id === linkDepKpiId)
+                    const def = editKpi ? definitions.find((d) => d.id === editKpi.kpi_definition_id) : null
+                    const vars = def?.variables?.length ? def.variables : ['input']
+                    return vars.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)
+                  })()}
                 </SelectContent>
               </Select>
             </div>
@@ -1138,10 +1491,11 @@ function KpisTab({ projectId }: { projectId: number }) {
   )
 }
 
-function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkBudget, onLinkKpi, onSync, isSyncing }: {
+function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkBudget, onLinkKpi, onSync, isSyncing, formula }: {
   kpi: MktProjectKpi; statusColors: Record<string, string>
   onRecord: () => void; onHistory: () => void; onDelete: () => void
   onLinkBudget: () => void; onLinkKpi: () => void; onSync: () => void; isSyncing: boolean
+  formula?: string | null
 }) {
   const { data: snapsData } = useQuery({
     queryKey: ['mkt-kpi-snapshots', k.id],
@@ -1179,6 +1533,7 @@ function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkBu
       <div className="flex items-start justify-between">
         <div>
           <div className="font-medium text-sm">{k.kpi_name}</div>
+          {formula && <div className="font-mono text-[10px] text-muted-foreground">{formula}</div>}
           {k.channel && <div className="text-xs text-muted-foreground">{k.channel}</div>}
         </div>
         <div className="flex items-center gap-1">
@@ -1195,8 +1550,12 @@ function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkBu
       </div>
       <div className="flex items-center justify-between">
         <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold tabular-nums">{current.toLocaleString('ro-RO')}</span>
-          {target > 0 && <span className="text-sm text-muted-foreground">/ {target.toLocaleString('ro-RO')} {k.unit}</span>}
+          <span className="text-2xl font-bold tabular-nums">
+            {current.toLocaleString('ro-RO')}{k.unit === 'percentage' ? '%' : k.unit === 'currency' ? ` ${k.currency || 'RON'}` : ''}
+          </span>
+          {target > 0 && <span className="text-sm text-muted-foreground">
+            / {target.toLocaleString('ro-RO')}{k.unit === 'percentage' ? '%' : k.unit === 'currency' ? ` ${k.currency || 'RON'}` : k.unit === 'ratio' ? '' : ` ${k.unit}`}
+          </span>}
         </div>
         {sparkValues.length >= 2 && (
           <MiniSparkline
@@ -1669,10 +2028,10 @@ function ActivityTab({ projectId }: { projectId: number }) {
 
 function FilesTab({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient()
-  const [showAdd, setShowAdd] = useState(false)
-  const [fileName, setFileName] = useState('')
-  const [storageUri, setStorageUri] = useState('')
+  const [showUpload, setShowUpload] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [fileDesc, setFileDesc] = useState('')
+  const [isDragging, setIsDragging] = useState(false)
 
   const { data } = useQuery({
     queryKey: ['mkt-files', projectId],
@@ -1680,17 +2039,12 @@ function FilesTab({ projectId }: { projectId: number }) {
   })
   const files = data?.files ?? []
 
-  const addMut = useMutation({
-    mutationFn: () => marketingApi.createFile(projectId, {
-      file_name: fileName,
-      storage_uri: storageUri,
-      description: fileDesc || undefined,
-    }),
+  const uploadMut = useMutation({
+    mutationFn: () => marketingApi.uploadFile(projectId, selectedFile!, fileDesc || undefined),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-files', projectId] })
-      setShowAdd(false)
-      setFileName('')
-      setStorageUri('')
+      setShowUpload(false)
+      setSelectedFile(null)
       setFileDesc('')
     },
   })
@@ -1710,16 +2064,43 @@ function FilesTab({ projectId }: { projectId: number }) {
     return 'FILE'
   }
 
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setIsDragging(false)
+    const f = e.dataTransfer.files[0]
+    if (f) { setSelectedFile(f); setShowUpload(true) }
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (f) { setSelectedFile(f); setShowUpload(true) }
+  }
+
+  const ACCEPT = '.pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.ppt,.pptx'
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button size="sm" onClick={() => setShowAdd(true)}>
-          <Plus className="h-3.5 w-3.5 mr-1.5" /> Add File
-        </Button>
+      {/* Drop zone */}
+      <div
+        className={cn(
+          'rounded-lg border-2 border-dashed p-6 text-center transition-colors cursor-pointer',
+          isDragging ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20' : 'border-muted-foreground/25 hover:border-muted-foreground/50',
+        )}
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => document.getElementById('mkt-file-input')?.click()}
+      >
+        <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+        <div className="text-sm text-muted-foreground">
+          Drag & drop a file here, or <span className="text-blue-600 underline">browse</span>
+        </div>
+        <div className="text-xs text-muted-foreground mt-1">PDF, images, Office documents — max 10 MB</div>
+        <input id="mkt-file-input" type="file" accept={ACCEPT} className="hidden" onChange={handleFileSelect} />
       </div>
 
       {files.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">No files attached.</div>
+        <div className="text-center py-4 text-muted-foreground text-sm">No files attached yet.</div>
       ) : (
         <div className="space-y-2">
           {files.map((f) => (
@@ -1728,7 +2109,14 @@ function FilesTab({ projectId }: { projectId: number }) {
                 {fileIcon(f.file_name)}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium truncate">{f.file_name}</div>
+                <a
+                  href={f.storage_uri}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm font-medium truncate block hover:underline text-blue-600 dark:text-blue-400"
+                >
+                  {f.file_name}
+                </a>
                 <div className="text-xs text-muted-foreground">
                   {f.uploaded_by_name ?? 'Unknown'} · {fmtDate(f.created_at)}
                   {f.file_size ? ` · ${(f.file_size / 1024).toFixed(0)} KB` : ''}
@@ -1743,27 +2131,26 @@ function FilesTab({ projectId }: { projectId: number }) {
         </div>
       )}
 
-      {/* Add File Dialog */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Add File</DialogTitle></DialogHeader>
+      {/* Upload Confirmation Dialog */}
+      <Dialog open={showUpload} onOpenChange={(open) => { if (!open) { setShowUpload(false); setSelectedFile(null); setFileDesc('') } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Upload to Google Drive</DialogTitle></DialogHeader>
           <div className="space-y-4">
+            {selectedFile && (
+              <div className="rounded-md border p-3 bg-muted/30">
+                <div className="text-sm font-medium truncate">{selectedFile.name}</div>
+                <div className="text-xs text-muted-foreground">{(selectedFile.size / 1024).toFixed(0)} KB</div>
+              </div>
+            )}
             <div className="space-y-1.5">
-              <Label>File Name *</Label>
-              <Input value={fileName} onChange={(e) => setFileName(e.target.value)} placeholder="campaign-brief.pdf" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Storage URI / URL *</Label>
-              <Input value={storageUri} onChange={(e) => setStorageUri(e.target.value)} placeholder="https://drive.google.com/..." />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Description</Label>
-              <Input value={fileDesc} onChange={(e) => setFileDesc(e.target.value)} />
+              <Label>Description (optional)</Label>
+              <Input value={fileDesc} onChange={(e) => setFileDesc(e.target.value)} placeholder="e.g., Campaign brief Q1" />
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-              <Button disabled={!fileName || !storageUri || addMut.isPending} onClick={() => addMut.mutate()}>
-                {addMut.isPending ? 'Adding...' : 'Add'}
+              <Button variant="outline" onClick={() => { setShowUpload(false); setSelectedFile(null); setFileDesc('') }}>Cancel</Button>
+              <Button disabled={!selectedFile || uploadMut.isPending} onClick={() => uploadMut.mutate()}>
+                <Upload className="h-3.5 w-3.5 mr-1.5" />
+                {uploadMut.isPending ? 'Uploading...' : 'Upload'}
               </Button>
             </div>
           </div>

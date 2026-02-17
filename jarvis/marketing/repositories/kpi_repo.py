@@ -86,14 +86,15 @@ class KpiRepository:
             cursor.execute('''
                 INSERT INTO mkt_project_kpis
                     (project_id, kpi_definition_id, channel, target_value, weight,
-                     threshold_warning, threshold_critical, notes)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     threshold_warning, threshold_critical, currency, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             ''', (
                 project_id, kpi_definition_id,
                 kwargs.get('channel'), kwargs.get('target_value'),
                 kwargs.get('weight', 50),
                 kwargs.get('threshold_warning'), kwargs.get('threshold_critical'),
+                kwargs.get('currency', 'RON'),
                 kwargs.get('notes'),
             ))
             kpi_id = cursor.fetchone()['id']
@@ -107,7 +108,7 @@ class KpiRepository:
 
     def update_project_kpi(self, kpi_id, **kwargs):
         allowed = {'target_value', 'current_value', 'weight', 'threshold_warning',
-                    'threshold_critical', 'status', 'notes', 'channel'}
+                    'threshold_critical', 'status', 'notes', 'channel', 'currency'}
         conn = get_db()
         try:
             cursor = get_cursor(conn)
@@ -150,28 +151,28 @@ class KpiRepository:
         try:
             cursor = get_cursor(conn)
             cursor.execute('''
-                SELECT kb.id, kb.project_kpi_id, kb.budget_line_id, kb.created_at,
+                SELECT kb.id, kb.project_kpi_id, kb.budget_line_id, kb.role, kb.created_at,
                        bl.channel, bl.description, bl.planned_amount,
                        bl.spent_amount, bl.currency
                 FROM mkt_kpi_budget_lines kb
                 JOIN mkt_budget_lines bl ON bl.id = kb.budget_line_id
                 WHERE kb.project_kpi_id = %s
-                ORDER BY bl.channel
+                ORDER BY kb.role, bl.channel
             ''', (project_kpi_id,))
             return [dict(r) for r in cursor.fetchall()]
         finally:
             release_db(conn)
 
-    def link_budget_line(self, project_kpi_id, budget_line_id):
+    def link_budget_line(self, project_kpi_id, budget_line_id, role='input'):
         conn = get_db()
         try:
             cursor = get_cursor(conn)
             cursor.execute('''
-                INSERT INTO mkt_kpi_budget_lines (project_kpi_id, budget_line_id)
-                VALUES (%s, %s)
-                ON CONFLICT (project_kpi_id, budget_line_id) DO NOTHING
+                INSERT INTO mkt_kpi_budget_lines (project_kpi_id, budget_line_id, role)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (project_kpi_id, budget_line_id) DO UPDATE SET role = EXCLUDED.role
                 RETURNING id
-            ''', (project_kpi_id, budget_line_id))
+            ''', (project_kpi_id, budget_line_id, role))
             row = cursor.fetchone()
             conn.commit()
             return row['id'] if row else None
@@ -256,58 +257,123 @@ class KpiRepository:
     # ---- Sync / Recalculate ----
 
     def sync_kpi(self, project_kpi_id):
-        """Recalculate current_value from linked budget lines or KPI dependencies."""
+        """Recalculate current_value from linked sources using the KPI definition's formula.
+
+        For formula KPIs (e.g. 'spent / leads'), evaluates the formula with variable values
+        resolved from linked budget lines and KPI dependencies.
+        For raw KPIs (no formula), sums all linked source values.
+        """
+        from marketing.services.formula_engine import evaluate as eval_formula
         conn = get_db()
         try:
             cursor = get_cursor(conn)
-            # Sum of linked budget lines' spent_amount
+
+            # Get KPI's formula from its definition
             cursor.execute('''
-                SELECT COALESCE(SUM(bl.spent_amount), 0) as total_spent, COUNT(*) as cnt
+                SELECT pk.id, kd.formula
+                FROM mkt_project_kpis pk
+                JOIN mkt_kpi_definitions kd ON kd.id = pk.kpi_definition_id
+                WHERE pk.id = %s
+            ''', (project_kpi_id,))
+            kpi_row = cursor.fetchone()
+            if not kpi_row:
+                return {'synced': False, 'reason': 'KPI not found'}
+            formula = kpi_row['formula']
+
+            # Budget lines grouped by role (variable name)
+            cursor.execute('''
+                SELECT kb.role, COALESCE(SUM(bl.spent_amount), 0) as total
                 FROM mkt_kpi_budget_lines kb
                 JOIN mkt_budget_lines bl ON bl.id = kb.budget_line_id
                 WHERE kb.project_kpi_id = %s
+                GROUP BY kb.role
             ''', (project_kpi_id,))
-            bl_row = cursor.fetchone()
+            bl_by_role = {r['role']: float(r['total']) for r in cursor.fetchall()}
 
-            # KPI dependencies
+            # KPI dependencies grouped by role (variable name)
             cursor.execute('''
-                SELECT kd.role, pk.current_value
+                SELECT kd.role, COALESCE(SUM(pk.current_value), 0) as total
                 FROM mkt_kpi_dependencies kd
                 JOIN mkt_project_kpis pk ON pk.id = kd.depends_on_kpi_id
                 WHERE kd.project_kpi_id = %s
+                GROUP BY kd.role
             ''', (project_kpi_id,))
-            deps = [dict(r) for r in cursor.fetchall()]
+            dep_by_role = {r['role']: float(r['total']) for r in cursor.fetchall()}
 
-            new_value = None
-
-            if deps:
-                numerators = [float(d['current_value'] or 0) for d in deps if d['role'] == 'numerator']
-                denominators = [float(d['current_value'] or 0) for d in deps if d['role'] == 'denominator']
-                if numerators and denominators:
-                    num = sum(numerators)
-                    den = sum(denominators)
-                    new_value = round(num / den, 4) if den != 0 else 0
-            elif bl_row['cnt'] > 0:
-                new_value = float(bl_row['total_spent'])
-
-            if new_value is not None:
-                cursor.execute('''
-                    UPDATE mkt_project_kpis
-                    SET current_value = %s, last_synced_at = NOW(), updated_at = NOW()
-                    WHERE id = %s
-                ''', (new_value, project_kpi_id))
-                cursor.execute('''
-                    INSERT INTO mkt_kpi_snapshots (project_kpi_id, value, source)
-                    VALUES (%s, %s, 'auto')
-                ''', (project_kpi_id, new_value))
+            has_sources = bool(bl_by_role) or bool(dep_by_role)
+            if not has_sources:
                 conn.commit()
-                return {'synced': True, 'value': new_value}
+                return {'synced': False, 'reason': 'No linked sources'}
 
+            # Merge variables from both sources (same variable name = summed)
+            variables = {}
+            for role in set(bl_by_role.keys()) | set(dep_by_role.keys()):
+                variables[role] = bl_by_role.get(role, 0) + dep_by_role.get(role, 0)
+
+            # Calculate
+            if formula:
+                try:
+                    new_value = round(eval_formula(formula, variables), 4)
+                except ZeroDivisionError:
+                    logger.warning(f"KPI {project_kpi_id}: division by zero in '{formula}'")
+                    new_value = 0
+                except ValueError as e:
+                    logger.warning(f"KPI {project_kpi_id}: formula error: {e}")
+                    conn.commit()
+                    return {'synced': False, 'reason': f'Formula error: {e}'}
+            else:
+                # No formula = raw KPI, sum all inputs
+                new_value = sum(variables.values())
+
+            cursor.execute('''
+                UPDATE mkt_project_kpis
+                SET current_value = %s, last_synced_at = NOW(), updated_at = NOW()
+                WHERE id = %s
+            ''', (new_value, project_kpi_id))
+            cursor.execute('''
+                INSERT INTO mkt_kpi_snapshots (project_kpi_id, value, source)
+                VALUES (%s, %s, 'auto')
+            ''', (project_kpi_id, new_value))
             conn.commit()
-            return {'synced': False, 'reason': 'No linked sources'}
+            return {'synced': True, 'value': new_value}
         except Exception:
             conn.rollback()
             raise
+        finally:
+            release_db(conn)
+
+    def sync_all_project_kpis(self, project_id):
+        """Sync all KPIs for a project that have linked sources. Returns count synced."""
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute('SELECT id FROM mkt_project_kpis WHERE project_id = %s', (project_id,))
+            kpi_ids = [r['id'] for r in cursor.fetchall()]
+        finally:
+            release_db(conn)
+        synced = 0
+        for kpi_id in kpi_ids:
+            try:
+                result = self.sync_kpi(kpi_id)
+                if result.get('synced'):
+                    synced += 1
+            except Exception as e:
+                logger.warning(f"Failed to sync KPI {kpi_id}: {e}")
+        return synced
+
+    def get_all_syncable_kpi_ids(self):
+        """Get all KPI IDs that have at least one linked budget line or dependency."""
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute('''
+                SELECT DISTINCT project_kpi_id FROM (
+                    SELECT project_kpi_id FROM mkt_kpi_budget_lines
+                    UNION
+                    SELECT project_kpi_id FROM mkt_kpi_dependencies
+                ) src
+            ''')
+            return [r['project_kpi_id'] for r in cursor.fetchall()]
         finally:
             release_db(conn)
 

@@ -212,6 +212,87 @@ def api_delete_file(file_id):
     return jsonify({'success': False, 'error': 'File not found'}), 404
 
 
+@marketing_bp.route('/api/projects/<int:project_id>/files/upload', methods=['POST'])
+@login_required
+@mkt_permission_required('project', 'edit')
+def api_upload_file(project_id):
+    """Upload a file to Google Drive and attach to project."""
+    from marketing.repositories import ProjectRepository
+    from core.services.drive_service import get_drive_service, find_or_create_folder, ROOT_FOLDER_ID
+
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'No file provided'}), 400
+
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'success': False, 'error': 'Empty filename'}), 400
+
+    # 10 MB limit
+    file_bytes = f.read()
+    if len(file_bytes) > 10 * 1024 * 1024:
+        return jsonify({'success': False, 'error': 'File exceeds 10 MB limit'}), 400
+
+    description = request.form.get('description', '')
+
+    try:
+        # Get project name for folder structure
+        proj = ProjectRepository().get_by_id(project_id)
+        if not proj:
+            return jsonify({'success': False, 'error': 'Project not found'}), 404
+
+        project_name = proj.get('name', f'Project-{project_id}')
+        clean_name = ''.join(c for c in project_name if c.isalnum() or c in ' -_').strip() or f'Project-{project_id}'
+
+        service = get_drive_service()
+        # Folder: Root / Marketing / {ProjectName}
+        mkt_folder = find_or_create_folder(service, 'Marketing', ROOT_FOLDER_ID)
+        proj_folder = find_or_create_folder(service, clean_name, mkt_folder)
+
+        # Upload
+        from googleapiclient.http import MediaIoBaseUpload
+        import io as iomod
+        ext = f.filename.lower().rsplit('.', 1)[-1] if '.' in f.filename else ''
+        mime_map = {
+            'pdf': 'application/pdf', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+            'png': 'image/png', 'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xls': 'application/vnd.ms-excel',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'ppt': 'application/vnd.ms-powerpoint',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        }
+        mime_type = mime_map.get(ext, 'application/octet-stream')
+
+        media = MediaIoBaseUpload(iomod.BytesIO(file_bytes), mimetype=mime_type, resumable=True)
+        drive_file = service.files().create(
+            body={'name': f.filename, 'parents': [proj_folder]},
+            media_body=media,
+            fields='id, webViewLink',
+            supportsAllDrives=True,
+        ).execute()
+        drive_link = drive_file.get('webViewLink', f"https://drive.google.com/file/d/{drive_file['id']}/view")
+
+        # Create DB record
+        file_id = _file_repo.create(
+            project_id, f.filename, drive_link, current_user.id,
+            file_type=ext or None,
+            mime_type=mime_type,
+            file_size=len(file_bytes),
+            description=description or None,
+        )
+        _activity_repo.log(project_id, 'file_attached', actor_id=current_user.id,
+                           details={'file_name': f.filename})
+        return jsonify({
+            'success': True, 'id': file_id,
+            'drive_link': drive_link,
+            'file_name': f.filename,
+            'file_size': len(file_bytes),
+        }), 201
+    except Exception as e:
+        logger.exception('File upload failed')
+        return safe_error_response(e)
+
+
 # ---- KPIs ----
 
 @marketing_bp.route('/api/projects/<int:project_id>/kpis', methods=['GET'])
@@ -346,8 +427,11 @@ def api_link_kpi_budget_line(kpi_id):
     budget_line_id = data.get('budget_line_id')
     if not budget_line_id:
         return jsonify({'success': False, 'error': 'budget_line_id is required'}), 400
+    role = data.get('role', 'input')
+    if not role or not isinstance(role, str) or not role.replace('_', '').isalpha():
+        return jsonify({'success': False, 'error': 'role must be a valid variable name'}), 400
     try:
-        link_id = _kpi_repo.link_budget_line(kpi_id, budget_line_id)
+        link_id = _kpi_repo.link_budget_line(kpi_id, budget_line_id, role=role)
         return jsonify({'success': True, 'id': link_id}), 201
     except Exception as e:
         return safe_error_response(e)
@@ -386,8 +470,8 @@ def api_link_kpi_dependency(kpi_id):
     role = data.get('role', 'input')
     if not depends_on_kpi_id:
         return jsonify({'success': False, 'error': 'depends_on_kpi_id is required'}), 400
-    if role not in ('numerator', 'denominator', 'input'):
-        return jsonify({'success': False, 'error': 'role must be numerator, denominator, or input'}), 400
+    if not role or not isinstance(role, str) or not role.replace('_', '').isalpha():
+        return jsonify({'success': False, 'error': 'role must be a valid variable name'}), 400
     try:
         link_id = _kpi_repo.link_kpi_dependency(kpi_id, depends_on_kpi_id, role)
         return jsonify({'success': True, 'id': link_id}), 201
@@ -406,6 +490,18 @@ def api_unlink_kpi_dependency(kpi_id, dep_kpi_id):
 
 
 # ---- KPI Sync ----
+
+@marketing_bp.route('/api/projects/<int:project_id>/kpis/sync-all', methods=['POST'])
+@login_required
+@mkt_permission_required('kpi', 'edit')
+def api_sync_all_kpis(project_id):
+    """Sync all KPIs for a project."""
+    try:
+        synced = _kpi_repo.sync_all_project_kpis(project_id)
+        return jsonify({'success': True, 'synced_count': synced})
+    except Exception as e:
+        return safe_error_response(e)
+
 
 @marketing_bp.route('/api/kpis/<int:kpi_id>/sync', methods=['POST'])
 @login_required

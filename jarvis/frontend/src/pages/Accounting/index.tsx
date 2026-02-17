@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, memo } from 'react'
 import { Link } from 'react-router-dom'
+import { useTabParam } from '@/hooks/useTabParam'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
@@ -76,7 +77,7 @@ function formatDate(dateStr: string) {
 
 export default function Accounting() {
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<TabKey>('invoices')
+  const [activeTab, setActiveTab] = useTabParam<TabKey>('invoices')
   const [search, setSearch] = useState('')
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)

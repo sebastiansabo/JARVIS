@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTabParam } from '@/hooks/useTabParam'
 import {
   FileText,
   Activity,
@@ -39,7 +40,7 @@ const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
 ]
 
 export default function Profile() {
-  const [activeTab, setActiveTab] = useState<Tab>('invoices')
+  const [activeTab, setActiveTab] = useTabParam<Tab>('invoices')
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ['profile', 'summary'],

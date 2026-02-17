@@ -2322,6 +2322,7 @@ def create_schema(conn, cursor):
             weight INTEGER DEFAULT 50,
             threshold_warning NUMERIC(15,4),
             threshold_critical NUMERIC(15,4),
+            currency TEXT DEFAULT 'RON',
             status TEXT DEFAULT 'no_data',
             last_synced_at TIMESTAMP,
             notes TEXT,
@@ -2412,6 +2413,7 @@ def create_schema(conn, cursor):
             id SERIAL PRIMARY KEY,
             project_kpi_id INTEGER NOT NULL REFERENCES mkt_project_kpis(id) ON DELETE CASCADE,
             budget_line_id INTEGER NOT NULL REFERENCES mkt_budget_lines(id) ON DELETE CASCADE,
+            role TEXT NOT NULL DEFAULT 'input',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT mkt_kpi_budget_lines_unique UNIQUE (project_kpi_id, budget_line_id)
         )

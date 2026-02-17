@@ -383,6 +383,55 @@ def init_db():
                     ('smart_invoice_anomaly_sigma', '2')
                 ON CONFLICT (setting_key) DO NOTHING
             ''')
+            # M-KPI: role column on mkt_kpi_budget_lines
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'mkt_kpi_budget_lines' AND column_name = 'role') THEN
+                        ALTER TABLE mkt_kpi_budget_lines ADD COLUMN role TEXT NOT NULL DEFAULT 'input';
+                    END IF;
+                END $$;
+            ''')
+            # M-KPI: currency column on mkt_project_kpis
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'mkt_project_kpis' AND column_name = 'currency') THEN
+                        ALTER TABLE mkt_project_kpis ADD COLUMN currency TEXT DEFAULT 'RON';
+                    END IF;
+                END $$;
+            ''')
+            # M-KPI: migrate abstract roles to formula variable names
+            cursor.execute('''
+                UPDATE mkt_kpi_budget_lines kb
+                SET role = COALESCE(
+                    (SELECT split_part(kd.formula, ' ', 1)
+                     FROM mkt_project_kpis pk
+                     JOIN mkt_kpi_definitions kd ON kd.id = pk.kpi_definition_id
+                     WHERE pk.id = kb.project_kpi_id AND kd.formula IS NOT NULL),
+                    'input')
+                WHERE kb.role IN ('numerator', 'denominator', 'input')
+                AND EXISTS (
+                    SELECT 1 FROM mkt_project_kpis pk
+                    JOIN mkt_kpi_definitions kd ON kd.id = pk.kpi_definition_id
+                    WHERE pk.id = kb.project_kpi_id AND kd.formula IS NOT NULL)
+            ''')
+            cursor.execute('''
+                UPDATE mkt_kpi_dependencies kd_link
+                SET role = COALESCE(
+                    (SELECT dep_def.slug
+                     FROM mkt_project_kpis dep_pk
+                     JOIN mkt_kpi_definitions dep_def ON dep_def.id = dep_pk.kpi_definition_id
+                     WHERE dep_pk.id = kd_link.depends_on_kpi_id),
+                    'input')
+                WHERE kd_link.role IN ('numerator', 'denominator', 'input')
+                AND EXISTS (
+                    SELECT 1 FROM mkt_project_kpis pk
+                    JOIN mkt_kpi_definitions kd ON kd.id = pk.kpi_definition_id
+                    WHERE pk.id = kd_link.project_kpi_id AND kd.formula IS NOT NULL)
+            ''')
             conn.commit()
             logger.info('Database schema already initialized — skipping init_db()')
             return

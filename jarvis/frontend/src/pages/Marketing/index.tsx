@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTabParam } from '@/hooks/useTabParam'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
@@ -51,7 +52,7 @@ export default function Marketing() {
   const navigate = useNavigate()
   const { filters, updateFilter, clearFilters, viewMode, setViewMode } = useMarketingStore()
   const [showCreateDialog, setShowCreateDialog] = useState(false)
-  const [mainTab, setMainTab] = useState<MainTab>('projects')
+  const [mainTab, setMainTab] = useTabParam<MainTab>('projects')
 
   // Data queries
   const { data: summaryData, isLoading: summaryLoading } = useQuery({

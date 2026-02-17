@@ -23,10 +23,15 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
     url += `?${searchParams.toString()}`
   }
 
+  const isFormData = fetchOptions.body instanceof FormData
+  const headers: Record<string, string> = isFormData
+    ? {} // Let browser set Content-Type with boundary for FormData
+    : { 'Content-Type': 'application/json' }
+
   const response = await fetch(url, {
     ...fetchOptions,
     headers: {
-      'Content-Type': 'application/json',
+      ...headers,
       ...fetchOptions.headers,
     },
     credentials: 'same-origin',
@@ -61,13 +66,13 @@ export const api = {
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, {
       method: 'POST',
-      body: body ? JSON.stringify(body) : undefined,
+      body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
     }),
 
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, {
       method: 'PUT',
-      body: body ? JSON.stringify(body) : undefined,
+      body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
     }),
 
   delete: <T>(path: string) =>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTabParam } from '@/hooks/useTabParam'
 import { ClipboardCheck, Inbox, Send, Clock, CheckCircle, XCircle, RotateCcw, AlertTriangle, Users2, Plus, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -51,7 +52,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 export default function Approvals() {
-  const [activeTab, setActiveTab] = useState<Tab>('queue')
+  const [activeTab, setActiveTab] = useTabParam<Tab>('queue')
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [showDelegationDialog, setShowDelegationDialog] = useState(false)

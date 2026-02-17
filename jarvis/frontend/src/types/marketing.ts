@@ -94,6 +94,8 @@ export interface MktBudgetTransaction {
   source: string
   reference_id: string | null
   invoice_id: number | null
+  invoice_supplier: string | null
+  invoice_number_ref: string | null
   transaction_date: string
   description: string | null
   recorded_by: number
@@ -109,6 +111,7 @@ export interface MktKpiDefinition {
   direction: 'higher' | 'lower'
   category: string
   formula: string | null
+  variables: string[]
   description: string | null
   is_active: boolean
   sort_order: number
@@ -131,6 +134,7 @@ export interface MktProjectKpi {
   weight: number
   threshold_warning: number | null
   threshold_critical: number | null
+  currency: string | null
   status: 'no_data' | 'on_track' | 'at_risk' | 'behind' | 'exceeded'
   last_synced_at: string | null
   notes: string | null
@@ -265,6 +269,7 @@ export interface MktKpiBudgetLine {
   id: number
   project_kpi_id: number
   budget_line_id: number
+  role: string
   channel: string
   description: string | null
   planned_amount: number
@@ -277,7 +282,7 @@ export interface MktKpiDependency {
   id: number
   project_kpi_id: number
   depends_on_kpi_id: number
-  role: 'numerator' | 'denominator' | 'input'
+  role: string
   dep_current_value: number | null
   dep_kpi_name: string
   dep_kpi_slug: string

@@ -16,9 +16,12 @@ _kpi_repo = KpiRepository()
 @marketing_bp.route('/api/kpi-definitions', methods=['GET'])
 @login_required
 def api_get_kpi_definitions():
-    """Get all KPI definitions (catalog)."""
+    """Get all KPI definitions (catalog) with extracted formula variables."""
+    from marketing.services.formula_engine import extract_variables
     active_only = request.args.get('active_only', 'true').lower() != 'false'
     definitions = _kpi_repo.get_definitions(active_only=active_only)
+    for d in definitions:
+        d['variables'] = extract_variables(d.get('formula'))
     return jsonify({'definitions': definitions})
 
 
@@ -69,3 +72,16 @@ def api_update_kpi_definition(def_id):
         if 'mkt_kpi_definitions_slug_key' in str(e):
             return jsonify({'success': False, 'error': 'A KPI with that slug already exists'}), 409
         return safe_error_response(e)
+
+
+@marketing_bp.route('/api/kpi-formulas/validate', methods=['POST'])
+@login_required
+def api_validate_formula():
+    """Validate a formula and return its extracted variables."""
+    from marketing.services.formula_engine import validate as validate_formula
+    data, error = get_json_or_error()
+    if error:
+        return error
+    formula = data.get('formula', '')
+    is_valid, err, variables = validate_formula(formula)
+    return jsonify({'valid': is_valid, 'error': err, 'variables': variables})

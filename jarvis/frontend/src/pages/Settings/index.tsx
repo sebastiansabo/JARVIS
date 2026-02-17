@@ -14,6 +14,7 @@ import {
   Bot,
   Plug,
   ClipboardCheck,
+  Megaphone,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -32,6 +33,7 @@ const HrTab = lazy(() => import('./HrTab'))
 const AiTab = lazy(() => import('./AiTab'))
 const ConnectorsTab = lazy(() => import('./ConnectorsTab'))
 const ApprovalsTab = lazy(() => import('./ApprovalsTab'))
+const MarketingTab = lazy(() => import('./MarketingTab'))
 
 const tabs = [
   // Access
@@ -51,6 +53,7 @@ const tabs = [
   { path: 'activity', label: 'Activity', icon: Activity },
   // Workflows
   { path: 'approvals', label: 'Approvals', icon: ClipboardCheck },
+  { path: 'marketing', label: 'Marketing', icon: Megaphone },
   // Connectors
   { path: 'connectors', label: 'Connectors', icon: Plug },
   // AI
@@ -115,6 +118,7 @@ export default function Settings() {
               <Route path="tags" element={<TagsTab />} />
               <Route path="hr" element={<HrTab />} />
               <Route path="approvals" element={<ApprovalsTab />} />
+              <Route path="marketing" element={<MarketingTab />} />
               <Route path="connectors" element={<ConnectorsTab />} />
               <Route path="ai" element={<AiTab />} />
               <Route path="*" element={<Navigate to="users" replace />} />

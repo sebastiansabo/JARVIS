@@ -79,6 +79,26 @@ def run_smart_notifications():
         logger.error(f"Smart notification task failed: {e}")
 
 
+def sync_marketing_kpis():
+    """Sync all marketing KPIs that have linked budget lines or dependencies."""
+    try:
+        from marketing.repositories import KpiRepository
+        repo = KpiRepository()
+        kpi_ids = repo.get_all_syncable_kpi_ids()
+        synced = 0
+        for kpi_id in kpi_ids:
+            try:
+                result = repo.sync_kpi(kpi_id)
+                if result.get('synced'):
+                    synced += 1
+            except Exception as e:
+                logger.warning(f"Failed to sync KPI {kpi_id}: {e}")
+        if synced > 0:
+            logger.info(f"Marketing KPI sync: {synced}/{len(kpi_ids)} KPIs updated")
+    except Exception as e:
+        logger.error(f"Marketing KPI sync task failed: {e}")
+
+
 def _acquire_scheduler_lock():
     """Try to acquire an exclusive file lock. Returns True if this process won."""
     global _lock_file
@@ -156,6 +176,17 @@ def start_scheduler():
         'interval',
         hours=4,
         id='smart_notifications',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        sync_marketing_kpis,
+        'cron',
+        hour=6,
+        minute=0,
+        id='sync_marketing_kpis',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,
