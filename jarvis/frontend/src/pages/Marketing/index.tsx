@@ -15,8 +15,9 @@ import { cn } from '@/lib/utils'
 import {
   Plus, Search, LayoutGrid, List,
   DollarSign, Target, AlertTriangle, FolderOpen,
-  BarChart3, PieChart, Calculator,
+  BarChart3, PieChart, Calculator, Download,
 } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { marketingApi } from '@/api/marketing'
 import { settingsApi } from '@/api/settings'
 import { organizationApi } from '@/api/organization'
@@ -512,11 +513,6 @@ function DashboardView() {
   })
   const channelPerf = channelPerfData?.channels ?? []
 
-  const kpiStatusColors: Record<string, string> = {
-    on_track: 'text-green-600', exceeded: 'text-blue-600',
-    at_risk: 'text-yellow-600', behind: 'text-red-600', no_data: 'text-gray-400',
-  }
-
   const totalPlanned = channels.reduce((s, c) => s + (Number(c.planned) || 0), 0)
   const totalSpent = channels.reduce((s, c) => s + (Number(c.spent) || 0), 0)
 
@@ -578,7 +574,7 @@ function DashboardView() {
           )}
         </div>
 
-        {/* KPI Scoreboard */}
+        {/* KPI Scoreboard — Matrix Grid */}
         <div className="rounded-lg border p-4 space-y-4">
           <div className="flex items-center gap-2">
             <Target className="h-4 w-4 text-muted-foreground" />
@@ -589,51 +585,31 @@ function DashboardView() {
           ) : kpis.length === 0 ? (
             <div className="text-center py-6 text-sm text-muted-foreground">No KPIs tracked.</div>
           ) : (
-            <div className="max-h-80 overflow-y-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Project</TableHead>
-                    <TableHead>KPI</TableHead>
-                    <TableHead className="text-right">Current</TableHead>
-                    <TableHead className="text-right">Target</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {kpis.map((k: MktKpiScoreboardItem) => {
-                    const target = Number(k.target_value) || 0
-                    const current = Number(k.current_value) || 0
-                    return (
-                      <TableRow
-                        key={`${k.project_id}-${k.kpi_id}`}
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => navigate(`/app/marketing/projects/${k.project_id}`)}
-                      >
-                        <TableCell className="text-sm font-medium">{k.project_name}</TableCell>
-                        <TableCell className="text-sm">{k.kpi_name}</TableCell>
-                        <TableCell className="text-right text-sm tabular-nums">{current.toLocaleString('ro-RO')}</TableCell>
-                        <TableCell className="text-right text-sm tabular-nums text-muted-foreground">{target ? target.toLocaleString('ro-RO') : '—'}</TableCell>
-                        <TableCell>
-                          <span className={`text-xs font-medium ${kpiStatusColors[k.status] ?? ''}`}>
-                            {k.status.replace('_', ' ')}
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+            <KpiMatrix kpis={kpis} onProjectClick={(id) => navigate(`/app/marketing/projects/${id}`)} />
           )}
         </div>
       </div>
 
       {/* Budget vs Actual Report */}
       <div className="rounded-lg border p-4 space-y-4">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-muted-foreground" />
-          <h3 className="font-semibold text-sm">Budget vs Actual</h3>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            <h3 className="font-semibold text-sm">Budget vs Actual</h3>
+          </div>
+          {bvaProjects.length > 0 && (
+            <Button variant="outline" size="sm" onClick={() => exportCsv(
+              ['Project', 'Status', 'Budget', 'Approved', 'Spent', 'Variance', 'Utilization %'],
+              bvaProjects.map((p: Record<string, unknown>) => {
+                const budget = Number(p.total_budget) || 0
+                const spent = Number(p.total_spent) || 0
+                return [p.name as string, p.status as string, budget, Number(p.total_approved) || 0, spent, budget - spent, Number(p.utilization_pct) || 0]
+              }),
+              'budget-vs-actual',
+            )}>
+              <Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV
+            </Button>
+          )}
         </div>
         {bvaLoading ? (
           <Skeleton className="h-32 w-full" />
@@ -649,6 +625,7 @@ function DashboardView() {
                   <TableHead className="text-right">Budget</TableHead>
                   <TableHead className="text-right">Approved</TableHead>
                   <TableHead className="text-right">Spent</TableHead>
+                  <TableHead className="text-right">Variance</TableHead>
                   <TableHead>Utilization</TableHead>
                 </TableRow>
               </TableHeader>
@@ -658,6 +635,7 @@ function DashboardView() {
                   const spent = Number(p.total_spent) || 0
                   const approved = Number(p.total_approved) || 0
                   const util = Number(p.utilization_pct) || 0
+                  const variance = budget - spent
                   return (
                     <TableRow
                       key={p.id as number}
@@ -673,6 +651,9 @@ function DashboardView() {
                       <TableCell className="text-right text-sm tabular-nums">{formatCurrency(budget)}</TableCell>
                       <TableCell className="text-right text-sm tabular-nums">{formatCurrency(approved)}</TableCell>
                       <TableCell className="text-right text-sm tabular-nums">{formatCurrency(spent)}</TableCell>
+                      <TableCell className={cn('text-right text-sm tabular-nums', variance < 0 ? 'text-red-600' : 'text-green-600')}>
+                        {variance >= 0 ? '+' : ''}{formatCurrency(variance)}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div className="w-16 h-2 rounded-full bg-muted overflow-hidden">
@@ -695,9 +676,25 @@ function DashboardView() {
 
       {/* Channel Performance Report */}
       <div className="rounded-lg border p-4 space-y-4">
-        <div className="flex items-center gap-2">
-          <PieChart className="h-4 w-4 text-muted-foreground" />
-          <h3 className="font-semibold text-sm">Channel Performance</h3>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <PieChart className="h-4 w-4 text-muted-foreground" />
+            <h3 className="font-semibold text-sm">Channel Performance</h3>
+          </div>
+          {channelPerf.length > 0 && (
+            <Button variant="outline" size="sm" onClick={() => exportCsv(
+              ['Channel', 'Total Planned', 'Total Spent', 'Variance', 'Avg Utilization %', 'Spend/Project', 'Projects'],
+              channelPerf.map((ch: Record<string, unknown>) => {
+                const planned = Number(ch.total_planned) || 0
+                const spent = Number(ch.total_spent) || 0
+                const cnt = Number(ch.project_count) || 1
+                return [ch.channel as string, planned, spent, planned - spent, Math.round(Number(ch.avg_utilization) || 0), Math.round(spent / cnt), cnt]
+              }),
+              'channel-performance',
+            )}>
+              <Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV
+            </Button>
+          )}
         </div>
         {channelPerfLoading ? (
           <Skeleton className="h-32 w-full" />
@@ -711,7 +708,9 @@ function DashboardView() {
                   <TableHead>Channel</TableHead>
                   <TableHead className="text-right">Total Planned</TableHead>
                   <TableHead className="text-right">Total Spent</TableHead>
+                  <TableHead className="text-right">Variance</TableHead>
                   <TableHead>Avg Utilization</TableHead>
+                  <TableHead className="text-right">Spend/Project</TableHead>
                   <TableHead className="text-right">Projects</TableHead>
                 </TableRow>
               </TableHeader>
@@ -720,6 +719,8 @@ function DashboardView() {
                   const planned = Number(ch.total_planned) || 0
                   const spent = Number(ch.total_spent) || 0
                   const avgUtil = Number(ch.avg_utilization) || 0
+                  const variance = planned - spent
+                  const projCount = Number(ch.project_count) || 1
                   return (
                     <TableRow key={ch.channel as string}>
                       <TableCell>
@@ -727,6 +728,9 @@ function DashboardView() {
                       </TableCell>
                       <TableCell className="text-right text-sm tabular-nums">{formatCurrency(planned)}</TableCell>
                       <TableCell className="text-right text-sm tabular-nums">{formatCurrency(spent)}</TableCell>
+                      <TableCell className={cn('text-right text-sm tabular-nums', variance < 0 ? 'text-red-600' : 'text-green-600')}>
+                        {variance >= 0 ? '+' : ''}{formatCurrency(variance)}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div className="w-16 h-2 rounded-full bg-muted overflow-hidden">
@@ -738,6 +742,7 @@ function DashboardView() {
                           <span className="text-xs text-muted-foreground">{Math.round(avgUtil)}%</span>
                         </div>
                       </TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">{formatCurrency(Math.round(spent / projCount))}</TableCell>
                       <TableCell className="text-right text-sm">{ch.project_count as number}</TableCell>
                     </TableRow>
                   )
@@ -749,4 +754,110 @@ function DashboardView() {
       </div>
     </div>
   )
+}
+
+
+// ---- KPI Matrix Grid ----
+
+const kpiCellColors: Record<string, string> = {
+  on_track: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
+  exceeded: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
+  at_risk: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
+  behind: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
+  no_data: 'bg-gray-100 text-gray-500 dark:bg-gray-800/40 dark:text-gray-400',
+}
+
+function KpiMatrix({ kpis, onProjectClick }: {
+  kpis: MktKpiScoreboardItem[]
+  onProjectClick: (id: number) => void
+}) {
+  // Pivot: rows = projects, cols = unique KPI names
+  const projectMap = new Map<number, { name: string; kpis: Map<string, MktKpiScoreboardItem> }>()
+  const kpiNames = new Set<string>()
+
+  for (const k of kpis) {
+    kpiNames.add(k.kpi_name)
+    if (!projectMap.has(k.project_id)) {
+      projectMap.set(k.project_id, { name: k.project_name, kpis: new Map() })
+    }
+    projectMap.get(k.project_id)!.kpis.set(k.kpi_name, k)
+  }
+
+  const kpiCols = Array.from(kpiNames)
+  const projects = Array.from(projectMap.entries())
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <div className="overflow-x-auto max-h-80">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="sticky left-0 z-10 bg-card min-w-[140px]">Project</TableHead>
+              {kpiCols.map((name) => (
+                <TableHead key={name} className="text-center text-xs min-w-[90px]">{name}</TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {projects.map(([pid, proj]) => (
+              <TableRow
+                key={pid}
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => onProjectClick(pid)}
+              >
+                <TableCell className="sticky left-0 z-10 bg-card text-sm font-medium">{proj.name}</TableCell>
+                {kpiCols.map((kpiName) => {
+                  const k = proj.kpis.get(kpiName)
+                  if (!k) return <TableCell key={kpiName} className="text-center text-xs text-muted-foreground">—</TableCell>
+                  const current = Number(k.current_value) || 0
+                  const target = Number(k.target_value) || 0
+                  const pct = target ? Math.round((current / target) * 100) : 0
+                  return (
+                    <TableCell key={kpiName} className="p-1 text-center">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className={cn(
+                            'rounded px-2 py-1.5 text-xs font-medium tabular-nums',
+                            kpiCellColors[k.status] ?? kpiCellColors.no_data,
+                          )}>
+                            {current.toLocaleString('ro-RO')}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          <div className="space-y-0.5">
+                            <div className="font-medium">{kpiName}</div>
+                            <div>Current: {current.toLocaleString('ro-RO')}</div>
+                            <div>Target: {target ? target.toLocaleString('ro-RO') : '—'}</div>
+                            <div>Progress: {pct}% &middot; {k.status.replace('_', ' ')}</div>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TableCell>
+                  )
+                })}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </TooltipProvider>
+  )
+}
+
+
+// ---- CSV Export Helper ----
+
+function exportCsv(headers: string[], rows: (string | number | null | undefined)[][], filename: string) {
+  const escape = (v: unknown) => {
+    const s = String(v ?? '')
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const csv = [headers.map(escape).join(','), ...rows.map((r) => r.map(escape).join(','))].join('\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${filename}-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
