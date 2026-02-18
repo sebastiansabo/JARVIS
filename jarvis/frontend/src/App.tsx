@@ -4,7 +4,6 @@ import Layout from './components/Layout'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
-const AiAgent = lazy(() => import('./pages/AiAgent/AiAgent'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Profile = lazy(() => import('./pages/Profile'))
 const Accounting = lazy(() => import('./pages/Accounting'))
@@ -40,7 +39,6 @@ export default function App() {
       <Route path="/app" element={<Layout />}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<SuspensePage><Dashboard /></SuspensePage>} />
-        <Route path="ai-agent" element={<SuspensePage><AiAgent /></SuspensePage>} />
         <Route path="settings/*" element={<SuspensePage><Settings /></SuspensePage>} />
         <Route path="profile" element={<SuspensePage><Profile /></SuspensePage>} />
         <Route path="accounting" element={<SuspensePage><Accounting /></SuspensePage>} />

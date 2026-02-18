@@ -53,6 +53,9 @@ class RAGSourceType(Enum):
     DEPARTMENT = "department"
     EVENT = "event"
     EFACTURA = "efactura"
+    MARKETING = "marketing"
+    APPROVAL = "approval"
+    TAG = "tag"
 
 
 @dataclass

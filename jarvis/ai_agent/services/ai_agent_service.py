@@ -779,7 +779,14 @@ class AIAgentService:
         """
         base_prompt = """You are JARVIS, an intelligent assistant for the JARVIS enterprise platform.
 
-You help users with questions about invoices, transactions, company data, and general business operations.
+You help users with questions about:
+- Invoices, transactions, and bank statements
+- Companies, departments, and employees
+- e-Factura (ANAF electronic invoices)
+- HR events and bonuses
+- Marketing projects (budgets, KPIs, teams, status)
+- Approval workflows (requests, decisions, delegations)
+- Tags and entity categorization
 
 Guidelines:
 - Be helpful, accurate, and concise

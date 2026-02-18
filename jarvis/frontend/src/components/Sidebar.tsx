@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
+import { useAiAgentStore } from '@/stores/aiAgentStore'
 import { ThemeToggle } from './ThemeToggle'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -18,11 +19,14 @@ interface NavItem {
   external?: boolean
   children?: NavItem[]
   badge?: React.ComponentType
+  action?: () => void
 }
 
-const navItems: NavItem[] = [
+const AI_AGENT_ITEM_LABEL = 'AI Agent'
+
+const navItemsDef: Omit<NavItem, 'action'>[] = [
   { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/app/ai-agent', label: 'AI Agent', icon: Bot },
+  { path: '', label: AI_AGENT_ITEM_LABEL, icon: Bot },
   {
     path: '/app/accounting',
     label: 'Accounting',
@@ -48,6 +52,12 @@ interface SidebarProps {
 export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const { user } = useAuth()
   const location = useLocation()
+  const toggleWidget = useAiAgentStore((s) => s.toggleWidget)
+
+  // Wire up AI Agent action
+  const navItems: NavItem[] = navItemsDef.map((item) =>
+    item.label === AI_AGENT_ITEM_LABEL ? { ...item, action: toggleWidget } : item,
+  )
 
   const visibleItems = navItems.filter((item) => {
     if (!item.permission) return true
@@ -186,7 +196,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
     }
 
     // --- Regular item (no children) ---
-    const isActive = location.pathname.startsWith(item.path)
+    const isActive = item.path ? location.pathname.startsWith(item.path) : false
     const classes = cn(
       'flex items-center rounded-md text-sm font-medium transition-colors',
       collapsed ? 'justify-center px-2 py-2' : 'gap-3 px-3 py-2',
@@ -203,6 +213,24 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
         {!collapsed && BadgeComp && <BadgeComp />}
       </>
     )
+
+    // Action items render as buttons (e.g. AI Agent toggle)
+    if (item.action) {
+      const btn = (
+        <button key={item.label} onClick={item.action} className={cn(classes, 'w-full')}>
+          {linkContent}
+        </button>
+      )
+      if (collapsed) {
+        return (
+          <Tooltip key={item.label}>
+            <TooltipTrigger asChild>{btn}</TooltipTrigger>
+            <TooltipContent side="right">{item.label}</TooltipContent>
+          </Tooltip>
+        )
+      }
+      return btn
+    }
 
     const link = item.external ? (
       <a key={item.path} href={item.path} className={classes}>

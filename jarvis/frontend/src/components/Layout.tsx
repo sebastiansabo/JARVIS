@@ -3,6 +3,7 @@ import { Menu } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { Sidebar } from './Sidebar'
+import { AiAgentWidget } from './AiAgentWidget'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -79,6 +80,7 @@ export default function Layout() {
         </main>
       </div>
 
+      <AiAgentWidget />
       <Toaster />
     </div>
   )

@@ -139,6 +139,15 @@ class RAGService:
             ('invoice_number', 'Invoice'), ('partner_name', 'Supplier'), ('amount', 'Amount'),
             ('currency', 'Currency'), ('date', 'Date'), ('direction', 'Direction'),
         ],
+        'marketing': [
+            ('name', 'Project'), ('status', 'Status'), ('type', 'Type'),
+            ('company', 'Company'), ('owner', 'Owner'), ('budget', 'Budget'),
+        ],
+        'approval': [
+            ('flow', 'Flow'), ('entity_type', 'Entity'), ('status', 'Status'),
+            ('priority', 'Priority'), ('requester', 'Requester'),
+        ],
+        'tag': [('name', 'Tag'), ('group', 'Group'), ('usage_count', 'Used')],
     }
 
     def format_context(
@@ -987,6 +996,290 @@ class RAGService:
             logger.error(f"HR event batch indexing failed: {e}")
             return ServiceResult(success=False, error=str(e))
 
+    # ============== Marketing Project Indexing ==============
+
+    def _fetch_marketing_data(self, project_id: int) -> Optional[Dict]:
+        """Fetch marketing project data with budget and KPI summaries."""
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute("""
+                SELECT p.*,
+                       u.name as owner_name,
+                       c.company as company_name,
+                       COALESCE(SUM(bl.planned_amount), 0) as total_planned,
+                       COALESCE(SUM(bl.spent_amount), 0) as total_spent,
+                       COUNT(DISTINCT pk.id) as kpi_count
+                FROM mkt_projects p
+                LEFT JOIN users u ON u.id = p.owner_id
+                LEFT JOIN companies c ON c.id = p.company_id
+                LEFT JOIN mkt_budget_lines bl ON bl.project_id = p.id
+                LEFT JOIN mkt_project_kpis pk ON pk.project_id = p.id
+                WHERE p.id = %s AND p.deleted_at IS NULL
+                GROUP BY p.id, u.name, c.company
+            """, (project_id,))
+            return cursor.fetchone()
+        finally:
+            release_db(conn)
+
+    def _build_marketing_content(self, data: Dict) -> str:
+        """Build searchable content from marketing project data."""
+        parts = []
+        if data.get('name'):
+            parts.append(f"Marketing Project: {data['name']}")
+        if data.get('status'):
+            parts.append(f"Status: {data['status']}")
+        if data.get('project_type'):
+            parts.append(f"Type: {data['project_type']}")
+        if data.get('company_name'):
+            parts.append(f"Company: {data['company_name']}")
+        if data.get('owner_name'):
+            parts.append(f"Owner: {data['owner_name']}")
+        if data.get('description'):
+            parts.append(f"Description: {data['description'][:500]}")
+        if data.get('objective'):
+            parts.append(f"Objective: {data['objective'][:300]}")
+        if data.get('target_audience'):
+            parts.append(f"Target Audience: {data['target_audience'][:200]}")
+        if data.get('start_date'):
+            parts.append(f"Start: {data['start_date']}")
+        if data.get('end_date'):
+            parts.append(f"End: {data['end_date']}")
+        if data.get('total_planned'):
+            parts.append(f"Planned Budget: {data['total_planned']}")
+        if data.get('total_spent'):
+            parts.append(f"Spent Budget: {data['total_spent']}")
+        if data.get('kpi_count'):
+            parts.append(f"KPIs: {data['kpi_count']}")
+        return "\n".join(parts)
+
+    def index_marketing(self, project_id: int) -> ServiceResult:
+        """Index a marketing project for RAG search."""
+        data = self._fetch_marketing_data(project_id)
+        if not data:
+            return ServiceResult(success=False, error="Marketing project not found")
+
+        content = self._build_marketing_content(data)
+        metadata = {
+            'name': data.get('name'),
+            'status': data.get('status'),
+            'type': data.get('project_type'),
+            'company': data.get('company_name'),
+            'owner': data.get('owner_name'),
+            'budget': str(data.get('total_planned', 0)),
+        }
+        return self._index_document(
+            RAGSourceType.MARKETING, project_id, 'mkt_projects', content, metadata, data.get('company_id')
+        )
+
+    def index_marketing_batch(self, limit: int = 500) -> ServiceResult:
+        """Batch index marketing projects."""
+        try:
+            conn = get_db()
+            try:
+                cursor = get_cursor(conn)
+                cursor.execute("""
+                    SELECT p.id FROM mkt_projects p
+                    LEFT JOIN ai_agent.rag_documents r
+                        ON r.source_type = 'marketing' AND r.source_id = p.id AND r.is_active = TRUE
+                    WHERE p.deleted_at IS NULL
+                      AND (r.id IS NULL OR r.updated_at < p.updated_at)
+                    LIMIT %s
+                """, (limit,))
+                rows = cursor.fetchall()
+            finally:
+                release_db(conn)
+
+            indexed = 0
+            for row in rows:
+                if self.index_marketing(row['id']).success:
+                    indexed += 1
+
+            logger.info(f"Batch indexed {indexed} marketing projects")
+            return ServiceResult(success=True, data={'indexed': indexed})
+        except Exception as e:
+            logger.error(f"Marketing batch indexing failed: {e}")
+            return ServiceResult(success=False, error=str(e))
+
+    # ============== Approval Request Indexing ==============
+
+    def _fetch_approval_data(self, request_id: int) -> Optional[Dict]:
+        """Fetch approval request data with flow and decision info."""
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute("""
+                SELECT ar.*,
+                       af.name as flow_name,
+                       af.entity_type,
+                       u.name as requester_name,
+                       (SELECT COUNT(*) FROM approval_decisions ad WHERE ad.request_id = ar.id) as decision_count
+                FROM approval_requests ar
+                LEFT JOIN approval_flows af ON af.id = ar.flow_id
+                LEFT JOIN users u ON u.id = ar.requested_by
+                WHERE ar.id = %s
+            """, (request_id,))
+            return cursor.fetchone()
+        finally:
+            release_db(conn)
+
+    def _build_approval_content(self, data: Dict) -> str:
+        """Build searchable content from approval request data."""
+        parts = []
+        if data.get('flow_name'):
+            parts.append(f"Approval Flow: {data['flow_name']}")
+        if data.get('entity_type'):
+            parts.append(f"Entity Type: {data['entity_type']}")
+        if data.get('entity_id'):
+            parts.append(f"Entity ID: {data['entity_id']}")
+        if data.get('status'):
+            parts.append(f"Status: {data['status']}")
+        if data.get('priority'):
+            parts.append(f"Priority: {data['priority']}")
+        if data.get('requester_name'):
+            parts.append(f"Requested By: {data['requester_name']}")
+        if data.get('requested_at'):
+            parts.append(f"Requested: {data['requested_at']}")
+        if data.get('resolved_at'):
+            parts.append(f"Resolved: {data['resolved_at']}")
+        if data.get('resolution_note'):
+            parts.append(f"Resolution: {data['resolution_note'][:300]}")
+        if data.get('decision_count'):
+            parts.append(f"Decisions: {data['decision_count']}")
+        # Include context snapshot summary
+        ctx = data.get('context_snapshot')
+        if ctx and isinstance(ctx, dict):
+            for key in ('name', 'title', 'supplier', 'amount', 'invoice_number'):
+                if ctx.get(key):
+                    parts.append(f"Context {key}: {ctx[key]}")
+        return "\n".join(parts)
+
+    def index_approval(self, request_id: int) -> ServiceResult:
+        """Index an approval request for RAG search."""
+        data = self._fetch_approval_data(request_id)
+        if not data:
+            return ServiceResult(success=False, error="Approval request not found")
+
+        content = self._build_approval_content(data)
+        metadata = {
+            'flow': data.get('flow_name'),
+            'entity_type': data.get('entity_type'),
+            'status': data.get('status'),
+            'priority': data.get('priority'),
+            'requester': data.get('requester_name'),
+        }
+        return self._index_document(
+            RAGSourceType.APPROVAL, request_id, 'approval_requests', content, metadata
+        )
+
+    def index_approvals_batch(self, limit: int = 500) -> ServiceResult:
+        """Batch index approval requests."""
+        try:
+            conn = get_db()
+            try:
+                cursor = get_cursor(conn)
+                cursor.execute("""
+                    SELECT ar.id FROM approval_requests ar
+                    LEFT JOIN ai_agent.rag_documents r
+                        ON r.source_type = 'approval' AND r.source_id = ar.id AND r.is_active = TRUE
+                    WHERE r.id IS NULL OR r.updated_at < ar.updated_at
+                    LIMIT %s
+                """, (limit,))
+                rows = cursor.fetchall()
+            finally:
+                release_db(conn)
+
+            indexed = 0
+            for row in rows:
+                if self.index_approval(row['id']).success:
+                    indexed += 1
+
+            logger.info(f"Batch indexed {indexed} approval requests")
+            return ServiceResult(success=True, data={'indexed': indexed})
+        except Exception as e:
+            logger.error(f"Approval batch indexing failed: {e}")
+            return ServiceResult(success=False, error=str(e))
+
+    # ============== Tag Indexing ==============
+
+    def _fetch_tag_data(self, tag_id: int) -> Optional[Dict]:
+        """Fetch tag data with group and usage count."""
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute("""
+                SELECT t.*,
+                       tg.name as group_name,
+                       tg.color as group_color,
+                       COUNT(et.id) as usage_count
+                FROM tags t
+                LEFT JOIN tag_groups tg ON tg.id = t.group_id
+                LEFT JOIN entity_tags et ON et.tag_id = t.id
+                WHERE t.id = %s AND t.is_active = TRUE
+                GROUP BY t.id, tg.name, tg.color
+            """, (tag_id,))
+            return cursor.fetchone()
+        finally:
+            release_db(conn)
+
+    def _build_tag_content(self, data: Dict) -> str:
+        """Build searchable content from tag data."""
+        parts = []
+        if data.get('name'):
+            parts.append(f"Tag: {data['name']}")
+        if data.get('group_name'):
+            parts.append(f"Group: {data['group_name']}")
+        if data.get('color'):
+            parts.append(f"Color: {data['color']}")
+        if data.get('usage_count'):
+            parts.append(f"Used on: {data['usage_count']} entities")
+        return "\n".join(parts)
+
+    def index_tag(self, tag_id: int) -> ServiceResult:
+        """Index a tag for RAG search."""
+        data = self._fetch_tag_data(tag_id)
+        if not data:
+            return ServiceResult(success=False, error="Tag not found")
+
+        content = self._build_tag_content(data)
+        metadata = {
+            'name': data.get('name'),
+            'group': data.get('group_name'),
+            'color': data.get('color'),
+            'usage_count': data.get('usage_count', 0),
+        }
+        return self._index_document(
+            RAGSourceType.TAG, tag_id, 'tags', content, metadata
+        )
+
+    def index_tags_batch(self, limit: int = 500) -> ServiceResult:
+        """Batch index tags."""
+        try:
+            conn = get_db()
+            try:
+                cursor = get_cursor(conn)
+                cursor.execute("""
+                    SELECT t.id FROM tags t
+                    LEFT JOIN ai_agent.rag_documents r
+                        ON r.source_type = 'tag' AND r.source_id = t.id AND r.is_active = TRUE
+                    WHERE t.is_active = TRUE AND r.id IS NULL
+                    LIMIT %s
+                """, (limit,))
+                rows = cursor.fetchall()
+            finally:
+                release_db(conn)
+
+            indexed = 0
+            for row in rows:
+                if self.index_tag(row['id']).success:
+                    indexed += 1
+
+            logger.info(f"Batch indexed {indexed} tags")
+            return ServiceResult(success=True, data={'indexed': indexed})
+        except Exception as e:
+            logger.error(f"Tag batch indexing failed: {e}")
+            return ServiceResult(success=False, error=str(e))
+
     # ============== Orchestration ==============
 
     def index_all_sources(self, limit: int = 500) -> ServiceResult:
@@ -1002,6 +1295,9 @@ class RAGService:
             ('transactions', self.index_transactions_batch),
             ('efactura', self.index_efactura_batch),
             ('events', self.index_events_batch),
+            ('marketing', self.index_marketing_batch),
+            ('approvals', self.index_approvals_batch),
+            ('tags', self.index_tags_batch),
         ]
 
         for name, method in batch_methods:

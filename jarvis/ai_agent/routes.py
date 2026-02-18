@@ -397,6 +397,9 @@ def api_rag_reindex():
         'transaction': rag_service.index_transactions_batch,
         'efactura': rag_service.index_efactura_batch,
         'event': rag_service.index_events_batch,
+        'marketing': rag_service.index_marketing_batch,
+        'approval': rag_service.index_approvals_batch,
+        'tag': rag_service.index_tags_batch,
     }
 
     if source_type:
