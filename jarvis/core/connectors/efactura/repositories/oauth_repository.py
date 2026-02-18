@@ -6,10 +6,10 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from database import get_db, get_cursor, release_db
+from core.base_repository import BaseRepository
 
 
-class OAuthRepository:
+class OAuthRepository(BaseRepository):
     """Repository for e-Factura OAuth token operations."""
 
     def get_tokens(self, company_cif: str) -> Optional[dict]:
@@ -21,21 +21,15 @@ class OAuthRepository:
         Returns:
             Dict with tokens or None if not found
         """
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT credentials FROM connectors
-                WHERE connector_type = 'efactura'
-                AND name = %s
-                AND status = 'connected'
-            ''', (company_cif,))
-            row = cursor.fetchone()
-            if row and row['credentials']:
-                return row['credentials']
-            return None
-        finally:
-            release_db(conn)
+        row = self.query_one('''
+            SELECT credentials FROM connectors
+            WHERE connector_type = 'efactura'
+            AND name = %s
+            AND status = 'connected'
+        ''', (company_cif,))
+        if row and row['credentials']:
+            return row['credentials']
+        return None
 
     def save_tokens(self, company_cif: str, tokens: dict) -> bool:
         """Save OAuth tokens for a company's e-Factura connection.
@@ -49,10 +43,7 @@ class OAuthRepository:
         Returns:
             True if successful
         """
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-
+        def _work(cursor):
             cursor.execute('''
                 SELECT id FROM connectors
                 WHERE connector_type = 'efactura' AND name = %s
@@ -72,14 +63,10 @@ class OAuthRepository:
                     INSERT INTO connectors (connector_type, name, status, credentials, config)
                     VALUES ('efactura', %s, 'connected', %s, '{}')
                 ''', (company_cif, json.dumps(tokens)))
-
-            conn.commit()
             return True
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+
+        self.execute_many(_work)
+        return True
 
     def delete_tokens(self, company_cif: str) -> bool:
         """Remove OAuth tokens for a company (disconnect).
@@ -90,24 +77,13 @@ class OAuthRepository:
         Returns:
             True if tokens were removed
         """
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                UPDATE connectors
-                SET credentials = '{}',
-                    status = 'disconnected',
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE connector_type = 'efactura' AND name = %s
-            ''', (company_cif,))
-            affected = cursor.rowcount
-            conn.commit()
-            return affected > 0
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute('''
+            UPDATE connectors
+            SET credentials = '{}',
+                status = 'disconnected',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE connector_type = 'efactura' AND name = %s
+        ''', (company_cif,)) > 0
 
     def get_status(self, company_cif: str) -> dict:
         """Get OAuth authentication status for a company.

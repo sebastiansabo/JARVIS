@@ -7,7 +7,7 @@ import logging
 import time
 from typing import Optional
 
-from database import get_db, get_cursor, release_db, dict_from_row
+from core.base_repository import BaseRepository
 
 logger = logging.getLogger('jarvis.core.roles.permission_repository')
 
@@ -30,23 +30,17 @@ def _cache_clear():
     _perm_cache.clear()
 
 
-class PermissionRepository:
+class PermissionRepository(BaseRepository):
 
     # ---- Permissions v1 ----
 
     def get_all(self) -> list[dict]:
         """Get all permissions grouped by module."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT id, module_key, permission_key, label, description, icon, sort_order, parent_id
-                FROM permissions
-                ORDER BY module_key, sort_order, id
-            ''')
-            permissions = [dict_from_row(row) for row in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        permissions = self.query_all('''
+            SELECT id, module_key, permission_key, label, description, icon, sort_order, parent_id
+            FROM permissions
+            ORDER BY module_key, sort_order, id
+        ''')
 
         modules = {}
         for perm in permissions:
@@ -73,17 +67,11 @@ class PermissionRepository:
 
     def get_flat(self) -> list[dict]:
         """Get all permissions as flat list."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT id, module_key, permission_key, label, description, icon, sort_order, parent_id
-                FROM permissions
-                ORDER BY module_key, sort_order, id
-            ''')
-            return [dict_from_row(row) for row in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        return self.query_all('''
+            SELECT id, module_key, permission_key, label, description, icon, sort_order, parent_id
+            FROM permissions
+            ORDER BY module_key, sort_order, id
+        ''')
 
     def get_role_permissions(self, role_id: int) -> dict:
         """Get permissions for a role as dict: {module_key: {permission_key: bool}}."""
@@ -92,9 +80,7 @@ class PermissionRepository:
         if cached is not None:
             return cached
 
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             cursor.execute('''
                 SELECT p.module_key, p.permission_key, rp.granted
                 FROM role_permissions rp
@@ -108,10 +94,11 @@ class PermissionRepository:
                 if module not in result:
                     result[module] = {}
                 result[module][perm] = True
-            _cache_set(cache_key, result)
             return result
-        finally:
-            release_db(conn)
+
+        result = self.execute_many(_work)
+        _cache_set(cache_key, result)
+        return result
 
     def get_role_permissions_list(self, role_id: int) -> list[dict]:
         """Get permissions for a role as list of 'module.permission' strings."""
@@ -120,9 +107,7 @@ class PermissionRepository:
         if cached is not None:
             return cached
 
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             cursor.execute('''
                 SELECT p.module_key, p.permission_key, p.label
                 FROM role_permissions rp
@@ -138,16 +123,15 @@ class PermissionRepository:
                     'permission': row['permission_key'],
                     'label': row['label']
                 })
-            _cache_set(cache_key, result)
             return result
-        finally:
-            release_db(conn)
+
+        result = self.execute_many(_work)
+        _cache_set(cache_key, result)
+        return result
 
     def set_role_permissions(self, role_id: int, permissions: list[str]) -> bool:
         """Set permissions for a role. Also syncs to old boolean columns."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             cursor.execute('DELETE FROM role_permissions WHERE role_id = %s', (role_id,))
             for perm_str in permissions:
                 parts = perm_str.split('.')
@@ -161,14 +145,10 @@ class PermissionRepository:
                     ON CONFLICT (role_id, permission_id) DO UPDATE SET granted = TRUE
                 ''', (role_id, module_key, perm_key))
             self._sync_permissions_to_role_booleans(cursor, role_id, permissions)
-            conn.commit()
-            _cache_clear()
-            return True
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+
+        self.execute_many(_work)
+        _cache_clear()
+        return True
 
     def _sync_permissions_to_role_booleans(self, cursor, role_id: int, permissions: list[str]):
         """Sync new permission format to old boolean columns."""
@@ -191,9 +171,7 @@ class PermissionRepository:
 
     def sync_role_from_booleans(self, role_id: int) -> bool:
         """Sync old boolean columns to new permissions table (for migration)."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             cursor.execute('SELECT * FROM roles WHERE id = %s', (role_id,))
             role = cursor.fetchone()
             if not role:
@@ -219,21 +197,15 @@ class PermissionRepository:
                         WHERE module_key = %s AND permission_key = %s
                         ON CONFLICT (role_id, permission_id) DO NOTHING
                     ''', (role_id, module_key, perm_key))
-            conn.commit()
             return True
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+
+        return self.execute_many(_work)
 
     # ---- Permissions v2 ----
 
     def get_matrix(self) -> dict:
         """Get all permissions organized for matrix display."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             cursor.execute('''
                 SELECT id, module_key, module_label, module_icon, entity_key, entity_label,
                        action_key, action_label, description, is_scope_based, sort_order
@@ -243,8 +215,9 @@ class PermissionRepository:
             perms = cursor.fetchall()
             cursor.execute('SELECT id, name, description FROM roles ORDER BY id')
             roles = [dict(row) for row in cursor.fetchall()]
-        finally:
-            release_db(conn)
+            return perms, roles
+
+        perms, roles = self.execute_many(_work)
 
         modules = {}
         for p in perms:
@@ -283,9 +256,7 @@ class PermissionRepository:
 
     def get_role_permissions_v2(self, role_id: int) -> dict:
         """Get all v2 permissions for a role."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             cursor.execute('''
                 SELECT permission_id, scope, granted
                 FROM role_permissions_v2
@@ -298,14 +269,12 @@ class PermissionRepository:
                     'granted': row['granted']
                 }
             return result
-        finally:
-            release_db(conn)
+
+        return self.execute_many(_work)
 
     def get_all_role_permissions_v2(self) -> dict:
         """Get v2 permissions for all roles."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             cursor.execute('''
                 SELECT role_id, permission_id, scope, granted
                 FROM role_permissions_v2
@@ -320,15 +289,13 @@ class PermissionRepository:
                     'granted': row['granted']
                 }
             return result
-        finally:
-            release_db(conn)
+
+        return self.execute_many(_work)
 
     def set_role_permission_v2(self, role_id: int, permission_id: int,
                                scope: str = None, granted: bool = None) -> bool:
         """Set a single v2 permission for a role."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             cursor.execute('SELECT is_scope_based FROM permissions_v2 WHERE id = %s', (permission_id,))
             perm = cursor.fetchone()
             if not perm:
@@ -346,20 +313,15 @@ class PermissionRepository:
                 ON CONFLICT (role_id, permission_id)
                 DO UPDATE SET scope = %s, granted = %s, updated_at = CURRENT_TIMESTAMP
             ''', (role_id, permission_id, actual_scope, actual_granted, actual_scope, actual_granted))
-            conn.commit()
-            _cache_clear()
             return True
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+
+        result = self.execute_many(_work)
+        _cache_clear()
+        return result
 
     def set_role_permissions_v2_bulk(self, role_id: int, permissions: dict) -> bool:
         """Set multiple v2 permissions for a role at once."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             for perm_id, values in permissions.items():
                 perm_id = int(perm_id)
                 cursor.execute('SELECT is_scope_based FROM permissions_v2 WHERE id = %s', (perm_id,))
@@ -368,27 +330,22 @@ class PermissionRepository:
                     continue
                 is_scope_based = perm['is_scope_based']
                 if is_scope_based:
-                    scope = values.get('scope', 'deny')
-                    granted = scope != 'deny'
+                    s = values.get('scope', 'deny')
+                    g = s != 'deny'
                 else:
-                    granted = values.get('granted', False)
-                    scope = 'all' if granted else 'deny'
+                    g = values.get('granted', False)
+                    s = 'all' if g else 'deny'
                 cursor.execute('''
                     INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted, updated_at)
                     VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
                     ON CONFLICT (role_id, permission_id)
                     DO UPDATE SET scope = %s, granted = %s, updated_at = CURRENT_TIMESTAMP
-                ''', (role_id, perm_id, scope, granted, scope, granted))
-            conn.commit()
+                ''', (role_id, perm_id, s, g, s, g))
             self._sync_v2_permissions_to_booleans(cursor, role_id)
-            conn.commit()
-            _cache_clear()
-            return True
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+
+        self.execute_many(_work)
+        _cache_clear()
+        return True
 
     def _sync_v2_permissions_to_booleans(self, cursor, role_id: int):
         """Sync v2 permissions to old boolean columns for backward compatibility."""
@@ -420,22 +377,16 @@ class PermissionRepository:
 
     def check_permission_v2(self, role_id: int, module: str, entity: str, action: str) -> dict:
         """Check if a role has a specific v2 permission."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT rp.scope, rp.granted
-                FROM role_permissions_v2 rp
-                JOIN permissions_v2 p ON p.id = rp.permission_id
-                WHERE rp.role_id = %s
-                  AND p.module_key = %s
-                  AND p.entity_key = %s
-                  AND p.action_key = %s
-            ''', (role_id, module, entity, action))
-            row = cursor.fetchone()
-            if row:
-                has_perm = row['scope'] != 'deny' or row['granted']
-                return {'has_permission': has_perm, 'scope': row['scope']}
-            return {'has_permission': False, 'scope': 'deny'}
-        finally:
-            release_db(conn)
+        row = self.query_one('''
+            SELECT rp.scope, rp.granted
+            FROM role_permissions_v2 rp
+            JOIN permissions_v2 p ON p.id = rp.permission_id
+            WHERE rp.role_id = %s
+              AND p.module_key = %s
+              AND p.entity_key = %s
+              AND p.action_key = %s
+        ''', (role_id, module, entity, action))
+        if row:
+            has_perm = row['scope'] != 'deny' or row['granted']
+            return {'has_permission': has_perm, 'scope': row['scope']}
+        return {'has_permission': False, 'scope': 'deny'}

@@ -5,13 +5,10 @@ This module handles all database operations related to user events.
 import json
 from typing import Optional, Dict, Any
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))
-from database import get_db, get_cursor, release_db, dict_from_row
+from core.base_repository import BaseRepository
 
 
-class EventRepository:
+class EventRepository(BaseRepository):
     """Repository for user event/audit log operations."""
 
     def log_event(
@@ -42,81 +39,55 @@ class EventRepository:
         Returns:
             The ID of the created event record
         """
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-
-            cursor.execute('''
-                INSERT INTO user_events
-                (user_id, user_email, event_type, event_description, entity_type, entity_id,
-                 ip_address, user_agent, details)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-            ''', (
-                user_id,
-                user_email,
-                event_type,
-                event_description,
-                entity_type,
-                entity_id,
-                ip_address,
-                user_agent,
-                json.dumps(details or {})
-            ))
-
-            event_id = cursor.fetchone()['id']
-            conn.commit()
-            return event_id
-        finally:
-            release_db(conn)
+        result = self.execute('''
+            INSERT INTO user_events
+            (user_id, user_email, event_type, event_description, entity_type, entity_id,
+             ip_address, user_agent, details)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        ''', (
+            user_id, user_email, event_type, event_description,
+            entity_type, entity_id, ip_address, user_agent,
+            json.dumps(details or {})
+        ), returning=True)
+        return result['id']
 
     def get_events(self, limit: int = 100, offset: int = 0, user_id: int = None,
                    event_type: str = None, entity_type: str = None,
                    start_date: str = None, end_date: str = None) -> list[dict]:
         """Get user events with optional filtering."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            query = '''
-                SELECT ue.*, u.name as user_name
-                FROM user_events ue
-                LEFT JOIN users u ON ue.user_id = u.id
-            '''
-            params = []
-            conditions = []
-            if user_id:
-                conditions.append('ue.user_id = %s')
-                params.append(user_id)
-            if event_type:
-                conditions.append('ue.event_type = %s')
-                params.append(event_type)
-            if entity_type:
-                conditions.append('ue.entity_type = %s')
-                params.append(entity_type)
-            if start_date:
-                conditions.append('ue.created_at >= %s')
-                params.append(start_date)
-            if end_date:
-                conditions.append('ue.created_at <= %s')
-                params.append(end_date)
-            if conditions:
-                query += ' WHERE ' + ' AND '.join(conditions)
-            query += ' ORDER BY ue.created_at DESC LIMIT %s OFFSET %s'
-            params.extend([limit, offset])
-            cursor.execute(query, params)
-            return [dict_from_row(row) for row in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        query = '''
+            SELECT ue.*, u.name as user_name
+            FROM user_events ue
+            LEFT JOIN users u ON ue.user_id = u.id
+        '''
+        params = []
+        conditions = []
+        if user_id:
+            conditions.append('ue.user_id = %s')
+            params.append(user_id)
+        if event_type:
+            conditions.append('ue.event_type = %s')
+            params.append(event_type)
+        if entity_type:
+            conditions.append('ue.entity_type = %s')
+            params.append(entity_type)
+        if start_date:
+            conditions.append('ue.created_at >= %s')
+            params.append(start_date)
+        if end_date:
+            conditions.append('ue.created_at <= %s')
+            params.append(end_date)
+        if conditions:
+            query += ' WHERE ' + ' AND '.join(conditions)
+        query += ' ORDER BY ue.created_at DESC LIMIT %s OFFSET %s'
+        params.extend([limit, offset])
+        return self.query_all(query, params)
 
     def get_event_types(self) -> list[str]:
         """Get distinct event types for filtering."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT DISTINCT event_type FROM user_events
-                ORDER BY event_type
-            ''')
-            return [row['event_type'] for row in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        rows = self.query_all('''
+            SELECT DISTINCT event_type FROM user_events
+            ORDER BY event_type
+        ''')
+        return [row['event_type'] for row in rows]

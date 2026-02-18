@@ -20,7 +20,7 @@ from core.roles.repositories.role_repository import RoleRepository
 from core.roles.repositories.permission_repository import PermissionRepository, _perm_cache
 
 _R = 'core.base_repository'  # RoleRepository inherits from BaseRepository
-_P = 'core.roles.repositories.permission_repository'
+_P = 'core.base_repository'  # PermissionRepository also inherits from BaseRepository
 
 
 def _mock_db():

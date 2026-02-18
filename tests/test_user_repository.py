@@ -210,8 +210,8 @@ class TestUpdate:
 
         assert result is False
 
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_update_name_only(self, mock_get_db, mock_release):
         """Update with name builds correct SQL and returns True."""
         mock_conn = MagicMock()
@@ -234,8 +234,8 @@ class TestUpdate:
         mock_conn.commit.assert_called_once()
         mock_release.assert_called_once_with(mock_conn)
 
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_update_multiple_fields(self, mock_get_db, mock_release):
         """Update with multiple fields includes all in SQL."""
         mock_conn = MagicMock()
@@ -258,8 +258,8 @@ class TestUpdate:
         assert params[2] is False
         assert params[-1] == 10
 
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_update_no_rows_affected(self, mock_get_db, mock_release):
         """Update returns False when no rows are affected (user not found)."""
         mock_conn = MagicMock()
@@ -274,8 +274,8 @@ class TestUpdate:
         assert result is False
         mock_conn.commit.assert_called_once()
 
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_update_duplicate_email_raises_value_error(self, mock_get_db, mock_release):
         """Update raises ValueError when email conflicts with unique constraint."""
         mock_conn = MagicMock()
@@ -301,8 +301,8 @@ class TestDeleteBulk:
 
         assert result == 0
 
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_delete_multiple_users(self, mock_get_db, mock_release):
         """Deletes multiple users and returns count."""
         mock_conn = MagicMock()
@@ -323,8 +323,8 @@ class TestDeleteBulk:
         mock_conn.commit.assert_called_once()
         mock_release.assert_called_once_with(mock_conn)
 
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_delete_single_user(self, mock_get_db, mock_release):
         """Deletes single user in list and returns 1."""
         mock_conn = MagicMock()
@@ -338,8 +338,8 @@ class TestDeleteBulk:
 
         assert result == 1
 
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_delete_bulk_partial(self, mock_get_db, mock_release):
         """Returns actual count when some IDs don't exist."""
         mock_conn = MagicMock()
@@ -357,8 +357,8 @@ class TestDeleteBulk:
 class TestGetOnlineUsers:
     """Tests for UserRepository.get_online_users() — direct DB method."""
 
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_returns_formatted_list(self, mock_get_db, mock_release):
         """Returns list of dicts with id, name, email keys."""
         mock_conn = MagicMock()
@@ -378,8 +378,8 @@ class TestGetOnlineUsers:
         assert result[1] == {'id': 2, 'name': 'Bob', 'email': 'bob@test.com'}
         mock_release.assert_called_once_with(mock_conn)
 
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_empty_result(self, mock_get_db, mock_release):
         """Returns empty list when no users are online."""
         mock_conn = MagicMock()
@@ -397,9 +397,9 @@ class TestGetOnlineUsers:
 class TestGetByEmail:
     """Tests for UserRepository.get_by_email() — direct DB method."""
 
-    @patch('core.auth.repositories.user_repository.dict_from_row')
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.dict_from_row')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_found(self, mock_get_db, mock_release, mock_dict_from_row):
         """Returns user dict when email exists."""
         mock_conn = MagicMock()
@@ -417,8 +417,8 @@ class TestGetByEmail:
         assert result['email'] == 'admin@autoworld.ro'
         mock_release.assert_called_once_with(mock_conn)
 
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_not_found(self, mock_get_db, mock_release):
         """Returns None when email does not exist."""
         mock_conn = MagicMock()
@@ -436,9 +436,9 @@ class TestGetByEmail:
 class TestGetById:
     """Tests for UserRepository.get_by_id() — direct DB method."""
 
-    @patch('core.auth.repositories.user_repository.dict_from_row')
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.dict_from_row')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_found(self, mock_get_db, mock_release, mock_dict_from_row):
         """Returns user dict when ID exists."""
         mock_conn = MagicMock()
@@ -456,8 +456,8 @@ class TestGetById:
         assert result['id'] == 1
         assert result['role_name'] == 'Super Admin'
 
-    @patch('core.auth.repositories.user_repository.release_db')
-    @patch('core.auth.repositories.user_repository.get_db')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_db')
     def test_not_found(self, mock_get_db, mock_release):
         """Returns None when ID does not exist."""
         mock_conn = MagicMock()
