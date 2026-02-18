@@ -538,22 +538,34 @@ const TransactionRow = memo(function TransactionRow({
 
   return (
     <>
-      <TableRow className={cn(isSelected && 'bg-muted/50', txn.status === 'ignored' && 'opacity-50')}>
+      <TableRow
+        className={cn(
+          isSelected && 'bg-muted/50',
+          txn.status === 'ignored' && 'opacity-50',
+          isMerged && 'cursor-pointer hover:bg-muted/40',
+        )}
+        onClick={(e) => {
+          if (isMerged && !(e.target as HTMLElement).closest('button, input, [role="checkbox"], a, [data-no-row-click]')) {
+            onToggleExpand(txn.id)
+          }
+        }}
+        aria-expanded={isMerged ? isExpanded : undefined}
+      >
         <TableCell>
           <Checkbox checked={isSelected} onCheckedChange={() => onToggleSelect(txn.id)} />
         </TableCell>
-        <TableCell className="text-sm whitespace-nowrap">{formatDate(txn.transaction_date)}</TableCell>
+        <TableCell className="text-sm whitespace-nowrap">
+          <span className="inline-flex items-center gap-1">
+            {isMerged && (isExpanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />)}
+            {formatDate(txn.transaction_date)}
+          </span>
+        </TableCell>
         <TableCell className="text-xs text-muted-foreground truncate max-w-[100px]">
           {txn.company_name ?? txn.company_cui ?? '—'}
         </TableCell>
         <TableCell className="text-sm">{txn.vendor_name ?? '—'}</TableCell>
         <TableCell className="text-sm font-medium">{txn.matched_supplier ?? '—'}</TableCell>
         <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={txn.description}>
-          {isMerged && (
-            <button onClick={() => onToggleExpand(txn.id)} className="mr-1 inline-flex">
-              {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            </button>
-          )}
           {txn.description}
         </TableCell>
         <TableCell className={cn('text-right text-sm font-medium whitespace-nowrap', txn.amount < 0 ? 'text-red-500' : 'text-green-500')}>
