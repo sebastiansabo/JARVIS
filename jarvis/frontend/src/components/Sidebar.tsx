@@ -217,7 +217,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
     // Action items render as buttons (e.g. AI Agent toggle)
     if (item.action) {
       const btn = (
-        <button key={item.label} onClick={item.action} className={cn(classes, 'w-full')}>
+        <button key={item.label} onClick={item.action} className={cn(classes, 'w-full text-left')}>
           {linkContent}
         </button>
       )

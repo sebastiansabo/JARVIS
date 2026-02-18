@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Calculator, Users, Bot, Settings, Plus, FileText, ArrowRight, ClipboardCheck, Clock } from 'lucide-react'
+import { Calculator, Users, Bot, Settings, FileText, ArrowRight, ClipboardCheck, Clock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { StatCard } from '@/components/shared/StatCard'
@@ -11,36 +11,6 @@ import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { useAuth } from '@/hooks/useAuth'
 import { dashboardApi } from '@/api/dashboard'
 import { approvalsApi } from '@/api/approvals'
-
-const apps = [
-  {
-    path: '/app/ai-agent',
-    label: 'AI Agent',
-    description: 'Ask questions about your data',
-    icon: Bot,
-  },
-  {
-    path: '/app/accounting',
-    label: 'Accounting',
-    description: 'Invoices, statements, e-Factura',
-    icon: Calculator,
-    permission: 'can_access_accounting' as const,
-  },
-  {
-    path: '/app/hr',
-    label: 'HR',
-    description: 'Events and bonuses',
-    icon: Users,
-    permission: 'can_access_hr' as const,
-  },
-  {
-    path: '/app/settings',
-    label: 'Settings',
-    description: 'Users, roles, configuration',
-    icon: Settings,
-    permission: 'can_access_settings' as const,
-  },
-]
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -79,11 +49,6 @@ export default function Dashboard() {
   const totalInvoices = companySummary?.reduce((sum, c) => sum + Number(c.invoice_count), 0) ?? 0
   const totalValue = companySummary?.reduce((sum, c) => sum + Number(c.total_value_ron ?? 0), 0) ?? 0
 
-  const visibleApps = apps.filter((app) => {
-    if (!('permission' in app) || !app.permission) return true
-    return user?.[app.permission]
-  })
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -92,26 +57,16 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="mt-1 text-muted-foreground">Welcome, {user?.name}.</p>
         </div>
-        <div className="flex gap-2">
-          {user?.can_add_invoices && (
-            <Button asChild size="sm">
-              <Link to="/app/accounting/add">
-                <Plus className="mr-1.5 h-4 w-4" />
-                Add Invoice
-              </Link>
-            </Button>
-          )}
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/app/ai-agent">
-              <Bot className="mr-1.5 h-4 w-4" />
-              New Chat
-            </Link>
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" asChild>
+          <Link to="/app/ai-agent">
+            <Bot className="mr-1.5 h-4 w-4" />
+            New Chat
+          </Link>
+        </Button>
       </div>
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Stats */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {canAccounting && (
           <>
             <StatCard
@@ -149,31 +104,6 @@ export default function Dashboard() {
           icon={<ClipboardCheck className="h-4 w-4" />}
           description={pendingApprovals.length > 0 ? 'Awaiting your decision' : undefined}
         />
-      </div>
-
-      {/* Quick Navigation */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {visibleApps.map((app) => {
-          const Icon = app.icon
-          const inner = (
-            <Card className="transition-shadow hover:shadow-md">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg bg-primary/10 p-2">
-                    <Icon className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">{app.label}</CardTitle>
-                    <CardDescription>{app.description}</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-            </Card>
-          )
-          return (
-            <Link key={app.path} to={app.path}>{inner}</Link>
-          )
-        })}
       </div>
 
       {/* Pending Approvals */}
