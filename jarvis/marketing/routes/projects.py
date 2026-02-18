@@ -24,6 +24,41 @@ _activity_repo = ActivityRepository()
 _perm_repo = PermissionRepository()
 
 
+def _can_access_project(project, user_id, scope):
+    """Check if user can access a specific project given their permission scope."""
+    if scope == 'all':
+        return True
+    # Owner always has access
+    if project.get('owner_id') == user_id:
+        return True
+    # Team member always has access
+    members = _member_repo.get_by_project(project['id'])
+    if any(m['user_id'] == user_id for m in members):
+        return True
+    # Pending approver (context_approver) always has access
+    from database import get_db, get_cursor, release_db
+    conn = get_db()
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            SELECT 1 FROM approval_requests
+            WHERE entity_type = 'mkt_project' AND entity_id = %s
+              AND status IN ('pending', 'on_hold')
+              AND (context_snapshot->>'approver_user_id')::int = %s
+            LIMIT 1
+        ''', (project['id'], user_id))
+        if cursor.fetchone():
+            return True
+    finally:
+        release_db(conn)
+    # Department scope: check company match
+    if scope == 'department':
+        user_company = getattr(current_user, 'company', None)
+        if user_company and project.get('company_id') == int(user_company):
+            return True
+    return False
+
+
 # ---- Permission decorator ----
 
 def mkt_permission_required(entity, action):
@@ -66,12 +101,13 @@ def api_list_projects():
     # Strip None values
     filters = {k: v for k, v in filters.items() if v is not None}
 
-    # Scope filtering
+    # Scope filtering — always include projects where user is approver/member
     scope = getattr(g, 'permission_scope', 'all')
     if scope == 'own':
-        filters['owner_id'] = current_user.id
+        filters['visible_to_user_id'] = current_user.id
     elif scope == 'department':
-        filters['company_id'] = getattr(current_user, 'company', None)
+        filters['visible_to_user_id'] = current_user.id
+        filters['department_company_id'] = getattr(current_user, 'company', None)
 
     result = _project_repo.list_projects(filters)
     return jsonify(result)
@@ -132,6 +168,10 @@ def api_get_project(project_id):
     project = _project_repo.get_by_id(project_id)
     if not project:
         return jsonify({'success': False, 'error': 'Project not found'}), 404
+
+    scope = getattr(g, 'permission_scope', 'all')
+    if not _can_access_project(project, current_user.id, scope):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
 
     project['members'] = _member_repo.get_by_project(project_id)
     project['budget_lines'] = _budget_repo.get_lines_by_project(project_id)

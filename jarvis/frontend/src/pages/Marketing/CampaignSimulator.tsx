@@ -1,48 +1,67 @@
-import { useMemo, useState, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMemo, useState, useCallback, Fragment } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import {
-  Calculator, RotateCcw, Wand2, Plus, Users,
-  Target, DollarSign, Car, TrendingUp, ChevronDown, ChevronRight, Info,
+  RotateCcw, Wand2, Plus, Users, Trash2,
+  Target, DollarSign, Car, TrendingUp, ChevronDown, ChevronRight,
+  Info, Sparkles, Settings2, Loader2, Save, X, Columns3,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
-import type { SimBenchmark, SimChannelResult, SimStageTotal, SimTotals } from '@/types/marketing'
+import type { SimBenchmark, SimStageTotal, SimTotals } from '@/types/marketing'
 
 // ── Constants ──
 
 const STAGES = ['awareness', 'consideration', 'conversion'] as const
 type FunnelStage = typeof STAGES[number]
 
-const STAGE_CONFIG: Record<FunnelStage, { label: string; color: string; bg: string; headerBg: string; textColor: string }> = {
-  awareness:     { label: 'Awareness',     color: 'text-blue-600 dark:text-blue-400',   bg: 'bg-blue-50 dark:bg-blue-950/40',   headerBg: 'bg-blue-600',   textColor: 'text-white' },
-  consideration: { label: 'Consideration', color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40', headerBg: 'bg-amber-600',  textColor: 'text-white' },
-  conversion:    { label: 'Conversion',    color: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-950/40', headerBg: 'bg-green-600',  textColor: 'text-white' },
+const STAGE_CONFIG: Record<FunnelStage, {
+  label: string; color: string
+  headerBg: string; textColor: string; subtotalBg: string
+}> = {
+  awareness: {
+    label: 'Awareness',
+    color: 'text-blue-600 dark:text-blue-400',
+    headerBg: 'bg-gray-300 dark:bg-gray-700',
+    textColor: 'text-gray-900 dark:text-gray-100',
+    subtotalBg: 'bg-gray-100 dark:bg-gray-800',
+  },
+  consideration: {
+    label: 'Consideration',
+    color: 'text-amber-600 dark:text-amber-400',
+    headerBg: 'bg-gray-300 dark:bg-gray-700',
+    textColor: 'text-gray-900 dark:text-gray-100',
+    subtotalBg: 'bg-gray-100 dark:bg-gray-800',
+  },
+  conversion: {
+    label: 'Conversion',
+    color: 'text-green-600 dark:text-green-400',
+    headerBg: 'bg-gray-300 dark:bg-gray-700',
+    textColor: 'text-gray-900 dark:text-gray-100',
+    subtotalBg: 'bg-gray-100 dark:bg-gray-800',
+  },
 }
 
-// Default active channels matching exercitiu.xlsx Modul 4
 const DEFAULT_ACTIVE: Record<FunnelStage, Set<string>> = {
   awareness: new Set(['meta_traffic_aw', 'meta_reach', 'meta_video_views', 'youtube_skippable_aw', 'google_display']),
   consideration: new Set(['meta_engagement', 'special_activation']),
   conversion: new Set(['google_pmax_conv', 'meta_conversion']),
 }
 
-// Funnel synergy multipliers from exercitiu.xlsx hidden formulas
-const AWARENESS_THRESHOLD = 0.42   // >42% of budget on awareness → 1.7x
+const AWARENESS_THRESHOLD = 0.42
 const AWARENESS_MULTIPLIER = 1.7
-const CONSIDERATION_THRESHOLD = 0.14 // >14% of budget on consideration → 1.5x
+const CONSIDERATION_THRESHOLD = 0.14
 const CONSIDERATION_MULTIPLIER = 1.5
 
-// Auto-distribute pattern from Toyota Masterclass
 const AUTO_DISTRIBUTE = {
   months: [0.40, 0.35, 0.25],
   stages: [
@@ -57,22 +76,15 @@ const AUTO_DISTRIBUTE = {
 function fmtNum(n: number, decimals = 0): string {
   return n.toLocaleString('ro-RO', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
-
-function fmtEur(n: number): string {
-  return `€${fmtNum(n, 2)}`
-}
-
-function fmtPct(n: number): string {
-  return `${(n * 100).toFixed(2)}%`
-}
+function fmtEur(n: number): string { return `\u20AC ${fmtNum(n, 0)}` }
+function fmtPct(n: number): string { return `${(n * 100).toFixed(2)}%` }
 
 // ── Component ──
 
 export default function CampaignSimulator() {
-  // Inputs
   const [audienceSize, setAudienceSize] = useState(300000)
   const [totalBudget, setTotalBudget] = useState(10000)
-  const [leadToSaleRate, setLeadToSaleRate] = useState(5) // percentage display
+  const [leadToSaleRate, setLeadToSaleRate] = useState(5)
   const [allocations, setAllocations] = useState<Record<string, number>>({})
   const [activeChannels, setActiveChannels] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {}
@@ -82,8 +94,14 @@ export default function CampaignSimulator() {
     return init
   })
   const [collapsedStages, setCollapsedStages] = useState<Record<string, boolean>>({})
+  const [showCalcCols, setShowCalcCols] = useState(true)
+  const [showKpiDetails, setShowKpiDetails] = useState(false)
+  const [showBenchmarks, setShowBenchmarks] = useState(false)
+  const [addChannelStage, setAddChannelStage] = useState<FunnelStage | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiReasoning, setAiReasoning] = useState('')
+  const queryClient = useQueryClient()
 
-  // Fetch benchmarks
   const { data: benchmarkData, isLoading } = useQuery({
     queryKey: ['sim-benchmarks'],
     queryFn: () => marketingApi.getSimBenchmarks(),
@@ -91,7 +109,6 @@ export default function CampaignSimulator() {
   })
   const benchmarks = benchmarkData?.benchmarks ?? []
 
-  // Group benchmarks by stage → channels (unique keys)
   const channelsByStage = useMemo(() => {
     const map: Record<FunnelStage, { key: string; label: string }[]> = {
       awareness: [], consideration: [], conversion: [],
@@ -107,45 +124,48 @@ export default function CampaignSimulator() {
     return map
   }, [benchmarks])
 
-  // Benchmark lookup map
   const benchmarkMap = useMemo(() => {
     const m = new Map<string, SimBenchmark>()
     for (const b of benchmarks) m.set(`${b.channel_key}-${b.month_index}`, b)
     return m
   }, [benchmarks])
 
-  // ── Calculation engine ──
+  // Column counts for colSpan
+  const colsPerMonth = showCalcCols ? 3 : 1
+  const totalCols = 1 + colsPerMonth * 3 + 1 // name + (3 months * cols) + total
+
+  // ── Calculation engine (matching Excel formulas) ──
   const outputs = useMemo(() => {
-    const perChannel: SimChannelResult[] = []
     const byStage: Record<string, SimStageTotal> = {}
-    const byMonth: Record<number, SimStageTotal> = { 1: { budget: 0, clicks: 0, leads: 0 }, 2: { budget: 0, clicks: 0, leads: 0 }, 3: { budget: 0, clicks: 0, leads: 0 } }
-
-    for (const stage of STAGES) {
-      byStage[stage] = { budget: 0, clicks: 0, leads: 0 }
+    const byMonth: Record<number, SimStageTotal> = {
+      1: { budget: 0, clicks: 0, leads: 0 },
+      2: { budget: 0, clicks: 0, leads: 0 },
+      3: { budget: 0, clicks: 0, leads: 0 },
     }
+    const kpiDetails: {
+      channel_key: string; channel_label: string; funnel_stage: string
+      month_index: number; budget: number; cpc: number; clicks: number
+      cvr_lead: number; leads: number; cvr_car: number
+    }[] = []
+
+    for (const stage of STAGES) byStage[stage] = { budget: 0, clicks: 0, leads: 0 }
 
     for (const stage of STAGES) {
-      const channels = channelsByStage[stage] ?? []
-      for (const ch of channels) {
+      for (const ch of (channelsByStage[stage] ?? [])) {
         if (!activeChannels[ch.key]) continue
         for (const month of [1, 2, 3]) {
+          if (stage === 'consideration' && month === 1) continue
           const key = `${ch.key}-${month}`
           const budget = allocations[key] || 0
           const bm = benchmarkMap.get(key)
-          if (!bm || budget <= 0) continue
-
-          const clicks = budget / bm.cpc
+          if (!bm) continue
+          const clicks = budget > 0 ? budget / bm.cpc : 0
           const leads = clicks * bm.cvr_lead
-          const cars = clicks * bm.cvr_car
-
-          perChannel.push({
-            channel_key: ch.key,
-            channel_label: ch.label,
-            funnel_stage: stage,
-            month_index: month,
-            budget, cpc: bm.cpc, clicks, cvr_lead: bm.cvr_lead, leads, cvr_car: bm.cvr_car, cars,
+          kpiDetails.push({
+            channel_key: ch.key, channel_label: ch.label,
+            funnel_stage: stage, month_index: month,
+            budget, cpc: bm.cpc, clicks, cvr_lead: bm.cvr_lead, leads, cvr_car: bm.cvr_car,
           })
-
           byStage[stage].budget += budget
           byStage[stage].clicks += clicks
           byStage[stage].leads += leads
@@ -156,85 +176,87 @@ export default function CampaignSimulator() {
       }
     }
 
-    // Raw totals (before multipliers)
     const rawTotalBudget = Object.values(byStage).reduce((s, v) => s + v.budget, 0)
     const rawTotalLeads = Object.values(byStage).reduce((s, v) => s + v.leads, 0)
+    const rawTotalClicks = Object.values(byStage).reduce((s, v) => s + v.clicks, 0)
 
-    // Funnel synergy multipliers
     const awPct = rawTotalBudget > 0 ? byStage.awareness.budget / rawTotalBudget : 0
     const coPct = rawTotalBudget > 0 ? byStage.consideration.budget / rawTotalBudget : 0
     const awMultiplier = awPct > AWARENESS_THRESHOLD ? AWARENESS_MULTIPLIER : 1
     const coMultiplier = coPct > CONSIDERATION_THRESHOLD ? CONSIDERATION_MULTIPLIER : 1
     const totalMultiplier = awMultiplier * coMultiplier
 
+    const m1Cvr = byMonth[1].clicks > 0 ? byMonth[1].leads / byMonth[1].clicks : 0
+    const m2Cvr = byMonth[2].clicks > 0 ? byMonth[2].leads / byMonth[2].clicks : 0
+    const m3Cvr = byMonth[3].clicks > 0 ? byMonth[3].leads / byMonth[3].clicks : 0
+    const monthsWithData = [m1Cvr, m2Cvr, m3Cvr].filter(v => v > 0).length
+    const avgCvr = monthsWithData > 0 ? (m1Cvr + m2Cvr + m3Cvr) / monthsWithData : 0
+    const finalCvr = avgCvr * totalMultiplier
+
     const totalLeads = rawTotalLeads * totalMultiplier
     const rate = leadToSaleRate / 100
     const totalCars = totalLeads * rate
 
     const totals: SimTotals = {
-      total_budget: rawTotalBudget,
-      total_clicks: Object.values(byStage).reduce((s, v) => s + v.clicks, 0),
-      total_leads: totalLeads,
+      total_budget: rawTotalBudget, total_clicks: rawTotalClicks, total_leads: totalLeads,
       cost_per_lead: totalLeads > 0 ? rawTotalBudget / totalLeads : 0,
-      total_cars: totalCars,
-      cost_per_car: totalCars > 0 ? rawTotalBudget / totalCars : 0,
+      total_cars: totalCars, cost_per_car: totalCars > 0 ? rawTotalBudget / totalCars : 0,
     }
 
-    return {
-      perChannel, byStage, byMonth, totals,
-      awPct, coPct, awMultiplier, coMultiplier, totalMultiplier, rawTotalLeads,
-    }
+    return { kpiDetails, byStage, byMonth, totals, awPct, coPct, awMultiplier, coMultiplier, totalMultiplier, rawTotalLeads, finalCvr }
   }, [allocations, activeChannels, benchmarkMap, channelsByStage, leadToSaleRate])
 
   const budgetRemaining = totalBudget - outputs.totals.total_budget
 
   // ── Actions ──
-
   const handleAllocationChange = useCallback((channelKey: string, month: number, value: string) => {
-    const num = parseFloat(value) || 0
-    setAllocations(prev => ({ ...prev, [`${channelKey}-${month}`]: num }))
+    setAllocations(prev => ({ ...prev, [`${channelKey}-${month}`]: parseFloat(value) || 0 }))
   }, [])
 
-  const handleReset = useCallback(() => {
-    setAllocations({})
-  }, [])
+  const handleReset = useCallback(() => { setAllocations({}); setAiReasoning('') }, [])
 
   const handleAutoDistribute = useCallback(() => {
-    const newAlloc: Record<string, number> = {}
-
+    const n: Record<string, number> = {}
     for (let mi = 0; mi < 3; mi++) {
-      const month = mi + 1
-      const monthBudget = totalBudget * AUTO_DISTRIBUTE.months[mi]
-      const stageWeights = AUTO_DISTRIBUTE.stages[mi]
-
+      const month = mi + 1, mb = totalBudget * AUTO_DISTRIBUTE.months[mi], sw = AUTO_DISTRIBUTE.stages[mi]
       for (const stage of STAGES) {
-        const stageBudget = monthBudget * stageWeights[stage]
-        const channels = (channelsByStage[stage] ?? []).filter(ch => activeChannels[ch.key])
-        if (channels.length === 0) continue
-        const perChannel = stageBudget / channels.length
-
-        for (const ch of channels) {
-          newAlloc[`${ch.key}-${month}`] = Math.round(perChannel * 100) / 100
-        }
+        if (stage === 'consideration' && month === 1) continue
+        const sb = mb * sw[stage]
+        const chs = (channelsByStage[stage] ?? []).filter(ch => activeChannels[ch.key])
+        if (!chs.length) continue
+        const per = sb / chs.length
+        for (const ch of chs) n[`${ch.key}-${month}`] = Math.round(per)
       }
     }
-
-    setAllocations(newAlloc)
+    setAllocations(n); setAiReasoning('')
   }, [totalBudget, channelsByStage, activeChannels])
+
+  const handleAiDistribute = useCallback(async () => {
+    setAiLoading(true); setAiReasoning('')
+    try {
+      const activeByStage: Record<string, string[]> = {}
+      for (const stage of STAGES) {
+        const keys = (channelsByStage[stage] ?? []).filter(ch => activeChannels[ch.key]).map(ch => ch.key)
+        if (keys.length > 0) activeByStage[stage] = keys
+      }
+      const result = await marketingApi.aiDistribute({
+        total_budget: totalBudget, audience_size: audienceSize,
+        lead_to_sale_rate: leadToSaleRate, active_channels: activeByStage,
+        benchmarks: benchmarks.filter(b => activeChannels[b.channel_key]),
+      })
+      if (result.success && result.allocations) {
+        const na: Record<string, number> = {}
+        for (const [k, v] of Object.entries(result.allocations)) na[k] = Number(v) || 0
+        setAllocations(na); setAiReasoning(result.reasoning || '')
+      }
+    } catch (err) { console.error('AI distribute failed:', err) }
+    finally { setAiLoading(false) }
+  }, [totalBudget, audienceSize, leadToSaleRate, channelsByStage, activeChannels, benchmarks])
 
   const toggleChannel = useCallback((key: string) => {
     setActiveChannels(prev => {
       const next = { ...prev, [key]: !prev[key] }
-      // Clear allocations for deactivated channel
-      if (!next[key]) {
-        setAllocations(prev2 => {
-          const a = { ...prev2 }
-          delete a[`${key}-1`]
-          delete a[`${key}-2`]
-          delete a[`${key}-3`]
-          return a
-        })
-      }
+      if (!next[key]) setAllocations(p => { const a = { ...p }; delete a[`${key}-1`]; delete a[`${key}-2`]; delete a[`${key}-3`]; return a })
       return next
     })
   }, [])
@@ -243,428 +265,630 @@ export default function CampaignSimulator() {
     setCollapsedStages(prev => ({ ...prev, [stage]: !prev[stage] }))
   }, [])
 
-  // ── Helpers for grid ──
+  const handleDeleteChannel = useCallback(async (channelKey: string) => {
+    try {
+      await marketingApi.deleteSimChannel(channelKey)
+      setActiveChannels(prev => { const n = { ...prev }; delete n[channelKey]; return n })
+      setAllocations(prev => {
+        const n = { ...prev }; delete n[`${channelKey}-1`]; delete n[`${channelKey}-2`]; delete n[`${channelKey}-3`]; return n
+      })
+      queryClient.invalidateQueries({ queryKey: ['sim-benchmarks'] })
+    } catch (err) { console.error('Delete channel failed:', err) }
+  }, [queryClient])
 
-  function getChannelMonthTotal(channelKey: string): { budget: number; clicks: number; leads: number } {
-    let budget = 0, clicks = 0, leads = 0
-    for (const month of [1, 2, 3]) {
-      const b = allocations[`${channelKey}-${month}`] || 0
-      const bm = benchmarkMap.get(`${channelKey}-${month}`)
-      if (bm && b > 0) {
-        budget += b
-        const c = b / bm.cpc
-        clicks += c
-        leads += c * bm.cvr_lead
-      }
+  // Per-cell computed values
+  function getCellCalc(ck: string, month: number) {
+    const bm = benchmarkMap.get(`${ck}-${month}`)
+    const budget = allocations[`${ck}-${month}`] || 0
+    if (!bm || budget <= 0) return { clicks: 0, leads: 0 }
+    const clicks = budget / bm.cpc
+    return { clicks, leads: clicks * bm.cvr_lead }
+  }
+
+  function getChannelRowTotal(ck: string, stage: FunnelStage) {
+    let t = 0; for (const m of [1, 2, 3]) { if (stage === 'consideration' && m === 1) continue; t += allocations[`${ck}-${m}`] || 0 }; return t
+  }
+  function getStageMonthBudget(stage: FunnelStage, month: number) {
+    let t = 0; for (const ch of (channelsByStage[stage] ?? [])) { if (!activeChannels[ch.key] || (stage === 'consideration' && month === 1)) continue; t += allocations[`${ch.key}-${month}`] || 0 }; return t
+  }
+  function getStageMonthCalc(stage: FunnelStage, month: number) {
+    let clicks = 0, leads = 0
+    for (const ch of (channelsByStage[stage] ?? [])) {
+      if (!activeChannels[ch.key] || (stage === 'consideration' && month === 1)) continue
+      const c = getCellCalc(ch.key, month); clicks += c.clicks; leads += c.leads
     }
-    return { budget, clicks, leads }
+    return { clicks, leads }
+  }
+  function getStageTotal(stage: FunnelStage) {
+    let t = 0; for (const ch of (channelsByStage[stage] ?? [])) { if (!activeChannels[ch.key]) continue; for (const m of [1, 2, 3]) { if (stage === 'consideration' && m === 1) continue; t += allocations[`${ch.key}-${m}`] || 0 } }; return t
   }
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4 mt-4">
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-96 w-full" />
-      </div>
-    )
-  }
+  if (isLoading) return <div className="space-y-4 mt-4"><Skeleton className="h-32 w-full" /><Skeleton className="h-96 w-full" /></div>
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <div className="space-y-4 mt-4">
-
-        {/* ── Header: Inputs ── */}
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex flex-wrap items-end gap-4">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Users className="h-3 w-3" /> Audience Size
-                </Label>
-                <Input
-                  type="number"
-                  className="w-36 h-8 text-sm"
-                  value={audienceSize}
-                  onChange={e => setAudienceSize(parseInt(e.target.value) || 0)}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground flex items-center gap-1">
-                  <DollarSign className="h-3 w-3" /> Total Budget (EUR)
-                </Label>
-                <Input
-                  type="number"
-                  className="w-36 h-8 text-sm"
-                  value={totalBudget}
-                  onChange={e => setTotalBudget(parseFloat(e.target.value) || 0)}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Car className="h-3 w-3" /> Lead → Sale %
-                </Label>
-                <Input
-                  type="number"
-                  className="w-24 h-8 text-sm"
-                  value={leadToSaleRate}
-                  step={0.5}
-                  onChange={e => setLeadToSaleRate(parseFloat(e.target.value) || 0)}
-                />
-              </div>
-
-              <div className="flex gap-2 ml-auto">
-                <Button variant="outline" size="sm" onClick={handleReset}>
-                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
-                </Button>
-                <Button size="sm" onClick={handleAutoDistribute}>
-                  <Wand2 className="h-3.5 w-3.5 mr-1" /> Auto-Distribute
-                </Button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Remaining:</span>
-                <Badge variant={budgetRemaining < 0 ? 'destructive' : budgetRemaining === 0 ? 'default' : 'secondary'} className="text-xs">
-                  {fmtEur(budgetRemaining)}
-                </Badge>
-              </div>
+    <div className="space-y-4 mt-4">
+      {/* ── Header ── */}
+      <Card>
+        <CardContent className="pt-4 pb-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" /> Dimensiune audienta</Label>
+              <Input type="number" className="w-36 h-8 text-sm" value={audienceSize} onChange={e => setAudienceSize(parseInt(e.target.value) || 0)} />
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3" /> Buget Disponibil (EUR)</Label>
+              <Input type="number" className="w-36 h-8 text-sm" value={totalBudget} onChange={e => setTotalBudget(parseFloat(e.target.value) || 0)} />
+            </div>
+            <div className="flex gap-2 ml-auto">
+              <Button variant={showCalcCols ? 'default' : 'outline'} size="sm" onClick={() => setShowCalcCols(!showCalcCols)} title="Toggle Clicks/Leads columns">
+                <Columns3 className="h-3.5 w-3.5 mr-1" /> {showCalcCols ? 'Hide' : 'Show'} KPI
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleReset}><RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset</Button>
+              <Button variant="outline" size="sm" onClick={handleAutoDistribute}><Wand2 className="h-3.5 w-3.5 mr-1" /> Auto-Distribute</Button>
+              <Button size="sm" onClick={handleAiDistribute} disabled={aiLoading} className="bg-purple-600 hover:bg-purple-700 text-white">
+                {aiLoading ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />} AI Distribute
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowBenchmarks(true)} title="Edit benchmarks"><Settings2 className="h-3.5 w-3.5" /></Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Ramas:</span>
+              <Badge variant={budgetRemaining < 0 ? 'destructive' : budgetRemaining === 0 ? 'default' : 'secondary'} className="text-xs tabular-nums">{fmtEur(budgetRemaining)}</Badge>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {aiReasoning && (
+        <Card className="border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20">
+          <CardContent className="py-3 flex items-start gap-2">
+            <Sparkles className="h-4 w-4 text-purple-600 shrink-0 mt-0.5" />
+            <div className="text-sm text-purple-800 dark:text-purple-200">{aiReasoning}</div>
+            <button onClick={() => setAiReasoning('')} className="shrink-0 ml-auto"><X className="h-3.5 w-3.5 text-muted-foreground" /></button>
           </CardContent>
         </Card>
+      )}
 
-        {/* ── Allocation Grid ── */}
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="text-xs">
-                    <TableHead className="w-52 sticky left-0 bg-background z-10">Channel</TableHead>
-                    <TableHead className="text-center w-24 bg-blue-50/50 dark:bg-blue-950/20">M1 Budget</TableHead>
-                    <TableHead className="text-right w-20 bg-blue-50/50 dark:bg-blue-950/20">Clicks</TableHead>
-                    <TableHead className="text-right w-20 bg-blue-50/50 dark:bg-blue-950/20">Leads</TableHead>
-                    <TableHead className="text-center w-24 bg-amber-50/50 dark:bg-amber-950/20">M2 Budget</TableHead>
-                    <TableHead className="text-right w-20 bg-amber-50/50 dark:bg-amber-950/20">Clicks</TableHead>
-                    <TableHead className="text-right w-20 bg-amber-50/50 dark:bg-amber-950/20">Leads</TableHead>
-                    <TableHead className="text-center w-24 bg-green-50/50 dark:bg-green-950/20">M3 Budget</TableHead>
-                    <TableHead className="text-right w-20 bg-green-50/50 dark:bg-green-950/20">Clicks</TableHead>
-                    <TableHead className="text-right w-20 bg-green-50/50 dark:bg-green-950/20">Leads</TableHead>
-                    <TableHead className="text-right w-20 font-bold">Total €</TableHead>
-                    <TableHead className="text-right w-20 font-bold">Clicks</TableHead>
-                    <TableHead className="text-right w-20 font-bold">Leads</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {STAGES.map(stage => {
-                    const cfg = STAGE_CONFIG[stage]
-                    const channels = channelsByStage[stage] ?? []
-                    const activeList = channels.filter(ch => activeChannels[ch.key])
-                    const isCollapsed = collapsedStages[stage]
-
-                    // Stage subtotals
-                    const stageData = outputs.byStage[stage] || { budget: 0, clicks: 0, leads: 0 }
-
-                    return (
-                      <> {/* Fragment for stage group */}
-                        {/* Stage Header */}
-                        <TableRow
-                          key={`stage-${stage}`}
-                          className={cn(cfg.headerBg, cfg.textColor, 'cursor-pointer hover:opacity-90')}
-                          onClick={() => toggleStageCollapse(stage)}
-                        >
-                          <TableCell colSpan={10} className="py-1.5 font-semibold text-xs sticky left-0">
-                            <div className="flex items-center gap-2">
-                              {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                              {cfg.label}
-                              <span className="font-normal opacity-80">({activeList.length}/{channels.length} channels)</span>
-                              {/* Channel toggle */}
+      {/* ── Budget Table (Excel Modul 4) ── */}
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="text-xs">
+                  <TableHead className="w-64 sticky left-0 bg-background z-10 font-bold">Canal / Funnel</TableHead>
+                  {[1, 2, 3].map(m => (
+                    <Fragment key={m}>
+                      <TableHead className={cn('text-center w-28 border-l', !showCalcCols && 'w-28')}>Luna {m}</TableHead>
+                      {showCalcCols && <TableHead className="text-center w-20 text-muted-foreground text-[10px]">Clicks</TableHead>}
+                      {showCalcCols && <TableHead className="text-center w-20 text-muted-foreground text-[10px]">Leads</TableHead>}
+                    </Fragment>
+                  ))}
+                  <TableHead className="text-right w-28 border-l font-bold">TOTAL</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {STAGES.map(stage => {
+                  const cfg = STAGE_CONFIG[stage]
+                  const channels = channelsByStage[stage] ?? []
+                  const activeList = channels.filter(ch => activeChannels[ch.key])
+                  const isCollapsed = collapsedStages[stage]
+                  const stTotal = getStageTotal(stage)
+                  return (
+                    <Fragment key={stage}>
+                      {/* Stage header row */}
+                      <TableRow className={cn(cfg.headerBg, cfg.textColor, 'cursor-pointer hover:opacity-90')} onClick={() => toggleStageCollapse(stage)}>
+                        <TableCell className="py-1.5 font-bold text-xs sticky left-0 bg-inherit">
+                          <div className="flex items-center gap-2">
+                            {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                            {cfg.label}
+                            <span className="font-normal opacity-70">({activeList.length}/{channels.length})</span>
+                            <div className="ml-auto flex items-center gap-1">
                               <Popover>
                                 <PopoverTrigger asChild onClick={e => e.stopPropagation()}>
-                                  <button className="ml-auto opacity-70 hover:opacity-100">
-                                    <Plus className="h-3.5 w-3.5" />
-                                  </button>
+                                  <button className="opacity-70 hover:opacity-100" title="Toggle channels"><Plus className="h-3.5 w-3.5" /></button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-56 p-2" onClick={e => e.stopPropagation()}>
                                   <p className="text-xs font-medium mb-2">Toggle channels</p>
                                   {channels.map(ch => (
                                     <label key={ch.key} className="flex items-center gap-2 py-1 text-xs cursor-pointer hover:bg-accent rounded px-1">
-                                      <Checkbox
-                                        checked={!!activeChannels[ch.key]}
-                                        onCheckedChange={() => toggleChannel(ch.key)}
-                                      />
+                                      <Checkbox checked={!!activeChannels[ch.key]} onCheckedChange={() => toggleChannel(ch.key)} />
                                       {ch.label}
                                     </label>
                                   ))}
+                                  <div className="border-t mt-2 pt-2">
+                                    <button
+                                      className="flex items-center gap-1 text-xs text-primary hover:underline w-full"
+                                      onClick={(e) => { e.stopPropagation(); setAddChannelStage(stage) }}
+                                    >
+                                      <Plus className="h-3 w-3" /> Add new channel
+                                    </button>
+                                  </div>
                                 </PopoverContent>
                               </Popover>
                             </div>
-                          </TableCell>
-                          <TableCell className="text-right text-xs py-1.5 font-semibold">{fmtEur(stageData.budget)}</TableCell>
-                          <TableCell className="text-right text-xs py-1.5 font-semibold">{fmtNum(stageData.clicks)}</TableCell>
-                          <TableCell className="text-right text-xs py-1.5 font-semibold">{fmtNum(stageData.leads, 1)}</TableCell>
-                        </TableRow>
+                          </div>
+                        </TableCell>
+                        <TableCell colSpan={colsPerMonth * 3} className="py-1.5 border-l" />
+                        <TableCell className="py-1.5 border-l" />
+                      </TableRow>
 
-                        {/* Channel Rows */}
-                        {!isCollapsed && activeList.map(ch => {
-                          const rowTotal = getChannelMonthTotal(ch.key)
+                      {/* Channel rows */}
+                      {!isCollapsed && activeList.map(ch => {
+                        const rowTotal = getChannelRowTotal(ch.key, stage)
+                        return (
+                          <TableRow key={ch.key} className="text-xs hover:bg-accent/30 group">
+                            <TableCell className="py-1 font-medium sticky left-0 bg-background text-xs pl-8">
+                              <div className="flex items-center gap-1">
+                                <span className="truncate">{ch.label}</span>
+                                <button
+                                  className="opacity-0 group-hover:opacity-60 hover:!opacity-100 shrink-0 ml-auto text-destructive"
+                                  title="Delete channel"
+                                  onClick={() => { if (confirm(`Delete "${ch.label}"?`)) handleDeleteChannel(ch.key) }}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </TableCell>
+                            {[1, 2, 3].map(month => {
+                              const dis = stage === 'consideration' && month === 1
+                              const ak = `${ch.key}-${month}`
+                              const bgt = allocations[ak] || 0
+                              const calc = getCellCalc(ch.key, month)
+                              return (
+                                <Fragment key={ak}>
+                                  <TableCell className={cn('py-1 text-center border-l')}>
+                                    {dis ? <span className="text-muted-foreground/30">{'\u2014'}</span> : (
+                                      <Input type="number" className="w-24 h-6 text-xs text-center px-1 bg-orange-50/60 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800"
+                                        value={bgt || ''} placeholder="0" onChange={e => handleAllocationChange(ch.key, month, e.target.value)} />
+                                    )}
+                                  </TableCell>
+                                  {showCalcCols && (
+                                    <TableCell className="py-1 text-center text-[11px] tabular-nums text-muted-foreground">
+                                      {dis ? '\u2014' : calc.clicks > 0 ? fmtNum(calc.clicks) : '-'}
+                                    </TableCell>
+                                  )}
+                                  {showCalcCols && (
+                                    <TableCell className="py-1 text-center text-[11px] tabular-nums font-medium">
+                                      {dis ? '\u2014' : calc.leads > 0 ? fmtNum(calc.leads, 2) : '-'}
+                                    </TableCell>
+                                  )}
+                                </Fragment>
+                              )
+                            })}
+                            <TableCell className="py-1 text-right text-xs font-medium tabular-nums border-l">{rowTotal > 0 ? fmtEur(rowTotal) : '\u20AC -'}</TableCell>
+                          </TableRow>
+                        )
+                      })}
+
+                      {/* Subtotal row */}
+                      <TableRow className={cn(cfg.subtotalBg, 'font-bold text-xs')}>
+                        <TableCell className="py-1.5 sticky left-0 bg-inherit font-bold pl-4">TOTAL ({cfg.label})</TableCell>
+                        {[1, 2, 3].map(m => {
+                          const mb = getStageMonthBudget(stage, m)
+                          const mc = getStageMonthCalc(stage, m)
                           return (
-                            <TableRow key={ch.key} className={cn('text-xs', cfg.bg, 'hover:bg-accent/40')}>
-                              <TableCell className="py-1 font-medium sticky left-0 bg-inherit text-xs">
-                                {ch.label}
-                              </TableCell>
-                              {[1, 2, 3].map(month => {
-                                const allocKey = `${ch.key}-${month}`
-                                const bm = benchmarkMap.get(allocKey)
-                                const budget = allocations[allocKey] || 0
-                                const clicks = bm && budget > 0 ? budget / bm.cpc : 0
-                                const leads = bm ? clicks * bm.cvr_lead : 0
-
-                                return (
-                                  <>
-                                    <TableCell key={`${allocKey}-b`} className="py-1 text-center">
-                                      <Input
-                                        type="number"
-                                        className="w-20 h-6 text-xs text-center px-1"
-                                        value={budget || ''}
-                                        placeholder="0"
-                                        onChange={e => handleAllocationChange(ch.key, month, e.target.value)}
-                                      />
-                                    </TableCell>
-                                    <TableCell key={`${allocKey}-c`} className="py-1 text-right text-muted-foreground">
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span>{clicks > 0 ? fmtNum(clicks) : '-'}</span>
-                                        </TooltipTrigger>
-                                        <TooltipContent className="text-xs">
-                                          CPC: {bm ? fmtEur(bm.cpc) : '-'}
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TableCell>
-                                    <TableCell key={`${allocKey}-l`} className="py-1 text-right text-muted-foreground">
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span>{leads > 0 ? fmtNum(leads, 2) : '-'}</span>
-                                        </TooltipTrigger>
-                                        <TooltipContent className="text-xs">
-                                          CVR: {bm ? fmtPct(bm.cvr_lead) : '-'}
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TableCell>
-                                  </>
-                                )
-                              })}
-                              {/* Row totals */}
-                              <TableCell className="py-1 text-right font-medium">{rowTotal.budget > 0 ? fmtEur(rowTotal.budget) : '-'}</TableCell>
-                              <TableCell className="py-1 text-right text-muted-foreground">{rowTotal.clicks > 0 ? fmtNum(rowTotal.clicks) : '-'}</TableCell>
-                              <TableCell className="py-1 text-right text-muted-foreground">{rowTotal.leads > 0 ? fmtNum(rowTotal.leads, 2) : '-'}</TableCell>
-                            </TableRow>
+                            <Fragment key={m}>
+                              <TableCell className={cn('py-1.5 text-center tabular-nums border-l')}>{fmtEur(mb)}</TableCell>
+                              {showCalcCols && <TableCell className="py-1.5 text-center tabular-nums text-[11px] text-muted-foreground">{mc.clicks > 0 ? fmtNum(mc.clicks) : '-'}</TableCell>}
+                              {showCalcCols && <TableCell className="py-1.5 text-center tabular-nums text-[11px]">{mc.leads > 0 ? fmtNum(mc.leads, 1) : '-'}</TableCell>}
+                            </Fragment>
                           )
                         })}
-                      </>
-                    )
-                  })}
+                        <TableCell className="py-1.5 text-right tabular-nums border-l">{fmtEur(stTotal)}</TableCell>
+                      </TableRow>
+                      <TableRow className="h-2"><TableCell colSpan={totalCols} className="p-0" /></TableRow>
+                    </Fragment>
+                  )
+                })}
 
-                  {/* Grand Total */}
-                  <TableRow className="bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 font-bold text-xs">
-                    <TableCell className="py-2 sticky left-0 bg-inherit">GRAND TOTAL</TableCell>
-                    {[1, 2, 3].map(month => {
-                      const md = outputs.byMonth[month]
-                      return (
-                        <>
-                          <TableCell key={`gt-${month}-b`} className="py-2 text-center">{fmtEur(md.budget)}</TableCell>
-                          <TableCell key={`gt-${month}-c`} className="py-2 text-right">{fmtNum(md.clicks)}</TableCell>
-                          <TableCell key={`gt-${month}-l`} className="py-2 text-right">{fmtNum(md.leads, 1)}</TableCell>
-                        </>
-                      )
-                    })}
-                    <TableCell className="py-2 text-right">{fmtEur(outputs.totals.total_budget)}</TableCell>
-                    <TableCell className="py-2 text-right">{fmtNum(outputs.totals.total_clicks)}</TableCell>
-                    <TableCell className="py-2 text-right">{fmtNum(outputs.rawTotalLeads, 1)}</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
+                {/* Grand total row */}
+                <TableRow className="bg-gray-200 dark:bg-gray-700 font-bold text-xs">
+                  <TableCell className="py-2 sticky left-0 bg-inherit font-bold">TOTAL CAMPANIE / LUNA</TableCell>
+                  {[1, 2, 3].map(m => (
+                    <Fragment key={m}>
+                      <TableCell className={cn('py-2 text-center tabular-nums border-l')}>{fmtEur(outputs.byMonth[m].budget)}</TableCell>
+                      {showCalcCols && <TableCell className="py-2 text-center tabular-nums text-[11px]">{outputs.byMonth[m].clicks > 0 ? fmtNum(outputs.byMonth[m].clicks) : '-'}</TableCell>}
+                      {showCalcCols && <TableCell className="py-2 text-center tabular-nums text-[11px]">{outputs.byMonth[m].leads > 0 ? fmtNum(outputs.byMonth[m].leads, 1) : '-'}</TableCell>}
+                    </Fragment>
+                  ))}
+                  <TableCell className="py-2 text-right tabular-nums border-l" />
+                </TableRow>
+
+                {/* Summary rows */}
+                <SummaryRow label="Buget CONSUMAT" value={fmtEur(outputs.totals.total_budget)} colsPerMonth={colsPerMonth} totalCols={totalCols} />
+                <SummaryRow label="CVR" value={outputs.finalCvr > 0 ? fmtPct(outputs.finalCvr) : '0,00%'} colsPerMonth={colsPerMonth} totalCols={totalCols} />
+                <SummaryRow label="Numar Lead-uri" value={fmtNum(outputs.totals.total_leads, 1)} highlight={outputs.totalMultiplier > 1} colsPerMonth={colsPerMonth} totalCols={totalCols} />
+                <SummaryRow label="Cost / Lead" value={outputs.totals.cost_per_lead > 0 ? fmtEur(outputs.totals.cost_per_lead) : '\u20AC -'} colsPerMonth={colsPerMonth} totalCols={totalCols} />
+                <TableRow className="text-xs">
+                  <TableCell className="py-1.5 sticky left-0 bg-background font-medium">CVR (Lead {'\u2192'} Sale)</TableCell>
+                  <TableCell className="py-1.5 text-center border-l" colSpan={colsPerMonth * 2}>
+                    <Input type="number" className="w-20 h-6 text-xs text-center px-1 mx-auto bg-orange-50/60 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800"
+                      value={leadToSaleRate} step={0.5} onChange={e => setLeadToSaleRate(parseFloat(e.target.value) || 0)} />
+                  </TableCell>
+                  <TableCell className="py-1.5" colSpan={colsPerMonth} />
+                  <TableCell className="py-1.5 border-l" />
+                </TableRow>
+                <SummaryRow label="Masini Vandute" value={fmtNum(outputs.totals.total_cars, 1)} bold colsPerMonth={colsPerMonth} totalCols={totalCols} />
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Synergy Multipliers ── */}
+      {(outputs.awMultiplier > 1 || outputs.coMultiplier > 1) && (
+        <Card className="border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20">
+          <CardContent className="py-3">
+            <div className="flex items-center gap-3 text-sm flex-wrap">
+              <TrendingUp className="h-4 w-4 text-amber-600" />
+              <span className="font-medium text-amber-800 dark:text-amber-200">Funnel Synergy Bonus Active!</span>
+              <div className="flex gap-2 flex-wrap text-xs">
+                {outputs.awMultiplier > 1 && <Badge variant="outline" className="border-blue-400 text-blue-700 dark:text-blue-300">Awareness {fmtPct(outputs.awPct)} &gt; 42% {'\u2192'} {outputs.awMultiplier}x</Badge>}
+                {outputs.coMultiplier > 1 && <Badge variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-300">Consideration {fmtPct(outputs.coPct)} &gt; 14% {'\u2192'} {outputs.coMultiplier}x</Badge>}
+                <Badge className="bg-green-600 text-white">Total: {outputs.totalMultiplier}x {'\u2192'} {fmtNum(outputs.totals.total_leads, 1)} leads</Badge>
+              </div>
             </div>
           </CardContent>
         </Card>
+      )}
 
-        {/* ── Synergy Multipliers ── */}
-        {(outputs.awMultiplier > 1 || outputs.coMultiplier > 1) && (
-          <Card className="border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20">
-            <CardContent className="py-3">
-              <div className="flex items-center gap-3 text-sm">
-                <TrendingUp className="h-4 w-4 text-amber-600" />
-                <span className="font-medium text-amber-800 dark:text-amber-200">Funnel Synergy Bonus Active!</span>
-                <div className="flex gap-4 ml-2 text-xs">
-                  {outputs.awMultiplier > 1 && (
-                    <Badge variant="outline" className="border-blue-400 text-blue-700 dark:text-blue-300">
-                      Awareness &gt;42% → {outputs.awMultiplier}x leads
-                    </Badge>
-                  )}
-                  {outputs.coMultiplier > 1 && (
-                    <Badge variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-300">
-                      Consideration &gt;14% → {outputs.coMultiplier}x leads
-                    </Badge>
-                  )}
-                  <Badge className="bg-green-600 text-white">
-                    Total: {outputs.totalMultiplier}x → {fmtNum(outputs.totals.total_leads, 1)} leads
-                  </Badge>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ── Results Panel ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <ResultCard
-            icon={<Target className="h-4 w-4 text-green-600" />}
-            label="Total Leads"
-            value={fmtNum(outputs.totals.total_leads, 1)}
-            sub={outputs.totalMultiplier > 1 ? `${fmtNum(outputs.rawTotalLeads, 1)} × ${outputs.totalMultiplier}x` : undefined}
-            color="green"
-          />
-          <ResultCard
-            icon={<DollarSign className="h-4 w-4 text-blue-600" />}
-            label="Cost / Lead"
-            value={outputs.totals.cost_per_lead > 0 ? fmtEur(outputs.totals.cost_per_lead) : '-'}
-            color="blue"
-          />
-          <ResultCard
-            icon={<Car className="h-4 w-4 text-purple-600" />}
-            label="Cars Sold"
-            value={fmtNum(outputs.totals.total_cars, 1)}
-            sub={`${leadToSaleRate}% conversion`}
-            color="purple"
-          />
-          <ResultCard
-            icon={<DollarSign className="h-4 w-4 text-red-600" />}
-            label="Cost / Car"
-            value={outputs.totals.cost_per_car > 0 ? fmtEur(outputs.totals.cost_per_car) : '-'}
-            color="red"
-          />
-        </div>
-
-        {/* ── Funnel Visualization + Monthly Breakdown ── */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* Funnel */}
-          <Card>
-            <CardHeader className="py-3 px-4">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <TrendingUp className="h-4 w-4" /> Funnel Flow
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pb-4 px-4">
-              <FunnelVis
-                audience={audienceSize}
-                clicks={outputs.totals.total_clicks}
-                leads={outputs.totals.total_leads}
-                cars={outputs.totals.total_cars}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Monthly Breakdown */}
-          <Card>
-            <CardHeader className="py-3 px-4">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Calculator className="h-4 w-4" /> Monthly Breakdown
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pb-4 px-4">
-              <div className="grid grid-cols-3 gap-3">
-                {[1, 2, 3].map(month => {
-                  const md = outputs.byMonth[month]
-                  const pct = outputs.totals.total_budget > 0 ? (md.budget / outputs.totals.total_budget * 100) : 0
-                  return (
-                    <div key={month} className="rounded-lg border p-3 text-center space-y-2">
-                      <p className="text-xs font-semibold text-muted-foreground">Month {month}</p>
-                      <p className="text-lg font-bold">{fmtEur(md.budget)}</p>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                        <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${Math.min(pct, 100)}%` }} />
-                      </div>
-                      <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
-                        <span>{fmtNum(md.clicks)} clicks</span>
-                        <span>{fmtNum(md.leads, 1)} leads</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* ── Info ── */}
-        <div className="text-xs text-muted-foreground flex items-start gap-2 px-1">
-          <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-          <span>
-            Benchmarks sourced from Toyota Digital Masterclass (Romanian automotive market). CPC and CVR rates
-            vary by month to model audience fatigue (awareness) and retargeting lift (consideration/conversion).
-            Funnel synergy: spending &gt;42% on awareness gives a 1.7x lead multiplier; &gt;14% on consideration gives 1.5x.
-            These stack for up to 2.55x total.
-          </span>
-        </div>
+      {/* ── Results ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <ResultCard icon={<Target className="h-4 w-4 text-green-600" />} label="Total Leads" value={fmtNum(outputs.totals.total_leads, 1)} sub={outputs.totalMultiplier > 1 ? `${fmtNum(outputs.rawTotalLeads, 1)} \u00D7 ${outputs.totalMultiplier}x` : undefined} />
+        <ResultCard icon={<DollarSign className="h-4 w-4 text-blue-600" />} label="Cost / Lead" value={outputs.totals.cost_per_lead > 0 ? `\u20AC ${fmtNum(outputs.totals.cost_per_lead, 2)}` : '-'} />
+        <ResultCard icon={<Car className="h-4 w-4 text-purple-600" />} label="Masini Vandute" value={fmtNum(outputs.totals.total_cars, 1)} sub={`${leadToSaleRate}% conversion`} />
+        <ResultCard icon={<DollarSign className="h-4 w-4 text-red-600" />} label="Cost / Masina" value={outputs.totals.cost_per_car > 0 ? `\u20AC ${fmtNum(outputs.totals.cost_per_car, 2)}` : '-'} />
       </div>
-    </TooltipProvider>
+
+      {/* ── Funnel + Budget Split ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Card>
+          <CardHeader className="py-3 px-4"><CardTitle className="text-sm flex items-center gap-2"><TrendingUp className="h-4 w-4" /> Funnel Flow</CardTitle></CardHeader>
+          <CardContent className="pb-4 px-4"><FunnelVis audience={audienceSize} clicks={outputs.totals.total_clicks} leads={outputs.totals.total_leads} cars={outputs.totals.total_cars} /></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="py-3 px-4"><CardTitle className="text-sm flex items-center gap-2"><DollarSign className="h-4 w-4" /> Budget Split</CardTitle></CardHeader>
+          <CardContent className="pb-4 px-4">
+            <div className="space-y-3">
+              {STAGES.map(stage => {
+                const sb = outputs.byStage[stage]?.budget || 0
+                const pct = outputs.totals.total_budget > 0 ? sb / outputs.totals.total_budget : 0
+                const cfg = STAGE_CONFIG[stage]
+                const th = stage === 'awareness' ? AWARENESS_THRESHOLD : stage === 'consideration' ? CONSIDERATION_THRESHOLD : null
+                return (
+                  <div key={stage} className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className={cn('font-medium', cfg.color)}>{cfg.label}</span>
+                      <span className="tabular-nums">{fmtEur(sb)} ({fmtPct(pct)}){th !== null && pct > th && <span className="text-green-600 ml-1">{'\u2713'}</span>}</span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 relative">
+                      <div className={cn('h-2 rounded-full', stage === 'awareness' ? 'bg-blue-500' : stage === 'consideration' ? 'bg-amber-500' : 'bg-green-500')} style={{ width: `${Math.min(pct * 100, 100)}%` }} />
+                      {th !== null && <div className="absolute top-0 h-2 w-0.5 bg-red-500" style={{ left: `${th * 100}%` }} title={`Threshold: ${fmtPct(th)}`} />}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── KPI Details ── */}
+      <Button variant="outline" size="sm" onClick={() => setShowKpiDetails(!showKpiDetails)} className="text-xs">
+        {showKpiDetails ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
+        {showKpiDetails ? 'Hide' : 'Show'} KPI Details (CPC / Clicks / CVR / Leads)
+      </Button>
+      {showKpiDetails && <KpiTable channelsByStage={channelsByStage} activeChannels={activeChannels} benchmarkMap={benchmarkMap} allocations={allocations} />}
+
+      <div className="text-xs text-muted-foreground flex items-start gap-2 px-1">
+        <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+        <span>Benchmarks sourced from Toyota Digital Masterclass (Romanian automotive market). CPC and CVR rates vary by month to model audience fatigue (awareness) and retargeting lift (consideration/conversion). Funnel synergy: spending &gt;42% on awareness gives a 1.7x lead multiplier; &gt;14% on consideration gives 1.5x. These stack for up to 2.55x total.</span>
+      </div>
+
+      {/* Dialogs */}
+      <BenchmarkEditor open={showBenchmarks} onClose={() => setShowBenchmarks(false)} benchmarks={benchmarks} channelsByStage={channelsByStage} onSaved={() => queryClient.invalidateQueries({ queryKey: ['sim-benchmarks'] })} />
+      <AddChannelDialog
+        stage={addChannelStage}
+        onClose={() => setAddChannelStage(null)}
+        onCreated={(channelKey) => {
+          setActiveChannels(prev => ({ ...prev, [channelKey]: true }))
+          queryClient.invalidateQueries({ queryKey: ['sim-benchmarks'] })
+        }}
+      />
+    </div>
   )
 }
 
 // ── Sub-components ──
 
-function ResultCard({ icon, label, value, sub }: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  sub?: string
-  color?: string
+function SummaryRow({ label, value, bold, highlight, colsPerMonth, totalCols }: {
+  label: string; value: string; bold?: boolean; highlight?: boolean; colsPerMonth: number; totalCols: number
 }) {
+  void totalCols
   return (
-    <Card>
-      <CardContent className="py-3 px-4">
-        <div className="flex items-center gap-2 mb-1">
-          {icon}
-          <span className="text-xs text-muted-foreground">{label}</span>
-        </div>
-        <p className="text-xl font-bold">{value}</p>
-        {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
-      </CardContent>
-    </Card>
+    <TableRow className={cn('text-xs', highlight && 'bg-green-50/50 dark:bg-green-950/20')}>
+      <TableCell className={cn('py-1.5 sticky left-0 bg-inherit', bold ? 'font-bold' : 'font-medium')}>{label}</TableCell>
+      <TableCell className="py-1.5 text-center border-l tabular-nums" colSpan={colsPerMonth * 2}><span className={bold ? 'font-bold' : ''}>{value}</span></TableCell>
+      <TableCell className="py-1.5" colSpan={colsPerMonth} /><TableCell className="py-1.5 border-l" />
+    </TableRow>
   )
 }
 
-function FunnelVis({ audience, clicks, leads, cars }: {
-  audience: number
-  clicks: number
-  leads: number
-  cars: number
-}) {
+function ResultCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub?: string }) {
+  return (
+    <Card><CardContent className="py-3 px-4">
+      <div className="flex items-center gap-2 mb-1">{icon}<span className="text-xs text-muted-foreground">{label}</span></div>
+      <p className="text-xl font-bold tabular-nums">{value}</p>
+      {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+    </CardContent></Card>
+  )
+}
+
+function FunnelVis({ audience, clicks, leads, cars }: { audience: number; clicks: number; leads: number; cars: number }) {
   const steps = [
-    { label: 'Audience', value: audience, color: 'bg-blue-500' },
+    { label: 'Audienta', value: audience, color: 'bg-blue-500' },
     { label: 'Clicks', value: clicks, color: 'bg-amber-500' },
-    { label: 'Leads', value: leads, color: 'bg-green-500' },
-    { label: 'Cars Sold', value: cars, color: 'bg-purple-500' },
+    { label: 'Lead-uri', value: leads, color: 'bg-green-500' },
+    { label: 'Masini', value: cars, color: 'bg-purple-500' },
   ]
   const maxVal = Math.max(audience, 1)
-
   return (
     <div className="space-y-2">
-      {steps.map((step) => {
-        const widthPct = Math.max((step.value / maxVal) * 100, 4)
-        return (
-          <div key={step.label} className="flex items-center gap-3">
-            <span className="text-xs w-16 text-right text-muted-foreground shrink-0">{step.label}</span>
-            <div className="flex-1 flex items-center gap-2">
-              <div
-                className={cn('h-6 rounded flex items-center justify-end px-2 transition-all', step.color)}
-                style={{ width: `${widthPct}%` }}
-              >
-                <span className="text-[10px] font-semibold text-white whitespace-nowrap">
-                  {fmtNum(step.value, step.value < 100 ? 1 : 0)}
-                </span>
-              </div>
+      {steps.map(step => (
+        <div key={step.label} className="flex items-center gap-3">
+          <span className="text-xs w-16 text-right text-muted-foreground shrink-0">{step.label}</span>
+          <div className="flex-1 flex items-center gap-2">
+            <div className={cn('h-6 rounded flex items-center justify-end px-2 transition-all', step.color)} style={{ width: `${Math.max((step.value / maxVal) * 100, 4)}%` }}>
+              <span className="text-[10px] font-semibold text-white whitespace-nowrap">{fmtNum(step.value, step.value < 100 ? 1 : 0)}</span>
             </div>
           </div>
-        )
-      })}
+        </div>
+      ))}
     </div>
+  )
+}
+
+function KpiTable({ channelsByStage, activeChannels, benchmarkMap, allocations }: {
+  channelsByStage: Record<FunnelStage, { key: string; label: string }[]>
+  activeChannels: Record<string, boolean>
+  benchmarkMap: Map<string, SimBenchmark>
+  allocations: Record<string, number>
+}) {
+  return (
+    <Card><CardContent className="p-0"><div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="text-xs">
+            <TableHead className="w-48 sticky left-0 bg-background z-10">Channel</TableHead>
+            {[1, 2, 3].map(m => <TableHead key={m} className="text-center border-l" colSpan={5}>Luna {m}</TableHead>)}
+          </TableRow>
+          <TableRow className="text-[10px] text-muted-foreground">
+            <TableHead className="sticky left-0 bg-background z-10" />
+            {[1, 2, 3].map(m => (
+              <Fragment key={m}>
+                <TableHead className="text-right border-l">CPC</TableHead>
+                <TableHead className="text-right">Clicks</TableHead>
+                <TableHead className="text-right">CVR Lead</TableHead>
+                <TableHead className="text-right">Leads</TableHead>
+                <TableHead className="text-right">CVR Car</TableHead>
+              </Fragment>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {STAGES.map(stage => {
+            const cfg = STAGE_CONFIG[stage]
+            const chs = (channelsByStage[stage] ?? []).filter(ch => activeChannels[ch.key])
+            return (
+              <Fragment key={stage}>
+                <TableRow className={cfg.headerBg}><TableCell colSpan={16} className={cn('py-1 text-xs font-bold', cfg.textColor)}>{cfg.label}</TableCell></TableRow>
+                {chs.map(ch => (
+                  <TableRow key={ch.key} className="text-xs">
+                    <TableCell className="py-1 font-medium sticky left-0 bg-background text-[11px]">{ch.label}</TableCell>
+                    {[1, 2, 3].map(month => {
+                      const dis = stage === 'consideration' && month === 1
+                      const bm = benchmarkMap.get(`${ch.key}-${month}`)
+                      const budget = allocations[`${ch.key}-${month}`] || 0
+                      const clicks = bm && budget > 0 ? budget / bm.cpc : 0
+                      const leads = bm ? clicks * bm.cvr_lead : 0
+                      if (dis || !bm) return <Fragment key={month}><TableCell className="py-1 text-right text-muted-foreground/30 border-l">{'\u2014'}</TableCell><TableCell className="py-1 text-right text-muted-foreground/30">{'\u2014'}</TableCell><TableCell className="py-1 text-right text-muted-foreground/30">{'\u2014'}</TableCell><TableCell className="py-1 text-right text-muted-foreground/30">{'\u2014'}</TableCell><TableCell className="py-1 text-right text-muted-foreground/30">{'\u2014'}</TableCell></Fragment>
+                      return (
+                        <Fragment key={month}>
+                          <TableCell className="py-1 text-right tabular-nums border-l">{bm.cpc.toFixed(2)}</TableCell>
+                          <TableCell className="py-1 text-right tabular-nums">{clicks > 0 ? fmtNum(clicks) : '0'}</TableCell>
+                          <TableCell className="py-1 text-right tabular-nums">{fmtPct(bm.cvr_lead)}</TableCell>
+                          <TableCell className="py-1 text-right tabular-nums font-medium">{leads > 0 ? fmtNum(leads, 2) : '0'}</TableCell>
+                          <TableCell className="py-1 text-right tabular-nums text-muted-foreground">{fmtPct(bm.cvr_car)}</TableCell>
+                        </Fragment>
+                      )
+                    })}
+                  </TableRow>
+                ))}
+              </Fragment>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </div></CardContent></Card>
+  )
+}
+
+function BenchmarkEditor({ open, onClose, benchmarks, channelsByStage, onSaved }: {
+  open: boolean; onClose: () => void; benchmarks: SimBenchmark[]
+  channelsByStage: Record<FunnelStage, { key: string; label: string }[]>; onSaved: () => void
+}) {
+  const [edits, setEdits] = useState<Record<string, Partial<SimBenchmark>>>({})
+  const [saving, setSaving] = useState(false)
+
+  const handleEdit = (id: number, field: 'cpc' | 'cvr_lead' | 'cvr_car', value: string) => {
+    const num = parseFloat(value); if (isNaN(num)) return
+    setEdits(prev => ({ ...prev, [id]: { ...prev[id], [field]: num } }))
+  }
+  const hasChanges = Object.keys(edits).length > 0
+  const handleSave = async () => {
+    const updates = Object.entries(edits).map(([id, f]) => ({ id: Number(id), ...f }))
+    if (!updates.length) return
+    setSaving(true)
+    try { await marketingApi.bulkUpdateSimBenchmarks(updates); setEdits({}); onSaved() }
+    catch (err) { console.error('Failed to save benchmarks:', err) }
+    finally { setSaving(false) }
+  }
+  const getVal = (bm: SimBenchmark, field: 'cpc' | 'cvr_lead' | 'cvr_car'): number => {
+    const e = edits[bm.id]; if (e && field in e) return e[field] as number; return bm[field]
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose() }}>
+      <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><Settings2 className="h-4 w-4" /> Edit Benchmarks (Foaie2)</DialogTitle></DialogHeader>
+        <div className="text-xs text-muted-foreground mb-2">Adjust CPC and CVR rates per channel per month. Changes are saved to the database.</div>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="text-xs">
+                <TableHead className="w-48">Channel</TableHead>
+                {[1, 2, 3].map(m => <TableHead key={m} className="text-center border-l" colSpan={3}>Luna {m}</TableHead>)}
+              </TableRow>
+              <TableRow className="text-[10px] text-muted-foreground">
+                <TableHead />
+                {[1, 2, 3].map(m => <Fragment key={m}><TableHead className="text-center border-l">CPC</TableHead><TableHead className="text-center">CVR Lead</TableHead><TableHead className="text-center">CVR Car</TableHead></Fragment>)}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {STAGES.map(stage => {
+                const cfg = STAGE_CONFIG[stage]
+                return (
+                  <Fragment key={stage}>
+                    <TableRow className={cfg.headerBg}><TableCell colSpan={10} className={cn('py-1 text-xs font-bold', cfg.textColor)}>{cfg.label}</TableCell></TableRow>
+                    {(channelsByStage[stage] ?? []).map(ch => (
+                      <TableRow key={ch.key} className="text-xs">
+                        <TableCell className="py-1 font-medium text-[11px]">{ch.label}</TableCell>
+                        {[1, 2, 3].map(month => {
+                          const dis = stage === 'consideration' && month === 1
+                          const bm = benchmarks.find(b => b.channel_key === ch.key && b.month_index === month)
+                          if (dis || !bm) return <Fragment key={month}><TableCell className="py-1 text-center text-muted-foreground/30 border-l">{'\u2014'}</TableCell><TableCell className="py-1 text-center text-muted-foreground/30">{'\u2014'}</TableCell><TableCell className="py-1 text-center text-muted-foreground/30">{'\u2014'}</TableCell></Fragment>
+                          const isEd = !!edits[bm.id]
+                          return (
+                            <Fragment key={month}>
+                              <TableCell className="py-1 border-l"><Input type="number" step="0.01" className={cn('w-16 h-5 text-[11px] text-center px-0.5', isEd && 'border-amber-400')} value={getVal(bm, 'cpc')} onChange={e => handleEdit(bm.id, 'cpc', e.target.value)} /></TableCell>
+                              <TableCell className="py-1"><Input type="number" step="0.0001" className={cn('w-20 h-5 text-[11px] text-center px-0.5', isEd && 'border-amber-400')} value={getVal(bm, 'cvr_lead')} onChange={e => handleEdit(bm.id, 'cvr_lead', e.target.value)} /></TableCell>
+                              <TableCell className="py-1"><Input type="number" step="0.0001" className={cn('w-20 h-5 text-[11px] text-center px-0.5', isEd && 'border-amber-400')} value={getVal(bm, 'cvr_car')} onChange={e => handleEdit(bm.id, 'cvr_car', e.target.value)} /></TableCell>
+                            </Fragment>
+                          )
+                        })}
+                      </TableRow>
+                    ))}
+                  </Fragment>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="outline" size="sm" onClick={onClose}><X className="h-3.5 w-3.5 mr-1" /> Close</Button>
+          <Button size="sm" onClick={handleSave} disabled={!hasChanges || saving}>
+            {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+            Save Changes ({Object.keys(edits).length})
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function AddChannelDialog({ stage, onClose, onCreated }: {
+  stage: FunnelStage | null; onClose: () => void; onCreated: (channelKey: string) => void
+}) {
+  const [name, setName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [m1, setM1] = useState({ cpc: 0.10, cvr_lead: 0.002, cvr_car: 0.0005 })
+  const [m2, setM2] = useState({ cpc: 0.10, cvr_lead: 0.002, cvr_car: 0.0005 })
+  const [m3, setM3] = useState({ cpc: 0.10, cvr_lead: 0.002, cvr_car: 0.0005 })
+  const [error, setError] = useState('')
+
+  const resetForm = () => {
+    setName(''); setError('')
+    setM1({ cpc: 0.10, cvr_lead: 0.002, cvr_car: 0.0005 })
+    setM2({ cpc: 0.10, cvr_lead: 0.002, cvr_car: 0.0005 })
+    setM3({ cpc: 0.10, cvr_lead: 0.002, cvr_car: 0.0005 })
+  }
+
+  const handleSave = async () => {
+    if (!name.trim() || !stage) return
+    setError(''); setSaving(true)
+    try {
+      const months = [
+        { month_index: 1, ...m1 },
+        { month_index: 2, ...m2 },
+        { month_index: 3, ...m3 },
+      ]
+      const result = await marketingApi.createSimChannel({ channel_label: name.trim(), funnel_stage: stage, months })
+      if (result.success) {
+        onCreated(result.channel_key)
+        resetForm()
+        onClose()
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to create channel'
+      setError(msg)
+    } finally { setSaving(false) }
+  }
+
+  const monthFields = [
+    { label: 'Luna 1', state: m1, setter: setM1, disabled: stage === 'consideration' },
+    { label: 'Luna 2', state: m2, setter: setM2, disabled: false },
+    { label: 'Luna 3', state: m3, setter: setM3, disabled: false },
+  ]
+
+  return (
+    <Dialog open={!!stage} onOpenChange={v => { if (!v) { resetForm(); onClose() } }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Plus className="h-4 w-4" /> Add Channel to {stage ? STAGE_CONFIG[stage].label : ''}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Channel Name</Label>
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. TikTok Ads" className="h-8 text-sm" autoFocus />
+          </div>
+
+          <div className="space-y-3">
+            <Label className="text-xs text-muted-foreground">Benchmark values per month</Label>
+            {monthFields.map(({ label, state, setter, disabled }) => (
+              <div key={label} className={cn('grid grid-cols-4 gap-2 items-center', disabled && 'opacity-40')}>
+                <span className="text-xs font-medium">{label}</span>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px] text-muted-foreground">CPC</Label>
+                  <Input type="number" step="0.01" className="h-6 text-xs" disabled={disabled}
+                    value={state.cpc} onChange={e => setter({ ...state, cpc: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px] text-muted-foreground">CVR Lead</Label>
+                  <Input type="number" step="0.0001" className="h-6 text-xs" disabled={disabled}
+                    value={state.cvr_lead} onChange={e => setter({ ...state, cvr_lead: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px] text-muted-foreground">CVR Car</Label>
+                  <Input type="number" step="0.0001" className="h-6 text-xs" disabled={disabled}
+                    value={state.cvr_car} onChange={e => setter({ ...state, cvr_car: parseFloat(e.target.value) || 0 })} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {error && <p className="text-xs text-destructive">{error}</p>}
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => { resetForm(); onClose() }}><X className="h-3.5 w-3.5 mr-1" /> Cancel</Button>
+            <Button size="sm" onClick={handleSave} disabled={!name.trim() || saving}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
+              Add Channel
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

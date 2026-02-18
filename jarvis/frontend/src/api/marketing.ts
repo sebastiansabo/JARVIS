@@ -264,4 +264,28 @@ export const marketingApi = {
 
   getSimBenchmarks: () =>
     api.get<{ benchmarks: SimBenchmark[] }>(`${BASE}/simulator/benchmarks`),
+
+  updateSimBenchmark: (id: number, data: { cpc?: number; cvr_lead?: number; cvr_car?: number }) =>
+    api.put<{ success: boolean }>(`${BASE}/simulator/benchmarks/${id}`, data),
+
+  bulkUpdateSimBenchmarks: (updates: { id: number; cpc?: number; cvr_lead?: number; cvr_car?: number }[]) =>
+    api.put<{ success: boolean; updated: number }>(`${BASE}/simulator/benchmarks/bulk`, { updates }),
+
+  aiDistribute: (data: {
+    total_budget: number
+    audience_size: number
+    lead_to_sale_rate: number
+    active_channels: Record<string, string[]>
+    benchmarks: SimBenchmark[]
+  }) =>
+    api.post<{ success: boolean; allocations: Record<string, number>; reasoning: string; total_allocated: number }>(`${BASE}/simulator/ai-distribute`, data),
+
+  createSimChannel: (data: {
+    channel_label: string; funnel_stage: string
+    months: { month_index: number; cpc: number; cvr_lead: number; cvr_car: number }[]
+  }) =>
+    api.post<{ success: boolean; channel_key: string; ids: number[] }>(`${BASE}/simulator/benchmarks`, data),
+
+  deleteSimChannel: (channelKey: string) =>
+    api.delete<{ success: boolean; deleted: number }>(`${BASE}/simulator/benchmarks/channel/${channelKey}`),
 }

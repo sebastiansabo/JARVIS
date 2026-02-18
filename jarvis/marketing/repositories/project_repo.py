@@ -49,7 +49,26 @@ class ProjectRepository:
             if filters.get('brand_id'):
                 where.append('p.brand_id = %s')
                 params.append(int(filters['brand_id']))
-            if filters.get('owner_id'):
+            if filters.get('visible_to_user_id'):
+                uid = int(filters['visible_to_user_id'])
+                dept_cid = filters.get('department_company_id')
+                user_clauses = [
+                    'p.owner_id = %s',
+                    'EXISTS (SELECT 1 FROM mkt_project_members m WHERE m.project_id = p.id AND m.user_id = %s)',
+                    '''EXISTS (
+                        SELECT 1 FROM approval_requests ar
+                        WHERE ar.entity_type = 'mkt_project' AND ar.entity_id = p.id
+                          AND ar.status IN ('pending', 'on_hold')
+                          AND (ar.context_snapshot->>'approver_user_id')::int = %s
+                    )''',
+                ]
+                user_params = [uid, uid, uid]
+                if dept_cid:
+                    user_clauses.append('p.company_id = %s')
+                    user_params.append(int(dept_cid))
+                where.append('(' + ' OR '.join(user_clauses) + ')')
+                params.extend(user_params)
+            elif filters.get('owner_id'):
                 where.append('p.owner_id = %s')
                 params.append(int(filters['owner_id']))
             if filters.get('project_type'):
