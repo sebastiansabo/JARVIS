@@ -52,7 +52,7 @@ def hr_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not current_user.is_authenticated:
-            return redirect(url_for('login'))
+            return redirect(url_for('auth.login'))
         if not getattr(current_user, 'can_access_hr', False):
             flash('HR access required.', 'error')
             return redirect(url_for('index'))
@@ -87,7 +87,7 @@ def hr_manager_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not current_user.is_authenticated:
-            return redirect(url_for('login'))
+            return redirect(url_for('auth.login'))
         if not getattr(current_user, 'can_access_hr', False):
             flash('HR access required.', 'error')
             return redirect(url_for('index'))
@@ -121,7 +121,7 @@ def hr_permission_required(entity: str, action: str):
         @wraps(f)
         def decorated(*args, **kwargs):
             if not current_user.is_authenticated:
-                return redirect(url_for('login'))
+                return redirect(url_for('auth.login'))
 
             # Check basic HR access first
             if not getattr(current_user, 'can_access_hr', False):

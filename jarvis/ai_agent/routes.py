@@ -32,7 +32,7 @@ def ai_agent_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not current_user.is_authenticated:
-            return redirect(url_for('login'))
+            return redirect(url_for('auth.login'))
         # For now, allow all authenticated users
         # Future: add can_access_ai_agent permission
         return f(*args, **kwargs)

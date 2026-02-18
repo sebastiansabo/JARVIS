@@ -1,9 +1,9 @@
-# Version: 2026-02-08-docker
+# Version: 2026-02-18-docker
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory
+from flask import Flask, request, jsonify, redirect, send_from_directory
 
 # Structured logging
 from core.utils.logging_config import setup_logging, get_logger
@@ -11,29 +11,13 @@ logger = setup_logging(level=os.environ.get('LOG_LEVEL', 'INFO'))
 app_logger = get_logger('jarvis.app')
 app_logger.info('JARVIS app module loading...')
 from flask_compress import Compress
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from flask_login import LoginManager, login_required, current_user
 from models import load_structure
 from core.auth.models import User
-from core.auth.repositories import UserRepository, EventRepository
-from core.roles.repositories import PermissionRepository
+from core.auth.repositories import UserRepository
 from database import ping_db
-from core.utils.api_helpers import RateLimiter
-
-_auth_limiter = RateLimiter()
 
 _user_repo = UserRepository()
-_event_repo = EventRepository()
-_perm_repo = PermissionRepository()
-
-get_user = _user_repo.get_by_id
-set_user_password = _user_repo.update_password
-update_user_last_login = _user_repo.update_last_login
-update_user_last_seen = _user_repo.update_last_seen
-authenticate_user = _user_repo.authenticate
-get_online_users_count = _user_repo.get_online_count
-log_user_event = _event_repo.log_event
-check_permission_v2 = _perm_repo.check_permission_v2
-
 
 app = Flask(__name__)
 
@@ -50,7 +34,7 @@ compress.init_app(app)
 # Flask-Login setup
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login'
+login_manager.login_view = 'auth.login'
 login_manager.login_message = 'Please log in to access this page.'
 
 # Remember Me cookie configuration (30 days)
@@ -231,7 +215,7 @@ def load_user(user_id):
     if cached and (now - cached[1]) < _USER_CACHE_TTL:
         return cached[0]
 
-    user_data = get_user(uid)
+    user_data = _user_repo.get_by_id(uid)
     if user_data:
         user = User(user_data)
         _user_cache[uid] = (user, now)
@@ -240,215 +224,11 @@ def load_user(user_id):
     return None
 
 
-def log_event(event_type, description=None, entity_type=None, entity_id=None, details=None):
-    """Helper to log user events with current user info."""
-    user_id = current_user.id if current_user.is_authenticated else None
-    user_email = current_user.email if current_user.is_authenticated else None
-    ip_address = request.remote_addr if request else None
-    user_agent = request.headers.get('User-Agent', '')[:500] if request else None
-
-    log_user_event(
-        event_type=event_type,
-        event_description=description,
-        user_id=user_id,
-        user_email=user_email,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        ip_address=ip_address,
-        user_agent=user_agent,
-        details=details
-    )
-
-
-# ============== Authentication Routes ==============
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    """Login page and form handler."""
-    if current_user.is_authenticated:
-        return redirect(url_for('index'))
-
-    if request.method == 'POST':
-        # Rate limit: 10 attempts per 5 minutes per IP
-        allowed, retry_after = _auth_limiter.is_allowed(
-            f'login:{request.remote_addr}', max_requests=10, window_seconds=300)
-        if not allowed:
-            flash(f'Too many login attempts. Try again in {retry_after} seconds.', 'error')
-            return render_template('core/login.html')
-
-        email = request.form.get('email', '').strip()
-        password = request.form.get('password', '')
-
-        if not email or not password:
-            flash('Please enter both email and password.', 'error')
-            return render_template('core/login.html')
-
-        user_data = authenticate_user(email, password)
-        if user_data:
-            user = User(user_data)
-            remember = request.form.get('remember') == 'on'
-            login_user(user, remember=remember)
-            update_user_last_login(user.id)
-            log_event('login', f'User {email} logged in')
-
-            next_page = request.args.get('next')
-            if next_page and (not next_page.startswith('/') or next_page.startswith('//')):
-                next_page = None
-            return redirect(next_page or url_for('index'))
-        else:
-            log_event('login_failed', f'Failed login attempt for {email}')
-            flash('Invalid email or password.', 'error')
-
-    return render_template('core/login.html')
-
-
-@app.route('/logout')
-@login_required
-def logout():
-    """Logout current user."""
-    log_event('logout', f'User {current_user.email} logged out')
-    logout_user()
-    flash('You have been logged out.', 'info')
-    return redirect(url_for('login'))
-
-
-# Password reset service (lazy-initialized)
-_auth_service = None
-
-def _get_auth_service():
-    global _auth_service
-    if _auth_service is None:
-        from core.auth.services import AuthService
-        _auth_service = AuthService()
-    return _auth_service
-
-
-@app.route('/forgot-password', methods=['GET', 'POST'])
-def forgot_password():
-    """Forgot password page and form handler."""
-    if current_user.is_authenticated:
-        return redirect(url_for('index'))
-
-    if request.method == 'POST':
-        # Rate limit: 5 attempts per 15 minutes per IP
-        allowed, retry_after = _auth_limiter.is_allowed(
-            f'forgot:{request.remote_addr}', max_requests=5, window_seconds=900)
-        if not allowed:
-            flash(f'Too many requests. Try again in {retry_after} seconds.', 'error')
-            return redirect(url_for('forgot_password'))
-
-        email = request.form.get('email', '').strip()
-        base_url = request.host_url
-        _get_auth_service().request_password_reset(email, base_url)
-
-        log_event('password_reset_requested', f'Password reset requested for {email}')
-
-        flash('If an account exists with that email, a reset link has been sent.', 'info')
-        return redirect(url_for('forgot_password'))
-
-    return render_template('core/forgot_password.html')
-
-
-@app.route('/reset-password/<token>', methods=['GET', 'POST'])
-def reset_password(token):
-    """Reset password page and form handler."""
-    if current_user.is_authenticated:
-        return redirect(url_for('index'))
-
-    auth_svc = _get_auth_service()
-    token_data = auth_svc.validate_reset_token(token)
-    if not token_data:
-        flash('This reset link is invalid or has expired.', 'error')
-        return redirect(url_for('forgot_password'))
-
-    if request.method == 'POST':
-        new_password = request.form.get('new_password', '')
-        confirm_password = request.form.get('confirm_password', '')
-
-        if new_password != confirm_password:
-            flash('Passwords do not match.', 'error')
-            return render_template('core/reset_password.html', token=token)
-
-        result = auth_svc.reset_password(token, new_password)
-        if result.success:
-            log_event('password_reset_completed',
-                      f'Password reset completed for {token_data["email"]}')
-            flash('Your password has been reset. You can now sign in.', 'success')
-            return redirect(url_for('login'))
-        else:
-            flash(result.error, 'error')
-            return render_template('core/reset_password.html', token=token)
-
-    return render_template('core/reset_password.html', token=token)
-
-
-@app.route('/api/auth/current-user')
-def api_current_user():
-    """Get current user info for UI."""
-    if current_user.is_authenticated:
-        return jsonify({
-            'authenticated': True,
-            'user': {
-                'id': current_user.id,
-                'name': current_user.name,
-                'email': current_user.email,
-                'role_id': current_user.role_id,
-                'role_name': current_user.role_name,
-                'is_active': current_user.is_active,
-                'company': current_user.company,
-                'brand': current_user.brand,
-                'department': current_user.department,
-                'subdepartment': current_user.subdepartment,
-                'can_add_invoices': current_user.can_add_invoices,
-                'can_edit_invoices': current_user.can_edit_invoices,
-                'can_delete_invoices': current_user.can_delete_invoices,
-                'can_view_invoices': current_user.can_view_invoices,
-                'can_access_accounting': current_user.can_access_accounting,
-                'can_access_settings': current_user.can_access_settings,
-                'can_access_connectors': current_user.can_access_connectors,
-                'can_access_templates': current_user.can_access_templates,
-                'can_access_hr': current_user.can_access_hr,
-                'is_hr_manager': current_user.is_hr_manager,
-                'can_access_efactura': current_user.can_access_efactura,
-                'can_access_statements': current_user.can_access_statements,
-            }
-        })
-    return jsonify({'authenticated': False})
-
-
-@app.route('/api/auth/change-password', methods=['POST'])
-@login_required
-def api_change_password():
-    """Change current user's password."""
-    data = request.get_json()
-    current_password = data.get('current_password', '')
-    new_password = data.get('new_password', '')
-
-    if not current_password or not new_password:
-        return jsonify({'success': False, 'error': 'Both current and new passwords are required'}), 400
-
-    if len(new_password) < 6:
-        return jsonify({'success': False, 'error': 'New password must be at least 6 characters'}), 400
-
-    user_data = authenticate_user(current_user.email, current_password)
-    if not user_data:
-        return jsonify({'success': False, 'error': 'Current password is incorrect'}), 400
-
-    set_user_password(current_user.id, new_password)
-    log_event('password_changed', 'User changed their password')
-
-    return jsonify({'success': True, 'message': 'Password changed successfully'})
-
-
 # ============== Health Check ==============
 
 @app.route('/health')
 def health_check():
-    """Application health check endpoint for orchestrator probes.
-
-    Kept lightweight — runs every 10s per worker. Only checks DB connectivity.
-    Cache cleanup runs on the scheduler instead.
-    """
+    """Application health check endpoint for orchestrator probes."""
     checks = {}
 
     try:
@@ -472,24 +252,8 @@ def health_check():
         'status': status,
         'checks': checks,
         'service': 'jarvis',
-        'version': '2026-02-17'
+        'version': '2026-02-18'
     }), http_code
-
-
-@app.route('/api/heartbeat', methods=['POST'])
-@login_required
-def api_heartbeat():
-    """Update user's last_seen timestamp (called periodically by frontend)."""
-    update_user_last_seen(current_user.id)
-    return jsonify({'success': True})
-
-
-@app.route('/api/online-users')
-@login_required
-def api_online_users():
-    """Get count and list of currently online users (active in last 3 minutes)."""
-    result = get_online_users_count(minutes=3)
-    return jsonify(result)
 
 
 # ============== Main Routes ==============

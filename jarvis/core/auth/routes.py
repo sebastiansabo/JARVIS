@@ -1,19 +1,233 @@
-"""Auth module API routes.
+"""Auth module routes.
 
-User management, employee management, password management, and event log routes.
-Note: Page routes (login, logout, forgot-password, reset-password) and basic auth
-API routes (current-user, change-password, heartbeat, online-users) remain in app.py
-until template url_for references are migrated.
+All authentication, user management, employee management, password management,
+and event log routes.
 """
-from flask import jsonify, request
-from flask_login import login_required, current_user
+from flask import jsonify, request, render_template, redirect, url_for, flash
+from flask_login import login_required, login_user, logout_user, current_user
 
 from . import auth_bp
+from .models import User
 from .repositories import UserRepository, EventRepository
-from core.utils.api_helpers import admin_required, safe_error_response
+from core.utils.api_helpers import admin_required, safe_error_response, RateLimiter
 
 _user_repo = UserRepository()
 _event_repo = EventRepository()
+_auth_limiter = RateLimiter()
+
+# Lazy-initialized password reset service
+_auth_service = None
+
+
+def _get_auth_service():
+    global _auth_service
+    if _auth_service is None:
+        from core.auth.services import AuthService
+        _auth_service = AuthService()
+    return _auth_service
+
+
+def _log_event(event_type, description=None, entity_type=None, entity_id=None, details=None):
+    """Log user event with current user info."""
+    user_id = current_user.id if current_user.is_authenticated else None
+    user_email = current_user.email if current_user.is_authenticated else None
+    ip_address = request.remote_addr if request else None
+    user_agent = request.headers.get('User-Agent', '')[:500] if request else None
+
+    _event_repo.log_event(
+        event_type=event_type,
+        event_description=description,
+        user_id=user_id,
+        user_email=user_email,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        details=details
+    )
+
+
+# ============== AUTHENTICATION ROUTES ==============
+
+@auth_bp.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page and form handler."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        allowed, retry_after = _auth_limiter.is_allowed(
+            f'login:{request.remote_addr}', max_requests=10, window_seconds=300)
+        if not allowed:
+            flash(f'Too many login attempts. Try again in {retry_after} seconds.', 'error')
+            return render_template('core/login.html')
+
+        email = request.form.get('email', '').strip()
+        password = request.form.get('password', '')
+
+        if not email or not password:
+            flash('Please enter both email and password.', 'error')
+            return render_template('core/login.html')
+
+        user_data = _user_repo.authenticate(email, password)
+        if user_data:
+            user = User(user_data)
+            remember = request.form.get('remember') == 'on'
+            login_user(user, remember=remember)
+            _user_repo.update_last_login(user.id)
+            _log_event('login', f'User {email} logged in')
+
+            next_page = request.args.get('next')
+            if next_page and (not next_page.startswith('/') or next_page.startswith('//')):
+                next_page = None
+            return redirect(next_page or url_for('index'))
+        else:
+            _log_event('login_failed', f'Failed login attempt for {email}')
+            flash('Invalid email or password.', 'error')
+
+    return render_template('core/login.html')
+
+
+@auth_bp.route('/logout')
+@login_required
+def logout():
+    """Logout current user."""
+    _log_event('logout', f'User {current_user.email} logged out')
+    logout_user()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('auth.login'))
+
+
+@auth_bp.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    """Forgot password page and form handler."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        allowed, retry_after = _auth_limiter.is_allowed(
+            f'forgot:{request.remote_addr}', max_requests=5, window_seconds=900)
+        if not allowed:
+            flash(f'Too many requests. Try again in {retry_after} seconds.', 'error')
+            return redirect(url_for('auth.forgot_password'))
+
+        email = request.form.get('email', '').strip()
+        base_url = request.host_url
+        _get_auth_service().request_password_reset(email, base_url)
+
+        _log_event('password_reset_requested', f'Password reset requested for {email}')
+
+        flash('If an account exists with that email, a reset link has been sent.', 'info')
+        return redirect(url_for('auth.forgot_password'))
+
+    return render_template('core/forgot_password.html')
+
+
+@auth_bp.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    """Reset password page and form handler."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    auth_svc = _get_auth_service()
+    token_data = auth_svc.validate_reset_token(token)
+    if not token_data:
+        flash('This reset link is invalid or has expired.', 'error')
+        return redirect(url_for('auth.forgot_password'))
+
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if new_password != confirm_password:
+            flash('Passwords do not match.', 'error')
+            return render_template('core/reset_password.html', token=token)
+
+        result = auth_svc.reset_password(token, new_password)
+        if result.success:
+            _log_event('password_reset_completed',
+                       f'Password reset completed for {token_data["email"]}')
+            flash('Your password has been reset. You can now sign in.', 'success')
+            return redirect(url_for('auth.login'))
+        else:
+            flash(result.error, 'error')
+            return render_template('core/reset_password.html', token=token)
+
+    return render_template('core/reset_password.html', token=token)
+
+
+@auth_bp.route('/api/auth/current-user')
+def api_current_user():
+    """Get current user info for UI."""
+    if current_user.is_authenticated:
+        return jsonify({
+            'authenticated': True,
+            'user': {
+                'id': current_user.id,
+                'name': current_user.name,
+                'email': current_user.email,
+                'role_id': current_user.role_id,
+                'role_name': current_user.role_name,
+                'is_active': current_user.is_active,
+                'company': current_user.company,
+                'brand': current_user.brand,
+                'department': current_user.department,
+                'subdepartment': current_user.subdepartment,
+                'can_add_invoices': current_user.can_add_invoices,
+                'can_edit_invoices': current_user.can_edit_invoices,
+                'can_delete_invoices': current_user.can_delete_invoices,
+                'can_view_invoices': current_user.can_view_invoices,
+                'can_access_accounting': current_user.can_access_accounting,
+                'can_access_settings': current_user.can_access_settings,
+                'can_access_connectors': current_user.can_access_connectors,
+                'can_access_templates': current_user.can_access_templates,
+                'can_access_hr': current_user.can_access_hr,
+                'is_hr_manager': current_user.is_hr_manager,
+                'can_access_efactura': current_user.can_access_efactura,
+                'can_access_statements': current_user.can_access_statements,
+            }
+        })
+    return jsonify({'authenticated': False})
+
+
+@auth_bp.route('/api/auth/change-password', methods=['POST'])
+@login_required
+def api_change_password():
+    """Change current user's password."""
+    data = request.get_json()
+    current_password = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+
+    if not current_password or not new_password:
+        return jsonify({'success': False, 'error': 'Both current and new passwords are required'}), 400
+
+    if len(new_password) < 6:
+        return jsonify({'success': False, 'error': 'New password must be at least 6 characters'}), 400
+
+    user_data = _user_repo.authenticate(current_user.email, current_password)
+    if not user_data:
+        return jsonify({'success': False, 'error': 'Current password is incorrect'}), 400
+
+    _user_repo.update_password(current_user.id, new_password)
+    _log_event('password_changed', 'User changed their password')
+
+    return jsonify({'success': True, 'message': 'Password changed successfully'})
+
+
+@auth_bp.route('/api/heartbeat', methods=['POST'])
+@login_required
+def api_heartbeat():
+    """Update user's last_seen timestamp (called periodically by frontend)."""
+    _user_repo.update_last_seen(current_user.id)
+    return jsonify({'success': True})
+
+
+@auth_bp.route('/api/online-users')
+@login_required
+def api_online_users():
+    """Get count and list of currently online users (active in last 3 minutes)."""
+    result = _user_repo.get_online_count(minutes=3)
+    return jsonify(result)
 
 
 # ============== USER MANAGEMENT ==============
@@ -234,8 +448,7 @@ def api_update_profile():
         return jsonify({'success': False, 'error': 'Name must be at least 2 characters'}), 400
 
     _user_repo.update(current_user.id, name=name, phone=phone)
-    from core.auth.repositories import EventRepository
-    EventRepository().log_event('profile_updated', event_description=f'User updated their profile: name={name}')
+    _event_repo.log_event('profile_updated', event_description=f'User updated their profile: name={name}')
     return jsonify({'success': True, 'message': 'Profile updated successfully', 'name': name})
 
 
@@ -256,8 +469,7 @@ def api_set_user_password(user_id):
         return jsonify({'success': False, 'error': 'User not found'}), 404
 
     _user_repo.update_password(user_id, new_password)
-    from core.auth.repositories import EventRepository
-    EventRepository().log_event('admin_password_reset', event_description=f'Password reset for user {user["email"]}', entity_type='user', entity_id=user_id)
+    _event_repo.log_event('admin_password_reset', event_description=f'Password reset for user {user["email"]}', entity_type='user', entity_id=user_id)
     return jsonify({'success': True, 'message': f'Password set for {user["name"]}'})
 
 
@@ -271,8 +483,7 @@ def api_set_default_passwords():
     data = request.get_json() or {}
     default_password = data.get('password', 'changeme123')
     updated_count = _user_repo.set_default_passwords(default_password)
-    from core.auth.repositories import EventRepository
-    EventRepository().log_event('bulk_password_set', event_description=f'Set default password for {updated_count} users')
+    _event_repo.log_event('bulk_password_set', event_description=f'Set default password for {updated_count} users')
     return jsonify({
         'success': True,
         'message': f'Default password set for {updated_count} users',
