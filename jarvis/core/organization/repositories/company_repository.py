@@ -7,7 +7,6 @@ import time
 import logging
 from typing import Optional
 
-from database import get_db, get_cursor, release_db
 from core.base_repository import BaseRepository
 from core.cache import _cache_lock, _is_cache_valid
 
@@ -123,11 +122,7 @@ class CompanyRepository(BaseRepository):
 
     def get_all_with_vat_and_brands(self) -> list[dict]:
         """Get all companies with VAT numbers and brand associations."""
-        # This method needs multiple queries on the same connection
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-
+        def _work(cursor):
             cursor.execute('SELECT id, company, vat FROM companies ORDER BY company')
             companies = [dict(row) for row in cursor.fetchall()]
 
@@ -157,8 +152,7 @@ class CompanyRepository(BaseRepository):
                 company['brands'] = ', '.join(b['brand'] for b in company_brands) if company_brands else ''
 
             return companies
-        finally:
-            release_db(conn)
+        return self.execute_many(_work)
 
     def add_with_vat(self, company: str, vat: str) -> bool:
         """Add a new company with VAT number."""

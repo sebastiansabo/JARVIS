@@ -1,38 +1,21 @@
-"""
-Message Repository
-
-Database operations for AI Agent messages.
-"""
-
+"""Message Repository — AI Agent messages."""
 import json
-from datetime import datetime
 from decimal import Decimal
 from typing import Optional, List
 
-from core.database import get_db, get_cursor, release_db
+from core.base_repository import BaseRepository
 from core.utils.logging_config import get_logger
 from ..models import Message, MessageRole
 
 logger = get_logger('jarvis.ai_agent.repo.message')
 
 
-class MessageRepository:
+class MessageRepository(BaseRepository):
     """Repository for Message entities."""
 
     def create(self, message: Message) -> Message:
-        """
-        Create a new message.
-
-        Args:
-            message: Message to create
-
-        Returns:
-            Created Message with ID
-        """
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        try:
+        """Create a new message."""
+        def _work(cursor):
             cursor.execute("""
                 INSERT INTO ai_agent.messages (
                     conversation_id, role, content,
@@ -57,195 +40,70 @@ class MessageRepository:
                 'model_config_id': message.model_config_id,
                 'response_time_ms': message.response_time_ms,
             })
-
             row = cursor.fetchone()
             message.id = row['id']
             message.created_at = row['created_at']
-
-            conn.commit()
             return message
-
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Error creating message: {e}")
-            raise
-
-        finally:
-            release_db(conn)
+        return self.execute_many(_work)
 
     def get_by_id(self, message_id: int) -> Optional[Message]:
-        """
-        Get a message by ID.
+        """Get a message by ID."""
+        row = self.query_one("""
+            SELECT id, conversation_id, role, content,
+                   input_tokens, output_tokens, cost,
+                   rag_sources, model_config_id, response_time_ms,
+                   created_at
+            FROM ai_agent.messages
+            WHERE id = %s
+        """, (message_id,))
+        return self._row_to_message(row) if row else None
 
-        Args:
-            message_id: ID of the message
+    def get_by_conversation(self, conversation_id: int, limit: int = 50,
+                            offset: int = 0, order: str = 'asc') -> List[Message]:
+        """Get messages for a conversation."""
+        order_dir = 'ASC' if order == 'asc' else 'DESC'
+        rows = self.query_all(f"""
+            SELECT id, conversation_id, role, content,
+                   input_tokens, output_tokens, cost,
+                   rag_sources, model_config_id, response_time_ms,
+                   created_at
+            FROM ai_agent.messages
+            WHERE conversation_id = %s
+            ORDER BY created_at {order_dir}
+            LIMIT %s OFFSET %s
+        """, (conversation_id, limit, offset))
+        return [self._row_to_message(row) for row in rows]
 
-        Returns:
-            Message or None if not found
-        """
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        try:
-            cursor.execute("""
-                SELECT id, conversation_id, role, content,
-                       input_tokens, output_tokens, cost,
-                       rag_sources, model_config_id, response_time_ms,
-                       created_at
-                FROM ai_agent.messages
-                WHERE id = %s
-            """, (message_id,))
-
-            row = cursor.fetchone()
-            if not row:
-                return None
-
-            return self._row_to_message(row)
-
-        finally:
-            release_db(conn)
-
-    def get_by_conversation(
-        self,
-        conversation_id: int,
-        limit: int = 50,
-        offset: int = 0,
-        order: str = 'asc',
-    ) -> List[Message]:
-        """
-        Get messages for a conversation.
-
-        Args:
-            conversation_id: ID of the conversation
-            limit: Maximum results
-            offset: Offset for pagination
-            order: 'asc' for oldest first, 'desc' for newest first
-
-        Returns:
-            List of Messages
-        """
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        try:
-            order_dir = 'ASC' if order == 'asc' else 'DESC'
-            cursor.execute(f"""
-                SELECT id, conversation_id, role, content,
-                       input_tokens, output_tokens, cost,
-                       rag_sources, model_config_id, response_time_ms,
-                       created_at
-                FROM ai_agent.messages
-                WHERE conversation_id = %s
-                ORDER BY created_at {order_dir}
-                LIMIT %s OFFSET %s
-            """, (conversation_id, limit, offset))
-
-            return [self._row_to_message(row) for row in cursor.fetchall()]
-
-        finally:
-            release_db(conn)
-
-    def get_recent_for_context(
-        self,
-        conversation_id: int,
-        limit: int = 10,
-    ) -> List[Message]:
-        """
-        Get recent messages for building context.
-
-        Returns messages in chronological order (oldest to newest).
-
-        Args:
-            conversation_id: ID of the conversation
-            limit: Maximum messages to return
-
-        Returns:
-            List of Messages in chronological order
-        """
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        try:
-            # Get newest first, then reverse for chronological order
-            cursor.execute("""
-                SELECT id, conversation_id, role, content,
-                       input_tokens, output_tokens, cost,
-                       rag_sources, model_config_id, response_time_ms,
-                       created_at
-                FROM ai_agent.messages
-                WHERE conversation_id = %s
-                ORDER BY created_at DESC
-                LIMIT %s
-            """, (conversation_id, limit))
-
-            messages = [self._row_to_message(row) for row in cursor.fetchall()]
-            # Reverse to get chronological order
-            messages.reverse()
-            return messages
-
-        finally:
-            release_db(conn)
+    def get_recent_for_context(self, conversation_id: int, limit: int = 10) -> List[Message]:
+        """Get recent messages for building context (chronological order)."""
+        rows = self.query_all("""
+            SELECT id, conversation_id, role, content,
+                   input_tokens, output_tokens, cost,
+                   rag_sources, model_config_id, response_time_ms,
+                   created_at
+            FROM ai_agent.messages
+            WHERE conversation_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+        """, (conversation_id, limit))
+        messages = [self._row_to_message(row) for row in rows]
+        messages.reverse()
+        return messages
 
     def count_by_conversation(self, conversation_id: int) -> int:
-        """
-        Count messages in a conversation.
-
-        Args:
-            conversation_id: ID of the conversation
-
-        Returns:
-            Number of messages
-        """
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        try:
-            cursor.execute("""
-                SELECT COUNT(*) as count
-                FROM ai_agent.messages
-                WHERE conversation_id = %s
-            """, (conversation_id,))
-
-            row = cursor.fetchone()
-            return row['count'] if row else 0
-
-        finally:
-            release_db(conn)
+        """Count messages in a conversation."""
+        row = self.query_one(
+            'SELECT COUNT(*) as count FROM ai_agent.messages WHERE conversation_id = %s',
+            (conversation_id,))
+        return row['count'] if row else 0
 
     def delete_by_conversation(self, conversation_id: int) -> int:
-        """
-        Delete all messages in a conversation.
-
-        Args:
-            conversation_id: ID of the conversation
-
-        Returns:
-            Number of messages deleted
-        """
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        try:
-            cursor.execute("""
-                DELETE FROM ai_agent.messages
-                WHERE conversation_id = %s
-            """, (conversation_id,))
-
-            count = cursor.rowcount
-            conn.commit()
-            return count
-
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Error deleting messages: {e}")
-            raise
-
-        finally:
-            release_db(conn)
+        """Delete all messages in a conversation. Returns count deleted."""
+        return self.execute(
+            'DELETE FROM ai_agent.messages WHERE conversation_id = %s', (conversation_id,))
 
     def _row_to_message(self, row: dict) -> Message:
         """Convert database row to Message model."""
-        # Parse rag_sources JSON
         rag_sources = row.get('rag_sources')
         if isinstance(rag_sources, str):
             rag_sources = json.loads(rag_sources)
