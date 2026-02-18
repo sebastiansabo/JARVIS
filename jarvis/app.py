@@ -134,7 +134,7 @@ app_logger.info(f'JARVIS startup complete — {len(app.url_map._rules)} routes r
 
 @app.errorhandler(404)
 def handle_404(e):
-    if request.path.startswith('/api/') or request.method != 'GET':
+    if request.path.startswith(('/api/', '/assets/')) or request.method != 'GET':
         return jsonify({'success': False, 'error': 'Not found'}), 404
     return redirect('/app/dashboard')
 
@@ -559,7 +559,9 @@ def react_app(path=''):
     """Serve the React SPA for all /app/* routes."""
     index_file = os.path.join(_react_dir, 'index.html')
     if os.path.exists(index_file):
-        return send_from_directory(_react_dir, 'index.html')
+        resp = send_from_directory(_react_dir, 'index.html')
+        resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        return resp
     return redirect('/apps')
 
 
