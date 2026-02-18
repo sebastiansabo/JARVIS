@@ -1,18 +1,16 @@
 """Repository for mkt_objectives and mkt_key_results tables."""
 
 import logging
-from database import get_db, get_cursor, release_db
+from core.base_repository import BaseRepository
 
 logger = logging.getLogger('jarvis.marketing.okr_repo')
 
 
-class OkrRepository:
+class OkrRepository(BaseRepository):
 
     def get_by_project(self, project_id):
         """Get all objectives with nested key_results and computed progress."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             cursor.execute('''
                 SELECT * FROM mkt_objectives
                 WHERE project_id = %s
@@ -51,72 +49,40 @@ class OkrRepository:
                     obj['progress'] = 0
 
             return objectives
-        finally:
-            release_db(conn)
+        return self.execute_many(_work)
 
     def create_objective(self, project_id, title, created_by, description=None, sort_order=0):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                INSERT INTO mkt_objectives (project_id, title, description, sort_order, created_by)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id
-            ''', (project_id, title, description, sort_order, created_by))
-            obj_id = cursor.fetchone()['id']
-            conn.commit()
-            return obj_id
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        row = self.execute('''
+            INSERT INTO mkt_objectives (project_id, title, description, sort_order, created_by)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        ''', (project_id, title, description, sort_order, created_by), returning=True)
+        return row['id'] if row else None
 
     def update_objective(self, objective_id, **kwargs):
         allowed = {'title', 'description', 'sort_order'}
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            updates = []
-            params = []
-            for key, val in kwargs.items():
-                if key in allowed and val is not None:
-                    updates.append(f'{key} = %s')
-                    params.append(val)
-            if not updates:
-                return False
-            updates.append('updated_at = NOW()')
-            params.append(objective_id)
-            cursor.execute(
-                f'UPDATE mkt_objectives SET {", ".join(updates)} WHERE id = %s',
-                params
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        updates = []
+        params = []
+        for key, val in kwargs.items():
+            if key in allowed and val is not None:
+                updates.append(f'{key} = %s')
+                params.append(val)
+        if not updates:
+            return False
+        updates.append('updated_at = NOW()')
+        params.append(objective_id)
+        return self.execute(
+            f'UPDATE mkt_objectives SET {", ".join(updates)} WHERE id = %s', params
+        ) > 0
 
     def delete_objective(self, objective_id):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('DELETE FROM mkt_objectives WHERE id = %s', (objective_id,))
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute(
+            'DELETE FROM mkt_objectives WHERE id = %s', (objective_id,)
+        ) > 0
 
     def create_key_result(self, objective_id, title, target_value=100, unit='number',
                           linked_kpi_id=None, sort_order=0):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             current_value = 0
             if linked_kpi_id:
                 cursor.execute(
@@ -132,28 +98,21 @@ class OkrRepository:
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             ''', (objective_id, title, target_value, current_value, unit, linked_kpi_id, sort_order))
-            kr_id = cursor.fetchone()['id']
-            conn.commit()
-            return kr_id
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+            return cursor.fetchone()['id']
+        return self.execute_many(_work)
 
     def update_key_result(self, kr_id, **kwargs):
         allowed = {'title', 'target_value', 'current_value', 'unit', 'linked_kpi_id', 'sort_order'}
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            updates = []
-            params = []
-            for key, val in kwargs.items():
-                if key in allowed:
-                    updates.append(f'{key} = %s')
-                    params.append(val)
-            if not updates:
-                return False
+        updates = []
+        params = []
+        for key, val in kwargs.items():
+            if key in allowed:
+                updates.append(f'{key} = %s')
+                params.append(val)
+        if not updates:
+            return False
+
+        def _work(cursor):
             # If linking to a KPI, sync its current value
             if 'linked_kpi_id' in kwargs and kwargs['linked_kpi_id']:
                 cursor.execute(
@@ -170,46 +129,22 @@ class OkrRepository:
                 f'UPDATE mkt_key_results SET {", ".join(updates)} WHERE id = %s',
                 params
             )
-            conn.commit()
             return cursor.rowcount > 0
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute_many(_work)
 
     def delete_key_result(self, kr_id):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('DELETE FROM mkt_key_results WHERE id = %s', (kr_id,))
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute(
+            'DELETE FROM mkt_key_results WHERE id = %s', (kr_id,)
+        ) > 0
 
     def sync_linked_kpis(self, project_id):
         """Copy current_value from linked KPIs to key results for a project."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                UPDATE mkt_key_results kr
-                SET current_value = pk.current_value, updated_at = NOW()
-                FROM mkt_project_kpis pk, mkt_objectives o
-                WHERE kr.linked_kpi_id = pk.id
-                  AND kr.objective_id = o.id
-                  AND o.project_id = %s
-                  AND kr.linked_kpi_id IS NOT NULL
-            ''', (project_id,))
-            count = cursor.rowcount
-            conn.commit()
-            return count
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute('''
+            UPDATE mkt_key_results kr
+            SET current_value = pk.current_value, updated_at = NOW()
+            FROM mkt_project_kpis pk, mkt_objectives o
+            WHERE kr.linked_kpi_id = pk.id
+              AND kr.objective_id = o.id
+              AND o.project_id = %s
+              AND kr.linked_kpi_id IS NOT NULL
+        ''', (project_id,))

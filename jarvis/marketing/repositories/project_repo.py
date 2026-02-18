@@ -3,93 +3,84 @@
 import json
 import logging
 import re
-from database import get_db, get_cursor, release_db
+from core.base_repository import BaseRepository
 
 logger = logging.getLogger('jarvis.marketing.project_repo')
 
 
-class ProjectRepository:
+class ProjectRepository(BaseRepository):
 
     def get_by_id(self, project_id):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT p.*,
-                       c.company as company_name,
-                       b.name as brand_name,
-                       u.name as owner_name, u.email as owner_email,
-                       u2.name as created_by_name
-                FROM mkt_projects p
-                JOIN companies c ON c.id = p.company_id
-                LEFT JOIN brands b ON b.id = p.brand_id
-                JOIN users u ON u.id = p.owner_id
-                JOIN users u2 ON u2.id = p.created_by
-                WHERE p.id = %s AND p.deleted_at IS NULL
-            ''', (project_id,))
-            row = cursor.fetchone()
-            return dict(row) if row else None
-        finally:
-            release_db(conn)
+        return self.query_one('''
+            SELECT p.*,
+                   c.company as company_name,
+                   b.name as brand_name,
+                   u.name as owner_name, u.email as owner_email,
+                   u2.name as created_by_name
+            FROM mkt_projects p
+            JOIN companies c ON c.id = p.company_id
+            LEFT JOIN brands b ON b.id = p.brand_id
+            JOIN users u ON u.id = p.owner_id
+            JOIN users u2 ON u2.id = p.created_by
+            WHERE p.id = %s AND p.deleted_at IS NULL
+        ''', (project_id,))
 
     def list_projects(self, filters=None):
         filters = filters or {}
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            where = ['p.deleted_at IS NULL']
-            params = []
+        where = ['p.deleted_at IS NULL']
+        params = []
 
-            if filters.get('status'):
-                where.append('p.status = %s')
-                params.append(filters['status'])
-            if filters.get('company_id'):
-                where.append('p.company_id = %s')
-                params.append(int(filters['company_id']))
-            if filters.get('brand_id'):
-                where.append('p.brand_id = %s')
-                params.append(int(filters['brand_id']))
-            if filters.get('visible_to_user_id'):
-                uid = int(filters['visible_to_user_id'])
-                dept_cid = filters.get('department_company_id')
-                user_clauses = [
-                    'p.owner_id = %s',
-                    'EXISTS (SELECT 1 FROM mkt_project_members m WHERE m.project_id = p.id AND m.user_id = %s)',
-                    '''EXISTS (
-                        SELECT 1 FROM approval_requests ar
-                        WHERE ar.entity_type = 'mkt_project' AND ar.entity_id = p.id
-                          AND ar.status IN ('pending', 'on_hold')
-                          AND ((ar.context_snapshot->>'approver_user_id')::int = %s
-                               OR ar.context_snapshot->'stakeholder_approver_ids' @> to_jsonb(%s::int))
-                    )''',
-                ]
-                user_params = [uid, uid, uid, uid]
-                if dept_cid:
-                    user_clauses.append('p.company_id = %s')
-                    user_params.append(int(dept_cid))
-                where.append('(' + ' OR '.join(user_clauses) + ')')
-                params.extend(user_params)
-            elif filters.get('owner_id'):
-                where.append('p.owner_id = %s')
-                params.append(int(filters['owner_id']))
-            if filters.get('project_type'):
-                where.append('p.project_type = %s')
-                params.append(filters['project_type'])
-            if filters.get('date_from'):
-                where.append('p.start_date >= %s')
-                params.append(filters['date_from'])
-            if filters.get('date_to'):
-                where.append('p.end_date <= %s')
-                params.append(filters['date_to'])
-            if filters.get('search'):
-                where.append('(p.name ILIKE %s OR p.description ILIKE %s)')
-                term = f"%{filters['search']}%"
-                params.extend([term, term])
+        if filters.get('status'):
+            where.append('p.status = %s')
+            params.append(filters['status'])
+        if filters.get('company_id'):
+            where.append('p.company_id = %s')
+            params.append(int(filters['company_id']))
+        if filters.get('brand_id'):
+            where.append('p.brand_id = %s')
+            params.append(int(filters['brand_id']))
+        if filters.get('visible_to_user_id'):
+            uid = int(filters['visible_to_user_id'])
+            dept_cid = filters.get('department_company_id')
+            user_clauses = [
+                'p.owner_id = %s',
+                'EXISTS (SELECT 1 FROM mkt_project_members m WHERE m.project_id = p.id AND m.user_id = %s)',
+                '''EXISTS (
+                    SELECT 1 FROM approval_requests ar
+                    WHERE ar.entity_type = 'mkt_project' AND ar.entity_id = p.id
+                      AND ar.status IN ('pending', 'on_hold')
+                      AND ((ar.context_snapshot->>'approver_user_id')::int = %s
+                           OR ar.context_snapshot->'stakeholder_approver_ids' @> to_jsonb(%s::int))
+                )''',
+            ]
+            user_params = [uid, uid, uid, uid]
+            if dept_cid:
+                user_clauses.append('p.company_id = %s')
+                user_params.append(int(dept_cid))
+            where.append('(' + ' OR '.join(user_clauses) + ')')
+            params.extend(user_params)
+        elif filters.get('owner_id'):
+            where.append('p.owner_id = %s')
+            params.append(int(filters['owner_id']))
+        if filters.get('project_type'):
+            where.append('p.project_type = %s')
+            params.append(filters['project_type'])
+        if filters.get('date_from'):
+            where.append('p.start_date >= %s')
+            params.append(filters['date_from'])
+        if filters.get('date_to'):
+            where.append('p.end_date <= %s')
+            params.append(filters['date_to'])
+        if filters.get('search'):
+            where.append('(p.name ILIKE %s OR p.description ILIKE %s)')
+            term = f"%{filters['search']}%"
+            params.extend([term, term])
 
-            where_clause = ' AND '.join(where)
-            limit = min(int(filters.get('limit', 100)), 500)
-            offset = int(filters.get('offset', 0))
+        where_clause = ' AND '.join(where)
+        limit = min(int(filters.get('limit', 100)), 500)
+        offset = int(filters.get('offset', 0))
 
+        def _work(cursor):
             cursor.execute(f'''
                 SELECT p.*,
                        c.company as company_name,
@@ -114,13 +105,10 @@ class ProjectRepository:
             total = cursor.fetchone()['total']
 
             return {'projects': [dict(r) for r in rows], 'total': total}
-        finally:
-            release_db(conn)
+        return self.execute_many(_work)
 
     def create(self, name, company_id, owner_id, created_by, **kwargs):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             slug = self._generate_slug(cursor, name)
             channel_mix = kwargs.get('channel_mix', [])
             if isinstance(channel_mix, list):
@@ -159,14 +147,8 @@ class ProjectRepository:
                 json.dumps(kwargs.get('metadata', {})),
                 kwargs.get('approval_mode', 'any'),
             ))
-            project_id = cursor.fetchone()['id']
-            conn.commit()
-            return project_id
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+            return cursor.fetchone()['id']
+        return self.execute_many(_work)
 
     def update(self, project_id, **kwargs):
         allowed = {
@@ -176,68 +158,38 @@ class ProjectRepository:
             'total_budget', 'currency', 'owner_id', 'objective', 'target_audience',
             'brief', 'external_ref', 'metadata', 'approval_mode',
         }
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            updates = []
-            params = []
-            for key, val in kwargs.items():
-                if key in allowed and val is not None:
-                    if key == 'channel_mix' and isinstance(val, list):
-                        val = '{' + ','.join(val) + '}'
-                    if key in ('company_ids', 'brand_ids', 'department_ids') and isinstance(val, list):
-                        val = '{' + ','.join(str(v) for v in val) + '}'
-                    if key in ('brief', 'metadata') and isinstance(val, dict):
-                        val = json.dumps(val)
-                    updates.append(f'{key} = %s')
-                    params.append(val)
-            if not updates:
-                return False
-            updates.append('updated_at = NOW()')
-            params.append(project_id)
-            cursor.execute(
-                f'UPDATE mkt_projects SET {", ".join(updates)} WHERE id = %s AND deleted_at IS NULL',
-                params
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        updates = []
+        params = []
+        for key, val in kwargs.items():
+            if key in allowed and val is not None:
+                if key == 'channel_mix' and isinstance(val, list):
+                    val = '{' + ','.join(val) + '}'
+                if key in ('company_ids', 'brand_ids', 'department_ids') and isinstance(val, list):
+                    val = '{' + ','.join(str(v) for v in val) + '}'
+                if key in ('brief', 'metadata') and isinstance(val, dict):
+                    val = json.dumps(val)
+                updates.append(f'{key} = %s')
+                params.append(val)
+        if not updates:
+            return False
+        updates.append('updated_at = NOW()')
+        params.append(project_id)
+        return self.execute(
+            f'UPDATE mkt_projects SET {", ".join(updates)} WHERE id = %s AND deleted_at IS NULL',
+            params
+        ) > 0
 
     def soft_delete(self, project_id):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute(
-                'UPDATE mkt_projects SET deleted_at = NOW(), updated_at = NOW() WHERE id = %s AND deleted_at IS NULL',
-                (project_id,)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute(
+            'UPDATE mkt_projects SET deleted_at = NOW(), updated_at = NOW() WHERE id = %s AND deleted_at IS NULL',
+            (project_id,)
+        ) > 0
 
     def update_status(self, project_id, status):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute(
-                'UPDATE mkt_projects SET status = %s, updated_at = NOW() WHERE id = %s AND deleted_at IS NULL',
-                (status, project_id)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute(
+            'UPDATE mkt_projects SET status = %s, updated_at = NOW() WHERE id = %s AND deleted_at IS NULL',
+            (status, project_id)
+        ) > 0
 
     def duplicate(self, project_id, new_name, created_by):
         """Clone a project as a new draft."""

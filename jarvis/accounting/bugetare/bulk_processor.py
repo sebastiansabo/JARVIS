@@ -231,7 +231,7 @@ def parse_meta_invoice(text: str) -> dict:
                     value = parse_value(date_value_match.group(1))
                     if value > 0:
                         result['items'][item_name] = value
-                except:
+                except (ValueError, TypeError, AttributeError):
                     pass
 
             i += 2  # Skip both lines
@@ -691,7 +691,7 @@ def parse_generic_invoice(text: str) -> dict:
             try:
                 result['invoice_value'] = parse_value(match.group(1))
                 break
-            except:
+            except (ValueError, TypeError, AttributeError):
                 pass
 
     # Extract currency

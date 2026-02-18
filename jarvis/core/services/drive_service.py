@@ -169,7 +169,7 @@ def upload_invoice_to_drive(
         date_obj = datetime.strptime(invoice_date, '%Y-%m-%d')
         year = str(date_obj.year)
         month = f"{date_obj.month:02d}"  # Zero-padded month (01-12)
-    except:
+    except (ValueError, TypeError):
         now = datetime.now()
         year = str(now.year)
         month = f"{now.month:02d}"

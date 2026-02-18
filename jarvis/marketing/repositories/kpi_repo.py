@@ -1,261 +1,157 @@
 """Repository for mkt_kpi_definitions, mkt_project_kpis, mkt_kpi_snapshots."""
 
 import logging
-from database import get_db, get_cursor, release_db
+from core.base_repository import BaseRepository
 
 logger = logging.getLogger('jarvis.marketing.kpi_repo')
 
 
-class KpiRepository:
+class KpiRepository(BaseRepository):
 
     # ---- KPI Definitions (admin catalog) ----
 
     def get_definitions(self, active_only=True):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            where = 'WHERE is_active = TRUE' if active_only else ''
-            cursor.execute(f'SELECT * FROM mkt_kpi_definitions {where} ORDER BY sort_order')
-            return [dict(r) for r in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        where = 'WHERE is_active = TRUE' if active_only else ''
+        return self.query_all(
+            f'SELECT * FROM mkt_kpi_definitions {where} ORDER BY sort_order'
+        )
 
     def create_definition(self, name, slug, unit='number', direction='higher',
                           category='performance', formula=None, description=None):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                INSERT INTO mkt_kpi_definitions (name, slug, unit, direction, category, formula, description)
-                VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
-            ''', (name, slug, unit, direction, category, formula, description))
-            def_id = cursor.fetchone()['id']
-            conn.commit()
-            return def_id
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        row = self.execute('''
+            INSERT INTO mkt_kpi_definitions (name, slug, unit, direction, category, formula, description)
+            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+        ''', (name, slug, unit, direction, category, formula, description), returning=True)
+        return row['id'] if row else None
 
     def update_definition(self, def_id, **kwargs):
         from psycopg2.extras import Json
         allowed = {'name', 'slug', 'unit', 'direction', 'category', 'formula', 'description', 'benchmarks', 'is_active', 'sort_order'}
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            updates = []
-            params = []
-            for key, val in kwargs.items():
-                if key in allowed and val is not None:
-                    updates.append(f'{key} = %s')
-                    params.append(Json(val) if key == 'benchmarks' and isinstance(val, dict) else val)
-            if not updates:
-                return False
-            params.append(def_id)
-            cursor.execute(f'UPDATE mkt_kpi_definitions SET {", ".join(updates)} WHERE id = %s', params)
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        updates = []
+        params = []
+        for key, val in kwargs.items():
+            if key in allowed and val is not None:
+                updates.append(f'{key} = %s')
+                params.append(Json(val) if key == 'benchmarks' and isinstance(val, dict) else val)
+        if not updates:
+            return False
+        params.append(def_id)
+        return self.execute(
+            f'UPDATE mkt_kpi_definitions SET {", ".join(updates)} WHERE id = %s', params
+        ) > 0
 
     # ---- Project KPIs ----
 
     def get_by_project(self, project_id):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT pk.*, kd.name as kpi_name, kd.slug as kpi_slug,
-                       kd.unit, kd.direction, kd.category, kd.formula
-                FROM mkt_project_kpis pk
-                JOIN mkt_kpi_definitions kd ON kd.id = pk.kpi_definition_id
-                WHERE pk.project_id = %s
-                ORDER BY kd.sort_order
-            ''', (project_id,))
-            return [dict(r) for r in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        return self.query_all('''
+            SELECT pk.*, kd.name as kpi_name, kd.slug as kpi_slug,
+                   kd.unit, kd.direction, kd.category, kd.formula
+            FROM mkt_project_kpis pk
+            JOIN mkt_kpi_definitions kd ON kd.id = pk.kpi_definition_id
+            WHERE pk.project_id = %s
+            ORDER BY kd.sort_order
+        ''', (project_id,))
 
     def add_project_kpi(self, project_id, kpi_definition_id, **kwargs):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                INSERT INTO mkt_project_kpis
-                    (project_id, kpi_definition_id, channel, target_value, weight,
-                     threshold_warning, threshold_critical, currency, notes, show_on_overview)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-            ''', (
-                project_id, kpi_definition_id,
-                kwargs.get('channel'), kwargs.get('target_value'),
-                kwargs.get('weight', 50),
-                kwargs.get('threshold_warning'), kwargs.get('threshold_critical'),
-                kwargs.get('currency', 'RON'),
-                kwargs.get('notes'),
-                kwargs.get('show_on_overview', False),
-            ))
-            kpi_id = cursor.fetchone()['id']
-            conn.commit()
-            return kpi_id
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        row = self.execute('''
+            INSERT INTO mkt_project_kpis
+                (project_id, kpi_definition_id, channel, target_value, weight,
+                 threshold_warning, threshold_critical, currency, notes, show_on_overview)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        ''', (
+            project_id, kpi_definition_id,
+            kwargs.get('channel'), kwargs.get('target_value'),
+            kwargs.get('weight', 50),
+            kwargs.get('threshold_warning'), kwargs.get('threshold_critical'),
+            kwargs.get('currency', 'RON'),
+            kwargs.get('notes'),
+            kwargs.get('show_on_overview', False),
+        ), returning=True)
+        return row['id'] if row else None
 
     def update_project_kpi(self, kpi_id, **kwargs):
         allowed = {'target_value', 'current_value', 'weight', 'threshold_warning',
                     'threshold_critical', 'status', 'notes', 'channel', 'currency',
                     'show_on_overview'}
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            updates = []
-            params = []
-            for key, val in kwargs.items():
-                if key in allowed:
-                    updates.append(f'{key} = %s')
-                    params.append(val)
-            if not updates:
-                return False
-            updates.append('updated_at = NOW()')
-            params.append(kpi_id)
-            cursor.execute(f'UPDATE mkt_project_kpis SET {", ".join(updates)} WHERE id = %s', params)
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        updates = []
+        params = []
+        for key, val in kwargs.items():
+            if key in allowed:
+                updates.append(f'{key} = %s')
+                params.append(val)
+        if not updates:
+            return False
+        updates.append('updated_at = NOW()')
+        params.append(kpi_id)
+        return self.execute(
+            f'UPDATE mkt_project_kpis SET {", ".join(updates)} WHERE id = %s', params
+        ) > 0
 
     def delete_project_kpi(self, kpi_id):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('DELETE FROM mkt_project_kpis WHERE id = %s', (kpi_id,))
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute(
+            'DELETE FROM mkt_project_kpis WHERE id = %s', (kpi_id,)
+        ) > 0
 
     # ---- KPI ↔ Budget Line linking ----
 
     def get_kpi_budget_lines(self, project_kpi_id):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT kb.id, kb.project_kpi_id, kb.budget_line_id, kb.role, kb.created_at,
-                       bl.channel, bl.description, bl.planned_amount,
-                       bl.spent_amount, bl.currency
-                FROM mkt_kpi_budget_lines kb
-                JOIN mkt_budget_lines bl ON bl.id = kb.budget_line_id
-                WHERE kb.project_kpi_id = %s
-                ORDER BY kb.role, bl.channel
-            ''', (project_kpi_id,))
-            return [dict(r) for r in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        return self.query_all('''
+            SELECT kb.id, kb.project_kpi_id, kb.budget_line_id, kb.role, kb.created_at,
+                   bl.channel, bl.description, bl.planned_amount,
+                   bl.spent_amount, bl.currency
+            FROM mkt_kpi_budget_lines kb
+            JOIN mkt_budget_lines bl ON bl.id = kb.budget_line_id
+            WHERE kb.project_kpi_id = %s
+            ORDER BY kb.role, bl.channel
+        ''', (project_kpi_id,))
 
     def link_budget_line(self, project_kpi_id, budget_line_id, role='input'):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                INSERT INTO mkt_kpi_budget_lines (project_kpi_id, budget_line_id, role)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (project_kpi_id, budget_line_id) DO UPDATE SET role = EXCLUDED.role
-                RETURNING id
-            ''', (project_kpi_id, budget_line_id, role))
-            row = cursor.fetchone()
-            conn.commit()
-            return row['id'] if row else None
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        # ON CONFLICT DO UPDATE always returns a row
+        row = self.execute('''
+            INSERT INTO mkt_kpi_budget_lines (project_kpi_id, budget_line_id, role)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (project_kpi_id, budget_line_id) DO UPDATE SET role = EXCLUDED.role
+            RETURNING id
+        ''', (project_kpi_id, budget_line_id, role), returning=True)
+        return row['id'] if row else None
 
     def unlink_budget_line(self, project_kpi_id, budget_line_id):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                DELETE FROM mkt_kpi_budget_lines
-                WHERE project_kpi_id = %s AND budget_line_id = %s
-            ''', (project_kpi_id, budget_line_id))
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute('''
+            DELETE FROM mkt_kpi_budget_lines
+            WHERE project_kpi_id = %s AND budget_line_id = %s
+        ''', (project_kpi_id, budget_line_id)) > 0
 
     # ---- KPI ↔ KPI dependencies ----
 
     def get_kpi_dependencies(self, project_kpi_id):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT kd.id, kd.project_kpi_id, kd.depends_on_kpi_id, kd.role, kd.created_at,
-                       pk.current_value as dep_current_value,
-                       kdef.name as dep_kpi_name, kdef.slug as dep_kpi_slug,
-                       kdef.unit as dep_unit
-                FROM mkt_kpi_dependencies kd
-                JOIN mkt_project_kpis pk ON pk.id = kd.depends_on_kpi_id
-                JOIN mkt_kpi_definitions kdef ON kdef.id = pk.kpi_definition_id
-                WHERE kd.project_kpi_id = %s
-                ORDER BY kd.role, kdef.name
-            ''', (project_kpi_id,))
-            return [dict(r) for r in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        return self.query_all('''
+            SELECT kd.id, kd.project_kpi_id, kd.depends_on_kpi_id, kd.role, kd.created_at,
+                   pk.current_value as dep_current_value,
+                   kdef.name as dep_kpi_name, kdef.slug as dep_kpi_slug,
+                   kdef.unit as dep_unit
+            FROM mkt_kpi_dependencies kd
+            JOIN mkt_project_kpis pk ON pk.id = kd.depends_on_kpi_id
+            JOIN mkt_kpi_definitions kdef ON kdef.id = pk.kpi_definition_id
+            WHERE kd.project_kpi_id = %s
+            ORDER BY kd.role, kdef.name
+        ''', (project_kpi_id,))
 
     def link_kpi_dependency(self, project_kpi_id, depends_on_kpi_id, role='input'):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                INSERT INTO mkt_kpi_dependencies (project_kpi_id, depends_on_kpi_id, role)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (project_kpi_id, depends_on_kpi_id) DO UPDATE SET role = EXCLUDED.role
-                RETURNING id
-            ''', (project_kpi_id, depends_on_kpi_id, role))
-            row = cursor.fetchone()
-            conn.commit()
-            return row['id'] if row else None
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        # ON CONFLICT DO UPDATE always returns a row
+        row = self.execute('''
+            INSERT INTO mkt_kpi_dependencies (project_kpi_id, depends_on_kpi_id, role)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (project_kpi_id, depends_on_kpi_id) DO UPDATE SET role = EXCLUDED.role
+            RETURNING id
+        ''', (project_kpi_id, depends_on_kpi_id, role), returning=True)
+        return row['id'] if row else None
 
     def unlink_kpi_dependency(self, project_kpi_id, depends_on_kpi_id):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                DELETE FROM mkt_kpi_dependencies
-                WHERE project_kpi_id = %s AND depends_on_kpi_id = %s
-            ''', (project_kpi_id, depends_on_kpi_id))
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute('''
+            DELETE FROM mkt_kpi_dependencies
+            WHERE project_kpi_id = %s AND depends_on_kpi_id = %s
+        ''', (project_kpi_id, depends_on_kpi_id)) > 0
 
     # ---- Sync / Recalculate ----
 
@@ -267,10 +163,8 @@ class KpiRepository:
         For raw KPIs (no formula), sums all linked source values.
         """
         from marketing.services.formula_engine import evaluate as eval_formula
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
 
+        def _work(cursor):
             # Get KPI's formula and current value from its definition
             cursor.execute('''
                 SELECT pk.id, pk.current_value, kd.formula
@@ -306,7 +200,6 @@ class KpiRepository:
 
             has_sources = bool(bl_by_role) or bool(dep_by_role)
             if not has_sources:
-                conn.commit()
                 return {'synced': False, 'reason': 'No linked sources'}
 
             # Merge variables from both sources (same variable name = summed)
@@ -323,7 +216,6 @@ class KpiRepository:
                     new_value = 0
                 except ValueError as e:
                     logger.warning(f"KPI {project_kpi_id}: formula error: {e}")
-                    conn.commit()
                     return {'synced': False, 'reason': f'Formula error: {e}'}
             else:
                 # No formula = raw KPI, sum all inputs
@@ -341,23 +233,15 @@ class KpiRepository:
                     INSERT INTO mkt_kpi_snapshots (project_kpi_id, value, source)
                     VALUES (%s, %s, 'auto')
                 ''', (project_kpi_id, new_value))
-            conn.commit()
             return {'synced': True, 'value': new_value, 'changed': value_changed}
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute_many(_work)
 
     def sync_all_project_kpis(self, project_id):
         """Sync all KPIs for a project that have linked sources. Returns count synced."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('SELECT id FROM mkt_project_kpis WHERE project_id = %s', (project_id,))
-            kpi_ids = [r['id'] for r in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        rows = self.query_all(
+            'SELECT id FROM mkt_project_kpis WHERE project_id = %s', (project_id,)
+        )
+        kpi_ids = [r['id'] for r in rows]
         synced = 0
         for kpi_id in kpi_ids:
             try:
@@ -370,42 +254,29 @@ class KpiRepository:
 
     def get_all_syncable_kpi_ids(self):
         """Get all KPI IDs that have at least one linked budget line or dependency."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT DISTINCT project_kpi_id FROM (
-                    SELECT project_kpi_id FROM mkt_kpi_budget_lines
-                    UNION
-                    SELECT project_kpi_id FROM mkt_kpi_dependencies
-                ) src
-            ''')
-            return [r['project_kpi_id'] for r in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        rows = self.query_all('''
+            SELECT DISTINCT project_kpi_id FROM (
+                SELECT project_kpi_id FROM mkt_kpi_budget_lines
+                UNION
+                SELECT project_kpi_id FROM mkt_kpi_dependencies
+            ) src
+        ''')
+        return [r['project_kpi_id'] for r in rows]
 
     # ---- Snapshots ----
 
     def get_snapshots(self, project_kpi_id, limit=50):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT s.*, u.name as recorded_by_name
-                FROM mkt_kpi_snapshots s
-                LEFT JOIN users u ON u.id = s.recorded_by
-                WHERE s.project_kpi_id = %s
-                ORDER BY s.recorded_at DESC
-                LIMIT %s
-            ''', (project_kpi_id, limit))
-            return [dict(r) for r in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        return self.query_all('''
+            SELECT s.*, u.name as recorded_by_name
+            FROM mkt_kpi_snapshots s
+            LEFT JOIN users u ON u.id = s.recorded_by
+            WHERE s.project_kpi_id = %s
+            ORDER BY s.recorded_at DESC
+            LIMIT %s
+        ''', (project_kpi_id, limit))
 
     def add_snapshot(self, project_kpi_id, value, recorded_by=None, source='manual', notes=None):
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             cursor.execute('''
                 INSERT INTO mkt_kpi_snapshots (project_kpi_id, value, source, recorded_by, notes)
                 VALUES (%s, %s, %s, %s, %s) RETURNING id
@@ -416,10 +287,5 @@ class KpiRepository:
                 UPDATE mkt_project_kpis SET current_value = COALESCE(current_value, 0) + %s, last_synced_at = NOW(), updated_at = NOW()
                 WHERE id = %s
             ''', (value, project_kpi_id))
-            conn.commit()
             return snap_id
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute_many(_work)
