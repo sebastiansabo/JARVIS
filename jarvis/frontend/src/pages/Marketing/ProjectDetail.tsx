@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
@@ -191,6 +192,8 @@ export default function ProjectDetail() {
 // ──────────────────────────────────────────
 
 function StatusActions({ project, onDone }: { project: MktProject; onDone: () => void }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [submitOpen, setSubmitOpen] = useState(false)
   const [selectedApprover, setSelectedApprover] = useState<number | undefined>()
   const { data: allUsers } = useQuery({ queryKey: ['users-list'], queryFn: () => usersApi.getUsers(), enabled: submitOpen })
@@ -201,7 +204,21 @@ function StatusActions({ project, onDone }: { project: MktProject; onDone: () =>
   const activateMut = useMutation({ mutationFn: () => marketingApi.activateProject(project.id), onSuccess: onDone })
   const pauseMut = useMutation({ mutationFn: () => marketingApi.pauseProject(project.id), onSuccess: onDone })
   const completeMut = useMutation({ mutationFn: () => marketingApi.completeProject(project.id), onSuccess: onDone })
-  const dupMut = useMutation({ mutationFn: () => marketingApi.duplicateProject(project.id), onSuccess: onDone })
+  const dupMut = useMutation({
+    mutationFn: () => marketingApi.duplicateProject(project.id),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
+      if (data?.id) navigate(`/app/marketing/projects/${data.id}`)
+      else onDone()
+    },
+  })
+  const deleteMut = useMutation({
+    mutationFn: () => marketingApi.deleteProject(project.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
+      navigate('/app/marketing')
+    },
+  })
 
   const s = project.status
   return (
@@ -259,6 +276,31 @@ function StatusActions({ project, onDone }: { project: MktProject; onDone: () =>
       <Button size="sm" variant="ghost" onClick={() => dupMut.mutate()} disabled={dupMut.isPending}>
         <Copy className="h-3.5 w-3.5" />
       </Button>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive">
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete &quot;{project.name}&quot; and all associated data (budget lines, KPIs, files, comments). This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteMut.mutate()}
+              disabled={deleteMut.isPending}
+            >
+              {deleteMut.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
