@@ -19,6 +19,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { QueryError } from '@/components/QueryError'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { hrApi } from '@/api/hr'
 import { useHrStore } from '@/stores/hrStore'
@@ -44,7 +45,7 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
   const [deleteIds, setDeleteIds] = useState<number[] | null>(null)
 
   // Data
-  const { data: bonuses = [], isLoading } = useQuery({
+  const { data: bonuses = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['hr-bonuses', filters.year, filters.month],
     queryFn: () => hrApi.getBonuses({ year: filters.year, month: filters.month }),
   })
@@ -191,7 +192,10 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
       </div>
 
       {/* Tables */}
-      {subTab === 'list' && (
+      {isError && (
+        <QueryError message="Failed to load bonuses" onRetry={() => refetch()} />
+      )}
+      {subTab === 'list' && !isError && (
         <BonusListTable
           bonuses={filtered}
           isLoading={isLoading}

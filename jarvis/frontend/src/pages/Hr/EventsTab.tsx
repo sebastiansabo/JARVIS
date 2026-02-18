@@ -20,6 +20,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { QueryError } from '@/components/QueryError'
 import { hrApi } from '@/api/hr'
 import { toast } from 'sonner'
 import { TagBadgeList } from '@/components/shared/TagBadge'
@@ -47,7 +48,7 @@ function EventsList() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteIds, setDeleteIds] = useState<number[] | null>(null)
 
-  const { data: events = [], isLoading } = useQuery({
+  const { data: events = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['hr-events'],
     queryFn: () => hrApi.getEvents(),
   })
@@ -131,7 +132,9 @@ function EventsList() {
         </div>
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <QueryError message="Failed to load events" onRetry={() => refetch()} />
+      ) : isLoading ? (
         <Card className="p-6">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="h-10 animate-pulse rounded bg-muted mb-2" />

@@ -31,6 +31,7 @@ import { cn, usePersistedState } from '@/lib/utils'
 import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
 import { TagFilter } from '@/components/shared/TagFilter'
+import { QueryError } from '@/components/QueryError'
 import { tagsApi } from '@/api/tags'
 import type { EntityTag } from '@/types/tags'
 import type { Transaction, TransactionFilters } from '@/types/statements'
@@ -105,7 +106,7 @@ export default function TransactionsTab() {
   }), [status, companyCui, supplier, dateFrom, dateTo, search, sort, page, pageSize])
 
   // Queries
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['statements-transactions', filters],
     queryFn: () => statementsApi.getTransactions(filters),
   })
@@ -386,7 +387,9 @@ export default function TransactionsTab() {
       )}
 
       {/* Table */}
-      {isLoading ? (
+      {isError ? (
+        <QueryError message="Failed to load transactions" onRetry={() => refetch()} />
+      ) : isLoading ? (
         <Card>
           <CardContent className="p-6">
             {Array.from({ length: 8 }).map((_, i) => (

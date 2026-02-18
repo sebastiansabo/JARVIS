@@ -39,6 +39,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { QueryError } from '@/components/QueryError'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
@@ -333,7 +334,7 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
   }
 
   // ── Queries ──────────────────────────────────────────────
-  const { data: unallocData, isLoading: unallocLoading } = useQuery({
+  const { data: unallocData, isLoading: unallocLoading, isError: unallocError, refetch: refetchUnalloc } = useQuery({
     queryKey: ['efactura-unallocated', { ...filters, search }],
     queryFn: () => efacturaApi.getUnallocated({ ...filters, search: search || undefined }),
   })
@@ -656,7 +657,9 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
       )}
 
       {/* Invoice table */}
-      {isLoading ? (
+      {unallocError ? (
+        <QueryError message="Failed to load e-Factura data" onRetry={() => refetchUnalloc()} />
+      ) : isLoading ? (
         <div className="space-y-2">
           {[1, 2, 3].map((i) => <div key={i} className="h-12 animate-pulse rounded bg-muted/50" />)}
         </div>

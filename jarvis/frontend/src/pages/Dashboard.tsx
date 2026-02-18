@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { StatCard } from '@/components/shared/StatCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
+import { QueryError } from '@/components/QueryError'
 import { useAuth } from '@/hooks/useAuth'
 import { dashboardApi } from '@/api/dashboard'
 import { approvalsApi } from '@/api/approvals'
@@ -17,7 +18,7 @@ export default function Dashboard() {
 
   const canAccounting = !!user?.can_access_accounting
 
-  const { data: invoices, isLoading: invoicesLoading } = useQuery({
+  const { data: invoices, isLoading: invoicesLoading, isError: invoicesError, refetch: refetchInvoices } = useQuery({
     queryKey: ['dashboard', 'recentInvoices'],
     queryFn: () => dashboardApi.getRecentInvoices(10),
     staleTime: 60_000,
@@ -31,7 +32,7 @@ export default function Dashboard() {
     refetchInterval: 30_000,
   })
 
-  const { data: companySummary, isLoading: summaryLoading } = useQuery({
+  const { data: companySummary, isLoading: summaryLoading, isError: summaryError, refetch: refetchSummary } = useQuery({
     queryKey: ['dashboard', 'companySummary'],
     queryFn: dashboardApi.getCompanySummary,
     staleTime: 60_000,
@@ -182,7 +183,9 @@ export default function Dashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              {invoicesLoading ? (
+              {invoicesError ? (
+                <QueryError message="Failed to load invoices" onRetry={() => refetchInvoices()} />
+              ) : invoicesLoading ? (
                 <div className="space-y-2">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} className="h-10 animate-pulse rounded bg-muted" />
@@ -227,7 +230,9 @@ export default function Dashboard() {
               <CardTitle className="text-base">By Company</CardTitle>
             </CardHeader>
             <CardContent>
-              {summaryLoading ? (
+              {summaryError ? (
+                <QueryError message="Failed to load company summary" onRetry={() => refetchSummary()} />
+              ) : summaryLoading ? (
                 <div className="space-y-3">
                   {Array.from({ length: 4 }).map((_, i) => (
                     <div key={i} className="h-12 animate-pulse rounded bg-muted" />

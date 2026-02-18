@@ -42,6 +42,7 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
 import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { QueryError } from '@/components/QueryError'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
@@ -101,13 +102,13 @@ export default function Accounting() {
     include_allocations: true,
   }
 
-  const { data: invoices = [], isLoading } = useQuery({
+  const { data: invoices = [], isLoading, isError: invoicesError, refetch: refetchInvoices } = useQuery({
     queryKey: ['invoices', filters],
     queryFn: () => invoicesApi.getInvoices(apiFilters),
     enabled: activeTab === 'invoices',
   })
 
-  const { data: binInvoices = [], isLoading: binLoading } = useQuery({
+  const { data: binInvoices = [], isLoading: binLoading, isError: binError, refetch: refetchBin } = useQuery({
     queryKey: ['invoices', 'bin'],
     queryFn: () => invoicesApi.getDeletedInvoices(),
     enabled: activeTab === 'bin',
@@ -493,7 +494,12 @@ export default function Accounting() {
       )}
 
       {/* Tab content */}
-      {activeTab === 'invoices' || activeTab === 'bin' ? (
+      {(activeTab === 'invoices' && invoicesError) || (activeTab === 'bin' && binError) ? (
+        <QueryError
+          message={activeTab === 'bin' ? 'Failed to load recycle bin' : 'Failed to load invoices'}
+          onRetry={() => (activeTab === 'bin' ? refetchBin() : refetchInvoices())}
+        />
+      ) : activeTab === 'invoices' || activeTab === 'bin' ? (
         <InvoiceTable
           invoices={displayedInvoices}
           isLoading={activeTab === 'bin' ? binLoading : isLoading}

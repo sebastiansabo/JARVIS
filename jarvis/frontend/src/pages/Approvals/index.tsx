@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { cn } from '@/lib/utils'
 import { approvalsApi } from '@/api/approvals'
 import { usersApi } from '@/api/users'
+import { QueryError } from '@/components/QueryError'
 import { toast } from 'sonner'
 import RequestDetail from './RequestDetail'
 import type { ApprovalRequest, ApprovalQueueItem, ApprovalDelegation } from '@/types/approvals'
@@ -59,17 +60,17 @@ export default function Approvals() {
   const [newDelegation, setNewDelegation] = useState({ delegate_id: '', starts_at: '', ends_at: '', reason: '' })
   const queryClient = useQueryClient()
 
-  const { data: queueData, isLoading: queueLoading } = useQuery({
+  const { data: queueData, isLoading: queueLoading, isError: queueError, refetch: refetchQueue } = useQuery({
     queryKey: ['approval-queue'],
     queryFn: () => approvalsApi.getMyQueue(),
   })
 
-  const { data: myRequestsData, isLoading: myRequestsLoading } = useQuery({
+  const { data: myRequestsData, isLoading: myRequestsLoading, isError: myRequestsError, refetch: refetchMyRequests } = useQuery({
     queryKey: ['approval-my-requests'],
     queryFn: () => approvalsApi.getMyRequests(),
   })
 
-  const { data: allRequestsData, isLoading: allLoading } = useQuery({
+  const { data: allRequestsData, isLoading: allLoading, isError: allError, refetch: refetchAll } = useQuery({
     queryKey: ['approval-all-requests', statusFilter],
     queryFn: () => approvalsApi.listRequests({ status: statusFilter || undefined }),
     enabled: activeTab === 'all',
@@ -262,6 +263,15 @@ export default function Approvals() {
     : activeTab === 'all' ? allLoading
     : delegationsLoading
 
+  const tabError = activeTab === 'queue' ? queueError
+    : activeTab === 'my-requests' ? myRequestsError
+    : activeTab === 'all' ? allError
+    : false
+  const tabRefetch = activeTab === 'queue' ? refetchQueue
+    : activeTab === 'my-requests' ? refetchMyRequests
+    : activeTab === 'all' ? refetchAll
+    : undefined
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -352,7 +362,9 @@ export default function Approvals() {
       )}
 
       {/* Table */}
-      {isLoading ? (
+      {tabError ? (
+        <QueryError message="Failed to load approval data" onRetry={() => tabRefetch?.()} />
+      ) : isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full" />

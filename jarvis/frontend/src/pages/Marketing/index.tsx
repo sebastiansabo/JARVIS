@@ -21,6 +21,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { marketingApi } from '@/api/marketing'
 import { settingsApi } from '@/api/settings'
 import { organizationApi } from '@/api/organization'
+import { QueryError } from '@/components/QueryError'
 import { useMarketingStore } from '@/stores/marketingStore'
 import type { MktProject, MktKpiScoreboardItem } from '@/types/marketing'
 import ProjectForm from './ProjectForm'
@@ -63,7 +64,7 @@ export default function Marketing() {
   })
   const summary = summaryData?.summary
 
-  const { data: projectsData, isLoading: projectsLoading } = useQuery({
+  const { data: projectsData, isLoading: projectsLoading, isError: projectsError, refetch: refetchProjects } = useQuery({
     queryKey: ['mkt-projects', filters],
     queryFn: () => marketingApi.listProjects(filters),
   })
@@ -246,7 +247,9 @@ export default function Marketing() {
           </div>
 
           {/* Project List */}
-          {projectsLoading ? (
+          {projectsError ? (
+            <QueryError message="Failed to load projects" onRetry={() => refetchProjects()} />
+          ) : projectsLoading ? (
             <div className="space-y-3">
               {[1, 2, 3, 4].map((i) => (
                 <Skeleton key={i} className="h-16 w-full" />
