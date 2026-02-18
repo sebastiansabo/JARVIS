@@ -323,4 +323,9 @@ export const marketingApi = {
 
   syncOkrKpis: (projectId: number) =>
     api.post<{ success: boolean; synced: number }>(`${BASE}/projects/${projectId}/objectives/sync-kpis`),
+
+  suggestKeyResults: (projectId: number, objectiveId: number) =>
+    api.post<{ suggestions: Array<{ title: string; target_value: number; unit: string; linked_kpi_id: number | null }> }>(
+      `${BASE}/projects/${projectId}/objectives/${objectiveId}/suggest-krs`
+    ),
 }

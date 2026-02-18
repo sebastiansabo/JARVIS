@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 import {
   ArrowLeft, Pencil, Play, Pause, CheckCircle, Send, Copy, Check, RefreshCw,
   DollarSign, Target, Users, Clock, FileText, MessageSquare, ClipboardCheck,
-  Plus, Trash2, BarChart3, CalendarDays, Link2, Search, Eye,
+  Plus, Trash2, BarChart3, CalendarDays, Link2, Search, Eye, Info, Loader2, X,
   ChevronDown, ChevronRight, Upload, Sparkles,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
@@ -566,9 +566,11 @@ function OverviewTab({ project }: { project: MktProject }) {
 // OKR Card (inline in Overview)
 // ──────────────────────────────────────────
 
+type SuggestedKr = { title: string; target_value: number; unit: string; linked_kpi_id: number | null }
+
 function OkrCard({ projectId, kpis }: { projectId: number; kpis: MktProjectKpi[] }) {
   const queryClient = useQueryClient()
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
+  const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set())
   const [addingObjective, setAddingObjective] = useState(false)
   const [newObjTitle, setNewObjTitle] = useState('')
   const [editingObjId, setEditingObjId] = useState<number | null>(null)
@@ -577,6 +579,7 @@ function OkrCard({ projectId, kpis }: { projectId: number; kpis: MktProjectKpi[]
   const [newKr, setNewKr] = useState({ title: '', target_value: '100', unit: 'number', linked_kpi_id: '' })
   const [editingKrId, setEditingKrId] = useState<number | null>(null)
   const [editKrValue, setEditKrValue] = useState('')
+  const [suggestions, setSuggestions] = useState<Record<number, SuggestedKr[]>>({})
 
   const { data } = useQuery({
     queryKey: ['mkt-objectives', projectId],
@@ -615,9 +618,24 @@ function OkrCard({ projectId, kpis }: { projectId: number; kpis: MktProjectKpi[]
     mutationFn: () => marketingApi.syncOkrKpis(projectId),
     onSuccess: invalidate,
   })
+  const suggestMut = useMutation({
+    mutationFn: (objectiveId: number) => marketingApi.suggestKeyResults(projectId, objectiveId),
+    onSuccess: (data, objectiveId) => {
+      setSuggestions((prev) => ({ ...prev, [objectiveId]: data.suggestions }))
+    },
+  })
+
+  const acceptSuggestion = (objId: number, suggestion: SuggestedKr) => {
+    createKrMut.mutate({ objId, data: suggestion })
+    setSuggestions((prev) => {
+      const remaining = (prev[objId] ?? []).filter((s) => s !== suggestion)
+      if (remaining.length === 0) { const { [objId]: _, ...rest } = prev; return rest }
+      return { ...prev, [objId]: remaining }
+    })
+  }
 
   const toggleExpand = (id: number) => {
-    setExpandedIds((prev) => {
+    setCollapsedIds((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
@@ -628,11 +646,42 @@ function OkrCard({ projectId, kpis }: { projectId: number; kpis: MktProjectKpi[]
     pct >= 100 ? 'bg-green-500' : pct >= 70 ? 'bg-blue-500' : pct >= 40 ? 'bg-yellow-500' : 'bg-red-500'
 
   const hasLinkedKpis = objectives.some((o) => o.key_results.some((kr) => kr.linked_kpi_id))
+  const kpiMap = Object.fromEntries(kpis.map((k) => [k.id, k.kpi_name]))
 
   return (
     <div className="rounded-lg border p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-sm">Objectives & Key Results</h3>
+        <div className="flex items-center gap-1.5">
+          <h3 className="font-semibold text-sm">Objectives & Key Results</h3>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="text-muted-foreground hover:text-foreground">
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 text-xs" side="right" align="start">
+              <div className="space-y-2">
+                <p className="font-semibold text-sm">OKR Examples</p>
+                <div className="space-y-1.5 pl-3 border-l-2 border-muted">
+                  <p className="font-medium">Objective: <span className="font-normal italic">"Increase brand awareness in Bucharest"</span></p>
+                  <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground">
+                    <li>Reach 50,000 FB impressions (target: 50000, Number)</li>
+                    <li>Get 500 page followers (target: 500, Number)</li>
+                    <li>CTR above 3% (target: 3, Percentage — link to KPI)</li>
+                  </ul>
+                </div>
+                <div className="space-y-1.5 pl-3 border-l-2 border-muted">
+                  <p className="font-medium">Objective: <span className="font-normal italic">"Drive dealer traffic from digital"</span></p>
+                  <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground">
+                    <li>Generate 200 qualified leads (target: 200, Number)</li>
+                    <li>Cost per lead under 5,000 RON (target: 5000, Currency)</li>
+                  </ul>
+                </div>
+                <p className="text-[10px] text-muted-foreground">Tip: Link key results to KPIs for auto-sync. Use the Sparkles button to get AI suggestions.</p>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
         <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setAddingObjective(true)}>
           <Plus className="h-3 w-3 mr-1" /> Add Objective
         </Button>
@@ -644,7 +693,8 @@ function OkrCard({ projectId, kpis }: { projectId: number; kpis: MktProjectKpi[]
 
       <div className="space-y-2">
         {objectives.map((obj) => {
-          const expanded = expandedIds.has(obj.id) || expandedIds.size === 0
+          const expanded = !collapsedIds.has(obj.id)
+          const objSuggestions = suggestions[obj.id]
           return (
             <div key={obj.id} className="rounded-lg border">
               {/* Objective header */}
@@ -679,6 +729,16 @@ function OkrCard({ projectId, kpis }: { projectId: number; kpis: MktProjectKpi[]
                   <div className={`h-full rounded-full ${progressColor(obj.progress)}`} style={{ width: `${Math.min(obj.progress, 100)}%` }} />
                 </div>
                 <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <Button
+                    variant="ghost" size="sm" className="h-6 w-6 p-0"
+                    title="AI Suggest Key Results"
+                    disabled={suggestMut.isPending}
+                    onClick={() => suggestMut.mutate(obj.id)}
+                  >
+                    {suggestMut.isPending && suggestMut.variables === obj.id
+                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                      : <Sparkles className="h-3 w-3 text-amber-500" />}
+                  </Button>
                   <Button
                     variant="ghost" size="sm" className="h-6 w-6 p-0"
                     onClick={() => { setEditingObjId(obj.id); setEditObjTitle(obj.title) }}
@@ -760,25 +820,55 @@ function OkrCard({ projectId, kpis }: { projectId: number; kpis: MktProjectKpi[]
                     </div>
                   ))}
 
+                  {/* AI Suggestions */}
+                  {objSuggestions && objSuggestions.length > 0 && (
+                    <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-2 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium flex items-center gap-1 text-amber-700 dark:text-amber-400">
+                          <Sparkles className="h-3 w-3" /> AI Suggestions
+                        </span>
+                        <button className="text-muted-foreground hover:text-foreground" onClick={() => setSuggestions((prev) => { const { [obj.id]: _, ...rest } = prev; return rest })}>
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                      {objSuggestions.map((s, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs">
+                          <Button
+                            variant="ghost" size="sm" className="h-5 w-5 p-0 shrink-0 text-green-600 hover:text-green-700"
+                            onClick={() => acceptSuggestion(obj.id, s)}
+                            title="Accept suggestion"
+                          >
+                            <Check className="h-3 w-3" />
+                          </Button>
+                          {s.linked_kpi_id && <span title={`Link to: ${kpiMap[s.linked_kpi_id] ?? 'KPI'}`}><Link2 className="h-3 w-3 text-blue-500 shrink-0" /></span>}
+                          <span className="flex-1 truncate">{s.title}</span>
+                          <span className="tabular-nums text-muted-foreground shrink-0">
+                            {s.target_value.toLocaleString('ro-RO')} {s.unit === 'percentage' ? '%' : s.unit === 'currency' ? 'RON' : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Add KR inline form */}
                   {addingKrForObj === obj.id ? (
-                    <div className="space-y-1.5 pt-1 border-t">
+                    <div className="space-y-2 pt-2 border-t">
                       <Input
                         autoFocus placeholder="Key result title" value={newKr.title}
                         onChange={(e) => setNewKr((p) => ({ ...p, title: e.target.value }))}
-                        className="h-7 text-xs"
+                        className="h-9 text-xs"
                         onKeyDown={(e) => {
                           if (e.key === 'Escape') setAddingKrForObj(null)
                         }}
                       />
-                      <div className="flex gap-1.5">
+                      <div className="grid grid-cols-[80px_110px_1fr] gap-2">
                         <Input
                           type="number" placeholder="Target" value={newKr.target_value}
                           onChange={(e) => setNewKr((p) => ({ ...p, target_value: e.target.value }))}
-                          className="h-7 text-xs w-20"
+                          className="h-9 text-xs"
                         />
                         <Select value={newKr.unit} onValueChange={(v) => setNewKr((p) => ({ ...p, unit: v }))}>
-                          <SelectTrigger className="h-7 text-xs w-24">
+                          <SelectTrigger className="h-9 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -788,7 +878,7 @@ function OkrCard({ projectId, kpis }: { projectId: number; kpis: MktProjectKpi[]
                           </SelectContent>
                         </Select>
                         <Select value={newKr.linked_kpi_id} onValueChange={(v) => setNewKr((p) => ({ ...p, linked_kpi_id: v }))}>
-                          <SelectTrigger className="h-7 text-xs flex-1">
+                          <SelectTrigger className="h-9 text-xs">
                             <SelectValue placeholder="Link KPI (optional)" />
                           </SelectTrigger>
                           <SelectContent>
@@ -799,10 +889,10 @@ function OkrCard({ projectId, kpis }: { projectId: number; kpis: MktProjectKpi[]
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="flex justify-end gap-1">
-                        <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => setAddingKrForObj(null)}>Cancel</Button>
+                      <div className="flex justify-end gap-1.5">
+                        <Button variant="outline" size="sm" className="h-7 text-xs px-3" onClick={() => setAddingKrForObj(null)}>Cancel</Button>
                         <Button
-                          size="sm" className="h-6 text-xs"
+                          size="sm" className="h-7 text-xs px-3"
                           disabled={!newKr.title.trim() || createKrMut.isPending}
                           onClick={() => {
                             const linkedId = newKr.linked_kpi_id && newKr.linked_kpi_id !== 'none' ? parseInt(newKr.linked_kpi_id) : null
