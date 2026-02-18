@@ -10,7 +10,7 @@ from .engine import (
     NotAuthorizedError, AlreadyDecidedError, InvalidStateError,
 )
 from .repositories import FlowRepository, AuditRepository, DelegationRepository
-from core.utils.api_helpers import safe_error_response
+from core.utils.api_helpers import safe_error_response, handle_api_errors
 
 logger = logging.getLogger('jarvis.core.approvals.routes')
 
@@ -272,19 +272,17 @@ def api_get_flow(flow_id):
 
 @approvals_bp.route('/api/flows/<int:flow_id>', methods=['PUT'])
 @login_required
+@handle_api_errors
 def api_update_flow(flow_id):
     """Update a flow."""
     if not current_user.can_access_settings:
         return jsonify({'success': False, 'error': 'Admin access required'}), 403
 
     data = request.get_json()
-    try:
-        updated = _flow_repo.update_flow(flow_id, **data)
-        if updated:
-            return jsonify({'success': True})
-        return jsonify({'success': False, 'error': 'Flow not found'}), 404
-    except Exception as e:
-        return safe_error_response(e)
+    updated = _flow_repo.update_flow(flow_id, **data)
+    if updated:
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Flow not found'}), 404
 
 
 @approvals_bp.route('/api/flows/<int:flow_id>', methods=['DELETE'])
@@ -305,6 +303,7 @@ def api_delete_flow(flow_id):
 
 @approvals_bp.route('/api/flows/<int:flow_id>/steps', methods=['POST'])
 @login_required
+@handle_api_errors
 def api_create_step(flow_id):
     """Add a step to a flow."""
     if not current_user.can_access_settings:
@@ -321,41 +320,36 @@ def api_create_step(flow_id):
     existing_steps = _flow_repo.get_steps_for_flow(flow_id)
     step_order = data.get('step_order', len(existing_steps) + 1)
 
-    try:
-        step_id = _flow_repo.create_step(
-            flow_id, name, step_order, approver_type,
-            approver_user_id=data.get('approver_user_id'),
-            approver_role_name=data.get('approver_role_name'),
-            requires_all=data.get('requires_all', False),
-            min_approvals=data.get('min_approvals', 1),
-            skip_conditions=data.get('skip_conditions'),
-            timeout_hours=data.get('timeout_hours'),
-            escalation_step_id=data.get('escalation_step_id'),
-            escalation_user_id=data.get('escalation_user_id'),
-            notify_on_pending=data.get('notify_on_pending', True),
-            notify_on_decision=data.get('notify_on_decision', True),
-            reminder_after_hours=data.get('reminder_after_hours'),
-        )
-        return jsonify({'success': True, 'id': step_id})
-    except Exception as e:
-        return safe_error_response(e)
+    step_id = _flow_repo.create_step(
+        flow_id, name, step_order, approver_type,
+        approver_user_id=data.get('approver_user_id'),
+        approver_role_name=data.get('approver_role_name'),
+        requires_all=data.get('requires_all', False),
+        min_approvals=data.get('min_approvals', 1),
+        skip_conditions=data.get('skip_conditions'),
+        timeout_hours=data.get('timeout_hours'),
+        escalation_step_id=data.get('escalation_step_id'),
+        escalation_user_id=data.get('escalation_user_id'),
+        notify_on_pending=data.get('notify_on_pending', True),
+        notify_on_decision=data.get('notify_on_decision', True),
+        reminder_after_hours=data.get('reminder_after_hours'),
+    )
+    return jsonify({'success': True, 'id': step_id})
 
 
 @approvals_bp.route('/api/flows/<int:flow_id>/steps/<int:step_id>', methods=['PUT'])
 @login_required
+@handle_api_errors
 def api_update_step(flow_id, step_id):
     """Update a step."""
     if not current_user.can_access_settings:
         return jsonify({'success': False, 'error': 'Admin access required'}), 403
 
     data = request.get_json()
-    try:
-        updated = _flow_repo.update_step(step_id, **data)
-        if updated:
-            return jsonify({'success': True})
-        return jsonify({'success': False, 'error': 'Step not found'}), 404
-    except Exception as e:
-        return safe_error_response(e)
+    updated = _flow_repo.update_step(step_id, **data)
+    if updated:
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Step not found'}), 404
 
 
 @approvals_bp.route('/api/flows/<int:flow_id>/steps/<int:step_id>', methods=['DELETE'])
@@ -400,6 +394,7 @@ def api_list_delegations():
 
 @approvals_bp.route('/api/delegations', methods=['POST'])
 @login_required
+@handle_api_errors
 def api_create_delegation():
     """Create a new delegation."""
     data = request.get_json()
@@ -410,16 +405,13 @@ def api_create_delegation():
     if not all([delegate_id, starts_at, ends_at]):
         return jsonify({'success': False, 'error': 'delegate_id, starts_at, ends_at are required'}), 400
 
-    try:
-        delegation_id = _delegation_repo.create(
-            current_user.id, int(delegate_id), starts_at, ends_at,
-            reason=data.get('reason'),
-            entity_type=data.get('entity_type'),
-            flow_id=data.get('flow_id'),
-        )
-        return jsonify({'success': True, 'id': delegation_id})
-    except Exception as e:
-        return safe_error_response(e)
+    delegation_id = _delegation_repo.create(
+        current_user.id, int(delegate_id), starts_at, ends_at,
+        reason=data.get('reason'),
+        entity_type=data.get('entity_type'),
+        flow_id=data.get('flow_id'),
+    )
+    return jsonify({'success': True, 'id': delegation_id})
 
 
 @approvals_bp.route('/api/delegations/<int:delegation_id>', methods=['DELETE'])

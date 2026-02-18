@@ -399,6 +399,9 @@ class UserRepository:
             return False
         updates.append('updated_at = CURRENT_TIMESTAMP')
         params.append(user_id)
+        # Guard: updates are code-controlled literals, never user input
+        assert all(isinstance(u, str) and ('= %s' in u or u == 'updated_at = CURRENT_TIMESTAMP') for u in updates), \
+            "SQL SET clauses must be parameterized strings"
         conn = get_db()
         try:
             cursor = get_cursor(conn)

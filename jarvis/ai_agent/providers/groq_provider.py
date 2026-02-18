@@ -118,6 +118,63 @@ class GroqProvider(BaseProvider):
                 logger.error(f"Groq API error: {e}")
                 raise LLMProviderError(f"Groq API error: {e}")
 
+    def generate_structured(
+        self,
+        model_name: str,
+        messages: list[dict[str, str]],
+        max_tokens: int = 1024,
+        temperature: float = 0.3,
+        api_key: str | None = None,
+        **kwargs,
+    ):
+        """Generate structured JSON using Groq's json_object response_format."""
+        import json as json_module
+
+        try:
+            from groq import Groq
+        except ImportError:
+            raise LLMProviderError("groq package not installed. Run: pip install groq")
+
+        key = api_key or os.environ.get('GROQ_API_KEY')
+        if not key:
+            raise LLMAuthenticationError("GROQ_API_KEY not found")
+
+        formatted_messages = self.format_messages(messages)
+        if 'system' in kwargs:
+            formatted_messages.insert(0, {
+                'role': 'system',
+                'content': kwargs.pop('system'),
+            })
+
+        temperature = max(0.0, min(2.0, temperature))
+
+        try:
+            client = Groq(api_key=key)
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=formatted_messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                response_format={"type": "json_object"},
+            )
+
+            content = ""
+            if response.choices:
+                content = response.choices[0].message.content or ""
+
+            return json_module.loads(content)
+
+        except Exception as e:
+            error_str = str(e).lower()
+            if 'rate' in error_str and 'limit' in error_str:
+                raise LLMRateLimitError(f"Rate limit exceeded: {e}")
+            elif 'auth' in error_str or 'key' in error_str or 'unauthorized' in error_str:
+                raise LLMAuthenticationError(f"Authentication failed: {e}")
+            logger.warning(f"Groq structured output failed, falling back: {e}")
+            return super().generate_structured(
+                model_name, messages, max_tokens, temperature, api_key, **kwargs
+            )
+
     def format_messages(
         self,
         messages: List[Dict[str, str]],

@@ -107,6 +107,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
           <Popover key={item.label}>
             <PopoverTrigger asChild>
               <button
+                aria-label={item.label}
                 className={cn(
                   'flex w-full items-center justify-center rounded-md px-2 py-2 text-sm font-medium transition-colors',
                   anyChildActive
@@ -342,6 +343,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
               <Separator className="my-2" />
               <button
                 onClick={onToggle}
+                aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 className={cn(
                   'flex w-full items-center rounded-md text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
                   collapsed ? 'justify-center p-2' : 'gap-2 px-3 py-2',

@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'jarvis'))
 from core.roles.repositories.role_repository import RoleRepository
 from core.roles.repositories.permission_repository import PermissionRepository, _perm_cache
 
-_R = 'core.roles.repositories.role_repository'
+_R = 'core.base_repository'  # RoleRepository inherits from BaseRepository
 _P = 'core.roles.repositories.permission_repository'
 
 

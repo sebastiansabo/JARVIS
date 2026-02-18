@@ -26,7 +26,7 @@ from ..repositories import (
 from ..providers import BaseProvider, ClaudeProvider, OpenAIProvider, GroqProvider, GeminiProvider
 from .rag_service import RAGService
 from .analytics_service import AnalyticsService
-from .query_parser import parse_query
+from .query_parser import parse_query, classify_complexity
 
 logger = get_logger('jarvis.ai_agent.service')
 
@@ -120,6 +120,45 @@ class AIAgentService:
         if not provider:
             raise ConfigurationError(f"Provider '{provider_name}' not available")
         return provider
+
+    def _select_model(self, user_message: str, default_config: ModelConfig) -> ModelConfig:
+        """Select optimal model based on query complexity.
+
+        Routes simple queries (greetings, short lookups) to the cheapest
+        active model to reduce cost. Complex or analytics queries stay
+        on the default (most capable) model.
+
+        Args:
+            user_message: The user's message text
+            default_config: The conversation's default model config
+
+        Returns:
+            ModelConfig to use for this request
+        """
+        complexity = classify_complexity(user_message)
+
+        if complexity != 'simple':
+            return default_config
+
+        # Find cheapest active model (by input cost)
+        try:
+            all_models = self.model_config_repo.get_all_active()
+            if len(all_models) <= 1:
+                return default_config
+
+            cheapest = min(all_models, key=lambda m: m.cost_per_1k_input)
+
+            # Only route if it's actually cheaper
+            if cheapest.cost_per_1k_input < default_config.cost_per_1k_input:
+                logger.debug(
+                    f"Model routing: '{complexity}' query → {cheapest.display_name or cheapest.model_name} "
+                    f"(was {default_config.display_name or default_config.model_name})"
+                )
+                return cheapest
+        except Exception as e:
+            logger.warning(f"Model routing failed, using default: {e}")
+
+        return default_config
 
     def create_conversation(
         self,
@@ -287,6 +326,9 @@ class AIAgentService:
 
             if not model_config:
                 raise ConfigurationError("No model configuration available")
+
+            # 2b. Route to optimal model based on complexity
+            model_config = self._select_model(user_message, model_config)
 
             # 3. Save user message
             user_msg = Message(
@@ -456,6 +498,9 @@ class AIAgentService:
             if not model_config:
                 yield f"event: error\ndata: {json.dumps({'error': 'No model configuration available'})}\n\n"
                 return
+
+            # Route to optimal model based on complexity
+            model_config = self._select_model(user_message, model_config)
 
             # Save user message
             user_msg = Message(

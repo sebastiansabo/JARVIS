@@ -258,16 +258,17 @@ class TestMatchByVat:
 class TestCompanyRepositoryGetAll:
     """Tests for CompanyRepository.get_all() with cache."""
 
-    @patch('core.organization.repositories.company_repository.release_db')
-    @patch('core.organization.repositories.company_repository.get_db')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_cursor')
+    @patch('core.base_repository.get_db')
     @patch('core.organization.repositories.company_repository._is_cache_valid')
-    def test_fetches_from_db_when_cache_invalid(self, mock_cache_valid, mock_get_db, mock_release):
+    def test_fetches_from_db_when_cache_invalid(self, mock_cache_valid, mock_get_db, mock_get_cursor, mock_release):
         """Queries DB when cache is not valid."""
         mock_cache_valid.return_value = False
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_get_db.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
+        mock_get_cursor.return_value = mock_cursor
         mock_cursor.fetchall.return_value = [
             {'id': 1, 'company': 'Test Co', 'vat': 'RO123'},
         ]
@@ -283,15 +284,16 @@ class TestCompanyRepositoryGetAll:
 class TestCompanyRepositoryGet:
     """Tests for CompanyRepository.get() by ID."""
 
-    @patch('core.organization.repositories.company_repository.dict_from_row')
-    @patch('core.organization.repositories.company_repository.release_db')
-    @patch('core.organization.repositories.company_repository.get_db')
-    def test_found(self, mock_get_db, mock_release, mock_dict_from_row):
+    @patch('core.base_repository.dict_from_row')
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_cursor')
+    @patch('core.base_repository.get_db')
+    def test_found(self, mock_get_db, mock_get_cursor, mock_release, mock_dict_from_row):
         """Returns company dict when found."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_get_db.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
+        mock_get_cursor.return_value = mock_cursor
         row = {'id': 1, 'company': 'Test Co', 'vat': 'RO123'}
         mock_cursor.fetchone.return_value = row
         mock_dict_from_row.return_value = row
@@ -302,14 +304,15 @@ class TestCompanyRepositoryGet:
         assert result is not None
         assert result['id'] == 1
 
-    @patch('core.organization.repositories.company_repository.release_db')
-    @patch('core.organization.repositories.company_repository.get_db')
-    def test_not_found(self, mock_get_db, mock_release):
+    @patch('core.base_repository.release_db')
+    @patch('core.base_repository.get_cursor')
+    @patch('core.base_repository.get_db')
+    def test_not_found(self, mock_get_db, mock_get_cursor, mock_release):
         """Returns None when company ID doesn't exist."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_get_db.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
+        mock_get_cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = None
 
         repo = CompanyRepository()

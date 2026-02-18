@@ -622,24 +622,25 @@ export default function AddInvoice() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-1.5">
-                <Label className="text-xs">
+                <Label htmlFor="inv-supplier" className="text-xs">
                   Supplier <span className="text-destructive">*</span>
                 </Label>
-                <Input value={supplier} onChange={(e) => setSupplier(e.target.value)} />
+                <Input id="inv-supplier" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">
+                  <Label htmlFor="inv-number" className="text-xs">
                     Invoice Number <span className="text-destructive">*</span>
                   </Label>
-                  <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+                  <Input id="inv-number" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">
+                  <Label htmlFor="inv-date" className="text-xs">
                     Invoice Date <span className="text-destructive">*</span>
                   </Label>
                   <Input
+                    id="inv-date"
                     type="date"
                     value={invoiceDate}
                     onChange={(e) => setInvoiceDate(e.target.value)}
@@ -649,10 +650,11 @@ export default function AddInvoice() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">
+                  <Label htmlFor="inv-value" className="text-xs">
                     Invoice Value <span className="text-destructive">*</span>
                   </Label>
                   <Input
+                    id="inv-value"
                     type="number"
                     step="0.01"
                     value={invoiceValue}
@@ -748,8 +750,9 @@ export default function AddInvoice() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs">Drive Link</Label>
+                <Label htmlFor="inv-drive-link" className="text-xs">Drive Link</Label>
                 <Input
+                  id="inv-drive-link"
                   value={driveLink}
                   onChange={(e) => setDriveLink(e.target.value)}
                   placeholder="https://drive.google.com/..."
@@ -757,8 +760,9 @@ export default function AddInvoice() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs">Comment</Label>
+                <Label htmlFor="inv-comment" className="text-xs">Comment</Label>
                 <Textarea
+                  id="inv-comment"
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   rows={2}

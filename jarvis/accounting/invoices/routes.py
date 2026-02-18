@@ -5,7 +5,7 @@ from flask_login import login_required, current_user
 
 from . import invoices_bp
 from .repositories import InvoiceRepository, AllocationRepository, SummaryRepository
-from core.utils.api_helpers import safe_error_response
+from core.utils.api_helpers import safe_error_response, handle_api_errors
 
 _invoice_repo = InvoiceRepository()
 _allocation_repo = AllocationRepository()
@@ -271,6 +271,7 @@ def api_parse_invoice():
 
 @invoices_bp.route('/api/parse-existing/<path:filepath>')
 @login_required
+@handle_api_errors
 def api_parse_existing(filepath):
     """Parse an existing invoice from the Invoices folder."""
     from core.config import INVOICES_DIR
@@ -280,51 +281,46 @@ def api_parse_existing(filepath):
     if not os.path.exists(file_path):
         return jsonify({'success': False, 'error': 'File not found'}), 404
 
-    try:
-        result = parse_invoice(file_path)
-        return jsonify({'success': True, 'data': result})
-    except Exception as e:
-        return safe_error_response(e)
+    result = parse_invoice(file_path)
+    return jsonify({'success': True, 'data': result})
 
 
 @invoices_bp.route('/api/suggest-department')
 @login_required
+@handle_api_errors
 def api_suggest_department():
     """Suggest department based on historical allocations for the same supplier."""
     supplier = request.args.get('supplier', '').strip()
     if not supplier:
         return jsonify({'suggestions': []})
 
+    from database import get_db, get_cursor, release_db
+    conn = get_db()
     try:
-        from database import get_db, get_cursor, release_db
-        conn = get_db()
-        try:
-            cur = get_cursor(conn)
-            cur.execute('''
-                SELECT a.company, a.brand, a.department, a.subdepartment, COUNT(*) as freq
-                FROM allocations a
-                JOIN invoices i ON a.invoice_id = i.id
-                WHERE LOWER(i.supplier) = LOWER(%s) AND i.deleted_at IS NULL
-                GROUP BY a.company, a.brand, a.department, a.subdepartment
-                ORDER BY freq DESC
-                LIMIT 5
-            ''', (supplier,))
-            rows = cur.fetchall()
-            suggestions = [
-                {
-                    'company': r['company'],
-                    'brand': r['brand'],
-                    'department': r['department'],
-                    'subdepartment': r['subdepartment'],
-                    'frequency': r['freq'],
-                }
-                for r in rows
-            ]
-            return jsonify({'suggestions': suggestions})
-        finally:
-            release_db(conn)
-    except Exception as e:
-        return safe_error_response(e)
+        cur = get_cursor(conn)
+        cur.execute('''
+            SELECT a.company, a.brand, a.department, a.subdepartment, COUNT(*) as freq
+            FROM allocations a
+            JOIN invoices i ON a.invoice_id = i.id
+            WHERE LOWER(i.supplier) = LOWER(%s) AND i.deleted_at IS NULL
+            GROUP BY a.company, a.brand, a.department, a.subdepartment
+            ORDER BY freq DESC
+            LIMIT 5
+        ''', (supplier,))
+        rows = cur.fetchall()
+        suggestions = [
+            {
+                'company': r['company'],
+                'brand': r['brand'],
+                'department': r['department'],
+                'subdepartment': r['subdepartment'],
+                'frequency': r['freq'],
+            }
+            for r in rows
+        ]
+        return jsonify({'suggestions': suggestions})
+    finally:
+        release_db(conn)
 
 
 @invoices_bp.route('/api/invoices')
@@ -653,6 +649,7 @@ def api_db_update_allocations(invoice_id):
 
 @invoices_bp.route('/api/allocations/<int:allocation_id>/comment', methods=['PUT'])
 @login_required
+@handle_api_errors
 def api_update_allocation_comment(allocation_id):
     """Update the comment for a specific allocation."""
     if not current_user.can_edit_invoices:
@@ -660,17 +657,15 @@ def api_update_allocation_comment(allocation_id):
     data = request.get_json()
     comment = data.get('comment', '')
 
-    try:
-        updated = _allocation_repo.update_comment(allocation_id, comment)
-        if updated:
-            return jsonify({'success': True})
-        return jsonify({'success': False, 'error': 'Allocation not found'}), 404
-    except Exception as e:
-        return safe_error_response(e)
+    updated = _allocation_repo.update_comment(allocation_id, comment)
+    if updated:
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Allocation not found'}), 404
 
 
 @invoices_bp.route('/api/invoices/<int:invoice_id>/drive-link', methods=['PUT'])
 @login_required
+@handle_api_errors
 def api_update_invoice_drive_link(invoice_id):
     """Update only the drive_link for an invoice."""
     if not current_user.can_edit_invoices:
@@ -681,13 +676,10 @@ def api_update_invoice_drive_link(invoice_id):
     if not drive_link:
         return jsonify({'success': False, 'error': 'drive_link is required'}), 400
 
-    try:
-        updated = _invoice_repo.update(invoice_id=invoice_id, drive_link=drive_link)
-        if updated:
-            return jsonify({'success': True})
-        return jsonify({'error': 'Invoice not found'}), 404
-    except Exception as e:
-        return safe_error_response(e)
+    updated = _invoice_repo.update(invoice_id=invoice_id, drive_link=drive_link)
+    if updated:
+        return jsonify({'success': True})
+    return jsonify({'error': 'Invoice not found'}), 404
 
 
 # ============== SEARCH ==============

@@ -13,7 +13,7 @@ from marketing.repositories import (
     ActivityRepository,
 )
 from core.roles.repositories import PermissionRepository
-from core.utils.api_helpers import get_json_or_error, safe_error_response
+from core.utils.api_helpers import get_json_or_error, safe_error_response, handle_api_errors
 
 logger = logging.getLogger('jarvis.marketing.routes.projects')
 
@@ -116,6 +116,7 @@ def api_list_projects():
 @marketing_bp.route('/api/projects', methods=['POST'])
 @login_required
 @mkt_permission_required('project', 'create')
+@handle_api_errors
 def api_create_project():
     """Create a new marketing project."""
     data, error = get_json_or_error()
@@ -127,37 +128,34 @@ def api_create_project():
     if not name or not company_id:
         return jsonify({'success': False, 'error': 'name and company_id are required'}), 400
 
-    try:
-        project_id = _project_repo.create(
-            name=name,
-            company_id=company_id,
-            owner_id=data.get('owner_id', current_user.id),
-            created_by=current_user.id,
-            description=data.get('description'),
-            company_ids=data.get('company_ids', []),
-            brand_id=data.get('brand_id'),
-            brand_ids=data.get('brand_ids', []),
-            department_structure_id=data.get('department_structure_id'),
-            department_ids=data.get('department_ids', []),
-            project_type=data.get('project_type', 'campaign'),
-            channel_mix=data.get('channel_mix', []),
-            start_date=data.get('start_date'),
-            end_date=data.get('end_date'),
-            total_budget=data.get('total_budget', 0),
-            currency=data.get('currency', 'RON'),
-            objective=data.get('objective'),
-            target_audience=data.get('target_audience'),
-            brief=data.get('brief', {}),
-            external_ref=data.get('external_ref'),
-            metadata=data.get('metadata', {}),
-        )
-        # Add creator as owner member
-        _member_repo.add(project_id, current_user.id, 'owner', current_user.id)
-        # Log activity
-        _activity_repo.log(project_id, 'created', actor_id=current_user.id, details={'name': name})
-        return jsonify({'success': True, 'id': project_id}), 201
-    except Exception as e:
-        return safe_error_response(e)
+    project_id = _project_repo.create(
+        name=name,
+        company_id=company_id,
+        owner_id=data.get('owner_id', current_user.id),
+        created_by=current_user.id,
+        description=data.get('description'),
+        company_ids=data.get('company_ids', []),
+        brand_id=data.get('brand_id'),
+        brand_ids=data.get('brand_ids', []),
+        department_structure_id=data.get('department_structure_id'),
+        department_ids=data.get('department_ids', []),
+        project_type=data.get('project_type', 'campaign'),
+        channel_mix=data.get('channel_mix', []),
+        start_date=data.get('start_date'),
+        end_date=data.get('end_date'),
+        total_budget=data.get('total_budget', 0),
+        currency=data.get('currency', 'RON'),
+        objective=data.get('objective'),
+        target_audience=data.get('target_audience'),
+        brief=data.get('brief', {}),
+        external_ref=data.get('external_ref'),
+        metadata=data.get('metadata', {}),
+    )
+    # Add creator as owner member
+    _member_repo.add(project_id, current_user.id, 'owner', current_user.id)
+    # Log activity
+    _activity_repo.log(project_id, 'created', actor_id=current_user.id, details={'name': name})
+    return jsonify({'success': True, 'id': project_id}), 201
 
 
 @marketing_bp.route('/api/projects/<int:project_id>', methods=['GET'])
@@ -182,6 +180,7 @@ def api_get_project(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>', methods=['PUT'])
 @login_required
 @mkt_permission_required('project', 'edit')
+@handle_api_errors
 def api_update_project(project_id):
     """Update project fields."""
     data, error = get_json_or_error()
@@ -192,14 +191,11 @@ def api_update_project(project_id):
     if not project:
         return jsonify({'success': False, 'error': 'Project not found'}), 404
 
-    try:
-        updated = _project_repo.update(project_id, **data)
-        if updated:
-            _activity_repo.log(project_id, 'updated', actor_id=current_user.id,
-                               details={'fields': list(data.keys())})
-        return jsonify({'success': True})
-    except Exception as e:
-        return safe_error_response(e)
+    updated = _project_repo.update(project_id, **data)
+    if updated:
+        _activity_repo.log(project_id, 'updated', actor_id=current_user.id,
+                           details={'fields': list(data.keys())})
+    return jsonify({'success': True})
 
 
 @marketing_bp.route('/api/projects/<int:project_id>', methods=['DELETE'])
@@ -217,6 +213,7 @@ def api_delete_project(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/submit-approval', methods=['POST'])
 @login_required
 @mkt_permission_required('project', 'approve')
+@handle_api_errors
 def api_submit_approval(project_id):
     """Submit project for approval via approval engine."""
     project = _project_repo.get_by_id(project_id)
@@ -227,66 +224,63 @@ def api_submit_approval(project_id):
 
     body = request.get_json(silent=True) or {}
 
-    try:
-        from core.approvals.engine import ApprovalEngine
-        engine = ApprovalEngine()
+    from core.approvals.engine import ApprovalEngine
+    engine = ApprovalEngine()
 
-        budget_lines = _budget_repo.get_lines_by_project(project_id)
-        context = {
-            'title': project['name'],
-            'amount': float(project['total_budget']),
-            'currency': project['currency'],
-            'project_type': project['project_type'],
-            'company': project.get('company_name', ''),
-            'brand': project.get('brand_name', ''),
-            'owner': project.get('owner_name', ''),
-            'channels': project.get('channel_mix', []),
-            'start_date': str(project.get('start_date', '')),
-            'end_date': str(project.get('end_date', '')),
-            'objective': project.get('objective', ''),
-            'budget_breakdown': [
-                {'channel': l['channel'], 'amount': float(l['planned_amount'])}
-                for l in budget_lines
-            ],
-        }
+    budget_lines = _budget_repo.get_lines_by_project(project_id)
+    context = {
+        'title': project['name'],
+        'amount': float(project['total_budget']),
+        'currency': project['currency'],
+        'project_type': project['project_type'],
+        'company': project.get('company_name', ''),
+        'brand': project.get('brand_name', ''),
+        'owner': project.get('owner_name', ''),
+        'channels': project.get('channel_mix', []),
+        'start_date': str(project.get('start_date', '')),
+        'end_date': str(project.get('end_date', '')),
+        'objective': project.get('objective', ''),
+        'budget_breakdown': [
+            {'channel': l['channel'], 'amount': float(l['planned_amount'])}
+            for l in budget_lines
+        ],
+    }
 
-        # Auto-detect stakeholders for approval routing
-        stakeholder_ids = _member_repo.get_stakeholder_ids(project_id)
-        if stakeholder_ids:
-            context['stakeholder_approver_ids'] = stakeholder_ids
-            if project.get('approval_mode') == 'all':
-                context['min_approvals_override'] = len(stakeholder_ids)
-        else:
-            # Backward compat: single approver picker
-            approver_id = body.get('approver_id')
-            if approver_id:
-                context['approver_user_id'] = int(approver_id)
+    # Auto-detect stakeholders for approval routing
+    stakeholder_ids = _member_repo.get_stakeholder_ids(project_id)
+    if stakeholder_ids:
+        context['stakeholder_approver_ids'] = stakeholder_ids
+        if project.get('approval_mode') == 'all':
+            context['min_approvals_override'] = len(stakeholder_ids)
+    else:
+        # Backward compat: single approver picker
+        approver_id = body.get('approver_id')
+        if approver_id:
+            context['approver_user_id'] = int(approver_id)
 
-        result = engine.submit(
-            entity_type='mkt_project',
-            entity_id=project_id,
-            context=context,
-            requested_by=current_user.id,
-        )
+    result = engine.submit(
+        entity_type='mkt_project',
+        entity_id=project_id,
+        context=context,
+        requested_by=current_user.id,
+    )
 
-        _project_repo.update_status(project_id, 'pending_approval')
-        _activity_repo.log(project_id, 'approval_submitted', actor_id=current_user.id)
+    _project_repo.update_status(project_id, 'pending_approval')
+    _activity_repo.log(project_id, 'approval_submitted', actor_id=current_user.id)
 
-        # Notify project members + stakeholders
-        from core.notifications.notify import notify_users
-        member_ids = _member_repo.get_user_ids_for_project(project_id)
-        notify_users(
-            [uid for uid in member_ids if uid != current_user.id],
-            title=f"Project '{project['name']}' submitted for approval",
-            link=f'/app/marketing/projects/{project_id}',
-            entity_type='mkt_project',
-            entity_id=project_id,
-            type='info',
-        )
+    # Notify project members + stakeholders
+    from core.notifications.notify import notify_users
+    member_ids = _member_repo.get_user_ids_for_project(project_id)
+    notify_users(
+        [uid for uid in member_ids if uid != current_user.id],
+        title=f"Project '{project['name']}' submitted for approval",
+        link=f'/app/marketing/projects/{project_id}',
+        entity_type='mkt_project',
+        entity_id=project_id,
+        type='info',
+    )
 
-        return jsonify({'success': True, 'request_id': result.get('request_id') if isinstance(result, dict) else result})
-    except Exception as e:
-        return safe_error_response(e)
+    return jsonify({'success': True, 'request_id': result.get('request_id') if isinstance(result, dict) else result})
 
 
 @marketing_bp.route('/api/projects/<int:project_id>/activate', methods=['POST'])
@@ -343,6 +337,7 @@ def api_complete_project(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/duplicate', methods=['POST'])
 @login_required
 @mkt_permission_required('project', 'create')
+@handle_api_errors
 def api_duplicate_project(project_id):
     """Clone project as new draft."""
     data = request.get_json() or {}
@@ -353,16 +348,13 @@ def api_duplicate_project(project_id):
             return jsonify({'success': False, 'error': 'Project not found'}), 404
         new_name = f"{project['name']} (Copy)"
 
-    try:
-        new_id = _project_repo.duplicate(project_id, new_name, current_user.id)
-        if not new_id:
-            return jsonify({'success': False, 'error': 'Original project not found'}), 404
-        _member_repo.add(new_id, current_user.id, 'owner', current_user.id)
-        _activity_repo.log(new_id, 'created', actor_id=current_user.id,
-                           details={'duplicated_from': project_id})
-        return jsonify({'success': True, 'id': new_id}), 201
-    except Exception as e:
-        return safe_error_response(e)
+    new_id = _project_repo.duplicate(project_id, new_name, current_user.id)
+    if not new_id:
+        return jsonify({'success': False, 'error': 'Original project not found'}), 404
+    _member_repo.add(new_id, current_user.id, 'owner', current_user.id)
+    _activity_repo.log(new_id, 'created', actor_id=current_user.id,
+                       details={'duplicated_from': project_id})
+    return jsonify({'success': True, 'id': new_id}), 201
 
 
 # ---- Activity ----

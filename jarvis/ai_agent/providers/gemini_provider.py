@@ -128,6 +128,62 @@ class GeminiProvider(BaseProvider):
                 logger.error(f"Gemini API error: {e}")
                 raise LLMProviderError(f"Gemini API error: {e}")
 
+    def generate_structured(
+        self,
+        model_name: str,
+        messages: list[dict[str, str]],
+        max_tokens: int = 1024,
+        temperature: float = 0.3,
+        api_key: str | None = None,
+        **kwargs,
+    ):
+        """Generate structured JSON using Gemini's response_mime_type."""
+        import json as json_module
+
+        try:
+            import google.generativeai as genai
+        except ImportError:
+            raise LLMProviderError("google-generativeai package not installed")
+
+        key = api_key or os.environ.get('GOOGLE_AI_API_KEY')
+        if not key:
+            raise LLMAuthenticationError("GOOGLE_AI_API_KEY not found")
+
+        genai.configure(api_key=key)
+
+        system_instruction = kwargs.pop('system', None)
+        formatted_messages = self._format_for_gemini(messages)
+        temperature = max(0.0, min(1.0, temperature))
+
+        try:
+            generation_config = {
+                'temperature': temperature,
+                'max_output_tokens': max_tokens,
+                'response_mime_type': 'application/json',
+            }
+
+            model_kwargs = {'model_name': model_name}
+            if system_instruction:
+                model_kwargs['system_instruction'] = system_instruction
+
+            model = genai.GenerativeModel(**model_kwargs)
+            chat = model.start_chat(history=formatted_messages[:-1] if len(formatted_messages) > 1 else [])
+            last_message = formatted_messages[-1]['parts'][0] if formatted_messages else ""
+            response = chat.send_message(last_message, generation_config=generation_config)
+
+            return json_module.loads(response.text)
+
+        except Exception as e:
+            error_str = str(e).lower()
+            if 'quota' in error_str or 'rate' in error_str:
+                raise LLMRateLimitError(f"Rate limit exceeded: {e}")
+            elif 'api key' in error_str or 'auth' in error_str:
+                raise LLMAuthenticationError(f"Authentication failed: {e}")
+            logger.warning(f"Gemini structured output failed, falling back: {e}")
+            return super().generate_structured(
+                model_name, messages, max_tokens, temperature, api_key, **kwargs
+            )
+
     def _format_for_gemini(
         self,
         messages: List[Dict[str, str]],

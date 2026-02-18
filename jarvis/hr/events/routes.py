@@ -6,7 +6,7 @@ from flask_login import login_required, current_user
 
 from . import events_bp
 from .utils import can_edit_bonus, get_lock_status
-from core.utils.api_helpers import safe_error_response
+from core.utils.api_helpers import handle_api_errors
 
 from core.roles.repositories import PermissionRepository
 check_permission_v2 = PermissionRepository().check_permission_v2
@@ -956,16 +956,14 @@ def api_get_company_brands():
 @events_bp.route('/api/structure/company-brands', methods=['POST'])
 @login_required
 @hr_permission_required('structure', 'edit')
+@handle_api_errors
 def api_create_company_brand():
     """API: Create a new company brand."""
     from models import clear_structure_cache
     data = request.get_json()
-    try:
-        brand_id = create_company_brand(data['company_id'], data['brand'])
-        clear_structure_cache()
-        return jsonify({'success': True, 'id': brand_id})
-    except Exception as e:
-        return safe_error_response(e)
+    brand_id = create_company_brand(data['company_id'], data['brand'])
+    clear_structure_cache()
+    return jsonify({'success': True, 'id': brand_id})
 
 
 @events_bp.route('/api/structure/company-brands/<int:brand_id>', methods=['PUT'])
@@ -1088,16 +1086,14 @@ def api_get_master_brands():
 @events_bp.route('/api/master/brands', methods=['POST'])
 @login_required
 @hr_permission_required('structure', 'edit')
+@handle_api_errors
 def api_create_master_brand():
     """API: Create a new brand in master table."""
     from models import clear_structure_cache
     data = request.get_json()
-    try:
-        brand_id = create_master_brand(data['name'])
-        clear_structure_cache()
-        return jsonify({'success': True, 'id': brand_id})
-    except Exception as e:
-        return safe_error_response(e)
+    brand_id = create_master_brand(data['name'])
+    clear_structure_cache()
+    return jsonify({'success': True, 'id': brand_id})
 
 
 @events_bp.route('/api/master/brands/<int:brand_id>', methods=['PUT'])
@@ -1137,16 +1133,14 @@ def api_get_master_departments():
 @events_bp.route('/api/master/departments', methods=['POST'])
 @login_required
 @hr_permission_required('structure', 'edit')
+@handle_api_errors
 def api_create_master_department():
     """API: Create a new department in master table."""
     from models import clear_structure_cache
     data = request.get_json()
-    try:
-        dept_id = create_master_department(data['name'])
-        clear_structure_cache()
-        return jsonify({'success': True, 'id': dept_id})
-    except Exception as e:
-        return safe_error_response(e)
+    dept_id = create_master_department(data['name'])
+    clear_structure_cache()
+    return jsonify({'success': True, 'id': dept_id})
 
 
 @events_bp.route('/api/master/departments/<int:dept_id>', methods=['PUT'])
@@ -1186,16 +1180,14 @@ def api_get_master_subdepartments():
 @events_bp.route('/api/master/subdepartments', methods=['POST'])
 @login_required
 @hr_permission_required('structure', 'edit')
+@handle_api_errors
 def api_create_master_subdepartment():
     """API: Create a new subdepartment in master table."""
     from models import clear_structure_cache
     data = request.get_json()
-    try:
-        subdept_id = create_master_subdepartment(data['name'])
-        clear_structure_cache()
-        return jsonify({'success': True, 'id': subdept_id})
-    except Exception as e:
-        return safe_error_response(e)
+    subdept_id = create_master_subdepartment(data['name'])
+    clear_structure_cache()
+    return jsonify({'success': True, 'id': subdept_id})
 
 
 @events_bp.route('/api/master/subdepartments/<int:subdept_id>', methods=['PUT'])

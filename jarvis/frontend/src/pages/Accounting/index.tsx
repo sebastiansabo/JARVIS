@@ -707,7 +707,7 @@ function ColumnToggle({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" title="Toggle columns">
+        <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" title="Toggle columns" aria-label="Toggle columns">
           <Columns3 className="h-4 w-4" />
         </Button>
       </PopoverTrigger>
@@ -956,14 +956,14 @@ const InvoiceRow = memo(function InvoiceRow({
 
   return (
     <>
-      <TableRow className={cn('cursor-pointer hover:bg-muted/40', isSelected && 'bg-muted/50')} onClick={() => onToggleExpand(inv.id)}>
+      <TableRow className={cn('cursor-pointer hover:bg-muted/40', isSelected && 'bg-muted/50')} onClick={() => onToggleExpand(inv.id)} aria-expanded={isExpanded}>
         <TableCell onClick={(e) => e.stopPropagation()}>
           <Checkbox checked={isSelected} onCheckedChange={() => onToggleSelect(inv.id)} />
         </TableCell>
         <TableCell>
           <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
             {hasAllocations &&
-              (isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />)}
+              (isExpanded ? <ChevronDown className="h-3 w-3" aria-hidden="true" /> : <ChevronRight className="h-3 w-3" aria-hidden="true" />)}
             {inv.id}
           </span>
         </TableCell>

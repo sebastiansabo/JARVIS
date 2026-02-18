@@ -1,6 +1,5 @@
 """Marketing OKR routes — objectives and key results."""
 
-import json as json_module
 import logging
 from flask import jsonify, request
 from flask_login import login_required, current_user
@@ -206,23 +205,14 @@ Return ONLY a JSON array:
             return jsonify({'success': False, 'error': 'No AI model configured'}), 503
 
         provider = svc.get_provider(model_config.provider.value)
-        response = provider.generate(
+        result = provider.generate_structured(
             model_name=model_config.model_name,
             messages=[{'role': 'user', 'content': prompt}],
             max_tokens=1024,
-            temperature=0.7,
+            temperature=0.5,
             system='You are a marketing OKR assistant. Return ONLY valid JSON arrays.',
         )
-
-        # Parse JSON
-        text = response.content.strip()
-        if '```' in text:
-            text = text.split('```')[1].split('```')[0]
-            if text.startswith('json'):
-                text = text[4:]
-        suggestions = json_module.loads(text.strip())
-        if not isinstance(suggestions, list):
-            suggestions = []
+        suggestions = result if isinstance(result, list) else []
 
         # Validate
         valid_kpi_ids = {k['id'] for k in kpis}

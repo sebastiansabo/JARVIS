@@ -368,22 +368,22 @@ Return a JSON array of tag IDs that best match this record, ordered by relevance
 Example: [12, 5, 23]
 Return ONLY the JSON array, no other text."""
 
-        # Call LLM
-        import json as json_module
+        # Call LLM with structured output
         from ai_agent.services.ai_agent_service import AIAgentService
         svc = AIAgentService()
+        model_config = svc.model_config_repo.get_default()
+        if not model_config:
+            return jsonify({'suggestions': []})
 
-        response = svc.provider.generate(prompt, system_prompt='You are a tag classification assistant. Return ONLY a JSON array of tag IDs.')
-
-        # Parse response
-        text = response.content.strip()
-        if '```' in text:
-            text = text.split('```')[1].split('```')[0]
-            if text.startswith('json'):
-                text = text[4:]
-        suggested_ids = json_module.loads(text)
-        if not isinstance(suggested_ids, list):
-            suggested_ids = []
+        provider = svc.get_provider(model_config.provider.value)
+        result = provider.generate_structured(
+            model_name=model_config.model_name,
+            messages=[{'role': 'user', 'content': prompt}],
+            max_tokens=512,
+            temperature=0.3,
+            system='You are a tag classification assistant. Return ONLY a JSON array of tag IDs.',
+        )
+        suggested_ids = result if isinstance(result, list) else []
 
         # Map IDs back to tag info
         tag_map = {t['id']: t for t in available}

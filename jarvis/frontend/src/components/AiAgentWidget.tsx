@@ -29,6 +29,7 @@ export function AiAgentWidget() {
       <Button
         onClick={() => setWidgetOpen(!isWidgetOpen)}
         size="icon"
+        aria-label={isWidgetOpen ? 'Close AI Agent' : 'Open AI Agent'}
         className={cn(
           'fixed bottom-5 right-5 z-50 h-12 w-12 rounded-full shadow-lg transition-transform hover:scale-105',
           isWidgetOpen && 'bg-muted text-muted-foreground hover:bg-muted/80',
@@ -60,7 +61,7 @@ export function AiAgentWidget() {
             <div className="flex flex-1 flex-col">
               {/* Widget header */}
               <div className="flex items-center gap-2 border-b px-3 py-2">
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={toggleSidebar}>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={toggleSidebar} aria-label={isSidebarOpen ? 'Close conversation list' : 'Open conversation list'}>
                   {isSidebarOpen ? (
                     <PanelLeftClose className="h-4 w-4" />
                   ) : (

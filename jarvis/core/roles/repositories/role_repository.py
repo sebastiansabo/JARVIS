@@ -4,35 +4,21 @@ Handles all database operations for role management.
 """
 
 import logging
-from typing import Optional
 
-from database import get_db, get_cursor, release_db, dict_from_row
+from core.base_repository import BaseRepository
 
 logger = logging.getLogger('jarvis.core.roles.role_repository')
 
 
-class RoleRepository:
+class RoleRepository(BaseRepository):
 
     def get_all(self) -> list[dict]:
         """Get all roles."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('SELECT * FROM roles ORDER BY name')
-            return [dict_from_row(row) for row in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        return self.query_all('SELECT * FROM roles ORDER BY name')
 
-    def get(self, role_id: int) -> Optional[dict]:
+    def get(self, role_id: int) -> dict | None:
         """Get a specific role by ID."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('SELECT * FROM roles WHERE id = %s', (role_id,))
-            role = cursor.fetchone()
-            return dict_from_row(role) if role else None
-        finally:
-            release_db(conn)
+        return self.query_one('SELECT * FROM roles WHERE id = %s', (role_id,))
 
     def save(self, name: str, description: str = None,
              can_add_invoices: bool = False, can_edit_invoices: bool = False,
@@ -42,10 +28,8 @@ class RoleRepository:
              can_access_hr: bool = False, is_hr_manager: bool = False,
              can_access_efactura: bool = False, can_access_statements: bool = False) -> int:
         """Save a new role. Returns role ID."""
-        conn = get_db()
         try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
+            result = self.execute('''
                 INSERT INTO roles (name, description, can_add_invoices, can_edit_invoices, can_delete_invoices,
                     can_view_invoices, can_access_accounting, can_access_settings,
                     can_access_connectors, can_access_templates, can_access_hr, is_hr_manager,
@@ -57,17 +41,12 @@ class RoleRepository:
                 can_view_invoices, can_access_accounting, can_access_settings,
                 can_access_connectors, can_access_templates, can_access_hr, is_hr_manager,
                 can_access_efactura, can_access_statements
-            ))
-            role_id = cursor.fetchone()['id']
-            conn.commit()
-            return role_id
+            ), returning=True)
+            return result['id']
         except Exception as e:
-            conn.rollback()
             if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
                 raise ValueError(f"Role '{name}' already exists")
             raise
-        finally:
-            release_db(conn)
 
     def update(self, role_id: int, name: str = None, description: str = None,
                can_add_invoices: bool = None, can_edit_invoices: bool = None,
@@ -117,32 +96,22 @@ class RoleRepository:
         if not updates:
             return False
         params.append(role_id)
-        conn = get_db()
         try:
-            cursor = get_cursor(conn)
-            cursor.execute(f"UPDATE roles SET {', '.join(updates)} WHERE id = %s", params)
-            updated = cursor.rowcount > 0
-            conn.commit()
-            return updated
+            rowcount = self.execute(
+                f"UPDATE roles SET {', '.join(updates)} WHERE id = %s", params
+            )
+            return rowcount > 0
         except Exception as e:
-            conn.rollback()
             if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
                 raise ValueError("Role with that name already exists")
             raise
-        finally:
-            release_db(conn)
 
     def delete(self, role_id: int) -> bool:
         """Delete a role. Returns False if role is in use by users."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             cursor.execute('SELECT COUNT(*) as count FROM users WHERE role_id = %s', (role_id,))
             if cursor.fetchone()['count'] > 0:
                 raise ValueError("Cannot delete role that is assigned to users")
             cursor.execute('DELETE FROM roles WHERE id = %s', (role_id,))
-            deleted = cursor.rowcount > 0
-            conn.commit()
-            return deleted
-        finally:
-            release_db(conn)
+            return cursor.rowcount > 0
+        return self.execute_many(_work)

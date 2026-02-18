@@ -408,8 +408,9 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label>Total Budget</Label>
+          <Label htmlFor="mkt-total-budget">Total Budget</Label>
           <Input
+            id="mkt-total-budget"
             type="number"
             value={form.total_budget}
             onChange={(e) => setForm((f) => ({ ...f, total_budget: e.target.value }))}
@@ -475,16 +476,18 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
       {/* Dates */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <Label>Start Date</Label>
+          <Label htmlFor="mkt-start-date">Start Date</Label>
           <Input
+            id="mkt-start-date"
             type="date"
             value={form.start_date}
             onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
           />
         </div>
         <div className="space-y-1.5">
-          <Label>End Date</Label>
+          <Label htmlFor="mkt-end-date">End Date</Label>
           <Input
+            id="mkt-end-date"
             type="date"
             value={form.end_date}
             onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))}
@@ -494,8 +497,9 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
 
       {/* Description */}
       <div className="space-y-1.5">
-        <Label>Description</Label>
+        <Label htmlFor="mkt-description">Description</Label>
         <Textarea
+          id="mkt-description"
           value={form.description}
           onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
           placeholder="Brief project description..."
@@ -505,8 +509,9 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
 
       {/* Objective */}
       <div className="space-y-1.5">
-        <Label>Objective</Label>
+        <Label htmlFor="mkt-objective">Objective</Label>
         <Textarea
+          id="mkt-objective"
           value={form.objective}
           onChange={(e) => setForm((f) => ({ ...f, objective: e.target.value }))}
           placeholder="What does success look like?"
@@ -516,8 +521,9 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
 
       {/* Target Audience */}
       <div className="space-y-1.5">
-        <Label>Target Audience</Label>
+        <Label htmlFor="mkt-target-audience">Target Audience</Label>
         <Input
+          id="mkt-target-audience"
           value={form.target_audience}
           onChange={(e) => setForm((f) => ({ ...f, target_audience: e.target.value }))}
           placeholder="e.g., Males 25-45, urban, car enthusiasts"
@@ -526,8 +532,9 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
 
       {/* External Ref */}
       <div className="space-y-1.5">
-        <Label>External Reference</Label>
+        <Label htmlFor="mkt-external-ref">External Reference</Label>
         <Input
+          id="mkt-external-ref"
           value={form.external_ref}
           onChange={(e) => setForm((f) => ({ ...f, external_ref: e.target.value }))}
           placeholder="PO number, agency ref, etc."

@@ -46,7 +46,7 @@ export function SearchInput({
         className="pl-8 pr-8"
       />
       {localValue && (
-        <button onClick={clear} className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground">
+        <button onClick={clear} aria-label="Clear search" className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
         </button>
       )}

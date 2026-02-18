@@ -124,6 +124,79 @@ class ClaudeProvider(BaseProvider):
             logger.error(f"Unexpected error calling Claude: {e}")
             raise LLMProviderError(f"Failed to call Claude API: {e}")
 
+    def generate_structured(
+        self,
+        model_name: str,
+        messages: list[dict[str, str]],
+        max_tokens: int = 1024,
+        temperature: float = 0.3,
+        api_key: str | None = None,
+        **kwargs,
+    ):
+        """Generate structured JSON using Claude's tool_use trick.
+
+        Defines a single tool whose input_schema matches the desired output,
+        forcing Claude to return valid JSON as the tool input.
+        Falls back to text extraction if tool_use doesn't fire.
+        """
+        key = api_key or os.environ.get('ANTHROPIC_API_KEY')
+        if not key:
+            raise LLMAuthenticationError("ANTHROPIC_API_KEY not found")
+
+        system_content, remaining_messages = self.extract_system_message(messages)
+        if 'system' in kwargs:
+            system_content = kwargs.pop('system')
+
+        formatted_messages = self.format_messages(remaining_messages)
+        temperature = max(0.0, min(1.0, temperature))
+
+        # Define a tool that accepts any JSON
+        tools = [{
+            "name": "structured_output",
+            "description": "Return structured JSON data",
+            "input_schema": {
+                "type": "object",
+                "additionalProperties": True,
+            },
+        }]
+
+        try:
+            client = anthropic.Anthropic(api_key=key)
+            request_params = {
+                'model': model_name,
+                'max_tokens': max_tokens,
+                'temperature': temperature,
+                'messages': formatted_messages,
+                'tools': tools,
+                'tool_choice': {"type": "any"},
+            }
+            if system_content:
+                request_params['system'] = system_content
+
+            response = client.messages.create(**request_params)
+
+            # Extract tool input (the structured JSON)
+            for block in response.content:
+                if block.type == 'tool_use':
+                    return block.input
+
+            # Fallback: extract from text content
+            for block in response.content:
+                if block.type == 'text' and block.text.strip():
+                    return self._extract_json(block.text)
+
+            raise ValueError("Claude returned no tool_use or text content")
+
+        except (anthropic.RateLimitError, anthropic.AuthenticationError, anthropic.APIError):
+            raise
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.warning(f"Claude structured output failed, falling back: {e}")
+            return super().generate_structured(
+                model_name, messages, max_tokens, temperature, api_key, **kwargs
+            )
+
     def format_messages(
         self,
         messages: List[Dict[str, str]],

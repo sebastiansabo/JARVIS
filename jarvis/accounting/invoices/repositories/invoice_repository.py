@@ -79,6 +79,9 @@ class InvoiceRepository:
                         conditions.append('ds.subdepartment = %s')
                         params.append(subdept)
 
+                    # Guard: conditions are code-controlled literals, never user input
+                    assert all(isinstance(c, str) and '%s' in c for c in conditions), \
+                        "SQL conditions must be parameterized strings"
                     cursor.execute(f'''
                         SELECT COALESCE(
                             (SELECT string_agg(u.name, ', ')

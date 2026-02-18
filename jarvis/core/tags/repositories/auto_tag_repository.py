@@ -24,6 +24,10 @@ class AutoTagRepository:
             if entity_type:
                 conditions.append('r.entity_type = %s')
                 params.append(entity_type)
+            # Guard: conditions are code-controlled literals, never user input
+            if conditions:
+                assert all(isinstance(c, str) and ('%s' in c or c == 'r.is_active = TRUE') for c in conditions), \
+                    "SQL conditions must be parameterized strings"
             where = f'WHERE {" AND ".join(conditions)}' if conditions else ''
             cursor.execute(f'''
                 SELECT r.*, t.name as tag_name, t.color as tag_color,

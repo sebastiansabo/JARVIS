@@ -5,53 +5,37 @@ Handles all database operations for user filter presets.
 
 import json
 import logging
-from typing import Optional
 
-from database import get_db, get_cursor, release_db, dict_from_row
+from core.base_repository import BaseRepository
 
 logger = logging.getLogger('jarvis.core.presets.repository')
 
 
-class PresetRepository:
+class PresetRepository(BaseRepository):
 
     def get_presets(self, user_id: int, page_key: str) -> list:
         """Get all filter presets for a user on a specific page."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT id, user_id, page_key, name, is_default, preset_data,
-                       created_at, updated_at
-                FROM user_filter_presets
-                WHERE user_id = %s AND page_key = %s
-                ORDER BY is_default DESC, name ASC
-            ''', (user_id, page_key))
-            return [dict_from_row(row) for row in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        return self.query_all('''
+            SELECT id, user_id, page_key, name, is_default, preset_data,
+                   created_at, updated_at
+            FROM user_filter_presets
+            WHERE user_id = %s AND page_key = %s
+            ORDER BY is_default DESC, name ASC
+        ''', (user_id, page_key))
 
-    def get_default(self, user_id: int, page_key: str) -> Optional[dict]:
+    def get_default(self, user_id: int, page_key: str) -> dict | None:
         """Get the default preset for a user on a specific page."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT id, user_id, page_key, name, is_default, preset_data,
-                       created_at, updated_at
-                FROM user_filter_presets
-                WHERE user_id = %s AND page_key = %s AND is_default = TRUE
-                LIMIT 1
-            ''', (user_id, page_key))
-            row = cursor.fetchone()
-            return dict_from_row(row) if row else None
-        finally:
-            release_db(conn)
+        return self.query_one('''
+            SELECT id, user_id, page_key, name, is_default, preset_data,
+                   created_at, updated_at
+            FROM user_filter_presets
+            WHERE user_id = %s AND page_key = %s AND is_default = TRUE
+            LIMIT 1
+        ''', (user_id, page_key))
 
     def save(self, user_id: int, page_key: str, name: str, preset_data: dict, is_default: bool = False) -> int:
         """Create a new filter preset. Returns preset id."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             if is_default:
                 cursor.execute('''
                     UPDATE user_filter_presets SET is_default = FALSE, updated_at = CURRENT_TIMESTAMP
@@ -63,21 +47,13 @@ class PresetRepository:
                 VALUES (%s, %s, %s, %s::jsonb, %s)
                 RETURNING id
             ''', (user_id, page_key, name, json.dumps(preset_data), is_default))
-            preset_id = cursor.fetchone()['id']
-            conn.commit()
-            return preset_id
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+            return cursor.fetchone()['id']
+        return self.execute_many(_work)
 
     def update(self, preset_id: int, user_id: int, name: str = None,
                preset_data: dict = None, is_default: bool = None) -> bool:
         """Update an existing preset. Returns True if found and updated."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
+        def _work(cursor):
             cursor.execute('SELECT page_key FROM user_filter_presets WHERE id = %s AND user_id = %s', (preset_id, user_id))
             row = cursor.fetchone()
             if not row:
@@ -108,25 +84,13 @@ class PresetRepository:
                 UPDATE user_filter_presets SET {', '.join(updates)}
                 WHERE id = %s AND user_id = %s
             ''', params)
-            conn.commit()
             return True
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute_many(_work)
 
     def delete(self, preset_id: int, user_id: int) -> bool:
         """Delete a preset. Returns True if found and deleted."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('DELETE FROM user_filter_presets WHERE id = %s AND user_id = %s', (preset_id, user_id))
-            deleted = cursor.rowcount > 0
-            conn.commit()
-            return deleted
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        rowcount = self.execute(
+            'DELETE FROM user_filter_presets WHERE id = %s AND user_id = %s',
+            (preset_id, user_id)
+        )
+        return rowcount > 0

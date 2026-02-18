@@ -67,6 +67,24 @@ QUARTER_MAP = {
 }
 
 
+# Simple/greeting keywords — queries that don't need a powerful model
+SIMPLE_KEYWORDS = {
+    'hello', 'hi', 'hey', 'buna', 'salut', 'ciao',
+    'thanks', 'thank you', 'mersi', 'multumesc',
+    'bye', 'goodbye', 'pa', 'ok', 'okay',
+    'who are you', 'what are you', 'what can you do',
+    'help', 'ajutor',
+}
+
+# Complex keywords — queries that benefit from a powerful model
+COMPLEX_KEYWORDS = {
+    'analyze', 'analyse', 'explain', 'why', 'recommend', 'suggest',
+    'forecast', 'predict', 'compare', 'correlation', 'anomaly',
+    'strategy', 'optimize', 'plan', 'evaluate', 'assess',
+    'detailed', 'in-depth', 'comprehensive', 'elaborate',
+}
+
+
 @dataclass
 class ParsedQuery:
     """Result of parsing a user query for analytics intent."""
@@ -75,6 +93,7 @@ class ParsedQuery:
     group_by: Optional[str] = None
     filters: Dict[str, str] = field(default_factory=dict)
     top_n: Optional[int] = None
+    complexity: str = 'default'  # 'simple', 'default', or 'complex'
 
 
 def parse_query(user_message: str, known_entities: Optional[Dict[str, List[str]]] = None) -> ParsedQuery:
@@ -115,9 +134,12 @@ def parse_query(user_message: str, known_entities: Optional[Dict[str, List[str]]
     # 6. Extract top N
     result.top_n = _extract_top_n(msg_lower)
 
+    # 7. Classify complexity
+    result.complexity = classify_complexity(user_message)
+
     logger.debug(
         f"Parsed query: analytics={result.is_analytics}, types={result.query_types}, "
-        f"group_by={result.group_by}, filters={result.filters}"
+        f"group_by={result.group_by}, filters={result.filters}, complexity={result.complexity}"
     )
 
     return result
@@ -315,3 +337,32 @@ def _extract_top_n(msg_lower: str) -> Optional[int]:
         return 10  # Default top 10
 
     return None
+
+
+def classify_complexity(user_message: str) -> str:
+    """Classify query complexity for model routing.
+
+    Returns:
+        'simple'  — greetings, thanks, short lookups → route to cheap model
+        'complex' — analysis, comparisons, reasoning → route to powerful model
+        'default' — everything else → use default model
+    """
+    msg_lower = user_message.lower().strip()
+    word_count = len(msg_lower.split())
+
+    # Very short messages that are greetings/thanks
+    if word_count <= 5:
+        for kw in SIMPLE_KEYWORDS:
+            if kw in msg_lower:
+                return 'simple'
+
+    # Complex analysis requests
+    for kw in COMPLEX_KEYWORDS:
+        if kw in msg_lower:
+            return 'complex'
+
+    # Long multi-sentence queries tend to be complex
+    if word_count > 40:
+        return 'complex'
+
+    return 'default'

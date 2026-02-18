@@ -81,6 +81,22 @@ def safe_error_response(e, status_code=500):
     return jsonify({'success': False, 'error': 'An internal error occurred'}), status_code
 
 
+def handle_api_errors(f):
+    """Decorator that wraps a route in try/except and returns safe_error_response.
+
+    Use on routes where the entire body can be wrapped. For routes that need
+    partial error handling (e.g., different status codes per branch), use
+    safe_error_response() directly instead.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception as e:
+            return safe_error_response(e)
+    return decorated
+
+
 # ============== Rate Limiter ==============
 
 class RateLimiter:
