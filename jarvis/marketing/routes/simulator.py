@@ -12,6 +12,62 @@ from marketing import marketing_bp
 
 logger = logging.getLogger('jarvis.marketing.routes.simulator')
 
+SIM_DEFAULTS = {
+    'awareness_threshold': 0.42,
+    'awareness_multiplier': 1.7,
+    'consideration_threshold': 0.14,
+    'consideration_multiplier': 1.5,
+    'auto_month_pcts': [0.40, 0.35, 0.25],
+    'auto_stage_weights': [
+        {'awareness': 0.80, 'consideration': 0.10, 'conversion': 0.10},
+        {'awareness': 0.50, 'consideration': 0.25, 'conversion': 0.25},
+        {'awareness': 0.20, 'consideration': 0.30, 'conversion': 0.50},
+    ],
+    'default_active': {
+        'awareness': ['meta_traffic_aw', 'meta_reach', 'meta_video_views', 'youtube_skippable_aw', 'google_display'],
+        'consideration': ['meta_engagement', 'special_activation'],
+        'conversion': ['google_pmax_conv', 'meta_conversion'],
+    },
+}
+
+
+@marketing_bp.route('/api/simulator/settings', methods=['GET'])
+@login_required
+def api_sim_settings_get():
+    """Return simulator configuration (thresholds, multipliers, auto-distribute weights)."""
+    conn = get_db()
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("SELECT value FROM notification_settings WHERE key = 'sim_config'")
+        row = cursor.fetchone()
+        if row:
+            config = json.loads(row['value'])
+            merged = {**SIM_DEFAULTS, **config}
+        else:
+            merged = {**SIM_DEFAULTS}
+        return jsonify({'settings': merged})
+    finally:
+        release_db(conn)
+
+
+@marketing_bp.route('/api/simulator/settings', methods=['PUT'])
+@login_required
+def api_sim_settings_put():
+    """Save simulator configuration."""
+    data = request.get_json(silent=True) or {}
+    conn = get_db()
+    try:
+        cursor = get_cursor(conn)
+        val = json.dumps(data)
+        cursor.execute('''
+            INSERT INTO notification_settings (key, value) VALUES ('sim_config', %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        ''', (val,))
+        conn.commit()
+        return jsonify({'success': True})
+    finally:
+        release_db(conn)
+
 
 @marketing_bp.route('/api/simulator/benchmarks', methods=['GET'])
 @login_required

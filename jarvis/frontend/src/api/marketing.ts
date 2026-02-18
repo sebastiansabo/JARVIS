@@ -20,6 +20,7 @@ import type {
   HrEventSearchResult,
   InvoiceSearchResult,
   SimBenchmark,
+  SimSettings,
 } from '@/types/marketing'
 
 const BASE = '/marketing/api'
@@ -288,4 +289,10 @@ export const marketingApi = {
 
   deleteSimChannel: (channelKey: string) =>
     api.delete<{ success: boolean; deleted: number }>(`${BASE}/simulator/benchmarks/channel/${channelKey}`),
+
+  getSimSettings: () =>
+    api.get<{ settings: SimSettings }>(`${BASE}/simulator/settings`),
+
+  updateSimSettings: (data: Partial<SimSettings>) =>
+    api.put<{ success: boolean }>(`${BASE}/simulator/settings`, data),
 }

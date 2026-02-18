@@ -359,3 +359,17 @@ export interface SimTotals {
   total_cars: number
   cost_per_car: number
 }
+
+export interface SimSettings {
+  awareness_threshold: number
+  awareness_multiplier: number
+  consideration_threshold: number
+  consideration_multiplier: number
+  auto_month_pcts: [number, number, number]
+  auto_stage_weights: [
+    { awareness: number; consideration: number; conversion: number },
+    { awareness: number; consideration: number; conversion: number },
+    { awareness: number; consideration: number; conversion: number },
+  ]
+  default_active: Record<string, string[]>
+}

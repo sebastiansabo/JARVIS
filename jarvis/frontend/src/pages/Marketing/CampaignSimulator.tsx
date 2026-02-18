@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, Fragment } from 'react'
+import { useMemo, useState, useCallback, Fragment, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -14,10 +14,10 @@ import { cn } from '@/lib/utils'
 import {
   RotateCcw, Wand2, Plus, Users, Trash2,
   Target, DollarSign, Car, TrendingUp, ChevronDown, ChevronRight,
-  Info, Sparkles, Settings2, Loader2, Save, X, Columns3,
+  Info, Sparkles, Settings2, Loader2, Save, X, Columns3, SlidersHorizontal,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
-import type { SimBenchmark, SimStageTotal, SimTotals } from '@/types/marketing'
+import type { SimBenchmark, SimSettings, SimStageTotal, SimTotals } from '@/types/marketing'
 
 // ── Constants ──
 
@@ -51,24 +51,22 @@ const STAGE_CONFIG: Record<FunnelStage, {
   },
 }
 
-const DEFAULT_ACTIVE: Record<FunnelStage, Set<string>> = {
-  awareness: new Set(['meta_traffic_aw', 'meta_reach', 'meta_video_views', 'youtube_skippable_aw', 'google_display']),
-  consideration: new Set(['meta_engagement', 'special_activation']),
-  conversion: new Set(['google_pmax_conv', 'meta_conversion']),
-}
-
-const AWARENESS_THRESHOLD = 0.42
-const AWARENESS_MULTIPLIER = 1.7
-const CONSIDERATION_THRESHOLD = 0.14
-const CONSIDERATION_MULTIPLIER = 1.5
-
-const AUTO_DISTRIBUTE = {
-  months: [0.40, 0.35, 0.25],
-  stages: [
+const FALLBACK_SETTINGS: SimSettings = {
+  awareness_threshold: 0.42,
+  awareness_multiplier: 1.7,
+  consideration_threshold: 0.14,
+  consideration_multiplier: 1.5,
+  auto_month_pcts: [0.40, 0.35, 0.25],
+  auto_stage_weights: [
     { awareness: 0.80, consideration: 0.10, conversion: 0.10 },
     { awareness: 0.50, consideration: 0.25, conversion: 0.25 },
     { awareness: 0.20, consideration: 0.30, conversion: 0.50 },
   ],
+  default_active: {
+    awareness: ['meta_traffic_aw', 'meta_reach', 'meta_video_views', 'youtube_skippable_aw', 'google_display'],
+    consideration: ['meta_engagement', 'special_activation'],
+    conversion: ['google_pmax_conv', 'meta_conversion'],
+  },
 }
 
 // ── Helpers ──
@@ -86,21 +84,24 @@ export default function CampaignSimulator() {
   const [totalBudget, setTotalBudget] = useState(10000)
   const [leadToSaleRate, setLeadToSaleRate] = useState(5)
   const [allocations, setAllocations] = useState<Record<string, number>>({})
-  const [activeChannels, setActiveChannels] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {}
-    for (const [, keys] of Object.entries(DEFAULT_ACTIVE)) {
-      for (const k of keys) init[k] = true
-    }
-    return init
-  })
+  const [activeChannels, setActiveChannels] = useState<Record<string, boolean>>({})
+  const [activeChannelsInitialized, setActiveChannelsInitialized] = useState(false)
   const [collapsedStages, setCollapsedStages] = useState<Record<string, boolean>>({})
   const [showCalcCols, setShowCalcCols] = useState(true)
   const [showKpiDetails, setShowKpiDetails] = useState(false)
   const [showBenchmarks, setShowBenchmarks] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [addChannelStage, setAddChannelStage] = useState<FunnelStage | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiReasoning, setAiReasoning] = useState('')
   const queryClient = useQueryClient()
+
+  const { data: settingsData } = useQuery({
+    queryKey: ['sim-settings'],
+    queryFn: () => marketingApi.getSimSettings(),
+    staleTime: 5 * 60_000,
+  })
+  const cfg: SimSettings = settingsData?.settings ?? FALLBACK_SETTINGS
 
   const { data: benchmarkData, isLoading } = useQuery({
     queryKey: ['sim-benchmarks'],
@@ -108,6 +109,19 @@ export default function CampaignSimulator() {
     staleTime: 5 * 60_000,
   })
   const benchmarks = benchmarkData?.benchmarks ?? []
+
+  // Initialize active channels from settings once loaded
+  useEffect(() => {
+    if (activeChannelsInitialized) return
+    const da = cfg.default_active
+    if (!da) return
+    const init: Record<string, boolean> = {}
+    for (const keys of Object.values(da)) {
+      for (const k of keys) init[k] = true
+    }
+    setActiveChannels(init)
+    setActiveChannelsInitialized(true)
+  }, [cfg.default_active, activeChannelsInitialized])
 
   const channelsByStage = useMemo(() => {
     const map: Record<FunnelStage, { key: string; label: string }[]> = {
@@ -182,8 +196,8 @@ export default function CampaignSimulator() {
 
     const awPct = rawTotalBudget > 0 ? byStage.awareness.budget / rawTotalBudget : 0
     const coPct = rawTotalBudget > 0 ? byStage.consideration.budget / rawTotalBudget : 0
-    const awMultiplier = awPct > AWARENESS_THRESHOLD ? AWARENESS_MULTIPLIER : 1
-    const coMultiplier = coPct > CONSIDERATION_THRESHOLD ? CONSIDERATION_MULTIPLIER : 1
+    const awMultiplier = awPct > cfg.awareness_threshold ? cfg.awareness_multiplier : 1
+    const coMultiplier = coPct > cfg.consideration_threshold ? cfg.consideration_multiplier : 1
     const totalMultiplier = awMultiplier * coMultiplier
 
     const m1Cvr = byMonth[1].clicks > 0 ? byMonth[1].leads / byMonth[1].clicks : 0
@@ -204,7 +218,7 @@ export default function CampaignSimulator() {
     }
 
     return { kpiDetails, byStage, byMonth, totals, awPct, coPct, awMultiplier, coMultiplier, totalMultiplier, rawTotalLeads, finalCvr }
-  }, [allocations, activeChannels, benchmarkMap, channelsByStage, leadToSaleRate])
+  }, [allocations, activeChannels, benchmarkMap, channelsByStage, leadToSaleRate, cfg])
 
   const budgetRemaining = totalBudget - outputs.totals.total_budget
 
@@ -217,8 +231,10 @@ export default function CampaignSimulator() {
 
   const handleAutoDistribute = useCallback(() => {
     const n: Record<string, number> = {}
+    const monthPcts = cfg.auto_month_pcts
+    const stageWeights = cfg.auto_stage_weights
     for (let mi = 0; mi < 3; mi++) {
-      const month = mi + 1, mb = totalBudget * AUTO_DISTRIBUTE.months[mi], sw = AUTO_DISTRIBUTE.stages[mi]
+      const month = mi + 1, mb = totalBudget * monthPcts[mi], sw = stageWeights[mi]
       for (const stage of STAGES) {
         if (stage === 'consideration' && month === 1) continue
         const sb = mb * sw[stage]
@@ -229,7 +245,7 @@ export default function CampaignSimulator() {
       }
     }
     setAllocations(n); setAiReasoning('')
-  }, [totalBudget, channelsByStage, activeChannels])
+  }, [totalBudget, channelsByStage, activeChannels, cfg])
 
   const handleAiDistribute = useCallback(async () => {
     setAiLoading(true); setAiReasoning('')
@@ -329,6 +345,7 @@ export default function CampaignSimulator() {
                 {aiLoading ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />} AI Distribute
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setShowBenchmarks(true)} title="Edit benchmarks"><Settings2 className="h-3.5 w-3.5" /></Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowSettings(true)} title="Simulator settings"><SlidersHorizontal className="h-3.5 w-3.5" /></Button>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">Ramas:</span>
@@ -523,8 +540,8 @@ export default function CampaignSimulator() {
               <TrendingUp className="h-4 w-4 text-amber-600" />
               <span className="font-medium text-amber-800 dark:text-amber-200">Funnel Synergy Bonus Active!</span>
               <div className="flex gap-2 flex-wrap text-xs">
-                {outputs.awMultiplier > 1 && <Badge variant="outline" className="border-blue-400 text-blue-700 dark:text-blue-300">Awareness {fmtPct(outputs.awPct)} &gt; 42% {'\u2192'} {outputs.awMultiplier}x</Badge>}
-                {outputs.coMultiplier > 1 && <Badge variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-300">Consideration {fmtPct(outputs.coPct)} &gt; 14% {'\u2192'} {outputs.coMultiplier}x</Badge>}
+                {outputs.awMultiplier > 1 && <Badge variant="outline" className="border-blue-400 text-blue-700 dark:text-blue-300">Awareness {fmtPct(outputs.awPct)} &gt; {fmtPct(cfg.awareness_threshold)} {'\u2192'} {outputs.awMultiplier}x</Badge>}
+                {outputs.coMultiplier > 1 && <Badge variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-300">Consideration {fmtPct(outputs.coPct)} &gt; {fmtPct(cfg.consideration_threshold)} {'\u2192'} {outputs.coMultiplier}x</Badge>}
                 <Badge className="bg-green-600 text-white">Total: {outputs.totalMultiplier}x {'\u2192'} {fmtNum(outputs.totals.total_leads, 1)} leads</Badge>
               </div>
             </div>
@@ -553,12 +570,12 @@ export default function CampaignSimulator() {
               {STAGES.map(stage => {
                 const sb = outputs.byStage[stage]?.budget || 0
                 const pct = outputs.totals.total_budget > 0 ? sb / outputs.totals.total_budget : 0
-                const cfg = STAGE_CONFIG[stage]
-                const th = stage === 'awareness' ? AWARENESS_THRESHOLD : stage === 'consideration' ? CONSIDERATION_THRESHOLD : null
+                const sc = STAGE_CONFIG[stage]
+                const th = stage === 'awareness' ? cfg.awareness_threshold : stage === 'consideration' ? cfg.consideration_threshold : null
                 return (
                   <div key={stage} className="space-y-1">
                     <div className="flex justify-between text-xs">
-                      <span className={cn('font-medium', cfg.color)}>{cfg.label}</span>
+                      <span className={cn('font-medium', sc.color)}>{sc.label}</span>
                       <span className="tabular-nums">{fmtEur(sb)} ({fmtPct(pct)}){th !== null && pct > th && <span className="text-green-600 ml-1">{'\u2713'}</span>}</span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 relative">
@@ -582,7 +599,7 @@ export default function CampaignSimulator() {
 
       <div className="text-xs text-muted-foreground flex items-start gap-2 px-1">
         <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-        <span>Benchmarks sourced from Toyota Digital Masterclass (Romanian automotive market). CPC and CVR rates vary by month to model audience fatigue (awareness) and retargeting lift (consideration/conversion). Funnel synergy: spending &gt;42% on awareness gives a 1.7x lead multiplier; &gt;14% on consideration gives 1.5x. These stack for up to 2.55x total.</span>
+        <span>Benchmarks sourced from Toyota Digital Masterclass (Romanian automotive market). CPC and CVR rates vary by month to model audience fatigue (awareness) and retargeting lift (consideration/conversion). Funnel synergy: spending &gt;{fmtPct(cfg.awareness_threshold)} on awareness gives a {cfg.awareness_multiplier}x lead multiplier; &gt;{fmtPct(cfg.consideration_threshold)} on consideration gives {cfg.consideration_multiplier}x. These stack for up to {(cfg.awareness_multiplier * cfg.consideration_multiplier).toFixed(2)}x total.</span>
       </div>
 
       {/* Dialogs */}
@@ -594,6 +611,12 @@ export default function CampaignSimulator() {
           setActiveChannels(prev => ({ ...prev, [channelKey]: true }))
           queryClient.invalidateQueries({ queryKey: ['sim-benchmarks'] })
         }}
+      />
+      <SimSettingsDialog
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        current={cfg}
+        onSaved={() => queryClient.invalidateQueries({ queryKey: ['sim-settings'] })}
       />
     </div>
   )
@@ -789,6 +812,138 @@ function BenchmarkEditor({ open, onClose, benchmarks, channelsByStage, onSaved }
           <Button size="sm" onClick={handleSave} disabled={!hasChanges || saving}>
             {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
             Save Changes ({Object.keys(edits).length})
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function SimSettingsDialog({ open, onClose, current, onSaved }: {
+  open: boolean; onClose: () => void; current: SimSettings; onSaved: () => void
+}) {
+  const [draft, setDraft] = useState<SimSettings>(current)
+  const [saving, setSaving] = useState(false)
+
+  // Sync draft when settings load/change and dialog opens
+  useEffect(() => { if (open) setDraft(current) }, [open, current])
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await marketingApi.updateSimSettings(draft)
+      onSaved()
+      onClose()
+    } catch (err) { console.error('Failed to save settings:', err) }
+    finally { setSaving(false) }
+  }
+
+  const updateWeight = (mi: number, stage: FunnelStage, value: number) => {
+    setDraft(prev => {
+      const weights = [...prev.auto_stage_weights] as SimSettings['auto_stage_weights']
+      weights[mi] = { ...weights[mi], [stage]: value }
+      return { ...prev, auto_stage_weights: weights }
+    })
+  }
+
+  const updateMonthPct = (mi: number, value: number) => {
+    setDraft(prev => {
+      const pcts = [...prev.auto_month_pcts] as SimSettings['auto_month_pcts']
+      pcts[mi] = value
+      return { ...prev, auto_month_pcts: pcts }
+    })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose() }}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><SlidersHorizontal className="h-4 w-4" /> Simulator Settings</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-5">
+          {/* Synergy Thresholds */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Funnel Synergy Multipliers</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Awareness Threshold</Label>
+                <div className="flex items-center gap-1">
+                  <Input type="number" step="0.01" min="0" max="1" className="h-7 text-xs w-20"
+                    value={draft.awareness_threshold} onChange={e => setDraft(d => ({ ...d, awareness_threshold: parseFloat(e.target.value) || 0 }))} />
+                  <span className="text-xs text-muted-foreground">({fmtPct(draft.awareness_threshold)})</span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Awareness Multiplier</Label>
+                <Input type="number" step="0.1" min="1" className="h-7 text-xs w-20"
+                  value={draft.awareness_multiplier} onChange={e => setDraft(d => ({ ...d, awareness_multiplier: parseFloat(e.target.value) || 1 }))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Consideration Threshold</Label>
+                <div className="flex items-center gap-1">
+                  <Input type="number" step="0.01" min="0" max="1" className="h-7 text-xs w-20"
+                    value={draft.consideration_threshold} onChange={e => setDraft(d => ({ ...d, consideration_threshold: parseFloat(e.target.value) || 0 }))} />
+                  <span className="text-xs text-muted-foreground">({fmtPct(draft.consideration_threshold)})</span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Consideration Multiplier</Label>
+                <Input type="number" step="0.1" min="1" className="h-7 text-xs w-20"
+                  value={draft.consideration_multiplier} onChange={e => setDraft(d => ({ ...d, consideration_multiplier: parseFloat(e.target.value) || 1 }))} />
+              </div>
+            </div>
+          </div>
+
+          {/* Auto-distribute Month Percentages */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Auto-Distribute: Month Budget Split</h4>
+            <div className="grid grid-cols-3 gap-3">
+              {[0, 1, 2].map(mi => (
+                <div key={mi} className="space-y-1">
+                  <Label className="text-xs">Luna {mi + 1}</Label>
+                  <div className="flex items-center gap-1">
+                    <Input type="number" step="0.05" min="0" max="1" className="h-7 text-xs w-20"
+                      value={draft.auto_month_pcts[mi]} onChange={e => updateMonthPct(mi, parseFloat(e.target.value) || 0)} />
+                    <span className="text-xs text-muted-foreground">{fmtPct(draft.auto_month_pcts[mi])}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {Math.abs(draft.auto_month_pcts.reduce((s, v) => s + v, 0) - 1) > 0.01 && (
+              <p className="text-xs text-destructive">Month percentages should sum to 100%</p>
+            )}
+          </div>
+
+          {/* Auto-distribute Stage Weights per Month */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Auto-Distribute: Stage Weights per Month</h4>
+            {[0, 1, 2].map(mi => (
+              <div key={mi} className="space-y-1">
+                <Label className="text-xs font-medium">Luna {mi + 1}</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {STAGES.map(stage => (
+                    <div key={stage} className="space-y-0.5">
+                      <Label className="text-[10px] text-muted-foreground">{STAGE_CONFIG[stage].label}</Label>
+                      <Input type="number" step="0.05" min="0" max="1" className="h-6 text-xs"
+                        value={draft.auto_stage_weights[mi][stage]}
+                        onChange={e => updateWeight(mi, stage, parseFloat(e.target.value) || 0)} />
+                    </div>
+                  ))}
+                </div>
+                {Math.abs(STAGES.reduce((s, st) => s + (draft.auto_stage_weights[mi][st] || 0), 0) - 1) > 0.01 && (
+                  <p className="text-[10px] text-destructive">Weights for Luna {mi + 1} should sum to 100%</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="outline" size="sm" onClick={onClose}><X className="h-3.5 w-3.5 mr-1" /> Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+            Save Settings
           </Button>
         </div>
       </DialogContent>
