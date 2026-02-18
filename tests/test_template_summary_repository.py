@@ -28,8 +28,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'jarvis'))
 from accounting.templates.repositories.template_repository import TemplateRepository, _templates_cache, clear_templates_cache
 from accounting.invoices.repositories.summary_repository import SummaryRepository, _summary_cache, clear_summary_cache
 
-_T = 'accounting.templates.repositories.template_repository'
-_S = 'accounting.invoices.repositories.summary_repository'
+_B = 'core.base_repository'  # DB functions (get_db, get_cursor, release_db, dict_from_row)
+_T = 'accounting.templates.repositories.template_repository'  # Module-specific (clear_templates_cache)
 
 
 def _mock_db():
@@ -43,10 +43,10 @@ class TestTemplateGetAll:
     def setup_method(self):
         clear_templates_cache()
 
-    @patch(f'{_T}.dict_from_row')
-    @patch(f'{_T}.release_db')
-    @patch(f'{_T}.get_cursor')
-    @patch(f'{_T}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_returns_list(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -60,10 +60,10 @@ class TestTemplateGetAll:
         assert len(result) == 1
         assert result[0]['name'] == 'Meta Template'
 
-    @patch(f'{_T}.dict_from_row')
-    @patch(f'{_T}.release_db')
-    @patch(f'{_T}.get_cursor')
-    @patch(f'{_T}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_uses_cache(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Second call uses cache."""
         mock_conn, mock_cursor = _mock_db()
@@ -82,10 +82,10 @@ class TestTemplateGetAll:
 
 class TestTemplateGet:
 
-    @patch(f'{_T}.dict_from_row')
-    @patch(f'{_T}.release_db')
-    @patch(f'{_T}.get_cursor')
-    @patch(f'{_T}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_found(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -97,9 +97,9 @@ class TestTemplateGet:
         result = TemplateRepository().get(1)
         assert result['name'] == 'Meta'
 
-    @patch(f'{_T}.release_db')
-    @patch(f'{_T}.get_cursor')
-    @patch(f'{_T}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_not_found(self, mock_get_db, mock_get_cursor, mock_release):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -112,10 +112,10 @@ class TestTemplateGet:
 
 class TestTemplateGetByName:
 
-    @patch(f'{_T}.dict_from_row')
-    @patch(f'{_T}.release_db')
-    @patch(f'{_T}.get_cursor')
-    @patch(f'{_T}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_found(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -127,9 +127,9 @@ class TestTemplateGetByName:
         result = TemplateRepository().get_by_name('Meta')
         assert result['name'] == 'Meta'
 
-    @patch(f'{_T}.release_db')
-    @patch(f'{_T}.get_cursor')
-    @patch(f'{_T}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_not_found(self, mock_get_db, mock_get_cursor, mock_release):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -146,9 +146,9 @@ class TestTemplateSave:
         clear_templates_cache()
 
     @patch(f'{_T}.clear_templates_cache')
-    @patch(f'{_T}.release_db')
-    @patch(f'{_T}.get_cursor')
-    @patch(f'{_T}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_success(self, mock_get_db, mock_get_cursor, mock_release, mock_clear):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -161,9 +161,9 @@ class TestTemplateSave:
         mock_conn.commit.assert_called_once()
         mock_clear.assert_called_once()
 
-    @patch(f'{_T}.release_db')
-    @patch(f'{_T}.get_cursor')
-    @patch(f'{_T}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_duplicate_raises(self, mock_get_db, mock_get_cursor, mock_release):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -183,9 +183,9 @@ class TestTemplateUpdate:
         assert result is False
 
     @patch(f'{_T}.clear_templates_cache')
-    @patch(f'{_T}.release_db')
-    @patch(f'{_T}.get_cursor')
-    @patch(f'{_T}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_success(self, mock_get_db, mock_get_cursor, mock_release, mock_clear):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -201,9 +201,9 @@ class TestTemplateUpdate:
         mock_clear.assert_called_once()
 
     @patch(f'{_T}.clear_templates_cache')
-    @patch(f'{_T}.release_db')
-    @patch(f'{_T}.get_cursor')
-    @patch(f'{_T}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_not_found(self, mock_get_db, mock_get_cursor, mock_release, mock_clear):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -219,9 +219,9 @@ class TestTemplateUpdate:
 class TestTemplateDelete:
 
     @patch(f'{_T}.clear_templates_cache')
-    @patch(f'{_T}.release_db')
-    @patch(f'{_T}.get_cursor')
-    @patch(f'{_T}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_success(self, mock_get_db, mock_get_cursor, mock_release, mock_clear):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -234,9 +234,9 @@ class TestTemplateDelete:
         mock_clear.assert_called_once()
 
     @patch(f'{_T}.clear_templates_cache')
-    @patch(f'{_T}.release_db')
-    @patch(f'{_T}.get_cursor')
-    @patch(f'{_T}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_not_found(self, mock_get_db, mock_get_cursor, mock_release, mock_clear):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -256,10 +256,10 @@ class TestSummaryByCompany:
     def setup_method(self):
         clear_summary_cache()
 
-    @patch(f'{_S}.dict_from_row')
-    @patch(f'{_S}.release_db')
-    @patch(f'{_S}.get_cursor')
-    @patch(f'{_S}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_no_filters(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -275,10 +275,10 @@ class TestSummaryByCompany:
         sql = mock_cursor.execute.call_args[0][0]
         assert 'GROUP BY a.company' in sql
 
-    @patch(f'{_S}.dict_from_row')
-    @patch(f'{_S}.release_db')
-    @patch(f'{_S}.get_cursor')
-    @patch(f'{_S}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_with_date_filter(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -292,10 +292,10 @@ class TestSummaryByCompany:
         assert 'invoice_date >= %s' in sql
         assert 'invoice_date <= %s' in sql
 
-    @patch(f'{_S}.dict_from_row')
-    @patch(f'{_S}.release_db')
-    @patch(f'{_S}.get_cursor')
-    @patch(f'{_S}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_cache_hit(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Second call with same params uses cache."""
         mock_conn, mock_cursor = _mock_db()
@@ -316,10 +316,10 @@ class TestSummaryByDepartment:
     def setup_method(self):
         clear_summary_cache()
 
-    @patch(f'{_S}.dict_from_row')
-    @patch(f'{_S}.release_db')
-    @patch(f'{_S}.get_cursor')
-    @patch(f'{_S}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_no_filters(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -334,10 +334,10 @@ class TestSummaryByDepartment:
         sql = mock_cursor.execute.call_args[0][0]
         assert 'GROUP BY a.company, a.department' in sql
 
-    @patch(f'{_S}.dict_from_row')
-    @patch(f'{_S}.release_db')
-    @patch(f'{_S}.get_cursor')
-    @patch(f'{_S}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_with_company_filter(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -356,10 +356,10 @@ class TestSummaryByBrand:
     def setup_method(self):
         clear_summary_cache()
 
-    @patch(f'{_S}.dict_from_row')
-    @patch(f'{_S}.release_db')
-    @patch(f'{_S}.get_cursor')
-    @patch(f'{_S}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_no_filters(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -381,10 +381,10 @@ class TestSummaryBySupplier:
     def setup_method(self):
         clear_summary_cache()
 
-    @patch(f'{_S}.dict_from_row')
-    @patch(f'{_S}.release_db')
-    @patch(f'{_S}.get_cursor')
-    @patch(f'{_S}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_no_filters(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -400,10 +400,10 @@ class TestSummaryBySupplier:
         sql = mock_cursor.execute.call_args[0][0]
         assert 'GROUP BY i.supplier' in sql
 
-    @patch(f'{_S}.dict_from_row')
-    @patch(f'{_S}.release_db')
-    @patch(f'{_S}.get_cursor')
-    @patch(f'{_S}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_with_all_filters(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn
@@ -428,9 +428,9 @@ class TestSummaryConnectionRelease:
     def setup_method(self):
         clear_summary_cache()
 
-    @patch(f'{_S}.release_db')
-    @patch(f'{_S}.get_cursor')
-    @patch(f'{_S}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_releases_on_error(self, mock_get_db, mock_get_cursor, mock_release):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn

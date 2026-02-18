@@ -4,9 +4,8 @@ Handles invoice template CRUD with caching.
 """
 import time
 import logging
-from typing import Optional
 
-from database import get_db, get_cursor, release_db, dict_from_row
+from core.base_repository import BaseRepository
 from core.cache import _cache_lock, _is_cache_valid
 
 logger = logging.getLogger('jarvis.accounting.templates.repository')
@@ -27,7 +26,7 @@ def clear_templates_cache():
     logger.debug('Templates cache cleared')
 
 
-class TemplateRepository:
+class TemplateRepository(BaseRepository):
     """Repository for invoice template data access operations."""
 
     def get_all(self) -> list[dict]:
@@ -37,39 +36,19 @@ class TemplateRepository:
         if _is_cache_valid(_templates_cache):
             return _templates_cache['data']
 
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('SELECT * FROM invoice_templates ORDER BY name')
-            templates = [dict_from_row(row) for row in cursor.fetchall()]
+        templates = self.query_all('SELECT * FROM invoice_templates ORDER BY name')
 
-            _templates_cache['data'] = templates
-            _templates_cache['timestamp'] = time.time()
-            return templates
-        finally:
-            release_db(conn)
+        _templates_cache['data'] = templates
+        _templates_cache['timestamp'] = time.time()
+        return templates
 
-    def get(self, template_id: int) -> Optional[dict]:
+    def get(self, template_id: int):
         """Get a specific invoice template by ID."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('SELECT * FROM invoice_templates WHERE id = %s', (template_id,))
-            row = cursor.fetchone()
-            return dict_from_row(row) if row else None
-        finally:
-            release_db(conn)
+        return self.query_one('SELECT * FROM invoice_templates WHERE id = %s', (template_id,))
 
-    def get_by_name(self, name: str) -> Optional[dict]:
+    def get_by_name(self, name: str):
         """Get a specific invoice template by name."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('SELECT * FROM invoice_templates WHERE name = %s', (name,))
-            row = cursor.fetchone()
-            return dict_from_row(row) if row else None
-        finally:
-            release_db(conn)
+        return self.query_one('SELECT * FROM invoice_templates WHERE name = %s', (name,))
 
     def save(self, name: str, supplier: str = None, supplier_vat: str = None,
              customer_vat: str = None, currency: str = 'RON', description: str = None,
@@ -79,10 +58,8 @@ class TemplateRepository:
              supplier_regex: str = None, supplier_vat_regex: str = None,
              customer_vat_regex: str = None, currency_regex: str = None) -> int:
         """Save a new invoice template. Returns template ID."""
-        conn = get_db()
         try:
-            cursor = get_cursor(conn)
-            cursor.execute('''
+            result = self.execute('''
                 INSERT INTO invoice_templates (
                     name, template_type, supplier, supplier_vat, customer_vat, currency, description,
                     invoice_number_regex, invoice_date_regex, invoice_value_regex,
@@ -93,18 +70,14 @@ class TemplateRepository:
             ''', (name, template_type, supplier, supplier_vat, customer_vat, currency, description,
                   invoice_number_regex, invoice_date_regex, invoice_value_regex,
                   date_format, sample_invoice_path,
-                  supplier_regex, supplier_vat_regex, customer_vat_regex, currency_regex))
-            template_id = cursor.fetchone()['id']
-            conn.commit()
+                  supplier_regex, supplier_vat_regex, customer_vat_regex, currency_regex),
+                returning=True)
             clear_templates_cache()
-            return template_id
+            return result['id']
         except Exception as e:
-            conn.rollback()
             if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
                 raise ValueError(f"Template '{name}' already exists")
             raise
-        finally:
-            release_db(conn)
 
     def update(self, template_id: int, name: str = None, supplier: str = None,
                supplier_vat: str = None, customer_vat: str = None, currency: str = None,
@@ -141,28 +114,14 @@ class TemplateRepository:
         updates.append('updated_at = CURRENT_TIMESTAMP')
         params.append(template_id)
 
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute(f"UPDATE invoice_templates SET {', '.join(updates)} WHERE id = %s", params)
-            updated = cursor.rowcount > 0
-            conn.commit()
-            if updated:
-                clear_templates_cache()
-            return updated
-        finally:
-            release_db(conn)
+        updated = self.execute(f"UPDATE invoice_templates SET {', '.join(updates)} WHERE id = %s", params) > 0
+        if updated:
+            clear_templates_cache()
+        return updated
 
     def delete(self, template_id: int) -> bool:
         """Delete an invoice template."""
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            cursor.execute('DELETE FROM invoice_templates WHERE id = %s', (template_id,))
-            deleted = cursor.rowcount > 0
-            conn.commit()
-            if deleted:
-                clear_templates_cache()
-            return deleted
-        finally:
-            release_db(conn)
+        deleted = self.execute('DELETE FROM invoice_templates WHERE id = %s', (template_id,)) > 0
+        if deleted:
+            clear_templates_cache()
+        return deleted

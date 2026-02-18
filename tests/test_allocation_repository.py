@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'jarvis'))
 
 from accounting.invoices.repositories.allocation_repository import AllocationRepository
 
-_P = 'accounting.invoices.repositories.allocation_repository'
+_P = 'core.base_repository'
 
 
 def _mock_db():
@@ -116,19 +116,11 @@ class TestGetByDepartment:
 
 class TestUpdate:
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
-    def test_no_fields_returns_false(self, mock_get_db, mock_get_cursor, mock_release):
-        mock_conn, mock_cursor = _mock_db()
-        mock_get_db.return_value = mock_conn
-        mock_get_cursor.return_value = mock_cursor
-
+    def test_no_fields_returns_false(self):
         repo = AllocationRepository()
         result = repo.update(allocation_id=1)
 
         assert result is False
-        mock_release.assert_called_once_with(mock_conn)
 
     @patch(f'{_P}.release_db')
     @patch(f'{_P}.get_cursor')

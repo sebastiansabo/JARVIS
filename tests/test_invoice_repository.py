@@ -30,8 +30,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'jarvis'))
 
 from accounting.invoices.repositories.invoice_repository import InvoiceRepository
 
-# Patch target prefix
-_P = 'accounting.invoices.repositories.invoice_repository'
+# Patch target prefixes
+_B = 'core.base_repository'  # DB functions (get_db, get_cursor, release_db, dict_from_row)
+_P = 'accounting.invoices.repositories.invoice_repository'  # Module-specific (clear_invoices_cache, dict_from_row)
 
 
 def _mock_db():
@@ -47,9 +48,9 @@ class TestSave:
     """Tests for InvoiceRepository.save()."""
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_save_basic_invoice(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Save invoice with one allocation returns invoice ID."""
         mock_conn, mock_cursor = _mock_db()
@@ -88,9 +89,9 @@ class TestSave:
         mock_clear_cache.assert_called_once()
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_save_with_reinvoice_destinations(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Save invoice with reinvoice destinations inserts them."""
         mock_conn, mock_cursor = _mock_db()
@@ -126,9 +127,9 @@ class TestSave:
         # Should have at least 3 execute calls: invoice insert, manager lookup, allocation insert, reinvoice dest insert
         assert mock_cursor.execute.call_count >= 4
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_save_duplicate_raises_value_error(self, mock_get_db, mock_get_cursor, mock_release):
         """Save with duplicate invoice number raises ValueError."""
         mock_conn, mock_cursor = _mock_db()
@@ -154,9 +155,9 @@ class TestSave:
         mock_release.assert_called_once_with(mock_conn)
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_save_with_vat_subtraction(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Save with subtract_vat=True uses net_value for allocation calculation."""
         mock_conn, mock_cursor = _mock_db()
@@ -201,10 +202,10 @@ class TestSave:
 class TestGetAll:
     """Tests for InvoiceRepository.get_all()."""
 
-    @patch(f'{_P}.dict_from_row')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_get_all_no_filters(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Get all with defaults returns list of dicts."""
         mock_conn, mock_cursor = _mock_db()
@@ -223,10 +224,10 @@ class TestGetAll:
         assert result[0]['id'] == 1
         mock_release.assert_called_once_with(mock_conn)
 
-    @patch(f'{_P}.dict_from_row')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_get_all_with_company_filter(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Get all with company filter joins allocations table."""
         mock_conn, mock_cursor = _mock_db()
@@ -243,10 +244,10 @@ class TestGetAll:
         assert 'JOIN allocations' in sql
         assert 'a.company = %s' in sql
 
-    @patch(f'{_P}.dict_from_row')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_get_all_include_deleted(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Get all with include_deleted=True filters for deleted invoices."""
         mock_conn, mock_cursor = _mock_db()
@@ -261,10 +262,10 @@ class TestGetAll:
         sql = mock_cursor.execute.call_args[0][0]
         assert 'deleted_at IS NOT NULL' in sql
 
-    @patch(f'{_P}.dict_from_row')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_get_all_with_date_range(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Get all with date filters includes date conditions."""
         mock_conn, mock_cursor = _mock_db()
@@ -289,10 +290,10 @@ class TestGetAll:
 class TestGetWithAllocations:
     """Tests for InvoiceRepository.get_with_allocations()."""
 
-    @patch(f'{_P}.dict_from_row')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_found_with_allocations(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Returns invoice dict with allocations list."""
         mock_conn, mock_cursor = _mock_db()
@@ -319,9 +320,9 @@ class TestGetWithAllocations:
         assert result['allocations'][0]['reinvoice_destinations'] == []
         mock_release.assert_called_once_with(mock_conn)
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_not_found(self, mock_get_db, mock_get_cursor, mock_release):
         """Returns None when invoice doesn't exist."""
         mock_conn, mock_cursor = _mock_db()
@@ -335,10 +336,10 @@ class TestGetWithAllocations:
         assert result is None
         mock_release.assert_called_once_with(mock_conn)
 
-    @patch(f'{_P}.dict_from_row')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_with_reinvoice_destinations(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Allocations include their reinvoice destinations."""
         mock_conn, mock_cursor = _mock_db()
@@ -369,9 +370,9 @@ class TestDelete:
     """Tests for InvoiceRepository.delete() — soft delete."""
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_delete_success(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Soft delete returns True when invoice exists."""
         mock_conn, mock_cursor = _mock_db()
@@ -388,9 +389,9 @@ class TestDelete:
         mock_release.assert_called_once_with(mock_conn)
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_delete_not_found(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Soft delete returns False when invoice doesn't exist."""
         mock_conn, mock_cursor = _mock_db()
@@ -411,9 +412,9 @@ class TestRestore:
     """Tests for InvoiceRepository.restore()."""
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_restore_success(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Restore returns True when deleted invoice exists."""
         mock_conn, mock_cursor = _mock_db()
@@ -429,9 +430,9 @@ class TestRestore:
         mock_clear_cache.assert_called_once()
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_restore_not_found(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Restore returns False when invoice isn't in bin."""
         mock_conn, mock_cursor = _mock_db()
@@ -451,9 +452,9 @@ class TestRestore:
 class TestGetDriveLink:
     """Tests for InvoiceRepository.get_drive_link()."""
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_found(self, mock_get_db, mock_get_cursor, mock_release):
         """Returns drive link when invoice exists."""
         mock_conn, mock_cursor = _mock_db()
@@ -467,9 +468,9 @@ class TestGetDriveLink:
         assert result == 'https://drive.google.com/abc'
         mock_release.assert_called_once_with(mock_conn)
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_not_found(self, mock_get_db, mock_get_cursor, mock_release):
         """Returns None when invoice doesn't exist."""
         mock_conn, mock_cursor = _mock_db()
@@ -494,9 +495,9 @@ class TestGetDriveLinks:
         result = repo.get_drive_links([])
         assert result == []
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_multiple_links(self, mock_get_db, mock_get_cursor, mock_release):
         """Returns list of non-null drive links."""
         mock_conn, mock_cursor = _mock_db()
@@ -513,9 +514,9 @@ class TestGetDriveLinks:
         assert len(result) == 2
         assert 'https://drive.google.com/a' in result
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_no_links_found(self, mock_get_db, mock_get_cursor, mock_release):
         """Returns empty list when no invoices have drive links."""
         mock_conn, mock_cursor = _mock_db()
@@ -535,9 +536,9 @@ class TestPermanentlyDelete:
     """Tests for InvoiceRepository.permanently_delete()."""
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_success(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Permanently deletes invoice and returns True."""
         mock_conn, mock_cursor = _mock_db()
@@ -554,9 +555,9 @@ class TestPermanentlyDelete:
         mock_clear_cache.assert_called_once()
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_not_found(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Returns False when invoice doesn't exist."""
         mock_conn, mock_cursor = _mock_db()
@@ -582,9 +583,9 @@ class TestBulkSoftDelete:
         assert repo.bulk_soft_delete([]) == 0
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_deletes_multiple(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Soft deletes multiple invoices and returns count."""
         mock_conn, mock_cursor = _mock_db()
@@ -600,9 +601,9 @@ class TestBulkSoftDelete:
         mock_clear_cache.assert_called_once()
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_partial_delete(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Returns actual count when some IDs are already deleted."""
         mock_conn, mock_cursor = _mock_db()
@@ -627,9 +628,9 @@ class TestBulkRestore:
         assert repo.bulk_restore([]) == 0
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_restores_multiple(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Restores multiple invoices and returns count."""
         mock_conn, mock_cursor = _mock_db()
@@ -656,9 +657,9 @@ class TestBulkPermanentlyDelete:
         assert repo.bulk_permanently_delete([]) == 0
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_deletes_multiple(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Permanently deletes multiple invoices and returns count."""
         mock_conn, mock_cursor = _mock_db()
@@ -679,9 +680,9 @@ class TestBulkPermanentlyDelete:
 class TestCleanupOldDeleted:
     """Tests for InvoiceRepository.cleanup_old_deleted()."""
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_deletes_old(self, mock_get_db, mock_get_cursor, mock_release):
         """Deletes invoices older than specified days and returns count."""
         mock_conn, mock_cursor = _mock_db()
@@ -697,9 +698,9 @@ class TestCleanupOldDeleted:
         params = mock_cursor.execute.call_args[0][1]
         assert params == (30,)
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_nothing_to_delete(self, mock_get_db, mock_get_cursor, mock_release):
         """Returns 0 when no old deleted invoices exist."""
         mock_conn, mock_cursor = _mock_db()
@@ -718,9 +719,9 @@ class TestCleanupOldDeleted:
 class TestUpdate:
     """Tests for InvoiceRepository.update()."""
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_no_fields_returns_false(self, mock_get_db, mock_get_cursor, mock_release):
         """Update with no kwargs returns False without executing SQL."""
         mock_conn, mock_cursor = _mock_db()
@@ -733,9 +734,9 @@ class TestUpdate:
         assert result is False
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_update_single_field(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Update with one field builds correct SQL."""
         mock_conn, mock_cursor = _mock_db()
@@ -756,9 +757,9 @@ class TestUpdate:
         mock_clear_cache.assert_called_once()
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_update_multiple_fields(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Update with multiple fields includes all in SQL."""
         mock_conn, mock_cursor = _mock_db()
@@ -776,9 +777,9 @@ class TestUpdate:
         assert 'payment_status = %s' in sql
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_update_not_found(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Update returns False when no rows affected."""
         mock_conn, mock_cursor = _mock_db()
@@ -792,9 +793,9 @@ class TestUpdate:
         assert result is False
         mock_clear_cache.assert_not_called()
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_update_duplicate_raises_value_error(self, mock_get_db, mock_get_cursor, mock_release):
         """Update raises ValueError on duplicate key violation."""
         mock_conn, mock_cursor = _mock_db()
@@ -810,9 +811,9 @@ class TestUpdate:
         mock_release.assert_called_once_with(mock_conn)
 
     @patch(f'{_P}.clear_invoices_cache')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_update_subtract_vat_false_clears_vat_fields(self, mock_get_db, mock_get_cursor, mock_release, mock_clear_cache):
         """Setting subtract_vat=False clears vat_rate and net_value."""
         mock_conn, mock_cursor = _mock_db()
@@ -834,10 +835,10 @@ class TestUpdate:
 class TestCheckNumberExists:
     """Tests for InvoiceRepository.check_number_exists()."""
 
-    @patch(f'{_P}.dict_from_row')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_exists(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Returns exists=True with invoice data when number found."""
         mock_conn, mock_cursor = _mock_db()
@@ -853,9 +854,9 @@ class TestCheckNumberExists:
         assert result['exists'] is True
         assert result['invoice']['invoice_number'] == 'INV-001'
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_not_exists(self, mock_get_db, mock_get_cursor, mock_release):
         """Returns exists=False when number not found."""
         mock_conn, mock_cursor = _mock_db()
@@ -869,9 +870,9 @@ class TestCheckNumberExists:
         assert result['exists'] is False
         assert result['invoice'] is None
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_with_exclude_id(self, mock_get_db, mock_get_cursor, mock_release):
         """Uses exclude_id in query when provided."""
         mock_conn, mock_cursor = _mock_db()
@@ -893,10 +894,10 @@ class TestCheckNumberExists:
 class TestSearch:
     """Tests for InvoiceRepository.search()."""
 
-    @patch(f'{_P}.dict_from_row')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_text_search(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Search by text returns matching invoices."""
         mock_conn, mock_cursor = _mock_db()
@@ -915,10 +916,10 @@ class TestSearch:
         assert 'ILIKE' in sql
         assert 'deleted_at IS NULL' in sql
 
-    @patch(f'{_P}.dict_from_row')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_numeric_search(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Search with numeric value includes ABS comparison."""
         mock_conn, mock_cursor = _mock_db()
@@ -933,10 +934,10 @@ class TestSearch:
         sql = mock_cursor.execute.call_args[0][0]
         assert 'ABS(i.invoice_value' in sql
 
-    @patch(f'{_P}.dict_from_row')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_search_with_company_filter(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Search with company filter joins allocations."""
         mock_conn, mock_cursor = _mock_db()
@@ -952,9 +953,9 @@ class TestSearch:
         assert 'JOIN allocations' in sql
         assert 'a.company = %s' in sql
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_empty_query(self, mock_get_db, mock_get_cursor, mock_release):
         """Empty query returns empty list without DB call."""
         mock_conn, mock_cursor = _mock_db()
@@ -966,10 +967,10 @@ class TestSearch:
 
         assert result == []
 
-    @patch(f'{_P}.dict_from_row')
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.dict_from_row')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_search_with_date_and_status_filters(self, mock_get_db, mock_get_cursor, mock_release, mock_dict):
         """Search with date range and status filters includes all conditions."""
         mock_conn, mock_cursor = _mock_db()
@@ -998,9 +999,9 @@ class TestSearch:
 class TestConnectionRelease:
     """Verify connections are released even on exceptions."""
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_get_all_releases_on_error(self, mock_get_db, mock_get_cursor, mock_release):
         """get_all releases connection even when query throws."""
         mock_conn, mock_cursor = _mock_db()
@@ -1014,9 +1015,9 @@ class TestConnectionRelease:
 
         mock_release.assert_called_once_with(mock_conn)
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_delete_releases_on_error(self, mock_get_db, mock_get_cursor, mock_release):
         """delete releases connection even when query throws."""
         mock_conn, mock_cursor = _mock_db()
@@ -1030,9 +1031,9 @@ class TestConnectionRelease:
 
         mock_release.assert_called_once_with(mock_conn)
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_search_releases_on_error(self, mock_get_db, mock_get_cursor, mock_release):
         """search releases connection even when query throws."""
         mock_conn, mock_cursor = _mock_db()
@@ -1046,9 +1047,9 @@ class TestConnectionRelease:
 
         mock_release.assert_called_once_with(mock_conn)
 
-    @patch(f'{_P}.release_db')
-    @patch(f'{_P}.get_cursor')
-    @patch(f'{_P}.get_db')
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_update_releases_on_error(self, mock_get_db, mock_get_cursor, mock_release):
         """update releases connection even on non-duplicate exceptions."""
         mock_conn, mock_cursor = _mock_db()

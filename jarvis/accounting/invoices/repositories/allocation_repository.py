@@ -2,19 +2,16 @@
 import logging
 from decimal import Decimal
 
-from database import get_db, get_cursor, release_db, dict_from_row
+from core.base_repository import BaseRepository
 
 logger = logging.getLogger('jarvis.allocations')
 
 
-class AllocationRepository:
+class AllocationRepository(BaseRepository):
 
     def get_by_company(self, company):
         """Get all allocations for a specific company."""
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        cursor.execute('''
+        return self.query_all('''
             SELECT a.*, i.supplier, i.invoice_number, i.invoice_date
             FROM allocations a
             JOIN invoices i ON a.invoice_id = i.id
@@ -22,16 +19,9 @@ class AllocationRepository:
             ORDER BY i.invoice_date DESC
         ''', (company,))
 
-        results = [dict_from_row(row) for row in cursor.fetchall()]
-        release_db(conn)
-        return results
-
     def get_by_department(self, company, department):
         """Get all allocations for a specific department."""
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        cursor.execute('''
+        return self.query_all('''
             SELECT a.*, i.supplier, i.invoice_number, i.invoice_date
             FROM allocations a
             JOIN invoices i ON a.invoice_id = i.id
@@ -39,18 +29,11 @@ class AllocationRepository:
             ORDER BY i.invoice_date DESC
         ''', (company, department))
 
-        results = [dict_from_row(row) for row in cursor.fetchall()]
-        release_db(conn)
-        return results
-
     def update(self, allocation_id, company=None, brand=None, department=None,
                subdepartment=None, allocation_percent=None, allocation_value=None,
                responsible=None, reinvoice_to=None, reinvoice_brand=None,
                reinvoice_department=None, reinvoice_subdepartment=None, comment=None):
         """Update an existing allocation."""
-        conn = get_db()
-        cursor = get_cursor(conn)
-
         updates = []
         params = []
 
@@ -69,51 +52,27 @@ class AllocationRepository:
                 params.append(value)
 
         if not updates:
-            release_db(conn)
             return False
 
         params.append(allocation_id)
         query = f"UPDATE allocations SET {', '.join(updates)} WHERE id = %s"
-        cursor.execute(query, params)
-        updated = cursor.rowcount > 0
-
-        conn.commit()
-        release_db(conn)
-        return updated
+        return self.execute(query, params) > 0
 
     def delete(self, allocation_id):
         """Delete an allocation."""
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        cursor.execute('DELETE FROM allocations WHERE id = %s', (allocation_id,))
-        deleted = cursor.rowcount > 0
-
-        conn.commit()
-        release_db(conn)
-        return deleted
+        return self.execute('DELETE FROM allocations WHERE id = %s', (allocation_id,)) > 0
 
     def update_comment(self, allocation_id, comment):
         """Update just the comment for an allocation."""
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        cursor.execute('UPDATE allocations SET comment = %s WHERE id = %s', (comment, allocation_id))
-        updated = cursor.rowcount > 0
-
-        conn.commit()
-        release_db(conn)
-        return updated
+        return self.execute('UPDATE allocations SET comment = %s WHERE id = %s',
+                            (comment, allocation_id)) > 0
 
     def add(self, invoice_id, company, department, allocation_percent,
             allocation_value, brand=None, subdepartment=None, responsible=None,
             reinvoice_to=None, reinvoice_brand=None, reinvoice_department=None,
             reinvoice_subdepartment=None):
         """Add a new allocation to an invoice. Returns allocation ID."""
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        try:
+        def _work(cursor):
             responsible_user_id = None
             if responsible:
                 cursor.execute('SELECT id FROM users WHERE LOWER(name) = LOWER(%s) LIMIT 1', (responsible,))
@@ -128,22 +87,12 @@ class AllocationRepository:
                 RETURNING id
             ''', (invoice_id, company, brand, department, subdepartment,
                   allocation_percent, allocation_value, responsible, responsible_user_id, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment))
-            allocation_id = cursor.fetchone()['id']
-
-            conn.commit()
-            return allocation_id
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+            return cursor.fetchone()['id']
+        return self.execute_many(_work)
 
     def update_invoice_allocations(self, invoice_id, allocations):
         """Replace all allocations for an invoice with new ones (transactional)."""
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        try:
+        def _work(cursor):
             cursor.execute('SELECT invoice_value, subtract_vat, net_value FROM invoices WHERE id = %s', (invoice_id,))
             result = cursor.fetchone()
             if not result:
@@ -210,32 +159,20 @@ class AllocationRepository:
                         rd_value
                     ))
 
-            conn.commit()
             from accounting.invoices.repositories.invoice_repository import clear_invoices_cache
             clear_invoices_cache()
             return True
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute_many(_work)
 
     def get_reinvoice_destinations(self, allocation_id):
         """Get all reinvoice destinations for an allocation."""
-        conn = get_db()
-        cursor = get_cursor(conn)
-        cursor.execute('''
+        return self.query_all('''
             SELECT * FROM reinvoice_destinations WHERE allocation_id = %s ORDER BY id
         ''', (allocation_id,))
-        results = [dict_from_row(row) for row in cursor.fetchall()]
-        release_db(conn)
-        return results
 
     def save_reinvoice_destinations(self, allocation_id, destinations, allocation_value=None):
         """Replace all reinvoice destinations for an allocation."""
-        conn = get_db()
-        cursor = get_cursor(conn)
-        try:
+        def _work(cursor):
             cursor.execute('DELETE FROM reinvoice_destinations WHERE allocation_id = %s', (allocation_id,))
 
             for dest in destinations:
@@ -255,19 +192,12 @@ class AllocationRepository:
                     dest['percentage'],
                     dest_value or dest.get('value')
                 ))
-            conn.commit()
             return True
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute_many(_work)
 
     def save_reinvoice_destinations_batch(self, allocation_destinations):
         """Save reinvoice destinations for multiple allocations in a single transaction."""
-        conn = get_db()
-        cursor = get_cursor(conn)
-        try:
+        def _work(cursor):
             for allocation_id, destinations, allocation_value in allocation_destinations:
                 cursor.execute('DELETE FROM reinvoice_destinations WHERE allocation_id = %s', (allocation_id,))
 
@@ -286,10 +216,5 @@ class AllocationRepository:
                         dest['percentage'],
                         dest_value
                     ))
-            conn.commit()
             return True
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            release_db(conn)
+        return self.execute_many(_work)
