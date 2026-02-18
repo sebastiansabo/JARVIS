@@ -90,7 +90,6 @@ export default function CampaignSimulator() {
   const [showCalcCols, setShowCalcCols] = useState(true)
   const [showKpiDetails, setShowKpiDetails] = useState(false)
   const [showBenchmarks, setShowBenchmarks] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
   const [addChannelStage, setAddChannelStage] = useState<FunnelStage | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiReasoning, setAiReasoning] = useState('')
@@ -344,8 +343,7 @@ export default function CampaignSimulator() {
               <Button size="sm" onClick={handleAiDistribute} disabled={aiLoading} className="bg-purple-600 hover:bg-purple-700 text-white">
                 {aiLoading ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />} AI Distribute
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowBenchmarks(true)} title="Edit benchmarks"><Settings2 className="h-3.5 w-3.5" /></Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowSettings(true)} title="Simulator settings"><SlidersHorizontal className="h-3.5 w-3.5" /></Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowBenchmarks(true)} title="Settings"><Settings2 className="h-3.5 w-3.5" /></Button>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">Ramas:</span>
@@ -603,7 +601,7 @@ export default function CampaignSimulator() {
       </div>
 
       {/* Dialogs */}
-      <BenchmarkEditor open={showBenchmarks} onClose={() => setShowBenchmarks(false)} benchmarks={benchmarks} channelsByStage={channelsByStage} onSaved={() => queryClient.invalidateQueries({ queryKey: ['sim-benchmarks'] })} />
+      <BenchmarkEditor open={showBenchmarks} onClose={() => setShowBenchmarks(false)} benchmarks={benchmarks} channelsByStage={channelsByStage} settings={cfg} onSaved={() => { queryClient.invalidateQueries({ queryKey: ['sim-benchmarks'] }); queryClient.invalidateQueries({ queryKey: ['sim-settings'] }) }} />
       <AddChannelDialog
         stage={addChannelStage}
         onClose={() => setAddChannelStage(null)}
@@ -611,12 +609,6 @@ export default function CampaignSimulator() {
           setActiveChannels(prev => ({ ...prev, [channelKey]: true }))
           queryClient.invalidateQueries({ queryKey: ['sim-benchmarks'] })
         }}
-      />
-      <SimSettingsDialog
-        open={showSettings}
-        onClose={() => setShowSettings(false)}
-        current={cfg}
-        onSaved={() => queryClient.invalidateQueries({ queryKey: ['sim-settings'] })}
       />
     </div>
   )
@@ -736,35 +728,159 @@ function KpiTable({ channelsByStage, activeChannels, benchmarkMap, allocations }
   )
 }
 
-function BenchmarkEditor({ open, onClose, benchmarks, channelsByStage, onSaved }: {
+function BenchmarkEditor({ open, onClose, benchmarks, channelsByStage, settings, onSaved }: {
   open: boolean; onClose: () => void; benchmarks: SimBenchmark[]
-  channelsByStage: Record<FunnelStage, { key: string; label: string }[]>; onSaved: () => void
+  channelsByStage: Record<FunnelStage, { key: string; label: string }[]>
+  settings: SimSettings; onSaved: () => void
 }) {
   const [edits, setEdits] = useState<Record<string, Partial<SimBenchmark>>>({})
+  const [draft, setDraft] = useState<SimSettings>(settings)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => { if (open) { setDraft(settings); setEdits({}) } }, [open, settings])
 
   const handleEdit = (id: number, field: 'cpc' | 'cvr_lead' | 'cvr_car', value: string) => {
     const num = parseFloat(value); if (isNaN(num)) return
     setEdits(prev => ({ ...prev, [id]: { ...prev[id], [field]: num } }))
   }
-  const hasChanges = Object.keys(edits).length > 0
-  const handleSave = async () => {
-    const updates = Object.entries(edits).map(([id, f]) => ({ id: Number(id), ...f }))
-    if (!updates.length) return
-    setSaving(true)
-    try { await marketingApi.bulkUpdateSimBenchmarks(updates); setEdits({}); onSaved() }
-    catch (err) { console.error('Failed to save benchmarks:', err) }
-    finally { setSaving(false) }
-  }
   const getVal = (bm: SimBenchmark, field: 'cpc' | 'cvr_lead' | 'cvr_car'): number => {
     const e = edits[bm.id]; if (e && field in e) return e[field] as number; return bm[field]
+  }
+
+  const settingsChanged = JSON.stringify(draft) !== JSON.stringify(settings)
+  const benchmarkChanges = Object.keys(edits).length
+  const hasChanges = settingsChanged || benchmarkChanges > 0
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const promises: Promise<unknown>[] = []
+      if (benchmarkChanges > 0) {
+        const updates = Object.entries(edits).map(([id, f]) => ({ id: Number(id), ...f }))
+        promises.push(marketingApi.bulkUpdateSimBenchmarks(updates))
+      }
+      if (settingsChanged) {
+        promises.push(marketingApi.updateSimSettings(draft))
+      }
+      await Promise.all(promises)
+      setEdits({})
+      onSaved()
+    } catch (err) { console.error('Failed to save:', err) }
+    finally { setSaving(false) }
+  }
+
+  const updateWeight = (mi: number, stage: FunnelStage, value: number) => {
+    setDraft(prev => {
+      const weights = [...prev.auto_stage_weights] as SimSettings['auto_stage_weights']
+      weights[mi] = { ...weights[mi], [stage]: value }
+      return { ...prev, auto_stage_weights: weights }
+    })
+  }
+  const updateMonthPct = (mi: number, value: number) => {
+    setDraft(prev => {
+      const pcts = [...prev.auto_month_pcts] as SimSettings['auto_month_pcts']
+      pcts[mi] = value
+      return { ...prev, auto_month_pcts: pcts }
+    })
   }
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose() }}>
       <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader><DialogTitle className="flex items-center gap-2"><Settings2 className="h-4 w-4" /> Edit Benchmarks (Foaie2)</DialogTitle></DialogHeader>
-        <div className="text-xs text-muted-foreground mb-2">Adjust CPC and CVR rates per channel per month. Changes are saved to the database.</div>
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><Settings2 className="h-4 w-4" /> Simulator Settings</DialogTitle></DialogHeader>
+
+        {/* ── Collapsible Settings Section ── */}
+        <div className="border rounded-md">
+          <button
+            className="flex items-center gap-2 w-full px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-accent/50 rounded-md"
+            onClick={() => setSettingsOpen(!settingsOpen)}
+          >
+            {settingsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Funnel Synergy & Auto-Distribute
+            {settingsChanged && <Badge variant="outline" className="ml-auto text-[10px] border-amber-400 text-amber-600">modified</Badge>}
+          </button>
+          {settingsOpen && (
+            <div className="px-3 pb-3 space-y-4 border-t">
+              {/* Synergy Thresholds */}
+              <div className="space-y-2 pt-3">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Funnel Synergy Multipliers</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Awareness Threshold</Label>
+                    <div className="flex items-center gap-1">
+                      <Input type="number" step="0.01" min="0" max="1" className="h-7 text-xs w-20"
+                        value={draft.awareness_threshold} onChange={e => setDraft(d => ({ ...d, awareness_threshold: parseFloat(e.target.value) || 0 }))} />
+                      <span className="text-[10px] text-muted-foreground">({fmtPct(draft.awareness_threshold)})</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Awareness Multiplier</Label>
+                    <Input type="number" step="0.1" min="1" className="h-7 text-xs w-20"
+                      value={draft.awareness_multiplier} onChange={e => setDraft(d => ({ ...d, awareness_multiplier: parseFloat(e.target.value) || 1 }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Consideration Threshold</Label>
+                    <div className="flex items-center gap-1">
+                      <Input type="number" step="0.01" min="0" max="1" className="h-7 text-xs w-20"
+                        value={draft.consideration_threshold} onChange={e => setDraft(d => ({ ...d, consideration_threshold: parseFloat(e.target.value) || 0 }))} />
+                      <span className="text-[10px] text-muted-foreground">({fmtPct(draft.consideration_threshold)})</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Consideration Multiplier</Label>
+                    <Input type="number" step="0.1" min="1" className="h-7 text-xs w-20"
+                      value={draft.consideration_multiplier} onChange={e => setDraft(d => ({ ...d, consideration_multiplier: parseFloat(e.target.value) || 1 }))} />
+                  </div>
+                </div>
+              </div>
+              {/* Auto-distribute */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Auto-Distribute: Month Budget Split</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  {[0, 1, 2].map(mi => (
+                    <div key={mi} className="space-y-1">
+                      <Label className="text-xs">Luna {mi + 1}</Label>
+                      <div className="flex items-center gap-1">
+                        <Input type="number" step="0.05" min="0" max="1" className="h-7 text-xs w-20"
+                          value={draft.auto_month_pcts[mi]} onChange={e => updateMonthPct(mi, parseFloat(e.target.value) || 0)} />
+                        <span className="text-[10px] text-muted-foreground">{fmtPct(draft.auto_month_pcts[mi])}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {Math.abs(draft.auto_month_pcts.reduce((s, v) => s + v, 0) - 1) > 0.01 && (
+                  <p className="text-xs text-destructive">Month percentages should sum to 100%</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Auto-Distribute: Stage Weights per Month</h4>
+                {[0, 1, 2].map(mi => (
+                  <div key={mi} className="space-y-1">
+                    <Label className="text-xs font-medium">Luna {mi + 1}</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {STAGES.map(stage => (
+                        <div key={stage} className="space-y-0.5">
+                          <Label className="text-[10px] text-muted-foreground">{STAGE_CONFIG[stage].label}</Label>
+                          <Input type="number" step="0.05" min="0" max="1" className="h-6 text-xs"
+                            value={draft.auto_stage_weights[mi][stage]}
+                            onChange={e => updateWeight(mi, stage, parseFloat(e.target.value) || 0)} />
+                        </div>
+                      ))}
+                    </div>
+                    {Math.abs(STAGES.reduce((s, st) => s + (draft.auto_stage_weights[mi][st] || 0), 0) - 1) > 0.01 && (
+                      <p className="text-[10px] text-destructive">Weights for Luna {mi + 1} should sum to 100%</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Benchmarks Table ── */}
+        <div className="text-xs text-muted-foreground">Adjust CPC and CVR rates per channel per month.</div>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -779,10 +895,10 @@ function BenchmarkEditor({ open, onClose, benchmarks, channelsByStage, onSaved }
             </TableHeader>
             <TableBody>
               {STAGES.map(stage => {
-                const cfg = STAGE_CONFIG[stage]
+                const sc = STAGE_CONFIG[stage]
                 return (
                   <Fragment key={stage}>
-                    <TableRow className={cfg.headerBg}><TableCell colSpan={10} className={cn('py-1 text-xs font-bold', cfg.textColor)}>{cfg.label}</TableCell></TableRow>
+                    <TableRow className={sc.headerBg}><TableCell colSpan={10} className={cn('py-1 text-xs font-bold', sc.textColor)}>{sc.label}</TableCell></TableRow>
                     {(channelsByStage[stage] ?? []).map(ch => (
                       <TableRow key={ch.key} className="text-xs">
                         <TableCell className="py-1 font-medium text-[11px]">{ch.label}</TableCell>
@@ -811,139 +927,7 @@ function BenchmarkEditor({ open, onClose, benchmarks, channelsByStage, onSaved }
           <Button variant="outline" size="sm" onClick={onClose}><X className="h-3.5 w-3.5 mr-1" /> Close</Button>
           <Button size="sm" onClick={handleSave} disabled={!hasChanges || saving}>
             {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-            Save Changes ({Object.keys(edits).length})
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function SimSettingsDialog({ open, onClose, current, onSaved }: {
-  open: boolean; onClose: () => void; current: SimSettings; onSaved: () => void
-}) {
-  const [draft, setDraft] = useState<SimSettings>(current)
-  const [saving, setSaving] = useState(false)
-
-  // Sync draft when settings load/change and dialog opens
-  useEffect(() => { if (open) setDraft(current) }, [open, current])
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      await marketingApi.updateSimSettings(draft)
-      onSaved()
-      onClose()
-    } catch (err) { console.error('Failed to save settings:', err) }
-    finally { setSaving(false) }
-  }
-
-  const updateWeight = (mi: number, stage: FunnelStage, value: number) => {
-    setDraft(prev => {
-      const weights = [...prev.auto_stage_weights] as SimSettings['auto_stage_weights']
-      weights[mi] = { ...weights[mi], [stage]: value }
-      return { ...prev, auto_stage_weights: weights }
-    })
-  }
-
-  const updateMonthPct = (mi: number, value: number) => {
-    setDraft(prev => {
-      const pcts = [...prev.auto_month_pcts] as SimSettings['auto_month_pcts']
-      pcts[mi] = value
-      return { ...prev, auto_month_pcts: pcts }
-    })
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={v => { if (!v) onClose() }}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><SlidersHorizontal className="h-4 w-4" /> Simulator Settings</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-5">
-          {/* Synergy Thresholds */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Funnel Synergy Multipliers</h4>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Awareness Threshold</Label>
-                <div className="flex items-center gap-1">
-                  <Input type="number" step="0.01" min="0" max="1" className="h-7 text-xs w-20"
-                    value={draft.awareness_threshold} onChange={e => setDraft(d => ({ ...d, awareness_threshold: parseFloat(e.target.value) || 0 }))} />
-                  <span className="text-xs text-muted-foreground">({fmtPct(draft.awareness_threshold)})</span>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Awareness Multiplier</Label>
-                <Input type="number" step="0.1" min="1" className="h-7 text-xs w-20"
-                  value={draft.awareness_multiplier} onChange={e => setDraft(d => ({ ...d, awareness_multiplier: parseFloat(e.target.value) || 1 }))} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Consideration Threshold</Label>
-                <div className="flex items-center gap-1">
-                  <Input type="number" step="0.01" min="0" max="1" className="h-7 text-xs w-20"
-                    value={draft.consideration_threshold} onChange={e => setDraft(d => ({ ...d, consideration_threshold: parseFloat(e.target.value) || 0 }))} />
-                  <span className="text-xs text-muted-foreground">({fmtPct(draft.consideration_threshold)})</span>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Consideration Multiplier</Label>
-                <Input type="number" step="0.1" min="1" className="h-7 text-xs w-20"
-                  value={draft.consideration_multiplier} onChange={e => setDraft(d => ({ ...d, consideration_multiplier: parseFloat(e.target.value) || 1 }))} />
-              </div>
-            </div>
-          </div>
-
-          {/* Auto-distribute Month Percentages */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Auto-Distribute: Month Budget Split</h4>
-            <div className="grid grid-cols-3 gap-3">
-              {[0, 1, 2].map(mi => (
-                <div key={mi} className="space-y-1">
-                  <Label className="text-xs">Luna {mi + 1}</Label>
-                  <div className="flex items-center gap-1">
-                    <Input type="number" step="0.05" min="0" max="1" className="h-7 text-xs w-20"
-                      value={draft.auto_month_pcts[mi]} onChange={e => updateMonthPct(mi, parseFloat(e.target.value) || 0)} />
-                    <span className="text-xs text-muted-foreground">{fmtPct(draft.auto_month_pcts[mi])}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {Math.abs(draft.auto_month_pcts.reduce((s, v) => s + v, 0) - 1) > 0.01 && (
-              <p className="text-xs text-destructive">Month percentages should sum to 100%</p>
-            )}
-          </div>
-
-          {/* Auto-distribute Stage Weights per Month */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Auto-Distribute: Stage Weights per Month</h4>
-            {[0, 1, 2].map(mi => (
-              <div key={mi} className="space-y-1">
-                <Label className="text-xs font-medium">Luna {mi + 1}</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {STAGES.map(stage => (
-                    <div key={stage} className="space-y-0.5">
-                      <Label className="text-[10px] text-muted-foreground">{STAGE_CONFIG[stage].label}</Label>
-                      <Input type="number" step="0.05" min="0" max="1" className="h-6 text-xs"
-                        value={draft.auto_stage_weights[mi][stage]}
-                        onChange={e => updateWeight(mi, stage, parseFloat(e.target.value) || 0)} />
-                    </div>
-                  ))}
-                </div>
-                {Math.abs(STAGES.reduce((s, st) => s + (draft.auto_stage_weights[mi][st] || 0), 0) - 1) > 0.01 && (
-                  <p className="text-[10px] text-destructive">Weights for Luna {mi + 1} should sum to 100%</p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-2 mt-4">
-          <Button variant="outline" size="sm" onClick={onClose}><X className="h-3.5 w-3.5 mr-1" /> Cancel</Button>
-          <Button size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-            Save Settings
+            Save {hasChanges ? `(${benchmarkChanges}${settingsChanged ? ' + settings' : ''})` : ''}
           </Button>
         </div>
       </DialogContent>
