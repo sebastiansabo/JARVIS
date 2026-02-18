@@ -6,7 +6,7 @@ from flask_login import login_required, current_user
 
 from . import events_bp
 from .utils import can_edit_bonus, get_lock_status
-from core.utils.api_helpers import handle_api_errors
+from core.utils.api_helpers import error_response, handle_api_errors
 
 from core.roles.repositories import PermissionRepository
 check_permission_v2 = PermissionRepository().check_permission_v2
@@ -280,7 +280,7 @@ def api_get_event_bonus(bonus_id):
     """API: Get a single event bonus."""
     bonus = get_event_bonus(bonus_id)
     if not bonus:
-        return jsonify({'error': 'Bonus not found'}), 404
+        return error_response('Bonus not found', 404)
     return jsonify(bonus)
 
 
@@ -603,7 +603,7 @@ def api_get_event(event_id):
     """API: Get a single event."""
     event = get_hr_event(event_id)
     if not event:
-        return jsonify({'error': 'Event not found'}), 404
+        return error_response('Event not found', 404)
     return jsonify(event)
 
 
@@ -718,7 +718,7 @@ def api_get_employee(employee_id):
     """API: Get a single employee."""
     employee = get_hr_employee(employee_id)
     if not employee:
-        return jsonify({'error': 'Employee not found'}), 404
+        return error_response('Employee not found', 404)
     return jsonify(employee)
 
 
@@ -1262,7 +1262,7 @@ def api_get_bonus_type(bonus_type_id):
     """API: Get a single bonus type."""
     bonus_type = get_bonus_type(bonus_type_id)
     if not bonus_type:
-        return jsonify({'error': 'Bonus type not found'}), 404
+        return error_response('Bonus type not found', 404)
 
     # Strip monetary values if user cannot view amounts
     is_hr_manager = getattr(current_user, 'is_hr_manager', False)

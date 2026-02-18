@@ -4,7 +4,7 @@ from flask_login import login_required, current_user
 
 from . import presets_bp
 from .repositories import PresetRepository
-from core.utils.api_helpers import safe_error_response
+from core.utils.api_helpers import error_response, safe_error_response
 
 _preset_repo = PresetRepository()
 
@@ -15,7 +15,7 @@ def api_get_presets():
     """Get all filter presets for the current user on a specific page."""
     page_key = request.args.get('page')
     if not page_key:
-        return jsonify({'error': 'page parameter is required'}), 400
+        return error_response('page parameter is required')
     presets = _preset_repo.get_presets(current_user.id, page_key)
     return jsonify(presets)
 

@@ -9,7 +9,7 @@ from . import settings_bp
 from .themes.repositories import ThemeRepository
 from .menus.repositories import MenuRepository
 from .dropdowns.repositories import DropdownRepository
-from core.utils.api_helpers import admin_required, safe_error_response
+from core.utils.api_helpers import admin_required, error_response, safe_error_response
 
 _theme_repo = ThemeRepository()
 _menu_repo = MenuRepository()
@@ -40,7 +40,7 @@ def api_get_theme(theme_id):
     theme = _theme_repo.get_by_id(theme_id)
     if theme:
         return jsonify({'theme': theme})
-    return jsonify({'error': 'Theme not found'}), 404
+    return error_response('Theme not found', 404)
 
 
 @settings_bp.route('/api/themes', methods=['POST'])
@@ -53,7 +53,7 @@ def api_create_theme():
     is_active = data.get('is_active', False)
 
     if not theme_name:
-        return jsonify({'error': 'Theme name is required'}), 400
+        return error_response('Theme name is required')
 
     theme = _theme_repo.save(None, theme_name, settings, is_active)
     return jsonify({'success': True, 'theme': theme})
@@ -69,12 +69,12 @@ def api_update_theme(theme_id):
     is_active = data.get('is_active')
 
     if not theme_name:
-        return jsonify({'error': 'Theme name is required'}), 400
+        return error_response('Theme name is required')
 
     theme = _theme_repo.save(theme_id, theme_name, settings, is_active)
     if theme:
         return jsonify({'success': True, 'theme': theme})
-    return jsonify({'error': 'Theme not found'}), 404
+    return error_response('Theme not found', 404)
 
 
 @settings_bp.route('/api/themes/<int:theme_id>', methods=['DELETE'])
@@ -83,7 +83,7 @@ def api_delete_theme(theme_id):
     """Delete a theme."""
     if _theme_repo.delete(theme_id):
         return jsonify({'success': True})
-    return jsonify({'error': 'Cannot delete active or only theme'}), 400
+    return error_response('Cannot delete active or only theme')
 
 
 @settings_bp.route('/api/themes/<int:theme_id>/activate', methods=['POST'])
@@ -92,7 +92,7 @@ def api_activate_theme(theme_id):
     """Activate a theme."""
     if _theme_repo.activate(theme_id):
         return jsonify({'success': True})
-    return jsonify({'error': 'Failed to activate theme'}), 500
+    return error_response('Failed to activate theme', 500)
 
 
 # ============== MODULE MENU ENDPOINTS ==============
@@ -141,7 +141,7 @@ def api_get_module_menu_item(item_id):
     item = _menu_repo.get_by_id(item_id)
     if item:
         return jsonify({'item': item})
-    return jsonify({'error': 'Item not found'}), 404
+    return error_response('Item not found', 404)
 
 
 @settings_bp.route('/api/module-menu', methods=['POST'])
@@ -151,7 +151,7 @@ def api_create_module_menu_item():
     data = request.get_json()
 
     if not data.get('name') or not data.get('module_key'):
-        return jsonify({'error': 'Name and module_key are required'}), 400
+        return error_response('Name and module_key are required')
 
     item = _menu_repo.save(None, data)
     return jsonify({'success': True, 'item': item})
@@ -164,12 +164,12 @@ def api_update_module_menu_item(item_id):
     data = request.get_json()
 
     if not data.get('name') or not data.get('module_key'):
-        return jsonify({'error': 'Name and module_key are required'}), 400
+        return error_response('Name and module_key are required')
 
     item = _menu_repo.save(item_id, data)
     if item:
         return jsonify({'success': True, 'item': item})
-    return jsonify({'error': 'Item not found'}), 404
+    return error_response('Item not found', 404)
 
 
 @settings_bp.route('/api/module-menu/<int:item_id>', methods=['DELETE'])
@@ -178,7 +178,7 @@ def api_delete_module_menu_item(item_id):
     """Delete a module menu item."""
     if _menu_repo.delete(item_id):
         return jsonify({'success': True})
-    return jsonify({'error': 'Failed to delete item'}), 400
+    return error_response('Failed to delete item')
 
 
 @settings_bp.route('/api/module-menu/reorder', methods=['POST'])
@@ -189,11 +189,11 @@ def api_reorder_module_menu():
     items = data.get('items', [])
 
     if not items:
-        return jsonify({'error': 'Items array is required'}), 400
+        return error_response('Items array is required')
 
     if _menu_repo.update_order(items):
         return jsonify({'success': True})
-    return jsonify({'error': 'Failed to reorder items'}), 500
+    return error_response('Failed to reorder items', 500)
 
 
 # ============== VAT RATE ENDPOINTS ==============
@@ -216,7 +216,7 @@ def api_create_vat_rate():
     rate = data.get('rate')
 
     if not name or rate is None:
-        return jsonify({'error': 'Name and rate are required'}), 400
+        return error_response('Name and rate are required')
 
     try:
         rate_id = _dropdown_repo.add_vat_rate(

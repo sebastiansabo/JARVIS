@@ -5,7 +5,7 @@ from flask_login import login_required, current_user
 
 from . import invoices_bp
 from .repositories import InvoiceRepository, AllocationRepository, SummaryRepository
-from core.utils.api_helpers import safe_error_response, handle_api_errors
+from core.utils.api_helpers import error_response, safe_error_response, handle_api_errors
 
 _invoice_repo = InvoiceRepository()
 _allocation_repo = AllocationRepository()
@@ -347,7 +347,7 @@ def api_list_invoices():
 def api_db_invoices():
     """Get all invoices from database with pagination and optional filters."""
     if not current_user.can_view_invoices:
-        return jsonify({'error': 'You do not have permission to view invoices'}), 403
+        return error_response('You do not have permission to view invoices', 403)
 
     limit = request.args.get('limit', 10000, type=int)
     offset = request.args.get('offset', 0, type=int)
@@ -383,12 +383,12 @@ def api_db_invoices():
 def api_db_invoice_detail(invoice_id):
     """Get invoice with all allocations."""
     if not current_user.can_view_invoices:
-        return jsonify({'error': 'You do not have permission to view invoices'}), 403
+        return error_response('You do not have permission to view invoices', 403)
 
     invoice = _invoice_repo.get_with_allocations(invoice_id)
     if invoice:
         return jsonify(invoice)
-    return jsonify({'error': 'Invoice not found'}), 404
+    return error_response('Invoice not found', 404)
 
 
 @invoices_bp.route('/api/db/invoices/<int:invoice_id>', methods=['DELETE'])
@@ -401,7 +401,7 @@ def api_db_delete_invoice(invoice_id):
         _log_event('invoice_deleted', f'Moved invoice ID {invoice_id} to bin',
                    entity_type='invoice', entity_id=invoice_id)
         return jsonify({'success': True})
-    return jsonify({'error': 'Invoice not found'}), 404
+    return error_response('Invoice not found', 404)
 
 
 @invoices_bp.route('/api/db/invoices/<int:invoice_id>/restore', methods=['POST'])
@@ -414,7 +414,7 @@ def api_db_restore_invoice(invoice_id):
         _log_event('invoice_restored', f'Restored invoice ID {invoice_id} from bin',
                    entity_type='invoice', entity_id=invoice_id)
         return jsonify({'success': True})
-    return jsonify({'error': 'Invoice not found in bin'}), 404
+    return error_response('Invoice not found in bin', 404)
 
 
 @invoices_bp.route('/api/db/invoices/<int:invoice_id>/permanent', methods=['DELETE'])
@@ -437,7 +437,7 @@ def api_db_permanently_delete_invoice(invoice_id):
         _log_event('invoice_permanently_deleted', f'Permanently deleted invoice ID {invoice_id}',
                    entity_type='invoice', entity_id=invoice_id)
         return jsonify({'success': True, 'drive_deleted': drive_deleted})
-    return jsonify({'error': 'Invoice not found'}), 404
+    return error_response('Invoice not found', 404)
 
 
 @invoices_bp.route('/api/db/invoices/bulk-delete', methods=['POST'])
@@ -449,7 +449,7 @@ def api_db_bulk_delete_invoices():
     data = request.get_json()
     invoice_ids = data.get('invoice_ids', [])
     if not invoice_ids:
-        return jsonify({'error': 'No invoice IDs provided'}), 400
+        return error_response('No invoice IDs provided')
     count = _invoice_repo.bulk_soft_delete(invoice_ids)
     return jsonify({'success': True, 'deleted_count': count})
 
@@ -463,7 +463,7 @@ def api_db_bulk_restore_invoices():
     data = request.get_json()
     invoice_ids = data.get('invoice_ids', [])
     if not invoice_ids:
-        return jsonify({'error': 'No invoice IDs provided'}), 400
+        return error_response('No invoice IDs provided')
     count = _invoice_repo.bulk_restore(invoice_ids)
     return jsonify({'success': True, 'restored_count': count})
 
@@ -477,7 +477,7 @@ def api_db_bulk_permanently_delete_invoices():
     data = request.get_json()
     invoice_ids = data.get('invoice_ids', [])
     if not invoice_ids:
-        return jsonify({'error': 'No invoice IDs provided'}), 400
+        return error_response('No invoice IDs provided')
 
     drive_links = _invoice_repo.get_drive_links(invoice_ids)
     count = _invoice_repo.bulk_permanently_delete(invoice_ids)
@@ -498,7 +498,7 @@ def api_db_bulk_permanently_delete_invoices():
 def api_db_get_deleted_invoices():
     """Get all soft-deleted invoices (bin)."""
     if not current_user.can_view_invoices:
-        return jsonify({'error': 'You do not have permission to view invoices'}), 403
+        return error_response('You do not have permission to view invoices', 403)
 
     invoices = _invoice_repo.get_all(include_deleted=True, limit=500)
     return jsonify(invoices)
@@ -578,7 +578,7 @@ def api_db_update_invoice(invoice_id):
             _log_event('invoice_updated', f'Updated invoice ID {invoice_id}',
                        entity_type='invoice', entity_id=invoice_id)
             return jsonify({'success': True})
-        return jsonify({'error': 'Invoice not found or no changes made'}), 404
+        return error_response('Invoice not found or no changes made', 404)
     except Exception as e:
         return safe_error_response(e)
 
@@ -679,7 +679,7 @@ def api_update_invoice_drive_link(invoice_id):
     updated = _invoice_repo.update(invoice_id=invoice_id, drive_link=drive_link)
     if updated:
         return jsonify({'success': True})
-    return jsonify({'error': 'Invoice not found'}), 404
+    return error_response('Invoice not found', 404)
 
 
 # ============== SEARCH ==============
@@ -689,7 +689,7 @@ def api_update_invoice_drive_link(invoice_id):
 def api_db_search():
     """Search invoices by supplier or invoice number, respecting active filters."""
     if not current_user.can_view_invoices:
-        return jsonify({'error': 'You do not have permission to view invoices'}), 403
+        return error_response('You do not have permission to view invoices', 403)
 
     query = request.args.get('q', '')
     if len(query) < 2:

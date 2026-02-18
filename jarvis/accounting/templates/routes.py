@@ -4,7 +4,7 @@ from flask_login import login_required
 
 from . import templates_bp
 from .repositories import TemplateRepository
-from core.utils.api_helpers import safe_error_response
+from core.utils.api_helpers import error_response, safe_error_response
 
 _template_repo = TemplateRepository()
 
@@ -30,7 +30,7 @@ def api_get_template(template_id):
     template = _template_repo.get(template_id)
     if template:
         return jsonify(template)
-    return jsonify({'error': 'Template not found'}), 404
+    return error_response('Template not found', 404)
 
 
 @templates_bp.route('/api/templates', methods=['POST'])

@@ -9,6 +9,7 @@ from flask import request, jsonify, redirect, url_for, Response, stream_with_con
 from flask_login import login_required, current_user
 
 from core.utils.logging_config import get_logger
+from core.utils.api_helpers import error_response
 from . import ai_agent_bp
 from .services import AIAgentService
 from .models import ConversationStatus
@@ -81,7 +82,7 @@ def api_list_conversations():
     )
 
     if not result.success:
-        return jsonify({'error': result.error}), 500
+        return error_response(result.error, 500)
 
     # Convert to serializable format
     conversations = []
@@ -115,7 +116,7 @@ def api_create_conversation():
     )
 
     if not result.success:
-        return jsonify({'error': result.error}), 500
+        return error_response(result.error, 500)
 
     conv = result.data
     return jsonify({
@@ -139,7 +140,7 @@ def api_get_conversation(conversation_id: int):
     )
 
     if not result.success:
-        return jsonify({'error': result.error}), 404
+        return error_response(result.error, 404)
 
     data = result.data
     conv = data['conversation']
@@ -186,7 +187,7 @@ def api_archive_conversation(conversation_id: int):
     )
 
     if not result.success:
-        return jsonify({'error': result.error}), 404
+        return error_response(result.error, 404)
 
     return jsonify({'success': True})
 
@@ -204,7 +205,7 @@ def api_delete_conversation(conversation_id: int):
     )
 
     if not result.success:
-        return jsonify({'error': result.error}), 404
+        return error_response(result.error, 404)
 
     return jsonify({'success': True})
 
@@ -240,17 +241,17 @@ def api_chat():
     data = request.get_json()
 
     if not data:
-        return jsonify({'error': 'Request body required'}), 400
+        return error_response('Request body required')
 
     conversation_id = data.get('conversation_id')
     message = data.get('message', '').strip()
     model_config_id = data.get('model_config_id')
 
     if not conversation_id:
-        return jsonify({'error': 'conversation_id required'}), 400
+        return error_response('conversation_id required')
 
     if not message:
-        return jsonify({'error': 'message required'}), 400
+        return error_response('message required')
 
     result = service.chat(
         conversation_id=conversation_id,
@@ -261,7 +262,7 @@ def api_chat():
 
     if not result.success:
         logger.error(f"Chat failed: {result.error}")
-        return jsonify({'error': result.error}), 500
+        return error_response(result.error, 500)
 
     response = result.data
     msg = response.message
@@ -302,7 +303,7 @@ def api_list_models():
     result = service.get_available_models()
 
     if not result.success:
-        return jsonify({'error': result.error}), 500
+        return error_response(result.error, 500)
 
     models = []
     for model in result.data:
@@ -336,16 +337,16 @@ def api_chat_stream():
     data = request.get_json()
 
     if not data:
-        return jsonify({'error': 'Request body required'}), 400
+        return error_response('Request body required')
 
     conversation_id = data.get('conversation_id')
     message = data.get('message', '').strip()
     model_config_id = data.get('model_config_id')
 
     if not conversation_id:
-        return jsonify({'error': 'conversation_id required'}), 400
+        return error_response('conversation_id required')
     if not message:
-        return jsonify({'error': 'message required'}), 400
+        return error_response('message required')
 
     return Response(
         stream_with_context(service.chat_stream(
@@ -378,7 +379,7 @@ def api_rag_reindex():
     """
     # Check admin permission
     if not getattr(current_user, 'can_access_settings', False):
-        return jsonify({'error': 'Admin access required'}), 403
+        return error_response('Admin access required', 403)
 
     from .services import RAGService
     from .models import RAGSourceType
@@ -406,11 +407,11 @@ def api_rag_reindex():
         # Validate source_type
         if source_type not in BATCH_METHODS:
             valid = ', '.join(BATCH_METHODS.keys())
-            return jsonify({'error': f'Invalid source_type. Valid: {valid}'}), 400
+            return error_response(f'Invalid source_type. Valid: {valid}')
 
         result = BATCH_METHODS[source_type](limit=limit)
         if not result.success:
-            return jsonify({'error': result.error}), 500
+            return error_response(result.error, 500)
 
         return jsonify({
             'success': True,
@@ -421,7 +422,7 @@ def api_rag_reindex():
         # Reindex all sources
         result = rag_service.index_all_sources(limit=limit)
         if not result.success:
-            return jsonify({'error': result.error}), 500
+            return error_response(result.error, 500)
 
         return jsonify({
             'success': True,
@@ -460,7 +461,7 @@ def api_rag_stats():
 def api_list_all_models():
     """API: List all models including inactive (admin)."""
     if not getattr(current_user, 'can_access_settings', False):
-        return jsonify({'error': 'Admin access required'}), 403
+        return error_response('Admin access required', 403)
 
     from .repositories import ModelConfigRepository
     repo = ModelConfigRepository()
@@ -490,14 +491,14 @@ def api_list_all_models():
 def api_set_default_model(model_id: int):
     """API: Set a model as default for its provider."""
     if not getattr(current_user, 'can_access_settings', False):
-        return jsonify({'error': 'Admin access required'}), 403
+        return error_response('Admin access required', 403)
 
     from .repositories import ModelConfigRepository
     repo = ModelConfigRepository()
 
     success = repo.set_default(model_id)
     if not success:
-        return jsonify({'error': 'Model not found'}), 404
+        return error_response('Model not found', 404)
 
     return jsonify({'success': True})
 
@@ -508,7 +509,7 @@ def api_set_default_model(model_id: int):
 def api_toggle_model(model_id: int):
     """API: Enable or disable a model."""
     if not getattr(current_user, 'can_access_settings', False):
-        return jsonify({'error': 'Admin access required'}), 403
+        return error_response('Admin access required', 403)
 
     data = request.get_json() or {}
     is_active = data.get('is_active', True)
@@ -518,7 +519,7 @@ def api_toggle_model(model_id: int):
 
     success = repo.toggle_active(model_id, is_active)
     if not success:
-        return jsonify({'error': 'Model not found'}), 404
+        return error_response('Model not found', 404)
 
     return jsonify({'success': True})
 
@@ -529,19 +530,19 @@ def api_toggle_model(model_id: int):
 def api_update_model_key(model_id: int):
     """API: Update a model's API key."""
     if not getattr(current_user, 'can_access_settings', False):
-        return jsonify({'error': 'Admin access required'}), 403
+        return error_response('Admin access required', 403)
 
     data = request.get_json() or {}
     api_key = data.get('api_key', '').strip()
     if not api_key:
-        return jsonify({'error': 'api_key required'}), 400
+        return error_response('api_key required')
 
     from .repositories import ModelConfigRepository
     repo = ModelConfigRepository()
 
     success = repo.update_api_key(model_id, api_key)
     if not success:
-        return jsonify({'error': 'Model not found'}), 404
+        return error_response('Model not found', 404)
 
     return jsonify({'success': True})
 
@@ -560,7 +561,7 @@ AI_SETTINGS_KEYS = [
 def api_get_ai_settings():
     """API: Get AI configuration settings."""
     if not getattr(current_user, 'can_access_settings', False):
-        return jsonify({'error': 'Admin access required'}), 403
+        return error_response('Admin access required', 403)
 
     from core.notifications.repositories.notification_repository import NotificationRepository
     repo = NotificationRepository()
@@ -585,7 +586,7 @@ def api_get_ai_settings():
 def api_save_ai_settings():
     """API: Save AI configuration settings."""
     if not getattr(current_user, 'can_access_settings', False):
-        return jsonify({'error': 'Admin access required'}), 403
+        return error_response('Admin access required', 403)
 
     data = request.get_json() or {}
 

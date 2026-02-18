@@ -4,7 +4,7 @@ from flask_login import login_required
 
 from . import roles_bp
 from .repositories import RoleRepository, PermissionRepository
-from core.utils.api_helpers import admin_required, safe_error_response
+from core.utils.api_helpers import admin_required, error_response, safe_error_response
 
 _role_repo = RoleRepository()
 _perm_repo = PermissionRepository()
@@ -29,7 +29,7 @@ def api_get_role(role_id):
     role = _role_repo.get(role_id)
     if role:
         return jsonify(role)
-    return jsonify({'error': 'Role not found'}), 404
+    return error_response('Role not found', 404)
 
 
 @roles_bp.route('/api/roles', methods=['POST'])
@@ -39,7 +39,7 @@ def api_create_role():
     data = request.get_json()
     name = data.get('name', '').strip()
     if not name:
-        return jsonify({'error': 'Name is required'}), 400
+        return error_response('Name is required')
     try:
         role_id = _role_repo.save(
             name=name,

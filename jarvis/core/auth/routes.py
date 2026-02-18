@@ -9,7 +9,7 @@ from flask_login import login_required, login_user, logout_user, current_user
 from . import auth_bp
 from .models import User
 from .repositories import UserRepository, EventRepository
-from core.utils.api_helpers import admin_required, safe_error_response, RateLimiter
+from core.utils.api_helpers import admin_required, error_response, safe_error_response, RateLimiter
 
 _user_repo = UserRepository()
 _event_repo = EventRepository()
@@ -247,7 +247,7 @@ def api_get_user(user_id):
     user = _user_repo.get_by_id(user_id)
     if user:
         return jsonify(user)
-    return jsonify({'error': 'User not found'}), 404
+    return error_response('User not found', 404)
 
 
 @auth_bp.route('/api/users', methods=['POST'])
@@ -261,7 +261,7 @@ def api_create_user():
     password = data.get('password', '').strip() if data.get('password') else ''
 
     if not name or not email:
-        return jsonify({'error': 'Name and email are required'}), 400
+        return error_response('Name and email are required')
 
     try:
         user_id = _user_repo.save(
@@ -356,7 +356,7 @@ def api_get_employee(employee_id):
     if user:
         user['departments'] = user.get('department')
         return jsonify(user)
-    return jsonify({'error': 'Employee not found'}), 404
+    return error_response('Employee not found', 404)
 
 
 @auth_bp.route('/api/employees', methods=['POST'])
@@ -374,7 +374,7 @@ def api_create_employee():
     brand = data.get('brand', '').strip() if data.get('brand') else None
 
     if not name:
-        return jsonify({'error': 'Name is required'}), 400
+        return error_response('Name is required')
 
     try:
         user_id = _user_repo.save(

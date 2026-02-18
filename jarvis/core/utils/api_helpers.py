@@ -68,6 +68,15 @@ def get_json_or_error():
 
 # ============== Error Handling ==============
 
+def error_response(message: str, status_code: int = 400):
+    """Return a standardized error response for known/expected errors.
+
+    Use for validation failures, missing resources, permission errors, etc.
+    For unexpected exceptions, use safe_error_response() instead.
+    """
+    return jsonify({'success': False, 'error': message}), status_code
+
+
 def safe_error_response(e, status_code=500):
     """Return error response without leaking DB internals.
 

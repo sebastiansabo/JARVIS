@@ -6,6 +6,7 @@ import os
 import re
 from flask import jsonify, request
 from flask_login import login_required
+from core.utils.api_helpers import error_response
 
 from database import get_db, get_cursor, release_db
 from marketing import marketing_bp
@@ -110,7 +111,7 @@ def api_sim_benchmark_update(benchmark_id):
                 sets.append(f"{field} = %s")
                 params.append(float(data[field]))
         if not sets:
-            return jsonify({'error': 'No fields to update'}), 400
+            return error_response('No fields to update')
 
         sets.append("updated_at = CURRENT_TIMESTAMP")
         params.append(benchmark_id)
@@ -131,7 +132,7 @@ def api_sim_benchmarks_bulk_update():
     data = request.get_json(silent=True) or {}
     updates = data.get('updates', [])
     if not updates:
-        return jsonify({'error': 'No updates provided'}), 400
+        return error_response('No updates provided')
 
     conn = get_db()
     try:
@@ -172,18 +173,18 @@ def api_sim_benchmark_create():
     months = data.get('months', [])
 
     if not channel_label or funnel_stage not in ('awareness', 'consideration', 'conversion'):
-        return jsonify({'error': 'channel_label and valid funnel_stage required'}), 400
+        return error_response('channel_label and valid funnel_stage required')
 
     channel_key = re.sub(r'[^a-z0-9_]', '', channel_label.lower().replace(' ', '_').replace('-', '_'))
     if not channel_key:
-        return jsonify({'error': 'Invalid channel name'}), 400
+        return error_response('Invalid channel name')
 
     conn = get_db()
     try:
         cursor = get_cursor(conn)
         cursor.execute("SELECT 1 FROM mkt_sim_benchmarks WHERE channel_key = %s LIMIT 1", (channel_key,))
         if cursor.fetchone():
-            return jsonify({'error': f'Channel "{channel_key}" already exists'}), 409
+            return error_response(f'Channel "{channel_key}" already exists', 409)
 
         created_ids = []
         for md in months:
@@ -233,7 +234,7 @@ def api_sim_ai_distribute():
     benchmarks = data.get('benchmarks', [])  # full benchmark list
 
     if not total_budget or not benchmarks:
-        return jsonify({'error': 'total_budget and benchmarks required'}), 400
+        return error_response('total_budget and benchmarks required')
 
     # Build channel info for the prompt
     channel_info = {}
@@ -261,7 +262,7 @@ def api_sim_ai_distribute():
                 active_info[key] = channel_info[key]
 
     if not active_info:
-        return jsonify({'error': 'No active channels'}), 400
+        return error_response('No active channels')
 
     system_prompt = f"""You are the best digital marketing PPC specialist in the Romanian automotive market.
 You manage campaigns for car dealerships (Toyota, Lexus, Mazda, Hyundai, Suzuki, Kia brands).
@@ -348,10 +349,10 @@ Return format:
             'tokens_used': response.input_tokens + response.output_tokens,
         })
     except ImportError:
-        return jsonify({'error': 'AI provider not available'}), 503
+        return error_response('AI provider not available', 503)
     except json.JSONDecodeError as e:
         logger.error(f"AI distribute JSON parse error: {e}, content: {content[:500]}")
-        return jsonify({'error': 'Failed to parse AI response'}), 500
+        return error_response('Failed to parse AI response', 500)
     except Exception as e:
         logger.error(f"AI distribute error: {e}")
-        return jsonify({'error': str(e)}), 500
+        return error_response(str(e), 500)

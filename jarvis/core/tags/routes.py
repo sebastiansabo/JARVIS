@@ -8,7 +8,7 @@ from flask_login import login_required, current_user
 from . import tags_bp
 from .repositories import TagRepository, AutoTagRepository
 from .auto_tag_service import AutoTagService, ENTITY_FIELDS
-from core.utils.api_helpers import safe_error_response
+from core.utils.api_helpers import error_response, safe_error_response
 
 _tag_repo = TagRepository()
 _auto_tag_repo = AutoTagRepository()
@@ -158,10 +158,10 @@ def api_delete_tag(tag_id):
 def api_get_entity_tags():
     entity_type = request.args.get('entity_type', '')
     if entity_type not in VALID_ENTITY_TYPES:
-        return jsonify({'error': f'Invalid entity_type. Must be one of: {", ".join(sorted(VALID_ENTITY_TYPES))}'}), 400
+        return error_response(f'Invalid entity_type. Must be one of: {", ".join(sorted(VALID_ENTITY_TYPES))}')
     entity_id = request.args.get('entity_id', type=int)
     if not entity_id:
-        return jsonify({'error': 'entity_id is required'}), 400
+        return error_response('entity_id is required')
     tags = _tag_repo.get_entity_tags(entity_type, entity_id, current_user.id)
     return jsonify(tags)
 
@@ -171,7 +171,7 @@ def api_get_entity_tags():
 def api_get_entity_tags_bulk():
     entity_type = request.args.get('entity_type', '')
     if entity_type not in VALID_ENTITY_TYPES:
-        return jsonify({'error': f'Invalid entity_type'}), 400
+        return error_response('Invalid entity_type')
     ids_str = request.args.get('entity_ids', '')
     entity_ids = [int(x) for x in ids_str.split(',') if x.strip()] if ids_str else []
     if not entity_ids:

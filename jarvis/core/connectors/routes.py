@@ -4,6 +4,7 @@ Currently disabled/under development. All endpoints return 503.
 """
 from flask import jsonify, redirect, url_for, flash
 from flask_login import login_required, current_user
+from core.utils.api_helpers import error_response
 
 from . import connectors_bp
 
@@ -54,46 +55,46 @@ def connectors():
 @login_required
 def api_get_connectors():
     """Get all connectors - DISABLED."""
-    return jsonify({'error': 'Connectors feature is coming soon'}), 503
+    return error_response('Connectors feature is coming soon', 503)
 
 
 @connectors_bp.route('/api/connectors/<int:connector_id>', methods=['GET'])
 @login_required
 def api_get_connector(connector_id):
     """Get a specific connector - DISABLED."""
-    return jsonify({'error': 'Connectors feature is coming soon'}), 503
+    return error_response('Connectors feature is coming soon', 503)
 
 
 @connectors_bp.route('/api/connectors', methods=['POST'])
 @login_required
 def api_create_connector():
     """Create a new connector - DISABLED."""
-    return jsonify({'error': 'Connectors feature is coming soon'}), 503
+    return error_response('Connectors feature is coming soon', 503)
 
 
 @connectors_bp.route('/api/connectors/<int:connector_id>', methods=['PUT'])
 @login_required
 def api_update_connector(connector_id):
     """Update a connector - DISABLED."""
-    return jsonify({'error': 'Connectors feature is coming soon'}), 503
+    return error_response('Connectors feature is coming soon', 503)
 
 
 @connectors_bp.route('/api/connectors/<int:connector_id>', methods=['DELETE'])
 @login_required
 def api_delete_connector(connector_id):
     """Delete a connector - DISABLED."""
-    return jsonify({'error': 'Connectors feature is coming soon'}), 503
+    return error_response('Connectors feature is coming soon', 503)
 
 
 @connectors_bp.route('/api/connectors/<int:connector_id>/sync', methods=['POST'])
 @login_required
 def api_sync_connector(connector_id):
     """Trigger a sync for a connector - DISABLED."""
-    return jsonify({'error': 'Connectors feature is coming soon'}), 503
+    return error_response('Connectors feature is coming soon', 503)
 
 
 @connectors_bp.route('/api/buffer/fetch/<source>', methods=['POST'])
 @login_required
 def api_buffer_fetch(source):
     """Fetch invoices from a connector source - DISABLED."""
-    return jsonify({'error': 'Connectors feature is coming soon'}), 503
+    return error_response('Connectors feature is coming soon', 503)
