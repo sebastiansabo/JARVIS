@@ -123,6 +123,13 @@
   body {
     @apply bg-background text-foreground;
   }
+  button,
+  [role="combobox"],
+  [role="checkbox"],
+  [role="switch"],
+  a[href] {
+    cursor: pointer;
+  }
 }
 
 /* react-grid-layout overrides */

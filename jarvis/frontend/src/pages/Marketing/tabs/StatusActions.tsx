@@ -108,7 +108,7 @@ export function StatusActions({ project, onDone }: { project: MktProject; onDone
           </Button>
         </>
       )}
-      {s !== 'archived' && (
+      {s !== 'archived' && s !== 'pending_approval' && (
         <Button size="sm" variant="ghost" onClick={() => archiveMut.mutate()} disabled={archiveMut.isPending} title="Archive">
           <Archive className="h-3.5 w-3.5" />
         </Button>

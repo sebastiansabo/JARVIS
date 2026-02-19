@@ -479,10 +479,10 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete }: {
                 {(onArchive || onDelete) && (
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      {onArchive && (
+                      {onArchive && p.status !== 'pending_approval' && p.status !== 'archived' && (
                         <button
                           type="button"
-                          className="p-1 rounded hover:bg-muted"
+                          className="p-1 rounded hover:bg-accent cursor-pointer transition-colors"
                           title="Archive"
                           onClick={(e) => { e.stopPropagation(); onArchive(p) }}
                         >
@@ -492,7 +492,7 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete }: {
                       {onDelete && (
                         <button
                           type="button"
-                          className="p-1 rounded hover:bg-muted"
+                          className="p-1 rounded hover:bg-destructive/10 cursor-pointer transition-colors"
                           title="Delete"
                           onClick={(e) => { e.stopPropagation(); onDelete(p) }}
                         >
@@ -581,10 +581,10 @@ function ProjectCards({ projects, onSelect, onArchive, onDelete }: {
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{p.owner_name}</span>
               <div className="flex items-center gap-1">
-                {onArchive && (
+                {onArchive && p.status !== 'pending_approval' && p.status !== 'archived' && (
                   <button
                     type="button"
-                    className="p-1 rounded hover:bg-muted"
+                    className="p-1 rounded hover:bg-accent cursor-pointer transition-colors"
                     title="Archive"
                     onClick={(e) => { e.stopPropagation(); onArchive(p) }}
                   >
@@ -594,7 +594,7 @@ function ProjectCards({ projects, onSelect, onArchive, onDelete }: {
                 {onDelete && (
                   <button
                     type="button"
-                    className="p-1 rounded hover:bg-muted text-destructive"
+                    className="p-1 rounded hover:bg-destructive/10 cursor-pointer transition-colors text-destructive"
                     title="Delete"
                     onClick={(e) => { e.stopPropagation(); onDelete(p) }}
                   >
