@@ -9,6 +9,7 @@ import { Pencil } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import type { MktProject } from '@/types/marketing'
 import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
+import { RichTextEditor, RichTextDisplay } from '@/components/shared/RichTextEditor'
 import { OkrCard } from './OkrCard'
 import { statusColors, fmt, fmtDate } from './utils'
 
@@ -145,12 +146,10 @@ export function OverviewTab({ project }: { project: MktProject }) {
           </div>
           {editingDesc ? (
             <div className="space-y-2">
-              <Textarea
-                value={descDraft}
-                onChange={(e) => setDescDraft(e.target.value)}
+              <RichTextEditor
+                content={descDraft}
+                onChange={setDescDraft}
                 placeholder="Add project details, goals, scope, notes..."
-                rows={6}
-                className="text-sm"
               />
               <div className="flex justify-end gap-2">
                 <Button variant="outline" size="sm" onClick={() => setEditingDesc(false)}>Cancel</Button>
@@ -160,9 +159,11 @@ export function OverviewTab({ project }: { project: MktProject }) {
               </div>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-              {project.description || 'No description yet. Click Edit to add details.'}
-            </p>
+            project.description && project.description !== '<p></p>' ? (
+              <RichTextDisplay content={project.description} className="text-sm" />
+            ) : (
+              <p className="text-sm text-muted-foreground">No description yet. Click Edit to add details.</p>
+            )
           )}
         </div>
 

@@ -8,9 +8,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn } from '@/lib/utils'
 import {
   ArrowLeft, Pencil, BarChart3, DollarSign, Target, Users,
-  CalendarDays, Clock, FileText, MessageSquare,
+  CalendarDays, Clock, FileText, MessageSquare, Download,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
+import { exportProjectPdf } from './exportProjectPdf'
 import ProjectForm from './ProjectForm'
 import {
   StatusActions, OverviewTab, BudgetTab, KpisTab, TeamTab,
@@ -86,6 +87,9 @@ export default function ProjectDetail() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={() => exportProjectPdf(project)}>
+            <Download className="h-3.5 w-3.5 mr-1.5" /> PDF
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowEditDialog(true)}>
             <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
           </Button>
