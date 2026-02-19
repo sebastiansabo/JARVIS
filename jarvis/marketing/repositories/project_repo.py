@@ -191,6 +191,58 @@ class ProjectRepository(BaseRepository):
             (status, project_id)
         ) > 0
 
+    def archive(self, project_id):
+        return self.execute(
+            "UPDATE mkt_projects SET status = 'archived', updated_at = NOW() WHERE id = %s AND deleted_at IS NULL",
+            (project_id,)
+        ) > 0
+
+    def restore(self, project_id):
+        """Restore from archived status or from soft-delete (trash)."""
+        return self.execute(
+            "UPDATE mkt_projects SET status = 'draft', deleted_at = NULL, updated_at = NOW() WHERE id = %s",
+            (project_id,)
+        ) > 0
+
+    def list_archived(self, limit=100, offset=0):
+        def _work(cursor):
+            cursor.execute('''
+                SELECT p.*, c.company as company_name, b.name as brand_name, u.name as owner_name,
+                       (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id) as total_spent
+                FROM mkt_projects p
+                JOIN companies c ON c.id = p.company_id
+                LEFT JOIN brands b ON b.id = p.brand_id
+                JOIN users u ON u.id = p.owner_id
+                WHERE p.status = 'archived' AND p.deleted_at IS NULL
+                ORDER BY p.updated_at DESC
+                LIMIT %s OFFSET %s
+            ''', (limit, offset))
+            return cursor.fetchall()
+        return self.with_cursor(_work)
+
+    def list_deleted(self, limit=100, offset=0):
+        def _work(cursor):
+            cursor.execute('''
+                SELECT p.*, c.company as company_name, b.name as brand_name, u.name as owner_name,
+                       (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id) as total_spent
+                FROM mkt_projects p
+                JOIN companies c ON c.id = p.company_id
+                LEFT JOIN brands b ON b.id = p.brand_id
+                JOIN users u ON u.id = p.owner_id
+                WHERE p.deleted_at IS NOT NULL
+                ORDER BY p.deleted_at DESC
+                LIMIT %s OFFSET %s
+            ''', (limit, offset))
+            return cursor.fetchall()
+        return self.with_cursor(_work)
+
+    def permanent_delete(self, project_id):
+        """Hard delete — only for projects already in trash."""
+        return self.execute(
+            'DELETE FROM mkt_projects WHERE id = %s AND deleted_at IS NOT NULL',
+            (project_id,)
+        ) > 0
+
     def duplicate(self, project_id, new_name, created_by):
         """Clone a project as a new draft."""
         original = self.get_by_id(project_id)

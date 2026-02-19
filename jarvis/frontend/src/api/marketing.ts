@@ -54,6 +54,21 @@ export const marketingApi = {
   deleteProject: (id: number) =>
     api.delete<{ success: boolean }>(`${BASE}/projects/${id}`),
 
+  archiveProject: (id: number) =>
+    api.post<{ success: boolean }>(`${BASE}/projects/${id}/archive`),
+
+  restoreProject: (id: number) =>
+    api.post<{ success: boolean }>(`${BASE}/projects/${id}/restore`),
+
+  getArchivedProjects: (limit = 100, offset = 0) =>
+    api.get<{ projects: MktProject[]; total: number }>(`${BASE}/projects/archived${toQs({ limit, offset })}`),
+
+  getTrashProjects: (limit = 100, offset = 0) =>
+    api.get<{ projects: MktProject[]; total: number }>(`${BASE}/projects/trash${toQs({ limit, offset })}`),
+
+  permanentDeleteProject: (id: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/projects/${id}/permanent`),
+
   // Status transitions
   submitApproval: (id: number, approverId?: number) =>
     api.post<{ success: boolean; request_id?: number }>(`${BASE}/projects/${id}/submit-approval`, approverId ? { approver_id: approverId } : {}),

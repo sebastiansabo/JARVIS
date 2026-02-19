@@ -16,6 +16,7 @@ import {
   Plus, Search, LayoutGrid, List,
   DollarSign, Target, AlertTriangle, FolderOpen,
   BarChart3, PieChart, Calculator, Download,
+  Archive, Trash2, RotateCcw, AlertCircle,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { marketingApi } from '@/api/marketing'
@@ -48,7 +49,7 @@ function burnRate(spent: number, budget: number) {
   return Math.round((spent / budget) * 100)
 }
 
-type MainTab = 'projects' | 'dashboard' | 'simulator'
+type MainTab = 'projects' | 'dashboard' | 'simulator' | 'archived' | 'trash'
 
 export default function Marketing() {
   const queryClient = useQueryClient()
@@ -134,6 +135,28 @@ export default function Marketing() {
           )}
         >
           <Calculator className="h-3.5 w-3.5" /> Simulator
+        </button>
+        <button
+          onClick={() => setMainTab('archived')}
+          className={cn(
+            'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+            mainTab === 'archived'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <Archive className="h-3.5 w-3.5" /> Archived
+        </button>
+        <button
+          onClick={() => setMainTab('trash')}
+          className={cn(
+            'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+            mainTab === 'trash'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <Trash2 className="h-3.5 w-3.5" /> Trash
         </button>
       </div>
 
@@ -260,6 +283,18 @@ export default function Marketing() {
             <ProjectCards
               projects={projects}
               onSelect={(p) => navigate(`/app/marketing/projects/${p.id}`)}
+              onArchive={async (p) => {
+                await marketingApi.archiveProject(p.id)
+                queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
+                queryClient.invalidateQueries({ queryKey: ['mkt-archived'] })
+                queryClient.invalidateQueries({ queryKey: ['mkt-dashboard-summary'] })
+              }}
+              onDelete={async (p) => {
+                await marketingApi.deleteProject(p.id)
+                queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
+                queryClient.invalidateQueries({ queryKey: ['mkt-trash'] })
+                queryClient.invalidateQueries({ queryKey: ['mkt-dashboard-summary'] })
+              }}
             />
           )}
 
@@ -295,6 +330,33 @@ export default function Marketing() {
       {mainTab === 'dashboard' && <DashboardView />}
 
       {mainTab === 'simulator' && <CampaignSimulator />}
+
+      {mainTab === 'archived' && (
+        <ArchivedView
+          onRestore={() => {
+            queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
+            queryClient.invalidateQueries({ queryKey: ['mkt-archived'] })
+            queryClient.invalidateQueries({ queryKey: ['mkt-dashboard-summary'] })
+          }}
+          onDelete={() => {
+            queryClient.invalidateQueries({ queryKey: ['mkt-archived'] })
+            queryClient.invalidateQueries({ queryKey: ['mkt-trash'] })
+          }}
+        />
+      )}
+
+      {mainTab === 'trash' && (
+        <TrashView
+          onRestore={() => {
+            queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
+            queryClient.invalidateQueries({ queryKey: ['mkt-trash'] })
+            queryClient.invalidateQueries({ queryKey: ['mkt-dashboard-summary'] })
+          }}
+          onPermanentDelete={() => {
+            queryClient.invalidateQueries({ queryKey: ['mkt-trash'] })
+          }}
+        />
+      )}
 
       {/* Create Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
@@ -403,9 +465,11 @@ function ProjectTable({ projects, onSelect }: {
 
 // ---- Card View ----
 
-function ProjectCards({ projects, onSelect }: {
+function ProjectCards({ projects, onSelect, onArchive, onDelete }: {
   projects: MktProject[]
   onSelect: (p: MktProject) => void
+  onArchive?: (p: MktProject) => void
+  onDelete?: (p: MktProject) => void
 }) {
   if (!projects.length) {
     return (
@@ -467,7 +531,29 @@ function ProjectCards({ projects, onSelect }: {
 
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{p.owner_name}</span>
-              <span>{p.start_date ? new Date(p.start_date).toLocaleDateString('ro-RO') : ''}</span>
+              <div className="flex items-center gap-1">
+                {onArchive && (
+                  <button
+                    type="button"
+                    className="p-1 rounded hover:bg-muted"
+                    title="Archive"
+                    onClick={(e) => { e.stopPropagation(); onArchive(p) }}
+                  >
+                    <Archive className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {onDelete && (
+                  <button
+                    type="button"
+                    className="p-1 rounded hover:bg-muted text-destructive"
+                    title="Delete"
+                    onClick={(e) => { e.stopPropagation(); onDelete(p) }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <span>{p.start_date ? new Date(p.start_date).toLocaleDateString('ro-RO') : ''}</span>
+              </div>
             </div>
           </div>
         )
@@ -840,6 +926,149 @@ function KpiMatrix({ kpis, onProjectClick }: {
         </Table>
       </div>
     </TooltipProvider>
+  )
+}
+
+
+// ---- Archived View ----
+
+function ArchivedView({ onRestore, onDelete }: { onRestore: () => void; onDelete: () => void }) {
+  const [confirming, setConfirming] = useState<number | null>(null)
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['mkt-archived'],
+    queryFn: () => marketingApi.getArchivedProjects(),
+  })
+  const projects = data?.projects ?? []
+
+  const handleRestore = async (id: number) => {
+    await marketingApi.restoreProject(id)
+    onRestore()
+    refetch()
+  }
+
+  const handleDelete = async (id: number) => {
+    await marketingApi.deleteProject(id)
+    onDelete()
+    refetch()
+    setConfirming(null)
+  }
+
+  if (isError) return <QueryError message="Failed to load archived projects" onRetry={() => refetch()} />
+  if (isLoading) return <TableSkeleton rows={4} columns={5} />
+
+  return (
+    <div className="space-y-4">
+      {projects.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <Archive className="mx-auto h-8 w-8 mb-2 opacity-50" />
+          No archived projects.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {projects.map((p) => (
+            <div key={p.id} className="flex items-center gap-4 rounded-lg border p-4 opacity-80">
+              <div className="min-w-0 flex-1">
+                <h3 className="font-semibold truncate">{p.name}</h3>
+                <p className="text-sm text-muted-foreground">{p.company_name}{p.brand_name ? ` / ${p.brand_name}` : ''}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Owner: {p.owner_name} &middot; Budget: {formatCurrency(p.total_budget, p.currency)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="outline" size="sm" onClick={() => handleRestore(p.id)}>
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> Restore
+                </Button>
+                {confirming === p.id ? (
+                  <div className="flex items-center gap-1">
+                    <Button variant="destructive" size="sm" onClick={() => handleDelete(p.id)}>Confirm</Button>
+                    <Button variant="ghost" size="sm" onClick={() => setConfirming(null)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button variant="ghost" size="sm" onClick={() => setConfirming(p.id)}>
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ---- Trash View ----
+
+function TrashView({ onRestore, onPermanentDelete }: { onRestore: () => void; onPermanentDelete: () => void }) {
+  const [confirming, setConfirming] = useState<number | null>(null)
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['mkt-trash'],
+    queryFn: () => marketingApi.getTrashProjects(),
+  })
+  const projects = data?.projects ?? []
+
+  const handleRestore = async (id: number) => {
+    await marketingApi.restoreProject(id)
+    onRestore()
+    refetch()
+  }
+
+  const handlePermanentDelete = async (id: number) => {
+    await marketingApi.permanentDeleteProject(id)
+    onPermanentDelete()
+    refetch()
+    setConfirming(null)
+  }
+
+  if (isError) return <QueryError message="Failed to load trash" onRetry={() => refetch()} />
+  if (isLoading) return <TableSkeleton rows={4} columns={5} />
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700 p-3 text-sm">
+        <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+        <span className="text-amber-800 dark:text-amber-200">Projects in trash can be restored or permanently deleted.</span>
+      </div>
+
+      {projects.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <Trash2 className="mx-auto h-8 w-8 mb-2 opacity-50" />
+          Trash is empty.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {projects.map((p) => (
+            <div key={p.id} className="flex items-center gap-4 rounded-lg border border-dashed p-4 opacity-60">
+              <div className="min-w-0 flex-1">
+                <h3 className="font-semibold truncate">{p.name}</h3>
+                <p className="text-sm text-muted-foreground">{p.company_name}{p.brand_name ? ` / ${p.brand_name}` : ''}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Deleted: {p.deleted_at ? new Date(p.deleted_at).toLocaleDateString('ro-RO') : '—'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="outline" size="sm" onClick={() => handleRestore(p.id)}>
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> Restore
+                </Button>
+                {confirming === p.id ? (
+                  <div className="flex items-center gap-1">
+                    <Button variant="destructive" size="sm" onClick={() => handlePermanentDelete(p.id)}>Delete Forever</Button>
+                    <Button variant="ghost" size="sm" onClick={() => setConfirming(null)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button variant="ghost" size="sm" onClick={() => setConfirming(p.id)} className="text-destructive">
+                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

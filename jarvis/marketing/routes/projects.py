@@ -169,10 +169,71 @@ def api_update_project(project_id):
 @login_required
 @mkt_permission_required('project', 'delete')
 def api_delete_project(project_id):
-    """Soft delete a project."""
+    """Soft delete a project (move to trash)."""
     if _project_repo.soft_delete(project_id):
+        _activity_repo.log(project_id, 'deleted', actor_id=current_user.id)
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Project not found'}), 404
+
+
+@marketing_bp.route('/api/projects/<int:project_id>/archive', methods=['POST'])
+@login_required
+@mkt_permission_required('project', 'edit')
+def api_archive_project(project_id):
+    """Archive a project."""
+    project = _project_repo.get_by_id(project_id)
+    if not project:
+        return jsonify({'success': False, 'error': 'Project not found'}), 404
+    if project['status'] in ('pending_approval',):
+        return jsonify({'success': False, 'error': 'Cannot archive a project pending approval'}), 400
+
+    _project_repo.archive(project_id)
+    _activity_repo.log(project_id, 'status_changed', actor_id=current_user.id,
+                       details={'from': project['status'], 'to': 'archived'})
+    return jsonify({'success': True})
+
+
+@marketing_bp.route('/api/projects/<int:project_id>/restore', methods=['POST'])
+@login_required
+@mkt_permission_required('project', 'edit')
+def api_restore_project(project_id):
+    """Restore a project from archived or trash back to draft."""
+    if _project_repo.restore(project_id):
+        _activity_repo.log(project_id, 'restored', actor_id=current_user.id)
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Project not found'}), 404
+
+
+@marketing_bp.route('/api/projects/archived', methods=['GET'])
+@login_required
+@mkt_permission_required('project', 'view')
+def api_list_archived():
+    """List archived projects."""
+    limit = min(int(request.args.get('limit', 100)), 500)
+    offset = int(request.args.get('offset', 0))
+    projects = _project_repo.list_archived(limit, offset)
+    return jsonify({'projects': projects, 'total': len(projects)})
+
+
+@marketing_bp.route('/api/projects/trash', methods=['GET'])
+@login_required
+@mkt_permission_required('project', 'view')
+def api_list_trash():
+    """List soft-deleted projects (trash)."""
+    limit = min(int(request.args.get('limit', 100)), 500)
+    offset = int(request.args.get('offset', 0))
+    projects = _project_repo.list_deleted(limit, offset)
+    return jsonify({'projects': projects, 'total': len(projects)})
+
+
+@marketing_bp.route('/api/projects/<int:project_id>/permanent', methods=['DELETE'])
+@login_required
+@mkt_permission_required('project', 'delete')
+def api_permanent_delete_project(project_id):
+    """Permanently delete a project from trash."""
+    if _project_repo.permanent_delete(project_id):
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Project not found or not in trash'}), 404
 
 
 # ---- Status Transitions ----
