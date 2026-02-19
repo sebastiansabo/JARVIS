@@ -394,8 +394,10 @@ export default function AddInvoice() {
 
   const hasParsedData = !!(supplier || invoiceNumber)
 
+  const onFormSubmit = (e: React.FormEvent) => { e.preventDefault(); handleSubmit() }
+
   return (
-    <div className="space-y-4">
+    <form onSubmit={onFormSubmit} className="space-y-4">
       <PageHeader
         title="Add Invoice"
         description="Create a new invoice and distribute costs."
@@ -903,7 +905,7 @@ export default function AddInvoice() {
               Cancel
             </Button>
             <Button
-              onClick={handleSubmit}
+              type="submit"
               disabled={submitMutation.isPending}
               className="min-w-[160px]"
             >
@@ -915,7 +917,7 @@ export default function AddInvoice() {
           </div>
         </div>
       </div>
-    </div>
+    </form>
   )
 }
 

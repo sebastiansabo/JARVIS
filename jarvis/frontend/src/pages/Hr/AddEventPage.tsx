@@ -197,8 +197,10 @@ export default function AddEventPage() {
     createEventMutation.mutate()
   }
 
+  const onFormSubmit = (e: React.FormEvent) => { e.preventDefault(); handleSubmit() }
+
   return (
-    <div className="space-y-4">
+    <form onSubmit={onFormSubmit} className="space-y-4">
       <PageHeader
         title="Add Event + Employees"
         description="Create an event and assign employees with bonuses."
@@ -431,12 +433,12 @@ export default function AddEventPage() {
           <Button variant="outline" onClick={() => navigate('/app/hr/events')}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={createEventMutation.isPending} className="min-w-[160px]">
+          <Button type="submit" disabled={createEventMutation.isPending} className="min-w-[160px]">
             {createEventMutation.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
             {createEventMutation.isPending ? 'Saving...' : 'Save Event & Bonuses'}
           </Button>
         </div>
       </div>
-    </div>
+    </form>
   )
 }
