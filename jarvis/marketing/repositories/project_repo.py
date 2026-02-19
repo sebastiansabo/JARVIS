@@ -217,8 +217,8 @@ class ProjectRepository(BaseRepository):
                 ORDER BY p.updated_at DESC
                 LIMIT %s OFFSET %s
             ''', (limit, offset))
-            return cursor.fetchall()
-        return self.with_cursor(_work)
+            return [dict(r) for r in cursor.fetchall()]
+        return self.execute_many(_work)
 
     def list_deleted(self, limit=100, offset=0):
         def _work(cursor):
@@ -233,8 +233,8 @@ class ProjectRepository(BaseRepository):
                 ORDER BY p.deleted_at DESC
                 LIMIT %s OFFSET %s
             ''', (limit, offset))
-            return cursor.fetchall()
-        return self.with_cursor(_work)
+            return [dict(r) for r in cursor.fetchall()]
+        return self.execute_many(_work)
 
     def permanent_delete(self, project_id):
         """Hard delete — only for projects already in trash."""
