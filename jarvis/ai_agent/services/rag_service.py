@@ -190,7 +190,7 @@ class RAGService:
                 entry += f"{meta_str}\n"
             entry += f"{source.snippet}\n"
 
-            entry_tokens = len(entry) // 4
+            entry_tokens = max(1, len(entry) // 3)  # ~3 chars/token (conservative)
             if approx_tokens + entry_tokens > max_tokens:
                 break
 

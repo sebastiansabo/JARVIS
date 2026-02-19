@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS ai_agent.model_configs (
 
     -- Limits
     max_tokens INTEGER DEFAULT 4096,
+    context_window INTEGER DEFAULT 200000,   -- Model context window size
     rate_limit_rpm INTEGER DEFAULT 60,       -- Requests per minute
     rate_limit_tpm INTEGER DEFAULT 100000,   -- Tokens per minute
 
@@ -235,32 +236,32 @@ CREATE INDEX IF NOT EXISTS idx_conversation_logs_created ON ai_agent.conversatio
 -- Seed Default Model Configurations
 -- ============================================================
 
-INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, is_default)
-SELECT 'claude', 'claude-sonnet-4-20250514', 'Claude Sonnet (Fast)', 0.003, 0.015, 4096, TRUE
+INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
+SELECT 'claude', 'claude-sonnet-4-20250514', 'Claude Sonnet (Fast)', 0.003, 0.015, 4096, 200000, TRUE
 WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'claude' AND model_name = 'claude-sonnet-4-20250514');
 
-INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, is_default)
-SELECT 'claude', 'claude-opus-4-5-20251101', 'Claude Opus (Smart)', 0.015, 0.075, 4096, FALSE
+INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
+SELECT 'claude', 'claude-opus-4-5-20251101', 'Claude Opus (Smart)', 0.015, 0.075, 4096, 200000, FALSE
 WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'claude' AND model_name = 'claude-opus-4-5-20251101');
 
-INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, is_default)
-SELECT 'openai', 'gpt-4-turbo', 'GPT-4 Turbo', 0.01, 0.03, 4096, FALSE
+INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
+SELECT 'openai', 'gpt-4-turbo', 'GPT-4 Turbo', 0.01, 0.03, 4096, 128000, FALSE
 WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'openai' AND model_name = 'gpt-4-turbo');
 
-INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, is_default)
-SELECT 'openai', 'gpt-3.5-turbo', 'GPT-3.5 (Cheap)', 0.0005, 0.0015, 4096, FALSE
+INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
+SELECT 'openai', 'gpt-3.5-turbo', 'GPT-3.5 (Cheap)', 0.0005, 0.0015, 4096, 16385, FALSE
 WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'openai' AND model_name = 'gpt-3.5-turbo');
 
-INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, is_default)
-SELECT 'groq', 'mixtral-8x7b-32768', 'Mixtral (Ultra Fast)', 0.00027, 0.00027, 32768, FALSE
+INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
+SELECT 'groq', 'mixtral-8x7b-32768', 'Mixtral (Ultra Fast)', 0.00027, 0.00027, 32768, 32768, FALSE
 WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'groq' AND model_name = 'mixtral-8x7b-32768');
 
-INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, is_default)
-SELECT 'groq', 'llama-3.3-70b-versatile', 'Llama 3.3 70B', 0.00059, 0.00079, 32768, FALSE
+INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
+SELECT 'groq', 'llama-3.3-70b-versatile', 'Llama 3.3 70B', 0.00059, 0.00079, 32768, 128000, FALSE
 WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'groq' AND model_name = 'llama-3.3-70b-versatile');
 
-INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, is_default)
-SELECT 'gemini', 'gemini-pro', 'Gemini Pro', 0.00025, 0.0005, 8192, FALSE
+INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
+SELECT 'gemini', 'gemini-pro', 'Gemini Pro', 0.00025, 0.0005, 8192, 32768, FALSE
 WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'gemini' AND model_name = 'gemini-pro');
 
 -- ============================================================

@@ -31,6 +31,15 @@ from .query_parser import parse_query, classify_complexity
 logger = get_logger('jarvis.ai_agent.service')
 
 
+def estimate_tokens(text: str) -> int:
+    """Approximate token count from text length.
+
+    Uses ~4 chars per token heuristic (accurate within ~10-15% for English).
+    Slightly conservative to avoid context window overflows.
+    """
+    return max(1, len(text) // 3)
+
+
 class AIAgentService:
     """
     Main AI Agent service for handling conversations.
@@ -361,20 +370,23 @@ class AIAgentService:
             # 4b. Analytics context
             analytics_context = self._get_analytics_context(user_message)
 
-            # 5. Build context messages
-            context_messages = self._build_context_messages(
-                conversation_id=conversation_id,
-                current_message=user_message,
-            )
-
-            # 6. Get provider and generate response
-            provider = self.get_provider(model_config.provider.value)
-
-            # Build system prompt with RAG + analytics context
+            # 5. Build system prompt first (needed for token budgeting)
             system_prompt = self._build_system_prompt(
                 rag_context=rag_context,
                 analytics_context=analytics_context,
             )
+            system_prompt_tokens = estimate_tokens(system_prompt)
+
+            # 6. Build context messages (token-aware)
+            context_messages = self._build_context_messages(
+                conversation_id=conversation_id,
+                current_message=user_message,
+                model_config=model_config,
+                system_prompt_tokens=system_prompt_tokens,
+            )
+
+            # 7. Get provider and generate response
+            provider = self.get_provider(model_config.provider.value)
 
             llm_response = provider.generate(
                 model_name=model_config.model_name,
@@ -384,17 +396,17 @@ class AIAgentService:
                 system=system_prompt,
             )
 
-            # 7. Calculate cost
+            # 8. Calculate cost
             cost = self._calculate_cost(
                 model_config=model_config,
                 input_tokens=llm_response.input_tokens,
                 output_tokens=llm_response.output_tokens,
             )
 
-            # 8. Calculate response time
+            # 9. Calculate response time
             response_time_ms = int((time.time() - start_time) * 1000)
 
-            # 9. Format RAG sources for storage
+            # 10. Format RAG sources for storage
             rag_sources_data = [
                 {
                     'doc_id': src.doc_id,
@@ -532,17 +544,22 @@ class AIAgentService:
             # Analytics context
             analytics_context = self._get_analytics_context(user_message)
 
-            # Build context
-            context_messages = self._build_context_messages(
-                conversation_id=conversation_id,
-                current_message=user_message,
-            )
-
-            provider = self.get_provider(model_config.provider.value)
+            # Build system prompt first (needed for token budgeting)
             system_prompt = self._build_system_prompt(
                 rag_context=rag_context,
                 analytics_context=analytics_context,
             )
+            system_prompt_tokens = estimate_tokens(system_prompt)
+
+            # Build context messages (token-aware)
+            context_messages = self._build_context_messages(
+                conversation_id=conversation_id,
+                current_message=user_message,
+                model_config=model_config,
+                system_prompt_tokens=system_prompt_tokens,
+            )
+
+            provider = self.get_provider(model_config.provider.value)
 
             # Stream tokens
             llm_response = None
@@ -709,38 +726,68 @@ class AIAgentService:
         self,
         conversation_id: int,
         current_message: str,
+        model_config: Optional[ModelConfig] = None,
+        system_prompt_tokens: int = 0,
     ) -> List[Dict[str, str]]:
         """
-        Build message context for LLM call.
+        Build message context for LLM call with token-aware trimming.
 
-        Includes recent conversation history up to token limit.
+        Fills the context window from newest to oldest messages, stopping
+        when the token budget is exhausted.  Always includes the current
+        user message.
 
         Args:
             conversation_id: Conversation ID
             current_message: Current user message
+            model_config: Model config (for context_window budget)
+            system_prompt_tokens: Estimated tokens used by system prompt + RAG
 
         Returns:
             List of message dicts for LLM
         """
-        # Get recent messages for context
+        # Calculate token budget
+        context_window = model_config.context_window if model_config else 200000
+        reserved_output = model_config.max_tokens if model_config else self.config.DEFAULT_MAX_TOKENS
+        available = context_window - reserved_output - system_prompt_tokens
+
+        # Reserve tokens for current message
+        current_tokens = estimate_tokens(current_message)
+        available -= current_tokens
+
+        # Safety margin (10%) to account for estimation error
+        available = int(available * 0.9)
+
+        # Get recent messages (newest first from DB, reversed to chronological)
         recent_messages = self.message_repo.get_recent_for_context(
             conversation_id=conversation_id,
             limit=self.config.MAX_CONTEXT_MESSAGES,
         )
 
-        # Convert to LLM format
-        context = []
-        for msg in recent_messages:
-            context.append({
-                'role': msg.role.value,
-                'content': msg.content,
-            })
+        # Add messages from most recent backward, respecting budget
+        selected = []
+        used_tokens = 0
+        for msg in reversed(recent_messages):
+            msg_tokens = estimate_tokens(msg.content)
+            if used_tokens + msg_tokens > available:
+                logger.debug(
+                    f"Context trimmed: {len(recent_messages) - len(selected)} messages dropped "
+                    f"({used_tokens}/{available} tokens used)"
+                )
+                break
+            selected.append(msg)
+            used_tokens += msg_tokens
 
-        # Add current message
-        context.append({
-            'role': 'user',
-            'content': current_message,
-        })
+        selected.reverse()
+
+        # Convert to LLM format
+        context = [{'role': msg.role.value, 'content': msg.content} for msg in selected]
+        context.append({'role': 'user', 'content': current_message})
+
+        logger.debug(
+            f"Context: {len(selected)} history + 1 current, "
+            f"~{used_tokens + current_tokens} tokens "
+            f"(budget: {context_window} - {reserved_output} output - {system_prompt_tokens} system)"
+        )
 
         return context
 

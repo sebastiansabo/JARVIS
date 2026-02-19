@@ -72,6 +72,7 @@ class ModelConfig:
     cost_per_1k_output: Decimal = field(default_factory=lambda: Decimal("0"))
 
     max_tokens: int = 4096
+    context_window: int = 200000
     rate_limit_rpm: int = 60
     rate_limit_tpm: int = 100000
     default_temperature: Decimal = field(default_factory=lambda: Decimal("0.7"))

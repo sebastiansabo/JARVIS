@@ -18,7 +18,7 @@ class ModelConfigRepository(BaseRepository):
             SELECT id, provider, model_name, display_name,
                    api_key_encrypted, base_url,
                    cost_per_1k_input, cost_per_1k_output,
-                   max_tokens, rate_limit_rpm, rate_limit_tpm,
+                   max_tokens, context_window, rate_limit_rpm, rate_limit_tpm,
                    default_temperature, is_active, is_default,
                    created_at, updated_at
             FROM ai_agent.model_configs
@@ -33,7 +33,7 @@ class ModelConfigRepository(BaseRepository):
                 SELECT id, provider, model_name, display_name,
                        api_key_encrypted, base_url,
                        cost_per_1k_input, cost_per_1k_output,
-                       max_tokens, rate_limit_rpm, rate_limit_tpm,
+                       max_tokens, context_window, rate_limit_rpm, rate_limit_tpm,
                        default_temperature, is_active, is_default,
                        created_at, updated_at
                 FROM ai_agent.model_configs
@@ -45,7 +45,7 @@ class ModelConfigRepository(BaseRepository):
                 SELECT id, provider, model_name, display_name,
                        api_key_encrypted, base_url,
                        cost_per_1k_input, cost_per_1k_output,
-                       max_tokens, rate_limit_rpm, rate_limit_tpm,
+                       max_tokens, context_window, rate_limit_rpm, rate_limit_tpm,
                        default_temperature, is_active, is_default,
                        created_at, updated_at
                 FROM ai_agent.model_configs
@@ -65,7 +65,7 @@ class ModelConfigRepository(BaseRepository):
                 SELECT id, provider, model_name, display_name,
                        api_key_encrypted, base_url,
                        cost_per_1k_input, cost_per_1k_output,
-                       max_tokens, rate_limit_rpm, rate_limit_tpm,
+                       max_tokens, context_window, rate_limit_rpm, rate_limit_tpm,
                        default_temperature, is_active, is_default,
                        created_at, updated_at
                 FROM ai_agent.model_configs
@@ -87,7 +87,7 @@ class ModelConfigRepository(BaseRepository):
             SELECT id, provider, model_name, display_name,
                    api_key_encrypted, base_url,
                    cost_per_1k_input, cost_per_1k_output,
-                   max_tokens, rate_limit_rpm, rate_limit_tpm,
+                   max_tokens, context_window, rate_limit_rpm, rate_limit_tpm,
                    default_temperature, is_active, is_default,
                    created_at, updated_at
             FROM ai_agent.model_configs
@@ -108,7 +108,7 @@ class ModelConfigRepository(BaseRepository):
             SELECT id, provider, model_name, display_name,
                    api_key_encrypted, base_url,
                    cost_per_1k_input, cost_per_1k_output,
-                   max_tokens, rate_limit_rpm, rate_limit_tpm,
+                   max_tokens, context_window, rate_limit_rpm, rate_limit_tpm,
                    default_temperature, is_active, is_default,
                    created_at, updated_at
             FROM ai_agent.model_configs
@@ -131,7 +131,7 @@ class ModelConfigRepository(BaseRepository):
             SELECT id, provider, model_name, display_name,
                    api_key_encrypted, base_url,
                    cost_per_1k_input, cost_per_1k_output,
-                   max_tokens, rate_limit_rpm, rate_limit_tpm,
+                   max_tokens, context_window, rate_limit_rpm, rate_limit_tpm,
                    default_temperature, is_active, is_default,
                    created_at, updated_at
             FROM ai_agent.model_configs
@@ -185,6 +185,7 @@ class ModelConfigRepository(BaseRepository):
             cost_per_1k_input=Decimal(str(row['cost_per_1k_input'])) if row['cost_per_1k_input'] else Decimal("0"),
             cost_per_1k_output=Decimal(str(row['cost_per_1k_output'])) if row['cost_per_1k_output'] else Decimal("0"),
             max_tokens=row['max_tokens'] or 4096,
+            context_window=row.get('context_window') or 200000,
             rate_limit_rpm=row['rate_limit_rpm'] or 60,
             rate_limit_tpm=row['rate_limit_tpm'] or 100000,
             default_temperature=Decimal(str(row['default_temperature'])) if row['default_temperature'] else Decimal("0.7"),
