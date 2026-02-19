@@ -79,52 +79,10 @@ def api_search_hr_events():
 @login_required
 @mkt_permission_required('budget', 'view')
 def api_search_invoices():
-    """Search invoices for linking to budget transactions.
-
-    Uses pg_trgm trigram similarity for fuzzy matching plus ILIKE fallback.
-    Splits query into words — each word must match supplier or invoice_number.
-    """
+    """Search invoices for linking to budget transactions."""
     q = request.args.get('q', '').strip()
     company = request.args.get('company')
     limit = min(int(request.args.get('limit', 20)), 50)
 
-    from database import get_db, get_cursor, release_db
-    conn = get_db()
-    try:
-        cursor = get_cursor(conn)
-        sql = '''
-            SELECT i.id, i.supplier, i.invoice_number, i.invoice_date,
-                   i.invoice_value, i.currency, i.status, i.payment_status
-            FROM invoices i
-            WHERE i.deleted_at IS NULL
-        '''
-        params = []
-        if q:
-            # Split into words — each word must match somewhere (supplier OR invoice_number)
-            words = q.split()
-            for word in words:
-                like = f'%{word}%'
-                sql += '''
-                    AND (i.supplier ILIKE %s OR i.invoice_number ILIKE %s
-                         OR word_similarity(%s, i.supplier) > 0.3)
-                '''
-                params.extend([like, like, word])
-        if company:
-            sql += '''
-                AND EXISTS (
-                    SELECT 1 FROM allocations a WHERE a.invoice_id = i.id AND a.company = %s
-                )
-            '''
-            params.append(company)
-        # Order by relevance when searching, by date otherwise
-        if q:
-            sql += ' ORDER BY similarity(%s, i.supplier) DESC, i.invoice_date DESC LIMIT %s'
-            params.extend([q, limit])
-        else:
-            sql += ' ORDER BY i.invoice_date DESC LIMIT %s'
-            params.append(limit)
-        cursor.execute(sql, params)
-        invoices = [dict(r) for r in cursor.fetchall()]
-        return jsonify({'invoices': invoices})
-    finally:
-        release_db(conn)
+    invoices = _event_repo.search_invoices(query=q, company=company, limit=limit)
+    return jsonify({'invoices': invoices})

@@ -8,7 +8,6 @@ from marketing import marketing_bp
 from marketing.repositories import OkrRepository, ActivityRepository
 from marketing.routes.projects import mkt_permission_required
 from core.utils.api_helpers import get_json_or_error, safe_error_response
-from database import get_db, get_cursor, release_db
 
 logger = logging.getLogger('jarvis.marketing.routes.okr')
 
@@ -152,88 +151,12 @@ def api_delete_key_result(kr_id):
 @mkt_permission_required('okr', 'edit')
 def api_suggest_key_results(project_id, objective_id):
     """Use AI to suggest key results for an objective based on its title and available KPIs."""
-    conn = get_db()
-    try:
-        cursor = get_cursor(conn)
+    from marketing.services.project_service import ProjectService
 
-        # 1. Get objective title
-        cursor.execute('SELECT title FROM mkt_objectives WHERE id = %s AND project_id = %s',
-                        (objective_id, project_id))
-        obj_row = cursor.fetchone()
-        if not obj_row:
-            return jsonify({'success': False, 'error': 'Objective not found'}), 404
-        obj_title = obj_row['title']
-
-        # 2. Get project KPIs
-        cursor.execute('''
-            SELECT pk.id, kd.name, pk.current_value, pk.target_value, kd.unit
-            FROM mkt_project_kpis pk
-            JOIN mkt_kpi_definitions kd ON pk.kpi_definition_id = kd.id
-            WHERE pk.project_id = %s
-        ''', (project_id,))
-        kpis = [dict(r) for r in cursor.fetchall()]
-    finally:
-        release_db(conn)
-
-    # 3. Build prompt
-    kpi_list = ''
-    if kpis:
-        kpi_lines = []
-        for k in kpis:
-            kpi_lines.append(
-                f'- ID:{k["id"]} "{k["name"]}" '
-                f'(current: {k["current_value"]}, target: {k["target_value"]}, unit: {k["unit"]})'
-            )
-        kpi_list = '\n\nAvailable project KPIs that can be linked:\n' + '\n'.join(kpi_lines)
-
-    prompt = f'''Given this marketing objective: "{obj_title}"{kpi_list}
-
-Suggest 3-5 measurable key results. For each provide:
-- title: concise measurable outcome
-- target_value: realistic target number
-- unit: "number" or "currency" or "percentage"
-- linked_kpi_id: ID from the KPI list above if one matches, else null
-
-Return ONLY a JSON array:
-[{{"title": "...", "target_value": 100, "unit": "number", "linked_kpi_id": null}}]'''
-
-    try:
-        from ai_agent.services.ai_agent_service import AIAgentService
-        svc = AIAgentService()
-        model_config = svc.model_config_repo.get_default()
-        if not model_config:
-            return jsonify({'success': False, 'error': 'No AI model configured'}), 503
-
-        provider = svc.get_provider(model_config.provider.value)
-        result = provider.generate_structured(
-            model_name=model_config.model_name,
-            messages=[{'role': 'user', 'content': prompt}],
-            max_tokens=1024,
-            temperature=0.5,
-            system='You are a marketing OKR assistant. Return ONLY valid JSON arrays.',
-        )
-        suggestions = result if isinstance(result, list) else []
-
-        # Validate
-        valid_kpi_ids = {k['id'] for k in kpis}
-        validated = []
-        for s in suggestions[:5]:
-            if not isinstance(s, dict) or not s.get('title'):
-                continue
-            kpi_id = s.get('linked_kpi_id')
-            if kpi_id and kpi_id not in valid_kpi_ids:
-                kpi_id = None
-            validated.append({
-                'title': str(s['title']),
-                'target_value': float(s.get('target_value', 100)),
-                'unit': s.get('unit', 'number') if s.get('unit') in ('number', 'currency', 'percentage') else 'number',
-                'linked_kpi_id': kpi_id,
-            })
-
-        return jsonify({'suggestions': validated})
-    except Exception as e:
-        logger.warning(f'AI suggest KRs failed: {e}')
-        return safe_error_response(e)
+    result = ProjectService().suggest_key_results(project_id, objective_id)
+    if result.success:
+        return jsonify(result.data)
+    return jsonify({'success': False, 'error': result.error}), result.status_code
 
 
 @marketing_bp.route('/api/projects/<int:project_id>/objectives/sync-kpis', methods=['POST'])

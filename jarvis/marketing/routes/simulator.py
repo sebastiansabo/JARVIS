@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 import re
 from flask import jsonify, request
 from flask_login import login_required
@@ -226,123 +225,16 @@ def api_sim_benchmark_delete_channel(channel_key):
 @login_required
 def api_sim_ai_distribute():
     """Use AI to distribute budget across channels like a PPC specialist."""
+    from marketing.services.project_service import ProjectService
+
     data = request.get_json(silent=True) or {}
-    total_budget = data.get('total_budget', 0)
-    audience_size = data.get('audience_size', 300000)
-    lead_to_sale_rate = data.get('lead_to_sale_rate', 5)
-    active_channels = data.get('active_channels', {})  # {stage: [channel_keys]}
-    benchmarks = data.get('benchmarks', [])  # full benchmark list
-
-    if not total_budget or not benchmarks:
-        return error_response('total_budget and benchmarks required')
-
-    # Build channel info for the prompt
-    channel_info = {}
-    for bm in benchmarks:
-        key = bm['channel_key']
-        stage = bm['funnel_stage']
-        month = bm['month_index']
-        if key not in channel_info:
-            channel_info[key] = {
-                'label': bm['channel_label'],
-                'stage': stage,
-                'months': {},
-            }
-        channel_info[key]['months'][month] = {
-            'cpc': bm['cpc'],
-            'cvr_lead': bm['cvr_lead'],
-            'cvr_car': bm['cvr_car'],
-        }
-
-    # Filter to active channels only
-    active_info = {}
-    for stage, keys in active_channels.items():
-        for key in keys:
-            if key in channel_info:
-                active_info[key] = channel_info[key]
-
-    if not active_info:
-        return error_response('No active channels')
-
-    system_prompt = f"""You are the best digital marketing PPC specialist in the Romanian automotive market.
-You manage campaigns for car dealerships (Toyota, Lexus, Mazda, Hyundai, Suzuki, Kia brands).
-
-TASK: Distribute a campaign budget of €{total_budget:,.0f} across advertising channels over 3 months to MAXIMIZE lead generation and car sales.
-
-AUDIENCE SIZE: {audience_size:,} people
-
-FUNNEL STRATEGY RULES:
-1. Awareness channels build brand recognition. Front-load in Month 1, reduce later.
-2. Consideration channels CANNOT run in Month 1 — they only activate from Month 2 (retargeting audiences from awareness).
-3. Conversion channels can run all 3 months but should ramp UP over time as warm audiences grow.
-
-SYNERGY MULTIPLIER SYSTEM (critical for maximizing leads):
-- If >42% of total budget goes to Awareness → all leads get a 1.7x multiplier
-- If >14% of total budget goes to Consideration → all leads get a 1.5x multiplier
-- Both can stack for 2.55x total multiplier
-- Try to hit BOTH thresholds for maximum impact
-
-OPTIMIZATION GUIDELINES:
-- Channels with lower CPC generate more clicks per EUR
-- Higher CVR_LEAD channels convert more clicks to leads
-- The "best" channels have the lowest CPC AND highest CVR_LEAD (best cost-per-lead)
-- CVR rates change per month — check each month's benchmarks
-- Balance between high-volume cheap channels and high-quality expensive channels
-- Don't spread too thin — focus budget on fewer channels with meaningful amounts
-- Minimum useful budget per channel per month: €100
-
-AVAILABLE CHANNELS AND BENCHMARKS:
-{json.dumps(active_info, indent=2)}
-
-Respond with ONLY a JSON object mapping "channel_key-month_index" to budget amount in EUR.
-Example: {{"meta_traffic_aw-1": 500, "meta_traffic_aw-2": 400, "meta_traffic_aw-3": 300}}
-
-Rules:
-- Total of all values must equal exactly €{total_budget:,.0f}
-- Consideration channels must have 0 for month 1
-- All values must be positive integers (round to nearest €)
-- Only include channels from the list above
-- Include your reasoning as a brief "reasoning" field
-
-Return format:
-{{"allocations": {{"channel-month": amount, ...}}, "reasoning": "brief explanation"}}"""
-
-    try:
-        from ai_agent.providers.claude_provider import ClaudeProvider
-
-        provider = ClaudeProvider()
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
-
-        result = provider.generate_structured(
-            model_name='claude-sonnet-4-20250514',
-            messages=[{'role': 'user', 'content': 'Distribute the budget optimally.'}],
-            max_tokens=2048,
-            temperature=0.3,
-            api_key=api_key,
-            system=system_prompt,
-        )
-        allocations = result.get('allocations', result)
-        reasoning = result.get('reasoning', '')
-
-        # Validate total matches budget (allow 1% tolerance for rounding)
-        total = sum(allocations.values()) if isinstance(allocations, dict) else 0
-        # Remove reasoning key from allocations if it accidentally ended up there
-        if 'reasoning' in allocations:
-            del allocations['reasoning']
-            total = sum(allocations.values())
-
-        return jsonify({
-            'success': True,
-            'allocations': allocations,
-            'reasoning': reasoning,
-            'total_allocated': total,
-            'tokens_used': 0,
-        })
-    except ImportError:
-        return error_response('AI provider not available', 503)
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.error(f"AI distribute JSON parse error: {e}")
-        return error_response('Failed to parse AI response', 500)
-    except Exception as e:
-        logger.error(f"AI distribute error: {e}")
-        return error_response(str(e), 500)
+    result = ProjectService().ai_distribute_budget(
+        total_budget=data.get('total_budget', 0),
+        audience_size=data.get('audience_size', 300000),
+        lead_to_sale_rate=data.get('lead_to_sale_rate', 5),
+        active_channels=data.get('active_channels', {}),
+        benchmarks=data.get('benchmarks', []),
+    )
+    if result.success:
+        return jsonify(result.data)
+    return jsonify({'success': False, 'error': result.error}), result.status_code

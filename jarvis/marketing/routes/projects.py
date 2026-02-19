@@ -1,6 +1,5 @@
 """Marketing project CRUD + status transitions + approval submission."""
 
-import json
 import logging
 from functools import wraps
 
@@ -12,8 +11,9 @@ from marketing.repositories import (
     ProjectRepository, MemberRepository, BudgetRepository,
     ActivityRepository,
 )
+from marketing.services.project_service import ProjectService, UserContext
 from core.roles.repositories import PermissionRepository
-from core.utils.api_helpers import get_json_or_error, safe_error_response, handle_api_errors
+from core.utils.api_helpers import get_json_or_error, handle_api_errors
 
 logger = logging.getLogger('jarvis.marketing.routes.projects')
 
@@ -22,41 +22,7 @@ _member_repo = MemberRepository()
 _budget_repo = BudgetRepository()
 _activity_repo = ActivityRepository()
 _perm_repo = PermissionRepository()
-
-
-def _can_access_project(project, user_id, scope):
-    """Check if user can access a specific project given their permission scope."""
-    if scope == 'all':
-        return True
-    # Owner always has access
-    if project.get('owner_id') == user_id:
-        return True
-    # Team member always has access
-    members = _member_repo.get_by_project(project['id'])
-    if any(m['user_id'] == user_id for m in members):
-        return True
-    # Pending approver (context_approver) always has access
-    from database import get_db, get_cursor, release_db
-    conn = get_db()
-    try:
-        cursor = get_cursor(conn)
-        cursor.execute('''
-            SELECT 1 FROM approval_requests
-            WHERE entity_type = 'mkt_project' AND entity_id = %s
-              AND status IN ('pending', 'on_hold')
-              AND (context_snapshot->>'approver_user_id')::int = %s
-            LIMIT 1
-        ''', (project['id'], user_id))
-        if cursor.fetchone():
-            return True
-    finally:
-        release_db(conn)
-    # Department scope: check company match
-    if scope == 'department':
-        user_company = getattr(current_user, 'company', None)
-        if user_company and project.get('company_id') == int(user_company):
-            return True
-    return False
+_service = ProjectService()
 
 
 # ---- Permission decorator ----
@@ -168,7 +134,8 @@ def api_get_project(project_id):
         return jsonify({'success': False, 'error': 'Project not found'}), 404
 
     scope = getattr(g, 'permission_scope', 'all')
-    if not _can_access_project(project, current_user.id, scope):
+    if not _service.can_access_project(project, current_user.id, scope,
+                                       getattr(current_user, 'company', None)):
         return jsonify({'success': False, 'error': 'Access denied'}), 403
 
     project['members'] = _member_repo.get_by_project(project_id)
@@ -216,71 +183,12 @@ def api_delete_project(project_id):
 @handle_api_errors
 def api_submit_approval(project_id):
     """Submit project for approval via approval engine."""
-    project = _project_repo.get_by_id(project_id)
-    if not project:
-        return jsonify({'success': False, 'error': 'Project not found'}), 404
-    if project['status'] not in ('draft', 'cancelled', 'pending_approval'):
-        return jsonify({'success': False, 'error': f"Cannot submit from status '{project['status']}'"}), 400
-
     body = request.get_json(silent=True) or {}
-
-    from core.approvals.engine import ApprovalEngine
-    engine = ApprovalEngine()
-
-    budget_lines = _budget_repo.get_lines_by_project(project_id)
-    context = {
-        'title': project['name'],
-        'amount': float(project['total_budget']),
-        'currency': project['currency'],
-        'project_type': project['project_type'],
-        'company': project.get('company_name', ''),
-        'brand': project.get('brand_name', ''),
-        'owner': project.get('owner_name', ''),
-        'channels': project.get('channel_mix', []),
-        'start_date': str(project.get('start_date', '')),
-        'end_date': str(project.get('end_date', '')),
-        'objective': project.get('objective', ''),
-        'budget_breakdown': [
-            {'channel': l['channel'], 'amount': float(l['planned_amount'])}
-            for l in budget_lines
-        ],
-    }
-
-    # Auto-detect stakeholders for approval routing
-    stakeholder_ids = _member_repo.get_stakeholder_ids(project_id)
-    if stakeholder_ids:
-        context['stakeholder_approver_ids'] = stakeholder_ids
-        if project.get('approval_mode') == 'all':
-            context['min_approvals_override'] = len(stakeholder_ids)
-    else:
-        # Backward compat: single approver picker
-        approver_id = body.get('approver_id')
-        if approver_id:
-            context['approver_user_id'] = int(approver_id)
-
-    result = engine.submit(
-        entity_type='mkt_project',
-        entity_id=project_id,
-        context=context,
-        requested_by=current_user.id,
-    )
-
-    _project_repo.update_status(project_id, 'pending_approval')
-    _activity_repo.log(project_id, 'approval_submitted', actor_id=current_user.id)
-
-    # Notify project members + stakeholders
-    from core.notifications.notify import notify_users
-    member_ids = _member_repo.get_user_ids_for_project(project_id)
-    notify_users(
-        [uid for uid in member_ids if uid != current_user.id],
-        title=f"Project '{project['name']}' submitted for approval",
-        link=f'/app/marketing/projects/{project_id}',
-        entity_type='mkt_project',
-        entity_id=project_id,
-        type='info',
-    )
-
-    return jsonify({'success': True, 'request_id': result.get('request_id') if isinstance(result, dict) else result})
+    user = UserContext(user_id=current_user.id)
+    result = _service.submit_approval(project_id, user, approver_id=body.get('approver_id'))
+    if result.success:
+        return jsonify(result.data)
+    return jsonify({'success': False, 'error': result.error}), result.status_code
 
 
 @marketing_bp.route('/api/projects/<int:project_id>/activate', methods=['POST'])

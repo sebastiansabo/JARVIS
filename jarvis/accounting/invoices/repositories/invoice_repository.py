@@ -564,6 +564,19 @@ class InvoiceRepository(BaseRepository):
                 raise ValueError("Invoice number already exists in database")
             raise
 
+    def get_department_suggestions(self, supplier, limit=5):
+        """Get allocation department histogram for a supplier."""
+        return self.query_all('''
+            SELECT a.company, a.brand, a.department, a.subdepartment,
+                   COUNT(*) as frequency
+            FROM allocations a
+            JOIN invoices i ON a.invoice_id = i.id
+            WHERE LOWER(i.supplier) = LOWER(%s) AND i.deleted_at IS NULL
+            GROUP BY a.company, a.brand, a.department, a.subdepartment
+            ORDER BY frequency DESC
+            LIMIT %s
+        ''', (supplier, limit))
+
     def check_number_exists(self, invoice_number, exclude_id=None):
         """Check if invoice number already exists in database."""
         if exclude_id:

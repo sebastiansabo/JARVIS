@@ -217,8 +217,7 @@ def api_delete_file(file_id):
 @mkt_permission_required('project', 'edit')
 def api_upload_file(project_id):
     """Upload a file to Google Drive and attach to project."""
-    from marketing.repositories import ProjectRepository
-    from core.services.drive_service import get_drive_service, find_or_create_folder, ROOT_FOLDER_ID
+    from marketing.services.project_service import ProjectService
 
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file provided'}), 400
@@ -227,73 +226,14 @@ def api_upload_file(project_id):
     if not f.filename:
         return jsonify({'success': False, 'error': 'Empty filename'}), 400
 
-    # 10 MB limit
-    file_bytes = f.read()
-    if len(file_bytes) > 10 * 1024 * 1024:
-        return jsonify({'success': False, 'error': 'File exceeds 10 MB limit'}), 400
-
-    description = request.form.get('description', '')
-
-    try:
-        # Get project name for folder structure
-        proj = ProjectRepository().get_by_id(project_id)
-        if not proj:
-            return jsonify({'success': False, 'error': 'Project not found'}), 404
-
-        project_name = proj.get('name', f'Project-{project_id}')
-        clean_name = ''.join(c for c in project_name if c.isalnum() or c in ' -_').strip() or f'Project-{project_id}'
-
-        try:
-            service = get_drive_service()
-        except FileNotFoundError:
-            return jsonify({'success': False, 'error': 'Google Drive is not configured. Set up credentials in Settings > Connectors.'}), 503
-        # Folder: Root / Marketing / {ProjectName}
-        mkt_folder = find_or_create_folder(service, 'Marketing', ROOT_FOLDER_ID)
-        proj_folder = find_or_create_folder(service, clean_name, mkt_folder)
-
-        # Upload
-        from googleapiclient.http import MediaIoBaseUpload
-        import io as iomod
-        ext = f.filename.lower().rsplit('.', 1)[-1] if '.' in f.filename else ''
-        mime_map = {
-            'pdf': 'application/pdf', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
-            'png': 'image/png', 'doc': 'application/msword',
-            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'xls': 'application/vnd.ms-excel',
-            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'ppt': 'application/vnd.ms-powerpoint',
-            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        }
-        mime_type = mime_map.get(ext, 'application/octet-stream')
-
-        media = MediaIoBaseUpload(iomod.BytesIO(file_bytes), mimetype=mime_type, resumable=True)
-        drive_file = service.files().create(
-            body={'name': f.filename, 'parents': [proj_folder]},
-            media_body=media,
-            fields='id, webViewLink',
-            supportsAllDrives=True,
-        ).execute()
-        drive_link = drive_file.get('webViewLink', f"https://drive.google.com/file/d/{drive_file['id']}/view")
-
-        # Create DB record
-        file_id = _file_repo.create(
-            project_id, f.filename, drive_link, current_user.id,
-            file_type=ext or None,
-            mime_type=mime_type,
-            file_size=len(file_bytes),
-            description=description or None,
-        )
-        _activity_repo.log(project_id, 'file_attached', actor_id=current_user.id,
-                           details={'file_name': f.filename})
-        return jsonify({
-            'success': True, 'id': file_id,
-            'drive_link': drive_link,
-            'file_name': f.filename,
-            'file_size': len(file_bytes),
-        }), 201
-    except Exception as e:
-        logger.exception('File upload failed')
-        return safe_error_response(e)
+    result = ProjectService().upload_file(
+        project_id, f.read(), f.filename,
+        description=request.form.get('description', ''),
+        user_id=current_user.id,
+    )
+    if result.success:
+        return jsonify(result.data), result.status_code
+    return jsonify({'success': False, 'error': result.error}), result.status_code
 
 
 # ---- KPIs ----

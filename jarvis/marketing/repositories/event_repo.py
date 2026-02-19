@@ -41,6 +41,39 @@ class ProjectEventRepository(BaseRepository):
             (project_id, event_id),
         ) > 0
 
+    def search_invoices(self, query='', company=None, limit=20):
+        """Search invoices for budget linking. Uses trigram similarity + ILIKE."""
+        sql = '''
+            SELECT i.id, i.supplier, i.invoice_number, i.invoice_date,
+                   i.invoice_value, i.currency, i.status, i.payment_status
+            FROM invoices i
+            WHERE i.deleted_at IS NULL
+        '''
+        params = []
+        if query:
+            words = query.split()
+            for word in words:
+                like = f'%{word}%'
+                sql += '''
+                    AND (i.supplier ILIKE %s OR i.invoice_number ILIKE %s
+                         OR word_similarity(%s, i.supplier) > 0.3)
+                '''
+                params.extend([like, like, word])
+        if company:
+            sql += '''
+                AND EXISTS (
+                    SELECT 1 FROM allocations a WHERE a.invoice_id = i.id AND a.company = %s
+                )
+            '''
+            params.append(company)
+        if query:
+            sql += ' ORDER BY similarity(%s, i.supplier) DESC, i.invoice_date DESC LIMIT %s'
+            params.extend([query, limit])
+        else:
+            sql += ' ORDER BY i.invoice_date DESC LIMIT %s'
+            params.append(limit)
+        return self.query_all(sql, params)
+
     def search_hr_events(self, query=None, limit=20):
         """Search HR events for the linking picker."""
         sql = '''
