@@ -2,11 +2,12 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Underline from '@tiptap/extension-underline'
-import { useEffect } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
-  List, ListOrdered, Heading2, Quote, Link as LinkIcon, Undo, Redo,
+  List, ListOrdered, Quote, Link as LinkIcon, Undo, Redo,
+  ChevronDown, Type, Heading2, Heading3,
 } from 'lucide-react'
 
 interface Props {
@@ -43,7 +44,16 @@ function ToolbarButton({
   )
 }
 
+const headingOptions = [
+  { label: 'Paragraph', icon: Type, value: 'paragraph' as const },
+  { label: 'Heading 2', icon: Heading2, value: 'h2' as const },
+  { label: 'Heading 3', icon: Heading3, value: 'h3' as const },
+]
+
 export function RichTextEditor({ content, onChange, placeholder, editable = true, className }: Props) {
+  const [headingOpen, setHeadingOpen] = useState(false)
+  const headingRef = useRef<HTMLDivElement>(null)
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -79,6 +89,17 @@ export function RichTextEditor({ content, onChange, placeholder, editable = true
     }
   }, [editable, editor])
 
+  // Close heading dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (headingRef.current && !headingRef.current.contains(e.target as Node)) {
+        setHeadingOpen(false)
+      }
+    }
+    if (headingOpen) document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [headingOpen])
+
   if (!editor) return null
 
   const addLink = () => {
@@ -86,6 +107,25 @@ export function RichTextEditor({ content, onChange, placeholder, editable = true
     if (url) {
       editor.chain().focus().setLink({ href: url }).run()
     }
+  }
+
+  const currentHeading = editor.isActive('heading', { level: 2 })
+    ? 'h2'
+    : editor.isActive('heading', { level: 3 })
+      ? 'h3'
+      : 'paragraph'
+
+  const currentOption = headingOptions.find(o => o.value === currentHeading)!
+
+  const setHeading = (value: 'paragraph' | 'h2' | 'h3') => {
+    if (value === 'paragraph') {
+      editor.chain().focus().setParagraph().run()
+    } else if (value === 'h2') {
+      editor.chain().focus().toggleHeading({ level: 2 }).run()
+    } else {
+      editor.chain().focus().toggleHeading({ level: 3 }).run()
+    }
+    setHeadingOpen(false)
   }
 
   return (
@@ -123,13 +163,41 @@ export function RichTextEditor({ content, onChange, placeholder, editable = true
 
           <div className="w-px h-5 bg-border mx-1" />
 
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-            active={editor.isActive('heading', { level: 2 })}
-            title="Heading"
-          >
-            <Heading2 className="h-4 w-4" />
-          </ToolbarButton>
+          {/* Heading dropdown */}
+          <div className="relative" ref={headingRef}>
+            <button
+              type="button"
+              onClick={() => setHeadingOpen(!headingOpen)}
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium hover:bg-accent transition-colors',
+                currentHeading !== 'paragraph' && 'bg-accent text-accent-foreground',
+              )}
+              title="Text style"
+            >
+              <currentOption.icon className="h-4 w-4" />
+              <span className="hidden sm:inline">{currentOption.label}</span>
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {headingOpen && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-popover border rounded-md shadow-md py-1 min-w-[140px]">
+                {headingOptions.map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setHeading(opt.value)}
+                    className={cn(
+                      'flex items-center gap-2 w-full px-3 py-1.5 text-xs hover:bg-accent transition-colors',
+                      currentHeading === opt.value && 'bg-accent text-accent-foreground',
+                    )}
+                  >
+                    <opt.icon className="h-4 w-4" />
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBulletList().run()}
             active={editor.isActive('bulletList')}
