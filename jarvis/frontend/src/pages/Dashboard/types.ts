@@ -1,5 +1,5 @@
 import {
-  FileText, Calculator, Users, ClipboardCheck, CreditCard, Receipt,
+  FileText, Users, ClipboardCheck, CreditCard, Receipt,
   CalendarDays, Megaphone, Bell,
 } from 'lucide-react'
 import type { User } from '@/types'
@@ -36,17 +36,7 @@ export const WIDGET_CATALOG: WidgetDef[] = [
     defaultVisible: true,
     statCards: [
       { key: 'total_invoices', title: 'Total Invoices', icon: FileText },
-      { key: 'total_value', title: 'Total Value', icon: Calculator },
     ],
-  },
-  {
-    id: 'accounting_companies',
-    name: 'By Company',
-    icon: Calculator,
-    permission: 'can_access_accounting',
-    colSpan: 1,
-    defaultVisible: true,
-    statCards: [],
   },
   {
     id: 'statements_summary',

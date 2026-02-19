@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Bot, FileText, Calculator, CreditCard, Receipt, CalendarDays, Megaphone, ClipboardCheck, Users } from 'lucide-react'
+import { Bot, CreditCard, Receipt, CalendarDays, Megaphone, ClipboardCheck, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatCard } from '@/components/shared/StatCard'
 import { useAuth } from '@/hooks/useAuth'
@@ -14,7 +14,6 @@ import { useDashboardPrefs } from './useDashboardPrefs'
 import { CustomizeSheet } from './CustomizeSheet'
 import {
   AccountingInvoicesWidget,
-  AccountingCompaniesWidget,
   StatementsSummaryWidget,
   EFacturaWidget,
   HrSummaryWidget,
@@ -26,7 +25,6 @@ import {
 
 const WIDGET_COMPONENTS: Record<string, React.ComponentType<{ enabled: boolean }>> = {
   accounting_invoices: AccountingInvoicesWidget,
-  accounting_companies: AccountingCompaniesWidget,
   statements_summary: StatementsSummaryWidget,
   efactura_status: EFacturaWidget,
   hr_summary: HrSummaryWidget,
@@ -40,19 +38,11 @@ export default function Dashboard() {
   const { user } = useAuth()
   const { permittedWidgets, visibleWidgets, toggleWidget, moveWidget, resetDefaults, isVisible } = useDashboardPrefs(user)
 
-  const canAccounting = !!user?.can_access_accounting
   const canStatements = !!user?.can_access_statements
   const canEfactura = !!user?.can_access_efactura
   const canHr = !!user?.can_access_hr
 
   // ── Stat card data queries (only fire when relevant widget is visible) ──
-
-  const { data: companySummary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['dashboard', 'companySummary'],
-    queryFn: dashboardApi.getCompanySummary,
-    staleTime: 60_000,
-    enabled: canAccounting && (isVisible('accounting_invoices') || isVisible('accounting_companies')),
-  })
 
   const { data: onlineUsers, isLoading: onlineLoading } = useQuery({
     queryKey: ['dashboard', 'onlineUsers'],
@@ -99,8 +89,6 @@ export default function Dashboard() {
   })
 
   // Computed stats
-  const totalInvoices = companySummary?.reduce((s, c) => s + Number(c.invoice_count), 0) ?? 0
-  const totalValue = companySummary?.reduce((s, c) => s + Number(c.total_value_ron ?? 0), 0) ?? 0
   const pendingApprovals = approvalQueue?.queue?.length ?? 0
   const pendingTxns = stmtData?.by_status?.pending?.count ?? 0
   const unallocatedEf = efacturaData ?? 0
@@ -110,18 +98,6 @@ export default function Dashboard() {
   // Build stat cards based on visible widgets
   const statCards: { key: string; title: string; value: string | number; icon: React.ReactNode; isLoading: boolean; description?: string }[] = []
 
-  if (isVisible('accounting_invoices') && canAccounting) {
-    statCards.push({
-      key: 'total_invoices', title: 'Total Invoices',
-      value: totalInvoices.toLocaleString('ro-RO'),
-      icon: <FileText className="h-4 w-4" />, isLoading: summaryLoading,
-    })
-    statCards.push({
-      key: 'total_value', title: 'Total Value',
-      value: new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalValue) + ' RON',
-      icon: <Calculator className="h-4 w-4" />, isLoading: summaryLoading,
-    })
-  }
   if (isVisible('statements_summary') && canStatements) {
     statCards.push({
       key: 'pending_txns', title: 'Pending Txns',
@@ -210,7 +186,7 @@ export default function Dashboard() {
       )}
 
       {/* Widget Grid */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
         {visibleWidgets.map(wp => {
           const Component = WIDGET_COMPONENTS[wp.id]
           if (!Component) return null

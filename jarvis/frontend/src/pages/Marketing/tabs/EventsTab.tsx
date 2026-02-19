@@ -40,7 +40,7 @@ export function EventsTab({ projectId }: { projectId: number }) {
 
   async function searchEvents(q: string) {
     setEventSearch(q)
-    if (q.length < 2) { setEventResults([]); return }
+    if (q.length < 1) { setEventResults([]); return }
     setIsSearching(true)
     try {
       const res = await marketingApi.searchHrEvents(q)
@@ -154,7 +154,7 @@ export function EventsTab({ projectId }: { projectId: number }) {
                 </Table>
               </div>
             )}
-            {eventSearch.length >= 2 && !isSearching && eventResults.length === 0 && (
+            {eventSearch.length >= 1 && !isSearching && eventResults.length === 0 && (
               <div className="text-center text-sm text-muted-foreground py-4">No events found.</div>
             )}
           </div>

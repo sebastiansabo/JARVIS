@@ -33,7 +33,7 @@ interface WidgetShellProps {
 
 export function WidgetShell({ title, icon, linkTo, linkLabel = 'View all', children, className, colSpan }: WidgetShellProps) {
   return (
-    <Card className={cn(colSpan === 2 && 'lg:col-span-2', className)}>
+    <Card className={cn(colSpan === 2 && 'md:col-span-2 lg:col-span-4', className)}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -59,7 +59,7 @@ export function WidgetShell({ title, icon, linkTo, linkLabel = 'View all', child
 export function AccountingInvoicesWidget({ enabled }: { enabled: boolean }) {
   const { data: invoices, isLoading, isError, refetch } = useQuery({
     queryKey: ['dashboard', 'recentInvoices'],
-    queryFn: () => dashboardApi.getRecentInvoices(10),
+    queryFn: () => dashboardApi.getRecentInvoices(5),
     staleTime: 60_000,
     enabled,
   })
@@ -99,48 +99,6 @@ export function AccountingInvoicesWidget({ enabled }: { enabled: boolean }) {
         </Table>
       ) : (
         <p className="py-8 text-center text-sm text-muted-foreground">No invoices yet.</p>
-      )}
-    </WidgetShell>
-  )
-}
-
-// ── Accounting: Company Summary ──
-
-export function AccountingCompaniesWidget({ enabled }: { enabled: boolean }) {
-  const { data: companySummary, isLoading, isError, refetch } = useQuery({
-    queryKey: ['dashboard', 'companySummary'],
-    queryFn: dashboardApi.getCompanySummary,
-    staleTime: 60_000,
-    enabled,
-  })
-
-  return (
-    <WidgetShell title="By Company" icon={<span />} linkTo="/app/accounting">
-      {isError ? (
-        <QueryError message="Failed to load" onRetry={() => refetch()} />
-      ) : isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex items-center justify-between py-2">
-              <div className="space-y-1.5"><Skeleton className="h-4 w-28" /><Skeleton className="h-3 w-16" /></div>
-              <Skeleton className="h-4 w-20" />
-            </div>
-          ))}
-        </div>
-      ) : companySummary && companySummary.length > 0 ? (
-        <div className="space-y-3">
-          {companySummary.map((cs) => (
-            <div key={cs.company} className="flex items-center justify-between rounded-lg border p-3">
-              <div>
-                <p className="text-sm font-medium">{cs.company}</p>
-                <p className="text-xs text-muted-foreground">{cs.invoice_count} invoices</p>
-              </div>
-              <CurrencyDisplay value={cs.total_value_ron ?? 0} currency="RON" className="text-sm" />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="py-8 text-center text-sm text-muted-foreground">No data.</p>
       )}
     </WidgetShell>
   )
@@ -333,7 +291,7 @@ export function ApprovalsQueueWidget({ enabled }: { enabled: boolean }) {
   if (!enabled || items.length === 0) return null
 
   return (
-    <Card className="lg:col-span-2 border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20">
+    <Card className="md:col-span-2 lg:col-span-4 border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
