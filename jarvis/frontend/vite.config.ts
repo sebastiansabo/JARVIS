@@ -53,6 +53,18 @@ export default defineConfig({
         target: 'http://localhost:5001',
         changeOrigin: true,
       },
+      '/approvals': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
+      '/marketing': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
+      '/notifications': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
     },
   },
 })

@@ -127,11 +127,12 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
 
       {/* Filters + actions */}
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={String(filters.year ?? '')} onValueChange={(v) => updateFilter('year', v ? Number(v) : undefined)}>
+        <Select value={String(filters.year ?? '__all__')} onValueChange={(v) => updateFilter('year', v === '__all__' ? undefined : Number(v))}>
           <SelectTrigger className="w-24">
             <SelectValue placeholder="Year" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="__all__">All years</SelectItem>
             {years.map((y) => (
               <SelectItem key={y} value={String(y)}>{y}</SelectItem>
             ))}
