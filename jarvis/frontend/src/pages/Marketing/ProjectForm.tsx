@@ -510,51 +510,52 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
         </div>
       </div>
 
-      {/* Description */}
-      <div className="space-y-1.5">
-        <Label htmlFor="mkt-description">Description</Label>
-        <Textarea
-          id="mkt-description"
-          value={form.description}
-          onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-          placeholder="Brief project description..."
-          rows={2}
-        />
-      </div>
+      {/* Description, Objective, Target Audience, External Ref — edit only */}
+      {isEdit && (
+        <>
+          <div className="space-y-1.5">
+            <Label htmlFor="mkt-description">Description</Label>
+            <Textarea
+              id="mkt-description"
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="Brief project description..."
+              rows={2}
+            />
+          </div>
 
-      {/* Objective */}
-      <div className="space-y-1.5">
-        <Label htmlFor="mkt-objective">Objective</Label>
-        <Textarea
-          id="mkt-objective"
-          value={form.objective}
-          onChange={(e) => setForm((f) => ({ ...f, objective: e.target.value }))}
-          placeholder="What does success look like?"
-          rows={2}
-        />
-      </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="mkt-objective">Objective</Label>
+            <Textarea
+              id="mkt-objective"
+              value={form.objective}
+              onChange={(e) => setForm((f) => ({ ...f, objective: e.target.value }))}
+              placeholder="What does success look like?"
+              rows={2}
+            />
+          </div>
 
-      {/* Target Audience */}
-      <div className="space-y-1.5">
-        <Label htmlFor="mkt-target-audience">Target Audience</Label>
-        <Input
-          id="mkt-target-audience"
-          value={form.target_audience}
-          onChange={(e) => setForm((f) => ({ ...f, target_audience: e.target.value }))}
-          placeholder="e.g., Males 25-45, urban, car enthusiasts"
-        />
-      </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="mkt-target-audience">Target Audience</Label>
+            <Input
+              id="mkt-target-audience"
+              value={form.target_audience}
+              onChange={(e) => setForm((f) => ({ ...f, target_audience: e.target.value }))}
+              placeholder="e.g., Males 25-45, urban, car enthusiasts"
+            />
+          </div>
 
-      {/* External Ref */}
-      <div className="space-y-1.5">
-        <Label htmlFor="mkt-external-ref">External Reference</Label>
-        <Input
-          id="mkt-external-ref"
-          value={form.external_ref}
-          onChange={(e) => setForm((f) => ({ ...f, external_ref: e.target.value }))}
-          placeholder="PO number, agency ref, etc."
-        />
-      </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="mkt-external-ref">External Reference</Label>
+            <Input
+              id="mkt-external-ref"
+              value={form.external_ref}
+              onChange={(e) => setForm((f) => ({ ...f, external_ref: e.target.value }))}
+              placeholder="PO number, agency ref, etc."
+            />
+          </div>
+        </>
+      )}
 
       {/* Approval Settings */}
       <div className="space-y-1.5">

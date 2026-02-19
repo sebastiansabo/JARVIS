@@ -29,20 +29,17 @@ export function SyncDialog({
   const [customDays, setCustomDays] = useState('')
   const [useCustom, setUseCustom] = useState(false)
   const [selectedCifs, setSelectedCifs] = useState<Set<string>>(new Set())
+  const [initialized, setInitialized] = useState(false)
 
   const { data: companies = [] } = useQuery({
     queryKey: ['efactura-sync-companies'],
     queryFn: () => efacturaApi.getSyncCompanies(),
   })
 
-  // Auto-select all companies when they load
-  const initCompanies = (comps: SyncCompany[]) => {
-    if (selectedCifs.size === 0 && comps.length > 0) {
-      setSelectedCifs(new Set(comps.map((c) => c.cif)))
-    }
-  }
-  if (companies.length > 0 && selectedCifs.size === 0) {
-    initCompanies(companies)
+  // Auto-select all companies once when they first load
+  if (companies.length > 0 && !initialized) {
+    setSelectedCifs(new Set(companies.map((c) => c.cif)))
+    setInitialized(true)
   }
 
   const syncMut = useMutation({
@@ -92,6 +89,8 @@ export function SyncDialog({
 
   const handleClose = () => {
     syncMut.reset()
+    setInitialized(false)
+    setSelectedCifs(new Set())
     onOpenChange(false)
   }
 

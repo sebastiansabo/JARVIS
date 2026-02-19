@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { Pencil } from 'lucide-react'
@@ -19,6 +20,12 @@ export function OverviewTab({ project }: { project: MktProject }) {
 
   const [editingDesc, setEditingDesc] = useState(false)
   const [descDraft, setDescDraft] = useState(project.description ?? '')
+  const [editingObj, setEditingObj] = useState(false)
+  const [objDraft, setObjDraft] = useState(project.objective ?? '')
+  const [editingAud, setEditingAud] = useState(false)
+  const [audDraft, setAudDraft] = useState(project.target_audience ?? '')
+  const [editingRef, setEditingRef] = useState(false)
+  const [refDraft, setRefDraft] = useState(project.external_ref ?? '')
 
   const { data: kpisData } = useQuery({
     queryKey: ['mkt-project-kpis', project.id],
@@ -31,6 +38,16 @@ export function OverviewTab({ project }: { project: MktProject }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-project', project.id] })
       setEditingDesc(false)
+    },
+  })
+
+  const saveFieldMut = useMutation({
+    mutationFn: (fields: Partial<MktProject>) => marketingApi.updateProject(project.id, fields),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-project', project.id] })
+      setEditingObj(false)
+      setEditingAud(false)
+      setEditingRef(false)
     },
   })
 
@@ -149,19 +166,70 @@ export function OverviewTab({ project }: { project: MktProject }) {
           )}
         </div>
 
-        {/* Objective & Audience */}
-        {project.objective && (
-          <div className="space-y-1">
-            <h3 className="font-semibold text-sm">Objective</h3>
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{project.objective}</p>
+        {/* Objective — always visible, editable */}
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-sm">Objective *</h3>
+            {!editingObj && (
+              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => { setObjDraft(project.objective ?? ''); setEditingObj(true) }}>
+                <Pencil className="h-3 w-3 mr-1" /> Edit
+              </Button>
+            )}
           </div>
-        )}
-        {project.target_audience && (
-          <div className="space-y-1">
-            <h3 className="font-semibold text-sm">Target Audience</h3>
-            <p className="text-sm text-muted-foreground">{project.target_audience}</p>
+          {editingObj ? (
+            <div className="space-y-2">
+              <Textarea
+                value={objDraft}
+                onChange={(e) => setObjDraft(e.target.value)}
+                placeholder="What does success look like?"
+                rows={3}
+                className="text-sm"
+              />
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setEditingObj(false)}>Cancel</Button>
+                <Button size="sm" disabled={saveFieldMut.isPending} onClick={() => saveFieldMut.mutate({ objective: objDraft } as Partial<MktProject>)}>
+                  {saveFieldMut.isPending ? 'Saving...' : 'Save'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+              {project.objective || 'No objective set. Click Edit to add one.'}
+            </p>
+          )}
+        </div>
+
+        {/* Target Audience — always visible, editable */}
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-sm">Target Audience *</h3>
+            {!editingAud && (
+              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => { setAudDraft(project.target_audience ?? ''); setEditingAud(true) }}>
+                <Pencil className="h-3 w-3 mr-1" /> Edit
+              </Button>
+            )}
           </div>
-        )}
+          {editingAud ? (
+            <div className="space-y-2">
+              <Input
+                value={audDraft}
+                onChange={(e) => setAudDraft(e.target.value)}
+                placeholder="e.g., Males 25-45, urban, car enthusiasts"
+                className="text-sm"
+              />
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setEditingAud(false)}>Cancel</Button>
+                <Button size="sm" disabled={saveFieldMut.isPending} onClick={() => saveFieldMut.mutate({ target_audience: audDraft } as Partial<MktProject>)}>
+                  {saveFieldMut.isPending ? 'Saving...' : 'Save'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {project.target_audience || 'No target audience set. Click Edit to add one.'}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Right column: metadata */}
@@ -196,15 +264,35 @@ export function OverviewTab({ project }: { project: MktProject }) {
             <span className="text-muted-foreground">Created</span>
             <span>{fmtDate(project.created_at)}</span>
           </div>
-          {project.external_ref && (
-            <>
-              <Separator />
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">External Ref</span>
-                <span>{project.external_ref}</span>
+          <Separator />
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">External Ref</span>
+              {!editingRef && (
+                <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={() => { setRefDraft(project.external_ref ?? ''); setEditingRef(true) }}>
+                  <Pencil className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+            {editingRef ? (
+              <div className="space-y-1.5">
+                <Input
+                  value={refDraft}
+                  onChange={(e) => setRefDraft(e.target.value)}
+                  placeholder="PO number, agency ref, etc."
+                  className="text-sm h-8"
+                />
+                <div className="flex justify-end gap-1.5">
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingRef(false)}>Cancel</Button>
+                  <Button size="sm" className="h-7 text-xs" disabled={saveFieldMut.isPending} onClick={() => saveFieldMut.mutate({ external_ref: refDraft } as Partial<MktProject>)}>
+                    {saveFieldMut.isPending ? 'Saving...' : 'Save'}
+                  </Button>
+                </div>
               </div>
-            </>
-          )}
+            ) : (
+              <span className="text-sm">{project.external_ref || '—'}</span>
+            )}
+          </div>
         </div>
 
         {/* Channel Mix */}
