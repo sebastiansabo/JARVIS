@@ -313,7 +313,7 @@ Return format:
         provider = ClaudeProvider()
         api_key = os.environ.get('ANTHROPIC_API_KEY')
 
-        response = provider.generate(
+        result = provider.generate_structured(
             model_name='claude-sonnet-4-20250514',
             messages=[{'role': 'user', 'content': 'Distribute the budget optimally.'}],
             max_tokens=2048,
@@ -321,16 +321,6 @@ Return format:
             api_key=api_key,
             system=system_prompt,
         )
-
-        # Parse JSON from response
-        content = response.content.strip()
-        # Try to extract JSON from markdown code blocks
-        if '```json' in content:
-            content = content.split('```json')[1].split('```')[0].strip()
-        elif '```' in content:
-            content = content.split('```')[1].split('```')[0].strip()
-
-        result = json.loads(content)
         allocations = result.get('allocations', result)
         reasoning = result.get('reasoning', '')
 
@@ -346,12 +336,12 @@ Return format:
             'allocations': allocations,
             'reasoning': reasoning,
             'total_allocated': total,
-            'tokens_used': response.input_tokens + response.output_tokens,
+            'tokens_used': 0,
         })
     except ImportError:
         return error_response('AI provider not available', 503)
-    except json.JSONDecodeError as e:
-        logger.error(f"AI distribute JSON parse error: {e}, content: {content[:500]}")
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.error(f"AI distribute JSON parse error: {e}")
         return error_response('Failed to parse AI response', 500)
     except Exception as e:
         logger.error(f"AI distribute error: {e}")

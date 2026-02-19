@@ -12,6 +12,8 @@ import os
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 
+from ai_agent.providers.base_provider import BaseProvider
+
 logger = logging.getLogger('jarvis.statements.invoice_matcher')
 
 # Matching thresholds
@@ -359,15 +361,8 @@ Return ONLY valid JSON, no other text."""
             messages=[{"role": "user", "content": prompt}]
         )
 
-        response_text = response.content[0].text.strip()
-
-        # Clean markdown code blocks
-        if '```json' in response_text:
-            response_text = response_text.split('```json')[1].split('```')[0]
-        elif '```' in response_text:
-            response_text = response_text.split('```')[1].split('```')[0]
-
-        result = json.loads(response_text)
+        response_text = response.content[0].text
+        result = BaseProvider._extract_json(response_text)
 
         return {
             'invoice_id': result.get('best_match_invoice_id'),
@@ -377,7 +372,7 @@ Return ONLY valid JSON, no other text."""
             'alternatives': result.get('alternative_matches', [])
         }
 
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, ValueError) as e:
         logger.error(f'AI matching JSON parse error: {e}')
         return {
             'invoice_id': None,

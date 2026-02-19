@@ -71,27 +71,16 @@ Use RON for currency-based KPIs."""
 
     logger.info(f'Generating benchmarks for {kpi_slug} via {model_config.provider.value}/{model_config.model_name}')
 
-    response = provider.generate(
-        model_name=model_config.model_name,
-        messages=messages,
-        max_tokens=1024,
-        temperature=0.3,
-        system=SYSTEM_PROMPT,
-    )
-
-    # Parse JSON from response
-    content = response.content.strip()
-    # Strip markdown fences if present
-    if content.startswith('```'):
-        content = content.split('\n', 1)[1] if '\n' in content else content[3:]
-        if content.endswith('```'):
-            content = content[:-3]
-        content = content.strip()
-
     try:
-        benchmarks = json.loads(content)
-    except json.JSONDecodeError as e:
-        logger.error(f'Failed to parse benchmark JSON: {e}\nContent: {content[:500]}')
+        benchmarks = provider.generate_structured(
+            model_name=model_config.model_name,
+            messages=messages,
+            max_tokens=1024,
+            temperature=0.3,
+            system=SYSTEM_PROMPT,
+        )
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.error(f'Failed to parse benchmark JSON: {e}')
         raise ValueError(f'AI returned invalid JSON: {e}')
 
     # Validate structure

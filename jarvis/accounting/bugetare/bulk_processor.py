@@ -19,6 +19,8 @@ from io import BytesIO
 import PyPDF2
 import json
 
+from ai_agent.providers.base_provider import BaseProvider
+
 # AI parsing support
 try:
     import anthropic
@@ -755,16 +757,8 @@ Invoice text:
             messages=[{"role": "user", "content": prompt}]
         )
 
-        response_text = response.content[0].text.strip()
-
-        # Clean up markdown if present
-        if response_text.startswith('```'):
-            response_text = response_text.split('```')[1]
-            if response_text.startswith('json'):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-
-        result = json.loads(response_text)
+        response_text = response.content[0].text
+        result = BaseProvider._extract_json(response_text)
 
         # Ensure items dict exists
         if 'items' not in result or not isinstance(result['items'], dict):

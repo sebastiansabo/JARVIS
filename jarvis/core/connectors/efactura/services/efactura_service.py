@@ -1538,6 +1538,7 @@ class EFacturaService:
         import os
         import anthropic
         from difflib import SequenceMatcher
+        from ai_agent.providers.base_provider import BaseProvider
 
         api_key = os.environ.get('ANTHROPIC_API_KEY')
         if not api_key:
@@ -1667,15 +1668,8 @@ Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
                             messages=[{"role": "user", "content": prompt}]
                         )
 
-                        response_text = response.content[0].text.strip()
-
-                        # Clean markdown code blocks
-                        if '```json' in response_text:
-                            response_text = response_text.split('```json')[1].split('```')[0]
-                        elif '```' in response_text:
-                            response_text = response_text.split('```')[1].split('```')[0]
-
-                        result = json.loads(response_text)
+                        response_text = response.content[0].text
+                        result = BaseProvider._extract_json(response_text)
 
                         if result.get('is_duplicate') and result.get('confidence', 0) >= 0.7:
                             ai_duplicates.append({
@@ -1691,7 +1685,7 @@ Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
                                 'ai_detected': True
                             })
 
-                    except json.JSONDecodeError as e:
+                    except (json.JSONDecodeError, ValueError) as e:
                         logger.error(f'AI duplicate detection JSON error: {e}')
                     except Exception as e:
                         logger.error(f'AI duplicate detection error: {e}')

@@ -9,6 +9,8 @@ from typing import Optional
 import json
 import tempfile
 
+from ai_agent.providers.base_provider import BaseProvider
+
 
 def normalize_vat_number(vat: str) -> str:
     """
@@ -198,17 +200,10 @@ LINE ITEMS (line_items):
     )
 
     # Parse the response
-    response_text = response.content[0].text.strip()
+    response_text = response.content[0].text
 
-    # Try to extract JSON from response
     try:
-        # Handle case where response might have markdown code blocks
-        if '```json' in response_text:
-            response_text = response_text.split('```json')[1].split('```')[0]
-        elif '```' in response_text:
-            response_text = response_text.split('```')[1].split('```')[0]
-
-        result = json.loads(response_text)
+        result = BaseProvider._extract_json(response_text)
 
         # Post-process: normalize VAT numbers to ensure consistent format
         if result.get('supplier_vat'):
@@ -221,7 +216,7 @@ LINE ITEMS (line_items):
             result['invoice_date'] = parse_romanian_date(result['invoice_date'])
 
         return result
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, ValueError) as e:
         return {
             "supplier": None,
             "invoice_number": None,
@@ -229,7 +224,7 @@ LINE ITEMS (line_items):
             "invoice_value": None,
             "currency": None,
             "description": None,
-            "raw_text": response_text,
+            "raw_text": response_text.strip(),
             "parse_error": str(e)
         }
 
@@ -334,15 +329,10 @@ IMPORTANT:
     )
 
     # Parse the response
-    response_text = response.content[0].text.strip()
+    response_text = response.content[0].text
 
     try:
-        if '```json' in response_text:
-            response_text = response_text.split('```json')[1].split('```')[0]
-        elif '```' in response_text:
-            response_text = response_text.split('```')[1].split('```')[0]
-
-        result = json.loads(response_text)
+        result = BaseProvider._extract_json(response_text)
 
         # Post-process VAT numbers
         if result.get('supplier_vat'):
@@ -355,7 +345,7 @@ IMPORTANT:
             result['invoice_date'] = parse_romanian_date(result['invoice_date'])
 
         return result
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, ValueError):
         return {}
 
 
@@ -1054,16 +1044,10 @@ Return ONLY the JSON, no other text."""
         )
 
         # Parse the response
-        response_text = response.content[0].text.strip()
+        response_text = response.content[0].text
 
-        # Try to extract JSON from response
         try:
-            if '```json' in response_text:
-                response_text = response_text.split('```json')[1].split('```')[0]
-            elif '```' in response_text:
-                response_text = response_text.split('```')[1].split('```')[0]
-
-            result = json.loads(response_text)
+            result = BaseProvider._extract_json(response_text)
 
             # Normalize VAT numbers
             if result.get('supplier_vat'):
@@ -1077,7 +1061,7 @@ Return ONLY the JSON, no other text."""
 
             return result
 
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, ValueError) as e:
             return {
                 'name': None,
                 'template_type': 'fixed',
@@ -1091,7 +1075,7 @@ Return ONLY the JSON, no other text."""
                 'invoice_value_regex': None,
                 'date_format': '%d.%m.%Y',
                 '_error': str(e),
-                '_raw_response': response_text,
+                '_raw_response': response_text.strip(),
                 '_extracted_text': text[:2000],
                 '_ai_generated': True
             }
@@ -1230,21 +1214,13 @@ IMPORTANT: Return ONLY the JSON object, no explanation or additional text."""
         )
 
         # Extract JSON from response
-        response_text = response.content[0].text.strip()
+        response_text = response.content[0].text
 
-        # Try to parse the response as JSON
         try:
-            # Remove any markdown code blocks if present
-            if response_text.startswith('```'):
-                response_text = response_text.split('```')[1]
-                if response_text.startswith('json'):
-                    response_text = response_text[4:]
-                response_text = response_text.strip()
-
-            result = json.loads(response_text)
+            result = BaseProvider._extract_json(response_text)
             # Convert string keys to int if needed
             return {int(k): int(v) for k, v in result.items()}
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError):
             # Fallback: return sequential mapping
             return {i: i % len(source_campaigns) for i in range(len(target_campaigns))}
 
