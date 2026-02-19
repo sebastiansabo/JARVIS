@@ -26,7 +26,7 @@ export function OkrCard({ projectId, kpis }: { projectId: number; kpis: MktProje
   const [newKr, setNewKr] = useState({ title: '', target_value: '100', unit: 'number', linked_kpi_id: '' })
   const [editingKrId, setEditingKrId] = useState<number | null>(null)
   const [editKrValue, setEditKrValue] = useState('')
-  const [editingKrFull, setEditingKrFull] = useState<{ id: number; title: string; target_value: string; unit: string } | null>(null)
+  const [editingKrFull, setEditingKrFull] = useState<{ id: number; title: string; target_value: string; unit: string; linked_kpi_id: string } | null>(null)
   const [suggestions, setSuggestions] = useState<Record<number, SuggestedKr[]>>({})
 
   const { data } = useQuery({
@@ -221,51 +221,60 @@ export function OkrCard({ projectId, kpis }: { projectId: number; kpis: MktProje
                   {obj.key_results.map((kr) => (
                     <div key={kr.id}>
                       {editingKrFull?.id === kr.id ? (
-                        /* Full KR edit row */
-                        <div className="flex items-center gap-1.5 py-1">
+                        /* Full KR edit — same layout as Add form */
+                        <div className="space-y-2 py-1">
                           <Input
                             autoFocus
                             value={editingKrFull.title}
                             onChange={(e) => setEditingKrFull((p) => p ? { ...p, title: e.target.value } : p)}
-                            className="h-7 text-xs flex-1"
+                            className="h-9 text-xs"
                             placeholder="Key result title"
                             onKeyDown={(e) => {
                               if (e.key === 'Escape') setEditingKrFull(null)
-                              if (e.key === 'Enter' && editingKrFull.title.trim()) {
-                                updateKrMut.mutate({ id: kr.id, data: { title: editingKrFull.title.trim(), target_value: parseFloat(editingKrFull.target_value) || 100, unit: editingKrFull.unit } })
+                            }}
+                          />
+                          <div className="grid grid-cols-[80px_110px_1fr] gap-2">
+                            <Input
+                              type="number"
+                              value={editingKrFull.target_value}
+                              onChange={(e) => setEditingKrFull((p) => p ? { ...p, target_value: e.target.value } : p)}
+                              className="h-9 text-xs"
+                              placeholder="Target"
+                            />
+                            <Select value={editingKrFull.unit} onValueChange={(v) => setEditingKrFull((p) => p ? { ...p, unit: v } : p)}>
+                              <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="number">Number</SelectItem>
+                                <SelectItem value="currency">Currency</SelectItem>
+                                <SelectItem value="percentage">Percentage</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Select value={editingKrFull.linked_kpi_id} onValueChange={(v) => setEditingKrFull((p) => p ? { ...p, linked_kpi_id: v } : p)}>
+                              <SelectTrigger className="h-9 text-xs">
+                                <SelectValue placeholder="Link KPI (optional)" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No KPI link</SelectItem>
+                                {kpis.map((k) => (
+                                  <SelectItem key={k.id} value={String(k.id)}>{k.kpi_name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex justify-end gap-1.5">
+                            <Button variant="outline" size="sm" className="h-7 text-xs px-3" onClick={() => setEditingKrFull(null)}>Cancel</Button>
+                            <Button
+                              size="sm" className="h-7 text-xs px-3"
+                              disabled={!editingKrFull.title.trim() || updateKrMut.isPending}
+                              onClick={() => {
+                                const linkedId = editingKrFull.linked_kpi_id && editingKrFull.linked_kpi_id !== 'none' ? parseInt(editingKrFull.linked_kpi_id) : null
+                                updateKrMut.mutate({ id: kr.id, data: { title: editingKrFull.title.trim(), target_value: parseFloat(editingKrFull.target_value) || 100, unit: editingKrFull.unit, linked_kpi_id: linkedId } })
                                 setEditingKrFull(null)
-                              }
-                            }}
-                          />
-                          <Input
-                            type="number"
-                            value={editingKrFull.target_value}
-                            onChange={(e) => setEditingKrFull((p) => p ? { ...p, target_value: e.target.value } : p)}
-                            className="h-7 text-xs w-20"
-                            placeholder="Target"
-                          />
-                          <Select value={editingKrFull.unit} onValueChange={(v) => setEditingKrFull((p) => p ? { ...p, unit: v } : p)}>
-                            <SelectTrigger className="h-7 text-xs w-24"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="number">Number</SelectItem>
-                              <SelectItem value="currency">Currency</SelectItem>
-                              <SelectItem value="percentage">%</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            variant="ghost" size="sm" className="h-6 w-6 p-0"
-                            onClick={() => {
-                              if (editingKrFull.title.trim()) {
-                                updateKrMut.mutate({ id: kr.id, data: { title: editingKrFull.title.trim(), target_value: parseFloat(editingKrFull.target_value) || 100, unit: editingKrFull.unit } })
-                              }
-                              setEditingKrFull(null)
-                            }}
-                          >
-                            <Check className="h-3 w-3 text-green-600" />
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setEditingKrFull(null)}>
-                            <X className="h-3 w-3" />
-                          </Button>
+                              }}
+                            >
+                              Save
+                            </Button>
+                          </div>
                         </div>
                       ) : (
                         /* Normal KR display row */
@@ -311,7 +320,7 @@ export function OkrCard({ projectId, kpis }: { projectId: number; kpis: MktProje
                           <Button
                             variant="ghost" size="sm"
                             className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 shrink-0"
-                            onClick={() => setEditingKrFull({ id: kr.id, title: kr.title, target_value: String(kr.target_value ?? 100), unit: kr.unit })}
+                            onClick={() => setEditingKrFull({ id: kr.id, title: kr.title, target_value: String(kr.target_value ?? 100), unit: kr.unit, linked_kpi_id: kr.linked_kpi_id ? String(kr.linked_kpi_id) : '' })}
                           >
                             <Pencil className="h-2.5 w-2.5" />
                           </Button>
