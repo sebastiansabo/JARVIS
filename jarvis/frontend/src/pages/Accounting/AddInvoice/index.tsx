@@ -29,6 +29,8 @@ import { organizationApi } from '@/api/organization'
 import { settingsApi } from '@/api/settings'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useFormValidation } from '@/hooks/useFormValidation'
+import { FieldError } from '@/components/shared/FieldError'
 import type { ParseResult, SubmitInvoiceInput, DeptSuggestion } from '@/types/invoices'
 import { type AllocationRow, newRow, AllocationRowComponent } from '../AllocationEditor'
 
@@ -147,6 +149,19 @@ export default function AddInvoice() {
   const totalPercent = useMemo(
     () => rows.reduce((sum, r) => sum + r.percent, 0),
     [rows],
+  )
+
+  // Inline validation
+  const v = useFormValidation(
+    { supplier, invoiceNumber, invoiceDate, invoiceValue, company },
+    {
+      supplier: (val) => (!val.trim() ? 'Supplier is required' : undefined),
+      invoiceNumber: (val) => (!val.trim() ? 'Invoice number is required' : undefined),
+      invoiceDate: (val) => (!val ? 'Invoice date is required' : undefined),
+      invoiceValue: (val) =>
+        !val || parseFloat(val) <= 0 ? 'Value must be positive' : undefined,
+      company: (val) => (!val ? 'Select a company' : undefined),
+    },
   )
 
   // Handlers
@@ -295,11 +310,8 @@ export default function AddInvoice() {
   })
 
   const handleSubmit = async () => {
-    if (!supplier.trim()) return toast.error('Supplier is required')
-    if (!invoiceNumber.trim()) return toast.error('Invoice number is required')
-    if (!invoiceDate) return toast.error('Invoice date is required')
-    if (!invoiceValue || parseFloat(invoiceValue) <= 0) return toast.error('Invoice value must be positive')
-    if (!company) return toast.error('Select a company')
+    v.touchAll()
+    if (!v.isValid) return toast.error('Please fix the highlighted fields')
     if (rows.some((r) => !r.department)) return toast.error('All rows need a department')
     if (Math.abs(totalPercent - 100) > 1) return toast.error('Total allocation must be 100%')
 
@@ -625,7 +637,8 @@ export default function AddInvoice() {
                 <Label htmlFor="inv-supplier" className="text-xs">
                   Supplier <span className="text-destructive">*</span>
                 </Label>
-                <Input id="inv-supplier" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
+                <Input id="inv-supplier" value={supplier} onChange={(e) => setSupplier(e.target.value)} onBlur={() => v.touch('supplier')} className={cn(v.error('supplier') && 'border-destructive')} />
+                <FieldError message={v.error('supplier')} />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -633,7 +646,8 @@ export default function AddInvoice() {
                   <Label htmlFor="inv-number" className="text-xs">
                     Invoice Number <span className="text-destructive">*</span>
                   </Label>
-                  <Input id="inv-number" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+                  <Input id="inv-number" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} onBlur={() => v.touch('invoiceNumber')} className={cn(v.error('invoiceNumber') && 'border-destructive')} />
+                  <FieldError message={v.error('invoiceNumber')} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="inv-date" className="text-xs">
@@ -644,7 +658,10 @@ export default function AddInvoice() {
                     type="date"
                     value={invoiceDate}
                     onChange={(e) => setInvoiceDate(e.target.value)}
+                    onBlur={() => v.touch('invoiceDate')}
+                    className={cn(v.error('invoiceDate') && 'border-destructive')}
                   />
+                  <FieldError message={v.error('invoiceDate')} />
                 </div>
               </div>
 
@@ -659,7 +676,10 @@ export default function AddInvoice() {
                     step="0.01"
                     value={invoiceValue}
                     onChange={(e) => handleValueChange(e.target.value)}
+                    onBlur={() => v.touch('invoiceValue')}
+                    className={cn(v.error('invoiceValue') && 'border-destructive')}
                   />
+                  <FieldError message={v.error('invoiceValue')} />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Currency</Label>
@@ -790,12 +810,13 @@ export default function AddInvoice() {
                 </Label>
                 <Select
                   value={company}
-                  onValueChange={(v) => {
-                    setCompany(v)
+                  onValueChange={(val) => {
+                    setCompany(val)
                     setRows([newRow()])
                   }}
+                  onOpenChange={(open) => { if (!open) v.touch('company') }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className={cn(v.error('company') && 'border-destructive')}>
                     <SelectValue placeholder="Select company..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -806,6 +827,7 @@ export default function AddInvoice() {
                     ))}
                   </SelectContent>
                 </Select>
+                <FieldError message={v.error('company')} />
               </div>
 
               {/* Allocation rows */}

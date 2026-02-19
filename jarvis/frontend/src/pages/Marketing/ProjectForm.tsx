@@ -14,6 +14,9 @@ import { marketingApi } from '@/api/marketing'
 import { settingsApi } from '@/api/settings'
 import { organizationApi } from '@/api/organization'
 import { usersApi } from '@/api/users'
+import { cn } from '@/lib/utils'
+import { useFormValidation } from '@/hooks/useFormValidation'
+import { FieldError } from '@/components/shared/FieldError'
 import type { MktProject } from '@/types/marketing'
 import type { CompanyWithBrands, DepartmentStructure } from '@/types/organization'
 import type { UserDetail } from '@/types/users'
@@ -48,6 +51,15 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
   const [stakeholderIds, setStakeholderIds] = useState<number[]>([])
   const [observerIds, setObserverIds] = useState<number[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  // Inline validation
+  const v = useFormValidation(
+    { name: form.name, company_ids: form.company_ids },
+    {
+      name: (val) => (!val.trim() ? 'Project name is required' : undefined),
+      company_ids: (val) => (val.length === 0 ? 'At least one company is required' : undefined),
+    },
+  )
 
   // Lookups
   const { data: companies } = useQuery({
@@ -203,9 +215,8 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
-
-    if (!form.name.trim()) { setError('Project name is required'); return }
-    if (form.company_ids.length === 0) { setError('At least one company is required'); return }
+    v.touchAll()
+    if (!v.isValid) return
 
     const payload: Record<string, unknown> = {
       name: form.name.trim(),
@@ -252,16 +263,19 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
           id="name"
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          onBlur={() => v.touch('name')}
+          className={cn(v.error('name') && 'border-destructive')}
           placeholder="Q1 2026 Brand Campaign"
         />
+        <FieldError message={v.error('name')} />
       </div>
 
       {/* Companies (dropdown + checkboxes) */}
       <div className="space-y-1.5">
         <Label>Companies *</Label>
-        <Popover>
+        <Popover onOpenChange={(open) => { if (!open) v.touch('company_ids') }}>
           <PopoverTrigger asChild>
-            <Button variant="outline" className="w-full justify-between font-normal">
+            <Button variant="outline" className={cn('w-full justify-between font-normal', v.error('company_ids') && 'border-destructive')}>
               <span className="truncate">
                 {form.company_ids.length === 0
                   ? 'Select companies...'
@@ -297,6 +311,7 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
             })}
           </div>
         )}
+        <FieldError message={v.error('company_ids')} />
       </div>
 
       {/* Brands (dropdown + checkboxes, from selected companies) */}

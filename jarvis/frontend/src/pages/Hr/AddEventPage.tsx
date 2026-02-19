@@ -19,6 +19,9 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { hrApi } from '@/api/hr'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
+import { useFormValidation } from '@/hooks/useFormValidation'
+import { FieldError } from '@/components/shared/FieldError'
 import type { HrEmployee } from '@/types/hr'
 
 interface EmployeeRow {
@@ -45,6 +48,16 @@ export default function AddEventPage() {
   const [description, setDescription] = useState('')
   const [year, setYear] = useState(String(new Date().getFullYear()))
   const [month, setMonth] = useState(String(new Date().getMonth() + 1))
+
+  // Inline validation
+  const v = useFormValidation(
+    { name, startDate, endDate },
+    {
+      name: (val) => (!val.trim() ? 'Event name is required' : undefined),
+      startDate: (val) => (!val ? 'Start date is required' : undefined),
+      endDate: (val) => (!val ? 'End date is required' : undefined),
+    },
+  )
 
   // Employees
   const [rows, setRows] = useState<EmployeeRow[]>([])
@@ -178,9 +191,8 @@ export default function AddEventPage() {
   })
 
   const handleSubmit = () => {
-    if (!name.trim()) return toast.error('Event name is required')
-    if (!startDate) return toast.error('Start date is required')
-    if (!endDate) return toast.error('End date is required')
+    v.touchAll()
+    if (!v.isValid) return toast.error('Please fix the highlighted fields')
     if (rows.length === 0) return toast.error('Add at least one employee')
     createEventMutation.mutate()
   }
@@ -208,16 +220,19 @@ export default function AddEventPage() {
             <CardContent className="space-y-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Event Name *</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Toyota Family Day" />
+                <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => v.touch('name')} className={cn(v.error('name') && 'border-destructive')} placeholder="e.g., Toyota Family Day" />
+                <FieldError message={v.error('name')} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Start Date *</Label>
-                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} onBlur={() => v.touch('startDate')} className={cn(v.error('startDate') && 'border-destructive')} />
+                  <FieldError message={v.error('startDate')} />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">End Date *</Label>
-                  <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                  <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} onBlur={() => v.touch('endDate')} className={cn(v.error('endDate') && 'border-destructive')} />
+                  <FieldError message={v.error('endDate')} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
