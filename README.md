@@ -7,68 +7,71 @@ A modular enterprise platform for accounting, HR, and business operations manage
 | Section | Apps | Description |
 |---------|------|-------------|
 | **Accounting** | Invoices, Templates, Bugetare, Statements, e-Factura | Invoice allocation, bank statement parsing, ANAF e-invoicing |
-| **HR** | Events | Employee event bonus management |
-| **AI** | AI Agent | Multi-provider chatbot with RAG (Claude, OpenAI, Groq, Gemini) |
-| **Core** | Auth, Roles, Organization, Settings, Profile, Tags, Presets, Notifications, Connectors, Drive | User management, permissions, platform configuration |
+| **HR** | Events | Employee event & bonus management |
+| **Marketing** | Projects, Budgets, KPIs, OKR | Marketing project management with approval workflows |
+| **AI** | AI Agent | Multi-provider chatbot with RAG, 10 tools, SSE streaming |
+| **Approvals** | Flows, Requests, Delegations | Configurable approval engine with multi-step workflows |
+| **Core** | Auth, Roles, Organization, Settings, Profile, Tags, Notifications | User management, permissions, platform configuration |
 
 ## Tech Stack
 
-- **Backend**: Flask + Gunicorn (17 blueprints, ~30 repository classes)
+- **Backend**: Flask + Gunicorn (20 blueprints, 50 repository classes, 19 services)
 - **Database**: PostgreSQL (pgvector for RAG)
-- **Frontend**: React 19 + TypeScript + Vite + Tailwind + shadcn/ui (at `/app/*`)
-- **AI**: Multi-provider (Claude, OpenAI, Groq, Gemini) for chatbot + Claude Sonnet vision for invoice parsing
+- **Frontend**: React 19 + TypeScript + Vite + Tailwind 4 + shadcn/ui (~140 TSX files at `/app/*`)
+- **AI**: Multi-provider (Claude, OpenAI, Groq, Gemini) with RAG, 10 tools, SSE streaming
 - **Storage**: Google Drive integration
-- **Deployment**: DigitalOcean App Platform (Docker)
+- **Deployment**: DigitalOcean App Platform (Docker, auto-deploy from staging)
 
 ## Quick Start
 
+See [SETUP.md](SETUP.md) for full local development setup.
+
 ```bash
-# Install dependencies
 pip install -r requirements.txt
+cd jarvis/frontend && npm ci && cd ../..
 
-# Set environment variables
-export DATABASE_URL='postgresql://user@localhost:5432/defaultdb'
-export ANTHROPIC_API_KEY='your-key'
-
-# Run locally
-python jarvis/app.py
+PORT=5001 DATABASE_URL="postgresql://user@localhost/defaultdb" \
+FLASK_SECRET_KEY="dev-key" python3 jarvis/app.py
 ```
 
 ## Project Structure
 
 ```
 jarvis/
-├── app.py                 # Flask app (484 lines, 17 blueprints)
-├── database.py            # DB pool + helpers (235 lines)
-├── migrations/            # Schema & seed data (init_schema.py)
+├── app.py                 # Flask app (20 blueprints, scheduler)
+├── database.py            # DB pool + helpers + init_db()
+├── migrations/            # Schema & seed data (auto-runs on first boot)
 ├── core/                  # Core platform
-│   ├── auth/              # Authentication & users
-│   ├── roles/             # Roles & permissions
-│   ├── organization/      # Companies & structure
-│   ├── settings/          # Themes, menus, dropdowns
-│   ├── tags/              # Platform-wide tagging
-│   ├── presets/           # User filter presets
-│   ├── notifications/     # Email notifications
+│   ├── auth/              # Authentication, users, employees
+│   ├── roles/             # Roles & permissions_v2
+│   ├── organization/      # Companies, brands, departments
+│   ├── settings/          # App settings, themes, dropdowns
+│   ├── tags/              # Tags, auto-tag rules, AI suggest
+│   ├── approvals/         # Approval engine (flows, steps, decisions)
+│   ├── notifications/     # In-app + email notifications
 │   ├── profile/           # User profile
 │   ├── connectors/        # External connectors (e-Factura/ANAF)
 │   ├── drive/             # Google Drive integration
-│   └── services/          # Shared utilities
+│   ├── presets/           # User filter presets
+│   ├── services/          # Shared services
+│   ├── utils/             # API helpers, logging
+│   └── base_repository.py # BaseRepository (inherited by 48 repos)
 ├── accounting/            # Accounting section
-│   ├── invoices/          # Invoice & allocation management
+│   ├── invoices/          # Invoice CRUD, allocations, service layer
 │   ├── templates/         # Invoice parsing templates
 │   ├── bugetare/          # Bulk processor & invoice parser
-│   ├── statements/        # Bank statement parsing
-│   └── efactura/          # e-Factura accounting UI
-├── hr/                    # HR section
-│   └── events/            # Event bonus management
-├── ai_agent/              # AI chatbot (multi-provider + RAG)
-└── frontend/              # React SPA (Vite + TS + Tailwind)
+│   └── statements/        # Bank statement parsing
+├── hr/events/             # HR events & bonus management
+├── ai_agent/              # AI (4 LLM providers, RAG, 10 tools, streaming)
+├── marketing/             # Marketing projects, budgets, KPIs, OKR
+└── frontend/              # React 19 + TypeScript + Vite + Tailwind 4
 ```
 
 ## Documentation
 
-- **[docs/CLAUDE.md](docs/CLAUDE.md)** - Detailed project documentation and development guide
-- **[docs/CHANGELOG.md](docs/CHANGELOG.md)** - Version history and release notes
+- **[SETUP.md](SETUP.md)** — Local development setup & architecture overview
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — Code conventions & workflow
+- **[docs/CHANGELOG.md](docs/CHANGELOG.md)** — Version history and release notes
 
 ## Environment Variables
 

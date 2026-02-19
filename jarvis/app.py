@@ -133,6 +133,14 @@ def handle_500(e):
         return jsonify({'success': False, 'error': 'An internal error occurred'}), 500
     return redirect('/app/dashboard')
 
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Catch-all for unhandled exceptions — never leak stack traces."""
+    app_logger.exception(f'Unhandled exception: {type(e).__name__}')
+    if '/api/' in request.path or request.content_type == 'application/json':
+        return jsonify({'success': False, 'error': 'An internal error occurred'}), 500
+    return redirect('/app/dashboard')
+
 # ============== Background Scheduler ==============
 # Start cleanup scheduler (only in main process or reloader child, not both)
 if not os.environ.get('TESTING'):
@@ -161,6 +169,22 @@ def _log_slow_requests(response):
     return response
 
 # ============== After-Request Hook ==============
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses."""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+
+    # HSTS — only in production (when SESSION_COOKIE_SECURE is set)
+    if app.config.get('SESSION_COOKIE_SECURE'):
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+
+    return response
+
 
 @app.after_request
 def add_cache_headers(response):

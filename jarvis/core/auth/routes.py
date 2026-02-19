@@ -243,7 +243,11 @@ def api_get_users():
 @auth_bp.route('/api/users/<int:user_id>', methods=['GET'])
 @login_required
 def api_get_user(user_id):
-    """Get a specific user with role information."""
+    """Get a specific user with role information.
+    Users can view their own profile; admin required for others.
+    """
+    if user_id != current_user.id and not current_user.can_access_settings:
+        return error_response('Permission denied', 403)
     user = _user_repo.get_by_id(user_id)
     if user:
         return jsonify(user)
@@ -351,7 +355,11 @@ def api_get_employees():
 @auth_bp.route('/api/employees/<int:employee_id>', methods=['GET'])
 @login_required
 def api_get_employee(employee_id):
-    """Get a specific user as employee."""
+    """Get a specific user as employee.
+    Users can view their own record; admin required for others.
+    """
+    if employee_id != current_user.id and not current_user.can_access_settings:
+        return error_response('Permission denied', 403)
     user = _user_repo.get_by_id(employee_id)
     if user:
         user['departments'] = user.get('department')
