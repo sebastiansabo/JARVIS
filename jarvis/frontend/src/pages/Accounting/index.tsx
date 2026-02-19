@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
+import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { SearchInput } from '@/components/shared/SearchInput'
@@ -820,12 +821,8 @@ function InvoiceTable({
   if (isLoading) {
     return (
       <Card>
-        <CardContent className="p-6">
-          <div className="space-y-3">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-10 animate-pulse rounded bg-muted" />
-            ))}
-          </div>
+        <CardContent className="p-0">
+          <TableSkeleton rows={8} columns={6} showCheckbox />
         </CardContent>
       </Card>
     )

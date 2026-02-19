@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
+import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { cn } from '@/lib/utils'
 import {
   Plus, Search, LayoutGrid, List,
@@ -250,11 +250,7 @@ export default function Marketing() {
           {projectsError ? (
             <QueryError message="Failed to load projects" onRetry={() => refetchProjects()} />
           ) : projectsLoading ? (
-            <div className="space-y-3">
-              {[1, 2, 3, 4].map((i) => (
-                <Skeleton key={i} className="h-16 w-full" />
-              ))}
-            </div>
+            <TableSkeleton rows={6} columns={7} />
           ) : viewMode === 'table' ? (
             <ProjectTable
               projects={projects}
@@ -538,7 +534,7 @@ function DashboardView() {
             <h3 className="font-semibold text-sm">Budget by Channel</h3>
           </div>
           {budgetLoading ? (
-            <Skeleton className="h-40 w-full" />
+            <TableSkeleton rows={4} columns={3} showHeader={false} />
           ) : channels.length === 0 ? (
             <div className="text-center py-6 text-sm text-muted-foreground">No budget data.</div>
           ) : (
@@ -584,7 +580,7 @@ function DashboardView() {
             <h3 className="font-semibold text-sm">KPI Scoreboard (Active Projects)</h3>
           </div>
           {scoreboardLoading ? (
-            <Skeleton className="h-40 w-full" />
+            <TableSkeleton rows={3} columns={5} />
           ) : kpis.length === 0 ? (
             <div className="text-center py-6 text-sm text-muted-foreground">No KPIs tracked.</div>
           ) : (
@@ -615,7 +611,7 @@ function DashboardView() {
           )}
         </div>
         {bvaLoading ? (
-          <Skeleton className="h-32 w-full" />
+          <TableSkeleton rows={4} columns={6} />
         ) : bvaProjects.length === 0 ? (
           <div className="text-center py-6 text-sm text-muted-foreground">No project data.</div>
         ) : (
@@ -700,7 +696,7 @@ function DashboardView() {
           )}
         </div>
         {channelPerfLoading ? (
-          <Skeleton className="h-32 w-full" />
+          <TableSkeleton rows={3} columns={5} />
         ) : channelPerf.length === 0 ? (
           <div className="text-center py-6 text-sm text-muted-foreground">No channel data.</div>
         ) : (

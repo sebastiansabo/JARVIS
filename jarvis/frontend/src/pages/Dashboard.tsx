@@ -9,6 +9,8 @@ import { StatCard } from '@/components/shared/StatCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { QueryError } from '@/components/QueryError'
+import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { dashboardApi } from '@/api/dashboard'
 import { approvalsApi } from '@/api/approvals'
@@ -186,11 +188,7 @@ export default function Dashboard() {
               {invoicesError ? (
                 <QueryError message="Failed to load invoices" onRetry={() => refetchInvoices()} />
               ) : invoicesLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="h-10 animate-pulse rounded bg-muted" />
-                  ))}
-                </div>
+                <TableSkeleton rows={5} columns={5} />
               ) : invoices && invoices.length > 0 ? (
                 <Table>
                   <TableHeader>
@@ -235,7 +233,13 @@ export default function Dashboard() {
               ) : summaryLoading ? (
                 <div className="space-y-3">
                   {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="h-12 animate-pulse rounded bg-muted" />
+                    <div key={i} className="flex items-center justify-between py-2">
+                      <div className="space-y-1.5">
+                        <Skeleton className="h-4 w-28" />
+                        <Skeleton className="h-3 w-16" />
+                      </div>
+                      <Skeleton className="h-4 w-20" />
+                    </div>
                   ))}
                 </div>
               ) : companySummary && companySummary.length > 0 ? (
