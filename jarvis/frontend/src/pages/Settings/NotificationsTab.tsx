@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Send, Bell } from 'lucide-react'
+import { Save, Send, Bell, Newspaper } from 'lucide-react'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -36,6 +37,9 @@ export default function NotificationsTab() {
     smart_efactura_backlog_threshold: '50',
     smart_alert_cooldown_hours: '24',
     smart_invoice_anomaly_sigma: '2',
+    // Daily digest
+    daily_digest_enabled: false,
+    daily_digest_recipients: 'admins',
   })
 
   const [testEmail, setTestEmail] = useState('')
@@ -60,6 +64,8 @@ export default function NotificationsTab() {
         smart_efactura_backlog_threshold: settings.smart_efactura_backlog_threshold || '50',
         smart_alert_cooldown_hours: settings.smart_alert_cooldown_hours || '24',
         smart_invoice_anomaly_sigma: settings.smart_invoice_anomaly_sigma || '2',
+        daily_digest_enabled: String(settings.daily_digest_enabled) === 'true',
+        daily_digest_recipients: settings.daily_digest_recipients || 'admins',
       })
     }
   }, [settings])
@@ -98,6 +104,8 @@ export default function NotificationsTab() {
       smart_efactura_backlog_threshold: form.smart_efactura_backlog_threshold,
       smart_alert_cooldown_hours: form.smart_alert_cooldown_hours,
       smart_invoice_anomaly_sigma: form.smart_invoice_anomaly_sigma,
+      daily_digest_enabled: String(form.daily_digest_enabled),
+      daily_digest_recipients: form.daily_digest_recipients,
     })
   }
 
@@ -293,6 +301,48 @@ export default function NotificationsTab() {
                 />
                 <p className="text-xs text-muted-foreground">Minimum hours between repeat alerts for the same issue. Default: 24</p>
               </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Daily Digest */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Newspaper className="h-5 w-5" />
+            Daily Digest
+          </CardTitle>
+          <CardDescription>AI-generated morning summary with key metrics, pending items, and anomalies. Runs daily at 8:00 AM UTC.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Enable Daily Digest</p>
+              <p className="text-xs text-muted-foreground">Send a morning summary notification to selected users</p>
+            </div>
+            <Switch
+              checked={form.daily_digest_enabled}
+              onCheckedChange={(v) => setForm({ ...form, daily_digest_enabled: v })}
+            />
+          </div>
+          {form.daily_digest_enabled && (
+            <div className="grid gap-1.5 border-l-2 border-muted pl-4">
+              <Label className="text-xs font-medium">Recipients</Label>
+              <Select
+                value={form.daily_digest_recipients}
+                onValueChange={(v) => setForm({ ...form, daily_digest_recipients: v })}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admins">Admins only</SelectItem>
+                  <SelectItem value="managers">Admins & Managers</SelectItem>
+                  <SelectItem value="all">All active users</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Who receives the daily digest notification</p>
             </div>
           )}
         </CardContent>

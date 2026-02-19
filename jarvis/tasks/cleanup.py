@@ -99,6 +99,19 @@ def sync_marketing_kpis():
         logger.error(f"Marketing KPI sync task failed: {e}")
 
 
+def run_daily_digest():
+    """Generate and send daily AI-powered digest to admins/managers."""
+    try:
+        from ai_agent.services.digest_service import generate_and_send
+        result = generate_and_send()
+        if result.get('skipped'):
+            logger.debug(f"Daily digest skipped: {result['skipped']}")
+        elif result.get('sent_to'):
+            logger.info(f"Daily digest sent to {result['sent_to']} users")
+    except Exception as e:
+        logger.error(f"Daily digest task failed: {e}")
+
+
 def _acquire_scheduler_lock():
     """Try to acquire an exclusive file lock. Returns True if this process won."""
     global _lock_file
@@ -187,6 +200,17 @@ def start_scheduler():
         hour=6,
         minute=0,
         id='sync_marketing_kpis',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        run_daily_digest,
+        'cron',
+        hour=8,
+        minute=0,
+        id='daily_digest',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,
