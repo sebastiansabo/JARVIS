@@ -127,12 +127,20 @@
 
 /* react-grid-layout overrides */
 .react-grid-item.react-grid-placeholder {
-  background: hsl(var(--primary) / 0.1);
-  border: 2px dashed hsl(var(--primary) / 0.4);
+  background: oklch(0.205 0 0 / 0.08);
+  border: 2px dashed oklch(0.205 0 0 / 0.3);
   border-radius: var(--radius);
+  opacity: 1;
+}
+.dark .react-grid-item.react-grid-placeholder {
+  background: oklch(0.922 0 0 / 0.08);
+  border-color: oklch(0.922 0 0 / 0.3);
+}
+.react-grid-item > .react-resizable-handle {
+  z-index: 10;
 }
 .react-grid-item > .react-resizable-handle::after {
-  border-color: hsl(var(--muted-foreground) / 0.4);
+  border-color: oklch(0.556 0 0 / 0.5);
 }
 .react-grid-item.react-draggable-dragging {
   box-shadow: 0 8px 25px -5px rgb(0 0 0 / 0.15);

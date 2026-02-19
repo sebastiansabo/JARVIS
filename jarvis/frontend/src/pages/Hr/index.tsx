@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, NavLink } from 'react-router-dom'
-import { Award, CalendarDays, Download } from 'lucide-react'
+import { Award, CalendarDays, Download, LayoutDashboard } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -9,6 +9,7 @@ import { StatCard } from '@/components/shared/StatCard'
 import { hrApi } from '@/api/hr'
 import { useHrStore } from '@/stores/hrStore'
 import { cn } from '@/lib/utils'
+import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 
 const BonusesTab = lazy(() => import('./BonusesTab'))
 const EventsTab = lazy(() => import('./EventsTab'))
@@ -30,6 +31,7 @@ function TabLoader() {
 }
 
 export default function Hr() {
+  const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('hr_summary')
   const filters = useHrStore((s) => s.filters)
 
   const { data: summary } = useQuery({
@@ -52,14 +54,20 @@ export default function Hr() {
         title="HR Events"
         description={`Bonuses, events & employee management${filters.year ? ` — ${filters.year}` : ''}${filters.month ? ` ${MONTHS[filters.month]}` : ''}`}
         actions={
-          canExport ? (
-            <Button variant="outline" asChild>
-              <a href={hrApi.exportUrl({ year: filters.year, month: filters.month })} download>
-                <Download className="mr-1.5 h-4 w-4" />
-                Export
-              </a>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
+              <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
+              {isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}
             </Button>
-          ) : undefined
+            {canExport && (
+              <Button variant="outline" asChild>
+                <a href={hrApi.exportUrl({ year: filters.year, month: filters.month })} download>
+                  <Download className="mr-1.5 h-4 w-4" />
+                  Export
+                </a>
+              </Button>
+            )}
+          </div>
         }
       />
 

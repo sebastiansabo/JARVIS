@@ -122,7 +122,7 @@ export function TeamTab({ projectId }: { projectId: number }) {
 
       {/* Add Member Dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm" aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Add Team Member</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">

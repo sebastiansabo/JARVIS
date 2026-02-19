@@ -17,6 +17,7 @@ import {
   ChevronUp,
   Columns3,
   GripVertical,
+  LayoutDashboard,
   Eye,
   EyeOff,
   ArrowUp,
@@ -35,6 +36,7 @@ import {
   SelectTrigger,
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { StatCard } from '@/components/shared/StatCard'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -79,6 +81,7 @@ function formatDate(dateStr: string) {
 
 export default function Accounting() {
   const queryClient = useQueryClient()
+  const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('accounting_invoices')
   const [activeTab, setActiveTab] = useTabParam<TabKey>('invoices')
   const [search, setSearch] = useState('')
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
@@ -365,12 +368,18 @@ export default function Accounting() {
         title="Accounting"
         description="Invoice management, allocations & financial reports."
         actions={
-          <Button asChild>
-            <Link to="/app/accounting/add">
-              <Plus className="mr-1.5 h-4 w-4" />
-              New Invoice
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
+              <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
+              {isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}
+            </Button>
+            <Button asChild>
+              <Link to="/app/accounting/add">
+                <Plus className="mr-1.5 h-4 w-4" />
+                New Invoice
+              </Link>
+            </Button>
+          </div>
         }
       />
 

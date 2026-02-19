@@ -103,7 +103,7 @@ export function EventsTab({ projectId }: { projectId: number }) {
 
       {/* Link Event Dialog */}
       <Dialog open={showLink} onOpenChange={setShowLink}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg" aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Link HR Event</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="relative">

@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, NavLink } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   FileStack,
+  LayoutDashboard,
   RefreshCw,
   Tags,
 } from 'lucide-react'
@@ -13,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { efacturaApi } from '@/api/efactura'
 import { cn } from '@/lib/utils'
+import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { SyncDialog } from './SyncDialog'
 
 const UnallocatedTab = lazy(() => import('./UnallocatedTab'))
@@ -34,6 +36,7 @@ function TabLoader() {
 }
 
 export default function EFactura() {
+  const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('efactura_status')
   const [syncOpen, setSyncOpen] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
 
@@ -54,10 +57,16 @@ export default function EFactura() {
           title="e-Factura"
           description="ANAF electronic invoicing — sync, allocate & manage"
         />
-        <Button onClick={() => setSyncOpen(true)}>
-          <RefreshCw className="mr-1.5 h-4 w-4" />
-          Sync
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
+            <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
+            {isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}
+          </Button>
+          <Button onClick={() => setSyncOpen(true)}>
+            <RefreshCw className="mr-1.5 h-4 w-4" />
+            Sync
+          </Button>
+        </div>
       </div>
 
       {/* Tab nav */}

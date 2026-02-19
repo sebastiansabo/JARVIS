@@ -6,6 +6,7 @@ import {
   verticalCompactor,
   type Layout,
 } from 'react-grid-layout'
+import 'react-grid-layout/css/styles.css'
 import { Bot, CreditCard, Receipt, CalendarDays, Megaphone, ClipboardCheck, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatCard } from '@/components/shared/StatCard'
@@ -219,7 +220,7 @@ export default function Dashboard() {
             const Component = WIDGET_COMPONENTS[wp.id]
             if (!Component) return null
             return (
-              <div key={wp.id}>
+              <div key={wp.id} className="h-full">
                 <Component enabled />
               </div>
             )

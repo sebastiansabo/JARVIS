@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { cn } from '@/lib/utils'
 import {
-  Plus, Search, LayoutGrid, List,
+  Plus, Search, LayoutGrid, LayoutDashboard, List,
   DollarSign, Target, AlertTriangle, FolderOpen,
   BarChart3, PieChart, Calculator, Download,
   Archive, Trash2, RotateCcw, AlertCircle,
@@ -24,6 +24,7 @@ import { settingsApi } from '@/api/settings'
 import { organizationApi } from '@/api/organization'
 import { QueryError } from '@/components/QueryError'
 import { useMarketingStore } from '@/stores/marketingStore'
+import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import type { MktProject, MktKpiScoreboardItem } from '@/types/marketing'
 import ProjectForm from './ProjectForm'
 import CampaignSimulator from './CampaignSimulator'
@@ -54,6 +55,7 @@ type MainTab = 'projects' | 'dashboard' | 'simulator' | 'archived' | 'trash'
 export default function Marketing() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('marketing_summary')
   const { filters, updateFilter, clearFilters, viewMode, setViewMode } = useMarketingStore()
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [mainTab, setMainTab] = useTabParam<MainTab>('projects')
@@ -95,9 +97,15 @@ export default function Marketing() {
         title="Marketing"
         description={mainTab === 'projects' ? `${total} project${total !== 1 ? 's' : ''}` : 'Dashboard & Reports'}
         actions={
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="h-4 w-4 mr-2" /> New Project
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
+              <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
+              {isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}
+            </Button>
+            <Button onClick={() => setShowCreateDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" /> New Project
+            </Button>
+          </div>
         }
       />
 
@@ -360,7 +368,7 @@ export default function Marketing() {
 
       {/* Create Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>New Project</DialogTitle>
           </DialogHeader>

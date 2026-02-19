@@ -33,9 +33,9 @@ interface WidgetShellProps {
 export function WidgetShell({ title, icon, linkTo, linkLabel = 'View all', children, className }: WidgetShellProps) {
   return (
     <Card className={cn('h-full flex flex-col', className)}>
-      <CardHeader className="widget-drag-handle cursor-grab">
+      <CardHeader>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="widget-drag-handle flex flex-1 cursor-grab items-center gap-2">
             <GripVertical className="h-3.5 w-3.5 text-muted-foreground/50" />
             {icon}
             <CardTitle className="text-base">{title}</CardTitle>

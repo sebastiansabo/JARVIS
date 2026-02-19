@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTabParam } from '@/hooks/useTabParam'
-import { ClipboardCheck, Inbox, Send, Clock, CheckCircle, XCircle, RotateCcw, AlertTriangle, Users2, Plus, Trash2 } from 'lucide-react'
+import { ClipboardCheck, Inbox, Send, Clock, CheckCircle, XCircle, RotateCcw, AlertTriangle, Users2, Plus, Trash2, LayoutDashboard } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { approvalsApi } from '@/api/approvals'
 import { usersApi } from '@/api/users'
 import { QueryError } from '@/components/QueryError'
@@ -53,6 +54,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 export default function Approvals() {
+  const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('approvals_queue')
   const [activeTab, setActiveTab] = useTabParam<Tab>('queue')
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('')
@@ -277,6 +279,12 @@ export default function Approvals() {
       <PageHeader
         title="Approvals"
         description="Review and manage approval requests"
+        actions={
+          <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
+            <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
+            {isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}
+          </Button>
+        }
       />
 
       {/* Summary stats */}

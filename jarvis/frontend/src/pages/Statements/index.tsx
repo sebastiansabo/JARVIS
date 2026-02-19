@@ -1,13 +1,14 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, NavLink } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeftRight, FileText, LinkIcon, Download } from 'lucide-react'
+import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
 import { statementsApi } from '@/api/statements'
 import { cn } from '@/lib/utils'
+import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import type { TransactionFilters } from '@/types/statements'
 import { useState } from 'react'
 
@@ -32,6 +33,7 @@ function TabLoader() {
 }
 
 export default function Statements() {
+  const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('statements_summary')
   const [filters] = useState<TransactionFilters>({})
 
   const { data: summary, isLoading } = useQuery({
@@ -52,12 +54,18 @@ export default function Statements() {
         title="Bank Statements"
         description="Transaction reconciliation, vendor mappings & invoice matching"
         actions={
-          <Button variant="outline" asChild>
-            <a href={statementsApi.exportUrl(filters)} download>
-              <Download className="mr-1.5 h-4 w-4" />
-              Export CSV
-            </a>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
+              <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
+              {isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}
+            </Button>
+            <Button variant="outline" asChild>
+              <a href={statementsApi.exportUrl(filters)} download>
+                <Download className="mr-1.5 h-4 w-4" />
+                Export CSV
+              </a>
+            </Button>
+          </div>
         }
       />
 

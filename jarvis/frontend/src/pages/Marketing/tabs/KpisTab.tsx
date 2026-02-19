@@ -461,7 +461,7 @@ export function KpisTab({ projectId }: { projectId: number }) {
 
       {/* Add KPI Dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm" aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Add KPI</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -545,7 +545,7 @@ export function KpisTab({ projectId }: { projectId: number }) {
 
       {/* Record Snapshot Dialog */}
       <Dialog open={!!snapKpiId} onOpenChange={(open) => { if (!open) setSnapKpiId(null) }}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm" aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Record KPI Value</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -564,7 +564,7 @@ export function KpisTab({ projectId }: { projectId: number }) {
 
       {/* Snapshot History Dialog */}
       <Dialog open={!!historyKpiId} onOpenChange={(open) => { if (!open) setHistoryKpiId(null) }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>{historyKpi?.kpi_name ?? 'KPI'} — History</DialogTitle>
           </DialogHeader>
@@ -608,7 +608,7 @@ export function KpisTab({ projectId }: { projectId: number }) {
 
       {/* Unified Link Sources Dialog */}
       <Dialog open={!!linkSourcesKpiId} onOpenChange={(open) => { if (!open) setLinkSourcesKpiId(null) }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg" aria-describedby={undefined}>
           {(() => {
             const editKpi = kpis.find((k) => k.id === linkSourcesKpiId)
             const def = editKpi ? definitions.find((d) => d.id === editKpi.kpi_definition_id) : null

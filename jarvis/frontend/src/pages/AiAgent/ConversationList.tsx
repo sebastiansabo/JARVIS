@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Archive, Trash2, MoreVertical, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { aiAgentApi } from '@/api/aiAgent'
-import { useAiAgentStore } from '@/stores/aiAgentStore'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -15,10 +14,13 @@ import {
 import { toast } from 'sonner'
 import type { Conversation } from '@/types/aiAgent'
 
-export function ConversationList() {
+interface Props {
+  selectedConversationId: number | null
+  onSelect: (id: number | null) => void
+}
+
+export function ConversationList({ selectedConversationId, onSelect }: Props) {
   const queryClient = useQueryClient()
-  const selectedConversationId = useAiAgentStore((s) => s.selectedConversationId)
-  const setConversation = useAiAgentStore((s) => s.setConversation)
 
   const { data: conversations, isLoading } = useQuery({
     queryKey: ['conversations'],
@@ -29,7 +31,7 @@ export function ConversationList() {
     mutationFn: () => aiAgentApi.createConversation(),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] })
-      setConversation(data.id)
+      onSelect(data.id)
     },
     onError: () => toast.error('Failed to create conversation'),
   })
@@ -46,7 +48,7 @@ export function ConversationList() {
     mutationFn: (id: number) => aiAgentApi.deleteConversation(id),
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] })
-      if (selectedConversationId === id) setConversation(null)
+      if (selectedConversationId === id) onSelect(null)
       toast.success('Conversation deleted')
     },
   })
@@ -86,7 +88,7 @@ export function ConversationList() {
           {activeConversations.map((conv: Conversation) => (
             <div
               key={conv.id}
-              onClick={() => setConversation(conv.id)}
+              onClick={() => onSelect(conv.id)}
               className={cn(
                 'group flex cursor-pointer items-center justify-between rounded-md px-3 py-2 transition-colors',
                 selectedConversationId === conv.id

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import TextareaAutosize from 'react-textarea-autosize'
 import { Send, Bot, Loader2 } from 'lucide-react'
 import { aiAgentApi } from '@/api/aiAgent'
 import { useAiAgentStore } from '@/stores/aiAgentStore'
-import { MessageBubble } from './MessageBubble'
-import { RagSources } from './RagSources'
+import { MessageBubble } from '@/pages/AiAgent/MessageBubble'
+import { RagSources } from '@/pages/AiAgent/RagSources'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -17,19 +17,19 @@ import {
 import { toast } from 'sonner'
 import type { Message, RagSource as RagSourceType } from '@/types/aiAgent'
 
-interface ChatWindowProps {
-  conversationId: number | null
-}
-
-export function ChatWindow({ conversationId: selectedConversationId }: ChatWindowProps) {
-  const queryClient = useQueryClient()
+export function EphemeralChatPopup() {
   const selectedModel = useAiAgentStore((s) => s.selectedModel)
   const setModel = useAiAgentStore((s) => s.setModel)
+
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [ragSources, setRagSources] = useState<Record<number, RagSourceType[]>>({})
-  const [toolsUsed, setToolsUsed] = useState<Record<number, string[]>>({})
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
+  const [ragSources, setRagSources] = useState<Record<number, RagSourceType[]>>({})
+  const [toolsUsed, setToolsUsed] = useState<Record<number, string[]>>({})
+
+  const convIdRef = useRef<number | null>(null)
+  const streamingRef = useRef('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -39,62 +39,102 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
     staleTime: 10 * 60 * 1000,
   })
 
-  const { data: conversation } = useQuery({
-    queryKey: ['conversation', selectedConversationId],
-    queryFn: () => aiAgentApi.getConversation(selectedConversationId!),
-    enabled: !!selectedConversationId,
-  })
-
-  const messages: Message[] = conversation?.messages ?? []
-
-  // Auto-scroll to bottom on new messages or streaming content
+  // Auto-scroll
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [messages.length, isStreaming, streamingContent])
 
-  // Focus input when conversation changes
+  // Focus input on mount
   useEffect(() => {
     inputRef.current?.focus()
-  }, [selectedConversationId])
+  }, [])
 
-  const handleSend = useCallback(() => {
+  // Cleanup: delete ephemeral conversation on unmount
+  useEffect(() => {
+    return () => {
+      if (convIdRef.current) {
+        aiAgentApi.deleteConversation(convIdRef.current).catch(() => {})
+      }
+    }
+  }, [])
+
+  const handleSend = useCallback(async () => {
     const content = input.trim()
-    if (!content || !selectedConversationId || isStreaming) return
+    if (!content || isStreaming) return
     setInput('')
     setIsStreaming(true)
     setStreamingContent('')
+    streamingRef.current = ''
 
-    aiAgentApi.streamMessage(
-      selectedConversationId,
+    // Add user message locally
+    const userMsg: Message = {
+      id: Date.now(),
+      role: 'user',
       content,
-      selectedModel ?? undefined,
-      // onChunk
-      (text) => {
-        setStreamingContent((prev) => prev + text)
-      },
-      // onDone
-      (data) => {
-        setIsStreaming(false)
-        setStreamingContent('')
-        queryClient.invalidateQueries({ queryKey: ['conversation', selectedConversationId] })
-        queryClient.invalidateQueries({ queryKey: ['conversations'] })
-        if (data.rag_sources?.length) {
-          setRagSources((prev) => ({ ...prev, [data.message_id]: data.rag_sources }))
-        }
-        if (data.tools_used?.length) {
-          setToolsUsed((prev) => ({ ...prev, [data.message_id]: data.tools_used! }))
-        }
-      },
-      // onError
-      (error) => {
-        setIsStreaming(false)
-        setStreamingContent('')
-        toast.error(error || 'Failed to send message')
-      },
-    )
-  }, [input, selectedConversationId, isStreaming, selectedModel, queryClient])
+      input_tokens: 0,
+      output_tokens: 0,
+      cost: '0',
+      response_time_ms: 0,
+      created_at: new Date().toISOString(),
+    }
+    setMessages((prev) => [...prev, userMsg])
+
+    try {
+      // Lazy-create conversation on first message
+      if (!convIdRef.current) {
+        const conv = await aiAgentApi.createConversation('Quick Chat')
+        convIdRef.current = conv.id
+      }
+
+      aiAgentApi.streamMessage(
+        convIdRef.current,
+        content,
+        selectedModel ?? undefined,
+        // onChunk
+        (text) => {
+          streamingRef.current += text
+          setStreamingContent(streamingRef.current)
+        },
+        // onDone
+        (data) => {
+          const assistantMsg: Message = {
+            id: data.message_id,
+            role: 'assistant',
+            content: streamingRef.current,
+            input_tokens: 0,
+            output_tokens: 0,
+            cost: data.cost,
+            response_time_ms: data.response_time_ms,
+            created_at: new Date().toISOString(),
+          }
+          setMessages((prev) => [...prev, assistantMsg])
+          setIsStreaming(false)
+          setStreamingContent('')
+          streamingRef.current = ''
+          if (data.rag_sources?.length) {
+            setRagSources((prev) => ({ ...prev, [data.message_id]: data.rag_sources }))
+          }
+          if (data.tools_used?.length) {
+            setToolsUsed((prev) => ({ ...prev, [data.message_id]: data.tools_used! }))
+          }
+        },
+        // onError
+        (error) => {
+          setIsStreaming(false)
+          setStreamingContent('')
+          streamingRef.current = ''
+          toast.error(error || 'Failed to send message')
+        },
+      )
+    } catch {
+      setIsStreaming(false)
+      setStreamingContent('')
+      streamingRef.current = ''
+      toast.error('Failed to create conversation')
+    }
+  }, [input, isStreaming, selectedModel])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -103,26 +143,16 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
     }
   }
 
-  // Empty state
-  if (!selectedConversationId) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
-        <Bot className="mb-4 h-12 w-12" />
-        <h2 className="text-lg font-medium">JARVIS AI Agent</h2>
-        <p className="mt-1 text-sm">Select a conversation or start a new chat</p>
-      </div>
-    )
-  }
-
   const currentModel = selectedModel ?? (models && models.length > 0 ? String(models[0].id) : null)
 
   return (
     <div className="flex h-full flex-col">
-      {/* Chat header */}
+      {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-2">
-        <h3 className="truncate text-sm font-medium">
-          {conversation?.title || 'New conversation'}
-        </h3>
+        <div className="flex items-center gap-2">
+          <Bot className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold">Quick Chat</span>
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="text-xs">
@@ -146,8 +176,10 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
       <ScrollArea className="flex-1" ref={scrollRef}>
         <div className="space-y-4 p-4">
           {messages.length === 0 && !isStreaming && (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              Send a message to start the conversation
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <Bot className="mb-3 h-10 w-10" />
+              <p className="text-sm font-medium">JARVIS AI</p>
+              <p className="mt-1 text-xs">Ask anything — no history saved</p>
             </div>
           )}
 
@@ -174,7 +206,7 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
             />
           )}
 
-          {/* Typing indicator (before first token arrives) */}
+          {/* Typing indicator */}
           {isStreaming && !streamingContent && (
             <div className="flex items-center gap-3">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
