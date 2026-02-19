@@ -17,6 +17,8 @@ export function OverviewTab({ project }: { project: MktProject }) {
   const queryClient = useQueryClient()
   const budget = typeof project.total_budget === 'string' ? parseFloat(project.total_budget as string) : (project.total_budget ?? 0)
   const spent = typeof project.total_spent === 'string' ? parseFloat(project.total_spent as string) : (project.total_spent ?? 0)
+  const eventCost = typeof project.event_cost === 'string' ? parseFloat(project.event_cost as string) : (project.event_cost ?? 0)
+  const budgetSpent = spent - eventCost
   const burn = budget ? Math.round((spent / budget) * 100) : 0
 
   const [editingDesc, setEditingDesc] = useState(false)
@@ -67,15 +69,21 @@ export function OverviewTab({ project }: { project: MktProject }) {
         {/* Budget summary */}
         <div className="rounded-lg border p-4 space-y-3">
           <h3 className="font-semibold text-sm">Budget</h3>
-          <div className="grid grid-cols-3 gap-4 text-center">
+          <div className={`grid gap-4 text-center ${eventCost > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
             <div>
               <div className="text-lg font-bold">{fmt(budget, project.currency)}</div>
               <div className="text-xs text-muted-foreground">Total Budget</div>
             </div>
             <div>
-              <div className="text-lg font-bold">{fmt(spent, project.currency)}</div>
-              <div className="text-xs text-muted-foreground">Spent</div>
+              <div className="text-lg font-bold">{fmt(eventCost > 0 ? budgetSpent : spent, project.currency)}</div>
+              <div className="text-xs text-muted-foreground">{eventCost > 0 ? 'Budget Spent' : 'Spent'}</div>
             </div>
+            {eventCost > 0 && (
+              <div>
+                <div className="text-lg font-bold">{fmt(eventCost, project.currency)}</div>
+                <div className="text-xs text-muted-foreground">Event Costs</div>
+              </div>
+            )}
             <div>
               <div className={`text-lg font-bold ${burn > 90 ? 'text-red-500' : burn > 70 ? 'text-yellow-500' : ''}`}>{burn}%</div>
               <div className="text-xs text-muted-foreground">Burn Rate</div>

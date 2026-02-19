@@ -26,6 +26,7 @@ Rules:
 - For "lower is better" KPIs (like CPC, CPL), lower values = better performance
 - Source should reference the data origin (e.g. "Google Ads Romania auto industry 2025", "Meta Ads Romania 2025")
 - Consider Romanian market specifics: lower CPCs than Western Europe, regional ad costs, local competition levels
+- Generate text fields (segment names, sources) in the same language as the user's request
 """
 
 

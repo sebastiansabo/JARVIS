@@ -39,13 +39,14 @@ login_manager.login_message = 'Please log in to access this page.'
 
 # Remember Me cookie configuration (30 days)
 from datetime import timedelta
+_is_production = 'localhost' not in os.environ.get('DATABASE_URL', 'localhost')
 app.config['REMEMBER_COOKIE_DURATION'] = timedelta(days=30)
-app.config['REMEMBER_COOKIE_SECURE'] = True  # Only send over HTTPS
+app.config['REMEMBER_COOKIE_SECURE'] = _is_production  # Only send over HTTPS in prod
 app.config['REMEMBER_COOKIE_HTTPONLY'] = True  # Not accessible via JavaScript
 app.config['REMEMBER_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
 
 # Session cookie hardening
-app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_SECURE'] = _is_production  # Only send over HTTPS in prod
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 

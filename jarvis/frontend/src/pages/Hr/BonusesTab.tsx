@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
   Trash2,
   Pencil,
+  Copy,
   Search,
   Users,
   CalendarDays,
@@ -21,6 +22,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { QueryError } from '@/components/QueryError'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { SearchSelect } from '@/components/shared/SearchSelect'
 import { hrApi } from '@/api/hr'
 import { useHrStore } from '@/stores/hrStore'
 import { toast } from 'sonner'
@@ -42,6 +44,7 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
   const [search, setSearch] = useState('')
   const [editBonus, setEditBonus] = useState<EventBonus | null>(null)
   const [addOpen, setAddOpen] = useState(false)
+  const [isDuplicate, setIsDuplicate] = useState(false)
   const [deleteIds, setDeleteIds] = useState<number[] | null>(null)
 
   // Data
@@ -86,6 +89,7 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
         b.employee_name.toLowerCase().includes(q) ||
         b.event_name.toLowerCase().includes(q) ||
         (b.company?.toLowerCase().includes(q) ?? false) ||
+        (b.brand?.toLowerCase().includes(q) ?? false) ||
         (b.department?.toLowerCase().includes(q) ?? false),
     )
   }, [bonuses, search])
@@ -207,7 +211,8 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
             if (allSelected) clearSelected()
             else setSelectedBonusIds(filtered.map((b) => b.id))
           }}
-          onEdit={(b) => { setEditBonus(b); setAddOpen(true) }}
+          onEdit={(b) => { setEditBonus(b); setIsDuplicate(false); setAddOpen(true) }}
+          onDuplicate={(b) => { setEditBonus(b); setIsDuplicate(true); setAddOpen(true) }}
           onDelete={(id) => setDeleteIds([id])}
           canViewAmounts={canViewAmounts}
         />
@@ -221,13 +226,14 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
         <ByEventTable data={byEvent} canViewAmounts={canViewAmounts} />
       )}
 
-      {/* Add/Edit Bonus Dialog */}
+      {/* Add/Edit/Duplicate Bonus Dialog */}
       <BonusDialog
         open={addOpen}
         bonus={editBonus}
+        isDuplicate={isDuplicate}
         events={events}
         employees={employees}
-        onClose={() => { setAddOpen(false); setEditBonus(null) }}
+        onClose={() => { setAddOpen(false); setEditBonus(null); setIsDuplicate(false) }}
       />
 
       {/* Delete confirm */}
@@ -247,7 +253,7 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
 
 function BonusListTable({
   bonuses, isLoading, selectedIds, allSelected, someSelected,
-  onToggleSelect, onSelectAll, onEdit, onDelete, canViewAmounts,
+  onToggleSelect, onSelectAll, onEdit, onDuplicate, onDelete, canViewAmounts,
 }: {
   bonuses: EventBonus[]
   isLoading: boolean
@@ -257,6 +263,7 @@ function BonusListTable({
   onToggleSelect: (id: number) => void
   onSelectAll: () => void
   onEdit: (b: EventBonus) => void
+  onDuplicate: (b: EventBonus) => void
   onDelete: (id: number) => void
   canViewAmounts: boolean
 }) {
@@ -290,12 +297,13 @@ function BonusListTable({
               <TableHead>Employee</TableHead>
               <TableHead>Department</TableHead>
               <TableHead>Company</TableHead>
+              <TableHead>Brand</TableHead>
               <TableHead>Event</TableHead>
               <TableHead className="text-right">Days</TableHead>
               <TableHead className="text-right">Hours</TableHead>
               {canViewAmounts && <TableHead className="text-right">Bonus (Net)</TableHead>}
               <TableHead>Details</TableHead>
-              <TableHead className="w-20">Actions</TableHead>
+              <TableHead className="w-28">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -311,6 +319,7 @@ function BonusListTable({
                 <TableCell className="text-sm font-medium">{b.employee_name}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{b.department ?? '—'}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{b.company ?? '—'}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{b.brand ?? '—'}</TableCell>
                 <TableCell className="text-sm">{b.event_name}</TableCell>
                 <TableCell className="text-right text-sm">{b.bonus_days ?? '—'}</TableCell>
                 <TableCell className="text-right text-sm">{b.hours_free ?? '—'}</TableCell>
@@ -322,10 +331,13 @@ function BonusListTable({
                 <TableCell className="text-xs text-muted-foreground max-w-[120px] truncate">{b.details ?? ''}</TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(b)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(b)} title="Edit">
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(b.id)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDuplicate(b)} title="Duplicate">
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(b.id)} title="Delete">
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -471,16 +483,17 @@ function ByEventTable({ data, canViewAmounts }: { data: BonusSummaryByEvent[]; c
 /* ──── Add/Edit Bonus Dialog ──── */
 
 function BonusDialog({
-  open, bonus, events, employees, onClose,
+  open, bonus, isDuplicate, events, employees, onClose,
 }: {
   open: boolean
   bonus: EventBonus | null
-  events: { id: number; name: string }[]
+  isDuplicate?: boolean
+  events: { id: number; name: string; start_date?: string; end_date?: string }[]
   employees: { id: number; name: string; company?: string | null }[]
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
-  const isEdit = !!bonus
+  const isEdit = !!bonus && !isDuplicate
 
   const { data: bonusTypes = [] } = useQuery({
     queryKey: ['hr-bonus-types-active'],
@@ -497,21 +510,18 @@ function BonusDialog({
   const [bonusTypeId, setBonusTypeId] = useState('')
   const [bonusDays, setBonusDays] = useState('')
   const [hoursFree, setHoursFree] = useState('')
-  const [bonusNet, setBonusNet] = useState('')
   const [details, setDetails] = useState('')
 
-  const recalcBonus = (typeId: string, days: string) => {
-    const type = bonusTypes.find((t) => String(t.id) === typeId)
-    const d = parseFloat(days) || 0
-    if (type && d > 0) {
-      setBonusNet(String(Math.round((type.amount / (type.days_per_amount ?? 1)) * d)))
-    }
-  }
+  const selectedEvent = events.find((e) => String(e.id) === eventId)
+  const maxBonusDays = selectedEvent?.start_date && selectedEvent?.end_date
+    ? Math.max(1, Math.round((new Date(selectedEvent.end_date).getTime() - new Date(selectedEvent.start_date).getTime()) / 86400000) + 1)
+    : 31
 
-  // Load values when bonus changes
-  const resetForm = () => {
+  // Sync form state when dialog opens or bonus changes
+  useEffect(() => {
+    if (!open) return
     if (bonus) {
-      setEmployeeId(String(bonus.employee_id))
+      setEmployeeId(String(bonus.user_id))
       setEventId(String(bonus.event_id))
       setYear(String(bonus.year))
       setMonth(String(bonus.month))
@@ -520,7 +530,6 @@ function BonusDialog({
       setBonusTypeId((bonus as any).bonus_type_id != null ? String((bonus as any).bonus_type_id) : '')
       setBonusDays(bonus.bonus_days != null ? String(bonus.bonus_days) : '')
       setHoursFree(bonus.hours_free != null ? String(bonus.hours_free) : '')
-      setBonusNet(bonus.bonus_net != null ? String(bonus.bonus_net) : '')
       setDetails(bonus.details ?? '')
     } else {
       setEmployeeId('')
@@ -532,10 +541,9 @@ function BonusDialog({
       setBonusTypeId('')
       setBonusDays('')
       setHoursFree('')
-      setBonusNet('')
       setDetails('')
     }
-  }
+  }, [open, bonus])
 
   const createMutation = useMutation({
     mutationFn: (data: Partial<EventBonus>) => hrApi.createBonus(data),
@@ -561,6 +569,12 @@ function BonusDialog({
 
   const handleSave = () => {
     if (!employeeId || !eventId) return toast.error('Employee and event are required')
+    if ((parseFloat(bonusDays) || 0) > maxBonusDays) return toast.error(`Bonus days cannot exceed ${maxBonusDays}`)
+    if ((parseFloat(hoursFree) || 0) > maxBonusDays * 8) return toast.error(`Hours free cannot exceed ${maxBonusDays * 8}`)
+    // Auto-compute bonus_net from type + days
+    const type = bonusTypes.find((t) => String(t.id) === bonusTypeId)
+    const d = parseFloat(bonusDays) || 0
+    const computedNet = type && d > 0 ? Math.round((type.amount / (type.days_per_amount ?? 1)) * d) : null
     const data: Record<string, any> = {
       employee_id: Number(employeeId),
       event_id: Number(eventId),
@@ -570,7 +584,7 @@ function BonusDialog({
       participation_end: partEnd || null,
       bonus_days: bonusDays ? Number(bonusDays) : null,
       hours_free: hoursFree ? Number(hoursFree) : null,
-      bonus_net: bonusNet ? Number(bonusNet) : null,
+      bonus_net: computedNet,
       details: details || null,
     }
     if (bonusTypeId) data.bonus_type_id = Number(bonusTypeId)
@@ -582,41 +596,40 @@ function BonusDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); else resetForm() }}>
-      <DialogContent className="sm:max-w-lg" onOpenAutoFocus={(e) => { e.preventDefault(); resetForm() }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
+      <DialogContent className="sm:max-w-lg" onOpenAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit Bonus' : 'Add Bonus'}</DialogTitle>
+          <DialogTitle>{isEdit ? 'Edit Bonus' : isDuplicate ? 'Duplicate Bonus' : 'Add Bonus'}</DialogTitle>
           <DialogDescription>
-            {isEdit ? 'Update bonus record.' : 'Create a new bonus entry.'}
+            {isEdit ? 'Update bonus record.' : isDuplicate ? 'Create a copy of the bonus.' : 'Create a new bonus entry.'}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Employee *</Label>
-              <Select value={employeeId} onValueChange={setEmployeeId}>
-                <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
-                <SelectContent>
-                  {employees.map((e) => (
-                    <SelectItem key={e.id} value={String(e.id)}>
-                      {e.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchSelect
+                value={employeeId}
+                onValueChange={setEmployeeId}
+                options={employees.map((e) => ({ value: String(e.id), label: e.name, sublabel: e.company ?? undefined }))}
+                placeholder="Select employee..."
+                searchPlaceholder="Search employee..."
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Event *</Label>
-              <Select value={eventId} onValueChange={setEventId}>
-                <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
-                <SelectContent>
-                  {events.map((ev) => (
-                    <SelectItem key={ev.id} value={String(ev.id)}>
-                      {ev.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchSelect
+                value={eventId}
+                onValueChange={(v) => {
+                  setEventId(v)
+                  const ev = events.find((e) => String(e.id) === v)
+                  if (ev?.start_date) setPartStart(ev.start_date)
+                  if (ev?.end_date) setPartEnd(ev.end_date)
+                }}
+                options={events.map((ev) => ({ value: String(ev.id), label: ev.name }))}
+                placeholder="Select event..."
+                searchPlaceholder="Search event..."
+              />
             </div>
           </div>
 
@@ -641,11 +654,11 @@ function BonusDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Participation Start</Label>
-              <Input type="date" value={partStart} onChange={(e) => setPartStart(e.target.value)} />
+              <Input type="date" value={partStart} onChange={(e) => setPartStart(e.target.value)} min={selectedEvent?.start_date} max={selectedEvent?.end_date} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Participation End</Label>
-              <Input type="date" value={partEnd} onChange={(e) => setPartEnd(e.target.value)} />
+              <Input type="date" value={partEnd} onChange={(e) => setPartEnd(e.target.value)} min={selectedEvent?.start_date} max={selectedEvent?.end_date} />
             </div>
           </div>
 
@@ -655,9 +668,7 @@ function BonusDialog({
               <Select
                 value={bonusTypeId || '__none__'}
                 onValueChange={(v) => {
-                  const id = v === '__none__' ? '' : v
-                  setBonusTypeId(id)
-                  if (id) recalcBonus(id, bonusDays)
+                  setBonusTypeId(v === '__none__' ? '' : v)
                 }}
               >
                 <SelectTrigger><SelectValue placeholder="Select type..." /></SelectTrigger>
@@ -665,7 +676,7 @@ function BonusDialog({
                   <SelectItem value="__none__">— Manual —</SelectItem>
                   {bonusTypes.map((bt) => (
                     <SelectItem key={bt.id} value={String(bt.id)}>
-                      {bt.name} ({bt.amount} RON{bt.days_per_amount && bt.days_per_amount > 1 ? ` / ${bt.days_per_amount} days` : '/day'})
+                      {bt.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -673,28 +684,29 @@ function BonusDialog({
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Bonus Days</Label>
+              <Label className="text-xs">Bonus Days{selectedEvent ? ` (max ${maxBonusDays})` : ''}</Label>
               <Input
                 type="number"
                 step="0.5"
                 min={0}
-                max={31}
+                max={maxBonusDays}
                 value={bonusDays}
-                onChange={(e) => {
-                  setBonusDays(e.target.value)
-                  if (bonusTypeId) recalcBonus(bonusTypeId, e.target.value)
-                }}
+                onChange={(e) => setBonusDays(e.target.value)}
+                className={cn((parseFloat(bonusDays) || 0) > maxBonusDays && 'border-destructive ring-destructive')}
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Hours Free</Label>
-              <Input type="number" min={0} max={100} value={hoursFree} onChange={(e) => setHoursFree(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Bonus Net (RON)</Label>
-              <Input type="number" step="0.01" value={bonusNet} onChange={(e) => setBonusNet(e.target.value)} />
+              <Label className="text-xs">Hours Free{selectedEvent ? ` (max ${maxBonusDays * 8})` : ''}</Label>
+              <Input
+                type="number"
+                min={0}
+                max={maxBonusDays * 8}
+                value={hoursFree}
+                onChange={(e) => setHoursFree(e.target.value)}
+                className={cn((parseFloat(hoursFree) || 0) > maxBonusDays * 8 && 'border-destructive ring-destructive')}
+              />
             </div>
           </div>
 
@@ -707,7 +719,7 @@ function BonusDialog({
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending}>
-            {isEdit ? 'Update' : 'Create'}
+            {isEdit ? 'Update' : isDuplicate ? 'Duplicate' : 'Create'}
           </Button>
         </div>
       </DialogContent>

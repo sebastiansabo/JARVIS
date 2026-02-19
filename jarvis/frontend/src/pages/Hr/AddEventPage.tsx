@@ -65,6 +65,14 @@ export default function AddEventPage() {
   const [searchResults, setSearchResults] = useState<HrEmployee[]>([])
   const [searching, setSearching] = useState(false)
 
+  // Permissions
+  const { data: permissions } = useQuery({
+    queryKey: ['hr-permissions'],
+    queryFn: () => hrApi.getPermissions(),
+    staleTime: 5 * 60 * 1000,
+  })
+  const canViewAmounts = permissions?.permissions?.['hr.bonuses.view_amounts']?.allowed ?? false
+
   // Queries
   const { data: companies = [] } = useQuery({
     queryKey: ['hr-structure-companies'],
@@ -143,6 +151,10 @@ export default function AddEventPage() {
     )
   }
 
+  const maxBonusDays = startDate && endDate
+    ? Math.max(1, Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1)
+    : 31
+
   // Summary
   const totalDays = useMemo(() => rows.reduce((s, r) => s + (parseFloat(r.bonusDays) || 0), 0), [rows])
   const totalBonus = useMemo(() => rows.reduce((s, r) => s + (r.bonusNet ?? 0), 0), [rows])
@@ -194,6 +206,10 @@ export default function AddEventPage() {
     v.touchAll()
     if (!v.isValid) return toast.error('Please fix the highlighted fields')
     if (rows.length === 0) return toast.error('Add at least one employee')
+    if (rows.some((r) => (parseFloat(r.bonusDays) || 0) > maxBonusDays))
+      return toast.error(`Bonus days cannot exceed ${maxBonusDays} (event duration)`)
+    if (rows.some((r) => (parseFloat(r.hoursFree) || 0) > maxBonusDays * 8))
+      return toast.error(`Hours free cannot exceed ${maxBonusDays * 8} (${maxBonusDays} days x 8h)`)
     createEventMutation.mutate()
   }
 
@@ -368,8 +384,8 @@ export default function AddEventPage() {
                           type="number"
                           step="0.5"
                           min={0}
-                          max={31}
-                          className="h-7 text-xs text-right"
+                          max={maxBonusDays}
+                          className={cn('h-7 text-xs text-right', (parseFloat(row.bonusDays) || 0) > maxBonusDays && 'border-destructive ring-destructive')}
                           value={row.bonusDays}
                           onChange={(e) => updateRow(idx, { bonusDays: e.target.value })}
                         />
@@ -378,8 +394,8 @@ export default function AddEventPage() {
                         <Input
                           type="number"
                           min={0}
-                          max={100}
-                          className="h-7 text-xs text-right"
+                          max={maxBonusDays * 8}
+                          className={cn('h-7 text-xs text-right', (parseFloat(row.hoursFree) || 0) > maxBonusDays * 8 && 'border-destructive ring-destructive')}
                           value={row.hoursFree}
                           onChange={(e) => updateRow(idx, { hoursFree: e.target.value })}
                         />
@@ -393,14 +409,14 @@ export default function AddEventPage() {
                             <SelectItem value="__none__">None</SelectItem>
                             {bonusTypes.map((bt) => (
                               <SelectItem key={bt.id} value={String(bt.id)}>
-                                {bt.name} ({bt.amount} RON)
+                                {bt.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="col-span-1 flex items-center justify-end gap-1">
-                        {row.bonusNet != null && (
+                        {canViewAmounts && row.bonusNet != null && (
                           <span className="text-xs font-medium text-green-600 whitespace-nowrap">
                             {row.bonusNet.toFixed(0)}
                           </span>
@@ -419,7 +435,9 @@ export default function AddEventPage() {
                 <div className="flex items-center gap-6 border-t pt-3 text-sm">
                   <span><span className="font-medium">{rows.length}</span> employees</span>
                   <span><span className="font-medium">{totalDays}</span> total days</span>
-                  <span className="text-green-600 font-medium">{totalBonus.toFixed(0)} RON total</span>
+                  {canViewAmounts && (
+                    <span className="text-green-600 font-medium">{totalBonus.toFixed(0)} RON total</span>
+                  )}
                 </div>
               )}
             </CardContent>

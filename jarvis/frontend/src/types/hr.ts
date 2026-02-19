@@ -1,6 +1,6 @@
 export interface EventBonus {
   id: number
-  employee_id: number
+  user_id: number
   employee_name: string
   event_id: number
   event_name: string

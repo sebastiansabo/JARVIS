@@ -214,7 +214,8 @@ def _format_digest_ai(metrics: Dict[str, Any]) -> Optional[str]:
         "Generate a concise daily morning digest (max 500 chars) summarizing key business metrics. "
         "Use plain text, not markdown. Include only notable items. "
         "If nothing stands out, say 'All clear — no urgent items today.' "
-        "Use Romanian number format (1.234,56) for monetary values. Always include RON currency."
+        "Use Romanian number format (1.234,56) for monetary values. Always include RON currency. "
+        "Respond in the same language as the user's message (default to Romanian if no user message)."
     )
 
     import json

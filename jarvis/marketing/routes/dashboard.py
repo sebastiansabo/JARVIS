@@ -43,8 +43,22 @@ def api_dashboard_summary():
             WHERE p.deleted_at IS NULL
         ''')
         spent_row = cursor.fetchone()
-        summary['total_spent'] = float(spent_row['all_spent'])
-        summary['total_active_spent'] = float(spent_row['active_spent'])
+
+        # Event bonus costs from linked HR events
+        cursor.execute('''
+            SELECT
+                COALESCE(SUM(eb.bonus_net) FILTER (WHERE p.status IN ('active', 'approved')), 0) as active_event_cost,
+                COALESCE(SUM(eb.bonus_net), 0) as all_event_cost
+            FROM mkt_project_events pe
+            JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id
+            JOIN mkt_projects p ON p.id = pe.project_id
+            WHERE p.deleted_at IS NULL
+        ''')
+        event_row = cursor.fetchone()
+
+        summary['total_spent'] = float(spent_row['all_spent']) + float(event_row['all_event_cost'])
+        summary['total_active_spent'] = float(spent_row['active_spent']) + float(event_row['active_event_cost'])
+        summary['total_event_cost'] = float(event_row['all_event_cost'])
 
         # KPI alerts
         cursor.execute('''
@@ -121,10 +135,15 @@ def api_report_budget_vs_actual():
         cursor = get_cursor(conn)
         cursor.execute('''
             SELECT p.id, p.name, p.status, p.total_budget,
-                   COALESCE(SUM(bl.spent_amount), 0) as total_spent,
+                   COALESCE(SUM(bl.spent_amount), 0)
+                     + COALESCE((SELECT SUM(eb.bonus_net) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id), 0)
+                     as total_spent,
                    COALESCE(SUM(bl.approved_amount), 0) as total_approved,
+                   COALESCE((SELECT SUM(eb.bonus_net) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id), 0) as event_cost,
                    CASE WHEN p.total_budget > 0
-                        THEN ROUND(COALESCE(SUM(bl.spent_amount), 0) / p.total_budget * 100, 1)
+                        THEN ROUND((COALESCE(SUM(bl.spent_amount), 0)
+                          + COALESCE((SELECT SUM(eb.bonus_net) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id), 0))
+                          / p.total_budget * 100, 1)
                         ELSE 0 END as utilization_pct
             FROM mkt_projects p
             LEFT JOIN mkt_budget_lines bl ON bl.project_id = p.id

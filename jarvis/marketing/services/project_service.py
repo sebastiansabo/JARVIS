@@ -307,7 +307,7 @@ class ProjectService:
                 messages=[{'role': 'user', 'content': prompt}],
                 max_tokens=1024,
                 temperature=0.5,
-                system='You are a marketing OKR assistant. Return ONLY valid JSON arrays.',
+                system='You are a marketing OKR assistant. Return ONLY valid JSON. Generate text fields (titles, descriptions) in the same language as the input provided.',
             )
             # generate_structured returns a dict (tool_use schema is object)
             # Extract the array from whichever key contains it
@@ -471,7 +471,9 @@ Rules:
 - Include your reasoning as a brief "reasoning" field
 
 Return format:
-{{"allocations": {{"channel-month": amount, ...}}, "reasoning": "brief explanation"}}"""
+{{"allocations": {{"channel-month": amount, ...}}, "reasoning": "brief explanation"}}
+
+Write the reasoning in the same language as the user's message."""
 
     def _build_kr_suggestion_prompt(self, obj_title: str, kpis: List[Dict]) -> str:
         """Build prompt for AI key result suggestions."""
@@ -486,7 +488,7 @@ Return format:
 
         return f'''Given this marketing objective: "{obj_title}"{kpi_list}
 
-Suggest 3-5 measurable key results. For each provide:
+Suggest 3-5 measurable key results in the SAME LANGUAGE as the objective above. For each provide:
 - title: concise measurable outcome
 - target_value: realistic target number
 - unit: "number" or "currency" or "percentage"

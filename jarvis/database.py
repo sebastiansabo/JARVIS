@@ -19,12 +19,13 @@ if not DATABASE_URL:
 
 # Connection pool configuration
 # DigitalOcean managed DB limit: 47 connections (Basic 1vCPU/2GB)
-# 3 Gunicorn workers × 8 max = 24 connections (~50% of limit, rest for admin/health/scheduler)
+# 3 Gunicorn workers × 15 max = 45 connections (leaves 2 for admin/health)
+# Frontend fires 11+ concurrent requests at page load — pool must handle that burst
 _connection_pool = None
 _pool_lock = threading.Lock()
 
 POOL_MIN_CONN = int(os.environ.get('DB_POOL_MIN_CONN', '2'))
-POOL_MAX_CONN = int(os.environ.get('DB_POOL_MAX_CONN', '8'))
+POOL_MAX_CONN = int(os.environ.get('DB_POOL_MAX_CONN', '15'))
 POOL_GETCONN_TIMEOUT = int(os.environ.get('DB_POOL_TIMEOUT', '10'))
 
 

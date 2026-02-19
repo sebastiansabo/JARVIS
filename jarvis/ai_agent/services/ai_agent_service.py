@@ -1054,7 +1054,8 @@ Guidelines:
 - Format currency values as "1.234,56 RON" or "1.234,56 EUR" (Romanian convention)
 - Use DD.MM.YYYY date format when displaying dates
 - When presenting financial data, use markdown tables with totals
-- For trends, describe the direction (increasing, decreasing, or stable)"""
+- For trends, describe the direction (increasing, decreasing, or stable)
+- Always respond in the same language as the user's message"""
 
         sections = [base_prompt]
 

@@ -15,7 +15,8 @@ class ProjectEventRepository(BaseRepository):
                    pe.linked_by, u.name as linked_by_name, pe.created_at,
                    e.name as event_name, e.start_date as event_start_date,
                    e.end_date as event_end_date, e.company as event_company,
-                   e.brand as event_brand, e.description as event_description
+                   e.brand as event_brand, e.description as event_description,
+                   COALESCE((SELECT SUM(eb.bonus_net) FROM hr.event_bonuses eb WHERE eb.event_id = pe.event_id), 0) as event_cost
             FROM mkt_project_events pe
             JOIN hr.events e ON e.id = pe.event_id
             JOIN users u ON u.id = pe.linked_by

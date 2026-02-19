@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Plus, Trash2, Search } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import type { HrEventSearchResult } from '@/types/marketing'
-import { fmtDate } from './utils'
+import { fmt, fmtDate } from './utils'
 
 export function EventsTab({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient()
@@ -27,6 +27,7 @@ export function EventsTab({ projectId }: { projectId: number }) {
     mutationFn: (eventId: number) => marketingApi.linkEvent(projectId, eventId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-project-events', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
       setShowLink(false)
       setEventSearch('')
       setEventResults([])
@@ -35,7 +36,10 @@ export function EventsTab({ projectId }: { projectId: number }) {
 
   const unlinkMut = useMutation({
     mutationFn: (eventId: number) => marketingApi.unlinkEvent(projectId, eventId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mkt-project-events', projectId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-project-events', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
+    },
   })
 
   async function searchEvents(q: string) {
@@ -70,6 +74,7 @@ export function EventsTab({ projectId }: { projectId: number }) {
                 <TableHead>Company</TableHead>
                 <TableHead>Start</TableHead>
                 <TableHead>End</TableHead>
+                <TableHead className="text-right">Cost</TableHead>
                 <TableHead>Linked By</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
@@ -88,6 +93,7 @@ export function EventsTab({ projectId }: { projectId: number }) {
                   <TableCell className="text-sm">{e.event_company ?? '—'}</TableCell>
                   <TableCell className="text-sm">{fmtDate(e.event_start_date)}</TableCell>
                   <TableCell className="text-sm">{fmtDate(e.event_end_date)}</TableCell>
+                  <TableCell className="text-sm text-right tabular-nums">{Number(e.event_cost) > 0 ? fmt(e.event_cost) : '—'}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{e.linked_by_name}</TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => unlinkMut.mutate(e.event_id)}>

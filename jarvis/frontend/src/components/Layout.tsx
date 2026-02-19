@@ -1,7 +1,8 @@
 import { Outlet } from 'react-router-dom'
 import { Menu } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { api } from '@/api/client'
 import { Sidebar } from './Sidebar'
 import { AiAgentWidget } from './AiAgentWidget'
 import { Button } from '@/components/ui/button'
@@ -16,6 +17,14 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true' } catch { return false }
   })
+
+  // Heartbeat: update last_seen every 60s so online-users widget works
+  useEffect(() => {
+    if (!user) return
+    api.post('/api/heartbeat').catch(() => {})
+    const id = setInterval(() => { api.post('/api/heartbeat').catch(() => {}) }, 60_000)
+    return () => clearInterval(id)
+  }, [user])
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {

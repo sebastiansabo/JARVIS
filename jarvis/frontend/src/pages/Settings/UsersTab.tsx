@@ -11,11 +11,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Checkbox } from '@/components/ui/checkbox'
 import { SearchInput } from '@/components/shared/SearchInput'
+import { SearchSelect } from '@/components/shared/SearchSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { usersApi } from '@/api/users'
 import { rolesApi } from '@/api/roles'
+import { hrApi } from '@/api/hr'
 import { toast } from 'sonner'
 import type { UserDetail, CreateUserInput, UpdateUserInput } from '@/types/users'
 
@@ -136,6 +138,7 @@ export default function UsersTab() {
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Company</TableHead>
+                <TableHead>Brand</TableHead>
                 <TableHead>Department</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-20">Actions</TableHead>
@@ -154,6 +157,7 @@ export default function UsersTab() {
                   <TableCell className="text-muted-foreground">{user.email}</TableCell>
                   <TableCell>{user.role_name}</TableCell>
                   <TableCell className="text-muted-foreground">{user.company || '-'}</TableCell>
+                  <TableCell className="text-muted-foreground">{user.brand || '-'}</TableCell>
                   <TableCell className="text-muted-foreground">{user.department || '-'}</TableCell>
                   <TableCell>
                     <StatusBadge status={user.is_active ? 'active' : 'archived'} />
@@ -238,9 +242,29 @@ function UserFormDialog({
     phone: '',
     role_id: '',
     company: '',
+    brand: '',
     department: '',
     is_active: true,
     password: '',
+  })
+
+  // Structure queries
+  const { data: companies = [] } = useQuery({
+    queryKey: ['hr-structure-companies'],
+    queryFn: () => hrApi.getStructureCompanies(),
+    enabled: open,
+  })
+
+  const { data: brands = [] } = useQuery({
+    queryKey: ['hr-structure-brands', form.company],
+    queryFn: () => hrApi.getStructureBrands(form.company),
+    enabled: open && !!form.company,
+  })
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ['hr-structure-departments', form.company],
+    queryFn: () => hrApi.getStructureDepartments(form.company),
+    enabled: open && !!form.company,
   })
 
   const resetForm = () =>
@@ -252,11 +276,12 @@ function UserFormDialog({
             phone: user.phone || '',
             role_id: String(user.role_id),
             company: user.company || '',
+            brand: user.brand || '',
             department: user.department || '',
             is_active: user.is_active,
             password: '',
           }
-        : { name: '', email: '', phone: '', role_id: '', company: '', department: '', is_active: true, password: '' },
+        : { name: '', email: '', phone: '', role_id: '', company: '', brand: '', department: '', is_active: true, password: '' },
     )
 
   return (
@@ -299,14 +324,38 @@ function UserFormDialog({
               </SelectContent>
             </Select>
           </div>
+          <div className="grid gap-2">
+            <Label>Company</Label>
+            <SearchSelect
+              value={form.company}
+              onValueChange={(v) => setForm({ ...form, company: v, brand: '', department: '' })}
+              options={companies.map((c) => ({ value: c, label: c }))}
+              placeholder="Select company..."
+              searchPlaceholder="Search company..."
+            />
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
-              <Label>Company</Label>
-              <Input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
+              <Label>Brand</Label>
+              <SearchSelect
+                value={form.brand}
+                onValueChange={(v) => setForm({ ...form, brand: v })}
+                options={brands.map((b) => ({ value: b, label: b }))}
+                placeholder={form.company ? 'Select brand...' : 'Select company first'}
+                searchPlaceholder="Search brand..."
+                emptyMessage={form.company ? 'No brands found.' : 'Select a company first.'}
+              />
             </div>
             <div className="grid gap-2">
               <Label>Department</Label>
-              <Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+              <SearchSelect
+                value={form.department}
+                onValueChange={(v) => setForm({ ...form, department: v })}
+                options={departments.map((d) => ({ value: d, label: d }))}
+                placeholder={form.company ? 'Select department...' : 'Select company first'}
+                searchPlaceholder="Search department..."
+                emptyMessage={form.company ? 'No departments found.' : 'Select a company first.'}
+              />
             </div>
           </div>
           {!user && (

@@ -36,6 +36,7 @@ export interface MktProject {
   deleted_at: string | null
   // Computed
   total_spent?: number
+  event_cost?: number
   // Nested (from detail endpoint)
   members?: MktMember[]
   budget_lines?: MktBudgetLine[]
@@ -271,6 +272,7 @@ export interface MktProjectEvent {
   event_company: string | null
   event_brand: string | null
   event_description: string | null
+  event_cost: number
 }
 
 export interface HrEventSearchResult {

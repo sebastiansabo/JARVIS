@@ -16,7 +16,11 @@ class ProjectRepository(BaseRepository):
                    c.company as company_name,
                    b.name as brand_name,
                    u.name as owner_name, u.email as owner_email,
-                   u2.name as created_by_name
+                   u2.name as created_by_name,
+                   (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id)
+                     + (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id)
+                     as total_spent,
+                   (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id) as event_cost
             FROM mkt_projects p
             JOIN companies c ON c.id = p.company_id
             LEFT JOIN brands b ON b.id = p.brand_id
@@ -86,7 +90,10 @@ class ProjectRepository(BaseRepository):
                        c.company as company_name,
                        b.name as brand_name,
                        u.name as owner_name,
-                       (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id) as total_spent
+                       (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id)
+                         + (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id)
+                         as total_spent,
+                       (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id) as event_cost
                 FROM mkt_projects p
                 JOIN companies c ON c.id = p.company_id
                 LEFT JOIN brands b ON b.id = p.brand_id
@@ -208,7 +215,10 @@ class ProjectRepository(BaseRepository):
         def _work(cursor):
             cursor.execute('''
                 SELECT p.*, c.company as company_name, b.name as brand_name, u.name as owner_name,
-                       (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id) as total_spent
+                       (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id)
+                         + (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id)
+                         as total_spent,
+                       (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id) as event_cost
                 FROM mkt_projects p
                 JOIN companies c ON c.id = p.company_id
                 LEFT JOIN brands b ON b.id = p.brand_id
@@ -224,7 +234,10 @@ class ProjectRepository(BaseRepository):
         def _work(cursor):
             cursor.execute('''
                 SELECT p.*, c.company as company_name, b.name as brand_name, u.name as owner_name,
-                       (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id) as total_spent
+                       (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id)
+                         + (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id)
+                         as total_spent,
+                       (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id) as event_cost
                 FROM mkt_projects p
                 JOIN companies c ON c.id = p.company_id
                 LEFT JOIN brands b ON b.id = p.brand_id
