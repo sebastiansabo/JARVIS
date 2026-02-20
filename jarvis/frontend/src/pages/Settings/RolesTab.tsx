@@ -65,7 +65,7 @@ export default function RolesTab() {
 
   const permMutation = useMutation({
     mutationFn: ({ permId, roleId, granted }: { permId: number; roleId: number; granted: boolean }) =>
-      rolesApi.setSinglePermissionV2(permId, roleId, { scope: 'full', granted }),
+      rolesApi.setSinglePermissionV2(permId, roleId, { scope: 'all', granted }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'permissionMatrix'] })
     },
