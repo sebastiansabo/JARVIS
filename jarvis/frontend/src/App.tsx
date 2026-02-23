@@ -14,6 +14,9 @@ const EFactura = lazy(() => import('./pages/EFactura'))
 const Approvals = lazy(() => import('./pages/Approvals'))
 const Marketing = lazy(() => import('./pages/Marketing'))
 const ProjectDetail = lazy(() => import('./pages/Marketing/ProjectDetail'))
+const Bilant = lazy(() => import('./pages/Accounting/Bilant'))
+const BilantDetail = lazy(() => import('./pages/Accounting/Bilant/BilantDetail'))
+const TemplateEditor = lazy(() => import('./pages/Accounting/Bilant/TemplateEditor'))
 
 function PageLoader() {
   return (
@@ -43,6 +46,9 @@ export default function App() {
         <Route path="profile" element={<SuspensePage><Profile /></SuspensePage>} />
         <Route path="accounting" element={<SuspensePage><Accounting /></SuspensePage>} />
         <Route path="accounting/add" element={<SuspensePage><AddInvoice /></SuspensePage>} />
+        <Route path="accounting/bilant" element={<SuspensePage><Bilant /></SuspensePage>} />
+        <Route path="accounting/bilant/:generationId" element={<SuspensePage><BilantDetail /></SuspensePage>} />
+        <Route path="accounting/bilant/templates/:templateId" element={<SuspensePage><TemplateEditor /></SuspensePage>} />
         <Route path="hr/*" element={<SuspensePage><Hr /></SuspensePage>} />
         <Route path="statements/*" element={<SuspensePage><Statements /></SuspensePage>} />
         <Route path="efactura/*" element={<SuspensePage><EFactura /></SuspensePage>} />

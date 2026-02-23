@@ -2708,6 +2708,115 @@ def create_schema(conn, cursor):
 
     conn.commit()
 
+    # ============== Bilant (Balance Sheet) Generator ==============
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bilant_templates (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL,
+            is_default BOOLEAN DEFAULT FALSE,
+            version INTEGER DEFAULT 1,
+            created_by INTEGER NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bilant_templates_company ON bilant_templates(company_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bilant_template_rows (
+            id SERIAL PRIMARY KEY,
+            template_id INTEGER NOT NULL REFERENCES bilant_templates(id) ON DELETE CASCADE,
+            description TEXT NOT NULL,
+            nr_rd TEXT,
+            formula_ct TEXT,
+            formula_rd TEXT,
+            row_type TEXT DEFAULT 'data',
+            is_bold BOOLEAN DEFAULT FALSE,
+            indent_level INTEGER DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bilant_tpl_rows_template ON bilant_template_rows(template_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bilant_tpl_rows_order ON bilant_template_rows(template_id, sort_order)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bilant_metric_configs (
+            id SERIAL PRIMARY KEY,
+            template_id INTEGER NOT NULL REFERENCES bilant_templates(id) ON DELETE CASCADE,
+            metric_key TEXT NOT NULL,
+            metric_label TEXT NOT NULL,
+            nr_rd TEXT NOT NULL,
+            metric_group TEXT DEFAULT 'summary',
+            sort_order INTEGER DEFAULT 0,
+            CONSTRAINT bilant_metric_unique UNIQUE (template_id, metric_key)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bilant_metric_cfg_template ON bilant_metric_configs(template_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bilant_generations (
+            id SERIAL PRIMARY KEY,
+            template_id INTEGER NOT NULL REFERENCES bilant_templates(id),
+            company_id INTEGER NOT NULL REFERENCES companies(id),
+            period_label TEXT,
+            period_date DATE,
+            status TEXT DEFAULT 'completed',
+            error_message TEXT,
+            original_filename TEXT,
+            generated_by INTEGER NOT NULL REFERENCES users(id),
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bilant_gen_company ON bilant_generations(company_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bilant_gen_date ON bilant_generations(period_date)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bilant_gen_template ON bilant_generations(template_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bilant_results (
+            id SERIAL PRIMARY KEY,
+            generation_id INTEGER NOT NULL REFERENCES bilant_generations(id) ON DELETE CASCADE,
+            template_row_id INTEGER REFERENCES bilant_template_rows(id) ON DELETE SET NULL,
+            nr_rd TEXT,
+            description TEXT,
+            formula_ct TEXT,
+            formula_rd TEXT,
+            value NUMERIC(15,2) DEFAULT 0,
+            verification TEXT,
+            sort_order INTEGER DEFAULT 0
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bilant_results_gen ON bilant_results(generation_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bilant_metrics (
+            id SERIAL PRIMARY KEY,
+            generation_id INTEGER NOT NULL REFERENCES bilant_generations(id) ON DELETE CASCADE,
+            metric_key TEXT NOT NULL,
+            metric_label TEXT NOT NULL,
+            metric_group TEXT NOT NULL,
+            value NUMERIC(15,4),
+            interpretation TEXT,
+            percent NUMERIC(7,2),
+            CONSTRAINT bilant_metric_gen_unique UNIQUE (generation_id, metric_key)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bilant_metrics_gen ON bilant_metrics(generation_id)')
+
+    conn.commit()
+
+    # Seed default Bilant template if not present
+    cursor.execute("SELECT COUNT(*) as cnt FROM bilant_templates")
+    if cursor.fetchone()['cnt'] == 0:
+        _seed_bilant_default_template(cursor)
+        conn.commit()
+
     # Seed initial data if tables are empty
     cursor.execute('SELECT COUNT(*) FROM department_structure')
     result = cursor.fetchone()
@@ -2838,3 +2947,39 @@ def _seed_sim_benchmarks(cursor):
         ('meta_conversion', 'Meta Conversion', 'conversion', 2, 0.8000, 0.025000, 0.001500),
         ('meta_conversion', 'Meta Conversion', 'conversion', 3, 0.8000, 0.028000, 0.001500)
     ''')
+
+
+def _seed_bilant_default_template(cursor):
+    """Seed default Romanian Bilant template from fixture JSON."""
+    import json
+    import os
+    fixture_path = os.path.join(os.path.dirname(__file__), '..', 'accounting', 'bilant', 'fixtures', 'default_template.json')
+    if not os.path.exists(fixture_path):
+        return
+
+    with open(fixture_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    # Use user id 1 (admin) as creator
+    cursor.execute('''
+        INSERT INTO bilant_templates (name, description, is_default, created_by)
+        VALUES (%s, %s, %s, 1) RETURNING id
+    ''', (data['name'], data.get('description'), data.get('is_default', True)))
+    template_id = cursor.fetchone()['id']
+
+    for row in data.get('rows', []):
+        cursor.execute('''
+            INSERT INTO bilant_template_rows
+                (template_id, description, nr_rd, formula_ct, formula_rd, row_type, is_bold, indent_level, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (template_id, row['description'], row.get('nr_rd'), row.get('formula_ct'),
+              row.get('formula_rd'), row.get('row_type', 'data'), row.get('is_bold', False),
+              row.get('indent_level', 0), row.get('sort_order', 0)))
+
+    for mc in data.get('metric_configs', []):
+        cursor.execute('''
+            INSERT INTO bilant_metric_configs
+                (template_id, metric_key, metric_label, nr_rd, metric_group, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (template_id, mc['metric_key'], mc['metric_label'], mc['nr_rd'],
+              mc.get('metric_group', 'summary'), mc.get('sort_order', 0)))

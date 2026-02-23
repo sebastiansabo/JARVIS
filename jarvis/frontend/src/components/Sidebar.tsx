@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { useAiAgentStore } from '@/stores/aiAgentStore'
@@ -36,6 +36,7 @@ const navItemsDef: Omit<NavItem, 'action'>[] = [
       { path: '/app/accounting', label: 'Invoices', icon: Calculator },
       { path: '/app/statements', label: 'Statements', icon: Landmark },
       { path: '/app/efactura', label: 'e-Factura', icon: FileText },
+      { path: '/app/accounting/bilant', label: 'Bilant', icon: Scale },
     ],
   },
   { path: '/app/hr', label: 'HR', icon: Users, permission: 'can_access_hr' },
@@ -189,7 +190,12 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
             <div className="mt-0.5 space-y-0.5">
               {item.children.map((child) => {
                 const ChildIcon = child.icon
-                const childActive = location.pathname.startsWith(child.path)
+                const hasLongerSibling = item.children!.some(
+                  (s) => s.path !== child.path && s.path.startsWith(child.path)
+                )
+                const childActive = hasLongerSibling
+                  ? location.pathname === child.path
+                  : location.pathname.startsWith(child.path)
 
                 return (
                   <Link

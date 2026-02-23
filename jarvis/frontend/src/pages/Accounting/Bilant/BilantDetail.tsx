@@ -1,0 +1,293 @@
+import { useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, Download, Trash2, FileSpreadsheet, Calendar, User, StickyNote } from 'lucide-react'
+import { toast } from 'sonner'
+
+import { bilantApi } from '@/api/bilant'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { StatCard } from '@/components/shared/StatCard'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Textarea } from '@/components/ui/textarea'
+import { Skeleton } from '@/components/ui/skeleton'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { ResultsTable } from './components/ResultsTable'
+import { RatioCard } from './components/RatioCard'
+import { StructureChart } from './components/StructureChart'
+import type { BilantMetrics } from '@/types/bilant'
+
+type DetailTab = 'results' | 'metrics' | 'info'
+
+const statusColors: Record<string, string> = {
+  completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  processing: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  error: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+}
+
+function fmtCurrency(n: number | undefined): string {
+  if (n == null) return '-'
+  return new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+}
+
+function fmtDate(s: string | null | undefined): string {
+  if (!s) return '-'
+  return new Date(s).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+// Standard ratio thresholds for Romanian accounting
+const RATIO_THRESHOLDS: Record<string, { good: number; warning: number; suffix: string; desc: string }> = {
+  lichiditate_curenta: { good: 2.0, warning: 1.0, suffix: '', desc: 'Active Circulante / Datorii < 1 an' },
+  lichiditate_rapida: { good: 1.0, warning: 0.5, suffix: '', desc: '(Active Circulante - Stocuri) / Datorii < 1 an' },
+  lichiditate_imediata: { good: 0.5, warning: 0.2, suffix: '', desc: 'Disponibilitati / Datorii < 1 an' },
+  solvabilitate: { good: 50, warning: 30, suffix: '%', desc: 'Capitaluri Proprii / Total Active * 100' },
+  indatorare: { good: 30, warning: 60, suffix: '%', desc: 'Total Datorii / Total Active * 100' },
+  autonomie_financiara: { good: 50, warning: 30, suffix: '%', desc: 'Capitaluri Proprii / (Capitaluri + Datorii) * 100' },
+}
+
+// For "indatorare", lower is better — flip thresholds
+function getThresholds(key: string) {
+  const t = RATIO_THRESHOLDS[key]
+  if (!t) return undefined
+  if (key === 'indatorare') return { good: t.warning, warning: t.good }
+  return { good: t.good, warning: t.warning }
+}
+
+export default function BilantDetail() {
+  const { generationId } = useParams<{ generationId: string }>()
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const [tab, setTab] = useState<DetailTab>('results')
+  const [showDelete, setShowDelete] = useState(false)
+  const [editNotes, setEditNotes] = useState(false)
+  const [notes, setNotes] = useState('')
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['bilant-generation', generationId],
+    queryFn: () => bilantApi.getGeneration(Number(generationId)),
+    enabled: !!generationId,
+  })
+
+  const gen = data?.generation
+  const results = data?.results || []
+  const metrics: BilantMetrics = data?.metrics || { summary: {}, ratios: {}, structure: { assets: [], liabilities: [] } }
+
+  const deleteMut = useMutation({
+    mutationFn: () => bilantApi.deleteGeneration(Number(generationId)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bilant-generations'] })
+      toast.success('Generation deleted')
+      navigate('/app/accounting/bilant')
+    },
+  })
+
+  const notesMut = useMutation({
+    mutationFn: () => bilantApi.updateNotes(Number(generationId), notes),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bilant-generation', generationId] })
+      toast.success('Notes saved')
+      setEditNotes(false)
+    },
+  })
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-4 w-96" />
+        <div className="grid grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-16" />)}
+        </div>
+        <Skeleton className="h-96" />
+      </div>
+    )
+  }
+
+  if (error || !gen) {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" size="sm" onClick={() => navigate('/app/accounting/bilant')}>
+          <ArrowLeft className="mr-1.5 h-4 w-4" /> Back
+        </Button>
+        <p className="text-sm text-destructive">Generation not found</p>
+      </div>
+    )
+  }
+
+  const tabs: { key: DetailTab; label: string }[] = [
+    { key: 'results', label: `Results (${results.length})` },
+    { key: 'metrics', label: 'Metrics' },
+    { key: 'info', label: 'Info' },
+  ]
+
+  return (
+    <div className="space-y-4">
+      <PageHeader
+        title={`${gen.company_name || 'Bilant'} — ${gen.period_label || `#${gen.id}`}`}
+        breadcrumbs={[
+          { label: 'Accounting', href: '/app/accounting' },
+          { label: 'Bilant', href: '/app/accounting/bilant' },
+          { label: gen.period_label || `Generation #${gen.id}` },
+        ]}
+        actions={
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className={statusColors[gen.status] || ''}>{gen.status}</Badge>
+            {gen.status === 'completed' && (
+              <Button size="sm" variant="outline" onClick={() => bilantApi.downloadGeneration(gen.id)}>
+                <Download className="mr-1.5 h-4 w-4" />
+                Download
+              </Button>
+            )}
+            <Button size="sm" variant="outline" className="text-destructive" onClick={() => setShowDelete(true)}>
+              <Trash2 className="mr-1.5 h-4 w-4" />
+              Delete
+            </Button>
+          </div>
+        }
+      />
+
+      {/* Summary Stats */}
+      {gen.status === 'completed' && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <StatCard title="Total Active" value={fmtCurrency(metrics.summary.total_active)} />
+          <StatCard title="Active Imobilizate" value={fmtCurrency(metrics.summary.active_imobilizate)} />
+          <StatCard title="Active Circulante" value={fmtCurrency(metrics.summary.active_circulante)} />
+          <StatCard title="Capitaluri Proprii" value={fmtCurrency(metrics.summary.capitaluri_proprii)} />
+          <StatCard title="Total Datorii" value={fmtCurrency(metrics.summary.total_datorii)} />
+        </div>
+      )}
+
+      {/* Error message */}
+      {gen.status === 'error' && gen.error_message && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-4">
+          <p className="text-sm text-destructive">{gen.error_message}</p>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex items-center gap-4 border-b">
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`pb-2 text-sm font-medium transition-colors ${
+              tab === t.key
+                ? 'border-b-2 border-primary text-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Results Tab */}
+      {tab === 'results' && <ResultsTable results={results} />}
+
+      {/* Metrics Tab */}
+      {tab === 'metrics' && (
+        <div className="space-y-6">
+          {/* Financial Ratios */}
+          <div>
+            <h3 className="mb-3 text-sm font-semibold">Financial Ratios</h3>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {Object.entries(RATIO_THRESHOLDS).map(([key, meta]) => {
+                const ratioVal = metrics.ratios[key]
+                const value = typeof ratioVal === 'number'
+                  ? ratioVal
+                  : ratioVal && typeof ratioVal === 'object' && 'value' in ratioVal
+                    ? ratioVal.value
+                    : null
+                return (
+                  <RatioCard
+                    key={key}
+                    label={meta.desc.split('/')[0].trim()}
+                    value={value}
+                    suffix={meta.suffix}
+                    thresholds={getThresholds(key)}
+                    description={meta.desc}
+                  />
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Structure Charts */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <StructureChart
+              title="Asset Structure"
+              items={metrics.structure.assets}
+              colorScheme="blue"
+            />
+            <StructureChart
+              title="Liability Structure"
+              items={metrics.structure.liabilities}
+              colorScheme="amber"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Info Tab */}
+      {tab === 'info' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <InfoItem icon={<FileSpreadsheet className="h-4 w-4" />} label="Template" value={gen.template_name || '-'} />
+            <InfoItem icon={<Calendar className="h-4 w-4" />} label="Created" value={fmtDate(gen.created_at)} />
+            <InfoItem icon={<User className="h-4 w-4" />} label="Created by" value={gen.generated_by_name || '-'} />
+            <InfoItem icon={<FileSpreadsheet className="h-4 w-4" />} label="Original file" value={gen.original_filename || '-'} />
+            <InfoItem icon={<Calendar className="h-4 w-4" />} label="Period date" value={gen.period_date ? fmtDate(gen.period_date) : '-'} />
+            <InfoItem label="Rows" value={String(results.length)} />
+          </div>
+
+          {/* Notes */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <StickyNote className="h-4 w-4 text-muted-foreground" />
+              <h3 className="text-sm font-medium">Notes</h3>
+              {!editNotes && (
+                <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => { setNotes(gen.notes || ''); setEditNotes(true) }}>
+                  Edit
+                </Button>
+              )}
+            </div>
+            {editNotes ? (
+              <div className="space-y-2">
+                <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} placeholder="Add notes..." />
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => notesMut.mutate()} disabled={notesMut.isPending}>Save</Button>
+                  <Button size="sm" variant="outline" onClick={() => setEditNotes(false)}>Cancel</Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{gen.notes || 'No notes'}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm */}
+      <ConfirmDialog
+        open={showDelete}
+        onOpenChange={setShowDelete}
+        title="Delete generation?"
+        description={`Delete "${gen.company_name} - ${gen.period_label || gen.id}"? This cannot be undone.`}
+        onConfirm={() => deleteMut.mutate()}
+        confirmLabel="Delete"
+        variant="destructive"
+      />
+    </div>
+  )
+}
+
+function InfoItem({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-2">
+      {icon && <div className="mt-0.5 text-muted-foreground">{icon}</div>}
+      <div>
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-sm font-medium">{value}</p>
+      </div>
+    </div>
+  )
+}

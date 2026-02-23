@@ -101,6 +101,9 @@ app.register_blueprint(invoices_bp)
 from accounting.bugetare import bugetare_bp
 app.register_blueprint(bugetare_bp)
 
+from accounting.bilant import bilant_bp
+app.register_blueprint(bilant_bp, url_prefix='/bilant')
+
 from core.drive import drive_bp
 app.register_blueprint(drive_bp)
 
