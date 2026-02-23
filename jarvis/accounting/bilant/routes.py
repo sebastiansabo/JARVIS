@@ -1,5 +1,6 @@
 """Bilant API routes — ~25 endpoints for templates, generations, metrics."""
 
+import os
 import logging
 from flask import jsonify, request, send_file
 from flask_login import login_required, current_user
@@ -357,3 +358,22 @@ def api_autocomplete_accounts():
         return jsonify({'accounts': []})
     results = _coa_repo.search_for_autocomplete(prefix, company_id=company_id)
     return jsonify({'accounts': results})
+
+
+# ════════════════════════════════════════════════════════════════
+# Template Download
+# ════════════════════════════════════════════════════════════════
+
+@bilant_bp.route('/api/template-download', methods=['GET'])
+@login_required
+def api_download_template():
+    """Download the Balanta/Bilant template Excel file."""
+    template_path = os.path.join(os.path.dirname(__file__), 'static', 'template_balanta.xlsx')
+    if not os.path.exists(template_path):
+        return jsonify({'success': False, 'error': 'Template file not found'}), 404
+    return send_file(
+        template_path,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name='Jarvis_Bilant_template.xlsx',
+    )

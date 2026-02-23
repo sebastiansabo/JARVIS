@@ -100,8 +100,32 @@ export const bilantApi = {
   updateNotes: (id: number, notes: string) =>
     api.put<{ success: boolean }>(`${BASE}/generations/${id}/notes`, { notes }),
 
-  downloadGeneration: (id: number) => {
-    window.open(`${BASE}/generations/${id}/download`, '_blank')
+  downloadGeneration: async (id: number) => {
+    const res = await fetch(`${BASE}/generations/${id}/download`, { credentials: 'same-origin' })
+    if (!res.ok) return
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = res.headers.get('content-disposition')?.match(/filename="?(.+?)"?$/)?.[1] || `Bilant_${id}.xlsx`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
+  downloadTemplate: async () => {
+    const res = await fetch(`${BASE}/template-download`, { credentials: 'same-origin' })
+    if (!res.ok) return
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'Jarvis_Bilant_template.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
   },
 
   // ── Compare ──

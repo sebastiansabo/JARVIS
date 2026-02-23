@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Upload, FileSpreadsheet, X } from 'lucide-react'
+import { Upload, FileSpreadsheet, X, Download, Info } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { bilantApi } from '@/api/bilant'
@@ -138,7 +138,18 @@ export function UploadDialog({ open, onOpenChange, companies, templates }: Uploa
 
           {/* File Upload */}
           <div className="space-y-2">
-            <Label>Balanta Excel File *</Label>
+            <div className="flex items-center justify-between">
+              <Label>Balanta Excel File *</Label>
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs"
+                onClick={() => bilantApi.downloadTemplate()}
+              >
+                <Download className="mr-1 h-3 w-3" />
+                Download Template
+              </Button>
+            </div>
             <input
               ref={fileInputRef}
               type="file"
@@ -168,9 +179,23 @@ export function UploadDialog({ open, onOpenChange, companies, templates }: Uploa
                 <>
                   <Upload className="mb-2 h-8 w-8 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">Drag & drop your Balanta Excel file here</p>
-                  <p className="text-xs text-muted-foreground">or click to browse</p>
+                  <p className="text-xs text-muted-foreground">or click to browse (.xlsx)</p>
                 </>
               )}
+            </div>
+          </div>
+
+          {/* Instructions */}
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 dark:border-blue-900/50 dark:bg-blue-950/30">
+            <div className="flex gap-2">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+              <div className="space-y-1 text-xs text-blue-800 dark:text-blue-300">
+                <p className="font-medium">Cerinte fisier Excel:</p>
+                <ul className="list-inside list-disc space-y-0.5">
+                  <li>Sheet-ul <strong>&quot;Balanta&quot;</strong> cu coloanele: Cont, SFD, SFC</li>
+                  <li>Valorile bilantului se calculeaza automat din formulele template-ului</li>
+                </ul>
+              </div>
             </div>
           </div>
 
