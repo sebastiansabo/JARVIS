@@ -103,6 +103,27 @@ def _on_approved(payload):
         except Exception as e:
             logger.error(f'Failed to update mkt_project status on approval: {e}')
 
+    # Auto-create signature request if flow requires_signature
+    try:
+        from core.approvals.repositories import RequestRepository, FlowRepository
+        req = RequestRepository().get_by_id(request_id)
+        if req:
+            flow = FlowRepository().get_flow_by_id(req['flow_id'])
+            if flow and flow.get('requires_signature'):
+                from core.signatures.services import SignatureService
+                SignatureService().request_signature(
+                    document_type=entity_type,
+                    document_id=entity_id,
+                    signed_by=req['requested_by'],
+                    callback_url=_entity_link(entity_type, entity_id),
+                )
+                logger.info(
+                    f'Signature request created for {entity_type} #{entity_id} '
+                    f'(flow requires_signature=true)'
+                )
+    except Exception as e:
+        logger.error(f'Failed to create signature request on approval: {e}')
+
 
 def _on_rejected(payload):
     """Notify requester their request was rejected."""

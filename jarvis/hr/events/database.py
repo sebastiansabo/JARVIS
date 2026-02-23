@@ -924,9 +924,17 @@ def delete_department_structure(struct_id):
     release_db(conn)
 
 
+_ALLOWED_LOOKUP_TABLES = frozenset({
+    'companies', 'brands', 'departments', 'subdepartments',
+    'positions', 'locations', 'cost_centers',
+})
+
+
 def get_name_by_id(table, id_value):
     """Get name from a lookup table by ID."""
     if not id_value:
+        return None
+    if table not in _ALLOWED_LOOKUP_TABLES:
         return None
     conn = get_db()
     cursor = get_cursor(conn)

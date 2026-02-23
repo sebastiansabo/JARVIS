@@ -76,9 +76,20 @@ def api_parse_invoice():
     if file.filename == '':
         return jsonify({'success': False, 'error': 'No file selected'}), 400
 
+    # Validate file type
+    allowed_extensions = {'.pdf', '.jpg', '.jpeg', '.png', '.tiff', '.tif'}
+    _, ext = os.path.splitext(file.filename.lower())
+    if ext not in allowed_extensions:
+        return jsonify({'success': False, 'error': f'File type {ext} not allowed'}), 400
+
+    # Validate file size (50MB max)
+    file_data = file.read()
+    if len(file_data) > 50 * 1024 * 1024:
+        return jsonify({'success': False, 'error': 'File too large (max 50MB)'}), 413
+
     template_id = request.form.get('template_id')
     result = _service.parse_invoice(
-        file.read(), file.filename,
+        file_data, file.filename,
         template_id=int(template_id) if template_id else None,
     )
     if result.success:
@@ -93,7 +104,11 @@ def api_parse_existing(filepath):
     """Parse an existing invoice from the Invoices folder."""
     from core.config import INVOICES_DIR
     from accounting.bugetare.invoice_parser import parse_invoice
-    file_path = os.path.join(INVOICES_DIR, filepath)
+    file_path = os.path.realpath(os.path.join(INVOICES_DIR, filepath))
+
+    # Prevent path traversal — resolved path must stay within INVOICES_DIR
+    if not file_path.startswith(os.path.realpath(INVOICES_DIR) + os.sep):
+        return jsonify({'success': False, 'error': 'Invalid file path'}), 400
 
     if not os.path.exists(file_path):
         return jsonify({'success': False, 'error': 'File not found'}), 404

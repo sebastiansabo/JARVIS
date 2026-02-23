@@ -82,8 +82,8 @@ class AuthService:
         if not current_password or not new_password:
             return AuthResult(success=False, error='Both current and new password required')
 
-        if len(new_password) < 6:
-            return AuthResult(success=False, error='New password must be at least 6 characters')
+        if len(new_password) < 10:
+            return AuthResult(success=False, error='New password must be at least 10 characters')
 
         # Verify current password
         auth_result = self.authenticate(user_email, current_password)

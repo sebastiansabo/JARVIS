@@ -2027,6 +2027,7 @@ def create_schema(conn, cursor):
             allow_parallel_steps BOOLEAN DEFAULT FALSE,
             auto_approve_below NUMERIC(15,2),
             auto_reject_after_hours INTEGER,
+            requires_signature BOOLEAN DEFAULT FALSE,
             created_by INTEGER REFERENCES users(id),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -2681,6 +2682,30 @@ def create_schema(conn, cursor):
             SELECT 1 FROM approval_steps s WHERE s.flow_id = f.id
         )
     ''')
+    # ============== Document Signatures ==============
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS document_signatures (
+            id SERIAL PRIMARY KEY,
+            document_type VARCHAR(50) NOT NULL,
+            document_id INTEGER NOT NULL,
+            signed_by INTEGER NOT NULL REFERENCES users(id),
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            signed_at TIMESTAMP,
+            ip_address VARCHAR(45),
+            signature_image TEXT,
+            document_hash VARCHAR(64),
+            original_pdf_path TEXT,
+            signed_pdf_path TEXT,
+            callback_url TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT chk_sig_status CHECK (status IN ('pending','signed','rejected','expired'))
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_doc_sig_doc ON document_signatures(document_type, document_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_doc_sig_signer ON document_signatures(signed_by, status)')
+
     conn.commit()
 
     # Seed initial data if tables are empty

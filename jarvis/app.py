@@ -22,9 +22,10 @@ _user_repo = UserRepository()
 app = Flask(__name__)
 
 # Secret key — prefer env var; fixed fallback ensures all workers share the same key
-_secret_key = os.environ.get('FLASK_SECRET_KEY', os.environ.get('SECRET_KEY', 'jarvis-aw-2026-change-me'))
-if _secret_key == 'jarvis-aw-2026-change-me':
-    app_logger.warning('Using default secret key — set FLASK_SECRET_KEY env var for production')
+_secret_key = os.environ.get('FLASK_SECRET_KEY', os.environ.get('SECRET_KEY', ''))
+if not _secret_key:
+    _secret_key = 'dev-only-insecure-key-not-for-production'
+    app_logger.warning('No FLASK_SECRET_KEY set — using insecure dev key. Set FLASK_SECRET_KEY env var for production!')
 app.secret_key = _secret_key
 
 # Flask-Compress for gzip/brotli compression (60-70% size reduction)
@@ -39,7 +40,10 @@ login_manager.login_message = 'Please log in to access this page.'
 
 # Remember Me cookie configuration (30 days)
 from datetime import timedelta
-_is_production = 'localhost' not in os.environ.get('DATABASE_URL', 'localhost')
+_is_production = os.environ.get('FLASK_ENV', '').lower() == 'production' or (
+    'localhost' not in os.environ.get('DATABASE_URL', 'localhost')
+    and '127.0.0.1' not in os.environ.get('DATABASE_URL', '127.0.0.1')
+)
 app.config['REMEMBER_COOKIE_DURATION'] = timedelta(days=30)
 app.config['REMEMBER_COOKIE_SECURE'] = _is_production  # Only send over HTTPS in prod
 app.config['REMEMBER_COOKIE_HTTPONLY'] = True  # Not accessible via JavaScript
@@ -108,6 +112,9 @@ app.register_blueprint(approvals_bp, url_prefix='/approvals')
 
 from marketing import marketing_bp
 app.register_blueprint(marketing_bp, url_prefix='/marketing')
+
+from core.signatures import signatures_bp
+app.register_blueprint(signatures_bp, url_prefix='/signatures')
 
 # Register approval notification hooks
 from core.approvals.handlers import register_approval_hooks
@@ -179,6 +186,15 @@ def add_security_headers(response):
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data:; "
+        "connect-src 'self' https:; "
+        "frame-ancestors 'self'"
+    )
 
     # HSTS — only in production (when SESSION_COOKIE_SECURE is set)
     if app.config.get('SESSION_COOKIE_SECURE'):

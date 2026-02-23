@@ -158,6 +158,11 @@ def api_update_project(project_id):
     if not project:
         return jsonify({'success': False, 'error': 'Project not found'}), 404
 
+    scope = getattr(g, 'permission_scope', 'all')
+    if not _service.can_access_project(project, current_user.id, scope,
+                                       getattr(current_user, 'company', None)):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
+
     updated = _project_repo.update(project_id, **data)
     if updated:
         _activity_repo.log(project_id, 'updated', actor_id=current_user.id,
@@ -170,10 +175,19 @@ def api_update_project(project_id):
 @mkt_permission_required('project', 'delete')
 def api_delete_project(project_id):
     """Soft delete a project (move to trash)."""
+    project = _project_repo.get_by_id(project_id)
+    if not project:
+        return jsonify({'success': False, 'error': 'Project not found'}), 404
+
+    scope = getattr(g, 'permission_scope', 'all')
+    if not _service.can_access_project(project, current_user.id, scope,
+                                       getattr(current_user, 'company', None)):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
+
     if _project_repo.soft_delete(project_id):
         _activity_repo.log(project_id, 'deleted', actor_id=current_user.id)
         return jsonify({'success': True})
-    return jsonify({'success': False, 'error': 'Project not found'}), 404
+    return jsonify({'success': False, 'error': 'Delete failed'}), 500
 
 
 @marketing_bp.route('/api/projects/<int:project_id>/archive', methods=['POST'])
@@ -184,6 +198,12 @@ def api_archive_project(project_id):
     project = _project_repo.get_by_id(project_id)
     if not project:
         return jsonify({'success': False, 'error': 'Project not found'}), 404
+
+    scope = getattr(g, 'permission_scope', 'all')
+    if not _service.can_access_project(project, current_user.id, scope,
+                                       getattr(current_user, 'company', None)):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
+
     _project_repo.archive(project_id)
     _activity_repo.log(project_id, 'status_changed', actor_id=current_user.id,
                        details={'from': project['status'], 'to': 'archived'})
@@ -195,10 +215,19 @@ def api_archive_project(project_id):
 @mkt_permission_required('project', 'edit')
 def api_restore_project(project_id):
     """Restore a project from archived or trash back to draft."""
+    project = _project_repo.get_by_id(project_id)
+    if not project:
+        return jsonify({'success': False, 'error': 'Project not found'}), 404
+
+    scope = getattr(g, 'permission_scope', 'all')
+    if not _service.can_access_project(project, current_user.id, scope,
+                                       getattr(current_user, 'company', None)):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
+
     if _project_repo.restore(project_id):
         _activity_repo.log(project_id, 'restored', actor_id=current_user.id)
         return jsonify({'success': True})
-    return jsonify({'success': False, 'error': 'Project not found'}), 404
+    return jsonify({'success': False, 'error': 'Restore failed'}), 500
 
 
 @marketing_bp.route('/api/projects/archived', methods=['GET'])

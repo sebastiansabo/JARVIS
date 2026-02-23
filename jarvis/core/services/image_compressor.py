@@ -7,7 +7,7 @@ import os
 import requests
 
 # TinyPNG API key - can be overridden via environment variable
-TINYPNG_API_KEY = os.environ.get('TINYPNG_API_KEY', 'cCDyLc85M6nYCKPBLFxC0qHhmb2TgCFs')
+TINYPNG_API_KEY = os.environ.get('TINYPNG_API_KEY', '')
 
 # Supported image types for compression
 COMPRESSIBLE_TYPES = {'image/png', 'image/jpeg', 'image/jpg'}

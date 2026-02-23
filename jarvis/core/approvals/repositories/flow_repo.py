@@ -51,8 +51,8 @@ class FlowRepository(BaseRepository):
         row = self.execute('''
             INSERT INTO approval_flows (name, slug, entity_type, created_by,
                 description, trigger_conditions, priority, allow_parallel_steps,
-                auto_approve_below, auto_reject_after_hours)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
+                auto_approve_below, auto_reject_after_hours, requires_signature)
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (
             name, slug, entity_type, created_by,
@@ -62,6 +62,7 @@ class FlowRepository(BaseRepository):
             kwargs.get('allow_parallel_steps', False),
             kwargs.get('auto_approve_below'),
             kwargs.get('auto_reject_after_hours'),
+            kwargs.get('requires_signature', False),
         ), returning=True)
         return row['id'] if row else None
 
@@ -69,7 +70,7 @@ class FlowRepository(BaseRepository):
         allowed = {
             'name', 'slug', 'description', 'entity_type', 'trigger_conditions',
             'is_active', 'priority', 'allow_parallel_steps',
-            'auto_approve_below', 'auto_reject_after_hours',
+            'auto_approve_below', 'auto_reject_after_hours', 'requires_signature',
         }
         updates = []
         params = []

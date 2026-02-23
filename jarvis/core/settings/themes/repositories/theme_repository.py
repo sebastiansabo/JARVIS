@@ -21,8 +21,8 @@ class ThemeRepository(BaseRepository):
             'theme_name': row['theme_name'],
             'settings': row['settings'] if isinstance(row['settings'], dict) else json.loads(row['settings'] or '{}'),
             'is_active': row['is_active'],
-            'created_at': row['created_at'].isoformat() if row['created_at'] else None,
-            'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None
+            'created_at': row.get('created_at'),
+            'updated_at': row.get('updated_at')
         }
 
     def get_active(self) -> Optional[dict]:

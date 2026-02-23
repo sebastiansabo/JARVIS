@@ -201,8 +201,8 @@ def api_change_password():
     if not current_password or not new_password:
         return jsonify({'success': False, 'error': 'Both current and new passwords are required'}), 400
 
-    if len(new_password) < 6:
-        return jsonify({'success': False, 'error': 'New password must be at least 6 characters'}), 400
+    if len(new_password) < 10:
+        return jsonify({'success': False, 'error': 'New password must be at least 10 characters'}), 400
 
     user_data = _user_repo.authenticate(current_user.email, current_password)
     if not user_data:
@@ -487,8 +487,8 @@ def api_set_user_password(user_id):
 
     data = request.get_json()
     new_password = data.get('password', '')
-    if not new_password or len(new_password) < 6:
-        return jsonify({'success': False, 'error': 'Password must be at least 6 characters'}), 400
+    if not new_password or len(new_password) < 10:
+        return jsonify({'success': False, 'error': 'Password must be at least 10 characters'}), 400
 
     user = _user_repo.get_by_id(user_id)
     if not user:
@@ -507,7 +507,9 @@ def api_set_default_passwords():
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json() or {}
-    default_password = data.get('password', 'changeme123')
+    default_password = data.get('password')
+    if not default_password or len(default_password) < 10:
+        return jsonify({'success': False, 'error': 'Password is required and must be at least 10 characters'}), 400
     updated_count = _user_repo.set_default_passwords(default_password)
     _event_repo.log_event('bulk_password_set', event_description=f'Set default password for {updated_count} users')
     return jsonify({

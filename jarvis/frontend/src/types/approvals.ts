@@ -87,6 +87,7 @@ export interface ApprovalFlow {
   allow_parallel_steps: boolean
   auto_approve_below: Record<string, unknown> | null
   auto_reject_after_hours: number | null
+  requires_signature: boolean
   is_active: boolean
   created_by: number | null
   created_at: string | null

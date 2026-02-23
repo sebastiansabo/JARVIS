@@ -45,8 +45,8 @@ class MenuRepository(BaseRepository):
             'sort_order': row['sort_order'],
         }
         if include_timestamps:
-            item['created_at'] = row['created_at'].isoformat() if row['created_at'] else None
-            item['updated_at'] = row['updated_at'].isoformat() if row['updated_at'] else None
+            item['created_at'] = row.get('created_at')
+            item['updated_at'] = row.get('updated_at')
         return item
 
     def get_items(self, include_hidden: bool = False) -> list:

@@ -250,7 +250,7 @@ def init_db():
         cursor.execute("""
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'smart_notification_state'
+                WHERE table_schema = 'public' AND table_name = 'document_signatures'
             )
         """)
         if cursor.fetchone()['exists']:
@@ -595,6 +595,38 @@ def init_db():
                                 VALUES (%s, %s, %s, TRUE)
                                 ON CONFLICT (role_id, permission_id) DO NOTHING
                             ''', (role['id'], p['id'], scope))
+            # Document signatures table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS document_signatures (
+                    id SERIAL PRIMARY KEY,
+                    document_type VARCHAR(50) NOT NULL,
+                    document_id INTEGER NOT NULL,
+                    signed_by INTEGER NOT NULL REFERENCES users(id),
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    signed_at TIMESTAMP,
+                    ip_address VARCHAR(45),
+                    signature_image TEXT,
+                    document_hash VARCHAR(64),
+                    original_pdf_path TEXT,
+                    signed_pdf_path TEXT,
+                    callback_url TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT chk_sig_status CHECK (status IN ('pending','signed','rejected','expired'))
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_doc_sig_doc ON document_signatures(document_type, document_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_doc_sig_signer ON document_signatures(signed_by, status)')
+            # requires_signature flag on approval_flows
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'approval_flows' AND column_name = 'requires_signature') THEN
+                        ALTER TABLE approval_flows ADD COLUMN requires_signature BOOLEAN DEFAULT FALSE;
+                    END IF;
+                END $$;
+            ''')
             # Stakeholder approval: approval_mode column on mkt_projects
             cursor.execute('''
                 DO $$

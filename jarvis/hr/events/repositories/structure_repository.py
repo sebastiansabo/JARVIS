@@ -285,9 +285,16 @@ class StructureRepository(BaseRepository):
 
     # ============== Helper Methods ==============
 
+    _ALLOWED_TABLES = frozenset({
+        'brands', 'departments', 'subdepartments',
+        'positions', 'locations', 'cost_centers',
+    })
+
     def _resolve_name(self, cursor, table: str, value) -> Optional[str]:
         """Resolve a name from a master table by ID or return the value as-is."""
         if not value:
+            return None
+        if table not in self._ALLOWED_TABLES:
             return None
         if str(value).isdigit():
             cursor.execute(f"SELECT name FROM {table} WHERE id = %s", (int(value),))

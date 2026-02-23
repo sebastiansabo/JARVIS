@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ClipboardCheck, Clock, CheckCircle, XCircle, RotateCcw, Send, ChevronDown, ChevronRight, MessageSquare } from 'lucide-react'
+import { ClipboardCheck, Clock, CheckCircle, XCircle, RotateCcw, Send, ChevronDown, ChevronRight, MessageSquare, PenLine } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { approvalsApi } from '@/api/approvals'
 import { usersApi } from '@/api/users'
+import { signaturesApi } from '@/api/signatures'
 import { useAuth } from '@/hooks/useAuth'
 import { toast } from 'sonner'
+import SignatureModal from '@/components/shared/SignatureModal'
 import type { ApprovalRequest, ApprovalRequestDetail, ApprovalDecision } from '@/types/approvals'
 
 interface ApprovalWidgetProps {
@@ -75,6 +77,17 @@ export function ApprovalWidget({ entityType, entityId, context, className, compa
     queryFn: () => usersApi.getUsers(),
     enabled: showApproverPicker && showSubmit,
   })
+
+  // Check for pending signature on this entity
+  const [showSignatureModal, setShowSignatureModal] = useState(false)
+  const { data: sigData } = useQuery({
+    queryKey: ['document-signatures', entityType, entityId],
+    queryFn: () => signaturesApi.getForDocument(entityType, entityId),
+    enabled: latestRequest?.status === 'approved',
+  })
+  const pendingSignature = (sigData?.signatures ?? []).find(
+    (s) => s.status === 'pending' && s.signed_by === user?.id,
+  )
 
   // Reset forms when closed
   useEffect(() => {
@@ -355,6 +368,41 @@ export function ApprovalWidget({ entityType, entityId, context, className, compa
             </div>
           )}
         </div>
+      )}
+
+      {/* Signature request — shown when approval is complete and signature pending */}
+      {pendingSignature && (
+        <>
+          <div className="rounded-md border border-amber-300 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20 p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm">
+                <PenLine className="h-4 w-4 text-amber-600" />
+                <span className="font-medium text-amber-800 dark:text-amber-300">Signature Required</span>
+              </div>
+              <Button
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setShowSignatureModal(true)}
+              >
+                <PenLine className="mr-1 h-3 w-3" />
+                Sign Document
+              </Button>
+            </div>
+          </div>
+          <SignatureModal
+            signatureId={pendingSignature.id}
+            documentName={`${entityType.replace('_', ' ')} #${entityId}`}
+            open={showSignatureModal}
+            onOpenChange={setShowSignatureModal}
+            onComplete={() => {
+              _invalidateAll()
+              queryClient.invalidateQueries({ queryKey: ['document-signatures', entityType, entityId] })
+            }}
+            onReject={() => {
+              queryClient.invalidateQueries({ queryKey: ['document-signatures', entityType, entityId] })
+            }}
+          />
+        </>
       )}
 
       {/* Decision history */}

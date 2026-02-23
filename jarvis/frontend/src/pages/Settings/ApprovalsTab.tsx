@@ -190,6 +190,7 @@ function FlowDialog({ flow, open, onClose }: FlowDialogProps) {
     priority: flow?.priority ?? 0,
     auto_reject_after_hours: flow?.auto_reject_after_hours ?? '',
     is_active: flow?.is_active ?? true,
+    requires_signature: flow?.requires_signature ?? false,
   })
 
   const createMutation = useMutation({
@@ -227,6 +228,7 @@ function FlowDialog({ flow, open, onClose }: FlowDialogProps) {
       priority: Number(form.priority) || 0,
       auto_reject_after_hours: form.auto_reject_after_hours ? Number(form.auto_reject_after_hours) : null,
       is_active: form.is_active,
+      requires_signature: form.requires_signature,
     }
     if (isEdit) {
       updateMutation.mutate(data)
@@ -308,9 +310,15 @@ function FlowDialog({ flow, open, onClose }: FlowDialogProps) {
               />
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Switch checked={form.is_active} onCheckedChange={(v) => setForm(f => ({ ...f, is_active: v }))} />
-            <Label>Active</Label>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Switch checked={form.is_active} onCheckedChange={(v) => setForm(f => ({ ...f, is_active: v }))} />
+              <Label>Active</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch checked={form.requires_signature} onCheckedChange={(v) => setForm(f => ({ ...f, requires_signature: v }))} />
+              <Label>Requires Signature</Label>
+            </div>
           </div>
         </div>
         <DialogFooter>
