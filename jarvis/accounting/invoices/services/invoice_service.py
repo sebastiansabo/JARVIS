@@ -457,8 +457,8 @@ class InvoiceService:
     def _link_efactura(self, efactura_match_id: int, invoice_id: int):
         """Auto-link to e-Factura record if match ID provided."""
         try:
-            from core.connectors.efactura.repositories.invoice_repo import EFacturaInvoiceRepository
-            EFacturaInvoiceRepository().mark_allocated(efactura_match_id, invoice_id)
+            from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository as EfacturaInvoiceRepo
+            EfacturaInvoiceRepo().mark_allocated(efactura_match_id, invoice_id)
         except Exception:
             pass
 

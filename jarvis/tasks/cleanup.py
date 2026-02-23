@@ -21,8 +21,8 @@ _lock_file = None
 def cleanup_old_unallocated_invoices():
     """Permanently delete unallocated e-Factura invoices older than 15 days."""
     try:
-        from core.connectors.efactura.repositories.invoice_repo import EFacturaInvoiceRepository
-        repo = EFacturaInvoiceRepository()
+        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        repo = InvoiceRepository()
         count = repo.delete_old_unallocated(days=15)
         if count > 0:
             logger.info(f"Cleanup: deleted {count} old unallocated e-Factura invoices (>15 days)")
