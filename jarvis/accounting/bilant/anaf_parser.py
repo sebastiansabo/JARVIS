@@ -359,8 +359,12 @@ def generate_anaf_txt(values: dict, prior_values: dict | None = None,
     """Generate ANAF balanta.txt import file.
 
     Format: CSV with CR+LF line endings.
-    Line 1: 26-field identification record.
+    Line 1: 27-field identification record (since 12/2022).
     Lines 2+: balance entries — cont,formular,rand,coloana,semn,suma
+
+    Fields: tipBil,cifE,entitate,judet,sector,localitate,strada,nr,bloc,
+            scara,ap,telefon,nrRC,formaProp,caen1,caen2,admin,intocmit,
+            calitate,nrOP,oblig,optiune,aprob,auditor,nrRA,cifA,cifLEI
 
     Args:
         values: {nr_rd: value} for C2 (current period).
@@ -374,14 +378,15 @@ def generate_anaf_txt(values: dict, prior_values: dict | None = None,
     """
     lines = []
 
-    # Line 1: identification (26 fields, mostly empty)
+    # Line 1: identification (27 fields since 12/2022, previously 26)
     tip_bil = 'BL' if form == 'F10L' else 'BS'
     ident_fields = [
         tip_bil, cif, company_name,
-        '', '', '', '', '', '', '', '', '',  # judet..telefon
-        '', '', '', '',  # nrRC, formaProp, caen1, caen2
-        '', '', '', '',  # admin, intocmit, calitate, nrOP
-        'N', 'N', '0', '', '', '',  # oblig, optiune, aprob, auditor, nrRA, cifA
+        '', '', '', '', '', '', '', '', '',  # judet..telefon (fields 4-12)
+        '', '', '', '',  # nrRC, formaProp, caen1, caen2 (fields 13-16)
+        '', '', '', '',  # admin, intocmit, calitate, nrOP (fields 17-20)
+        'N', 'N', '0', '', '', '',  # oblig, optiune, aprob, auditor, nrRA, cifA (21-26)
+        '',  # cifLEI (field 27, added 12/2022)
     ]
     lines.append(','.join(ident_fields))
 
@@ -411,14 +416,32 @@ def generate_anaf_txt(values: dict, prior_values: dict | None = None,
     return '\r\n'.join(lines) + '\r\n'
 
 
+def _xml_escape(val: str) -> str:
+    """Escape special chars for XML attribute values."""
+    return (val
+            .replace('&', '&amp;')
+            .replace('"', '&quot;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;'))
+
+
 def generate_anaf_xml(values: dict, prior_values: dict | None = None,
                       company_name: str = '', cif: str = '',
                       period_date: str | None = None,
                       form: str = 'F10L') -> bytes:
-    """Generate ANAF XML import file matching XFA datasets structure.
+    """Generate ANAF XML import file for 'Import fisier XML creat cu alte aplicatii'.
 
-    The XML mirrors the form1 > F10L > Table1 structure that the ANAF PDF
-    import function (\"Import fisier XML - F10\") expects.
+    The XML uses the official ANAF format:
+      <?xml version="1.0"?>
+      <Bilant1002 luna="12" an="2024" cui="..." den="..." xmlns:xsi="..." ...>
+        <F10 F10_0011="val" F10_0012="val" F10_0021="val" ... />
+      </Bilant1002>
+
+    Field naming: F10_XXXC where XXX = 3-digit zero-padded row number,
+    C = column (1=C1 prior year, 2=C2 current year).
+
+    The root tag is Bilant1002 (large entities) or Bilant1003 (small entities).
+    The ANAF import function validates by checking for 'Bilant1002' in the file.
 
     Args:
         values: {nr_rd: value} for C2 (current period).
@@ -434,60 +457,73 @@ def generate_anaf_xml(values: dict, prior_values: dict | None = None,
     # Parse period date
     an_r = ''
     luna_r = ''
-    per1 = ''
-    per2 = ''
-    per3 = ''
     if period_date:
         try:
             from datetime import datetime
             dt = datetime.fromisoformat(period_date.replace('Z', '+00:00') if 'T' in period_date else period_date)
             an_r = str(dt.year)
             luna_r = str(dt.month)
-            per1 = f'01.01.{dt.year}'
-            per2 = f'{dt.day:02d}.{dt.month:02d}.{dt.year}'
-            per3 = f'31.12.{dt.year - 1}'
         except (ValueError, AttributeError):
             pass
 
-    root = ET.Element('form1')
-
-    # date_identificare
-    di = ET.SubElement(root, 'date_identificare')
-    ET.SubElement(di, 'DENI').text = company_name
-    ET.SubElement(di, 'cif').text = cif
-    ET.SubElement(di, 'an_r').text = an_r
-    ET.SubElement(di, 'luna_r').text = luna_r
-    ET.SubElement(di, 'per1').text = per1
-    ET.SubElement(di, 'per2').text = per2
-    ET.SubElement(di, 'per3').text = per3
+    # Root tag: Bilant1002 (large entities S1002), Bilant1003 (small S1003)
+    root_tag = 'Bilant1002' if form == 'F10L' else 'Bilant1003'
+    schema_code = 's1002' if form == 'F10L' else 's1003'
+    # Schema version: v14 for annual 2024+
+    schema_ver = 'v14'
     tip_bil = 'BL' if form == 'F10L' else 'BS'
-    ET.SubElement(di, 'TipBIL').text = tip_bil
 
-    # F10L > Table1 > rows
-    form_elem = ET.SubElement(root, form)
-    table = ET.SubElement(form_elem, 'Table1')
+    # Build root attributes (identification data)
+    parts = [f'<?xml version="1.0"?>\n<{root_tag}']
 
-    # Collect all row numbers and sort
+    if luna_r:
+        parts.append(f' luna="{_xml_escape(luna_r)}"')
+    if an_r:
+        parts.append(f' an="{_xml_escape(an_r)}"')
+    if cif:
+        parts.append(f' cui="{_xml_escape(cif)}"')
+    if company_name:
+        parts.append(f' den="{_xml_escape(company_name)}"')
+    parts.append(f' tipBIL="{tip_bil}"')
+
+    # XML namespace (required for ANAF validation)
+    parts.append(
+        f' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"'
+        f' xsi:schemaLocation="mfp:anaf:dgti:{schema_code}:declaratie:{schema_ver}'
+        f' {schema_code}.xsd"'
+        f' xmlns="mfp:anaf:dgti:{schema_code}:declaratie:{schema_ver}"'
+    )
+    parts.append('>')
+
+    # F10 element with field values as attributes
+    f10_attrs = []
     all_rows = set()
     if values:
         all_rows.update(values.keys())
     if prior_values:
         all_rows.update(prior_values.keys())
 
-    for nr_rd in sorted(all_rows, key=lambda x: (x.zfill(4))):
-        row_tag = f'R{nr_rd}'
-        row_elem = ET.SubElement(table, row_tag)
+    for nr_rd in sorted(all_rows, key=lambda x: x.zfill(4)):
+        padded = nr_rd.zfill(3)
 
-        c1_val = prior_values.get(nr_rd) if prior_values else None
-        c2_val = values.get(nr_rd) if values else None
+        # C1 (prior period) — column suffix "1"
+        if prior_values:
+            c1_val = prior_values.get(nr_rd)
+            if c1_val is not None and c1_val != 0:
+                int_val = int(round(float(c1_val)))
+                f10_attrs.append(f'F10_{padded}1="{int_val}"')
 
-        c1_elem = ET.SubElement(row_elem, 'C1')
-        c1_elem.text = str(int(round(float(c1_val)))) if c1_val is not None and c1_val != 0 else ''
+        # C2 (current period) — column suffix "2"
+        if values:
+            c2_val = values.get(nr_rd)
+            if c2_val is not None and c2_val != 0:
+                int_val = int(round(float(c2_val)))
+                f10_attrs.append(f'F10_{padded}2="{int_val}"')
 
-        c2_elem = ET.SubElement(row_elem, 'C2')
-        c2_elem.text = str(int(round(float(c2_val)))) if c2_val is not None and c2_val != 0 else ''
+    parts.append(f'\n\t<F10 {" ".join(f10_attrs)} />')
+    parts.append(f'\n</{root_tag}>')
 
-    return ET.tostring(root, encoding='unicode', xml_declaration=False).encode('utf-8')
+    return ''.join(parts).encode('utf-8')
 
 
 # ════════════════════════════════════════════════════════════════

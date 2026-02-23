@@ -876,6 +876,8 @@ class TestAnafExportFormats:
         txt = generate_anaf_txt(values, company_name='TEST SRL', cif='12345678')
         lines = txt.strip().split('\r\n')
         assert lines[0].startswith('BL,12345678,TEST SRL,')
+        # 27 fields in identification line (since 12/2022)
+        assert len(lines[0].split(',')) == 27
         assert ',F10L,R01,C2,,1000' in txt
         assert ',F10L,R02,C2,,500' in txt
         assert ',F10L,R10,C2,,2000' in txt
@@ -911,47 +913,67 @@ class TestAnafExportFormats:
         assert ',F10L,R02,C2,,100' in txt
 
     def test_generate_anaf_xml_basic(self):
-        """Generate ANAF XML with form1 structure."""
+        """Generate ANAF XML with Bilant1002 root and F10 attributes."""
         from accounting.bilant.anaf_parser import generate_anaf_xml
-        import xml.etree.ElementTree as ET
         values = {'01': 1000, '02': 500}
         xml_bytes = generate_anaf_xml(values, company_name='TEST SRL', cif='12345678')
-        root = ET.fromstring(xml_bytes)
-        assert root.tag == 'form1'
-        di = root.find('date_identificare')
-        assert di.find('DENI').text == 'TEST SRL'
-        assert di.find('cif').text == '12345678'
-        table = root.find('F10L').find('Table1')
-        r01 = table.find('R01')
-        assert r01.find('C2').text == '1000'
+        text = xml_bytes.decode('utf-8')
+        # Root tag is Bilant1002 for F10L
+        assert '<Bilant1002' in text
+        assert 'cui="12345678"' in text
+        assert 'den="TEST SRL"' in text
+        # F10 element with field attributes: F10_XXXC
+        assert 'F10_0012="1000"' in text  # row 01, col 2 (C2)
+        assert 'F10_0022="500"' in text   # row 02, col 2 (C2)
+        assert '</Bilant1002>' in text
 
     def test_generate_anaf_xml_with_prior(self):
-        """XML includes C1 values from prior period."""
+        """XML includes C1 values as F10_XXX1 attributes."""
         from accounting.bilant.anaf_parser import generate_anaf_xml
-        import xml.etree.ElementTree as ET
         values = {'01': 1000}
         prior = {'01': 800}
         xml_bytes = generate_anaf_xml(values, prior_values=prior)
-        root = ET.fromstring(xml_bytes)
-        r01 = root.find('F10L').find('Table1').find('R01')
-        assert r01.find('C1').text == '800'
-        assert r01.find('C2').text == '1000'
+        text = xml_bytes.decode('utf-8')
+        assert 'F10_0011="800"' in text   # row 01, col 1 (C1 prior)
+        assert 'F10_0012="1000"' in text  # row 01, col 2 (C2 current)
 
     def test_generate_anaf_xml_period_date(self):
-        """Period date populates an_r, luna_r, per1, per2, per3."""
+        """Period date populates luna and an attributes."""
         from accounting.bilant.anaf_parser import generate_anaf_xml
-        import xml.etree.ElementTree as ET
         xml_bytes = generate_anaf_xml({'01': 100}, period_date='2024-12-31')
-        root = ET.fromstring(xml_bytes)
-        di = root.find('date_identificare')
-        assert di.find('an_r').text == '2024'
-        assert di.find('luna_r').text == '12'
-        assert di.find('per1').text == '01.01.2024'
-        assert di.find('per2').text == '31.12.2024'
-        assert di.find('per3').text == '31.12.2023'
+        text = xml_bytes.decode('utf-8')
+        assert 'an="2024"' in text
+        assert 'luna="12"' in text
 
-    def test_generate_anaf_xml_no_xml_declaration(self):
-        """XML output has no <?xml?> declaration."""
+    def test_generate_anaf_xml_has_declaration(self):
+        """XML output starts with <?xml version="1.0"?>."""
         from accounting.bilant.anaf_parser import generate_anaf_xml
         xml_bytes = generate_anaf_xml({'01': 100})
-        assert not xml_bytes.startswith(b'<?xml')
+        assert xml_bytes.startswith(b'<?xml version="1.0"?>')
+
+    def test_generate_anaf_xml_bilant1002_marker(self):
+        """ANAF import function searches for 'Bilant1002' string."""
+        from accounting.bilant.anaf_parser import generate_anaf_xml
+        xml_bytes = generate_anaf_xml({'01': 100}, form='F10L')
+        assert b'Bilant1002' in xml_bytes
+        # Small entities use Bilant1003
+        xml_bytes_s = generate_anaf_xml({'01': 100}, form='F10S')
+        assert b'Bilant1003' in xml_bytes_s
+
+    def test_generate_anaf_xml_namespace(self):
+        """XML includes required ANAF namespace/schema."""
+        from accounting.bilant.anaf_parser import generate_anaf_xml
+        xml_bytes = generate_anaf_xml({'01': 100})
+        text = xml_bytes.decode('utf-8')
+        assert 'xmlns:xsi=' in text
+        assert 'mfp:anaf:dgti:s1002' in text
+
+    def test_generate_anaf_xml_field_padding(self):
+        """Row numbers are 3-digit zero-padded in field names."""
+        from accounting.bilant.anaf_parser import generate_anaf_xml
+        values = {'1': 100, '10': 200, '103': 300}
+        xml_bytes = generate_anaf_xml(values)
+        text = xml_bytes.decode('utf-8')
+        assert 'F10_0012="100"' in text   # row '1' padded to '001'
+        assert 'F10_0102="200"' in text   # row '10' padded to '010'
+        assert 'F10_1032="300"' in text   # row '103' stays '103'
