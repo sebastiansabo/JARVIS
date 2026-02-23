@@ -42,6 +42,7 @@ export interface Transaction {
   suggested_invoice_id: number | null
   suggested_confidence: number | null
   merged_from_id: number | null
+  merged_count?: number
   created_at: string
   updated_at: string | null
 }

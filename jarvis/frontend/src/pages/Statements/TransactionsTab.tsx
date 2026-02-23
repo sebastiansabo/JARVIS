@@ -530,7 +530,7 @@ const TransactionRow = memo(function TransactionRow({
   isExpanded: boolean
   onToggleExpand: (id: number) => void
 }) {
-  const isMerged = txn.merged_from_id !== null
+  const isMerged = (txn.merged_count ?? 0) > 0
 
   // Merged sources query
   const { data: mergedSources } = useQuery({
