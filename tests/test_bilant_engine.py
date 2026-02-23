@@ -864,3 +864,94 @@ class TestFillAnafPdf:
                 assert r01.find('C2').text == '1235'  # Rounded
                 break
         pdf.close()
+
+
+class TestAnafExportFormats:
+    """Tests for ANAF XML and TXT export formats."""
+
+    def test_generate_anaf_txt_basic(self):
+        """Generate balanta.txt with C2 values."""
+        from accounting.bilant.anaf_parser import generate_anaf_txt
+        values = {'01': 1000, '02': 500, '10': 2000}
+        txt = generate_anaf_txt(values, company_name='TEST SRL', cif='12345678')
+        lines = txt.strip().split('\r\n')
+        assert lines[0].startswith('BL,12345678,TEST SRL,')
+        assert ',F10L,R01,C2,,1000' in txt
+        assert ',F10L,R02,C2,,500' in txt
+        assert ',F10L,R10,C2,,2000' in txt
+
+    def test_generate_anaf_txt_with_prior(self):
+        """Generate balanta.txt with C1 and C2 values."""
+        from accounting.bilant.anaf_parser import generate_anaf_txt
+        values = {'01': 1000}
+        prior = {'01': 800}
+        txt = generate_anaf_txt(values, prior_values=prior)
+        assert ',F10L,R01,C2,,1000' in txt
+        assert ',F10L,R01,C1,,800' in txt
+
+    def test_generate_anaf_txt_negative_values(self):
+        """Negative values get sign field '-'."""
+        from accounting.bilant.anaf_parser import generate_anaf_txt
+        values = {'01': -500}
+        txt = generate_anaf_txt(values)
+        assert ',F10L,R01,C2,-,500' in txt
+
+    def test_generate_anaf_txt_crlf(self):
+        """Lines end with CR+LF."""
+        from accounting.bilant.anaf_parser import generate_anaf_txt
+        txt = generate_anaf_txt({'01': 100})
+        assert '\r\n' in txt
+
+    def test_generate_anaf_txt_zero_skipped(self):
+        """Zero values are not included."""
+        from accounting.bilant.anaf_parser import generate_anaf_txt
+        values = {'01': 0, '02': 100}
+        txt = generate_anaf_txt(values)
+        assert 'R01' not in txt
+        assert ',F10L,R02,C2,,100' in txt
+
+    def test_generate_anaf_xml_basic(self):
+        """Generate ANAF XML with form1 structure."""
+        from accounting.bilant.anaf_parser import generate_anaf_xml
+        import xml.etree.ElementTree as ET
+        values = {'01': 1000, '02': 500}
+        xml_bytes = generate_anaf_xml(values, company_name='TEST SRL', cif='12345678')
+        root = ET.fromstring(xml_bytes)
+        assert root.tag == 'form1'
+        di = root.find('date_identificare')
+        assert di.find('DENI').text == 'TEST SRL'
+        assert di.find('cif').text == '12345678'
+        table = root.find('F10L').find('Table1')
+        r01 = table.find('R01')
+        assert r01.find('C2').text == '1000'
+
+    def test_generate_anaf_xml_with_prior(self):
+        """XML includes C1 values from prior period."""
+        from accounting.bilant.anaf_parser import generate_anaf_xml
+        import xml.etree.ElementTree as ET
+        values = {'01': 1000}
+        prior = {'01': 800}
+        xml_bytes = generate_anaf_xml(values, prior_values=prior)
+        root = ET.fromstring(xml_bytes)
+        r01 = root.find('F10L').find('Table1').find('R01')
+        assert r01.find('C1').text == '800'
+        assert r01.find('C2').text == '1000'
+
+    def test_generate_anaf_xml_period_date(self):
+        """Period date populates an_r, luna_r, per1, per2, per3."""
+        from accounting.bilant.anaf_parser import generate_anaf_xml
+        import xml.etree.ElementTree as ET
+        xml_bytes = generate_anaf_xml({'01': 100}, period_date='2024-12-31')
+        root = ET.fromstring(xml_bytes)
+        di = root.find('date_identificare')
+        assert di.find('an_r').text == '2024'
+        assert di.find('luna_r').text == '12'
+        assert di.find('per1').text == '01.01.2024'
+        assert di.find('per2').text == '31.12.2024'
+        assert di.find('per3').text == '31.12.2023'
+
+    def test_generate_anaf_xml_no_xml_declaration(self):
+        """XML output has no <?xml?> declaration."""
+        from accounting.bilant.anaf_parser import generate_anaf_xml
+        xml_bytes = generate_anaf_xml({'01': 100})
+        assert not xml_bytes.startswith(b'<?xml')

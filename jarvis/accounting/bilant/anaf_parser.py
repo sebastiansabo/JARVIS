@@ -350,6 +350,147 @@ def generate_row_mapping(rows: list[dict]) -> dict:
 
 
 # ════════════════════════════════════════════════════════════════
+# ANAF Export Formats (balanta.txt + XML)
+# ════════════════════════════════════════════════════════════════
+
+def generate_anaf_txt(values: dict, prior_values: dict | None = None,
+                      company_name: str = '', cif: str = '',
+                      form: str = 'F10L') -> str:
+    """Generate ANAF balanta.txt import file.
+
+    Format: CSV with CR+LF line endings.
+    Line 1: 26-field identification record.
+    Lines 2+: balance entries — cont,formular,rand,coloana,semn,suma
+
+    Args:
+        values: {nr_rd: value} for C2 (current period).
+        prior_values: optional {nr_rd: value} for C1 (prior period).
+        company_name: entity name for identification line.
+        cif: CIF/CUI for identification line.
+        form: 'F10L' or 'F10S'.
+
+    Returns:
+        String content of the balanta.txt file.
+    """
+    lines = []
+
+    # Line 1: identification (26 fields, mostly empty)
+    tip_bil = 'BL' if form == 'F10L' else 'BS'
+    ident_fields = [
+        tip_bil, cif, company_name,
+        '', '', '', '', '', '', '', '', '',  # judet..telefon
+        '', '', '', '',  # nrRC, formaProp, caen1, caen2
+        '', '', '', '',  # admin, intocmit, calitate, nrOP
+        'N', 'N', '0', '', '', '',  # oblig, optiune, aprob, auditor, nrRA, cifA
+    ]
+    lines.append(','.join(ident_fields))
+
+    # Balance entries: cont,formular,rand,coloana,semn,suma
+    all_rows = set()
+    if values:
+        all_rows.update(values.keys())
+    if prior_values:
+        all_rows.update(prior_values.keys())
+
+    for nr_rd in sorted(all_rows, key=lambda x: (x.zfill(4))):
+        # C2 (current period)
+        c2_val = values.get(nr_rd) if values else None
+        if c2_val is not None and c2_val != 0:
+            val = round(float(c2_val))
+            sign = '-' if val < 0 else ''
+            lines.append(f',{form},R{nr_rd},C2,{sign},{abs(int(val))}')
+
+        # C1 (prior period)
+        if prior_values:
+            c1_val = prior_values.get(nr_rd)
+            if c1_val is not None and c1_val != 0:
+                val = round(float(c1_val))
+                sign = '-' if val < 0 else ''
+                lines.append(f',{form},R{nr_rd},C1,{sign},{abs(int(val))}')
+
+    return '\r\n'.join(lines) + '\r\n'
+
+
+def generate_anaf_xml(values: dict, prior_values: dict | None = None,
+                      company_name: str = '', cif: str = '',
+                      period_date: str | None = None,
+                      form: str = 'F10L') -> bytes:
+    """Generate ANAF XML import file matching XFA datasets structure.
+
+    The XML mirrors the form1 > F10L > Table1 structure that the ANAF PDF
+    import function (\"Import fisier XML - F10\") expects.
+
+    Args:
+        values: {nr_rd: value} for C2 (current period).
+        prior_values: optional {nr_rd: value} for C1 (prior period).
+        company_name: entity name.
+        cif: CIF/CUI.
+        period_date: period end date (e.g. '2024-12-31').
+        form: 'F10L' or 'F10S'.
+
+    Returns:
+        UTF-8 encoded XML bytes.
+    """
+    # Parse period date
+    an_r = ''
+    luna_r = ''
+    per1 = ''
+    per2 = ''
+    per3 = ''
+    if period_date:
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(period_date.replace('Z', '+00:00') if 'T' in period_date else period_date)
+            an_r = str(dt.year)
+            luna_r = str(dt.month)
+            per1 = f'01.01.{dt.year}'
+            per2 = f'{dt.day:02d}.{dt.month:02d}.{dt.year}'
+            per3 = f'31.12.{dt.year - 1}'
+        except (ValueError, AttributeError):
+            pass
+
+    root = ET.Element('form1')
+
+    # date_identificare
+    di = ET.SubElement(root, 'date_identificare')
+    ET.SubElement(di, 'DENI').text = company_name
+    ET.SubElement(di, 'cif').text = cif
+    ET.SubElement(di, 'an_r').text = an_r
+    ET.SubElement(di, 'luna_r').text = luna_r
+    ET.SubElement(di, 'per1').text = per1
+    ET.SubElement(di, 'per2').text = per2
+    ET.SubElement(di, 'per3').text = per3
+    tip_bil = 'BL' if form == 'F10L' else 'BS'
+    ET.SubElement(di, 'TipBIL').text = tip_bil
+
+    # F10L > Table1 > rows
+    form_elem = ET.SubElement(root, form)
+    table = ET.SubElement(form_elem, 'Table1')
+
+    # Collect all row numbers and sort
+    all_rows = set()
+    if values:
+        all_rows.update(values.keys())
+    if prior_values:
+        all_rows.update(prior_values.keys())
+
+    for nr_rd in sorted(all_rows, key=lambda x: (x.zfill(4))):
+        row_tag = f'R{nr_rd}'
+        row_elem = ET.SubElement(table, row_tag)
+
+        c1_val = prior_values.get(nr_rd) if prior_values else None
+        c2_val = values.get(nr_rd) if values else None
+
+        c1_elem = ET.SubElement(row_elem, 'C1')
+        c1_elem.text = str(int(round(float(c1_val)))) if c1_val is not None and c1_val != 0 else ''
+
+        c2_elem = ET.SubElement(row_elem, 'C2')
+        c2_elem.text = str(int(round(float(c2_val)))) if c2_val is not None and c2_val != 0 else ''
+
+    return ET.tostring(root, encoding='unicode', xml_declaration=False).encode('utf-8')
+
+
+# ════════════════════════════════════════════════════════════════
 # XFA PDF Field Filling
 # ════════════════════════════════════════════════════════════════
 

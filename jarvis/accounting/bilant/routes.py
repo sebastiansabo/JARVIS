@@ -357,6 +357,44 @@ def api_download_generation_anaf(generation_id):
     )
 
 
+@bilant_bp.route('/api/generations/<int:generation_id>/download-xml', methods=['GET'])
+@login_required
+def api_download_generation_xml(generation_id):
+    """Download bilant as ANAF XML import file."""
+    result = _service.generate_anaf_import_xml(generation_id)
+    if not result.success:
+        return jsonify({'success': False, 'error': result.error}), result.status_code
+    gen = _generation_repo.get_by_id(generation_id)
+    name = f"Bilant_ANAF_{gen['company_name']}_{gen.get('period_label', generation_id)}.xml" if gen else f"Bilant_ANAF_{generation_id}.xml"
+    name = name.replace(' ', '_')
+    import io
+    return send_file(
+        io.BytesIO(result.data),
+        mimetype='application/xml',
+        as_attachment=True,
+        download_name=name,
+    )
+
+
+@bilant_bp.route('/api/generations/<int:generation_id>/download-txt', methods=['GET'])
+@login_required
+def api_download_generation_txt(generation_id):
+    """Download bilant as ANAF balanta.txt import file."""
+    result = _service.generate_anaf_import_txt(generation_id)
+    if not result.success:
+        return jsonify({'success': False, 'error': result.error}), result.status_code
+    gen = _generation_repo.get_by_id(generation_id)
+    name = f"Bilant_ANAF_{gen['company_name']}_{gen.get('period_label', generation_id)}.txt" if gen else f"Bilant_ANAF_{generation_id}.txt"
+    name = name.replace(' ', '_')
+    import io
+    return send_file(
+        io.BytesIO(result.data.encode('windows-1250', errors='replace')),
+        mimetype='text/plain; charset=windows-1250',
+        as_attachment=True,
+        download_name=name,
+    )
+
+
 # ════════════════════════════════════════════════════════════════
 # Comparison
 # ════════════════════════════════════════════════════════════════

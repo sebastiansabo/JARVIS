@@ -8,7 +8,7 @@ from ..repositories import BilantTemplateRepository, BilantGenerationRepository
 from ..formula_engine import process_bilant_from_template, calculate_metrics_from_config
 from ..excel_handler import read_balanta_from_excel, read_bilant_sheet_for_import, generate_output_excel, generate_anaf_excel
 from ..pdf_handler import generate_bilant_pdf
-from ..anaf_parser import parse_anaf_pdf, generate_row_mapping, fill_anaf_pdf
+from ..anaf_parser import parse_anaf_pdf, generate_row_mapping, fill_anaf_pdf, generate_anaf_xml, generate_anaf_txt
 
 logger = logging.getLogger('jarvis.bilant.service')
 
@@ -257,6 +257,65 @@ class BilantService:
             return ServiceResult(success=True, data=output)
         except Exception as e:
             logger.exception(f'Filled PDF generation failed: {e}')
+            return ServiceResult(success=False, error=str(e), status_code=500)
+
+    def _build_values_and_prior(self, generation_id):
+        """Shared helper: load generation, build nr_rd→value maps and company info."""
+        detail = self.get_generation_detail(generation_id)
+        if not detail.success:
+            return detail
+        generation = detail.data['generation']
+        results = detail.data['results']
+        values = {}
+        for r in results:
+            nr = r.get('nr_rd')
+            if nr:
+                values[nr] = r.get('value', 0) or 0
+        prior = self._get_prior_results(generation['company_id'], generation_id)
+        return ServiceResult(success=True, data={
+            'generation': generation, 'results': results,
+            'values': values, 'prior': prior,
+        })
+
+    def generate_anaf_import_xml(self, generation_id):
+        """Generate ANAF XML import file (form1 > F10L > Table1 structure)."""
+        loaded = self._build_values_and_prior(generation_id)
+        if not loaded.success:
+            return loaded
+        gen = loaded.data['generation']
+        values = loaded.data['values']
+        prior = loaded.data['prior']
+        try:
+            xml_bytes = generate_anaf_xml(
+                values, prior_values=prior,
+                company_name=gen.get('company_name', ''),
+                cif='',  # CIF not stored on generation
+                period_date=gen.get('period_date'),
+                form='F10L',
+            )
+            return ServiceResult(success=True, data=xml_bytes)
+        except Exception as e:
+            logger.exception(f'ANAF XML generation failed: {e}')
+            return ServiceResult(success=False, error=str(e), status_code=500)
+
+    def generate_anaf_import_txt(self, generation_id):
+        """Generate ANAF balanta.txt import file."""
+        loaded = self._build_values_and_prior(generation_id)
+        if not loaded.success:
+            return loaded
+        gen = loaded.data['generation']
+        values = loaded.data['values']
+        prior = loaded.data['prior']
+        try:
+            txt_content = generate_anaf_txt(
+                values, prior_values=prior,
+                company_name=gen.get('company_name', ''),
+                cif='',
+                form='F10L',
+            )
+            return ServiceResult(success=True, data=txt_content)
+        except Exception as e:
+            logger.exception(f'ANAF TXT generation failed: {e}')
             return ServiceResult(success=False, error=str(e), status_code=500)
 
     def generate_anaf_excel(self, generation_id):

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Download, Trash2, FileSpreadsheet, Calendar, User, StickyNote, ChevronDown, FileText, Table2, FileCheck } from 'lucide-react'
+import { ArrowLeft, Download, Trash2, FileSpreadsheet, Calendar, User, StickyNote, ChevronDown, FileText, Table2, FileCheck, Code2, FileType } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { bilantApi } from '@/api/bilant'
@@ -165,6 +165,14 @@ export default function BilantDetail() {
                   <DropdownMenuItem onClick={() => bilantApi.downloadGenerationAnaf(gen.id)}>
                     <Table2 className="mr-2 h-4 w-4" />
                     Excel (ANAF Format)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => bilantApi.downloadGenerationXml(gen.id)}>
+                    <Code2 className="mr-2 h-4 w-4" />
+                    XML (ANAF Import)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => bilantApi.downloadGenerationTxt(gen.id)}>
+                    <FileType className="mr-2 h-4 w-4" />
+                    TXT (balanta.txt)
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
