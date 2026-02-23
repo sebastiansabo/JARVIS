@@ -12,7 +12,7 @@ class BilantGenerationRepository(BaseRepository):
             SELECT g.*, c.company as company_name,
                    t.name as template_name,
                    u.email as generated_by_email,
-                   u.first_name || ' ' || u.last_name as generated_by_name
+                   u.name as generated_by_name
             FROM bilant_generations g
             JOIN companies c ON c.id = g.company_id
             JOIN bilant_templates t ON t.id = g.template_id
@@ -34,7 +34,7 @@ class BilantGenerationRepository(BaseRepository):
         rows = self.query_all(f'''
             SELECT g.*, c.company as company_name,
                    t.name as template_name,
-                   u.first_name || ' ' || u.last_name as generated_by_name
+                   u.name as generated_by_name
             FROM bilant_generations g
             JOIN companies c ON c.id = g.company_id
             JOIN bilant_templates t ON t.id = g.template_id
@@ -123,17 +123,28 @@ class BilantGenerationRepository(BaseRepository):
                 ''', (generation_id, key, key.replace('_', ' ').title(), val))
                 count += 1
 
-            # Ratios
-            from accounting.bilant.formula_engine import STANDARD_RATIOS
+            # Ratios — handle both new dict format and legacy scalar format
             for key, val in metrics_dict.get('ratios', {}).items():
-                spec = STANDARD_RATIOS.get(key, {})
-                cursor.execute('''
-                    INSERT INTO bilant_metrics
-                        (generation_id, metric_key, metric_label, metric_group, value, interpretation)
-                    VALUES (%s, %s, %s, 'ratio', %s, %s)
-                    ON CONFLICT (generation_id, metric_key) DO UPDATE
-                        SET value = EXCLUDED.value, interpretation = EXCLUDED.interpretation
-                ''', (generation_id, key, spec.get('label', key), val, spec.get('interpretation')))
+                if isinstance(val, dict):
+                    # New format: {value, label, interpretation}
+                    cursor.execute('''
+                        INSERT INTO bilant_metrics
+                            (generation_id, metric_key, metric_label, metric_group, value, interpretation)
+                        VALUES (%s, %s, %s, 'ratio', %s, %s)
+                        ON CONFLICT (generation_id, metric_key) DO UPDATE
+                            SET value = EXCLUDED.value, interpretation = EXCLUDED.interpretation
+                    ''', (generation_id, key, val.get('label', key), val.get('value'), val.get('interpretation')))
+                else:
+                    # Legacy format: scalar value — use STANDARD_RATIOS for label
+                    from accounting.bilant.formula_engine import STANDARD_RATIOS
+                    spec = STANDARD_RATIOS.get(key, {})
+                    cursor.execute('''
+                        INSERT INTO bilant_metrics
+                            (generation_id, metric_key, metric_label, metric_group, value, interpretation)
+                        VALUES (%s, %s, %s, 'ratio', %s, %s)
+                        ON CONFLICT (generation_id, metric_key) DO UPDATE
+                            SET value = EXCLUDED.value, interpretation = EXCLUDED.interpretation
+                    ''', (generation_id, key, spec.get('label', key), val, spec.get('interpretation')))
                 count += 1
 
             # Structure

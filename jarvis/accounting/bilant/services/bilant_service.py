@@ -116,10 +116,14 @@ class BilantService:
                     'percent': float(m['percent']) if m.get('percent') is not None else 0,
                 })
 
+        # Load template metric configs for dynamic rendering
+        metric_configs = self.template_repo.get_metric_configs(generation['template_id'])
+
         return ServiceResult(success=True, data={
             'generation': generation,
             'results': results,
             'metrics': metrics,
+            'metric_configs': metric_configs,
         })
 
     def generate_excel(self, generation_id):

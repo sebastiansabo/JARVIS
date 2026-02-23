@@ -86,8 +86,10 @@ class BilantTemplateRepository(BaseRepository):
             # Copy metric configs
             cursor.execute('''
                 INSERT INTO bilant_metric_configs
-                    (template_id, metric_key, metric_label, nr_rd, metric_group, sort_order)
-                SELECT %s, metric_key, metric_label, nr_rd, metric_group, sort_order
+                    (template_id, metric_key, metric_label, nr_rd, metric_group, sort_order,
+                     formula_expr, display_format, interpretation, threshold_good, threshold_warning, structure_side)
+                SELECT %s, metric_key, metric_label, nr_rd, metric_group, sort_order,
+                       formula_expr, display_format, interpretation, threshold_good, threshold_warning, structure_side
                 FROM bilant_metric_configs WHERE template_id = %s
             ''', (new_id, template_id))
             return new_id
@@ -163,17 +165,30 @@ class BilantTemplateRepository(BaseRepository):
             WHERE template_id = %s ORDER BY sort_order
         ''', (template_id,))
 
-    def set_metric_config(self, template_id, metric_key, metric_label, nr_rd, metric_group='summary', sort_order=0):
+    def set_metric_config(self, template_id, metric_key, metric_label, nr_rd=None,
+                          metric_group='summary', sort_order=0, formula_expr=None,
+                          display_format='currency', interpretation=None,
+                          threshold_good=None, threshold_warning=None, structure_side=None):
         row = self.execute('''
-            INSERT INTO bilant_metric_configs (template_id, metric_key, metric_label, nr_rd, metric_group, sort_order)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO bilant_metric_configs
+                (template_id, metric_key, metric_label, nr_rd, metric_group, sort_order,
+                 formula_expr, display_format, interpretation, threshold_good, threshold_warning, structure_side)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (template_id, metric_key) DO UPDATE
                 SET metric_label = EXCLUDED.metric_label,
                     nr_rd = EXCLUDED.nr_rd,
                     metric_group = EXCLUDED.metric_group,
-                    sort_order = EXCLUDED.sort_order
+                    sort_order = EXCLUDED.sort_order,
+                    formula_expr = EXCLUDED.formula_expr,
+                    display_format = EXCLUDED.display_format,
+                    interpretation = EXCLUDED.interpretation,
+                    threshold_good = EXCLUDED.threshold_good,
+                    threshold_warning = EXCLUDED.threshold_warning,
+                    structure_side = EXCLUDED.structure_side
             RETURNING id
-        ''', (template_id, metric_key, metric_label, nr_rd, metric_group, sort_order), returning=True)
+        ''', (template_id, metric_key, metric_label, nr_rd, metric_group, sort_order,
+              formula_expr, display_format, interpretation, threshold_good, threshold_warning,
+              structure_side), returning=True)
         return row['id']
 
     def delete_metric_config(self, config_id):
@@ -184,14 +199,25 @@ class BilantTemplateRepository(BaseRepository):
         def _work(cursor):
             for c in configs:
                 cursor.execute('''
-                    INSERT INTO bilant_metric_configs (template_id, metric_key, metric_label, nr_rd, metric_group, sort_order)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO bilant_metric_configs
+                        (template_id, metric_key, metric_label, nr_rd, metric_group, sort_order,
+                         formula_expr, display_format, interpretation, threshold_good, threshold_warning, structure_side)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (template_id, metric_key) DO UPDATE
                         SET metric_label = EXCLUDED.metric_label,
                             nr_rd = EXCLUDED.nr_rd,
                             metric_group = EXCLUDED.metric_group,
-                            sort_order = EXCLUDED.sort_order
-                ''', (template_id, c['metric_key'], c['metric_label'], c['nr_rd'],
-                      c.get('metric_group', 'summary'), c.get('sort_order', 0)))
+                            sort_order = EXCLUDED.sort_order,
+                            formula_expr = EXCLUDED.formula_expr,
+                            display_format = EXCLUDED.display_format,
+                            interpretation = EXCLUDED.interpretation,
+                            threshold_good = EXCLUDED.threshold_good,
+                            threshold_warning = EXCLUDED.threshold_warning,
+                            structure_side = EXCLUDED.structure_side
+                ''', (template_id, c['metric_key'], c['metric_label'], c.get('nr_rd'),
+                      c.get('metric_group', 'summary'), c.get('sort_order', 0),
+                      c.get('formula_expr'), c.get('display_format', 'currency'),
+                      c.get('interpretation'), c.get('threshold_good'), c.get('threshold_warning'),
+                      c.get('structure_side')))
             return len(configs)
         return self.execute_many(_work)

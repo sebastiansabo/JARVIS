@@ -250,7 +250,7 @@ def init_db():
         cursor.execute("""
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'bilant_metrics'
+                WHERE table_schema = 'public' AND table_name = 'chart_of_accounts'
             )
         """)
         if cursor.fetchone()['exists']:
@@ -749,11 +749,60 @@ def init_db():
                 )
             ''')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_bilant_metrics_gen ON bilant_metrics(generation_id)')
+            # ── Chart of Accounts (Plan de Conturi) ──
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chart_of_accounts (
+                    id SERIAL PRIMARY KEY,
+                    code TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    account_class SMALLINT NOT NULL,
+                    account_type TEXT NOT NULL DEFAULT 'synthetic',
+                    parent_code TEXT,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT chart_of_accounts_unique UNIQUE (code, company_id)
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_coa_class ON chart_of_accounts(account_class)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_coa_parent ON chart_of_accounts(parent_code)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_coa_company ON chart_of_accounts(company_id)')
+            # Seed standard Romanian chart of accounts (global, no company)
+            cursor.execute("SELECT COUNT(*) as cnt FROM chart_of_accounts WHERE company_id IS NULL")
+            if cursor.fetchone()['cnt'] == 0:
+                from migrations.init_schema import _seed_chart_of_accounts
+                _seed_chart_of_accounts(cursor)
             # Seed default Bilant template
             cursor.execute("SELECT COUNT(*) as cnt FROM bilant_templates")
             if cursor.fetchone()['cnt'] == 0:
                 from migrations.init_schema import _seed_bilant_default_template
                 _seed_bilant_default_template(cursor)
+            # Dynamic metrics: add new columns to bilant_metric_configs
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'bilant_metric_configs' AND column_name = 'formula_expr') THEN
+                        ALTER TABLE bilant_metric_configs ADD COLUMN formula_expr TEXT;
+                        ALTER TABLE bilant_metric_configs ADD COLUMN display_format TEXT DEFAULT 'currency';
+                        ALTER TABLE bilant_metric_configs ADD COLUMN interpretation TEXT;
+                        ALTER TABLE bilant_metric_configs ADD COLUMN threshold_good NUMERIC(12,4);
+                        ALTER TABLE bilant_metric_configs ADD COLUMN threshold_warning NUMERIC(12,4);
+                        ALTER TABLE bilant_metric_configs ADD COLUMN structure_side TEXT;
+                        ALTER TABLE bilant_metric_configs ALTER COLUMN nr_rd DROP NOT NULL;
+                    END IF;
+                END $$;
+            ''')
+            # Seed ratio/derived/structure configs for default template if missing
+            cursor.execute("""
+                SELECT COUNT(*) as cnt FROM bilant_metric_configs mc
+                JOIN bilant_templates t ON t.id = mc.template_id
+                WHERE t.is_default = TRUE AND mc.metric_group = 'ratio'
+            """)
+            if cursor.fetchone()['cnt'] == 0:
+                from migrations.init_schema import _seed_bilant_dynamic_metrics
+                _seed_bilant_dynamic_metrics(cursor)
             conn.commit()
             logger.info('Database schema already initialized — skipping init_db()')
             return
@@ -769,6 +818,45 @@ def init_db():
             logger.info('Base schema exists but newer tables missing — running incremental migration')
             from migrations.init_schema import create_schema
             create_schema(conn, cursor)
+            # Chart of Accounts (Plan de Conturi)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chart_of_accounts (
+                    id SERIAL PRIMARY KEY,
+                    code TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    account_class SMALLINT NOT NULL,
+                    account_type TEXT NOT NULL DEFAULT 'synthetic',
+                    parent_code TEXT,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT chart_of_accounts_unique UNIQUE (code, company_id)
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_coa_class ON chart_of_accounts(account_class)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_coa_parent ON chart_of_accounts(parent_code)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_coa_company ON chart_of_accounts(company_id)')
+            cursor.execute("SELECT COUNT(*) as cnt FROM chart_of_accounts WHERE company_id IS NULL")
+            if cursor.fetchone()['cnt'] == 0:
+                from migrations.init_schema import _seed_chart_of_accounts
+                _seed_chart_of_accounts(cursor)
+            # Dynamic metrics columns
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'bilant_metric_configs' AND column_name = 'formula_expr') THEN
+                        ALTER TABLE bilant_metric_configs ADD COLUMN formula_expr TEXT;
+                        ALTER TABLE bilant_metric_configs ADD COLUMN display_format TEXT DEFAULT 'currency';
+                        ALTER TABLE bilant_metric_configs ADD COLUMN interpretation TEXT;
+                        ALTER TABLE bilant_metric_configs ADD COLUMN threshold_good NUMERIC(12,4);
+                        ALTER TABLE bilant_metric_configs ADD COLUMN threshold_warning NUMERIC(12,4);
+                        ALTER TABLE bilant_metric_configs ADD COLUMN structure_side TEXT;
+                        ALTER TABLE bilant_metric_configs ALTER COLUMN nr_rd DROP NOT NULL;
+                    END IF;
+                END $$;
+            ''')
             conn.commit()
             logger.info('Incremental migration complete')
             return

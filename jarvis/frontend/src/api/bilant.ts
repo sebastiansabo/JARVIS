@@ -5,6 +5,7 @@ import type {
   BilantMetricConfig,
   BilantGeneration,
   BilantGenerationDetail,
+  ChartOfAccount,
 } from '@/types/bilant'
 
 const BASE = '/bilant/api'
@@ -107,4 +108,22 @@ export const bilantApi = {
 
   compareGenerations: (generationIds: number[]) =>
     api.post<{ generations: BilantGeneration[]; metrics: Record<string, unknown> }>(`${BASE}/compare`, { generation_ids: generationIds }),
+
+  // ── Chart of Accounts (Plan de Conturi) ──
+
+  listAccounts: (params?: { company_id?: number; account_class?: number; account_type?: string; search?: string }) =>
+    api.get<{ accounts: ChartOfAccount[] }>(`${BASE}/chart-of-accounts${toQs(params || {})}`),
+
+  createAccount: (data: { code: string; name: string; account_class: number; account_type?: string; parent_code?: string; company_id?: number }) =>
+    api.post<{ success: boolean; id: number }>(`${BASE}/chart-of-accounts`, data),
+
+  updateAccount: (id: number, data: Partial<ChartOfAccount>) =>
+    api.put<{ success: boolean }>(`${BASE}/chart-of-accounts/${id}`, data),
+
+  deleteAccount: (id: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/chart-of-accounts/${id}`),
+
+  autocompleteAccounts: (prefix: string, companyId?: number) =>
+    api.get<{ accounts: Pick<ChartOfAccount, 'code' | 'name' | 'account_class' | 'account_type'>[] }>(
+      `${BASE}/chart-of-accounts/autocomplete${toQs({ prefix, company_id: companyId })}`),
 }

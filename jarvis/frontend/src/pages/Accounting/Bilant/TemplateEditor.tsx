@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Trash2, GripVertical, Save } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, GripVertical, Save, HelpCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { bilantApi } from '@/api/bilant'
@@ -17,22 +17,27 @@ import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { BilantTemplateRow, BilantMetricConfig } from '@/types/bilant'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
+import type { BilantTemplateRow, BilantMetricConfig, MetricGroup } from '@/types/bilant'
 
 type EditorTab = 'rows' | 'metrics' | 'info'
 
 const ROW_TYPES = ['data', 'total', 'section', 'separator'] as const
 
-const STANDARD_METRICS = [
-  { key: 'active_imobilizate', label: 'Active Imobilizate', group: 'summary' },
-  { key: 'active_circulante', label: 'Active Circulante', group: 'summary' },
-  { key: 'stocuri', label: 'Stocuri', group: 'ratio_input' },
-  { key: 'disponibilitati', label: 'Disponibilitati', group: 'ratio_input' },
-  { key: 'creante', label: 'Creante', group: 'ratio_input' },
-  { key: 'datorii_termen_scurt', label: 'Datorii < 1 an', group: 'ratio_input' },
-  { key: 'datorii_termen_lung', label: 'Datorii > 1 an', group: 'ratio_input' },
-  { key: 'capitaluri_proprii', label: 'Capitaluri Proprii', group: 'summary' },
-  { key: 'capital_social', label: 'Capital Social', group: 'ratio_input' },
+const METRIC_GROUPS: { key: MetricGroup; label: string; description: string }[] = [
+  { key: 'summary', label: 'Summary', description: 'Stat cards — maps a row (Nr.Rd) to a value' },
+  { key: 'ratio_input', label: 'Ratio Inputs', description: 'Hidden data sources for ratios — maps a row (Nr.Rd) to a value' },
+  { key: 'derived', label: 'Derived', description: 'Computed summary cards — uses a formula over other metric keys' },
+  { key: 'ratio', label: 'Ratios', description: 'Financial ratios — computed via formula, shown as ratio cards' },
+  { key: 'structure', label: 'Structure', description: 'Chart breakdown items — maps a row to assets or liabilities side' },
+]
+
+const DISPLAY_FORMATS = [
+  { value: 'currency', label: 'Currency (RON)' },
+  { value: 'ratio', label: 'Ratio (x.xx)' },
+  { value: 'percent', label: 'Percent (%)' },
 ]
 
 export default function TemplateEditor() {
@@ -190,7 +195,38 @@ export default function TemplateEditor() {
       {/* Rows Tab */}
       {tab === 'rows' && (
         <div className="space-y-3">
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  <HelpCircle className="mr-1.5 h-4 w-4" />
+                  Formula Syntax
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 text-xs" side="bottom" align="start">
+                <div className="space-y-3">
+                  <div>
+                    <p className="font-semibold mb-1">CT Formula (Account References)</p>
+                    <div className="space-y-1 text-muted-foreground">
+                      <p><code className="font-mono text-primary">1011</code> — sum accounts starting with 1011</p>
+                      <p><code className="font-mono text-primary">1011+1012</code> — add multiple account prefixes</p>
+                      <p><code className="font-mono text-primary">201-2801</code> — subtract (SFD-SFC net)</p>
+                      <p><code className="font-mono text-primary">+/-411</code> — dynamic sign (debit if positive)</p>
+                      <p><code className="font-mono text-primary">dinct.472</code> — "din contul" (from account)</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="font-semibold mb-1">RD Formula (Row References)</p>
+                    <div className="space-y-1 text-muted-foreground">
+                      <p><code className="font-mono text-primary">01+02+03</code> — sum of rows</p>
+                      <p><code className="font-mono text-primary">10-11</code> — subtract rows</p>
+                      <p><code className="font-mono text-primary">01 la 06</code> — range (expands to 01+02+...+06)</p>
+                    </div>
+                  </div>
+                  <p className="text-muted-foreground italic">Type a number in CT formula to get account suggestions.</p>
+                </div>
+              </PopoverContent>
+            </Popover>
             <Button
               size="sm"
               onClick={() => addRowMut.mutate({
@@ -242,61 +278,13 @@ export default function TemplateEditor() {
 
       {/* Metrics Tab */}
       {tab === 'metrics' && (
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Map template row numbers (Nr.Rd) to standard financial metrics used for ratio calculations.
-          </p>
-
-          <div className="grid gap-3">
-            {STANDARD_METRICS.map(sm => {
-              const existing = metricConfigs.find(mc => mc.metric_key === sm.key)
-              return (
-                <Card key={sm.key} className="gap-0 py-0">
-                  <CardContent className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <p className="text-sm font-medium">{sm.label}</p>
-                      <p className="text-xs text-muted-foreground">{sm.key} ({sm.group})</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={existing?.nr_rd || ''}
-                        onValueChange={(nr_rd) => {
-                          if (nr_rd === 'none') {
-                            if (existing) deleteMetricMut.mutate(existing.id)
-                          } else {
-                            setMetricMut.mutate({
-                              metric_key: sm.key,
-                              metric_label: sm.label,
-                              nr_rd,
-                              metric_group: sm.group as 'summary' | 'ratio_input',
-                            })
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-8 w-[200px] text-xs">
-                          <SelectValue placeholder="Not mapped" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Not mapped</SelectItem>
-                          {availableRows.map(r => (
-                            <SelectItem key={r.nr_rd} value={r.nr_rd}>
-                              Rd.{r.nr_rd} — {r.desc.substring(0, 40)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {existing && (
-                        <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                          Rd.{existing.nr_rd}
-                        </Badge>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        </div>
+        <MetricsTab
+          metricConfigs={metricConfigs}
+          availableRows={availableRows}
+          onSave={(data) => setMetricMut.mutate(data)}
+          onDelete={(id) => setDeleteTarget({ type: 'metric', id, name: metricConfigs.find(m => m.id === id)?.metric_label || 'metric' })}
+          isSaving={setMetricMut.isPending}
+        />
       )}
 
       {/* Info Tab */}
@@ -425,7 +413,7 @@ function EditableRow({ row, isEditing, onStartEdit, onSave, onCancel, onDelete }
         <Input value={desc} onChange={e => setDesc(e.target.value)} className="h-7 text-xs" />
       </TableCell>
       <TableCell>
-        <Input value={formulaCt} onChange={e => setFormulaCt(e.target.value)} className="h-7 text-xs font-mono" placeholder="ct formula" />
+        <FormulaInput value={formulaCt} onChange={setFormulaCt} placeholder="ct formula" />
       </TableCell>
       <TableCell>
         <Input value={formulaRd} onChange={e => setFormulaRd(e.target.value)} className="h-7 text-xs font-mono" placeholder="rd formula" />
@@ -469,5 +457,426 @@ function EditableRow({ row, isEditing, onStartEdit, onSave, onCancel, onDelete }
         </div>
       </TableCell>
     </TableRow>
+  )
+}
+
+// ── Formula Input with Account Autocomplete ──
+
+function FormulaInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [suggestions, setSuggestions] = useState<{ code: string; name: string; account_class: number; account_type: string }[]>([])
+  const [selectedIdx, setSelectedIdx] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
+
+  // Extract the last number token being typed (after operators like +, -, space)
+  const getLastToken = useCallback((text: string): string | null => {
+    const match = text.match(/(\d+)$/)
+    return match ? match[1] : null
+  }, [])
+
+  const fetchSuggestions = useCallback((prefix: string) => {
+    if (prefix.length < 1) { setSuggestions([]); return }
+    bilantApi.autocompleteAccounts(prefix).then(res => {
+      setSuggestions(res.accounts || [])
+      setSelectedIdx(0)
+    }).catch(() => setSuggestions([]))
+  }, [])
+
+  const handleChange = (text: string) => {
+    onChange(text)
+    const token = getLastToken(text)
+    if (token && token.length >= 1) {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => fetchSuggestions(token), 150)
+      setShowSuggestions(true)
+    } else {
+      setSuggestions([])
+      setShowSuggestions(false)
+    }
+  }
+
+  const insertSuggestion = (code: string) => {
+    const token = getLastToken(value)
+    if (token) {
+      const before = value.slice(0, value.length - token.length)
+      onChange(before + code)
+    } else {
+      onChange(value + code)
+    }
+    setShowSuggestions(false)
+    setSuggestions([])
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!showSuggestions || suggestions.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedIdx(i => Math.min(i + 1, suggestions.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedIdx(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      insertSuggestion(suggestions[selectedIdx].code)
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false)
+    }
+  }
+
+  // Close suggestions on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Input
+        value={value}
+        onChange={e => handleChange(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onFocus={() => { const t = getLastToken(value); if (t) { fetchSuggestions(t); setShowSuggestions(true) } }}
+        className="h-7 text-xs font-mono"
+        placeholder={placeholder}
+      />
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="absolute left-0 top-full z-50 mt-1 max-h-48 w-72 overflow-y-auto rounded-md border bg-popover shadow-md">
+          {suggestions.map((s, i) => (
+            <button
+              key={s.code}
+              className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-accent ${i === selectedIdx ? 'bg-accent' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); insertSuggestion(s.code) }}
+            >
+              <span className="font-mono font-medium text-primary">{s.code}</span>
+              <span className="truncate text-muted-foreground">{s.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ── Dynamic Metrics Tab ──
+
+interface MetricsTabProps {
+  metricConfigs: BilantMetricConfig[]
+  availableRows: { nr_rd: string; desc: string }[]
+  onSave: (data: Partial<BilantMetricConfig>) => void
+  onDelete: (id: number) => void
+  isSaving: boolean
+}
+
+const EMPTY_METRIC: Partial<BilantMetricConfig> = {
+  metric_key: '',
+  metric_label: '',
+  nr_rd: null,
+  metric_group: 'summary',
+  formula_expr: null,
+  display_format: 'currency',
+  interpretation: null,
+  threshold_good: null,
+  threshold_warning: null,
+  structure_side: null,
+}
+
+function MetricsTab({ metricConfigs, availableRows, onSave, onDelete, isSaving }: MetricsTabProps) {
+  const [showDialog, setShowDialog] = useState(false)
+  const [editForm, setEditForm] = useState<Partial<BilantMetricConfig>>(EMPTY_METRIC)
+  const [editingId, setEditingId] = useState<number | null>(null)
+
+  const openAdd = (group?: MetricGroup) => {
+    setEditForm({ ...EMPTY_METRIC, metric_group: group || 'summary', sort_order: metricConfigs.length })
+    setEditingId(null)
+    setShowDialog(true)
+  }
+
+  const openEdit = (cfg: BilantMetricConfig) => {
+    setEditForm({ ...cfg })
+    setEditingId(cfg.id)
+    setShowDialog(true)
+  }
+
+  const handleSave = () => {
+    if (!editForm.metric_key?.trim() || !editForm.metric_label?.trim()) {
+      toast.error('Key and label are required')
+      return
+    }
+    onSave(editForm)
+    setShowDialog(false)
+  }
+
+  const groupedConfigs = METRIC_GROUPS.map(g => ({
+    ...g,
+    configs: metricConfigs.filter(c => c.metric_group === g.key),
+  }))
+
+  const needsNrRd = editForm.metric_group === 'summary' || editForm.metric_group === 'ratio_input' || editForm.metric_group === 'structure'
+  const needsFormula = editForm.metric_group === 'ratio' || editForm.metric_group === 'derived'
+  const needsStructureSide = editForm.metric_group === 'structure'
+  const needsThresholds = editForm.metric_group === 'ratio'
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Configure metrics for summary cards, financial ratios, and structure charts.
+        </p>
+        <Button size="sm" onClick={() => openAdd()}>
+          <Plus className="mr-1.5 h-4 w-4" />
+          Add Metric
+        </Button>
+      </div>
+
+      {metricConfigs.length === 0 && (
+        <Card className="py-8">
+          <CardContent className="text-center text-sm text-muted-foreground">
+            No metrics configured yet. Click "Add Metric" to get started.
+          </CardContent>
+        </Card>
+      )}
+
+      {groupedConfigs.map(group => {
+        if (group.configs.length === 0) return null
+        return (
+          <div key={group.key} className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold">{group.label}</h3>
+                <p className="text-xs text-muted-foreground">{group.description}</p>
+              </div>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => openAdd(group.key)}>
+                <Plus className="mr-1 h-3 w-3" />
+                Add
+              </Button>
+            </div>
+            <div className="grid gap-2">
+              {group.configs.map(cfg => (
+                <Card key={cfg.id} className="gap-0 py-0">
+                  <CardContent className="flex items-center justify-between px-4 py-2.5">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{cfg.metric_label}</p>
+                        <p className="text-xs text-muted-foreground font-mono">{cfg.metric_key}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {cfg.nr_rd && (
+                        <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">
+                          Rd.{cfg.nr_rd}
+                        </Badge>
+                      )}
+                      {cfg.formula_expr && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 text-xs font-mono max-w-40 truncate">
+                          {cfg.formula_expr}
+                        </Badge>
+                      )}
+                      {cfg.structure_side && (
+                        <Badge variant="outline" className="text-xs">{cfg.structure_side}</Badge>
+                      )}
+                      {cfg.display_format !== 'currency' && (
+                        <Badge variant="outline" className="text-xs">{cfg.display_format}</Badge>
+                      )}
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openEdit(cfg)}>
+                        Edit
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => onDelete(cfg.id)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Add/Edit Metric Dialog */}
+      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingId ? 'Edit Metric' : 'Add Metric'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Key (unique identifier)</Label>
+                <Input
+                  value={editForm.metric_key || ''}
+                  onChange={e => setEditForm(f => ({ ...f, metric_key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') }))}
+                  placeholder="e.g. lichiditate_curenta"
+                  className="font-mono text-sm"
+                  disabled={!!editingId}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Label</Label>
+                <Input
+                  value={editForm.metric_label || ''}
+                  onChange={e => {
+                    const label = e.target.value
+                    setEditForm(f => ({
+                      ...f,
+                      metric_label: label,
+                      ...(!editingId && !f.metric_key ? { metric_key: label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/_+$/, '') } : {}),
+                    }))
+                  }}
+                  placeholder="e.g. Lichiditate Curenta"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Group</Label>
+                <Select
+                  value={editForm.metric_group || 'summary'}
+                  onValueChange={(v) => setEditForm(f => ({ ...f, metric_group: v as MetricGroup }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {METRIC_GROUPS.map(g => (
+                      <SelectItem key={g.key} value={g.key}>{g.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Display Format</Label>
+                <Select
+                  value={editForm.display_format || 'currency'}
+                  onValueChange={(v) => setEditForm(f => ({ ...f, display_format: v as 'currency' | 'ratio' | 'percent' }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DISPLAY_FORMATS.map(f => (
+                      <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {needsNrRd && (
+              <div className="space-y-2">
+                <Label>Row Mapping (Nr.Rd)</Label>
+                <Select
+                  value={editForm.nr_rd || 'none'}
+                  onValueChange={(v) => setEditForm(f => ({ ...f, nr_rd: v === 'none' ? null : v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select row" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not mapped</SelectItem>
+                    {availableRows.map(r => (
+                      <SelectItem key={r.nr_rd} value={r.nr_rd}>
+                        Rd.{r.nr_rd} — {r.desc.substring(0, 50)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {needsFormula && (
+              <div className="space-y-2">
+                <Label>Formula Expression</Label>
+                <Input
+                  value={editForm.formula_expr || ''}
+                  onChange={e => setEditForm(f => ({ ...f, formula_expr: e.target.value }))}
+                  placeholder="e.g. active_circulante / datorii_termen_scurt"
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Use metric keys with +, -, *, / and parentheses. E.g. <code>active_circulante / datorii_termen_scurt</code>
+                </p>
+              </div>
+            )}
+
+            {needsStructureSide && (
+              <div className="space-y-2">
+                <Label>Structure Side</Label>
+                <Select
+                  value={editForm.structure_side || 'assets'}
+                  onValueChange={(v) => setEditForm(f => ({ ...f, structure_side: v as 'assets' | 'liabilities' }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="assets">Assets</SelectItem>
+                    <SelectItem value="liabilities">Liabilities</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {needsThresholds && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Threshold Good</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={editForm.threshold_good ?? ''}
+                    onChange={e => setEditForm(f => ({ ...f, threshold_good: e.target.value ? Number(e.target.value) : null }))}
+                    placeholder="e.g. 1.0"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Threshold Warning</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={editForm.threshold_warning ?? ''}
+                    onChange={e => setEditForm(f => ({ ...f, threshold_warning: e.target.value ? Number(e.target.value) : null }))}
+                    placeholder="e.g. 0.5"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Interpretation</Label>
+              <Textarea
+                value={editForm.interpretation || ''}
+                onChange={e => setEditForm(f => ({ ...f, interpretation: e.target.value || null }))}
+                placeholder="e.g. Ideal > 1"
+                rows={2}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Sort Order</Label>
+              <Input
+                type="number"
+                value={editForm.sort_order ?? 0}
+                onChange={e => setEditForm(f => ({ ...f, sort_order: Number(e.target.value) }))}
+                className="w-20"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={isSaving}>
+              {editingId ? 'Update' : 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }

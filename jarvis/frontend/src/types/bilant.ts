@@ -28,14 +28,22 @@ export interface BilantTemplateRow {
   sort_order: number
 }
 
+export type MetricGroup = 'summary' | 'ratio_input' | 'ratio' | 'structure' | 'derived'
+
 export interface BilantMetricConfig {
   id: number
   template_id: number
   metric_key: string
   metric_label: string
-  nr_rd: string
-  metric_group: 'summary' | 'ratio_input'
+  nr_rd: string | null
+  metric_group: MetricGroup
   sort_order: number
+  formula_expr: string | null
+  display_format: 'currency' | 'ratio' | 'percent'
+  interpretation: string | null
+  threshold_good: number | null
+  threshold_warning: number | null
+  structure_side: 'assets' | 'liabilities' | null
 }
 
 export interface BilantGeneration {
@@ -84,4 +92,19 @@ export interface BilantGenerationDetail {
   generation: BilantGeneration
   results: BilantResult[]
   metrics: BilantMetrics
+  metric_configs?: BilantMetricConfig[]
+}
+
+export interface ChartOfAccount {
+  id: number
+  code: string
+  name: string
+  account_class: number
+  account_type: 'class' | 'group' | 'synthetic' | 'analytical'
+  parent_code: string | null
+  is_active: boolean
+  company_id: number | null
+  company_name: string | null
+  created_at: string
+  updated_at: string | null
 }

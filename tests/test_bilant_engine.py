@@ -17,6 +17,7 @@ from accounting.bilant.formula_engine import (
     eval_row_formula,
     process_bilant_from_template,
     calculate_metrics_from_config,
+    eval_metric_formula,
 )
 
 
@@ -362,5 +363,136 @@ class TestCalculateMetricsFromConfig:
 
     def test_empty_configs(self):
         metrics = calculate_metrics_from_config({'25': 100}, [])
-        assert metrics['summary']['total_active'] == 0
+        # Empty configs → no summary/derived, auto-derive totals from missing keys = 0
+        assert metrics['summary'] == {}
         assert metrics['ratios']['lichiditate_curenta'] is None
+
+    def test_dynamic_ratio_configs(self):
+        """When ratio configs exist, use formula_expr instead of STANDARD_RATIOS."""
+        bilant_values = {'25': 60000, '42': 40000, '54': 25000}
+        metric_configs = [
+            {'metric_key': 'active_imobilizate', 'metric_label': 'AI', 'nr_rd': '25', 'metric_group': 'summary'},
+            {'metric_key': 'active_circulante', 'metric_label': 'AC', 'nr_rd': '42', 'metric_group': 'summary'},
+            {'metric_key': 'datorii_termen_scurt', 'metric_label': 'DTS', 'nr_rd': '54', 'metric_group': 'ratio_input'},
+            {
+                'metric_key': 'my_ratio',
+                'metric_label': 'My Custom Ratio',
+                'metric_group': 'ratio',
+                'formula_expr': 'active_circulante / datorii_termen_scurt',
+                'display_format': 'ratio',
+                'interpretation': 'Should be > 1',
+                'threshold_good': 2.0,
+                'threshold_warning': 1.0,
+            },
+        ]
+        metrics = calculate_metrics_from_config(bilant_values, metric_configs)
+        # Should use dynamic ratio, not fallback STANDARD_RATIOS
+        assert 'my_ratio' in metrics['ratios']
+        ratio = metrics['ratios']['my_ratio']
+        assert isinstance(ratio, dict)
+        assert ratio['value'] == 1.6  # 40000 / 25000
+        assert ratio['label'] == 'My Custom Ratio'
+        assert ratio['interpretation'] == 'Should be > 1'
+        # Fallback ratios should NOT be present
+        assert 'lichiditate_curenta' not in metrics['ratios']
+
+    def test_derived_configs(self):
+        """Derived metrics use formula_expr over other metric_keys."""
+        bilant_values = {'25': 60000, '42': 40000}
+        metric_configs = [
+            {'metric_key': 'active_imobilizate', 'metric_label': 'AI', 'nr_rd': '25', 'metric_group': 'summary'},
+            {'metric_key': 'active_circulante', 'metric_label': 'AC', 'nr_rd': '42', 'metric_group': 'summary'},
+            {
+                'metric_key': 'total_active',
+                'metric_label': 'Total Active',
+                'metric_group': 'derived',
+                'formula_expr': 'active_imobilizate + active_circulante',
+                'display_format': 'currency',
+            },
+        ]
+        metrics = calculate_metrics_from_config(bilant_values, metric_configs)
+        assert metrics['summary']['total_active'] == 100000
+        assert metrics['summary']['active_imobilizate'] == 60000
+
+    def test_structure_configs(self):
+        """Structure configs populate assets/liabilities from config."""
+        bilant_values = {'25': 60000, '42': 40000, '101': 70000, '54': 30000}
+        metric_configs = [
+            {'metric_key': 'active_imobilizate', 'metric_label': 'AI', 'nr_rd': '25', 'metric_group': 'summary'},
+            {'metric_key': 'active_circulante', 'metric_label': 'AC', 'nr_rd': '42', 'metric_group': 'summary'},
+            {'metric_key': 'capitaluri_proprii', 'metric_label': 'CP', 'nr_rd': '101', 'metric_group': 'summary'},
+            {'metric_key': 'datorii_termen_scurt', 'metric_label': 'DTS', 'nr_rd': '54', 'metric_group': 'ratio_input'},
+            {'metric_key': 'str_ai', 'metric_label': 'Active Imobilizate', 'nr_rd': '25', 'metric_group': 'structure', 'structure_side': 'assets'},
+            {'metric_key': 'str_ac', 'metric_label': 'Active Circulante', 'nr_rd': '42', 'metric_group': 'structure', 'structure_side': 'assets'},
+            {'metric_key': 'str_cp', 'metric_label': 'Capitaluri Proprii', 'nr_rd': '101', 'metric_group': 'structure', 'structure_side': 'liabilities'},
+        ]
+        metrics = calculate_metrics_from_config(bilant_values, metric_configs)
+        assert len(metrics['structure']['assets']) == 2
+        assert len(metrics['structure']['liabilities']) == 1
+        assert metrics['structure']['assets'][0]['value'] == 60000
+        assert metrics['structure']['assets'][0]['percent'] == 60.0  # 60000/100000*100
+
+
+# ══════════════════════════════════════════════════════════════
+# eval_metric_formula
+# ══════════════════════════════════════════════════════════════
+
+class TestEvalMetricFormula:
+    def test_simple_division(self):
+        vals = {'a': 100, 'b': 50}
+        assert eval_metric_formula('a / b', vals) == 2.0
+
+    def test_compound_expression(self):
+        vals = {'x': 10, 'y': 5, 'z': 2}
+        assert eval_metric_formula('(x - y) / z', vals) == 2.5
+
+    def test_multiplication(self):
+        vals = {'a': 50, 'b': 100}
+        assert eval_metric_formula('a / b * 100', vals) == 50.0
+
+    def test_nested_parens(self):
+        vals = {'a': 10, 'b': 20, 'c': 30}
+        result = eval_metric_formula('a + (b * (c - a))', vals)
+        assert result == 410.0  # 10 + (20 * 20)
+
+    def test_missing_variable_returns_none(self):
+        vals = {'a': 100}
+        assert eval_metric_formula('a / missing', vals) is None
+
+    def test_division_by_zero_returns_none(self):
+        vals = {'a': 100, 'b': 0}
+        assert eval_metric_formula('a / b', vals) is None
+
+    def test_unary_minus(self):
+        vals = {'a': 5}
+        assert eval_metric_formula('-a', vals) == -5.0
+
+    def test_numeric_literals(self):
+        vals = {'a': 50}
+        assert eval_metric_formula('a * 100', vals) == 5000.0
+
+    def test_empty_returns_none(self):
+        assert eval_metric_formula('', {}) is None
+        assert eval_metric_formula('  ', {}) is None
+        assert eval_metric_formula(None, {}) is None
+
+    def test_invalid_chars_raise(self):
+        with pytest.raises(ValueError):
+            eval_metric_formula('a; b', {'a': 1, 'b': 2})
+
+    def test_unclosed_paren_raises(self):
+        with pytest.raises(ValueError):
+            eval_metric_formula('(a + b', {'a': 1, 'b': 2})
+
+    def test_real_ratio_formula(self):
+        """Test with actual Romanian accounting ratio formula."""
+        vals = {
+            'active_circulante': 40000,
+            'datorii_termen_scurt': 25000,
+            'stocuri': 15000,
+        }
+        # Lichiditate curenta
+        assert eval_metric_formula('active_circulante / datorii_termen_scurt', vals) == 1.6
+        # Lichiditate rapida
+        result = eval_metric_formula('(active_circulante - stocuri) / datorii_termen_scurt', vals)
+        assert result == 1.0

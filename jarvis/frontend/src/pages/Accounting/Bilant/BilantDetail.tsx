@@ -15,7 +15,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ResultsTable } from './components/ResultsTable'
 import { RatioCard } from './components/RatioCard'
 import { StructureChart } from './components/StructureChart'
-import type { BilantMetrics } from '@/types/bilant'
+import type { BilantMetrics, BilantMetricConfig } from '@/types/bilant'
 
 type DetailTab = 'results' | 'metrics' | 'info'
 
@@ -35,22 +35,24 @@ function fmtDate(s: string | null | undefined): string {
   return new Date(s).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-// Standard ratio thresholds for Romanian accounting
-const RATIO_THRESHOLDS: Record<string, { good: number; warning: number; suffix: string; desc: string }> = {
-  lichiditate_curenta: { good: 2.0, warning: 1.0, suffix: '', desc: 'Active Circulante / Datorii < 1 an' },
-  lichiditate_rapida: { good: 1.0, warning: 0.5, suffix: '', desc: '(Active Circulante - Stocuri) / Datorii < 1 an' },
-  lichiditate_imediata: { good: 0.5, warning: 0.2, suffix: '', desc: 'Disponibilitati / Datorii < 1 an' },
-  solvabilitate: { good: 50, warning: 30, suffix: '%', desc: 'Capitaluri Proprii / Total Active * 100' },
-  indatorare: { good: 30, warning: 60, suffix: '%', desc: 'Total Datorii / Total Active * 100' },
-  autonomie_financiara: { good: 50, warning: 30, suffix: '%', desc: 'Capitaluri Proprii / (Capitaluri + Datorii) * 100' },
+// Fallback ratio thresholds for old generations without metric_configs
+const FALLBACK_RATIO_THRESHOLDS: Record<string, { good: number; warning: number; suffix: string; label: string }> = {
+  lichiditate_curenta: { good: 2.0, warning: 1.0, suffix: '', label: 'Lichiditate Curenta' },
+  lichiditate_rapida: { good: 1.0, warning: 0.5, suffix: '', label: 'Lichiditate Rapida' },
+  lichiditate_imediata: { good: 0.5, warning: 0.2, suffix: '', label: 'Lichiditate Imediata' },
+  solvabilitate: { good: 50, warning: 30, suffix: '%', label: 'Solvabilitate' },
+  indatorare: { good: 30, warning: 60, suffix: '%', label: 'Indatorare' },
+  autonomie_financiara: { good: 50, warning: 30, suffix: '%', label: 'Autonomie Financiara' },
 }
 
-// For "indatorare", lower is better — flip thresholds
-function getThresholds(key: string) {
-  const t = RATIO_THRESHOLDS[key]
-  if (!t) return undefined
-  if (key === 'indatorare') return { good: t.warning, warning: t.good }
-  return { good: t.good, warning: t.warning }
+// Fallback summary labels
+const FALLBACK_SUMMARY_ORDER = ['total_active', 'active_imobilizate', 'active_circulante', 'capitaluri_proprii', 'total_datorii']
+const FALLBACK_SUMMARY_LABELS: Record<string, string> = {
+  total_active: 'Total Active',
+  active_imobilizate: 'Active Imobilizate',
+  active_circulante: 'Active Circulante',
+  capitaluri_proprii: 'Capitaluri Proprii',
+  total_datorii: 'Total Datorii',
 }
 
 export default function BilantDetail() {
@@ -71,6 +73,12 @@ export default function BilantDetail() {
   const gen = data?.generation
   const results = data?.results || []
   const metrics: BilantMetrics = data?.metrics || { summary: {}, ratios: {}, structure: { assets: [], liabilities: [] } }
+  const metricConfigs: BilantMetricConfig[] = data?.metric_configs || []
+
+  // Derive display data from configs or fallback
+  const summaryConfigs = metricConfigs.filter(c => c.metric_group === 'summary' || c.metric_group === 'derived')
+  const ratioConfigs = metricConfigs.filter(c => c.metric_group === 'ratio')
+  const hasDynamicConfigs = metricConfigs.length > 0
 
   const deleteMut = useMutation({
     mutationFn: () => bilantApi.deleteGeneration(Number(generationId)),
@@ -148,12 +156,25 @@ export default function BilantDetail() {
 
       {/* Summary Stats */}
       {gen.status === 'completed' && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <StatCard title="Total Active" value={fmtCurrency(metrics.summary.total_active)} />
-          <StatCard title="Active Imobilizate" value={fmtCurrency(metrics.summary.active_imobilizate)} />
-          <StatCard title="Active Circulante" value={fmtCurrency(metrics.summary.active_circulante)} />
-          <StatCard title="Capitaluri Proprii" value={fmtCurrency(metrics.summary.capitaluri_proprii)} />
-          <StatCard title="Total Datorii" value={fmtCurrency(metrics.summary.total_datorii)} />
+        <div className={`grid grid-cols-2 gap-3 sm:grid-cols-${Math.min(summaryConfigs.length || FALLBACK_SUMMARY_ORDER.length, 5)}`}>
+          {hasDynamicConfigs && summaryConfigs.length > 0
+            ? summaryConfigs
+                .sort((a, b) => a.sort_order - b.sort_order)
+                .map(cfg => (
+                  <StatCard
+                    key={cfg.metric_key}
+                    title={cfg.metric_label}
+                    value={fmtCurrency(metrics.summary[cfg.metric_key])}
+                  />
+                ))
+            : FALLBACK_SUMMARY_ORDER.map(key => (
+                <StatCard
+                  key={key}
+                  title={FALLBACK_SUMMARY_LABELS[key] || key}
+                  value={fmtCurrency(metrics.summary[key])}
+                />
+              ))
+          }
         </div>
       )}
 
@@ -191,24 +212,51 @@ export default function BilantDetail() {
           <div>
             <h3 className="mb-3 text-sm font-semibold">Financial Ratios</h3>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {Object.entries(RATIO_THRESHOLDS).map(([key, meta]) => {
-                const ratioVal = metrics.ratios[key]
-                const value = typeof ratioVal === 'number'
-                  ? ratioVal
-                  : ratioVal && typeof ratioVal === 'object' && 'value' in ratioVal
-                    ? ratioVal.value
-                    : null
-                return (
-                  <RatioCard
-                    key={key}
-                    label={meta.desc.split('/')[0].trim()}
-                    value={value}
-                    suffix={meta.suffix}
-                    thresholds={getThresholds(key)}
-                    description={meta.desc}
-                  />
-                )
-              })}
+              {hasDynamicConfigs && ratioConfigs.length > 0
+                ? ratioConfigs
+                    .sort((a, b) => a.sort_order - b.sort_order)
+                    .map(cfg => {
+                      const ratioVal = metrics.ratios[cfg.metric_key]
+                      const value = ratioVal && typeof ratioVal === 'object' && 'value' in ratioVal
+                        ? ratioVal.value
+                        : typeof ratioVal === 'number' ? ratioVal : null
+                      const suffix = cfg.display_format === 'percent' ? '%' : ''
+                      const thresholds = cfg.threshold_good != null && cfg.threshold_warning != null
+                        ? { good: cfg.threshold_good, warning: cfg.threshold_warning }
+                        : undefined
+                      return (
+                        <RatioCard
+                          key={cfg.metric_key}
+                          label={cfg.metric_label}
+                          value={value}
+                          suffix={suffix}
+                          thresholds={thresholds}
+                          description={cfg.interpretation || undefined}
+                        />
+                      )
+                    })
+                : Object.entries(FALLBACK_RATIO_THRESHOLDS).map(([key, meta]) => {
+                    const ratioVal = metrics.ratios[key]
+                    const value = typeof ratioVal === 'number'
+                      ? ratioVal
+                      : ratioVal && typeof ratioVal === 'object' && 'value' in ratioVal
+                        ? ratioVal.value
+                        : null
+                    const thresholds = key === 'indatorare'
+                      ? { good: meta.warning, warning: meta.good }
+                      : { good: meta.good, warning: meta.warning }
+                    return (
+                      <RatioCard
+                        key={key}
+                        label={meta.label}
+                        value={value}
+                        suffix={meta.suffix}
+                        thresholds={thresholds}
+                        description={undefined}
+                      />
+                    )
+                  })
+              }
             </div>
           </div>
 

@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Scale, Plus, Upload, FileSpreadsheet, Trash2, Copy, Eye, Download, Pencil } from 'lucide-react'
+import { Scale, Plus, Upload, FileSpreadsheet, Trash2, Copy, Eye, Download, Pencil, ChevronRight, ChevronDown, Search, BookOpen } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { bilantApi } from '@/api/bilant'
@@ -19,9 +19,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { UploadDialog } from './UploadDialog'
-import type { BilantTemplate, BilantGeneration } from '@/types/bilant'
+import type { BilantTemplate, BilantGeneration, ChartOfAccount } from '@/types/bilant'
 
-type MainTab = 'generations' | 'templates'
+type MainTab = 'generations' | 'templates' | 'plan-conturi'
 
 const statusColors: Record<string, string> = {
   completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
@@ -39,6 +39,12 @@ function fmtDate(s: string | null | undefined): string {
   return new Date(s).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
+const CLASS_NAMES: [number, string][] = [
+  [1, 'Capitaluri'], [2, 'Imobilizari'], [3, 'Stocuri si productie'],
+  [4, 'Terti'], [5, 'Trezorerie'], [6, 'Cheltuieli'],
+  [7, 'Venituri'], [8, 'Conturi speciale'], [9, 'Conturi de gestiune'],
+]
+
 export default function Bilant() {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -49,6 +55,12 @@ export default function Bilant() {
   const [newTemplateName, setNewTemplateName] = useState('')
   const [newTemplateCompany, setNewTemplateCompany] = useState<string>('')
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'generation' | 'template'; id: number; name: string } | null>(null)
+  const [coaSearch, setCoaSearch] = useState('')
+  const [coaClassFilter, setCoaClassFilter] = useState<string>('')
+  const [expandedClasses, setExpandedClasses] = useState<Set<number>>(new Set([1, 2, 3, 4, 5, 6, 7]))
+  const [showAddAccount, setShowAddAccount] = useState(false)
+  const [editingAccount, setEditingAccount] = useState<ChartOfAccount | null>(null)
+  const [newAccount, setNewAccount] = useState({ code: '', name: '', account_class: '', account_type: 'synthetic', parent_code: '' })
 
   // ── Queries ──
 
@@ -70,6 +82,32 @@ export default function Bilant() {
     queryFn: () => bilantApi.listTemplates(companyFilter ? Number(companyFilter) : undefined),
   })
   const templates = templatesData?.templates || []
+
+  const { data: coaData } = useQuery({
+    queryKey: ['chart-of-accounts', companyFilter, coaClassFilter],
+    queryFn: () => bilantApi.listAccounts({
+      company_id: companyFilter ? Number(companyFilter) : undefined,
+      account_class: coaClassFilter ? Number(coaClassFilter) : undefined,
+    }),
+    enabled: tab === 'plan-conturi',
+  })
+  const allAccounts = coaData?.accounts || []
+
+  const filteredAccounts = useMemo(() => {
+    if (!coaSearch) return allAccounts
+    const q = coaSearch.toLowerCase()
+    return allAccounts.filter(a => a.code.startsWith(coaSearch) || a.name.toLowerCase().includes(q))
+  }, [allAccounts, coaSearch])
+
+  const accountsByClass = useMemo(() => {
+    const map = new Map<number, ChartOfAccount[]>()
+    for (const a of filteredAccounts) {
+      const list = map.get(a.account_class) || []
+      list.push(a)
+      map.set(a.account_class, list)
+    }
+    return map
+  }, [filteredAccounts])
 
   // ── Mutations ──
 
@@ -99,6 +137,22 @@ export default function Bilant() {
     },
   })
 
+  const createAccountMut = useMutation({
+    mutationFn: (data: { code: string; name: string; account_class: number; account_type?: string; parent_code?: string }) =>
+      bilantApi.createAccount(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['chart-of-accounts'] }); toast.success('Account added'); setShowAddAccount(false); setNewAccount({ code: '', name: '', account_class: '', account_type: 'synthetic', parent_code: '' }) },
+  })
+
+  const updateAccountMut = useMutation({
+    mutationFn: ({ id, ...data }: Partial<ChartOfAccount> & { id: number }) => bilantApi.updateAccount(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['chart-of-accounts'] }); toast.success('Account updated'); setEditingAccount(null) },
+  })
+
+  const deleteAccountMut = useMutation({
+    mutationFn: (id: number) => bilantApi.deleteAccount(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['chart-of-accounts'] }); toast.success('Account deleted') },
+  })
+
   const handleDelete = () => {
     if (!deleteTarget) return
     if (deleteTarget.type === 'generation') deleteGenMut.mutate(deleteTarget.id)
@@ -114,6 +168,7 @@ export default function Bilant() {
   const tabs: { key: MainTab; label: string }[] = [
     { key: 'generations', label: 'Generations' },
     { key: 'templates', label: 'Templates' },
+    { key: 'plan-conturi', label: 'Plan de Conturi' },
   ]
 
   return (
@@ -271,6 +326,230 @@ export default function Bilant() {
           )}
         </div>
       )}
+
+      {/* Plan de Conturi Tab */}
+      {tab === 'plan-conturi' && (
+        <div className="space-y-4">
+          {/* Search + Filter bar */}
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                value={coaSearch}
+                onChange={e => setCoaSearch(e.target.value)}
+                placeholder="Search by code or name..."
+                className="h-9 pl-8 text-sm"
+              />
+            </div>
+            <Select value={coaClassFilter} onValueChange={setCoaClassFilter}>
+              <SelectTrigger className="h-9 w-[180px] text-xs">
+                <SelectValue placeholder="All classes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All classes</SelectItem>
+                {CLASS_NAMES.map(([cls, name]) => (
+                  <SelectItem key={cls} value={String(cls)}>{cls} — {name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button size="sm" onClick={() => setShowAddAccount(true)}>
+              <Plus className="mr-1.5 h-4 w-4" />
+              Add Account
+            </Button>
+          </div>
+
+          {/* Tree view by class */}
+          {filteredAccounts.length === 0 ? (
+            <EmptyState
+              icon={<BookOpen className="h-12 w-12" />}
+              title="No accounts found"
+              description={coaSearch ? 'Try a different search term' : 'Seed data will load on first run'}
+            />
+          ) : (
+            <div className="space-y-1">
+              {Array.from(accountsByClass.entries())
+                .sort(([a], [b]) => a - b)
+                .map(([cls, accounts]) => {
+                  const isExpanded = expandedClasses.has(cls)
+                  const className = CLASS_NAMES.find(([c]) => c === cls)?.[1] || ''
+                  const classAccounts = accounts.filter(a => a.account_type === 'class')
+                  const groups = accounts.filter(a => a.account_type === 'group')
+                  const synthetics = accounts.filter(a => a.account_type === 'synthetic' || a.account_type === 'analytical')
+
+                  return (
+                    <div key={cls} className="rounded-md border">
+                      {/* Class header */}
+                      <button
+                        onClick={() => {
+                          const next = new Set(expandedClasses)
+                          if (isExpanded) next.delete(cls); else next.add(cls)
+                          setExpandedClasses(next)
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-muted/50 transition-colors"
+                      >
+                        {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        <span className="font-mono text-primary">{cls}</span>
+                        <span>{classAccounts[0]?.name || className}</span>
+                        <Badge variant="secondary" className="ml-auto text-[10px]">{accounts.length} accounts</Badge>
+                      </button>
+
+                      {/* Expanded content */}
+                      {isExpanded && (
+                        <div className="border-t">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-24">Code</TableHead>
+                                <TableHead>Name</TableHead>
+                                <TableHead className="w-24">Type</TableHead>
+                                <TableHead className="w-24">Parent</TableHead>
+                                <TableHead className="w-20">Actions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {[...groups, ...synthetics].map(account => (
+                                <TableRow key={account.id}>
+                                  <TableCell className="font-mono text-xs font-medium">{account.code}</TableCell>
+                                  <TableCell>
+                                    <span
+                                      className={`text-xs ${account.account_type === 'group' ? 'font-semibold' : ''}`}
+                                      style={{ paddingLeft: account.account_type === 'synthetic' ? 16 : account.account_type === 'analytical' ? 32 : 0 }}
+                                    >
+                                      {account.name}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline" className="text-[10px]">{account.account_type}</Badge>
+                                  </TableCell>
+                                  <TableCell className="font-mono text-xs text-muted-foreground">{account.parent_code || '-'}</TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center gap-1">
+                                      <Button
+                                        variant="ghost" size="icon" className="h-6 w-6"
+                                        onClick={() => setEditingAccount(account)}
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost" size="icon" className="h-6 w-6 text-destructive"
+                                        onClick={() => deleteAccountMut.mutate(account.id)}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Add Account Dialog */}
+      <Dialog open={showAddAccount || !!editingAccount} onOpenChange={(v) => { if (!v) { setShowAddAccount(false); setEditingAccount(null) } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingAccount ? 'Edit Account' : 'Add Account'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Code *</Label>
+                <Input
+                  value={editingAccount ? (editingAccount.code) : newAccount.code}
+                  onChange={e => editingAccount ? setEditingAccount({ ...editingAccount, code: e.target.value }) : setNewAccount({ ...newAccount, code: e.target.value })}
+                  placeholder="e.g. 411"
+                  className="font-mono"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Class *</Label>
+                <Select
+                  value={editingAccount ? String(editingAccount.account_class) : newAccount.account_class}
+                  onValueChange={v => editingAccount ? setEditingAccount({ ...editingAccount, account_class: Number(v) }) : setNewAccount({ ...newAccount, account_class: v })}
+                >
+                  <SelectTrigger className="text-xs"><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectContent>
+                    {CLASS_NAMES.map(([cls, name]) => (
+                      <SelectItem key={cls} value={String(cls)}>{cls} — {name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Name *</Label>
+              <Input
+                value={editingAccount ? editingAccount.name : newAccount.name}
+                onChange={e => editingAccount ? setEditingAccount({ ...editingAccount, name: e.target.value }) : setNewAccount({ ...newAccount, name: e.target.value })}
+                placeholder="Account name"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Type</Label>
+                <Select
+                  value={editingAccount ? editingAccount.account_type : newAccount.account_type}
+                  onValueChange={v => editingAccount ? setEditingAccount({ ...editingAccount, account_type: v as ChartOfAccount['account_type'] }) : setNewAccount({ ...newAccount, account_type: v })}
+                >
+                  <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="class">Class</SelectItem>
+                    <SelectItem value="group">Group</SelectItem>
+                    <SelectItem value="synthetic">Synthetic</SelectItem>
+                    <SelectItem value="analytical">Analytical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Parent Code</Label>
+                <Input
+                  value={editingAccount ? (editingAccount.parent_code || '') : newAccount.parent_code}
+                  onChange={e => editingAccount ? setEditingAccount({ ...editingAccount, parent_code: e.target.value || null }) : setNewAccount({ ...newAccount, parent_code: e.target.value })}
+                  placeholder="e.g. 41"
+                  className="font-mono"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => { setShowAddAccount(false); setEditingAccount(null) }}>Cancel</Button>
+              <Button
+                size="sm"
+                disabled={editingAccount ? (!editingAccount.code || !editingAccount.name) : (!newAccount.code || !newAccount.name || !newAccount.account_class)}
+                onClick={() => {
+                  if (editingAccount) {
+                    updateAccountMut.mutate({
+                      id: editingAccount.id,
+                      code: editingAccount.code,
+                      name: editingAccount.name,
+                      account_class: editingAccount.account_class,
+                      account_type: editingAccount.account_type,
+                      parent_code: editingAccount.parent_code,
+                    })
+                  } else {
+                    createAccountMut.mutate({
+                      code: newAccount.code.trim(),
+                      name: newAccount.name.trim(),
+                      account_class: Number(newAccount.account_class),
+                      account_type: newAccount.account_type,
+                      parent_code: newAccount.parent_code || undefined,
+                    })
+                  }
+                }}
+              >
+                {editingAccount ? 'Save' : 'Add'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Upload Dialog */}
       <UploadDialog

@@ -5,13 +5,14 @@ from flask import jsonify, request, send_file
 from flask_login import login_required, current_user
 
 from . import bilant_bp
-from .repositories import BilantTemplateRepository, BilantGenerationRepository
+from .repositories import BilantTemplateRepository, BilantGenerationRepository, ChartOfAccountsRepository
 from .services.bilant_service import BilantService
 
 logger = logging.getLogger('jarvis.bilant.routes')
 
 _template_repo = BilantTemplateRepository()
 _generation_repo = BilantGenerationRepository()
+_coa_repo = ChartOfAccountsRepository()
 _service = BilantService()
 
 
@@ -169,13 +170,25 @@ def api_set_metric_config(template_id):
     metric_key = data.get('metric_key')
     if not metric_key:
         return jsonify({'success': False, 'error': 'metric_key required'}), 400
+    group = data.get('metric_group', 'summary')
+    # Validate: ratios/derived need formula_expr, structure needs structure_side
+    if group in ('ratio', 'derived') and not data.get('formula_expr'):
+        return jsonify({'success': False, 'error': f'{group} metrics require formula_expr'}), 400
+    if group == 'structure' and not data.get('structure_side'):
+        return jsonify({'success': False, 'error': 'structure metrics require structure_side'}), 400
     config_id = _template_repo.set_metric_config(
         template_id=template_id,
         metric_key=metric_key,
         metric_label=data.get('metric_label', metric_key),
-        nr_rd=data.get('nr_rd', ''),
-        metric_group=data.get('metric_group', 'summary'),
+        nr_rd=data.get('nr_rd'),
+        metric_group=group,
         sort_order=data.get('sort_order', 0),
+        formula_expr=data.get('formula_expr'),
+        display_format=data.get('display_format', 'currency'),
+        interpretation=data.get('interpretation'),
+        threshold_good=data.get('threshold_good'),
+        threshold_warning=data.get('threshold_warning'),
+        structure_side=data.get('structure_side'),
     )
     return jsonify({'success': True, 'id': config_id})
 
@@ -283,3 +296,64 @@ def api_compare_generations():
     if not result.success:
         return jsonify({'success': False, 'error': result.error}), result.status_code
     return jsonify(result.data)
+
+
+# ════════════════════════════════════════════════════════════════
+# Chart of Accounts (Plan de Conturi)
+# ════════════════════════════════════════════════════════════════
+
+@bilant_bp.route('/api/chart-of-accounts', methods=['GET'])
+@login_required
+def api_list_accounts():
+    company_id = request.args.get('company_id', type=int)
+    account_class = request.args.get('account_class', type=int)
+    account_type = request.args.get('account_type')
+    search = request.args.get('search')
+    accounts = _coa_repo.list_all(
+        company_id=company_id, account_class=account_class,
+        account_type=account_type, search=search)
+    return jsonify({'accounts': accounts})
+
+
+@bilant_bp.route('/api/chart-of-accounts', methods=['POST'])
+@login_required
+def api_create_account():
+    data = request.get_json(silent=True) or {}
+    code = data.get('code', '').strip()
+    name = data.get('name', '').strip()
+    account_class = data.get('account_class')
+    if not code or not name or not account_class:
+        return jsonify({'success': False, 'error': 'code, name, account_class required'}), 400
+    account_id = _coa_repo.create(
+        code=code, name=name, account_class=account_class,
+        account_type=data.get('account_type', 'synthetic'),
+        parent_code=data.get('parent_code'),
+        company_id=data.get('company_id'))
+    return jsonify({'success': True, 'id': account_id})
+
+
+@bilant_bp.route('/api/chart-of-accounts/<int:account_id>', methods=['PUT'])
+@login_required
+def api_update_account(account_id):
+    data = request.get_json(silent=True) or {}
+    _coa_repo.update(account_id, **{k: v for k, v in data.items()
+                     if k in ('code', 'name', 'account_class', 'account_type', 'parent_code', 'is_active')})
+    return jsonify({'success': True})
+
+
+@bilant_bp.route('/api/chart-of-accounts/<int:account_id>', methods=['DELETE'])
+@login_required
+def api_delete_account(account_id):
+    _coa_repo.delete(account_id)
+    return jsonify({'success': True})
+
+
+@bilant_bp.route('/api/chart-of-accounts/autocomplete', methods=['GET'])
+@login_required
+def api_autocomplete_accounts():
+    prefix = request.args.get('prefix', '')
+    company_id = request.args.get('company_id', type=int)
+    if len(prefix) < 1:
+        return jsonify({'accounts': []})
+    results = _coa_repo.search_for_autocomplete(prefix, company_id=company_id)
+    return jsonify({'accounts': results})

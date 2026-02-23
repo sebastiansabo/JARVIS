@@ -20,37 +20,37 @@ COL_BAL_SFC = 2      # Sold Final Credit
 STANDARD_RATIOS = {
     'lichiditate_curenta': {
         'label': 'Lichiditate Curenta',
-        'formula': lambda m: m['active_circulante'] / m['datorii_termen_scurt'] if m.get('datorii_termen_scurt', 0) > 0 else None,
+        'formula': lambda m: m.get('active_circulante', 0) / m['datorii_termen_scurt'] if m.get('datorii_termen_scurt', 0) > 0 else None,
         'interpretation': 'Ideal > 1',
         'format': 'ratio',
     },
     'lichiditate_rapida': {
         'label': 'Lichiditate Rapida',
-        'formula': lambda m: (m['active_circulante'] - m.get('stocuri', 0)) / m['datorii_termen_scurt'] if m.get('datorii_termen_scurt', 0) > 0 else None,
+        'formula': lambda m: (m.get('active_circulante', 0) - m.get('stocuri', 0)) / m['datorii_termen_scurt'] if m.get('datorii_termen_scurt', 0) > 0 else None,
         'interpretation': 'Ideal > 0.8',
         'format': 'ratio',
     },
     'lichiditate_imediata': {
         'label': 'Lichiditate Imediata',
-        'formula': lambda m: m['disponibilitati'] / m['datorii_termen_scurt'] if m.get('datorii_termen_scurt', 0) > 0 else None,
+        'formula': lambda m: m.get('disponibilitati', 0) / m['datorii_termen_scurt'] if m.get('datorii_termen_scurt', 0) > 0 else None,
         'interpretation': 'Ideal > 0.2',
         'format': 'ratio',
     },
     'solvabilitate': {
         'label': 'Solvabilitate (%)',
-        'formula': lambda m: m['capitaluri_proprii'] / m['total_active'] * 100 if m.get('total_active', 0) > 0 else None,
+        'formula': lambda m: m.get('capitaluri_proprii', 0) / m['total_active'] * 100 if m.get('total_active', 0) > 0 else None,
         'interpretation': 'Ideal > 50%',
         'format': 'percent',
     },
     'indatorare': {
         'label': 'Indatorare (%)',
-        'formula': lambda m: m['total_datorii'] / m['total_active'] * 100 if m.get('total_active', 0) > 0 else None,
+        'formula': lambda m: m.get('total_datorii', 0) / m['total_active'] * 100 if m.get('total_active', 0) > 0 else None,
         'interpretation': 'Ideal < 50%',
         'format': 'percent',
     },
     'autonomie_financiara': {
         'label': 'Autonomie Financiara (%)',
-        'formula': lambda m: m['capitaluri_proprii'] / (m['capitaluri_proprii'] + m['total_datorii']) * 100 if (m.get('capitaluri_proprii', 0) + m.get('total_datorii', 0)) > 0 else None,
+        'formula': lambda m: m.get('capitaluri_proprii', 0) / (m.get('capitaluri_proprii', 0) + m.get('total_datorii', 0)) * 100 if (m.get('capitaluri_proprii', 0) + m.get('total_datorii', 0)) > 0 else None,
         'interpretation': 'Ideal > 50%',
         'format': 'percent',
     },
@@ -316,68 +316,280 @@ def process_bilant_from_template(df_balanta, template_rows):
     return bilant_values, results
 
 
+# ── Safe metric formula evaluator ──
+
+_METRIC_TOKEN_RE = re.compile(r'''
+    ([a-z_][a-z0-9_]*)   |  # identifier
+    (\d+(?:\.\d+)?)       |  # number
+    ([+\-*/])             |  # operator
+    ([()])                |  # parens
+    (\s+)                    # whitespace (skip)
+''', re.VERBOSE)
+
+
+def eval_metric_formula(expr, metric_values):
+    """Safely evaluate a metric formula like 'active_circulante / datorii_termen_scurt'.
+
+    Uses recursive descent parsing — no eval().
+    Returns float or None (on division by zero or missing variables).
+    Raises ValueError on invalid tokens.
+    """
+    if not expr or not expr.strip():
+        return None
+
+    # Tokenize
+    tokens = []
+    pos = 0
+    while pos < len(expr):
+        m = _METRIC_TOKEN_RE.match(expr, pos)
+        if not m:
+            raise ValueError(f"Invalid character in formula at position {pos}: '{expr[pos]}'")
+        if m.group(5):  # whitespace — skip
+            pos = m.end()
+            continue
+        if m.group(1):
+            tokens.append(('IDENT', m.group(1)))
+        elif m.group(2):
+            tokens.append(('NUM', float(m.group(2))))
+        elif m.group(3):
+            tokens.append(('OP', m.group(3)))
+        elif m.group(4):
+            tokens.append(('PAREN', m.group(4)))
+        pos = m.end()
+
+    # Recursive descent parser
+    idx = [0]  # mutable index
+
+    def peek():
+        return tokens[idx[0]] if idx[0] < len(tokens) else None
+
+    def advance():
+        tok = tokens[idx[0]]
+        idx[0] += 1
+        return tok
+
+    def parse_expr():
+        """expr = term (('+' | '-') term)*"""
+        left = parse_term()
+        if left is None:
+            return None
+        while True:
+            tok = peek()
+            if tok and tok[0] == 'OP' and tok[1] in ('+', '-'):
+                advance()
+                right = parse_term()
+                if right is None:
+                    return None
+                left = left + right if tok[1] == '+' else left - right
+            else:
+                break
+        return left
+
+    def parse_term():
+        """term = unary (('*' | '/') unary)*"""
+        left = parse_unary()
+        if left is None:
+            return None
+        while True:
+            tok = peek()
+            if tok and tok[0] == 'OP' and tok[1] in ('*', '/'):
+                advance()
+                right = parse_unary()
+                if right is None:
+                    return None
+                if tok[1] == '*':
+                    left = left * right
+                else:
+                    if right == 0:
+                        return None  # division by zero
+                    left = left / right
+            else:
+                break
+        return left
+
+    def parse_unary():
+        """unary = '-' unary | atom"""
+        tok = peek()
+        if tok and tok[0] == 'OP' and tok[1] == '-':
+            advance()
+            val = parse_unary()
+            return -val if val is not None else None
+        return parse_atom()
+
+    def parse_atom():
+        """atom = NUMBER | IDENTIFIER | '(' expr ')'"""
+        tok = peek()
+        if not tok:
+            raise ValueError("Unexpected end of formula")
+        if tok[0] == 'NUM':
+            advance()
+            return tok[1]
+        if tok[0] == 'IDENT':
+            advance()
+            val = metric_values.get(tok[1])
+            if val is None:
+                return None  # missing variable
+            return float(val)
+        if tok[0] == 'PAREN' and tok[1] == '(':
+            advance()
+            val = parse_expr()
+            closing = peek()
+            if not closing or closing[0] != 'PAREN' or closing[1] != ')':
+                raise ValueError("Missing closing parenthesis")
+            advance()
+            return val
+        raise ValueError(f"Unexpected token: {tok}")
+
+    result = parse_expr()
+    if idx[0] < len(tokens):
+        raise ValueError(f"Unexpected token after expression: {tokens[idx[0]]}")
+    return result
+
+
 # ── Metric calculation (config-driven) ──
 
 def calculate_metrics_from_config(bilant_values, metric_configs):
     """Calculate BI metrics using configurable row→metric mappings.
 
-    Args:
-        bilant_values: dict mapping nr_rd -> value
-        metric_configs: list of dicts with keys: metric_key, metric_label, nr_rd, metric_group
+    Supports 5 metric groups:
+    - summary: maps nr_rd → value (stat cards)
+    - ratio_input: maps nr_rd → value (hidden, feeds ratios)
+    - ratio: computed via formula_expr (ratio cards)
+    - structure: maps nr_rd → value with structure_side (chart breakdown)
+    - derived: computed via formula_expr (stat cards)
 
-    Returns:
-        dict with keys: summary, ratios, structure
+    Falls back to STANDARD_RATIOS if no ratio configs exist (backward compat).
     """
-    # Build metric_key -> value mapping from config
+    # Pass 1: collect values from nr_rd-mapped configs (summary, ratio_input, structure)
     metric_values = {}
+    has_ratio_configs = False
+    has_structure_configs = False
+
     for cfg in metric_configs:
         key = cfg['metric_key']
-        nr_rd = str(cfg['nr_rd']).strip()
-        metric_values[key] = bilant_values.get(nr_rd, 0)
+        group = cfg.get('metric_group', 'summary')
+        nr_rd = (cfg.get('nr_rd') or '')
+        if isinstance(nr_rd, (int, float)):
+            nr_rd = str(int(nr_rd))
+        nr_rd = str(nr_rd).strip()
+        formula_expr = (cfg.get('formula_expr') or '').strip()
 
-    # Compute derived values
-    total_active = metric_values.get('active_imobilizate', 0) + metric_values.get('active_circulante', 0)
-    metric_values['total_active'] = total_active
-    total_datorii = metric_values.get('datorii_termen_scurt', 0) + metric_values.get('datorii_termen_lung', 0)
-    metric_values['total_datorii'] = total_datorii
+        if group in ('summary', 'ratio_input'):
+            if nr_rd:
+                metric_values[key] = bilant_values.get(nr_rd, 0)
+        elif group == 'structure':
+            has_structure_configs = True
+            if nr_rd:
+                metric_values[key] = bilant_values.get(nr_rd, 0)
+        elif group in ('ratio', 'derived'):
+            if group == 'ratio':
+                has_ratio_configs = True
 
-    # Summary
-    summary = {
-        'total_active': total_active,
-        'active_imobilizate': metric_values.get('active_imobilizate', 0),
-        'active_circulante': metric_values.get('active_circulante', 0),
-        'capitaluri_proprii': metric_values.get('capitaluri_proprii', 0),
-        'total_datorii': total_datorii,
-    }
+    # Auto-derive total_active / total_datorii if not explicitly set
+    if 'total_active' not in metric_values:
+        metric_values['total_active'] = (
+            metric_values.get('active_imobilizate', 0) + metric_values.get('active_circulante', 0)
+        )
+    if 'total_datorii' not in metric_values:
+        metric_values['total_datorii'] = (
+            metric_values.get('datorii_termen_scurt', 0) + metric_values.get('datorii_termen_lung', 0)
+        )
 
-    # Ratios
+    # Pass 2: evaluate formula_expr for derived/ratio configs
+    for cfg in metric_configs:
+        key = cfg['metric_key']
+        group = cfg.get('metric_group', 'summary')
+        formula_expr = (cfg.get('formula_expr') or '').strip()
+
+        if group == 'derived' and formula_expr:
+            try:
+                val = eval_metric_formula(formula_expr, metric_values)
+                if val is not None:
+                    metric_values[key] = val
+            except ValueError:
+                metric_values[key] = 0
+
+    # Build summary from summary + derived configs
+    summary = {}
+    for cfg in metric_configs:
+        group = cfg.get('metric_group', 'summary')
+        if group in ('summary', 'derived'):
+            key = cfg['metric_key']
+            summary[key] = metric_values.get(key, 0)
+
+    # Always include auto-derived totals in summary if not already there
+    if 'total_active' not in summary and metric_values.get('total_active', 0) != 0:
+        summary['total_active'] = metric_values['total_active']
+    if 'total_datorii' not in summary and metric_values.get('total_datorii', 0) != 0:
+        summary['total_datorii'] = metric_values['total_datorii']
+
+    # Build ratios
     ratios = {}
-    for key, spec in STANDARD_RATIOS.items():
-        val = spec['formula'](metric_values)
-        if val is not None:
-            val = round(val, 2 if spec['format'] == 'ratio' else 1)
-        ratios[key] = val
+    if has_ratio_configs:
+        for cfg in metric_configs:
+            if cfg.get('metric_group') != 'ratio':
+                continue
+            key = cfg['metric_key']
+            formula_expr = (cfg.get('formula_expr') or '').strip()
+            display_format = cfg.get('display_format', 'ratio')
+            if not formula_expr:
+                continue
+            try:
+                val = eval_metric_formula(formula_expr, metric_values)
+                if val is not None:
+                    val = round(val, 2 if display_format == 'ratio' else 1)
+                ratios[key] = {
+                    'value': val,
+                    'label': cfg.get('metric_label', key),
+                    'interpretation': cfg.get('interpretation'),
+                }
+            except ValueError:
+                ratios[key] = {'value': None, 'label': cfg.get('metric_label', key), 'interpretation': None}
+    else:
+        # Fallback: use hardcoded STANDARD_RATIOS for old templates
+        for key, spec in STANDARD_RATIOS.items():
+            val = spec['formula'](metric_values)
+            if val is not None:
+                val = round(val, 2 if spec['format'] == 'ratio' else 1)
+            ratios[key] = val
 
-    # Structure
+    # Build structure
     structure = {'assets': [], 'liabilities': []}
-    if total_active > 0:
-        for key, label in [('active_imobilizate', 'Active Imobilizate'), ('stocuri', 'Stocuri'),
-                           ('creante', 'Creante'), ('disponibilitati', 'Disponibilitati')]:
+    if has_structure_configs:
+        total_active = metric_values.get('total_active', 0)
+        total_pasive = metric_values.get('capitaluri_proprii', 0) + metric_values.get('total_datorii', 0)
+        for cfg in metric_configs:
+            if cfg.get('metric_group') != 'structure':
+                continue
+            key = cfg['metric_key']
+            side = cfg.get('structure_side', 'assets')
             v = metric_values.get(key, 0)
-            structure['assets'].append({
-                'name': label, 'value': v,
-                'percent': round(v / total_active * 100, 1),
+            denom = total_active if side == 'assets' else total_pasive
+            structure[side].append({
+                'name': cfg.get('metric_label', key),
+                'value': v,
+                'percent': round(v / denom * 100, 1) if denom > 0 else 0,
             })
-
-    total_pasive = metric_values.get('capitaluri_proprii', 0) + total_datorii
-    if total_pasive > 0:
-        for key, label in [('capitaluri_proprii', 'Capitaluri Proprii'),
-                           ('datorii_termen_scurt', 'Datorii < 1 an'),
-                           ('datorii_termen_lung', 'Datorii > 1 an')]:
-            v = metric_values.get(key, 0)
-            structure['liabilities'].append({
-                'name': label, 'value': v,
-                'percent': round(v / total_pasive * 100, 1),
-            })
+    else:
+        # Fallback: hardcoded structure for old templates
+        total_active = metric_values.get('total_active', 0)
+        if total_active > 0:
+            for key, label in [('active_imobilizate', 'Active Imobilizate'), ('stocuri', 'Stocuri'),
+                               ('creante', 'Creante'), ('disponibilitati', 'Disponibilitati')]:
+                v = metric_values.get(key, 0)
+                structure['assets'].append({
+                    'name': label, 'value': v,
+                    'percent': round(v / total_active * 100, 1),
+                })
+        total_pasive = metric_values.get('capitaluri_proprii', 0) + metric_values.get('total_datorii', 0)
+        if total_pasive > 0:
+            for key, label in [('capitaluri_proprii', 'Capitaluri Proprii'),
+                               ('datorii_termen_scurt', 'Datorii < 1 an'),
+                               ('datorii_termen_lung', 'Datorii > 1 an')]:
+                v = metric_values.get(key, 0)
+                structure['liabilities'].append({
+                    'name': label, 'value': v,
+                    'percent': round(v / total_pasive * 100, 1),
+                })
 
     return {'summary': summary, 'ratios': ratios, 'structure': structure}
