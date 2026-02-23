@@ -177,8 +177,8 @@ def sum_accounts_by_prefix(df_balanta, prefix, use_net=False):
         if acct.endswith('.0'):
             acct = acct[:-2]
         if acct.startswith(prefix):
-            sfd = pd.to_numeric(row.iloc[COL_BAL_SFD], errors='coerce') or 0
-            sfc = pd.to_numeric(row.iloc[COL_BAL_SFC], errors='coerce') or 0
+            sfd = float(pd.to_numeric(row.iloc[COL_BAL_SFD], errors='coerce') or 0)
+            sfc = float(pd.to_numeric(row.iloc[COL_BAL_SFC], errors='coerce') or 0)
             if use_net:
                 val = sfd - sfc
             else:
