@@ -6,7 +6,9 @@ from typing import Any, Optional
 
 from ..repositories import BilantTemplateRepository, BilantGenerationRepository
 from ..formula_engine import process_bilant_from_template, calculate_metrics_from_config
-from ..excel_handler import read_balanta_from_excel, read_bilant_sheet_for_import, generate_output_excel
+from ..excel_handler import read_balanta_from_excel, read_bilant_sheet_for_import, generate_output_excel, generate_anaf_excel
+from ..pdf_handler import generate_bilant_pdf
+from ..anaf_parser import parse_anaf_pdf, generate_row_mapping, fill_anaf_pdf
 
 logger = logging.getLogger('jarvis.bilant.service')
 
@@ -175,3 +177,109 @@ class BilantService:
             'generations': generations,
             'metrics': metrics,
         })
+
+    def import_from_anaf_pdf(self, pdf_bytes, name, company_id, user_id):
+        """Parse ANAF PDF → create template with rows + metric configs."""
+        try:
+            parsed = parse_anaf_pdf(pdf_bytes)
+            rows = parsed['rows']
+            if not rows:
+                return ServiceResult(success=False, error='No rows found in PDF', status_code=400)
+
+            form_type = parsed['form_type']
+            template_id = self.template_repo.create(
+                name=name,
+                created_by=user_id,
+                company_id=company_id,
+                description=f'Imported from ANAF {form_type} PDF ({len(rows)} rows)',
+            )
+            self.template_repo.bulk_add_rows(template_id, rows)
+
+            # Add standard metric configs for the new template
+            from ..fixtures import get_default_metric_configs
+            for cfg in get_default_metric_configs():
+                self.template_repo.set_metric_config(template_id=template_id, **cfg)
+
+            logger.info(f'ANAF template {template_id} imported: {len(rows)} rows from {form_type}')
+            return ServiceResult(success=True, data={
+                'template_id': template_id,
+                'row_count': len(rows),
+                'form_type': form_type,
+            })
+        except ValueError as e:
+            return ServiceResult(success=False, error=str(e), status_code=400)
+        except Exception as e:
+            logger.exception(f'ANAF PDF import failed: {e}')
+            return ServiceResult(success=False, error=str(e), status_code=500)
+
+    def _get_prior_results(self, company_id, current_generation_id):
+        """Find most recent completed generation for same company (prior period).
+
+        Returns dict {nr_rd: value} or None.
+        """
+        prior = self.generation_repo.get_prior_generation(company_id, current_generation_id)
+        if not prior:
+            return None
+        prior_results_list = self.generation_repo.get_results(prior['id'])
+        return {r['nr_rd']: r.get('value', 0) for r in prior_results_list if r.get('nr_rd')}
+
+    def generate_pdf(self, generation_id):
+        """Generate ANAF-styled PDF from persisted generation."""
+        detail = self.get_generation_detail(generation_id)
+        if not detail.success:
+            return detail
+        generation = detail.data['generation']
+        results = detail.data['results']
+        try:
+            prior = self._get_prior_results(generation['company_id'], generation_id)
+            output = generate_bilant_pdf(generation, results, prior_results=prior)
+            return ServiceResult(success=True, data=output)
+        except Exception as e:
+            logger.exception(f'PDF generation failed: {e}')
+            return ServiceResult(success=False, error=str(e), status_code=500)
+
+    def generate_filled_pdf(self, generation_id):
+        """Generate filled ANAF XFA PDF — original template with computed values in C1/C2 fields."""
+        detail = self.get_generation_detail(generation_id)
+        if not detail.success:
+            return detail
+        generation = detail.data['generation']
+        results = detail.data['results']
+        try:
+            # Build nr_rd → value map
+            values = {}
+            for r in results:
+                nr = r.get('nr_rd')
+                if nr:
+                    values[nr] = r.get('value', 0) or 0
+            prior = self._get_prior_results(generation['company_id'], generation_id)
+            output = fill_anaf_pdf(values, prior_values=prior)
+            return ServiceResult(success=True, data=output)
+        except Exception as e:
+            logger.exception(f'Filled PDF generation failed: {e}')
+            return ServiceResult(success=False, error=str(e), status_code=500)
+
+    def generate_anaf_excel(self, generation_id):
+        """Generate ANAF-format Excel with F10 field codes."""
+        detail = self.get_generation_detail(generation_id)
+        if not detail.success:
+            return detail
+        generation = detail.data['generation']
+        results = detail.data['results']
+        try:
+            # Build row mapping from results
+            row_mapping = {}
+            for r in results:
+                nr = r.get('nr_rd')
+                if not nr:
+                    continue
+                padded = nr.zfill(3)
+                for c in ('1', '2'):
+                    row_mapping[f'F10_{padded}{c}'] = {'row': nr, 'col': f'C{c}'}
+
+            prior = self._get_prior_results(generation['company_id'], generation_id)
+            output = generate_anaf_excel(generation, results, row_mapping=row_mapping, prior_results=prior)
+            return ServiceResult(success=True, data=output)
+        except Exception as e:
+            logger.exception(f'ANAF Excel generation failed: {e}')
+            return ServiceResult(success=False, error=str(e), status_code=500)

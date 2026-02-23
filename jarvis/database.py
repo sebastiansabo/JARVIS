@@ -803,6 +803,15 @@ def init_db():
             if cursor.fetchone()['cnt'] == 0:
                 from migrations.init_schema import _seed_bilant_dynamic_metrics
                 _seed_bilant_dynamic_metrics(cursor)
+            # Fix corrupted seed data from original export
+            cursor.execute("""
+                UPDATE bilant_template_rows SET formula_rd = NULL
+                WHERE formula_rd ~ '^[a-z]'
+            """)
+            cursor.execute("""
+                UPDATE bilant_template_rows SET row_type = 'data', is_bold = FALSE, indent_level = 1
+                WHERE nr_rd IN ('19', '21', '95') AND row_type = 'total'
+            """)
             conn.commit()
             logger.info('Database schema already initialized — skipping init_db()')
             return
@@ -857,6 +866,15 @@ def init_db():
                     END IF;
                 END $$;
             ''')
+            # Fix corrupted seed data from original export
+            cursor.execute("""
+                UPDATE bilant_template_rows SET formula_rd = NULL
+                WHERE formula_rd ~ '^[a-z]'
+            """)
+            cursor.execute("""
+                UPDATE bilant_template_rows SET row_type = 'data', is_bold = FALSE, indent_level = 1
+                WHERE nr_rd IN ('19', '21', '95') AND row_type = 'total'
+            """)
             conn.commit()
             logger.info('Incremental migration complete')
             return

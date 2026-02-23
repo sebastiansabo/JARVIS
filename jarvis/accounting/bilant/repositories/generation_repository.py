@@ -80,6 +80,16 @@ class BilantGenerationRepository(BaseRepository):
             ORDER BY g.created_at DESC LIMIT 1
         ''', (company_id,))
 
+    def get_prior_generation(self, company_id, current_generation_id):
+        """Get the most recent completed generation for the same company, excluding current."""
+        return self.query_one('''
+            SELECT g.*, t.name as template_name
+            FROM bilant_generations g
+            JOIN bilant_templates t ON t.id = g.template_id
+            WHERE g.company_id = %s AND g.status = 'completed' AND g.id != %s
+            ORDER BY g.created_at DESC LIMIT 1
+        ''', (company_id, current_generation_id))
+
     # ── Results ──
 
     def save_results(self, generation_id, results):

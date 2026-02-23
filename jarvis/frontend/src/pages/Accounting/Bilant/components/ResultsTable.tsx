@@ -12,6 +12,77 @@ function fmtValue(n: number): string {
   return new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
 }
 
+/** Parse verification lines into account→value map. */
+function parseVerification(verification: string): Record<string, number> {
+  const map: Record<string, number> = {}
+  for (const line of verification.split('\n')) {
+    const m = line.trim().match(/^(\d+)\s*=\s*(-?[\d,.]+)$/)
+    if (m) map[m[1]] = parseFloat(m[2].replace(',', '.'))
+  }
+  return map
+}
+
+/** Enrich CT formula with per-prefix subtotals from verification data. */
+function enrichCtFormula(formulaCt: string, verification: string): string {
+  if (!formulaCt || !verification) return formulaCt || ''
+  const acctMap = parseVerification(verification)
+  if (Object.keys(acctMap).length === 0) return formulaCt
+
+  // Tokenize formula: handle +/-, dinct., regular +/-
+  const tokens: { prefix: string; op: string }[] = []
+  let i = 0
+  let sign = '+'
+  const f = formulaCt.replace(/\s/g, '')
+  while (i < f.length) {
+    // +/- dynamic sign
+    if (f.slice(i, i + 3) === '+/-') {
+      i += 3
+      let num = ''
+      while (i < f.length && /\d/.test(f[i])) { num += f[i]; i++ }
+      if (num) tokens.push({ prefix: num, op: '+/-' })
+      continue
+    }
+    // dinct. prefix
+    if (f.slice(i, i + 6).toLowerCase() === 'dinct.') {
+      i += 6
+      let num = ''
+      while (i < f.length && /\d/.test(f[i])) { num += f[i]; i++ }
+      if (num) tokens.push({ prefix: num, op: '-' })
+      continue
+    }
+    if (f[i] === '+') { sign = '+'; i++; continue }
+    if (f[i] === '-') { sign = '-'; i++; continue }
+    if (/\d/.test(f[i])) {
+      let num = ''
+      while (i < f.length && /\d/.test(f[i])) { num += f[i]; i++ }
+      tokens.push({ prefix: num, op: sign })
+      sign = '+'
+      continue
+    }
+    i++
+  }
+
+  // Sum verification values per prefix
+  const parts: string[] = []
+  for (let t = 0; t < tokens.length; t++) {
+    const { prefix, op } = tokens[t]
+    let total = 0
+    let found = false
+    for (const [acct, val] of Object.entries(acctMap)) {
+      if (acct.startsWith(prefix) || acct === prefix) {
+        total += val
+        found = true
+      }
+    }
+    const display = found ? fmtValue(Math.round(Math.abs(total))) : '0'
+    const opStr = t === 0 ? (op === '-' ? '-' : '') : (op === '-' ? ' - ' : ' + ')
+    const dynLabel = tokens[t].op === '+/-' ? '+/-' : ''
+    parts.push(`${opStr}${dynLabel}${prefix} (${display})`)
+  }
+
+  return parts.join('')
+}
+
 export function ResultsTable({ results }: ResultsTableProps) {
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
 
@@ -91,7 +162,7 @@ export function ResultsTable({ results }: ResultsTableProps) {
                     <TableCell />
                     <TableCell colSpan={3}>
                       <div className="py-1 text-xs text-muted-foreground font-mono whitespace-pre-wrap">
-                        {r.formula_ct && <div className="mb-1"><span className="font-medium">CT:</span> {r.formula_ct}</div>}
+                        {r.formula_ct && <div className="mb-1"><span className="font-medium">CT:</span> {enrichCtFormula(r.formula_ct, r.verification || '')} <span className="font-medium">= {fmtValue(r.value)}</span></div>}
                         {r.formula_rd && <div className="mb-1"><span className="font-medium">RD:</span> {r.formula_rd}</div>}
                         <div><span className="font-medium">Verification:</span> {r.verification}</div>
                       </div>

@@ -1,17 +1,17 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Download, Trash2, FileSpreadsheet, Calendar, User, StickyNote } from 'lucide-react'
+import { ArrowLeft, Download, Trash2, FileSpreadsheet, Calendar, User, StickyNote, ChevronDown, FileText, Table2, FileCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { bilantApi } from '@/api/bilant'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { StatCard } from '@/components/shared/StatCard'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ResultsTable } from './components/ResultsTable'
 import { RatioCard } from './components/RatioCard'
 import { StructureChart } from './components/StructureChart'
@@ -141,10 +141,33 @@ export default function BilantDetail() {
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className={statusColors[gen.status] || ''}>{gen.status}</Badge>
             {gen.status === 'completed' && (
-              <Button size="sm" variant="outline" onClick={() => bilantApi.downloadGeneration(gen.id)}>
-                <Download className="mr-1.5 h-4 w-4" />
-                Download
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Download className="mr-1.5 h-4 w-4" />
+                    Download
+                    <ChevronDown className="ml-1 h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => bilantApi.downloadGeneration(gen.id)}>
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    Excel (Standard)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => bilantApi.downloadGenerationPdf(gen.id)}>
+                    <FileText className="mr-2 h-4 w-4" />
+                    PDF (ANAF Format)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => bilantApi.downloadGenerationFilledPdf(gen.id)}>
+                    <FileCheck className="mr-2 h-4 w-4" />
+                    PDF (ANAF Filled)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => bilantApi.downloadGenerationAnaf(gen.id)}>
+                    <Table2 className="mr-2 h-4 w-4" />
+                    Excel (ANAF Format)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             <Button size="sm" variant="outline" className="text-destructive" onClick={() => setShowDelete(true)}>
               <Trash2 className="mr-1.5 h-4 w-4" />
@@ -154,29 +177,26 @@ export default function BilantDetail() {
         }
       />
 
-      {/* Summary Stats */}
-      {gen.status === 'completed' && (
-        <div className={`grid grid-cols-2 gap-3 sm:grid-cols-${Math.min(summaryConfigs.length || FALLBACK_SUMMARY_ORDER.length, 5)}`}>
-          {hasDynamicConfigs && summaryConfigs.length > 0
-            ? summaryConfigs
-                .sort((a, b) => a.sort_order - b.sort_order)
-                .map(cfg => (
-                  <StatCard
-                    key={cfg.metric_key}
-                    title={cfg.metric_label}
-                    value={fmtCurrency(metrics.summary[cfg.metric_key])}
-                  />
-                ))
-            : FALLBACK_SUMMARY_ORDER.map(key => (
-                <StatCard
-                  key={key}
-                  title={FALLBACK_SUMMARY_LABELS[key] || key}
-                  value={fmtCurrency(metrics.summary[key])}
-                />
-              ))
-          }
-        </div>
-      )}
+      {/* Summary Stats — single row */}
+      {gen.status === 'completed' && (() => {
+        const items = hasDynamicConfigs && summaryConfigs.length > 0
+          ? summaryConfigs.sort((a, b) => a.sort_order - b.sort_order).map(cfg => ({
+              key: cfg.metric_key, label: cfg.metric_label, value: metrics.summary[cfg.metric_key],
+            }))
+          : FALLBACK_SUMMARY_ORDER.map(key => ({
+              key, label: FALLBACK_SUMMARY_LABELS[key] || key, value: metrics.summary[key],
+            }))
+        return (
+          <div className="grid grid-cols-6 gap-2">
+            {items.map(item => (
+              <div key={item.key} className="rounded-md border px-3 py-1.5">
+                <p className="text-[11px] text-muted-foreground truncate">{item.label}</p>
+                <p className="text-sm font-semibold tabular-nums">{fmtCurrency(item.value)}</p>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* Error message */}
       {gen.status === 'error' && gen.error_message && (

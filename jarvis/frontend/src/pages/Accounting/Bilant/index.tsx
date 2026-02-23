@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Scale, Plus, Upload, FileSpreadsheet, Trash2, Copy, Eye, Download, Pencil, ChevronRight, ChevronDown, Search, BookOpen } from 'lucide-react'
+import { Scale, Plus, Upload, FileSpreadsheet, Trash2, Copy, Eye, Download, Pencil, ChevronRight, ChevronDown, Search, BookOpen, FileUp, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { bilantApi } from '@/api/bilant'
@@ -61,6 +61,10 @@ export default function Bilant() {
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [editingAccount, setEditingAccount] = useState<ChartOfAccount | null>(null)
   const [newAccount, setNewAccount] = useState({ code: '', name: '', account_class: '', account_type: 'synthetic', parent_code: '' })
+  const [showAnafImport, setShowAnafImport] = useState(false)
+  const [anafFile, setAnafFile] = useState<File | null>(null)
+  const [anafName, setAnafName] = useState('')
+  const [anafCompany, setAnafCompany] = useState<string>('')
 
   // ── Queries ──
 
@@ -137,6 +141,29 @@ export default function Bilant() {
     },
   })
 
+  const anafImportMut = useMutation({
+    mutationFn: () => {
+      if (!anafFile) throw new Error('No file')
+      return bilantApi.importAnafPdf(
+        anafFile,
+        anafName || 'ANAF Template',
+        anafCompany && anafCompany !== 'global' ? Number(anafCompany) : undefined,
+      )
+    },
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['bilant-templates'] })
+      toast.success(`ANAF template imported: ${res.row_count} rows (${res.form_type})`)
+      setShowAnafImport(false)
+      setAnafFile(null)
+      setAnafName('')
+      setAnafCompany('')
+      if (res.template_id) navigate(`/app/accounting/bilant/templates/${res.template_id}`)
+    },
+    onError: (err: Error & { data?: { error?: string } }) => {
+      toast.error(err.data?.error || err.message || 'ANAF import failed')
+    },
+  })
+
   const createAccountMut = useMutation({
     mutationFn: (data: { code: string; name: string; account_class: number; account_type?: string; parent_code?: string }) =>
       bilantApi.createAccount(data),
@@ -189,10 +216,16 @@ export default function Bilant() {
               </Button>
             )}
             {tab === 'templates' && (
-              <Button size="sm" onClick={() => setShowNewTemplate(true)}>
-                <Plus className="mr-1.5 h-4 w-4" />
-                New Template
-              </Button>
+              <>
+                <Button size="sm" variant="outline" onClick={() => setShowAnafImport(true)}>
+                  <FileUp className="mr-1.5 h-4 w-4" />
+                  Import ANAF PDF
+                </Button>
+                <Button size="sm" onClick={() => setShowNewTemplate(true)}>
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  New Template
+                </Button>
+              </>
             )}
           </div>
         }
@@ -610,6 +643,75 @@ export default function Bilant() {
         confirmLabel="Delete"
         variant="destructive"
       />
+
+      {/* ANAF PDF Import Dialog */}
+      <Dialog open={showAnafImport} onOpenChange={(v) => { if (!v) { setAnafFile(null); setAnafName(''); setAnafCompany('') }; setShowAnafImport(v) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Import ANAF Template from PDF</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Template Name</Label>
+              <Input value={anafName} onChange={e => setAnafName(e.target.value)} placeholder="e.g. ANAF F10 Standard" />
+            </div>
+            <div className="space-y-2">
+              <Label>Company (optional)</Label>
+              <Select value={anafCompany} onValueChange={setAnafCompany}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Global (all companies)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Global (all companies)</SelectItem>
+                  {companies.map(c => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>ANAF PDF File *</Label>
+              <input
+                type="file"
+                accept=".pdf"
+                onChange={e => { const f = e.target.files?.[0]; if (f) setAnafFile(f) }}
+                className="hidden"
+                id="anaf-pdf-input"
+              />
+              <div
+                onClick={() => document.getElementById('anaf-pdf-input')?.click()}
+                className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 border-muted-foreground/25 hover:border-muted-foreground/50 transition-colors"
+              >
+                {anafFile ? (
+                  <div className="flex items-center gap-2">
+                    <FileSpreadsheet className="h-5 w-5 text-red-600" />
+                    <span className="text-sm font-medium">{anafFile.name}</span>
+                    <span className="text-xs text-muted-foreground">({(anafFile.size / 1024).toFixed(0)} KB)</span>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); setAnafFile(null) }}>
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <FileUp className="mb-2 h-8 w-8 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">Click to upload ANAF bilant PDF</p>
+                    <p className="text-xs text-muted-foreground">Official XFA-based ANAF F10 form</p>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => { setShowAnafImport(false); setAnafFile(null); setAnafName(''); setAnafCompany('') }}>Cancel</Button>
+              <Button
+                disabled={!anafFile || anafImportMut.isPending}
+                onClick={() => anafImportMut.mutate()}
+              >
+                {anafImportMut.isPending ? 'Importing...' : 'Import Template'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

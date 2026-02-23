@@ -96,6 +96,25 @@ def api_import_template():
                     'error': result.error}), result.status_code
 
 
+@bilant_bp.route('/api/templates/import-anaf', methods=['POST'])
+@login_required
+def api_import_anaf_template():
+    """Upload ANAF PDF → parse XFA → create template with rows + metric configs."""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+    file = request.files['file']
+    if not file.filename.endswith('.pdf'):
+        return jsonify({'success': False, 'error': 'Please upload a PDF file'}), 400
+    name = request.form.get('name', 'ANAF Template')
+    company_id = request.form.get('company_id', type=int)
+    result = _service.import_from_anaf_pdf(
+        file.read(), name, company_id, current_user.id
+    )
+    status = result.status_code if not result.success else 200
+    return jsonify({'success': result.success, **(result.data or {}),
+                    'error': result.error}), status
+
+
 # ════════════════════════════════════════════════════════════════
 # Template Rows
 # ════════════════════════════════════════════════════════════════
@@ -275,6 +294,60 @@ def api_download_generation(generation_id):
         return jsonify({'success': False, 'error': result.error}), result.status_code
     gen = _generation_repo.get_by_id(generation_id)
     name = f"Bilant_{gen['company_name']}_{gen.get('period_label', generation_id)}.xlsx" if gen else f"Bilant_{generation_id}.xlsx"
+    name = name.replace(' ', '_')
+    return send_file(
+        result.data,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=name,
+    )
+
+
+@bilant_bp.route('/api/generations/<int:generation_id>/download-pdf', methods=['GET'])
+@login_required
+def api_download_generation_pdf(generation_id):
+    """Download bilant as ANAF-styled PDF."""
+    result = _service.generate_pdf(generation_id)
+    if not result.success:
+        return jsonify({'success': False, 'error': result.error}), result.status_code
+    gen = _generation_repo.get_by_id(generation_id)
+    name = f"Bilant_{gen['company_name']}_{gen.get('period_label', generation_id)}.pdf" if gen else f"Bilant_{generation_id}.pdf"
+    name = name.replace(' ', '_')
+    return send_file(
+        result.data,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=name,
+    )
+
+
+@bilant_bp.route('/api/generations/<int:generation_id>/download-filled-pdf', methods=['GET'])
+@login_required
+def api_download_generation_filled_pdf(generation_id):
+    """Download bilant as filled ANAF XFA PDF (original template with values)."""
+    result = _service.generate_filled_pdf(generation_id)
+    if not result.success:
+        return jsonify({'success': False, 'error': result.error}), result.status_code
+    gen = _generation_repo.get_by_id(generation_id)
+    name = f"Bilant_ANAF_{gen['company_name']}_{gen.get('period_label', generation_id)}.pdf" if gen else f"Bilant_ANAF_{generation_id}.pdf"
+    name = name.replace(' ', '_')
+    return send_file(
+        result.data,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=name,
+    )
+
+
+@bilant_bp.route('/api/generations/<int:generation_id>/download-anaf', methods=['GET'])
+@login_required
+def api_download_generation_anaf(generation_id):
+    """Download bilant as ANAF-format Excel with F10 field codes."""
+    result = _service.generate_anaf_excel(generation_id)
+    if not result.success:
+        return jsonify({'success': False, 'error': result.error}), result.status_code
+    gen = _generation_repo.get_by_id(generation_id)
+    name = f"Bilant_ANAF_{gen['company_name']}_{gen.get('period_label', generation_id)}.xlsx" if gen else f"Bilant_ANAF_{generation_id}.xlsx"
     name = name.replace(' ', '_')
     return send_file(
         result.data,

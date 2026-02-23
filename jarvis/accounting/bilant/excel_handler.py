@@ -1,4 +1,4 @@
-"""Bilant Excel Handler — read Balanta uploads, generate output Excel."""
+"""Bilant Excel Handler — read Balanta uploads, generate output Excel, ANAF export."""
 
 import io
 import pandas as pd
@@ -161,7 +161,9 @@ def generate_output_excel(generation, results, metrics):
     from .formula_engine import STANDARD_RATIOS
     ratios = metrics.get('ratios', {})
     for key, spec in STANDARD_RATIOS.items():
-        val = ratios.get(key)
+        raw = ratios.get(key)
+        # Handle both plain numbers and {value, label, interpretation} dicts
+        val = raw['value'] if isinstance(raw, dict) and 'value' in raw else raw
         ws2.cell(row=row_num, column=1, value=spec['label']).border = border
         ws2.cell(row=row_num, column=2, value=val if val is not None else 'N/A').border = border
         ws2.cell(row=row_num, column=3, value=spec['interpretation']).border = border
@@ -193,6 +195,130 @@ def generate_output_excel(generation, results, metrics):
     ws2.column_dimensions['A'].width = 30
     ws2.column_dimensions['B'].width = 20
     ws2.column_dimensions['C'].width = 20
+
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+def generate_anaf_excel(generation, results, row_mapping=None, prior_results=None):
+    """Generate ANAF-format Excel with F10 field codes and human-readable sheets.
+
+    Args:
+        generation: dict with generation metadata
+        results: list of result dicts (nr_rd, description, value, etc.)
+        row_mapping: optional dict from generate_row_mapping() {F10_XXXC: {row, col}}
+        prior_results: optional dict {nr_rd: value} for C1 (prior year) column
+
+    Returns:
+        io.BytesIO containing the Excel file
+    """
+    from openpyxl import Workbook
+
+    output = io.BytesIO()
+
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    header_fill = PatternFill(start_color='2563EB', end_color='2563EB', fill_type='solid')
+    total_font = Font(bold=True, size=10)
+    section_font = Font(bold=True, size=11)
+    border = Border(
+        left=Side(style='thin', color='D1D5DB'),
+        right=Side(style='thin', color='D1D5DB'),
+        top=Side(style='thin', color='D1D5DB'),
+        bottom=Side(style='thin', color='D1D5DB'),
+    )
+    money_format = '#,##0.00'
+
+    wb = Workbook()
+
+    # ── Sheet 1: F10 (ANAF field codes) ──
+    ws1 = wb.active
+    ws1.title = 'F10'
+    for col, h in enumerate(['Field Code', 'Value'], 1):
+        cell = ws1.cell(row=1, column=col, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal='center')
+
+    row_num = 2
+    # Build nr_rd → value map from results
+    val_map = {}
+    for r in results:
+        nr = r.get('nr_rd')
+        if nr:
+            val_map[nr] = r.get('value', 0) or 0
+
+    # Generate F10 entries (sorted by field code)
+    if row_mapping:
+        mapping = row_mapping
+    else:
+        # Auto-generate mapping from results
+        mapping = {}
+        for r in results:
+            nr = r.get('nr_rd')
+            if not nr:
+                continue
+            padded = nr.zfill(3)
+            for c in ('1', '2'):
+                mapping[f'F10_{padded}{c}'] = {'row': nr, 'col': f'C{c}'}
+
+    for field_code in sorted(mapping.keys()):
+        info = mapping[field_code]
+        nr = info['row']
+        col_name = info['col']
+        if col_name == 'C1':
+            value = prior_results.get(nr, 0) if prior_results else 0
+        else:
+            value = val_map.get(nr, 0)
+        ws1.cell(row=row_num, column=1, value=field_code).border = border
+        val_cell = ws1.cell(row=row_num, column=2, value=value or 0)
+        val_cell.number_format = money_format
+        val_cell.border = border
+        row_num += 1
+
+    ws1.column_dimensions['A'].width = 18
+    ws1.column_dimensions['B'].width = 20
+
+    # ── Sheet 2: Bilant (human-readable with C1 + C2) ──
+    ws2 = wb.create_sheet('Bilant')
+    for col, h in enumerate(['Nr. rd.', 'Denumirea elementului', 'Sold C1', 'Sold C2'], 1):
+        cell = ws2.cell(row=1, column=col, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal='center', wrap_text=True)
+
+    for i, r in enumerate(results, 2):
+        nr_rd = r.get('nr_rd', '') or ''
+        desc = r.get('description', '')
+        value = r.get('value', 0) or 0
+        c1_val = prior_results.get(nr_rd, 0) if prior_results and nr_rd else 0
+
+        ws2.cell(row=i, column=1, value=nr_rd).border = border
+        desc_cell = ws2.cell(row=i, column=2, value=desc)
+        desc_cell.border = border
+        indent = r.get('indent_level', 0)
+        if indent:
+            desc_cell.alignment = Alignment(indent=indent)
+
+        c1_cell = ws2.cell(row=i, column=3, value=c1_val)
+        c1_cell.number_format = money_format
+        c1_cell.border = border
+
+        c2_cell = ws2.cell(row=i, column=4, value=value)
+        c2_cell.number_format = money_format
+        c2_cell.border = border
+
+        if r.get('is_bold') or r.get('row_type') in ('total', 'section_header', 'section'):
+            font = total_font if r.get('row_type') == 'total' else section_font
+            for col in range(1, 5):
+                ws2.cell(row=i, column=col).font = font
+
+    ws2.column_dimensions['A'].width = 10
+    ws2.column_dimensions['B'].width = 55
+    ws2.column_dimensions['C'].width = 18
+    ws2.column_dimensions['D'].width = 18
 
     wb.save(output)
     output.seek(0)

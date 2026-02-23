@@ -48,6 +48,14 @@ export const bilantApi = {
     return api.post<{ success: boolean; template_id?: number; row_count?: number }>(`${BASE}/templates/import`, fd)
   },
 
+  importAnafPdf: (file: File, name: string, companyId?: number) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('name', name)
+    if (companyId) fd.append('company_id', String(companyId))
+    return api.post<{ success: boolean; template_id?: number; row_count?: number; form_type?: string }>(`${BASE}/templates/import-anaf`, fd)
+  },
+
   // ── Template Rows ──
 
   getRows: (templateId: number) =>
@@ -108,6 +116,48 @@ export const bilantApi = {
     const a = document.createElement('a')
     a.href = url
     a.download = res.headers.get('content-disposition')?.match(/filename="?(.+?)"?$/)?.[1] || `Bilant_${id}.xlsx`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
+  downloadGenerationPdf: async (id: number) => {
+    const res = await fetch(`${BASE}/generations/${id}/download-pdf`, { credentials: 'same-origin' })
+    if (!res.ok) return
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = res.headers.get('content-disposition')?.match(/filename="?(.+?)"?$/)?.[1] || `Bilant_${id}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
+  downloadGenerationFilledPdf: async (id: number) => {
+    const res = await fetch(`${BASE}/generations/${id}/download-filled-pdf`, { credentials: 'same-origin' })
+    if (!res.ok) return
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = res.headers.get('content-disposition')?.match(/filename="?(.+?)"?$/)?.[1] || `Bilant_ANAF_${id}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
+  downloadGenerationAnaf: async (id: number) => {
+    const res = await fetch(`${BASE}/generations/${id}/download-anaf`, { credentials: 'same-origin' })
+    if (!res.ok) return
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = res.headers.get('content-disposition')?.match(/filename="?(.+?)"?$/)?.[1] || `Bilant_ANAF_${id}.xlsx`
     document.body.appendChild(a)
     a.click()
     a.remove()

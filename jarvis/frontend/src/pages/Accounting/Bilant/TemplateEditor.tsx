@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Trash2, GripVertical, Save, HelpCircle } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Save, HelpCircle, ChevronRight, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { bilantApi } from '@/api/bilant'
@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+// Table imports kept for potential future use
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -46,7 +46,9 @@ export default function TemplateEditor() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<EditorTab>('rows')
   const [editingRow, setEditingRow] = useState<number | null>(null)
+  const [expandedRow, setExpandedRow] = useState<number | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'row' | 'metric'; id: number; name: string } | null>(null)
+  const [collapsedSections, setCollapsedSections] = useState<Set<number>>(new Set())
 
   // Template info state
   const [name, setName] = useState('')
@@ -196,13 +198,33 @@ export default function TemplateEditor() {
       {tab === 'rows' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="sm" className="text-muted-foreground">
-                  <HelpCircle className="mr-1.5 h-4 w-4" />
-                  Formula Syntax
-                </Button>
-              </PopoverTrigger>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground text-xs"
+                onClick={() => {
+                  const sectionIds = rows.filter(r => r.row_type === 'section').map(r => r.id)
+                  if (collapsedSections.size > 0) {
+                    setCollapsedSections(new Set())
+                  } else {
+                    setCollapsedSections(new Set(sectionIds))
+                  }
+                }}
+              >
+                {collapsedSections.size > 0 ? (
+                  <><ChevronDown className="mr-1 h-3.5 w-3.5" /> Expand All</>
+                ) : (
+                  <><ChevronRight className="mr-1 h-3.5 w-3.5" /> Collapse All</>
+                )}
+              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="sm" className="text-muted-foreground">
+                    <HelpCircle className="mr-1.5 h-4 w-4" />
+                    Formula Syntax
+                  </Button>
+                </PopoverTrigger>
               <PopoverContent className="w-80 text-xs" side="bottom" align="start">
                 <div className="space-y-3">
                   <div>
@@ -226,7 +248,8 @@ export default function TemplateEditor() {
                   <p className="text-muted-foreground italic">Type a number in CT formula to get account suggestions.</p>
                 </div>
               </PopoverContent>
-            </Popover>
+              </Popover>
+            </div>
             <Button
               size="sm"
               onClick={() => addRowMut.mutate({
@@ -240,28 +263,30 @@ export default function TemplateEditor() {
             </Button>
           </div>
 
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-8" />
-                  <TableHead className="w-16">Nr.Rd</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="w-32">CT Formula</TableHead>
-                  <TableHead className="w-32">RD Formula</TableHead>
-                  <TableHead className="w-20">Type</TableHead>
-                  <TableHead className="w-12">Bold</TableHead>
-                  <TableHead className="w-16">Indent</TableHead>
-                  <TableHead className="w-16">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((row) => (
+          <div className="rounded-md border divide-y">
+            {(() => {
+              let currentSection: number | null = null
+              return rows.map((row) => {
+                if (row.row_type === 'section') currentSection = row.id
+                const isHidden = row.row_type !== 'section' && currentSection !== null && collapsedSections.has(currentSection)
+                if (isHidden) return null
+                return (
                   <EditableRow
                     key={row.id}
                     row={row}
                     isEditing={editingRow === row.id}
-                    onStartEdit={() => setEditingRow(row.id)}
+                    isExpanded={expandedRow === row.id}
+                    isCollapsed={row.row_type === 'section' && collapsedSections.has(row.id)}
+                    onToggleExpand={() => setExpandedRow(prev => prev === row.id ? null : row.id)}
+                    onToggleCollapse={row.row_type === 'section' ? () => {
+                      setCollapsedSections(prev => {
+                        const next = new Set(prev)
+                        if (next.has(row.id)) next.delete(row.id)
+                        else next.add(row.id)
+                        return next
+                      })
+                    } : undefined}
+                    onStartEdit={() => { setExpandedRow(null); setEditingRow(row.id) }}
                     onSave={(data) => {
                       updateRowMut.mutate({ id: row.id, ...data })
                       setEditingRow(null)
@@ -269,9 +294,9 @@ export default function TemplateEditor() {
                     onCancel={() => setEditingRow(null)}
                     onDelete={() => setDeleteTarget({ type: 'row', id: row.id, name: row.description || `Row ${row.nr_rd}` })}
                   />
-                ))}
-              </TableBody>
-            </Table>
+                )
+              })
+            })()}
           </div>
         </div>
       )}
@@ -351,13 +376,17 @@ export default function TemplateEditor() {
 interface EditableRowProps {
   row: BilantTemplateRow
   isEditing: boolean
+  isExpanded: boolean
+  isCollapsed?: boolean
+  onToggleExpand: () => void
+  onToggleCollapse?: () => void
   onStartEdit: () => void
   onSave: (data: Partial<BilantTemplateRow>) => void
   onCancel: () => void
   onDelete: () => void
 }
 
-function EditableRow({ row, isEditing, onStartEdit, onSave, onCancel, onDelete }: EditableRowProps) {
+function EditableRow({ row, isEditing, isExpanded, isCollapsed, onToggleExpand, onToggleCollapse, onStartEdit, onSave, onCancel, onDelete }: EditableRowProps) {
   const [nr_rd, setNrRd] = useState(row.nr_rd || '')
   const [desc, setDesc] = useState(row.description)
   const [formulaCt, setFormulaCt] = useState(row.formula_ct || '')
@@ -376,87 +405,147 @@ function EditableRow({ row, isEditing, onStartEdit, onSave, onCancel, onDelete }
     setIndent(row.indent_level)
   }, [row])
 
-  if (!isEditing) {
+  const isSep = row.row_type === 'separator'
+  const isSec = row.row_type === 'section'
+  const isTotal = row.row_type === 'total'
+  const hasFormulas = row.formula_ct || row.formula_rd
+
+  // ── Edit mode ──
+  if (isEditing) {
     return (
-      <TableRow className="cursor-pointer hover:bg-muted/50" onDoubleClick={onStartEdit}>
-        <TableCell><GripVertical className="h-3.5 w-3.5 text-muted-foreground" /></TableCell>
-        <TableCell className="text-xs font-mono">{row.nr_rd || ''}</TableCell>
-        <TableCell>
-          <span
-            className={`text-xs ${row.row_type === 'section' ? 'font-semibold uppercase text-muted-foreground' : ''} ${row.is_bold ? 'font-semibold' : ''}`}
-            style={{ paddingLeft: `${(row.indent_level || 0) * 12}px` }}
-          >
-            {row.description}
-          </span>
-        </TableCell>
-        <TableCell className="text-xs font-mono text-muted-foreground">{row.formula_ct || ''}</TableCell>
-        <TableCell className="text-xs font-mono text-muted-foreground">{row.formula_rd || ''}</TableCell>
-        <TableCell><Badge variant="outline" className="text-[10px]">{row.row_type}</Badge></TableCell>
-        <TableCell>{row.is_bold ? 'B' : ''}</TableCell>
-        <TableCell className="text-xs">{row.indent_level || 0}</TableCell>
-        <TableCell>
-          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={onDelete}>
-            <Trash2 className="h-3 w-3" />
-          </Button>
-        </TableCell>
-      </TableRow>
+      <div className="bg-muted/30 px-3 py-2 space-y-2">
+        <div className="grid grid-cols-[3rem_1fr] gap-2">
+          <Input value={nr_rd} onChange={e => setNrRd(e.target.value)} className="h-7 text-xs font-mono" placeholder="rd" />
+          <Input value={desc} onChange={e => setDesc(e.target.value)} className="h-7 text-xs" autoFocus />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <FormulaInput value={formulaCt} onChange={setFormulaCt} placeholder="CT formula" />
+          <Input value={formulaRd} onChange={e => setFormulaRd(e.target.value)} className="h-7 text-xs font-mono" placeholder="RD formula" />
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground">Type:</Label>
+            <Select value={rowType} onValueChange={(v) => setRowType(v as BilantTemplateRow['row_type'])}>
+              <SelectTrigger className="h-6 w-24 text-[10px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ROW_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground">Bold:</Label>
+            <Switch checked={isBold} onCheckedChange={setIsBold} className="scale-75" />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground">Indent:</Label>
+            <Input type="number" value={indent} onChange={e => setIndent(Number(e.target.value))} className="h-6 text-xs w-12" min={0} max={5} />
+          </div>
+          <div className="ml-auto flex gap-1">
+            <Button
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={() => onSave({
+                nr_rd: nr_rd || null,
+                description: desc,
+                formula_ct: formulaCt || null,
+                formula_rd: formulaRd || null,
+                row_type: rowType,
+                is_bold: isBold,
+                indent_level: indent,
+              })}
+            >
+              Save
+            </Button>
+            <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={onCancel}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </div>
     )
   }
 
+  // ── View mode ──
+  if (isSep) {
+    return <div className="h-1.5 bg-muted/30" />
+  }
+
   return (
-    <TableRow className="bg-muted/30">
-      <TableCell />
-      <TableCell>
-        <Input value={nr_rd} onChange={e => setNrRd(e.target.value)} className="h-7 text-xs w-14" />
-      </TableCell>
-      <TableCell>
-        <Input value={desc} onChange={e => setDesc(e.target.value)} className="h-7 text-xs" />
-      </TableCell>
-      <TableCell>
-        <FormulaInput value={formulaCt} onChange={setFormulaCt} placeholder="ct formula" />
-      </TableCell>
-      <TableCell>
-        <Input value={formulaRd} onChange={e => setFormulaRd(e.target.value)} className="h-7 text-xs font-mono" placeholder="rd formula" />
-      </TableCell>
-      <TableCell>
-        <Select value={rowType} onValueChange={(v) => setRowType(v as BilantTemplateRow['row_type'])}>
-          <SelectTrigger className="h-7 text-[10px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ROW_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </TableCell>
-      <TableCell>
-        <Switch checked={isBold} onCheckedChange={setIsBold} />
-      </TableCell>
-      <TableCell>
-        <Input type="number" value={indent} onChange={e => setIndent(Number(e.target.value))} className="h-7 text-xs w-12" min={0} max={5} />
-      </TableCell>
-      <TableCell>
-        <div className="flex gap-1">
+    <div className={`group ${isTotal ? 'bg-muted/30' : ''} ${isSec ? 'bg-muted/20' : ''}`}>
+      {/* Main row — Rd + Description */}
+      <div
+        className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-muted/50"
+        onClick={onToggleExpand}
+        onDoubleClick={(e) => { e.stopPropagation(); onStartEdit() }}
+      >
+        {/* Chevron */}
+        <div className="w-4 shrink-0 flex items-center justify-center">
+          {isSec && onToggleCollapse ? (
+            <button onClick={(e) => { e.stopPropagation(); onToggleCollapse() }} className="p-0.5 hover:bg-muted rounded">
+              {isCollapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+            </button>
+          ) : hasFormulas ? (
+            isExpanded
+              ? <ChevronDown className="h-3 w-3 text-muted-foreground/50" />
+              : <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+          ) : null}
+        </div>
+
+        {/* Rd number */}
+        {row.nr_rd && (
+          <span className="w-8 shrink-0 text-xs font-mono text-muted-foreground">{row.nr_rd}</span>
+        )}
+
+        {/* Description — justified, fills remaining space */}
+        <span
+          className={`flex-1 text-xs text-justify ${isSec ? 'font-semibold uppercase text-muted-foreground' : ''} ${row.is_bold || isTotal ? 'font-semibold' : ''}`}
+          style={{ paddingLeft: `${(row.indent_level || 0) * 12}px` }}
+        >
+          {row.description}
+        </span>
+
+        {/* Delete — only on hover */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-5 w-5 shrink-0 text-destructive opacity-0 group-hover:opacity-100"
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      </div>
+
+      {/* Expanded details */}
+      {isExpanded && !isSec && (
+        <div className="flex items-center gap-4 px-3 pb-1.5 pl-9">
+          {row.formula_ct && (
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-muted-foreground">CT:</span>
+              <span className="text-[11px] font-mono text-primary/80">{row.formula_ct}</span>
+            </div>
+          )}
+          {row.formula_rd && (
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-muted-foreground">RD:</span>
+              <span className="text-[11px] font-mono text-primary/80">{row.formula_rd}</span>
+            </div>
+          )}
+          <Badge variant="outline" className="text-[9px] h-4 px-1">{row.row_type}</Badge>
+          {row.is_bold && <span className="text-[10px] font-semibold text-muted-foreground">B</span>}
+          {(row.indent_level || 0) > 0 && <span className="text-[10px] text-muted-foreground">indent:{row.indent_level}</span>}
           <Button
+            variant="ghost"
             size="sm"
-            className="h-6 px-2 text-xs"
-            onClick={() => onSave({
-              nr_rd: nr_rd || null,
-              description: desc,
-              formula_ct: formulaCt || null,
-              formula_rd: formulaRd || null,
-              row_type: rowType,
-              is_bold: isBold,
-              indent_level: indent,
-            })}
+            className="h-5 px-1.5 text-[10px] ml-auto"
+            onClick={onStartEdit}
           >
-            Save
-          </Button>
-          <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={onCancel}>
-            Cancel
+            Edit
           </Button>
         </div>
-      </TableCell>
-    </TableRow>
+      )}
+    </div>
   )
 }
 

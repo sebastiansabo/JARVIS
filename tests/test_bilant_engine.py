@@ -496,3 +496,371 @@ class TestEvalMetricFormula:
         # Lichiditate rapida
         result = eval_metric_formula('(active_circulante - stocuri) / datorii_termen_scurt', vals)
         assert result == 1.0
+
+
+# ════════════════════════════════════════════════════════════════
+# ANAF Parser Tests
+# ════════════════════════════════════════════════════════════════
+
+from accounting.bilant.anaf_parser import (
+    _strip_html,
+    _is_numeric_rd,
+    _extract_rd_formula_strict,
+    generate_row_mapping,
+)
+
+
+class TestAnafParserHelpers:
+    """Test ANAF parser helper functions."""
+
+    def test_strip_html_basic(self):
+        assert _strip_html('<b>Bold</b>') == 'Bold'
+
+    def test_strip_html_entities(self):
+        assert _strip_html('A &amp; B') == 'A & B'
+
+    def test_strip_html_nested(self):
+        assert _strip_html('<p><span style="color:red">Text</span></p>') == 'Text'
+
+    def test_strip_html_empty(self):
+        assert _strip_html('') == ''
+
+    def test_is_numeric_rd_valid(self):
+        assert _is_numeric_rd('01') is True
+        assert _is_numeric_rd('103') is True
+        assert _is_numeric_rd('35a') is True
+        assert _is_numeric_rd('7') is True
+
+    def test_is_numeric_rd_invalid(self):
+        assert _is_numeric_rd('abc') is False
+        assert _is_numeric_rd('1234') is False
+        assert _is_numeric_rd('') is False
+
+
+class TestExtractRdFormulaStrict:
+    """Test strict RD formula extraction (avoids false positives)."""
+
+    def test_basic_rd_formula(self):
+        desc = 'TOTAL (rd. 01 la 06)'
+        result = _extract_rd_formula_strict(desc)
+        assert result == '01+02+03+04+05+06'
+
+    def test_rd_with_addition(self):
+        desc = 'TOTAL (rd. 23+24+25)'
+        result = _extract_rd_formula_strict(desc)
+        assert result == '23+24+25'
+
+    def test_rd_with_subtraction(self):
+        desc = 'TOTAL (rd. 40-41+42)'
+        result = _extract_rd_formula_strict(desc)
+        assert result == '40-41+42'
+
+    def test_no_false_positive_acordate(self):
+        """'rd' inside 'acordate' should NOT match."""
+        desc = 'Creante legate de participatiile acordate (ct.2671+2672-2964)'
+        result = _extract_rd_formula_strict(desc)
+        assert result == ''
+
+    def test_no_false_positive_pierderea(self):
+        """'rd' inside 'pierderea' should NOT match."""
+        desc = 'VI. PROFITUL SAU PIERDEREA EXERCITIULUI FINANCIAR'
+        result = _extract_rd_formula_strict(desc)
+        assert result == ''
+
+    def test_no_false_positive_abordate(self):
+        desc = 'Probleme abordate in context (ct.100)'
+        result = _extract_rd_formula_strict(desc)
+        assert result == ''
+
+    def test_empty_input(self):
+        assert _extract_rd_formula_strict('') == ''
+        assert _extract_rd_formula_strict(None) == ''
+
+    def test_rd_without_dot(self):
+        desc = 'TOTAL (rd 01+02+03)'
+        result = _extract_rd_formula_strict(desc)
+        assert result == '01+02+03'
+
+
+class TestGenerateRowMapping:
+    """Test ANAF field name mapping generation."""
+
+    def test_basic_mapping(self):
+        rows = [
+            {'nr_rd': '01', 'description': 'Test'},
+            {'nr_rd': '103', 'description': 'Test 2'},
+            {'nr_rd': None, 'description': 'Section'},
+        ]
+        mapping = generate_row_mapping(rows)
+        assert 'F10_0011' in mapping
+        assert mapping['F10_0011'] == {'row': '01', 'col': 'C1'}
+        assert 'F10_0012' in mapping
+        assert mapping['F10_0012'] == {'row': '01', 'col': 'C2'}
+        assert 'F10_1031' in mapping
+        assert mapping['F10_1031'] == {'row': '103', 'col': 'C1'}
+        # Section row with no nr_rd should not be in mapping
+        assert len(mapping) == 4  # 2 rows * 2 columns
+
+    def test_empty_rows(self):
+        assert generate_row_mapping([]) == {}
+
+
+# ════════════════════════════════════════════════════════════════
+# PDF Handler Tests
+# ════════════════════════════════════════════════════════════════
+
+from accounting.bilant.pdf_handler import generate_bilant_pdf, _fmt_number, _strip_diacritics
+
+
+class TestPdfHandler:
+    """Test PDF generation functions."""
+
+    def test_fmt_number_basic(self):
+        assert _fmt_number(1234567) == '1.234.567'
+        assert _fmt_number(0) == ''
+        assert _fmt_number(None) == ''
+        assert _fmt_number('') == ''
+
+    def test_fmt_number_negative(self):
+        assert _fmt_number(-5000) == '-5.000'
+
+    def test_strip_diacritics(self):
+        assert _strip_diacritics('ăâîșț') == 'aais' or _strip_diacritics('ăâîșț') in ('aaist', 'aais', 'aaiST', 'aaist')
+        # At minimum, should not contain combining characters
+        result = _strip_diacritics('ăâî')
+        assert all(ord(c) < 768 for c in result)  # No combining chars
+
+    def test_generate_pdf_basic(self):
+        gen = {'company_name': 'Test SRL', 'period_label': 'Q4 2025'}
+        results = [
+            {'nr_rd': '01', 'description': 'Active imobilizate', 'value': 50000,
+             'row_type': 'data', 'is_bold': False, 'indent_level': 1},
+            {'nr_rd': '06', 'description': 'TOTAL', 'value': 50000,
+             'row_type': 'total', 'is_bold': True, 'indent_level': 0},
+            {'nr_rd': None, 'description': 'B. ACTIVE CIRCULANTE', 'value': 0,
+             'row_type': 'section', 'is_bold': True, 'indent_level': 0},
+        ]
+        output = generate_bilant_pdf(gen, results)
+        assert output is not None
+        content = output.getvalue()
+        assert len(content) > 0
+        assert content[:4] == b'%PDF'  # Valid PDF header
+
+    def test_generate_pdf_with_prior(self):
+        gen = {'company_name': 'Test', 'period_label': '2025'}
+        results = [
+            {'nr_rd': '01', 'description': 'Row 1', 'value': 100, 'row_type': 'data',
+             'is_bold': False, 'indent_level': 0},
+        ]
+        prior = {'01': 80}
+        output = generate_bilant_pdf(gen, results, prior_results=prior)
+        assert output.getvalue()[:4] == b'%PDF'
+
+
+# ════════════════════════════════════════════════════════════════
+# ANAF Excel Export Tests
+# ════════════════════════════════════════════════════════════════
+
+from accounting.bilant.excel_handler import generate_anaf_excel
+
+
+class TestAnafExcelExport:
+    """Test ANAF-format Excel export."""
+
+    def test_basic_export(self):
+        gen = {'company_name': 'Test SRL', 'period_label': 'Q4 2025'}
+        results = [
+            {'nr_rd': '01', 'description': 'Row 1', 'value': 5000, 'is_bold': False,
+             'row_type': 'data', 'indent_level': 1, 'sort_order': 0},
+            {'nr_rd': '06', 'description': 'TOTAL', 'value': 5000, 'is_bold': True,
+             'row_type': 'total', 'indent_level': 0, 'sort_order': 1},
+        ]
+        output = generate_anaf_excel(gen, results)
+        assert output is not None
+        # Verify it's a valid xlsx
+        from openpyxl import load_workbook
+        wb = load_workbook(output)
+        assert 'F10' in wb.sheetnames
+        assert 'Bilant' in wb.sheetnames
+        # Verify F10 sheet has field codes
+        ws = wb['F10']
+        assert ws.cell(1, 1).value == 'Field Code'
+        # Should have rows for F10_0011, F10_0012, F10_0061, F10_0062
+        field_codes = [ws.cell(r, 1).value for r in range(2, ws.max_row + 1)]
+        assert 'F10_0011' in field_codes
+        assert 'F10_0062' in field_codes
+
+    def test_export_with_prior_results(self):
+        gen = {'company_name': 'Test', 'period_label': '2025'}
+        results = [
+            {'nr_rd': '01', 'description': 'R1', 'value': 1000, 'is_bold': False,
+             'row_type': 'data', 'indent_level': 0, 'sort_order': 0},
+        ]
+        prior = {'01': 800}
+        output = generate_anaf_excel(gen, results, prior_results=prior)
+        from openpyxl import load_workbook
+        wb = load_workbook(output)
+        ws = wb['F10']
+        # Find F10_0011 (C1 = prior) and verify value
+        for r in range(2, ws.max_row + 1):
+            if ws.cell(r, 1).value == 'F10_0011':
+                assert ws.cell(r, 2).value == 800
+                break
+
+    def test_export_with_row_mapping(self):
+        gen = {'company_name': 'Test', 'period_label': '2025'}
+        results = [
+            {'nr_rd': '01', 'description': 'R1', 'value': 500, 'is_bold': False,
+             'row_type': 'data', 'indent_level': 0, 'sort_order': 0},
+        ]
+        mapping = {'F10_0011': {'row': '01', 'col': 'C1'}, 'F10_0012': {'row': '01', 'col': 'C2'}}
+        output = generate_anaf_excel(gen, results, row_mapping=mapping)
+        assert output is not None
+
+
+class TestFillAnafPdf:
+    """Test XFA PDF field filling."""
+
+    TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), '..', 'jarvis',
+                                  'accounting', 'bilant', 'static', 'anaf_f10l_template.pdf')
+
+    @pytest.fixture
+    def template_exists(self):
+        return os.path.exists(self.TEMPLATE_PATH)
+
+    def test_fill_basic_values(self, template_exists):
+        if not template_exists:
+            pytest.skip('ANAF template PDF not available')
+        from accounting.bilant.anaf_parser import fill_anaf_pdf
+        values = {'01': 1234567, '02': 890123, '103': 9999}
+        result = fill_anaf_pdf(values)
+        assert result is not None
+        data = result.getvalue()
+        assert len(data) > 100000  # Should be a substantial PDF
+
+    def test_fill_with_prior_values(self, template_exists):
+        if not template_exists:
+            pytest.skip('ANAF template PDF not available')
+        from accounting.bilant.anaf_parser import fill_anaf_pdf
+        import pikepdf
+        import xml.etree.ElementTree as ET
+
+        values = {'01': 5000, '35': 8000}
+        prior = {'01': 3000, '35': 6000}
+        result = fill_anaf_pdf(values, prior_values=prior)
+
+        # Verify by re-reading the filled PDF
+        result.seek(0)
+        pdf = pikepdf.Pdf.open(result)
+        xfa = pdf.Root.AcroForm.XFA
+        for i in range(0, len(xfa), 2):
+            if str(xfa[i]) == 'datasets':
+                xml_data = bytes(xfa[i + 1].read_bytes())
+                root = ET.fromstring(xml_data)
+                ns = '{http://www.xfa.org/schema/xfa-data/1.0/}'
+                table = root.find(f'{ns}data').find('form1').find('F10L').find('Table1')
+                r01 = table.find('R01')
+                assert r01.find('C2').text == '5000'
+                assert r01.find('C1').text == '3000'
+                r35 = table.find('R35')
+                assert r35.find('C2').text == '8000'
+                assert r35.find('C1').text == '6000'
+                break
+        pdf.close()
+
+    def test_fill_preserves_pdf_structure(self, template_exists):
+        if not template_exists:
+            pytest.skip('ANAF template PDF not available')
+        from accounting.bilant.anaf_parser import fill_anaf_pdf
+        import pikepdf
+
+        values = {'01': 100}
+        result = fill_anaf_pdf(values)
+        result.seek(0)
+        pdf = pikepdf.Pdf.open(result)
+        # Should still have XFA
+        assert hasattr(pdf.Root, 'AcroForm')
+        xfa = pdf.Root.AcroForm.XFA
+        assert len(xfa) == 18  # Same stream count as original
+        # Should have pages
+        assert len(pdf.pages) > 0
+        pdf.close()
+
+    def test_fill_zero_values_skipped(self, template_exists):
+        if not template_exists:
+            pytest.skip('ANAF template PDF not available')
+        from accounting.bilant.anaf_parser import fill_anaf_pdf
+        import pikepdf
+        import xml.etree.ElementTree as ET
+
+        values = {'01': 0, '02': 500}
+        result = fill_anaf_pdf(values)
+        result.seek(0)
+        pdf = pikepdf.Pdf.open(result)
+        xfa = pdf.Root.AcroForm.XFA
+        for i in range(0, len(xfa), 2):
+            if str(xfa[i]) == 'datasets':
+                xml_data = bytes(xfa[i + 1].read_bytes())
+                root = ET.fromstring(xml_data)
+                ns = '{http://www.xfa.org/schema/xfa-data/1.0/}'
+                table = root.find(f'{ns}data').find('form1').find('F10L').find('Table1')
+                r01 = table.find('R01')
+                # C2 for R01 should remain empty (zero skipped)
+                assert r01.find('C2').text is None or r01.find('C2').text == ''
+                r02 = table.find('R02')
+                assert r02.find('C2').text == '500'
+                break
+        pdf.close()
+
+    def test_fill_special_rows(self, template_exists):
+        """Test filling R301 (special row) and R_PP."""
+        if not template_exists:
+            pytest.skip('ANAF template PDF not available')
+        from accounting.bilant.anaf_parser import fill_anaf_pdf
+        import pikepdf
+        import xml.etree.ElementTree as ET
+
+        values = {'301': 77777}
+        result = fill_anaf_pdf(values)
+        result.seek(0)
+        pdf = pikepdf.Pdf.open(result)
+        xfa = pdf.Root.AcroForm.XFA
+        for i in range(0, len(xfa), 2):
+            if str(xfa[i]) == 'datasets':
+                xml_data = bytes(xfa[i + 1].read_bytes())
+                root = ET.fromstring(xml_data)
+                ns = '{http://www.xfa.org/schema/xfa-data/1.0/}'
+                table = root.find(f'{ns}data').find('form1').find('F10L').find('Table1')
+                r301 = table.find('R301')
+                assert r301.find('C2').text == '77777'
+                break
+        pdf.close()
+
+    def test_fill_missing_template_raises(self):
+        from accounting.bilant.anaf_parser import fill_anaf_pdf
+        with pytest.raises(ValueError, match='template not found'):
+            fill_anaf_pdf({'01': 100}, template_path='/nonexistent/path.pdf')
+
+    def test_fill_rounds_floats(self, template_exists):
+        """Values should be rounded to integers (ANAF format)."""
+        if not template_exists:
+            pytest.skip('ANAF template PDF not available')
+        from accounting.bilant.anaf_parser import fill_anaf_pdf
+        import pikepdf
+        import xml.etree.ElementTree as ET
+
+        values = {'01': 1234.56}
+        result = fill_anaf_pdf(values)
+        result.seek(0)
+        pdf = pikepdf.Pdf.open(result)
+        xfa = pdf.Root.AcroForm.XFA
+        for i in range(0, len(xfa), 2):
+            if str(xfa[i]) == 'datasets':
+                xml_data = bytes(xfa[i + 1].read_bytes())
+                root = ET.fromstring(xml_data)
+                ns = '{http://www.xfa.org/schema/xfa-data/1.0/}'
+                table = root.find(f'{ns}data').find('form1').find('F10L').find('Table1')
+                r01 = table.find('R01')
+                assert r01.find('C2').text == '1235'  # Rounded
+                break
+        pdf.close()
