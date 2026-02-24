@@ -511,6 +511,7 @@ class AIAgentService:
                 messages=context_messages,
                 max_tokens=model_config.max_tokens,
                 temperature=float(model_config.default_temperature),
+                api_key=model_config.api_key_encrypted,
                 system=system_prompt,
                 tools=tool_schemas,
             )
@@ -557,6 +558,7 @@ class AIAgentService:
                     messages=context_messages,
                     max_tokens=model_config.max_tokens,
                     temperature=float(model_config.default_temperature),
+                    api_key=model_config.api_key_encrypted,
                     system=system_prompt,
                     tools=tool_schemas,
                 )
@@ -806,6 +808,7 @@ class AIAgentService:
                     messages=context_messages,
                     max_tokens=model_config.max_tokens,
                     temperature=float(model_config.default_temperature),
+                    api_key=model_config.api_key_encrypted,
                     system=system_prompt,
                     tools=tool_schemas,
                 )
@@ -862,6 +865,7 @@ class AIAgentService:
                         messages=context_messages,
                         max_tokens=model_config.max_tokens,
                         temperature=float(model_config.default_temperature),
+                        api_key=model_config.api_key_encrypted,
                         system=system_prompt,
                         tools=tool_schemas,
                     )
@@ -883,6 +887,7 @@ class AIAgentService:
                     messages=context_messages,
                     max_tokens=model_config.max_tokens,
                     temperature=float(model_config.default_temperature),
+                    api_key=model_config.api_key_encrypted,
                     system=system_prompt,
                 ):
                     if text_chunk is not None:
@@ -1187,7 +1192,8 @@ class AIAgentService:
         has_tools: bool = False,
     ) -> str:
         """
-        Build system prompt for LLM.
+        Build system prompt for LLM with domain knowledge, tool examples,
+        and Romanian glossary.
 
         Args:
             rag_context: Optional RAG context to include
@@ -1197,32 +1203,62 @@ class AIAgentService:
         Returns:
             Complete system prompt
         """
-        base_prompt = """You are JARVIS, an intelligent assistant for the JARVIS enterprise platform.
+        from datetime import date
 
-You help users with questions about:
-- Invoices, transactions, and bank statements
-- Companies, departments, and employees
-- e-Factura (ANAF electronic invoices)
-- HR events and bonuses
-- Marketing projects (budgets, KPIs, teams, status)
-- Approval workflows (requests, decisions, delegations)
-- Tags and entity categorization
+        today = date.today().strftime('%d.%m.%Y')
 
-Guidelines:
+        base_prompt = f"""You are JARVIS, an intelligent AI assistant for the JARVIS enterprise platform used by AUTOWORLD — a group of car dealerships in Romania (Toyota, Lexus, Porsche, Bentley, Lamborghini).
+
+Today's date: {today}
+
+JARVIS manages these data entities:
+- **Invoices**: supplier invoices with number, date, value, currency (RON/EUR), status (pending/paid/approved/overdue), supplier name, allocations to companies/departments/brands
+- **Bank Transactions**: bank statement lines with vendor, amount, date, reconciliation status, linked to companies via CUI
+- **e-Factura**: electronic invoices from ANAF (Romanian tax authority), with allocation status (unallocated/hidden/allocated), direction (sent/received)
+- **Companies**: legal entities in the group (e.g., Autoworld SRL, Autoworld Premium SRL), identified by CUI/VAT code
+- **Departments & Brands**: organizational units (Sales, Service, Parts) under companies, brands (Toyota, Lexus, Porsche, etc.)
+- **Employees**: staff members with name, role, department, company assignment
+- **HR Events**: company events (dealer open doors, team buildings, masterclasses) with employee bonuses/participation
+- **Marketing Projects**: campaigns with budgets, KPIs, team members, status workflow (draft→pending→active→completed)
+- **Approvals**: workflow requests for invoices and marketing projects with multi-step approval chains
+
+Response guidelines:
 - Be helpful, accurate, and concise
-- When referencing data from context, cite the source
-- Format currency values as "1.234,56 RON" or "1.234,56 EUR" (Romanian convention)
-- Use DD.MM.YYYY date format when displaying dates
-- When presenting financial data, use markdown tables with totals
-- For trends, describe the direction (increasing, decreasing, or stable)
-- Always respond in the same language as the user's message"""
+- Format currency: "1.234,56 RON" or "1.234,56 EUR" (Romanian thousands separator = dot, decimal = comma)
+- Format dates: DD.MM.YYYY (e.g., 24.02.2026)
+- Use markdown tables for financial data, include totals
+- Always respond in the same language as the user's message (Romanian or English)"""
 
         sections = [base_prompt]
 
         if has_tools:
-            sections.append("""IMPORTANT: You have access to tools that can query the JARVIS database in real-time.
-When the user asks about specific data (invoices, transactions, suppliers, employees, etc.), you MUST use the available tools to look up the information. NEVER say you don't have access to data — use the tools instead.
-Always prefer using tools over saying you don't know or don't have access.""")
+            sections.append("""TOOL USAGE — MANDATORY:
+You have tools that query the JARVIS database in real-time. You MUST use them when the user asks about data.
+
+RULES:
+1. NEVER say "I don't have access to real-time data" or "I cannot access the database" — you DO have access via tools.
+2. ALWAYS call a tool when the user asks about invoices, transactions, suppliers, employees, events, approvals, or marketing projects.
+3. If unsure which tool to use, prefer search_invoices for invoice questions and get_invoice_summary for totals/aggregations.
+4. After getting tool results, present the data clearly with markdown tables when appropriate.
+
+EXAMPLES of when to use each tool:
+- "Arată-mi facturile de la Porsche" → search_invoices(supplier="Porsche")
+- "Câte facturi avem luna aceasta?" → get_invoice_summary(start_date="2026-02-01")
+- "Top 5 furnizori" → get_top_suppliers(limit=5)
+- "Ce aprobări am de făcut?" → get_pending_approvals(scope="mine")
+- "Detalii factura 123" → get_invoice_details(invoice_id=123)
+- "Sumar e-Factura" → get_efactura_summary()
+- "Bonusuri angajat Ion Popescu" → search_bonuses(employee="Ion Popescu")
+- "Proiecte marketing active" → search_marketing_projects(status="active")
+- "Tranzacții bancare luna ianuarie" → get_transaction_summary(date_from="2026-01-01", date_to="2026-01-31")
+- "Evenimente HR din 2025" → search_hr_events(year=2025)""")
+
+        sections.append("""ROMANIAN GLOSSARY (user may ask in Romanian):
+factura/facturi = invoice(s), furnizor = supplier, cheltuieli = spending/expenses, plată = payment,
+departament = department, angajat = employee, bonus/bonusuri = bonus(es), eveniment = event,
+luna/lună = month, an/anul = year, total/totaluri = total(s), aprobare = approval,
+tranzacție = transaction, extras bancar = bank statement, buget = budget, proiect = project,
+ultima/ultimele = last/recent, câte/câți = how many, arată = show, caută = search""")
 
         if analytics_context:
             sections.append(f"""ANALYTICS DATA (live aggregations from JARVIS database):
@@ -1235,7 +1271,7 @@ Present this data clearly using markdown tables. Include totals where appropriat
 {rag_context}""")
 
         if not analytics_context and not rag_context and not has_tools:
-            sections.append("Note: No specific context was retrieved for this query. If you don't have specific data, say so clearly.")
+            sections.append("Note: No specific context was retrieved for this query. Answer based on your general knowledge about the JARVIS platform.")
 
         return '\n\n'.join(sections)
 

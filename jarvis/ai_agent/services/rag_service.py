@@ -105,7 +105,7 @@ class RAGService:
                 logger.debug(f"Text search returned {len(documents)} results")
 
             # Convert to RAGSource format
-            return [
+            sources = [
                 RAGSource(
                     doc_id=doc.id,
                     score=doc.score,
@@ -117,9 +117,57 @@ class RAGService:
                 for doc in documents
             ]
 
+            # Rerank with recency boost
+            return self._rerank_sources(sources)
+
         except Exception as e:
             logger.error(f"RAG search failed: {e}")
             return []
+
+    @staticmethod
+    def _rerank_sources(sources: List['RAGSource']) -> List['RAGSource']:
+        """Rerank RAG sources with recency boost.
+
+        Combines similarity score (85%) with a recency factor (15%)
+        so recent invoices/events rank higher for queries like "ultima factura".
+
+        Sources with a 'date' in metadata get a recency boost based on how
+        recent the date is (within the last 365 days = max boost).
+        """
+        from datetime import date, datetime
+
+        if not sources or len(sources) <= 1:
+            return sources
+
+        today = date.today()
+
+        for src in sources:
+            recency = 0.0
+            meta = src.metadata or {}
+
+            # Try to extract a date from metadata
+            date_str = meta.get('date') or meta.get('start_date') or meta.get('issue_date')
+            if date_str:
+                try:
+                    if isinstance(date_str, str):
+                        d = datetime.strptime(date_str[:10], '%Y-%m-%d').date()
+                    elif isinstance(date_str, date):
+                        d = date_str
+                    else:
+                        d = None
+
+                    if d:
+                        days_ago = (today - d).days
+                        # Linear decay: 1.0 for today, 0.0 for 365+ days ago
+                        recency = max(0.0, 1.0 - days_ago / 365.0)
+                except (ValueError, TypeError):
+                    pass
+
+            # Blend: 85% similarity + 15% recency
+            src.score = src.score * 0.85 + recency * 0.15
+
+        sources.sort(key=lambda s: s.score, reverse=True)
+        return sources
 
     # Metadata keys to display per source type
     METADATA_DISPLAY_KEYS = {

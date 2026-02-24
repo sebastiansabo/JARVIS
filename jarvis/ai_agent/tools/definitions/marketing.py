@@ -149,8 +149,10 @@ def get_marketing_project_details(params: dict, user_id: int) -> dict:
 tool_registry.register(
     name='search_marketing_projects',
     description=(
-        'Search marketing projects. Filter by project name, status '
-        '(draft/pending/active/paused/completed), type, company, or channel.'
+        'Search marketing projects/campaigns. '
+        'Use when the user asks about marketing projects, campaign status, or "proiecte marketing active". '
+        'Returns: {projects: [{id, name, status, type, start_date, end_date, owner, total_budget, total_spent, kpi_count, channel_mix}], count}. '
+        'Example: {status: "active", company: "Autoworld"}'
     ),
     input_schema={
         'type': 'object',
@@ -174,8 +176,9 @@ tool_registry.register(
 tool_registry.register(
     name='get_marketing_project_details',
     description=(
-        'Get full details of a specific marketing project including budget lines, '
-        'spending, KPIs, and team members.'
+        'Get full details of a specific marketing project by ID, including budget lines with spending, KPIs with progress, and team members. '
+        'Use when the user asks about a specific project budget, KPI performance, or team. '
+        'Returns: {id, name, status, type, owner, budget_lines: [{name, amount, spent}], kpis: [{kpi_name, target_value, current_value, unit}], team: [{name, role}]}'
     ),
     input_schema={
         'type': 'object',

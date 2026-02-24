@@ -125,8 +125,10 @@ def get_invoice_details(params: dict, user_id: int) -> dict:
 tool_registry.register(
     name='search_invoices',
     description=(
-        'Search invoices in JARVIS. Filter by supplier name, invoice number, '
-        'status, date range, amount range, or company. Returns up to 50 results.'
+        'Search invoices in the JARVIS database. Use when the user asks about invoices, '
+        'supplier spending, invoice lists, or wants to find specific invoices. '
+        'Returns: {invoices: [{id, supplier, invoice_number, invoice_date, invoice_value, currency, status, invoice_type}], count}. '
+        'Example: {supplier: "Porsche", date_from: "2026-01-01", status: "pending"}'
     ),
     input_schema={
         'type': 'object',
@@ -148,7 +150,11 @@ tool_registry.register(
 
 tool_registry.register(
     name='get_invoice_details',
-    description='Get full details of a specific invoice including its allocations.',
+    description=(
+        'Get full details of a specific invoice by ID, including allocations to companies/departments/brands. '
+        'Use when the user asks about a specific invoice or its allocation breakdown. '
+        'Returns: {id, supplier, supplier_vat, invoice_number, invoice_date, invoice_value, currency, status, description, allocations: [{company, brand, department, percentage, value_ron}]}'
+    ),
     input_schema={
         'type': 'object',
         'properties': {

@@ -45,6 +45,16 @@ class AIAgentConfig:
     MULTI_PROVIDER_ENABLED: bool = True   # Enable multiple LLM providers
     ANALYTICS_ENABLED: bool = True        # Enable AI-powered analytics queries
 
+    @property
+    def embedding_model(self) -> str:
+        """Alias for RAG_EMBEDDING_MODEL (code uses lowercase)."""
+        return self.RAG_EMBEDDING_MODEL
+
+    @property
+    def rag_min_similarity(self) -> float:
+        """Alias for RAG_MIN_SIMILARITY (code uses lowercase)."""
+        return self.RAG_MIN_SIMILARITY
+
     @classmethod
     def from_env(cls) -> 'AIAgentConfig':
         """Load configuration from environment variables."""

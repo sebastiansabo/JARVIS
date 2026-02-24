@@ -57,8 +57,10 @@ def get_transaction_summary(params: dict, user_id: int) -> dict:
 tool_registry.register(
     name='get_invoice_summary',
     description=(
-        'Get aggregated invoice summary grouped by company, department, brand, or supplier. '
-        'Returns totals in RON and EUR with invoice counts. Supports date range and entity filters.'
+        'Get aggregated invoice totals grouped by company, department, brand, or supplier. '
+        'Use when the user asks "how much did we spend?", "total invoices by company", or any spending summary. '
+        'Returns: {summary: [{name, total_ron, total_eur, invoice_count}], grand_total_ron, grand_total_eur}. '
+        'Example: {group_by: "supplier", start_date: "2026-01-01", company: "Autoworld"}'
     ),
     input_schema={
         'type': 'object',
@@ -84,7 +86,9 @@ tool_registry.register(
     name='get_monthly_trend',
     description=(
         'Get monthly invoice spending trend over time. '
-        'Returns month-by-month totals in RON and EUR with invoice counts.'
+        'Use when the user asks about spending trends, month-by-month analysis, or "how has spending changed?". '
+        'Returns: {months: [{month, total_ron, total_eur, invoice_count}]}. '
+        'Example: {company: "Autoworld Premium", start_date: "2025-01-01", end_date: "2025-12-31"}'
     ),
     input_schema={
         'type': 'object',
@@ -103,7 +107,12 @@ tool_registry.register(
 
 tool_registry.register(
     name='get_top_suppliers',
-    description='Get the top N suppliers ranked by total spending (in RON).',
+    description=(
+        'Get the top N suppliers ranked by total spending (in RON). '
+        'Use when the user asks "top suppliers", "biggest vendors", "who do we spend the most with?". '
+        'Returns: {suppliers: [{supplier, total_ron, invoice_count}]}. '
+        'Example: {limit: 5, company: "Autoworld", start_date: "2026-01-01"}'
+    ),
     input_schema={
         'type': 'object',
         'properties': {
@@ -121,7 +130,12 @@ tool_registry.register(
 
 tool_registry.register(
     name='get_transaction_summary',
-    description='Get bank transaction summary with status breakdown and per-supplier totals.',
+    description=(
+        'Get bank transaction summary with status breakdown and per-supplier totals. '
+        'Use when the user asks about bank transactions, payment status, or transaction summaries. '
+        'Returns: {total_count, total_amount, by_status: {pending: {count, total}, ...}, top_suppliers: [{name, total, count}]}. '
+        'Example: {supplier: "OMV", date_from: "2026-01-01", date_to: "2026-01-31"}'
+    ),
     input_schema={
         'type': 'object',
         'properties': {

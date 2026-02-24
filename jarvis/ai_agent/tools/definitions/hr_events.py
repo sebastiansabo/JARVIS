@@ -191,8 +191,10 @@ def search_bonuses(params: dict, user_id: int) -> dict:
 tool_registry.register(
     name='search_hr_events',
     description=(
-        'Search HR events (company events, team activities, dealer open doors, etc). '
-        'Filter by name, company, brand, date range, or year.'
+        'Search HR events such as company events, team buildings, dealer open doors, and masterclasses. '
+        'Use when the user asks about events, "ce evenimente avem?", or event history. '
+        'Returns: {events: [{id, name, start_date, end_date, company, brand, bonus_count, total_bonus_net, total_bonus_days}], count}. '
+        'Example: {company: "Autoworld", year: 2025}'
     ),
     input_schema={
         'type': 'object',
@@ -212,7 +214,11 @@ tool_registry.register(
 
 tool_registry.register(
     name='get_hr_event_details',
-    description='Get full details of a specific HR event including all employee bonuses.',
+    description=(
+        'Get full details of a specific HR event by ID, including all employee bonuses and participation records. '
+        'Use when the user asks about a specific event or its bonus breakdown. '
+        'Returns: {id, name, start_date, end_date, company, brand, description, bonuses: [{employee, year, month, bonus_days, bonus_net, participation_start, participation_end}]}'
+    ),
     input_schema={
         'type': 'object',
         'properties': {
@@ -227,9 +233,10 @@ tool_registry.register(
 tool_registry.register(
     name='search_bonuses',
     description=(
-        'Search employee bonuses across HR events. '
-        'Filter by employee name, event name, year, month, or company. '
-        'Returns individual bonus records with totals.'
+        'Search employee bonuses across all HR events. '
+        'Use when the user asks about bonuses, "bonusuri angajat X", employee compensation from events, or bonus totals. '
+        'Returns: {bonuses: [{employee, event_name, year, month, bonus_days, bonus_net, company, brand}], count, total_bonus_net, total_bonus_days}. '
+        'Example: {employee: "Ion Popescu", year: 2025}'
     ),
     input_schema={
         'type': 'object',

@@ -113,8 +113,10 @@ def get_approval_status(params: dict, user_id: int) -> dict:
 tool_registry.register(
     name='get_pending_approvals',
     description=(
-        'Get pending approval requests. By default returns items pending for the current user. '
-        'Use scope="all" to see all pending requests across the organization.'
+        'Get pending approval requests from the approval workflow system. '
+        'Use when the user asks "what approvals do I have?", "pending approvals", or "ce aprobări am?". '
+        'Default scope="mine" returns only items assigned to the current user. Use scope="all" for organization-wide view. '
+        'Returns: {pending_approvals: [{id, entity_type, entity_id, title, status, priority, created_at, requested_by, context}], count}'
     ),
     input_schema={
         'type': 'object',
@@ -132,7 +134,11 @@ tool_registry.register(
 
 tool_registry.register(
     name='get_approval_status',
-    description='Get the status and decision history of a specific approval request.',
+    description=(
+        'Get the status, progress, and decision history of a specific approval request by ID. '
+        'Use when the user asks about a specific approval status or decision timeline. '
+        'Returns: {id, entity_type, title, status, current_step, total_steps, requested_by, decisions: [{step_order, decision, comment, decided_by}]}'
+    ),
     input_schema={
         'type': 'object',
         'properties': {

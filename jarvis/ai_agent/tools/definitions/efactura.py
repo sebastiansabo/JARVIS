@@ -70,8 +70,10 @@ def search_efactura(params: dict, user_id: int) -> dict:
 tool_registry.register(
     name='get_efactura_summary',
     description=(
-        'Get e-Factura (ANAF) backlog summary: counts and totals for unallocated, '
-        'hidden, and allocated invoices, broken down by company and direction.'
+        'Get e-Factura (ANAF) backlog overview: counts and totals for unallocated, hidden, and allocated electronic invoices. '
+        'Use when the user asks about e-Factura status, ANAF backlog, or "câte e-facturi avem nealocate?". '
+        'Returns: {by_company: [{company, direction, status, count, total}], totals: {unallocated, hidden, allocated}}. '
+        'Takes no parameters — returns full summary.'
     ),
     input_schema={'type': 'object', 'properties': {}},
     handler=get_efactura_summary,
@@ -81,9 +83,10 @@ tool_registry.register(
 tool_registry.register(
     name='search_efactura',
     description=(
-        'Search e-Factura invoices from ANAF. Filter by supplier name, '
-        'allocation status (unallocated/hidden/allocated), direction (sent/received), '
-        'or date range.'
+        'Search individual e-Factura invoices from ANAF. '
+        'Use when the user asks about specific e-Factura invoices, unallocated ANAF invoices, or invoices from a specific supplier via ANAF. '
+        'Returns: {efactura_invoices: [{id, partner_name, partner_cif, invoice_number, issue_date, total_amount, currency, direction, allocation_status}], count}. '
+        'Example: {supplier: "OMV", status: "unallocated", date_from: "2026-01-01"}'
     ),
     input_schema={
         'type': 'object',

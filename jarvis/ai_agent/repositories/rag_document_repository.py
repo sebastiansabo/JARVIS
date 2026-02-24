@@ -179,10 +179,10 @@ class RAGDocumentRepository(BaseRepository):
             SELECT id, source_type, source_id, source_table,
                    content, content_hash, metadata, company_id,
                    is_active, created_at, updated_at,
-                   ts_rank(to_tsvector('english', content), plainto_tsquery('english', %s)) as score
+                   ts_rank(to_tsvector('simple', content), plainto_tsquery('simple', %s)) as score
             FROM ai_agent.rag_documents
             WHERE {where_clause}
-              AND to_tsvector('english', content) @@ plainto_tsquery('english', %s)
+              AND to_tsvector('simple', content) @@ plainto_tsquery('simple', %s)
             ORDER BY score DESC
             LIMIT %s
         """, params)

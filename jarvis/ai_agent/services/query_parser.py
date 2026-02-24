@@ -23,16 +23,31 @@ ANALYTICS_KEYWORDS = {
     'overview', 'statistics', 'stats', 'aggregate',
     'per month', 'per quarter', 'quarterly', 'yearly', 'annual',
     'how many', 'what is the total', 'what are the',
+    # Romanian
+    'totaluri', 'cheltuieli', 'cheltuiala', 'cheltuit', 'cat am cheltuit',
+    'cat costa', 'buget', 'venituri', 'raport', 'sumar', 'medie',
+    'cate', 'cati', 'care este totalul', 'care sunt',
+    'pe luna', 'pe trimestru', 'trimestrial', 'anual',
+    'cel mai mare', 'cel mai scump', 'cei mai mari',
 }
 
 # Monthly trend keywords
-TREND_KEYWORDS = {'monthly', 'trend', 'per month', 'month by month', 'over time', 'quarterly', 'per quarter'}
+TREND_KEYWORDS = {
+    'monthly', 'trend', 'per month', 'month by month', 'over time', 'quarterly', 'per quarter',
+    'lunar', 'pe luna', 'luna de luna', 'evolutie', 'tendinta', 'trimestrial',
+}
 
 # Top suppliers keywords
-TOP_SUPPLIER_KEYWORDS = {'top supplier', 'top vendors', 'biggest supplier', 'largest supplier', 'most expensive supplier'}
+TOP_SUPPLIER_KEYWORDS = {
+    'top supplier', 'top vendors', 'biggest supplier', 'largest supplier', 'most expensive supplier',
+    'top furnizori', 'cei mai mari furnizori', 'principalii furnizori',
+}
 
 # Transaction/bank keywords
-TRANSACTION_KEYWORDS = {'bank', 'transaction', 'transactions', 'statement', 'statements', 'pending', 'reconcil'}
+TRANSACTION_KEYWORDS = {
+    'bank', 'transaction', 'transactions', 'statement', 'statements', 'pending', 'reconcil',
+    'tranzactie', 'tranzactii', 'extras bancar', 'extras de cont', 'banca', 'plati',
+}
 
 # e-Factura keywords
 EFACTURA_KEYWORDS = {
@@ -43,10 +58,10 @@ EFACTURA_KEYWORDS = {
 
 # Group-by keywords
 GROUP_BY_KEYWORDS = {
-    'company': ['by company', 'per company', 'each company', 'companies'],
-    'department': ['by department', 'per department', 'each department', 'departments'],
-    'brand': ['by brand', 'per brand', 'each brand', 'brands', 'business line'],
-    'supplier': ['by supplier', 'per supplier', 'each supplier', 'suppliers', 'vendors', 'by vendor'],
+    'company': ['by company', 'per company', 'each company', 'companies', 'pe firma', 'pe companie', 'firme'],
+    'department': ['by department', 'per department', 'each department', 'departments', 'pe departament', 'departamente'],
+    'brand': ['by brand', 'per brand', 'each brand', 'brands', 'business line', 'pe brand', 'branduri'],
+    'supplier': ['by supplier', 'per supplier', 'each supplier', 'suppliers', 'vendors', 'by vendor', 'pe furnizor', 'furnizori'],
 }
 
 # Month name mappings (English + Romanian)
@@ -180,7 +195,10 @@ def _detect_query_types(msg_lower: str) -> List[str]:
         types.append('efactura_summary')
 
     # Default: invoice summary (if no specific type detected, or always include)
-    if not types or any(kw in msg_lower for kw in ['invoice', 'spend', 'cost', 'total', 'budget', 'expense']):
+    if not types or any(kw in msg_lower for kw in [
+        'invoice', 'spend', 'cost', 'total', 'budget', 'expense',
+        'factura', 'facturi', 'cheltuieli', 'buget', 'cheltuiala',
+    ]):
         types.append('invoice_summary')
 
     return types
