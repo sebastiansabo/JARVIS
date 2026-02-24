@@ -88,11 +88,20 @@ export interface BilantMetrics {
   }
 }
 
+export interface BilantAiAnalysis {
+  content: string
+  model: string
+  generated_at: string
+  input_tokens: number
+  output_tokens: number
+}
+
 export interface BilantGenerationDetail {
   generation: BilantGeneration
   results: BilantResult[]
   metrics: BilantMetrics
   metric_configs?: BilantMetricConfig[]
+  ai_analysis?: BilantAiAnalysis | null
 }
 
 export interface ChartOfAccount {

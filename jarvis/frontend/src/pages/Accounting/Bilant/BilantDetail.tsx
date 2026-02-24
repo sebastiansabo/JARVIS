@@ -15,6 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ResultsTable } from './components/ResultsTable'
 import { RatioCard } from './components/RatioCard'
 import { StructureChart } from './components/StructureChart'
+import { AiInsightsCard } from './components/AiInsightsCard'
 import type { BilantMetrics, BilantMetricConfig } from '@/types/bilant'
 
 type DetailTab = 'results' | 'metrics' | 'info'
@@ -301,6 +302,9 @@ export default function BilantDetail() {
               colorScheme="amber"
             />
           </div>
+
+          {/* AI Financial Analyst */}
+          <AiInsightsCard generationId={gen.id} initialAnalysis={data?.ai_analysis} />
         </div>
       )}
 

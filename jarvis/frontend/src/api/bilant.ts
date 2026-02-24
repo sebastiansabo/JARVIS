@@ -5,6 +5,7 @@ import type {
   BilantMetricConfig,
   BilantGeneration,
   BilantGenerationDetail,
+  BilantAiAnalysis,
   ChartOfAccount,
 } from '@/types/bilant'
 
@@ -205,6 +206,19 @@ export const bilantApi = {
     a.remove()
     URL.revokeObjectURL(url)
   },
+
+  // ── AI Analysis ──
+
+  getAiModels: async () => {
+    const res = await api.get<{ models: { id: number; provider: string; model_name: string; display_name: string; is_default: boolean }[] }>(`${BASE}/ai-models`)
+    return res.models
+  },
+
+  getAiAnalysis: (id: number, modelId?: number) =>
+    api.post<{ success: boolean; analysis: BilantAiAnalysis }>(`${BASE}/generations/${id}/ai-analysis`, modelId ? { model_id: modelId } : {}),
+
+  clearAiAnalysis: (id: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/generations/${id}/ai-analysis`),
 
   // ── Compare ──
 

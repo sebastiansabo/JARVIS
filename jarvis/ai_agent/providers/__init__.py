@@ -9,6 +9,7 @@ from .claude_provider import ClaudeProvider
 from .openai_provider import OpenAIProvider
 from .groq_provider import GroqProvider
 from .gemini_provider import GeminiProvider
+from .grok_provider import GrokProvider
 
 __all__ = [
     'BaseProvider',
@@ -16,4 +17,5 @@ __all__ = [
     'OpenAIProvider',
     'GroqProvider',
     'GeminiProvider',
+    'GrokProvider',
 ]

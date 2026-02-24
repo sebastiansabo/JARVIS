@@ -13,7 +13,7 @@ from core.utils.logging_config import get_logger
 from ..models import (
     Conversation, Message, MessageRole, ConversationStatus,
     ModelConfig, LLMProvider, ChatResponse, ServiceResult,
-    RAGSource,
+    RAGSource, RAGSourceType,
 )
 from ..config import AIAgentConfig
 from ..exceptions import (
@@ -23,7 +23,7 @@ from ..exceptions import (
 from ..repositories import (
     ConversationRepository, MessageRepository, ModelConfigRepository
 )
-from ..providers import BaseProvider, ClaudeProvider, OpenAIProvider, GroqProvider, GeminiProvider
+from ..providers import BaseProvider, ClaudeProvider, OpenAIProvider, GroqProvider, GeminiProvider, GrokProvider
 from .rag_service import RAGService
 from .analytics_service import AnalyticsService
 from .query_parser import parse_query, classify_complexity
@@ -78,10 +78,14 @@ class AIAgentService:
             'openai': OpenAIProvider(),
             'groq': GroqProvider(),
             'gemini': GeminiProvider(),
+            'grok': GrokProvider(),
         }
 
         self._settings_cache: Optional[Dict[str, str]] = None
         self._settings_cache_time: float = 0
+
+        self._rag_source_perms_cache: Dict[int, List[RAGSourceType]] = {}
+        self._rag_source_perms_cache_time: Dict[int, float] = {}
 
         logger.info("AIAgentService initialized with RAG support and multi-provider")
 
@@ -111,6 +115,54 @@ class AIAgentService:
             self._settings_cache_time = now
         except Exception as e:
             logger.warning(f"Failed to load runtime AI settings: {e}")
+
+    def get_allowed_rag_sources(self, user_id: int) -> Optional[List[RAGSourceType]]:
+        """Get RAG source types allowed for a user based on role permissions.
+
+        Returns None if all sources are allowed (optimization to skip filtering).
+        Cached per user_id for 60 seconds.
+        """
+        now = time.time()
+        cached_time = self._rag_source_perms_cache_time.get(user_id, 0)
+        if user_id in self._rag_source_perms_cache and (now - cached_time) < 60:
+            return self._rag_source_perms_cache[user_id]
+
+        try:
+            from database import get_db, release_db
+            from core.roles.repositories.permission_repository import PermissionRepository
+
+            conn = get_db()
+            try:
+                cursor = conn.cursor()
+                cursor.execute('SELECT role_id FROM users WHERE id = %s', (user_id,))
+                row = cursor.fetchone()
+                if not row or not row.get('role_id'):
+                    return None  # No role = allow all (backward compat)
+
+                role_id = row['role_id']
+                perm_repo = PermissionRepository()
+                all_sources = list(RAGSourceType)
+                allowed = []
+
+                for src in all_sources:
+                    result = perm_repo.check_permission_v2(role_id, 'ai_agent', 'rag_source', src.value)
+                    if result.get('has_permission'):
+                        allowed.append(src)
+
+                # If all sources allowed, return None (no filtering needed)
+                if len(allowed) == len(all_sources):
+                    result_val = None
+                else:
+                    result_val = allowed if allowed else []
+
+                self._rag_source_perms_cache[user_id] = result_val
+                self._rag_source_perms_cache_time[user_id] = now
+                return result_val
+            finally:
+                release_db(conn)
+        except Exception as e:
+            logger.warning(f"Failed to check RAG source permissions for user {user_id}: {e}")
+            return None  # Fail open — allow all on error
 
     def get_provider(self, provider_name: str) -> BaseProvider:
         """
@@ -353,10 +405,12 @@ class AIAgentService:
             rag_context = None
             if self.config.RAG_ENABLED:
                 try:
+                    allowed_sources = self.get_allowed_rag_sources(user_id)
                     rag_sources = self.rag_service.search(
                         query=user_message,
                         limit=self.config.RAG_TOP_K,
                         company_id=None,  # TODO: Get user's company for filtering
+                        source_types=allowed_sources,
                     )
                     if rag_sources:
                         rag_context = self.rag_service.format_context(
@@ -601,10 +655,12 @@ class AIAgentService:
             rag_context = None
             if self.config.RAG_ENABLED:
                 try:
+                    allowed_sources = self.get_allowed_rag_sources(user_id)
                     rag_sources = self.rag_service.search(
                         query=user_message,
                         limit=self.config.RAG_TOP_K,
                         company_id=None,
+                        source_types=allowed_sources,
                     )
                     if rag_sources:
                         rag_context = self.rag_service.format_context(

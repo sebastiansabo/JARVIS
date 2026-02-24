@@ -264,6 +264,14 @@ INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per
 SELECT 'gemini', 'gemini-pro', 'Gemini Pro', 0.00025, 0.0005, 8192, 32768, FALSE
 WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'gemini' AND model_name = 'gemini-pro');
 
+INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
+SELECT 'grok', 'grok-3', 'Grok 3', 0.005, 0.015, 4096, 131072, FALSE
+WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'grok' AND model_name = 'grok-3');
+
+INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
+SELECT 'grok', 'grok-2-1212', 'Grok 2', 0.002, 0.010, 4096, 131072, FALSE
+WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'grok' AND model_name = 'grok-2-1212');
+
 -- ============================================================
 -- Add AI Agent to Module Menu
 -- ============================================================

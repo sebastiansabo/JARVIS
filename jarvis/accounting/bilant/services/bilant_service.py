@@ -1,7 +1,9 @@
 """Bilant Service — orchestrates upload → engine → persist."""
 
+import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from ..repositories import BilantTemplateRepository, BilantGenerationRepository
@@ -11,6 +13,30 @@ from ..pdf_handler import generate_bilant_pdf
 from ..anaf_parser import parse_anaf_pdf, generate_row_mapping, fill_anaf_pdf, generate_anaf_xml, generate_anaf_txt, _nr_rd_to_anaf
 
 logger = logging.getLogger('jarvis.bilant.service')
+
+FINANCIAL_ANALYST_SYSTEM_PROMPT = """You are a senior financial analyst specializing in Romanian accounting standards (OMFP 1802/2014).
+You analyze bilant (balance sheet) data and provide clear, actionable insights for business owners.
+
+Your analysis MUST be in Romanian language and use Romanian number formatting (1.234,56).
+Use markdown formatting with headers, bullet points, and bold for emphasis.
+
+Structure your response with these sections:
+## Stare Financiara Generala
+A 2-3 sentence overview of the company's financial health.
+
+## Puncte Forte
+- List 2-4 key financial strengths based on the data
+
+## Zone de Risc
+- List 2-4 risk areas or concerns, if any exist
+
+## Recomandari
+- List 2-3 specific, actionable recommendations
+
+## Indicatori Cheie
+Brief commentary on the most notable financial ratios and what they mean for this company.
+
+Keep the total response under 800 words. Be specific — reference actual numbers from the data."""
 
 
 @dataclass
@@ -126,6 +152,7 @@ class BilantService:
             'results': results,
             'metrics': metrics,
             'metric_configs': metric_configs,
+            'ai_analysis': generation.get('ai_analysis'),
         })
 
     def generate_excel(self, generation_id):
@@ -317,6 +344,130 @@ class BilantService:
         except Exception as e:
             logger.exception(f'ANAF TXT generation failed: {e}')
             return ServiceResult(success=False, error=str(e), status_code=500)
+
+    def generate_ai_analysis(self, generation_id, force=False, model_id=None):
+        """Generate AI financial analysis for a bilant generation.
+
+        Returns cached analysis if available (unless force=True).
+        model_id: optional specific model config ID to use instead of global default.
+        """
+        generation = self.generation_repo.get_by_id(generation_id)
+        if not generation:
+            return ServiceResult(success=False, error='Generation not found', status_code=404)
+
+        # Return cached if available and not forcing regeneration
+        if generation.get('ai_analysis') and not force:
+            return ServiceResult(success=True, data=generation['ai_analysis'])
+
+        # Load full detail for analysis
+        detail = self.get_generation_detail(generation_id)
+        if not detail.success:
+            return detail
+
+        try:
+            from ai_agent.repositories import ModelConfigRepository
+            from ai_agent.providers import ClaudeProvider, OpenAIProvider, GroqProvider, GeminiProvider
+
+            model_repo = ModelConfigRepository()
+            model_config = None
+            if model_id:
+                model_config = model_repo.get_by_id(model_id)
+            if not model_config:
+                model_config = model_repo.get_default()
+            if not model_config:
+                return ServiceResult(success=False, error='No AI model configured', status_code=400)
+
+            providers = {
+                'claude': ClaudeProvider,
+                'openai': OpenAIProvider,
+                'groq': GroqProvider,
+                'gemini': GeminiProvider,
+            }
+            provider_cls = providers.get(model_config.provider.value)
+            if not provider_cls:
+                return ServiceResult(success=False, error=f'Unsupported provider: {model_config.provider.value}', status_code=400)
+
+            provider = provider_cls()
+            prompt = self._build_analysis_prompt(detail.data)
+
+            response = provider.generate(
+                model_name=model_config.model_name,
+                messages=[{'role': 'user', 'content': prompt}],
+                max_tokens=2048,
+                temperature=0.3,
+                system=FINANCIAL_ANALYST_SYSTEM_PROMPT,
+            )
+
+            analysis = {
+                'content': response.content,
+                'model': response.model,
+                'generated_at': datetime.now(timezone.utc).isoformat(),
+                'input_tokens': response.input_tokens,
+                'output_tokens': response.output_tokens,
+            }
+
+            # Persist to DB
+            self.generation_repo.update_ai_analysis(generation_id, analysis)
+
+            logger.info(f'AI analysis generated for generation {generation_id} ({response.input_tokens}+{response.output_tokens} tokens)')
+            return ServiceResult(success=True, data=analysis)
+
+        except Exception as e:
+            logger.exception(f'AI analysis failed for generation {generation_id}: {e}')
+            return ServiceResult(success=False, error=str(e), status_code=500)
+
+    def clear_ai_analysis(self, generation_id):
+        """Clear cached AI analysis to allow regeneration."""
+        generation = self.generation_repo.get_by_id(generation_id)
+        if not generation:
+            return ServiceResult(success=False, error='Generation not found', status_code=404)
+        self.generation_repo.update_ai_analysis(generation_id, None)
+        return ServiceResult(success=True)
+
+    def _build_analysis_prompt(self, detail_data):
+        """Build the user prompt with all financial data for AI analysis."""
+        gen = detail_data['generation']
+        metrics = detail_data['metrics']
+
+        parts = [
+            f"Analizeaza bilantul pentru compania **{gen.get('company_name', 'N/A')}**, "
+            f"perioada **{gen.get('period_label', 'N/A')}**.",
+            "",
+            "### Date financiare:",
+        ]
+
+        # Summary
+        summary = metrics.get('summary', {})
+        if summary:
+            parts.append("\n**Sumar:**")
+            for key, val in summary.items():
+                label = key.replace('_', ' ').title()
+                parts.append(f"- {label}: {val:,.2f} RON")
+
+        # Ratios
+        ratios = metrics.get('ratios', {})
+        if ratios:
+            parts.append("\n**Indicatori financiari:**")
+            for key, raw in ratios.items():
+                if isinstance(raw, dict) and 'value' in raw:
+                    val = raw['value']
+                    label = raw.get('label', key.replace('_', ' ').title())
+                    interp = raw.get('interpretation', '')
+                    if val is not None:
+                        parts.append(f"- {label}: {val:.4f}" + (f" ({interp})" if interp else ""))
+                elif isinstance(raw, (int, float)):
+                    parts.append(f"- {key.replace('_', ' ').title()}: {raw:.4f}")
+
+        # Structure
+        structure = metrics.get('structure', {})
+        for side, label in [('assets', 'Active'), ('liabilities', 'Pasive')]:
+            items = structure.get(side, [])
+            if items:
+                parts.append(f"\n**Structura {label}:**")
+                for item in items:
+                    parts.append(f"- {item['name']}: {item['value']:,.2f} RON ({item['percent']}%)")
+
+        return "\n".join(parts)
 
     def generate_anaf_excel(self, generation_id):
         """Generate ANAF-format Excel with F10 field codes."""

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Star, Key, RefreshCw, Database } from 'lucide-react'
+import { Save, Star, Key, RefreshCw, Database, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -19,6 +19,9 @@ const SOURCE_LABELS: Record<string, string> = {
   transaction: 'Bank Transactions',
   efactura: 'e-Factura',
   event: 'HR Events',
+  marketing: 'Marketing Projects',
+  approval: 'Approvals',
+  tag: 'Tags',
 }
 
 export default function AiTab() {
@@ -38,6 +41,11 @@ export default function AiTab() {
   const { data: ragStats, isLoading: statsLoading } = useQuery({
     queryKey: ['settings', 'rag-stats'],
     queryFn: settingsApi.getRagStats,
+  })
+
+  const { data: ragPerms } = useQuery({
+    queryKey: ['settings', 'rag-source-permissions'],
+    queryFn: settingsApi.getRagSourcePermissions,
   })
 
   // ── Form state ──
@@ -126,7 +134,7 @@ export default function AiTab() {
   }
 
   // ── Group models by provider ──
-  const providerOrder = ['claude', 'openai', 'groq', 'gemini']
+  const providerOrder = ['claude', 'openai', 'groq', 'gemini', 'grok']
   const groupedModels = (models || []).reduce<Record<string, AiModel[]>>((acc, m) => {
     ;(acc[m.provider] ||= []).push(m)
     return acc
@@ -337,30 +345,40 @@ export default function AiTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {Object.entries(SOURCE_LABELS).map(([key, label]) => (
-                <TableRow key={key}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Database className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm font-medium">{label}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {statsLoading ? '...' : ragStats?.by_source_type?.[key] ?? 0}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={reindexing !== null}
-                      onClick={() => handleReindex(key)}
-                    >
-                      <RefreshCw className={`mr-1 h-3.5 w-3.5 ${reindexing === key ? 'animate-spin' : ''}`} />
-                      Reindex
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {Object.entries(SOURCE_LABELS).map(([key, label]) => {
+                const hasAccess = !ragPerms || ragPerms.allowed_sources.includes(key)
+                return (
+                  <TableRow key={key} className={hasAccess ? '' : 'opacity-50'}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {hasAccess ? (
+                          <Database className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Lock className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className="text-sm font-medium">{label}</span>
+                        {!hasAccess && (
+                          <Badge variant="outline" className="text-xs">No access</Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {statsLoading ? '...' : ragStats?.by_source_type?.[key] ?? 0}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={reindexing !== null || !hasAccess}
+                        onClick={() => handleReindex(key)}
+                      >
+                        <RefreshCw className={`mr-1 h-3.5 w-3.5 ${reindexing === key ? 'animate-spin' : ''}`} />
+                        Reindex
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </CardContent>

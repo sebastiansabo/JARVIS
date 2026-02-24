@@ -592,7 +592,19 @@ def create_schema(conn, cursor):
             ('ai_agent', 'AI Agent', 'bi-robot', 'models', 'Models', 'manage', 'Manage', 'Configure model settings and API keys', FALSE, 4),
             ('ai_agent', 'AI Agent', 'bi-robot', 'rag', 'RAG', 'view', 'View', 'View RAG stats and data sources', FALSE, 5),
             ('ai_agent', 'AI Agent', 'bi-robot', 'rag', 'RAG', 'reindex', 'Reindex', 'Trigger RAG reindexing', FALSE, 6),
-            ('ai_agent', 'AI Agent', 'bi-robot', 'settings', 'Settings', 'edit', 'Edit', 'Modify AI agent configuration', FALSE, 7)
+            ('ai_agent', 'AI Agent', 'bi-robot', 'settings', 'Settings', 'edit', 'Edit', 'Modify AI agent configuration', FALSE, 7),
+
+            -- AI Agent RAG Source permissions (per-source access control)
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'invoice', 'Invoices', 'Access invoice data in AI chat', FALSE, 10),
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'company', 'Companies', 'Access company data in AI chat', FALSE, 11),
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'department', 'Departments', 'Access department data in AI chat', FALSE, 12),
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'employee', 'Employees', 'Access employee data in AI chat', FALSE, 13),
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'transaction', 'Bank Transactions', 'Access bank transaction data in AI chat', FALSE, 14),
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'efactura', 'e-Factura', 'Access e-Factura data in AI chat', FALSE, 15),
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'event', 'HR Events', 'Access HR event data in AI chat', FALSE, 16),
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'marketing', 'Marketing Projects', 'Access marketing project data in AI chat', FALSE, 17),
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'approval', 'Approvals', 'Access approval data in AI chat', FALSE, 18),
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'tag', 'Tags', 'Access tag data in AI chat', FALSE, 19)
         ''')
 
         # Set default permissions for existing roles
@@ -712,6 +724,97 @@ def create_schema(conn, cursor):
         AND p.module_key = 'ai_agent' AND p.entity_key = 'chat'
         ON CONFLICT (role_id, permission_id) DO NOTHING
     ''')
+
+    # Migration: Add RAG source permissions if they don't exist (for existing databases)
+    rag_source_perms = [
+        ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'invoice', 'Invoices', 'Access invoice data in AI chat', False, 10),
+        ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'company', 'Companies', 'Access company data in AI chat', False, 11),
+        ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'department', 'Departments', 'Access department data in AI chat', False, 12),
+        ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'employee', 'Employees', 'Access employee data in AI chat', False, 13),
+        ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'transaction', 'Bank Transactions', 'Access bank transaction data in AI chat', False, 14),
+        ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'efactura', 'e-Factura', 'Access e-Factura data in AI chat', False, 15),
+        ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'event', 'HR Events', 'Access HR event data in AI chat', False, 16),
+        ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'marketing', 'Marketing Projects', 'Access marketing project data in AI chat', False, 17),
+        ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'approval', 'Approvals', 'Access approval data in AI chat', False, 18),
+        ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'tag', 'Tags', 'Access tag data in AI chat', False, 19),
+    ]
+    for p in rag_source_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+    # Grant all RAG source permissions to Admin and Manager roles
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'all', TRUE
+        FROM roles r
+        CROSS JOIN permissions_v2 p
+        WHERE r.name IN ('Admin', 'Manager')
+        AND p.module_key = 'ai_agent' AND p.entity_key = 'rag_source'
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+    ''')
+
+    # Seed bilant permissions_v2 if not already present
+    cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'bilant'")
+    if cursor.fetchone()['cnt'] == 0:
+        bilant_perms = [
+            ('bilant', 'Bilant', 'bi-clipboard-data', 'templates', 'Templates', 'view', 'View', 'View bilant templates', False, 1),
+            ('bilant', 'Bilant', 'bi-clipboard-data', 'templates', 'Templates', 'edit', 'Edit', 'Create, edit, delete and import templates', False, 2),
+            ('bilant', 'Bilant', 'bi-clipboard-data', 'generations', 'Generations', 'view', 'View', 'View balance sheet generations', False, 3),
+            ('bilant', 'Bilant', 'bi-clipboard-data', 'generations', 'Generations', 'create', 'Create', 'Upload balanta and generate balance sheets', False, 4),
+            ('bilant', 'Bilant', 'bi-clipboard-data', 'generations', 'Generations', 'delete', 'Delete', 'Delete balance sheet generations', False, 5),
+            ('bilant', 'Bilant', 'bi-clipboard-data', 'generations', 'Generations', 'export', 'Export', 'Download Excel, PDF, XML and TXT exports', False, 6),
+            ('bilant', 'Bilant', 'bi-clipboard-data', 'ai_analysis', 'AI Analysis', 'access', 'Access', 'Generate AI financial analysis', False, 7),
+            ('bilant', 'Bilant', 'bi-clipboard-data', 'chart_of_accounts', 'Chart of Accounts', 'view', 'View', 'View chart of accounts', False, 8),
+            ('bilant', 'Bilant', 'bi-clipboard-data', 'chart_of_accounts', 'Chart of Accounts', 'edit', 'Edit', 'Manage chart of accounts entries', False, 9),
+        ]
+        for p in bilant_perms:
+            cursor.execute('''
+                INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+            ''', p)
+        # Grant all bilant permissions to Admin
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, 'all', TRUE
+            FROM roles r
+            CROSS JOIN permissions_v2 p
+            WHERE r.name = 'Admin' AND p.module_key = 'bilant'
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''')
+        # Grant view/create/export to Manager
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, 'all', TRUE
+            FROM roles r
+            CROSS JOIN permissions_v2 p
+            WHERE r.name = 'Manager' AND p.module_key = 'bilant'
+              AND p.action_key IN ('view', 'create', 'export', 'access')
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''')
+        # Grant view to User
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, 'all', TRUE
+            FROM roles r
+            CROSS JOIN permissions_v2 p
+            WHERE r.name = 'User' AND p.module_key = 'bilant'
+              AND p.action_key = 'view'
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''')
+        # Grant view to Viewer
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, 'all', TRUE
+            FROM roles r
+            CROSS JOIN permissions_v2 p
+            WHERE r.name = 'Viewer' AND p.module_key = 'bilant'
+              AND p.action_key = 'view'
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''')
+        conn.commit()
 
     # Seed default permissions if table is empty
     cursor.execute('SELECT COUNT(*) as cnt FROM permissions')
@@ -2665,6 +2768,21 @@ def create_schema(conn, cursor):
     ''')
     conn.commit()
 
+    # Seed Grok (xAI) models if not present
+    cursor.execute('''
+        INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
+        SELECT 'grok', 'grok-3', 'Grok 3', 0.005, 0.015, 4096, 131072, FALSE
+        WHERE EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'ai_agent')
+        AND NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'grok' AND model_name = 'grok-3')
+    ''')
+    cursor.execute('''
+        INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
+        SELECT 'grok', 'grok-2-1212', 'Grok 2', 0.002, 0.010, 4096, 131072, FALSE
+        WHERE EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'ai_agent')
+        AND NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'grok' AND model_name = 'grok-2-1212')
+    ''')
+    conn.commit()
+
     # Seed default approval flow for marketing projects (context_approver)
     cursor.execute('''
         INSERT INTO approval_flows (name, slug, entity_type, is_active, created_by)
@@ -2808,6 +2926,16 @@ def create_schema(conn, cursor):
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_bilant_metrics_gen ON bilant_metrics(generation_id)')
+
+    # Add ai_analysis column to bilant_generations (incremental migration)
+    cursor.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bilant_generations' AND column_name = 'ai_analysis') THEN
+                ALTER TABLE bilant_generations ADD COLUMN ai_analysis JSONB;
+            END IF;
+        END $$;
+    """)
 
     conn.commit()
 

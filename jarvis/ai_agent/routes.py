@@ -600,3 +600,19 @@ def api_save_ai_settings():
         repo.save_settings_bulk(to_save)
 
     return jsonify({'success': True})
+
+
+@ai_agent_bp.route('/api/rag-source-permissions', methods=['GET'])
+@login_required
+@ai_agent_required
+def api_rag_source_permissions():
+    """API: Get which RAG sources the current user can access."""
+    service = get_service()
+    allowed = service.get_allowed_rag_sources(current_user.id)
+    if allowed is None:
+        # None means all sources allowed
+        from .models import RAGSourceType
+        all_sources = [s.value for s in RAGSourceType]
+    else:
+        all_sources = [s.value for s in allowed]
+    return jsonify({'allowed_sources': all_sources})

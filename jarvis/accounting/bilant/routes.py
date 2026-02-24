@@ -2,12 +2,14 @@
 
 import os
 import logging
-from flask import jsonify, request, send_file
+from functools import wraps
+from flask import jsonify, request, send_file, g
 from flask_login import login_required, current_user
 
 from . import bilant_bp
 from .repositories import BilantTemplateRepository, BilantGenerationRepository, ChartOfAccountsRepository
 from .services.bilant_service import BilantService
+from core.roles.repositories.permission_repository import PermissionRepository
 
 logger = logging.getLogger('jarvis.bilant.routes')
 
@@ -15,6 +17,25 @@ _template_repo = BilantTemplateRepository()
 _generation_repo = BilantGenerationRepository()
 _coa_repo = ChartOfAccountsRepository()
 _service = BilantService()
+_perm_repo = PermissionRepository()
+
+
+def bilant_permission_required(entity, action):
+    """Check bilant permissions_v2 with scope. Sets g.permission_scope."""
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return jsonify({'success': False, 'error': 'Authentication required'}), 401
+            role_id = getattr(current_user, 'role_id', None)
+            if role_id:
+                perm = _perm_repo.check_permission_v2(role_id, 'bilant', entity, action)
+                if perm.get('has_permission'):
+                    g.permission_scope = perm.get('scope', 'all')
+                    return f(*args, **kwargs)
+            return jsonify({'success': False, 'error': f'Permission denied: bilant.{entity}.{action}'}), 403
+        return decorated
+    return decorator
 
 
 # ════════════════════════════════════════════════════════════════
@@ -23,6 +44,7 @@ _service = BilantService()
 
 @bilant_bp.route('/api/templates', methods=['GET'])
 @login_required
+@bilant_permission_required('templates', 'view')
 def api_list_templates():
     company_id = request.args.get('company_id', type=int)
     templates = _template_repo.list_templates(company_id=company_id)
@@ -31,6 +53,7 @@ def api_list_templates():
 
 @bilant_bp.route('/api/templates', methods=['POST'])
 @login_required
+@bilant_permission_required('templates', 'edit')
 def api_create_template():
     data = request.get_json(silent=True) or {}
     name = data.get('name')
@@ -47,6 +70,7 @@ def api_create_template():
 
 @bilant_bp.route('/api/templates/<int:template_id>', methods=['GET'])
 @login_required
+@bilant_permission_required('templates', 'view')
 def api_get_template(template_id):
     template = _template_repo.get_by_id(template_id)
     if not template:
@@ -58,6 +82,7 @@ def api_get_template(template_id):
 
 @bilant_bp.route('/api/templates/<int:template_id>', methods=['PUT'])
 @login_required
+@bilant_permission_required('templates', 'edit')
 def api_update_template(template_id):
     data = request.get_json(silent=True) or {}
     _template_repo.update(template_id, **{k: v for k, v in data.items()
@@ -67,6 +92,7 @@ def api_update_template(template_id):
 
 @bilant_bp.route('/api/templates/<int:template_id>', methods=['DELETE'])
 @login_required
+@bilant_permission_required('templates', 'edit')
 def api_delete_template(template_id):
     _template_repo.soft_delete(template_id)
     return jsonify({'success': True})
@@ -74,6 +100,7 @@ def api_delete_template(template_id):
 
 @bilant_bp.route('/api/templates/<int:template_id>/duplicate', methods=['POST'])
 @login_required
+@bilant_permission_required('templates', 'edit')
 def api_duplicate_template(template_id):
     data = request.get_json(silent=True) or {}
     name = data.get('name', 'Copy')
@@ -83,6 +110,7 @@ def api_duplicate_template(template_id):
 
 @bilant_bp.route('/api/templates/import', methods=['POST'])
 @login_required
+@bilant_permission_required('templates', 'edit')
 def api_import_template():
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file uploaded'}), 400
@@ -98,6 +126,7 @@ def api_import_template():
 
 @bilant_bp.route('/api/templates/import-anaf', methods=['POST'])
 @login_required
+@bilant_permission_required('templates', 'edit')
 def api_import_anaf_template():
     """Upload ANAF PDF → parse XFA → create template with rows + metric configs."""
     if 'file' not in request.files:
@@ -121,6 +150,7 @@ def api_import_anaf_template():
 
 @bilant_bp.route('/api/templates/<int:template_id>/rows', methods=['GET'])
 @login_required
+@bilant_permission_required('templates', 'view')
 def api_get_rows(template_id):
     rows = _template_repo.get_rows(template_id)
     return jsonify({'rows': rows})
@@ -128,6 +158,7 @@ def api_get_rows(template_id):
 
 @bilant_bp.route('/api/templates/<int:template_id>/rows', methods=['POST'])
 @login_required
+@bilant_permission_required('templates', 'edit')
 def api_add_row(template_id):
     data = request.get_json(silent=True) or {}
     row_id = _template_repo.add_row(
@@ -146,6 +177,7 @@ def api_add_row(template_id):
 
 @bilant_bp.route('/api/templates/rows/<int:row_id>', methods=['PUT'])
 @login_required
+@bilant_permission_required('templates', 'edit')
 def api_update_row(row_id):
     data = request.get_json(silent=True) or {}
     _template_repo.update_row(row_id, **{k: v for k, v in data.items()
@@ -156,6 +188,7 @@ def api_update_row(row_id):
 
 @bilant_bp.route('/api/templates/rows/<int:row_id>', methods=['DELETE'])
 @login_required
+@bilant_permission_required('templates', 'edit')
 def api_delete_row(row_id):
     _template_repo.delete_row(row_id)
     return jsonify({'success': True})
@@ -163,6 +196,7 @@ def api_delete_row(row_id):
 
 @bilant_bp.route('/api/templates/<int:template_id>/rows/reorder', methods=['PUT'])
 @login_required
+@bilant_permission_required('templates', 'edit')
 def api_reorder_rows(template_id):
     data = request.get_json(silent=True) or {}
     row_ids = data.get('row_ids', [])
@@ -178,6 +212,7 @@ def api_reorder_rows(template_id):
 
 @bilant_bp.route('/api/templates/<int:template_id>/metrics', methods=['GET'])
 @login_required
+@bilant_permission_required('templates', 'view')
 def api_get_metric_configs(template_id):
     metrics = _template_repo.get_metric_configs(template_id)
     return jsonify({'metrics': metrics})
@@ -185,6 +220,7 @@ def api_get_metric_configs(template_id):
 
 @bilant_bp.route('/api/templates/<int:template_id>/metrics', methods=['POST'])
 @login_required
+@bilant_permission_required('templates', 'edit')
 def api_set_metric_config(template_id):
     data = request.get_json(silent=True) or {}
     metric_key = data.get('metric_key')
@@ -215,6 +251,7 @@ def api_set_metric_config(template_id):
 
 @bilant_bp.route('/api/templates/metrics/<int:config_id>', methods=['DELETE'])
 @login_required
+@bilant_permission_required('templates', 'edit')
 def api_delete_metric_config(config_id):
     _template_repo.delete_metric_config(config_id)
     return jsonify({'success': True})
@@ -226,6 +263,7 @@ def api_delete_metric_config(config_id):
 
 @bilant_bp.route('/api/generations', methods=['GET'])
 @login_required
+@bilant_permission_required('generations', 'view')
 def api_list_generations():
     company_id = request.args.get('company_id', type=int)
     limit = request.args.get('limit', 50, type=int)
@@ -236,6 +274,7 @@ def api_list_generations():
 
 @bilant_bp.route('/api/generations', methods=['POST'])
 @login_required
+@bilant_permission_required('generations', 'create')
 def api_create_generation():
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file uploaded'}), 400
@@ -264,6 +303,7 @@ def api_create_generation():
 
 @bilant_bp.route('/api/generations/<int:generation_id>', methods=['GET'])
 @login_required
+@bilant_permission_required('generations', 'view')
 def api_get_generation(generation_id):
     result = _service.get_generation_detail(generation_id)
     if not result.success:
@@ -273,13 +313,54 @@ def api_get_generation(generation_id):
 
 @bilant_bp.route('/api/generations/<int:generation_id>', methods=['DELETE'])
 @login_required
+@bilant_permission_required('generations', 'delete')
 def api_delete_generation(generation_id):
     _generation_repo.delete_generation(generation_id)
     return jsonify({'success': True})
 
 
+@bilant_bp.route('/api/generations/<int:generation_id>/ai-analysis', methods=['POST'])
+@login_required
+@bilant_permission_required('ai_analysis', 'access')
+def api_generate_ai_analysis(generation_id):
+    """Generate (or return cached) AI financial analysis."""
+    data = request.get_json(silent=True) or {}
+    model_id = data.get('model_id')
+    result = _service.generate_ai_analysis(generation_id, model_id=model_id)
+    if not result.success:
+        return jsonify({'success': False, 'error': result.error}), result.status_code
+    return jsonify({'success': True, 'analysis': result.data})
+
+
+@bilant_bp.route('/api/ai-models', methods=['GET'])
+@login_required
+@bilant_permission_required('ai_analysis', 'access')
+def api_list_ai_models():
+    """List active AI models available for financial analysis."""
+    from ai_agent.repositories import ModelConfigRepository
+    repo = ModelConfigRepository()
+    models = repo.get_all_active()
+    return jsonify({'models': [
+        {'id': m.id, 'provider': m.provider.value, 'model_name': m.model_name,
+         'display_name': m.display_name, 'is_default': m.is_default}
+        for m in models
+    ]})
+
+
+@bilant_bp.route('/api/generations/<int:generation_id>/ai-analysis', methods=['DELETE'])
+@login_required
+@bilant_permission_required('ai_analysis', 'access')
+def api_clear_ai_analysis(generation_id):
+    """Clear cached AI analysis to allow regeneration."""
+    result = _service.clear_ai_analysis(generation_id)
+    if not result.success:
+        return jsonify({'success': False, 'error': result.error}), result.status_code
+    return jsonify({'success': True})
+
+
 @bilant_bp.route('/api/generations/<int:generation_id>/notes', methods=['PUT'])
 @login_required
+@bilant_permission_required('generations', 'create')
 def api_update_notes(generation_id):
     data = request.get_json(silent=True) or {}
     _generation_repo.update_notes(generation_id, data.get('notes', ''))
@@ -288,6 +369,7 @@ def api_update_notes(generation_id):
 
 @bilant_bp.route('/api/generations/<int:generation_id>/download', methods=['GET'])
 @login_required
+@bilant_permission_required('generations', 'export')
 def api_download_generation(generation_id):
     result = _service.generate_excel(generation_id)
     if not result.success:
@@ -305,6 +387,7 @@ def api_download_generation(generation_id):
 
 @bilant_bp.route('/api/generations/<int:generation_id>/download-pdf', methods=['GET'])
 @login_required
+@bilant_permission_required('generations', 'export')
 def api_download_generation_pdf(generation_id):
     """Download bilant as ANAF-styled PDF."""
     result = _service.generate_pdf(generation_id)
@@ -323,6 +406,7 @@ def api_download_generation_pdf(generation_id):
 
 @bilant_bp.route('/api/generations/<int:generation_id>/download-filled-pdf', methods=['GET'])
 @login_required
+@bilant_permission_required('generations', 'export')
 def api_download_generation_filled_pdf(generation_id):
     """Download bilant as filled ANAF XFA PDF (original template with values)."""
     result = _service.generate_filled_pdf(generation_id)
@@ -341,6 +425,7 @@ def api_download_generation_filled_pdf(generation_id):
 
 @bilant_bp.route('/api/generations/<int:generation_id>/download-anaf', methods=['GET'])
 @login_required
+@bilant_permission_required('generations', 'export')
 def api_download_generation_anaf(generation_id):
     """Download bilant as ANAF-format Excel with F10 field codes."""
     result = _service.generate_anaf_excel(generation_id)
@@ -359,6 +444,7 @@ def api_download_generation_anaf(generation_id):
 
 @bilant_bp.route('/api/generations/<int:generation_id>/download-xml', methods=['GET'])
 @login_required
+@bilant_permission_required('generations', 'export')
 def api_download_generation_xml(generation_id):
     """Download bilant as ANAF XML import file."""
     result = _service.generate_anaf_import_xml(generation_id)
@@ -378,6 +464,7 @@ def api_download_generation_xml(generation_id):
 
 @bilant_bp.route('/api/generations/<int:generation_id>/download-txt', methods=['GET'])
 @login_required
+@bilant_permission_required('generations', 'export')
 def api_download_generation_txt(generation_id):
     """Download bilant as ANAF balanta.txt import file."""
     result = _service.generate_anaf_import_txt(generation_id)
@@ -401,6 +488,7 @@ def api_download_generation_txt(generation_id):
 
 @bilant_bp.route('/api/compare', methods=['POST'])
 @login_required
+@bilant_permission_required('generations', 'view')
 def api_compare_generations():
     data = request.get_json(silent=True) or {}
     ids = data.get('generation_ids', [])
@@ -416,6 +504,7 @@ def api_compare_generations():
 
 @bilant_bp.route('/api/chart-of-accounts', methods=['GET'])
 @login_required
+@bilant_permission_required('chart_of_accounts', 'view')
 def api_list_accounts():
     company_id = request.args.get('company_id', type=int)
     account_class = request.args.get('account_class', type=int)
@@ -429,6 +518,7 @@ def api_list_accounts():
 
 @bilant_bp.route('/api/chart-of-accounts', methods=['POST'])
 @login_required
+@bilant_permission_required('chart_of_accounts', 'edit')
 def api_create_account():
     data = request.get_json(silent=True) or {}
     code = data.get('code', '').strip()
@@ -446,6 +536,7 @@ def api_create_account():
 
 @bilant_bp.route('/api/chart-of-accounts/<int:account_id>', methods=['PUT'])
 @login_required
+@bilant_permission_required('chart_of_accounts', 'edit')
 def api_update_account(account_id):
     data = request.get_json(silent=True) or {}
     _coa_repo.update(account_id, **{k: v for k, v in data.items()
@@ -455,6 +546,7 @@ def api_update_account(account_id):
 
 @bilant_bp.route('/api/chart-of-accounts/<int:account_id>', methods=['DELETE'])
 @login_required
+@bilant_permission_required('chart_of_accounts', 'edit')
 def api_delete_account(account_id):
     _coa_repo.delete(account_id)
     return jsonify({'success': True})
@@ -462,6 +554,7 @@ def api_delete_account(account_id):
 
 @bilant_bp.route('/api/chart-of-accounts/autocomplete', methods=['GET'])
 @login_required
+@bilant_permission_required('chart_of_accounts', 'view')
 def api_autocomplete_accounts():
     prefix = request.args.get('prefix', '')
     company_id = request.args.get('company_id', type=int)
@@ -477,6 +570,7 @@ def api_autocomplete_accounts():
 
 @bilant_bp.route('/api/template-download', methods=['GET'])
 @login_required
+@bilant_permission_required('templates', 'view')
 def api_download_template():
     """Download the Balanta/Bilant template Excel file."""
     template_path = os.path.join(os.path.dirname(__file__), 'static', 'template_balanta.xlsx')

@@ -32,6 +32,7 @@ class LLMProvider(Enum):
     OPENAI = "openai"
     GEMINI = "gemini"
     GROQ = "groq"
+    GROK = "grok"
     LOCAL = "local"
 
 

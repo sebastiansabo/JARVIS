@@ -68,6 +68,14 @@ class BilantGenerationRepository(BaseRepository):
             (notes, generation_id)
         )
 
+    def update_ai_analysis(self, generation_id, analysis):
+        import json
+        val = json.dumps(analysis) if analysis is not None else None
+        return self.execute(
+            "UPDATE bilant_generations SET ai_analysis = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (val, generation_id)
+        )
+
     def delete_generation(self, generation_id):
         return self.execute("DELETE FROM bilant_generations WHERE id = %s", (generation_id,))
 
