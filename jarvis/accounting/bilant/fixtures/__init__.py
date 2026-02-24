@@ -4,35 +4,37 @@
 def get_default_metric_configs():
     """Return standard metric configs for a new bilant template.
 
-    These map ANAF F10 row numbers to financial metrics used for
+    These map ANAF F10 column B row numbers to financial metrics used for
     summary cards, ratios, and structure charts.
+
+    Column B numbering: 1-35, 35a, 36-103 (official ANAF Nr.rd. col.B).
     """
     return [
         # Summary metrics
         {'metric_key': 'active_imobilizate', 'metric_label': 'Active Imobilizate',
-         'nr_rd': '23', 'metric_group': 'summary', 'sort_order': 1,
+         'nr_rd': '25', 'metric_group': 'summary', 'sort_order': 1,
          'display_format': 'currency'},
         {'metric_key': 'active_circulante', 'metric_label': 'Active Circulante',
-         'nr_rd': '40', 'metric_group': 'summary', 'sort_order': 2,
+         'nr_rd': '41', 'metric_group': 'summary', 'sort_order': 2,
          'display_format': 'currency'},
         {'metric_key': 'capitaluri_proprii', 'metric_label': 'Capitaluri Proprii',
-         'nr_rd': '84', 'metric_group': 'summary', 'sort_order': 3,
+         'nr_rd': '100', 'metric_group': 'summary', 'sort_order': 3,
          'display_format': 'currency'},
         # Ratio inputs (hidden — feed ratio formulas)
         {'metric_key': 'stocuri', 'metric_label': 'Stocuri',
-         'nr_rd': '34', 'metric_group': 'ratio_input', 'sort_order': 10,
+         'nr_rd': '30', 'metric_group': 'ratio_input', 'sort_order': 10,
          'display_format': 'currency'},
         {'metric_key': 'disponibilitati', 'metric_label': 'Disponibilitati',
-         'nr_rd': '39', 'metric_group': 'ratio_input', 'sort_order': 11,
+         'nr_rd': '40', 'metric_group': 'ratio_input', 'sort_order': 11,
          'display_format': 'currency'},
         {'metric_key': 'datorii_termen_scurt', 'metric_label': 'Datorii < 1 an',
-         'nr_rd': '55', 'metric_group': 'ratio_input', 'sort_order': 12,
+         'nr_rd': '53', 'metric_group': 'ratio_input', 'sort_order': 12,
          'display_format': 'currency'},
         {'metric_key': 'datorii_termen_lung', 'metric_label': 'Datorii > 1 an',
-         'nr_rd': '60', 'metric_group': 'ratio_input', 'sort_order': 13,
+         'nr_rd': '64', 'metric_group': 'ratio_input', 'sort_order': 13,
          'display_format': 'currency'},
         {'metric_key': 'creante', 'metric_label': 'Creante',
-         'nr_rd': '35', 'metric_group': 'ratio_input', 'sort_order': 14,
+         'nr_rd': '36', 'metric_group': 'ratio_input', 'sort_order': 14,
          'display_format': 'currency'},
         # Derived metrics
         {'metric_key': 'total_active', 'metric_label': 'Total Active',
@@ -76,24 +78,24 @@ def get_default_metric_configs():
          'threshold_good': 50, 'threshold_warning': 30},
         # Structure metrics
         {'metric_key': 'struct_active_imobilizate', 'metric_label': 'Active Imobilizate',
-         'nr_rd': '23', 'metric_group': 'structure', 'sort_order': 30,
+         'nr_rd': '25', 'metric_group': 'structure', 'sort_order': 30,
          'structure_side': 'assets', 'display_format': 'currency'},
         {'metric_key': 'struct_stocuri', 'metric_label': 'Stocuri',
-         'nr_rd': '34', 'metric_group': 'structure', 'sort_order': 31,
+         'nr_rd': '30', 'metric_group': 'structure', 'sort_order': 31,
          'structure_side': 'assets', 'display_format': 'currency'},
         {'metric_key': 'struct_creante', 'metric_label': 'Creante',
-         'nr_rd': '35', 'metric_group': 'structure', 'sort_order': 32,
+         'nr_rd': '36', 'metric_group': 'structure', 'sort_order': 32,
          'structure_side': 'assets', 'display_format': 'currency'},
         {'metric_key': 'struct_disponibilitati', 'metric_label': 'Disponibilitati',
-         'nr_rd': '39', 'metric_group': 'structure', 'sort_order': 33,
+         'nr_rd': '40', 'metric_group': 'structure', 'sort_order': 33,
          'structure_side': 'assets', 'display_format': 'currency'},
         {'metric_key': 'struct_capitaluri', 'metric_label': 'Capitaluri Proprii',
-         'nr_rd': '84', 'metric_group': 'structure', 'sort_order': 34,
+         'nr_rd': '100', 'metric_group': 'structure', 'sort_order': 34,
          'structure_side': 'liabilities', 'display_format': 'currency'},
         {'metric_key': 'struct_datorii_scurt', 'metric_label': 'Datorii < 1 an',
-         'nr_rd': '55', 'metric_group': 'structure', 'sort_order': 35,
+         'nr_rd': '53', 'metric_group': 'structure', 'sort_order': 35,
          'structure_side': 'liabilities', 'display_format': 'currency'},
         {'metric_key': 'struct_datorii_lung', 'metric_label': 'Datorii > 1 an',
-         'nr_rd': '60', 'metric_group': 'structure', 'sort_order': 36,
+         'nr_rd': '64', 'metric_group': 'structure', 'sort_order': 36,
          'structure_side': 'liabilities', 'display_format': 'currency'},
     ]

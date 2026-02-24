@@ -425,7 +425,7 @@
     },
     {
       "description": "6. Creanțe reprezentând dividende repartizate în cursul exercițiului financiar (ct. 463)",
-      "nr_rd": "36",
+      "nr_rd": "35a",
       "formula_ct": "463",
       "formula_rd": null,
       "row_type": "data",
@@ -435,9 +435,9 @@
     },
     {
       "description": "TOTAL (rd. 31 la 35 +35a)",
-      "nr_rd": "37",
+      "nr_rd": "36",
       "formula_ct": null,
-      "formula_rd": "31+32+33+34+35+36",
+      "formula_rd": "31+32+33+34+35+35a",
       "row_type": "total",
       "is_bold": true,
       "indent_level": 0,
@@ -455,7 +455,7 @@
     },
     {
       "description": "1. Acţiuni deţinute la entităţile afiliate (ct. 501 - 591)",
-      "nr_rd": "38",
+      "nr_rd": "37",
       "formula_ct": "501-591",
       "formula_rd": null,
       "row_type": "data",
@@ -465,7 +465,7 @@
     },
     {
       "description": "2. Alte investiţii pe termen scurt\n(ct. 505 + 506 + 507 + din ct. 508 - 595 - 596 - 598 + 5113 + 5114)",
-      "nr_rd": "39",
+      "nr_rd": "38",
       "formula_ct": "505+506+507+dinct.508-595-596-598+5113+5114",
       "formula_rd": null,
       "row_type": "data",
@@ -475,7 +475,7 @@
     },
     {
       "description": "TOTAL (rd. 37 + 38)",
-      "nr_rd": "40",
+      "nr_rd": "39",
       "formula_ct": null,
       "formula_rd": "37+38",
       "row_type": "total",
@@ -485,7 +485,7 @@
     },
     {
       "description": "IV. CASA ŞI CONTURI LA BĂNCI\n(din ct. 508+ct. 5112 + 512 + 531 + 532 + 541 + 542)",
-      "nr_rd": "41",
+      "nr_rd": "40",
       "formula_ct": "508+ct.5112+512+531+532+541+542",
       "formula_rd": null,
       "row_type": "data",
@@ -495,7 +495,7 @@
     },
     {
       "description": "ACTIVE CIRCULANTE - TOTAL (rd. 30 + 36 + 39 + 40)",
-      "nr_rd": "42",
+      "nr_rd": "41",
       "formula_ct": null,
       "formula_rd": "30+36+39+40",
       "row_type": "total",
@@ -505,7 +505,7 @@
     },
     {
       "description": "C. CHELTUIELI ÎN AVANS (ct. 471) (rd.43+44)",
-      "nr_rd": "43",
+      "nr_rd": "42",
       "formula_ct": "471",
       "formula_rd": "43+44",
       "row_type": "total",
@@ -515,7 +515,7 @@
     },
     {
       "description": "Sume de reluat intr-o perioada de pana la un an (din ct. 471*)",
-      "nr_rd": "44",
+      "nr_rd": "43",
       "formula_ct": "471",
       "formula_rd": null,
       "row_type": "data",
@@ -525,7 +525,7 @@
     },
     {
       "description": "Sume de reluat intr-o perioada mai mare de un an (din ct. 471*)",
-      "nr_rd": "45",
+      "nr_rd": "44",
       "formula_ct": "471",
       "formula_rd": null,
       "row_type": "data",
@@ -545,7 +545,7 @@
     },
     {
       "description": "1. Împrumuturi din emisiunea de obligaţiuni, prezentându-se separat împrumuturile din emisiunea de obligaţiuni convertibile (ct. 161 + 1681 - 169)",
-      "nr_rd": "46",
+      "nr_rd": "45",
       "formula_ct": "161+1681-169",
       "formula_rd": null,
       "row_type": "data",
@@ -555,7 +555,7 @@
     },
     {
       "description": "2. Sume datorate instituţiilor de credit (ct. 1621 + 1622 + 1624 + 1625 +\n1627 + 1682 + 5191 + 5192 + 5198)",
-      "nr_rd": "47",
+      "nr_rd": "46",
       "formula_ct": "1621+1622+1624+1625+1627+1682+5191+5192+5198",
       "formula_rd": null,
       "row_type": "data",
@@ -565,7 +565,7 @@
     },
     {
       "description": "3. Avansuri încasate în contul comenzilor (ct. 419)",
-      "nr_rd": "48",
+      "nr_rd": "47",
       "formula_ct": "419",
       "formula_rd": null,
       "row_type": "data",
@@ -575,7 +575,7 @@
     },
     {
       "description": "4. Datorii comerciale - furnizori (ct. 401 + 404 + 408)",
-      "nr_rd": "49",
+      "nr_rd": "48",
       "formula_ct": "401+404+408",
       "formula_rd": null,
       "row_type": "data",
@@ -585,7 +585,7 @@
     },
     {
       "description": "5. Efecte de comerţ de plătit (ct. 403 + 405)",
-      "nr_rd": "50",
+      "nr_rd": "49",
       "formula_ct": "403+405",
       "formula_rd": null,
       "row_type": "data",
@@ -595,7 +595,7 @@
     },
     {
       "description": "6. Sume datorate entităţilor din grup (ct. 1661 + 1685 + 2691 + 451***)",
-      "nr_rd": "51",
+      "nr_rd": "50",
       "formula_ct": "1661+1685+2691+451",
       "formula_rd": null,
       "row_type": "data",
@@ -605,7 +605,7 @@
     },
     {
       "description": "7. Sume datorate entităţilor asociate si entitatilor controlate in comun (ct. 1663+1686+2692+2693+ 453***)",
-      "nr_rd": "52",
+      "nr_rd": "51",
       "formula_ct": "1663+1686+2692+2693+453",
       "formula_rd": null,
       "row_type": "data",
@@ -625,7 +625,7 @@
     },
     {
       "description": "8. Alte datorii, inclusiv datoriile fiscale şi datoriile privind asigurările sociale (ct. 1623 + 1626 + 167 + 1687 + 2695 + 421 + 423 + 424 + 426 + 427 + 4281 +\n431*** + 436***+ 437*** + 4381 + 441*** + 4423 +4428*** + 444*** + 446*** +\n447*** + 4481 + 455 + 456*** + 457 + 4581 + 462 + 4661+ 467 +473*** + 509 +\n5186 + 5193 + 5194 + 5195 + 5196 + 5197)",
-      "nr_rd": "53",
+      "nr_rd": "52",
       "formula_ct": "1623+1626+167+1687+2695+421+423+424+426+427+4281+431+436+437+4381+441+4423+4428+444+446+447+4481+455+456+457+4581+462+4661+467+473+509+5186+5193+5194+5195+5196+5197",
       "formula_rd": null,
       "row_type": "data",
@@ -635,7 +635,7 @@
     },
     {
       "description": "TOTAL (rd. 45 la 52)",
-      "nr_rd": "54",
+      "nr_rd": "53",
       "formula_ct": null,
       "formula_rd": "45+46+47+48+49+50+51+52",
       "row_type": "total",
@@ -645,7 +645,7 @@
     },
     {
       "description": "E. ACTIVE CIRCULANTE NETE/DATORII CURENTE NETE\n(rd. 41+43-53-70-73-76)",
-      "nr_rd": "55",
+      "nr_rd": "54",
       "formula_ct": null,
       "formula_rd": "41+43-53-70-73-76",
       "row_type": "total",
@@ -655,7 +655,7 @@
     },
     {
       "description": "F. TOTAL ACTIVE MINUS DATORII CURENTE (rd. 25+44+54)",
-      "nr_rd": "56",
+      "nr_rd": "55",
       "formula_ct": null,
       "formula_rd": "25+44+54",
       "row_type": "total",
@@ -675,7 +675,7 @@
     },
     {
       "description": "1. Împrumuturi din emisiunea de  obligaţiuni, prezentându-se separat împrumuturile din emisiunea de obligaţiuni convertibile (ct. 161 + 1681 - 169)",
-      "nr_rd": "57",
+      "nr_rd": "56",
       "formula_ct": "161+1681-169",
       "formula_rd": null,
       "row_type": "data",
@@ -685,7 +685,7 @@
     },
     {
       "description": "2. Sume datorate instituţiilor de credit (ct. 1621 + 1622 + 1624 + 1625 +\n1627 + 1682 + 5191 + 5192 + 5198)",
-      "nr_rd": "58",
+      "nr_rd": "57",
       "formula_ct": "1621+1622+1624+1625+1627+1682+5191+5192+5198",
       "formula_rd": null,
       "row_type": "data",
@@ -695,7 +695,7 @@
     },
     {
       "description": "3. Avansuri încasate în contul comenzilor (ct. 419)",
-      "nr_rd": "59",
+      "nr_rd": "58",
       "formula_ct": "419",
       "formula_rd": null,
       "row_type": "data",
@@ -705,7 +705,7 @@
     },
     {
       "description": "4. Datorii comerciale - furnizori (ct. 401 + 404 + 408)",
-      "nr_rd": "60",
+      "nr_rd": "59",
       "formula_ct": "401+404+408",
       "formula_rd": null,
       "row_type": "data",
@@ -715,7 +715,7 @@
     },
     {
       "description": "5. Efecte de comerţ de plătit (ct. 403 + 405)",
-      "nr_rd": "61",
+      "nr_rd": "60",
       "formula_ct": "403+405",
       "formula_rd": null,
       "row_type": "data",
@@ -725,7 +725,7 @@
     },
     {
       "description": "6. Sume datorate entităţilor din grup (ct. 1661 + 1685 + 2691 + 451***)",
-      "nr_rd": "62",
+      "nr_rd": "61",
       "formula_ct": "1661+1685+2691+451",
       "formula_rd": null,
       "row_type": "data",
@@ -735,7 +735,7 @@
     },
     {
       "description": "7. Sume datorate entităţilor asociate si entităţilor controlate in comun (ct. 1663 + 1686 + 2692 +2693+ 453***)",
-      "nr_rd": "63",
+      "nr_rd": "62",
       "formula_ct": "1663+1686+2692+2693+453",
       "formula_rd": null,
       "row_type": "data",
@@ -745,7 +745,7 @@
     },
     {
       "description": "8. Alte datorii, inclusiv datoriile fiscale şi datoriile privind asigurările sociale (ct. 1623 + 1626 + 167 + 1687 + 2695 + 421 + 423 + 424 + 426 + 427 + 4281 +\n431*** + 436*** +437*** + 4381 + 441*** + 4423 + 4428*** + 444*** + 446*** +\n447*** + 4481 + 455 + 456*** + 4581+462+4661+ 467 + 473*** + 509 + 5186 +\n5193 + 5194 + 5195 + 5196 + 5197)",
-      "nr_rd": "64",
+      "nr_rd": "63",
       "formula_ct": "1623+1626+167+1687+2695+421+423+424+426+427+4281+431+436+437+4381+441+4423+4428+444+446+447+4481+455+456+4581+462+4661+467+473+509+5186+5193+5194+5195+5196+5197",
       "formula_rd": null,
       "row_type": "data",
@@ -755,7 +755,7 @@
     },
     {
       "description": "TOTAL (rd.56 la 63)",
-      "nr_rd": "65",
+      "nr_rd": "64",
       "formula_ct": null,
       "formula_rd": "56+57+58+59+60+61+62+63",
       "row_type": "total",
@@ -775,7 +775,7 @@
     },
     {
       "description": "1. Provizioane pentru beneficiile angajatilor (ct. 1515+1517)",
-      "nr_rd": "66",
+      "nr_rd": "65",
       "formula_ct": "1515+1517",
       "formula_rd": null,
       "row_type": "data",
@@ -785,7 +785,7 @@
     },
     {
       "description": "2. Provizioane pentru impozite (ct. 1516)",
-      "nr_rd": "67",
+      "nr_rd": "66",
       "formula_ct": "1516",
       "formula_rd": null,
       "row_type": "data",
@@ -795,7 +795,7 @@
     },
     {
       "description": "3. Alte provizioane (ct. 1511 + 1512 + 1513 + 1514 + 1518)",
-      "nr_rd": "68",
+      "nr_rd": "67",
       "formula_ct": "1511+1512+1513+1514+1518",
       "formula_rd": null,
       "row_type": "data",
@@ -805,7 +805,7 @@
     },
     {
       "description": "TOTAL (rd. 65 la 67)",
-      "nr_rd": "69",
+      "nr_rd": "68",
       "formula_ct": null,
       "formula_rd": "65+66+67",
       "row_type": "total",
@@ -825,7 +825,7 @@
     },
     {
       "description": "1. Subvenţii pentru investiţii (ct. 475)(rd. 70+71)",
-      "nr_rd": "70",
+      "nr_rd": "69",
       "formula_ct": "475",
       "formula_rd": "70+71",
       "row_type": "total",
@@ -835,7 +835,7 @@
     },
     {
       "description": "Sume de reluat intr-o perioada de pana la un an (din ct. 475*)",
-      "nr_rd": "71",
+      "nr_rd": "70",
       "formula_ct": "475",
       "formula_rd": null,
       "row_type": "data",
@@ -845,7 +845,7 @@
     },
     {
       "description": "Sume de reluat intr-o perioada mai mare de un an (din ct. 475*)",
-      "nr_rd": "72",
+      "nr_rd": "71",
       "formula_ct": "475",
       "formula_rd": null,
       "row_type": "data",
@@ -855,7 +855,7 @@
     },
     {
       "description": "2. Venituri înregistrate în avans (ct. 472) (rd.73 + 74)",
-      "nr_rd": "73",
+      "nr_rd": "72",
       "formula_ct": "472",
       "formula_rd": "73+74",
       "row_type": "total",
@@ -865,7 +865,7 @@
     },
     {
       "description": "Sume de reluat intr-o perioada de pana la un an (din ct. 472*)",
-      "nr_rd": "74",
+      "nr_rd": "73",
       "formula_ct": "472",
       "formula_rd": null,
       "row_type": "data",
@@ -875,7 +875,7 @@
     },
     {
       "description": "Sume de reluat intr-o perioada mai mare de un an (din ct. 472*)",
-      "nr_rd": "75",
+      "nr_rd": "74",
       "formula_ct": "472",
       "formula_rd": null,
       "row_type": "data",
@@ -885,7 +885,7 @@
     },
     {
       "description": "3. Venituri în avans aferente activelor primite prin transfer de la clienţi (ct. 478)(rd.76+77)",
-      "nr_rd": "76",
+      "nr_rd": "75",
       "formula_ct": "478",
       "formula_rd": "76+77",
       "row_type": "total",
@@ -895,7 +895,7 @@
     },
     {
       "description": "Sume de reluat intr-o perioada de pana la un an (din ct. 478*)",
-      "nr_rd": "77",
+      "nr_rd": "76",
       "formula_ct": "478",
       "formula_rd": null,
       "row_type": "data",
@@ -905,7 +905,7 @@
     },
     {
       "description": "Sume de reluat intr-o perioada mai mare de un an (din ct. 478*)",
-      "nr_rd": "78",
+      "nr_rd": "77",
       "formula_ct": "478",
       "formula_rd": null,
       "row_type": "data",
@@ -915,7 +915,7 @@
     },
     {
       "description": "Fond comercial negativ (ct.2075)",
-      "nr_rd": "79",
+      "nr_rd": "78",
       "formula_ct": "2075",
       "formula_rd": null,
       "row_type": "data",
@@ -925,7 +925,7 @@
     },
     {
       "description": "TOTAL (rd. 69 + 72 + 75 + 78)",
-      "nr_rd": "80",
+      "nr_rd": "79",
       "formula_ct": null,
       "formula_rd": "69+72+75+78",
       "row_type": "total",
@@ -955,7 +955,7 @@
     },
     {
       "description": "1. Capital subscris vărsat (ct. 1012)",
-      "nr_rd": "81",
+      "nr_rd": "80",
       "formula_ct": "1012",
       "formula_rd": null,
       "row_type": "data",
@@ -975,7 +975,7 @@
     },
     {
       "description": "2. Capital subscris nevărsat (ct. 1011)",
-      "nr_rd": "82",
+      "nr_rd": "81",
       "formula_ct": "1011",
       "formula_rd": null,
       "row_type": "data",
@@ -985,7 +985,7 @@
     },
     {
       "description": "3. Patrimoniul regiei (ct. 1015)",
-      "nr_rd": "83",
+      "nr_rd": "82",
       "formula_ct": "1015",
       "formula_rd": null,
       "row_type": "data",
@@ -995,7 +995,7 @@
     },
     {
       "description": "4. Patrimoniul institutelor naţionale de cercetare-dezvoltare (ct. 1018)",
-      "nr_rd": "84",
+      "nr_rd": "83",
       "formula_ct": "1018",
       "formula_rd": null,
       "row_type": "data",
@@ -1005,7 +1005,7 @@
     },
     {
       "description": "5.Alte elemente de capitaluri proprii  (1031)",
-      "nr_rd": "85",
+      "nr_rd": "84",
       "formula_ct": null,
       "formula_rd": null,
       "row_type": "data",
@@ -1015,7 +1015,7 @@
     },
     {
       "description": "TOTAL (rd. 80 la 84)",
-      "nr_rd": "86",
+      "nr_rd": "85",
       "formula_ct": null,
       "formula_rd": "80+81+82+83+84",
       "row_type": "total",
@@ -1025,7 +1025,7 @@
     },
     {
       "description": "II. PRIME DE CAPITAL (ct. 104)",
-      "nr_rd": "87",
+      "nr_rd": "86",
       "formula_ct": "104",
       "formula_rd": null,
       "row_type": "data",
@@ -1035,7 +1035,7 @@
     },
     {
       "description": "III. REZERVE DIN REEVALUARE (ct. 105)",
-      "nr_rd": "88",
+      "nr_rd": "87",
       "formula_ct": "105",
       "formula_rd": null,
       "row_type": "data",
@@ -1055,7 +1055,7 @@
     },
     {
       "description": "1. Rezerve legale (ct. 1061)",
-      "nr_rd": "89",
+      "nr_rd": "88",
       "formula_ct": "1061",
       "formula_rd": null,
       "row_type": "data",
@@ -1065,7 +1065,7 @@
     },
     {
       "description": "2. Rezerve statutare sau contractuale (ct. 1063)",
-      "nr_rd": "90",
+      "nr_rd": "89",
       "formula_ct": "1063",
       "formula_rd": null,
       "row_type": "data",
@@ -1075,7 +1075,7 @@
     },
     {
       "description": "3. Alte rezerve (ct. 1068)",
-      "nr_rd": "91",
+      "nr_rd": "90",
       "formula_ct": "1068",
       "formula_rd": null,
       "row_type": "data",
@@ -1085,7 +1085,7 @@
     },
     {
       "description": "TOTAL (rd. 88 la 90)",
-      "nr_rd": "92",
+      "nr_rd": "91",
       "formula_ct": null,
       "formula_rd": "88+89+90",
       "row_type": "total",
@@ -1095,7 +1095,7 @@
     },
     {
       "description": "Acţiuni proprii (ct. 109)",
-      "nr_rd": "93",
+      "nr_rd": "92",
       "formula_ct": "109",
       "formula_rd": null,
       "row_type": "data",
@@ -1105,7 +1105,7 @@
     },
     {
       "description": "Câştiguri legate de instrumentele de capitaluri proprii (ct. 141)",
-      "nr_rd": "94",
+      "nr_rd": "93",
       "formula_ct": "141",
       "formula_rd": null,
       "row_type": "data",
@@ -1115,7 +1115,7 @@
     },
     {
       "description": "Pierderi legate de instrumentele  de capitaluri proprii (ct. 149)",
-      "nr_rd": "95",
+      "nr_rd": "94",
       "formula_ct": "149",
       "formula_rd": null,
       "row_type": "data",
@@ -1125,7 +1125,7 @@
     },
     {
       "description": "V. PROFITUL SAU PIERDEREA REPORTAT(Ă)                  SOLD C  (ct. 117)",
-      "nr_rd": "96",
+      "nr_rd": "95",
       "formula_ct": "117",
       "formula_rd": null,
       "row_type": "total",
@@ -1135,7 +1135,7 @@
     },
     {
       "description": "SOLD D (ct. 117)",
-      "nr_rd": "97",
+      "nr_rd": "96",
       "formula_ct": "117",
       "formula_rd": null,
       "row_type": "data",
@@ -1155,7 +1155,7 @@
     },
     {
       "description": "SOLD C (ct. 121)",
-      "nr_rd": "98",
+      "nr_rd": "97",
       "formula_ct": "121",
       "formula_rd": null,
       "row_type": "data",
@@ -1165,7 +1165,7 @@
     },
     {
       "description": "SOLD D (ct. 121)",
-      "nr_rd": "99",
+      "nr_rd": "98",
       "formula_ct": "121",
       "formula_rd": null,
       "row_type": "data",
@@ -1175,7 +1175,7 @@
     },
     {
       "description": "Repartizarea profitului (ct. 129)",
-      "nr_rd": "100",
+      "nr_rd": "99",
       "formula_ct": "129",
       "formula_rd": null,
       "row_type": "data",
@@ -1185,7 +1185,7 @@
     },
     {
       "description": "CAPITALURI PROPRII - TOTAL (rd. 85+86+87+91-92+93-94+95-96\n+97-98-99)",
-      "nr_rd": "101",
+      "nr_rd": "100",
       "formula_ct": null,
       "formula_rd": "85+86+87+91-92+93-94+95-96+97-98-99",
       "row_type": "total",
@@ -1195,7 +1195,7 @@
     },
     {
       "description": "Patrimoniul public (ct. 1016)",
-      "nr_rd": "102",
+      "nr_rd": "101",
       "formula_ct": "1016",
       "formula_rd": null,
       "row_type": "data",
@@ -1205,7 +1205,7 @@
     },
     {
       "description": "Patrimoniul privat (ct. 1017) 2)",
-      "nr_rd": "103",
+      "nr_rd": "102",
       "formula_ct": "1017",
       "formula_rd": null,
       "row_type": "data",
@@ -1215,7 +1215,7 @@
     },
     {
       "description": "CAPITALURI - TOTAL (rd.100+101+102) (rd.25+41+42-53-64-68-79)",
-      "nr_rd": "104",
+      "nr_rd": "103",
       "formula_ct": null,
       "formula_rd": "100+101+102",
       "row_type": "total",
@@ -1235,7 +1235,7 @@
     {
       "metric_key": "active_circulante",
       "metric_label": "Active Circulante",
-      "nr_rd": "42",
+      "nr_rd": "41",
       "metric_group": "summary",
       "sort_order": 2
     },
@@ -1249,42 +1249,42 @@
     {
       "metric_key": "creante",
       "metric_label": "Creante",
-      "nr_rd": "40",
+      "nr_rd": "36",
       "metric_group": "ratio_input",
       "sort_order": 4
     },
     {
       "metric_key": "disponibilitati",
       "metric_label": "Disponibilitati",
-      "nr_rd": "39",
+      "nr_rd": "40",
       "metric_group": "ratio_input",
       "sort_order": 5
     },
     {
       "metric_key": "datorii_termen_scurt",
       "metric_label": "Datorii < 1 an",
-      "nr_rd": "54",
+      "nr_rd": "53",
       "metric_group": "ratio_input",
       "sort_order": 6
     },
     {
       "metric_key": "datorii_termen_lung",
       "metric_label": "Datorii > 1 an",
-      "nr_rd": "55",
+      "nr_rd": "64",
       "metric_group": "ratio_input",
       "sort_order": 7
     },
     {
       "metric_key": "capitaluri_proprii",
       "metric_label": "Capitaluri Proprii",
-      "nr_rd": "101",
+      "nr_rd": "100",
       "metric_group": "summary",
       "sort_order": 8
     },
     {
       "metric_key": "capital_social",
       "metric_label": "Capital Social",
-      "nr_rd": "81",
+      "nr_rd": "80",
       "metric_group": "ratio_input",
       "sort_order": 9
     }

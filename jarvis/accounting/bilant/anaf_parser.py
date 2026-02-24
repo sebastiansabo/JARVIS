@@ -341,12 +341,23 @@ def generate_row_mapping(rows: list[dict]) -> dict:
         nr = row.get('nr_rd')
         if not nr:
             continue
-        # Pad to 3 digits (handles '01' -> '001', '103' -> '103', '301' -> '301')
-        padded = nr.zfill(3)
+        # Convert B numbering to ANAF code ('35a' → '301'), then pad to 3 digits
+        anaf_code = _nr_rd_to_anaf(nr)
+        padded = anaf_code.zfill(3)
         for col in ('1', '2'):
             key = f'F10_{padded}{col}'
             mapping[key] = {'row': nr, 'col': f'C{col}'}
     return mapping
+
+
+def _nr_rd_to_anaf(nr_rd: str) -> str:
+    """Convert nr_rd to ANAF row code. Handles '35a' -> '301'."""
+    return '301' if nr_rd == '35a' else nr_rd
+
+
+def _anaf_to_nr_rd(anaf_code: str) -> str:
+    """Convert ANAF row code to nr_rd. Handles '301' -> '35a'."""
+    return '35a' if anaf_code == '301' else anaf_code
 
 
 # ════════════════════════════════════════════════════════════════
@@ -397,13 +408,14 @@ def generate_anaf_txt(values: dict, prior_values: dict | None = None,
     if prior_values:
         all_rows.update(prior_values.keys())
 
-    for nr_rd in sorted(all_rows, key=lambda x: (x.zfill(4))):
+    for nr_rd in sorted(all_rows, key=lambda x: _nr_rd_to_anaf(x).zfill(4)):
+        anaf_rd = _nr_rd_to_anaf(nr_rd)
         # C2 (current period)
         c2_val = values.get(nr_rd) if values else None
         if c2_val is not None and c2_val != 0:
             val = round(float(c2_val))
             sign = '-' if val < 0 else ''
-            lines.append(f',{form},R{nr_rd},C2,{sign},{abs(int(val))}')
+            lines.append(f',{form},R{anaf_rd},C2,{sign},{abs(int(val))}')
 
         # C1 (prior period)
         if prior_values:
@@ -411,7 +423,7 @@ def generate_anaf_txt(values: dict, prior_values: dict | None = None,
             if c1_val is not None and c1_val != 0:
                 val = round(float(c1_val))
                 sign = '-' if val < 0 else ''
-                lines.append(f',{form},R{nr_rd},C1,{sign},{abs(int(val))}')
+                lines.append(f',{form},R{anaf_rd},C1,{sign},{abs(int(val))}')
 
     return '\r\n'.join(lines) + '\r\n'
 
@@ -503,8 +515,9 @@ def generate_anaf_xml(values: dict, prior_values: dict | None = None,
     if prior_values:
         all_rows.update(prior_values.keys())
 
-    for nr_rd in sorted(all_rows, key=lambda x: x.zfill(4)):
-        padded = nr_rd.zfill(3)
+    for nr_rd in sorted(all_rows, key=lambda x: _nr_rd_to_anaf(x).zfill(4)):
+        anaf_code = _nr_rd_to_anaf(nr_rd)
+        padded = anaf_code.zfill(3)
 
         # C1 (prior period) — column suffix "1"
         if prior_values:
@@ -583,10 +596,11 @@ def _fill_datasets_xml(datasets_xml: bytes, values: dict, prior_values: dict | N
         if not tag.startswith('R') or tag.startswith('RGOL') or tag.startswith('F10'):
             continue
 
-        # Extract nr_rd from element name: R01 → '01', R103 → '103', R301 → '301'
-        nr_rd = tag[1:]  # strip leading 'R'
-        if nr_rd.startswith('_'):
-            nr_rd = nr_rd[1:]  # R_PP → 'PP'
+        # Extract nr_rd from element name: R01 → '01', R103 → '103', R301 → '35a'
+        raw_code = tag[1:]  # strip leading 'R'
+        if raw_code.startswith('_'):
+            raw_code = raw_code[1:]  # R_PP → 'PP'
+        nr_rd = _anaf_to_nr_rd(raw_code)  # '301' → '35a' (B numbering)
 
         # Fill C2 (current period)
         c2_val = values.get(nr_rd)

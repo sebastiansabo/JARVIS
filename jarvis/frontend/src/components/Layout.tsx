@@ -84,7 +84,7 @@ export default function Layout() {
           <span className="ml-2 text-lg font-semibold">JARVIS</span>
         </header>
 
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex-1 overflow-auto p-6 pb-20">
           <Outlet />
         </main>
       </div>

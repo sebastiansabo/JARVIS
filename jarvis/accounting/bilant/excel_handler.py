@@ -4,6 +4,7 @@ import io
 import pandas as pd
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from .formula_engine import extract_ct_formula, extract_row_formula
+from .anaf_parser import _nr_rd_to_anaf
 
 
 def read_balanta_from_excel(file_bytes):
@@ -259,7 +260,8 @@ def generate_anaf_excel(generation, results, row_mapping=None, prior_results=Non
             nr = r.get('nr_rd')
             if not nr:
                 continue
-            padded = nr.zfill(3)
+            anaf_code = _nr_rd_to_anaf(nr)
+            padded = anaf_code.zfill(3)
             for c in ('1', '2'):
                 mapping[f'F10_{padded}{c}'] = {'row': nr, 'col': f'C{c}'}
 

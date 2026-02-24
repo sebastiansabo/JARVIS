@@ -121,10 +121,10 @@ class TestExtractRowFormula:
         result = extract_row_formula("TOTAL (rd. 31+32+33)")
         assert '31' in result and '32' in result and '33' in result
 
-    def test_35a_conversion(self):
-        """35a should be converted to 36."""
+    def test_35a_preserved(self):
+        """35a should be preserved as-is (column B numbering)."""
         result = extract_row_formula("TOTAL (rd. 35a)")
-        assert '36' in result
+        assert '35a' in result
 
     def test_no_formula(self):
         assert extract_row_formula("Just a description") == ""
@@ -172,6 +172,27 @@ class TestParseCtFormula:
     def test_empty(self):
         assert parse_ct_formula("") == []
         assert parse_ct_formula(None) == []
+
+    def test_dinct_inherits_plus_sign(self):
+        """dinct. should inherit the preceding sign — positive when preceded by +."""
+        items = parse_ct_formula("345+dinct.4428")
+        assert items == [
+            ('345', 'normal_plus'),
+            ('4428', 'normal_plus'),
+        ]
+
+    def test_dinct_inherits_minus_sign(self):
+        """dinct. should inherit the preceding sign — negative when preceded by -."""
+        items = parse_ct_formula("345-dinct.4428")
+        assert items == [
+            ('345', 'normal_plus'),
+            ('4428', 'normal_minus'),
+        ]
+
+    def test_dinct_default_sign_is_plus(self):
+        """dinct. at start of expression defaults to plus."""
+        items = parse_ct_formula("dinct.4428")
+        assert items == [('4428', 'normal_plus')]
 
     def test_complex_mixed(self):
         items = parse_ct_formula("345+346-2801+/-348-dinct.4428")
@@ -249,6 +270,11 @@ class TestEvalRowFormula:
     def test_missing_row(self):
         values = {'1': 100}
         assert eval_row_formula("1+2", values) == 100  # row 2 defaults to 0
+
+    def test_35a_token(self):
+        """eval_row_formula should handle alphanumeric '35a' tokens."""
+        values = {'31': 100, '35': 200, '35a': 50}
+        assert eval_row_formula("31+35+35a", values) == 350
 
     def test_empty(self):
         assert eval_row_formula("", {}) == 0
@@ -601,6 +627,15 @@ class TestGenerateRowMapping:
         # Section row with no nr_rd should not be in mapping
         assert len(mapping) == 4  # 2 rows * 2 columns
 
+    def test_35a_mapping(self):
+        """Row '35a' (B numbering) should produce ANAF field codes F10_3011/F10_3012."""
+        rows = [{'nr_rd': '35a', 'description': 'Dividende'}]
+        mapping = generate_row_mapping(rows)
+        assert 'F10_3011' in mapping
+        assert mapping['F10_3011'] == {'row': '35a', 'col': 'C1'}
+        assert 'F10_3012' in mapping
+        assert mapping['F10_3012'] == {'row': '35a', 'col': 'C2'}
+
     def test_empty_rows(self):
         assert generate_row_mapping([]) == {}
 
@@ -813,14 +848,14 @@ class TestFillAnafPdf:
         pdf.close()
 
     def test_fill_special_rows(self, template_exists):
-        """Test filling R301 (special row) and R_PP."""
+        """Test filling R301 via B-numbered '35a' key."""
         if not template_exists:
             pytest.skip('ANAF template PDF not available')
         from accounting.bilant.anaf_parser import fill_anaf_pdf
         import pikepdf
         import xml.etree.ElementTree as ET
 
-        values = {'301': 77777}
+        values = {'35a': 77777}  # B numbering — maps to XFA element R301
         result = fill_anaf_pdf(values)
         result.seek(0)
         pdf = pikepdf.Pdf.open(result)
@@ -912,6 +947,14 @@ class TestAnafExportFormats:
         assert 'R01' not in txt
         assert ',F10L,R02,C2,,100' in txt
 
+    def test_generate_anaf_txt_35a(self):
+        """Row '35a' (B numbering) should export as R301 in ANAF TXT."""
+        from accounting.bilant.anaf_parser import generate_anaf_txt
+        values = {'35a': 5000}
+        txt = generate_anaf_txt(values)
+        assert ',F10L,R301,C2,,5000' in txt
+        assert 'R35a' not in txt  # Should use ANAF code, not B numbering
+
     def test_generate_anaf_xml_basic(self):
         """Generate ANAF XML with Bilant1002 root and F10 attributes."""
         from accounting.bilant.anaf_parser import generate_anaf_xml
@@ -977,3 +1020,13 @@ class TestAnafExportFormats:
         assert 'F10_0012="100"' in text   # row '1' padded to '001'
         assert 'F10_0102="200"' in text   # row '10' padded to '010'
         assert 'F10_1032="300"' in text   # row '103' stays '103'
+
+    def test_generate_anaf_xml_35a(self):
+        """Row '35a' (B numbering) should export as F10_301X in ANAF XML."""
+        from accounting.bilant.anaf_parser import generate_anaf_xml
+        values = {'35': 1000, '35a': 2000, '36': 3000}
+        xml_bytes = generate_anaf_xml(values)
+        text = xml_bytes.decode('utf-8')
+        assert 'F10_0352="1000"' in text   # row '35' → '035'
+        assert 'F10_3012="2000"' in text   # row '35a' → '301'
+        assert 'F10_0362="3000"' in text   # row '36' → '036'

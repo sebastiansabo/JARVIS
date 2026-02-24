@@ -234,6 +234,79 @@ def get_placeholder():
 
 
 
+def _recompute_bilant_formula_values(cursor):
+    """Recompute all formula_rd values in bilant_results.
+
+    After OMF→B numbering migration, row numbers shifted but stored values
+    were stale. This recomputes formula_rd sums in dependency order and
+    updates verification strings with detailed row amounts.
+    """
+    cursor.execute("SELECT DISTINCT generation_id FROM bilant_results WHERE formula_rd IS NOT NULL")
+    gen_ids = [r['generation_id'] for r in cursor.fetchall()]
+    if not gen_ids:
+        return
+
+    updated = 0
+    for gen_id in gen_ids:
+        cursor.execute("""
+            SELECT id, nr_rd, value, formula_rd
+            FROM bilant_results WHERE generation_id = %s
+            ORDER BY CASE
+                WHEN nr_rd = '35a' THEN 35.5
+                WHEN nr_rd ~ '^[0-9]+$' THEN CAST(nr_rd AS FLOAT)
+                ELSE 999 END
+        """, (gen_id,))
+        all_rows = cursor.fetchall()
+        values = {r['nr_rd']: float(r['value'] or 0) for r in all_rows if r['nr_rd']}
+
+        # Evaluate formula_rd rows in order (dependencies have lower nr_rd)
+        for row in all_rows:
+            if not row['formula_rd']:
+                continue
+            expr = row['formula_rd']
+            # Parse and evaluate: tokens like "31+32+33-34+35a"
+            total = 0.0
+            sign = 1
+            token = ''
+            parts = []
+            for ch in expr + '+':
+                if ch.isdigit() or ch.isalpha():
+                    token += ch
+                elif ch in '+-':
+                    if token:
+                        # Strip leading zeros but keep alphanumeric like '35a'
+                        row_num = token.lstrip('0') or '0'
+                        val = values.get(row_num, 0)
+                        total += sign * val
+                        pfx = '+' if sign == 1 else '-'
+                        parts.append(f"{pfx} rd.{row_num} ({val:,.2f})")
+                        token = ''
+                    sign = 1 if ch == '+' else -1
+            # Update value in dict for dependent formulas
+            if row['nr_rd']:
+                values[row['nr_rd']] = total
+            # Build verification string
+            if parts and parts[0].startswith('+ '):
+                parts[0] = parts[0][2:]
+            verification = ' '.join(parts) + f" = {total:,.2f}"
+            # Update DB if value changed
+            old_val = float(row['value'] or 0)
+            if abs(total - old_val) > 0.001:
+                cursor.execute(
+                    "UPDATE bilant_results SET value = %s, verification = %s WHERE id = %s",
+                    (total, verification, row['id'])
+                )
+                updated += 1
+            else:
+                # Still update verification string for detailed display
+                cursor.execute(
+                    "UPDATE bilant_results SET verification = %s WHERE id = %s",
+                    (verification, row['id'])
+                )
+    if updated:
+        logger.info(f'Recomputed {updated} stale formula_rd values across {len(gen_ids)} generation(s)')
+
+
 def init_db():
     """Initialize database tables, indexes, and seed data.
 
@@ -812,6 +885,105 @@ def init_db():
                 UPDATE bilant_template_rows SET row_type = 'data', is_bold = FALSE, indent_level = 1
                 WHERE nr_rd IN ('19', '21', '95') AND row_type = 'total'
             """)
+            # ── Migrate default bilant template from OMF to column B numbering ──
+            # Check if migration needed: dividende row still has OMF nr_rd='36'
+            cursor.execute("""
+                SELECT tr.id FROM bilant_template_rows tr
+                JOIN bilant_templates t ON t.id = tr.template_id
+                WHERE t.is_default = TRUE AND tr.nr_rd = '36'
+                  AND tr.description LIKE '%%dividende%%'
+                LIMIT 1
+            """)
+            if cursor.fetchone():
+                logger.info('Migrating default bilant template from OMF to column B numbering')
+                cursor.execute("SELECT id FROM bilant_templates WHERE is_default = TRUE LIMIT 1")
+                tpl = cursor.fetchone()
+                if tpl:
+                    tid = tpl['id']
+                    # 1. Dividende row: OMF 36 → B '35a'
+                    cursor.execute("""
+                        UPDATE bilant_template_rows SET nr_rd = '35a'
+                        WHERE template_id = %s AND nr_rd = '36'
+                          AND description LIKE '%%dividende%%'
+                    """, (tid,))
+                    # 2. All rows with integer nr_rd >= 37: decrement by 1
+                    cursor.execute(r"""
+                        UPDATE bilant_template_rows
+                        SET nr_rd = CAST(CAST(nr_rd AS INTEGER) - 1 AS TEXT)
+                        WHERE template_id = %s
+                          AND nr_rd ~ '^\d+$' AND CAST(nr_rd AS INTEGER) >= 37
+                    """, (tid,))
+                    # 3. Update formula_rd values (explicit by sort_order for reliability)
+                    _formula_rd_b = {
+                        43: '31+32+33+34+35+35a', 47: '37+38', 49: '30+36+39+40',
+                        50: '43+44', 63: '45+46+47+48+49+50+51+52',
+                        64: '41+43-53-70-73-76', 65: '25+44+54',
+                        75: '56+57+58+59+60+61+62+63', 80: '65+66+67',
+                        82: '70+71', 85: '73+74', 88: '76+77',
+                        92: '69+72+75+78', 101: '80+81+82+83+84',
+                        108: '88+89+90',
+                        118: '85+86+87+91-92+93-94+95-96+97-98-99',
+                        121: '100+101+102',
+                    }
+                    for so, frd in _formula_rd_b.items():
+                        cursor.execute("""
+                            UPDATE bilant_template_rows SET formula_rd = %s
+                            WHERE template_id = %s AND sort_order = %s AND formula_rd IS NOT NULL
+                        """, (frd, tid, so))
+                    # 4. Update metric_configs nr_rd to correct B values
+                    _metric_b = {
+                        'active_imobilizate': '25', 'active_circulante': '41',
+                        'stocuri': '30', 'creante': '36', 'disponibilitati': '40',
+                        'datorii_termen_scurt': '53', 'datorii_termen_lung': '64',
+                        'capitaluri_proprii': '100', 'capital_social': '80',
+                        'struct_active_imobilizate': '25', 'struct_stocuri': '30',
+                        'struct_creante': '36', 'struct_disponibilitati': '40',
+                        'struct_capitaluri_proprii': '100', 'struct_datorii_scurt': '53',
+                        'struct_datorii_lung': '64',
+                    }
+                    for mkey, b_nr in _metric_b.items():
+                        cursor.execute("""
+                            UPDATE bilant_metric_configs SET nr_rd = %s
+                            WHERE template_id = %s AND metric_key = %s
+                        """, (b_nr, tid, mkey))
+                    # 5. Update existing bilant_results from OMF to B numbering
+                    #    Dividende results: nr_rd '36' with dividende description → '35a'
+                    cursor.execute("""
+                        UPDATE bilant_results SET nr_rd = '35a'
+                        WHERE nr_rd = '36' AND description LIKE '%%dividende%%'
+                    """)
+                    #    All results with integer nr_rd >= 37: decrement by 1
+                    cursor.execute(r"""
+                        UPDATE bilant_results
+                        SET nr_rd = CAST(CAST(nr_rd AS INTEGER) - 1 AS TEXT)
+                        WHERE nr_rd ~ '^\d+$' AND CAST(nr_rd AS INTEGER) >= 37
+                    """)
+                    #    Update formula_rd in results too
+                    cursor.execute("""
+                        UPDATE bilant_results br
+                        SET formula_rd = tr.formula_rd
+                        FROM bilant_template_rows tr
+                        WHERE br.template_row_id = tr.id AND tr.formula_rd IS NOT NULL
+                    """)
+                    # 6. Recompute formula_rd values (they're stale after nr_rd shift)
+                    _recompute_bilant_formula_values(cursor)
+                    logger.info('Bilant template migrated to column B numbering')
+
+            # ── Repair stale formula_rd values (runs if OMF→B migration already applied) ──
+            cursor.execute("""
+                SELECT DISTINCT br.generation_id
+                FROM bilant_results br
+                WHERE br.nr_rd = '35a'
+                  AND EXISTS (
+                      SELECT 1 FROM bilant_results br2
+                      WHERE br2.generation_id = br.generation_id
+                        AND br2.formula_rd IS NOT NULL
+                  )
+            """)
+            repair_gens = [r['generation_id'] for r in cursor.fetchall()]
+            if repair_gens:
+                _recompute_bilant_formula_values(cursor)
+
             conn.commit()
             logger.info('Database schema already initialized — skipping init_db()')
             return

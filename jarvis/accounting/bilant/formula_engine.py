@@ -112,7 +112,6 @@ def extract_row_formula(description):
             expanded = '+'.join(parts)
             raw = raw[:la_match.start()] + expanded + raw[la_match.end():]
     result = re.sub(r'[^0-9a-z+\-]', '', raw)
-    result = re.sub(r'35a', '36', result)
     return result
 
 
@@ -144,7 +143,9 @@ def parse_ct_formula(expr):
                 num += expr[i]
                 i += 1
             if num:
-                items.append((num, 'normal_minus'))
+                sign_type = 'normal_plus' if sign == 1 else 'normal_minus'
+                items.append((num, sign_type))
+            sign = 1
             continue
         if expr[i] == '+':
             sign = 1
@@ -247,6 +248,32 @@ def eval_row_formula(expr, bilant_values):
     return total
 
 
+def format_rd_verification(expr, bilant_values):
+    """Build detailed verification string for formula_rd showing each row's value."""
+    if not expr:
+        return ''
+    parts = []
+    sign = 1
+    row_ref = ''
+    total = 0
+    for ch in expr + '+':
+        if ch.isdigit() or ch.isalpha():
+            row_ref += ch
+        elif ch in '+-':
+            if row_ref:
+                match = re.match(r'^0*(\d+[a-z]*)$', row_ref)
+                row_num = match.group(1) if match else row_ref
+                val = bilant_values.get(row_num, 0)
+                total += sign * val
+                prefix = '+' if sign == 1 else '-'
+                parts.append(f"{prefix} rd.{row_num} ({val:,.2f})")
+                row_ref = ''
+            sign = 1 if ch == '+' else -1
+    if parts and parts[0].startswith('+ '):
+        parts[0] = parts[0][2:]
+    return ' '.join(parts) + f" = {total:,.2f}"
+
+
 # ── Main processing (template-driven) ──
 
 def process_bilant_from_template(df_balanta, template_rows):
@@ -308,7 +335,7 @@ def process_bilant_from_template(df_balanta, template_rows):
         if formula_rd and not formula_ct:
             val = eval_row_formula(formula_rd, bilant_values)
             results[i]['value'] = val
-            results[i]['verification'] = f"Sum of rows: {formula_rd}"
+            results[i]['verification'] = format_rd_verification(formula_rd, bilant_values)
             nr_rd = str(row.get('nr_rd') or '').strip()
             if nr_rd:
                 bilant_values[nr_rd] = val

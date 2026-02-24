@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -83,6 +83,10 @@ function enrichCtFormula(formulaCt: string, verification: string): string {
   return parts.join('')
 }
 
+function isSectionType(rt: string | undefined): boolean {
+  return rt === 'section' || rt === 'section_header'
+}
+
 export function ResultsTable({ results }: ResultsTableProps) {
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
 
@@ -100,22 +104,22 @@ export function ResultsTable({ results }: ResultsTableProps) {
   }
 
   return (
-    <div className="rounded-md border">
-      <Table>
+    <div className="rounded-md border overflow-hidden">
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead className="w-12">Nr.</TableHead>
+            <TableHead className="w-14">Nr.</TableHead>
             <TableHead>Description</TableHead>
-            <TableHead className="w-32 text-right">Value</TableHead>
-            <TableHead className="w-10" />
+            <TableHead className="w-28 text-right">Value</TableHead>
+            <TableHead className="w-8" />
           </TableRow>
         </TableHeader>
         <TableBody>
-          {results.map(r => {
+          {results.map((r) => {
             const isExpanded = expandedRows.has(r.id)
             const hasVerification = !!r.verification
             const isSeparator = r.row_type === 'separator'
-            const isSection = r.row_type === 'section'
+            const isSection = isSectionType(r.row_type)
             const isTotal = r.row_type === 'total' || r.is_bold
 
             if (isSeparator) {
@@ -127,27 +131,26 @@ export function ResultsTable({ results }: ResultsTableProps) {
             }
 
             return (
-              <>
+              <Fragment key={r.id}>
                 <TableRow
-                  key={r.id}
                   className={cn(
                     hasVerification && 'cursor-pointer',
                     isSection && 'bg-muted/50',
                     isTotal && 'font-semibold',
                   )}
-                  onClick={() => hasVerification && toggleRow(r.id)}
+                  onClick={hasVerification ? () => toggleRow(r.id) : undefined}
                 >
                   <TableCell className="text-xs text-muted-foreground">{r.nr_rd || ''}</TableCell>
-                  <TableCell>
+                  <TableCell className="break-words whitespace-normal">
                     <span
-                      className={cn('text-sm', isSection && 'font-semibold text-muted-foreground uppercase text-xs')}
+                      className={cn('text-sm text-justify block', isSection && 'font-semibold text-muted-foreground uppercase text-xs')}
                       style={{ paddingLeft: `${(r.indent_level || 0) * 16}px` }}
                     >
                       {r.description}
                     </span>
                   </TableCell>
                   <TableCell className={cn('text-right tabular-nums text-sm', isTotal && 'font-bold')}>
-                    {r.value !== 0 || isTotal ? fmtValue(r.value) : ''}
+                    {isSection ? '' : (r.value !== 0 || isTotal ? fmtValue(r.value) : '')}
                   </TableCell>
                   <TableCell>
                     {hasVerification && (
@@ -158,7 +161,7 @@ export function ResultsTable({ results }: ResultsTableProps) {
                   </TableCell>
                 </TableRow>
                 {isExpanded && hasVerification && (
-                  <TableRow key={`${r.id}-detail`} className="bg-muted/30">
+                  <TableRow className="bg-muted/30">
                     <TableCell />
                     <TableCell colSpan={3}>
                       <div className="py-1 text-xs text-muted-foreground font-mono whitespace-pre-wrap">
@@ -169,7 +172,7 @@ export function ResultsTable({ results }: ResultsTableProps) {
                     </TableCell>
                   </TableRow>
                 )}
-              </>
+              </Fragment>
             )
           })}
         </TableBody>

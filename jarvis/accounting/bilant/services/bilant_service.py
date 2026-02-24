@@ -8,7 +8,7 @@ from ..repositories import BilantTemplateRepository, BilantGenerationRepository
 from ..formula_engine import process_bilant_from_template, calculate_metrics_from_config
 from ..excel_handler import read_balanta_from_excel, read_bilant_sheet_for_import, generate_output_excel, generate_anaf_excel
 from ..pdf_handler import generate_bilant_pdf
-from ..anaf_parser import parse_anaf_pdf, generate_row_mapping, fill_anaf_pdf, generate_anaf_xml, generate_anaf_txt
+from ..anaf_parser import parse_anaf_pdf, generate_row_mapping, fill_anaf_pdf, generate_anaf_xml, generate_anaf_txt, _nr_rd_to_anaf
 
 logger = logging.getLogger('jarvis.bilant.service')
 
@@ -332,7 +332,8 @@ class BilantService:
                 nr = r.get('nr_rd')
                 if not nr:
                     continue
-                padded = nr.zfill(3)
+                anaf_code = _nr_rd_to_anaf(nr)
+                padded = anaf_code.zfill(3)
                 for c in ('1', '2'):
                     row_mapping[f'F10_{padded}{c}'] = {'row': nr, 'col': f'C{c}'}
 
