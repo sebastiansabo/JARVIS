@@ -1,9 +1,8 @@
 import { useEffect } from 'react'
-import { Bot, X } from 'lucide-react'
+import { Bot } from 'lucide-react'
 import { useAiAgentStore } from '@/stores/aiAgentStore'
 import { EphemeralChatPopup } from './EphemeralChatPopup'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 
 export function AiAgentWidget() {
@@ -22,29 +21,36 @@ export function AiAgentWidget() {
   return (
     <>
       {/* Floating trigger button — bottom-right corner */}
-      <Button
-        onClick={() => setWidgetOpen(!isWidgetOpen)}
-        size="icon"
-        aria-label={isWidgetOpen ? 'Close AI Agent' : 'Open AI Agent'}
-        className={cn(
-          'fixed bottom-5 right-5 z-50 h-12 w-12 rounded-full shadow-lg transition-transform hover:scale-105',
-          isWidgetOpen && 'bg-muted text-muted-foreground hover:bg-muted/80',
-        )}
-      >
-        {isWidgetOpen ? <X className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
-      </Button>
-
-      {/* Chat panel — right-side Sheet */}
-      <Sheet open={isWidgetOpen} onOpenChange={setWidgetOpen}>
-        <SheetContent
-          side="right"
-          className="flex w-full flex-col gap-0 p-0 sm:max-w-lg md:max-w-xl lg:max-w-2xl"
-          aria-describedby={undefined}
+      {!isWidgetOpen && (
+        <Button
+          onClick={() => setWidgetOpen(true)}
+          size="icon"
+          aria-label="Open AI Agent"
+          className="fixed bottom-5 right-5 z-50 h-12 w-12 rounded-full shadow-lg transition-transform hover:scale-105"
         >
-          <SheetTitle className="sr-only">AI Agent</SheetTitle>
-          {isWidgetOpen && <EphemeralChatPopup />}
-        </SheetContent>
-      </Sheet>
+          <Bot className="h-5 w-5" />
+        </Button>
+      )}
     </>
+  )
+}
+
+/** Inline chat panel rendered inside the layout flex container (pushes content). */
+export function AiAgentPanel() {
+  const isWidgetOpen = useAiAgentStore((s) => s.isWidgetOpen)
+  const setWidgetOpen = useAiAgentStore((s) => s.setWidgetOpen)
+
+  if (!isWidgetOpen) return null
+
+  return (
+    <aside
+      className={cn(
+        'hidden md:flex flex-col border-l bg-background',
+        'w-[420px] lg:w-[480px] xl:w-[540px]',
+        'animate-in slide-in-from-right duration-200',
+      )}
+    >
+      <EphemeralChatPopup onClose={() => setWidgetOpen(false)} />
+    </aside>
   )
 }

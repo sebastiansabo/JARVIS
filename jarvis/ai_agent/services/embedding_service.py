@@ -6,8 +6,10 @@ These embeddings are used for semantic search in RAG.
 """
 
 import os
-from typing import List, Optional
+import time
+from typing import List, Optional, Tuple
 import hashlib
+from collections import OrderedDict
 
 import openai
 
@@ -16,6 +18,13 @@ from ..config import AIAgentConfig
 from ..exceptions import EmbeddingError, ConfigurationError
 
 logger = get_logger('jarvis.ai_agent.services.embedding')
+
+# Module-level query embedding cache (shared across service instances).
+# Caches the embedding vector for user queries to avoid duplicate OpenAI API calls.
+# Key: text hash, Value: (embedding_tuple, timestamp)
+_QUERY_CACHE: OrderedDict[str, Tuple[List[float], float]] = OrderedDict()
+_QUERY_CACHE_MAX = 256
+_QUERY_CACHE_TTL = 600  # 10 minutes
 
 
 class EmbeddingService:
@@ -44,12 +53,14 @@ class EmbeddingService:
             self._client = openai.OpenAI(api_key=api_key)
         return self._client
 
-    def generate_embedding(self, text: str) -> List[float]:
+    def generate_embedding(self, text: str, use_cache: bool = True) -> List[float]:
         """
         Generate embedding for a single text.
 
         Args:
             text: Text to embed
+            use_cache: Whether to check/populate the query cache (default True).
+                       Set False for indexing operations where caching isn't useful.
 
         Returns:
             List of 1536 floats (embedding vector)
@@ -59,6 +70,20 @@ class EmbeddingService:
         """
         if not text or not text.strip():
             raise EmbeddingError("Cannot generate embedding for empty text")
+
+        # Check cache first (for query embeddings — avoids duplicate OpenAI API calls)
+        cache_key = None
+        if use_cache:
+            cache_key = hashlib.md5(text.encode('utf-8')).hexdigest()
+            cached = _QUERY_CACHE.get(cache_key)
+            if cached:
+                embedding, ts = cached
+                if (time.time() - ts) < _QUERY_CACHE_TTL:
+                    logger.debug("Embedding cache hit")
+                    _QUERY_CACHE.move_to_end(cache_key)
+                    return embedding
+                else:
+                    del _QUERY_CACHE[cache_key]
 
         try:
             client = self._get_client()
@@ -70,6 +95,13 @@ class EmbeddingService:
 
             embedding = response.data[0].embedding
             logger.debug(f"Generated embedding: {len(embedding)} dimensions")
+
+            # Store in cache
+            if use_cache and cache_key:
+                _QUERY_CACHE[cache_key] = (embedding, time.time())
+                # Evict oldest entries if over max size
+                while len(_QUERY_CACHE) > _QUERY_CACHE_MAX:
+                    _QUERY_CACHE.popitem(last=False)
 
             return embedding
 

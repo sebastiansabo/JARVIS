@@ -30,6 +30,7 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
   const [toolsUsed, setToolsUsed] = useState<Record<number, string[]>>({})
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
+  const [streamingStatus, setStreamingStatus] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -125,6 +126,7 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
     setInput('')
     setIsStreaming(true)
     setStreamingContent('')
+    setStreamingStatus('')
 
     aiAgentApi.streamMessage(
       selectedConversationId,
@@ -132,12 +134,14 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
       selectedModel ?? undefined,
       // onChunk
       (text) => {
+        setStreamingStatus('')  // Clear status once tokens start flowing
         setStreamingContent((prev) => prev + text)
       },
       // onDone
       (data) => {
         setIsStreaming(false)
         setStreamingContent('')
+        setStreamingStatus('')
         queryClient.invalidateQueries({ queryKey: ['conversation', selectedConversationId] })
         queryClient.invalidateQueries({ queryKey: ['conversations'] })
         if (data.rag_sources?.length) {
@@ -156,7 +160,12 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
       (error) => {
         setIsStreaming(false)
         setStreamingContent('')
+        setStreamingStatus('')
         toast.error(error || 'Failed to send message')
+      },
+      // onStatus
+      (status) => {
+        setStreamingStatus(status)
       },
     )
   }, [input, selectedConversationId, isStreaming, selectedModel, queryClient])
@@ -253,7 +262,9 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
               </div>
               <div className="flex items-center gap-1 rounded-lg bg-muted px-4 py-3">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Thinking...</span>
+                <span className="text-sm text-muted-foreground">
+                  {streamingStatus || 'Thinking...'}
+                </span>
               </div>
             </div>
           )}

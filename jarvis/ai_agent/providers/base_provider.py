@@ -162,6 +162,55 @@ class BaseProvider(ABC):
         )
         return self._extract_json(response.content)
 
+    # ── Tool-calling helpers (override per provider) ────────────────
+
+    def format_tool_schemas(self, schemas: List[dict]) -> List[dict]:
+        """Convert Claude-format tool schemas to provider format.
+
+        Default: OpenAI function-calling format (used by OpenAI, Groq, Grok).
+        """
+        return [{
+            'type': 'function',
+            'function': {
+                'name': s['name'],
+                'description': s['description'],
+                'parameters': s['input_schema'],
+            }
+        } for s in schemas]
+
+    def build_tool_call_message(self, llm_response: 'LLMResponse') -> dict:
+        """Build assistant message with tool calls for conversation history.
+
+        Default: OpenAI format.
+        """
+        tool_calls = [{
+            'id': tc['id'],
+            'type': 'function',
+            'function': {
+                'name': tc['name'],
+                'arguments': json.dumps(tc['input'], default=str),
+            }
+        } for tc in llm_response.tool_calls]
+        return {
+            'role': 'assistant',
+            'content': llm_response.content or None,
+            'tool_calls': tool_calls,
+        }
+
+    def build_tool_result_messages(self, tool_results: List[dict]) -> List[dict]:
+        """Build tool result messages for conversation history.
+
+        Default: OpenAI format (one message per result).
+
+        Args:
+            tool_results: list of ``{tool_call_id, name, content}``
+        """
+        return [{
+            'role': 'tool',
+            'tool_call_id': tr['tool_call_id'],
+            'content': tr['content'],
+        } for tr in tool_results]
+
     @staticmethod
     def _extract_json(text: str) -> Any:
         """Extract JSON from LLM text that may contain markdown fences.

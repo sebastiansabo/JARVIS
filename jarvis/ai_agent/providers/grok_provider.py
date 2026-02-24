@@ -5,6 +5,7 @@ xAI Grok LLM provider implementation.
 Uses OpenAI-compatible API at https://api.x.ai/v1.
 """
 
+import json as json_module
 import os
 from typing import List, Dict, Any, Optional, Generator, Tuple
 
@@ -55,15 +56,22 @@ class GrokProvider(BaseProvider):
 
         temperature = max(0.0, min(2.0, temperature))
 
-        try:
-            logger.debug(f"Grok API request: model={model_name}, messages={len(formatted_messages)}")
+        # Handle tools
+        tools = kwargs.pop('tools', None)
 
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=formatted_messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
+        try:
+            logger.debug(f"Grok API request: model={model_name}, messages={len(formatted_messages)}, tools={len(tools) if tools else 0}")
+
+            create_kwargs = {
+                'model': model_name,
+                'messages': formatted_messages,
+                'max_tokens': max_tokens,
+                'temperature': temperature,
+            }
+            if tools:
+                create_kwargs['tools'] = tools
+
+            response = client.chat.completions.create(**create_kwargs)
 
             content = ""
             if response.choices:
@@ -73,7 +81,17 @@ class GrokProvider(BaseProvider):
             output_tokens = response.usage.completion_tokens if response.usage else 0
             finish_reason = response.choices[0].finish_reason if response.choices else None
 
-            logger.debug(f"Grok API response: tokens_in={input_tokens}, tokens_out={output_tokens}")
+            # Parse tool calls if present
+            tool_calls = []
+            if response.choices and response.choices[0].message.tool_calls:
+                for tc in response.choices[0].message.tool_calls:
+                    tool_calls.append({
+                        'id': tc.id,
+                        'name': tc.function.name,
+                        'input': json_module.loads(tc.function.arguments),
+                    })
+
+            logger.debug(f"Grok API response: tokens_in={input_tokens}, tokens_out={output_tokens}, tool_calls={len(tool_calls)}")
 
             return LLMResponse(
                 content=content,
@@ -81,6 +99,7 @@ class GrokProvider(BaseProvider):
                 output_tokens=output_tokens,
                 model=model_name,
                 finish_reason=finish_reason,
+                tool_calls=tool_calls,
             )
 
         except openai.RateLimitError as e:
@@ -145,13 +164,22 @@ class GrokProvider(BaseProvider):
         self,
         messages: List[Dict[str, str]],
     ) -> List[Dict[str, str]]:
-        """Format messages for xAI API (OpenAI-compatible)."""
+        """Format messages for xAI API (OpenAI-compatible).
+
+        Passes through tool-related messages unchanged.
+        """
         if not messages:
             return []
 
         formatted = []
         for msg in messages:
             role = msg.get('role', 'user')
+
+            # Pass through tool result messages and assistant tool_call messages
+            if role == 'tool' or 'tool_calls' in msg:
+                formatted.append(msg)
+                continue
+
             content = msg.get('content', '')
 
             if role not in ('system', 'user', 'assistant'):

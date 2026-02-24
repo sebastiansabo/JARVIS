@@ -249,7 +249,7 @@ SELECT 'openai', 'gpt-4-turbo', 'GPT-4 Turbo', 0.01, 0.03, 4096, 128000, FALSE
 WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'openai' AND model_name = 'gpt-4-turbo');
 
 INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
-SELECT 'openai', 'gpt-3.5-turbo', 'GPT-3.5 (Cheap)', 0.0005, 0.0015, 4096, 16385, FALSE
+SELECT 'openai', 'gpt-3.5-turbo', 'GPT-3.5', 0.0005, 0.0015, 4096, 16385, FALSE
 WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'openai' AND model_name = 'gpt-3.5-turbo');
 
 INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)

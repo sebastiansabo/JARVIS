@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/api/client'
 import { Sidebar } from './Sidebar'
-import { AiAgentWidget } from './AiAgentWidget'
+import { AiAgentWidget, AiAgentPanel } from './AiAgentWidget'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -89,6 +89,10 @@ export default function Layout() {
         </main>
       </div>
 
+      {/* AI Agent panel — pushes main content when open */}
+      <AiAgentPanel />
+
+      {/* Floating trigger button (only visible when panel is closed) */}
       <AiAgentWidget />
       <Toaster />
     </div>

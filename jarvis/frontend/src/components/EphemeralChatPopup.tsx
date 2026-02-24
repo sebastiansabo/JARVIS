@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import TextareaAutosize from 'react-textarea-autosize'
-import { Send, Bot, Loader2 } from 'lucide-react'
+import { Send, Bot, Loader2, X } from 'lucide-react'
 import { aiAgentApi } from '@/api/aiAgent'
 import { useAiAgentStore } from '@/stores/aiAgentStore'
 import { MessageBubble } from '@/pages/AiAgent/MessageBubble'
@@ -17,7 +17,7 @@ import {
 import { toast } from 'sonner'
 import type { Message, RagSource as RagSourceType } from '@/types/aiAgent'
 
-export function EphemeralChatPopup() {
+export function EphemeralChatPopup({ onClose }: { onClose?: () => void } = {}) {
   const selectedModel = useAiAgentStore((s) => s.selectedModel)
   const setModel = useAiAgentStore((s) => s.setModel)
 
@@ -143,7 +143,9 @@ export function EphemeralChatPopup() {
     }
   }
 
-  const currentModel = selectedModel ?? (models && models.length > 0 ? String(models[0].id) : null)
+  const currentModel = selectedModel ?? (models && models.length > 0
+    ? String(models.find((m) => m.is_default)?.id ?? models[0].id)
+    : null)
 
   return (
     <div className="flex h-full flex-col">
@@ -153,6 +155,7 @@ export function EphemeralChatPopup() {
           <Bot className="h-4 w-4 text-primary" />
           <span className="text-sm font-semibold">Quick Chat</span>
         </div>
+        <div className="flex items-center gap-1">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="text-xs">
@@ -170,6 +173,12 @@ export function EphemeralChatPopup() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        {onClose && (
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+        </div>
       </div>
 
       {/* Messages */}

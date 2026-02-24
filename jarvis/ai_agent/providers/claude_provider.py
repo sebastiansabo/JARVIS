@@ -264,6 +264,35 @@ class ClaudeProvider(BaseProvider):
 
         return formatted
 
+    # ── Tool-calling helpers (Claude format) ────────────────
+
+    def format_tool_schemas(self, schemas):
+        """Claude uses schemas as-is (name, description, input_schema)."""
+        return schemas
+
+    def build_tool_call_message(self, llm_response):
+        """Claude format: content blocks with tool_use type."""
+        content = []
+        if llm_response.content:
+            content.append({'type': 'text', 'text': llm_response.content})
+        for tc in llm_response.tool_calls:
+            content.append({
+                'type': 'tool_use',
+                'id': tc['id'],
+                'name': tc['name'],
+                'input': tc['input'],
+            })
+        return {'role': 'assistant', 'content': content}
+
+    def build_tool_result_messages(self, tool_results):
+        """Claude format: single user message with tool_result blocks."""
+        content = [{
+            'type': 'tool_result',
+            'tool_use_id': tr['tool_call_id'],
+            'content': tr['content'],
+        } for tr in tool_results]
+        return [{'role': 'user', 'content': content}]
+
     def generate_stream(
         self,
         model_name: str,

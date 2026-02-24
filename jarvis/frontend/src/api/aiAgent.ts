@@ -42,6 +42,7 @@ export const aiAgentApi = {
     onChunk: (text: string) => void,
     onDone: (data: StreamDoneEvent) => void,
     onError: (error: string) => void,
+    onStatus?: (status: string) => void,
   ) => {
     const response = await fetch('/ai-agent/api/chat/stream', {
       method: 'POST',
@@ -92,6 +93,8 @@ export const aiAgentApi = {
               onDone(parsed)
             } else if (eventType === 'error') {
               onError(parsed.error)
+            } else if (eventType === 'status') {
+              onStatus?.(parsed.status)
             }
           } catch {
             // skip malformed JSON
