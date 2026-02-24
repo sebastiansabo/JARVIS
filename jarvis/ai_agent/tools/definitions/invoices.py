@@ -105,12 +105,16 @@ def get_invoice_details(params: dict, user_id: int) -> dict:
             FROM allocations WHERE invoice_id = %s
             ORDER BY company, department
         """, [invoice_id])
-        result['allocations'] = [dict(r) for r in cursor.fetchall()]
-        for a in result['allocations']:
+        allocs = [dict(r) for r in cursor.fetchall()]
+        for a in allocs:
             if a.get('value_ron'):
                 a['value_ron'] = float(a['value_ron'])
             if a.get('percentage'):
                 a['percentage'] = float(a['percentage'])
+
+        result['allocations'] = allocs
+        if not allocs:
+            result['allocation_note'] = 'This invoice has no allocations yet (not assigned to any company/department).'
 
         return result
     finally:
