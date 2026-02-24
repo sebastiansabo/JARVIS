@@ -339,6 +339,16 @@ def _extract_top_n(msg_lower: str) -> Optional[int]:
     return None
 
 
+def _word_boundary_match(keyword: str, text: str) -> bool:
+    """Check if keyword appears as whole word(s) in text, not as substring."""
+    # Multi-word keywords: use simple substring (they're specific enough)
+    if ' ' in keyword:
+        return keyword in text
+    # Single-word keywords: check word boundaries
+    import re
+    return bool(re.search(r'\b' + re.escape(keyword) + r'\b', text))
+
+
 def classify_complexity(user_message: str) -> str:
     """Classify query complexity for model routing.
 
@@ -353,12 +363,12 @@ def classify_complexity(user_message: str) -> str:
     # Very short messages that are greetings/thanks
     if word_count <= 5:
         for kw in SIMPLE_KEYWORDS:
-            if kw in msg_lower:
+            if _word_boundary_match(kw, msg_lower):
                 return 'simple'
 
     # Complex analysis requests
     for kw in COMPLEX_KEYWORDS:
-        if kw in msg_lower:
+        if _word_boundary_match(kw, msg_lower):
             return 'complex'
 
     # Long multi-sentence queries tend to be complex
