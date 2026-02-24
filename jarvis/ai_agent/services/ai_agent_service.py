@@ -476,22 +476,7 @@ class AIAgentService:
                     except Exception as e:
                         logger.warning(f"Analytics context failed: {e}")
 
-            # 5. Build system prompt first (needed for token budgeting)
-            system_prompt = self._build_system_prompt(
-                rag_context=rag_context,
-                analytics_context=analytics_context,
-            )
-            system_prompt_tokens = estimate_tokens(system_prompt)
-
-            # 6. Build context messages (token-aware)
-            context_messages = self._build_context_messages(
-                conversation_id=conversation_id,
-                current_message=user_message,
-                model_config=model_config,
-                system_prompt_tokens=system_prompt_tokens,
-            )
-
-            # 7. Get provider and generate response (with tool loop)
+            # 5. Get provider and load tools
             provider = self.get_provider(model_config.provider.value)
 
             # Load tools for all providers (skip only for simple queries)
@@ -504,6 +489,22 @@ class AIAgentService:
                         tool_schemas = provider.format_tool_schemas(raw_schemas)
                 except Exception as e:
                     logger.warning(f"Failed to load tool schemas: {e}")
+
+            # 6. Build system prompt (needs has_tools flag)
+            system_prompt = self._build_system_prompt(
+                rag_context=rag_context,
+                analytics_context=analytics_context,
+                has_tools=bool(tool_schemas),
+            )
+            system_prompt_tokens = estimate_tokens(system_prompt)
+
+            # 7. Build context messages (token-aware)
+            context_messages = self._build_context_messages(
+                conversation_id=conversation_id,
+                current_message=user_message,
+                model_config=model_config,
+                system_prompt_tokens=system_prompt_tokens,
+            )
 
             llm_response = provider.generate(
                 model_name=model_config.model_name,
@@ -754,24 +755,9 @@ class AIAgentService:
                     except Exception as e:
                         logger.warning(f"Analytics context failed: {e}")
 
-            # 4. Build system prompt (needed for token budgeting)
-            system_prompt = self._build_system_prompt(
-                rag_context=rag_context,
-                analytics_context=analytics_context,
-            )
-            system_prompt_tokens = estimate_tokens(system_prompt)
-
-            # 5. Build context messages (token-aware)
-            context_messages = self._build_context_messages(
-                conversation_id=conversation_id,
-                current_message=user_message,
-                model_config=model_config,
-                system_prompt_tokens=system_prompt_tokens,
-            )
-
             provider = self.get_provider(model_config.provider.value)
 
-            # 6. Load tools for all providers (skip only for simple queries)
+            # 4. Load tools for all providers (skip only for simple queries)
             tool_schemas = None
             if complexity != 'simple':
                 try:
@@ -781,6 +767,22 @@ class AIAgentService:
                         tool_schemas = provider.format_tool_schemas(raw_schemas)
                 except Exception:
                     pass
+
+            # 5. Build system prompt (needs has_tools flag)
+            system_prompt = self._build_system_prompt(
+                rag_context=rag_context,
+                analytics_context=analytics_context,
+                has_tools=bool(tool_schemas),
+            )
+            system_prompt_tokens = estimate_tokens(system_prompt)
+
+            # 6. Build context messages (token-aware)
+            context_messages = self._build_context_messages(
+                conversation_id=conversation_id,
+                current_message=user_message,
+                model_config=model_config,
+                system_prompt_tokens=system_prompt_tokens,
+            )
 
             tools_used = False
             tools_used_names = []
@@ -1175,6 +1177,7 @@ class AIAgentService:
         self,
         rag_context: Optional[str] = None,
         analytics_context: Optional[str] = None,
+        has_tools: bool = False,
     ) -> str:
         """
         Build system prompt for LLM.
@@ -1182,6 +1185,7 @@ class AIAgentService:
         Args:
             rag_context: Optional RAG context to include
             analytics_context: Optional analytics data to include
+            has_tools: Whether tools are available for this request
 
         Returns:
             Complete system prompt
@@ -1199,7 +1203,6 @@ You help users with questions about:
 
 Guidelines:
 - Be helpful, accurate, and concise
-- If you don't have specific data, say so clearly
 - When referencing data from context, cite the source
 - Format currency values as "1.234,56 RON" or "1.234,56 EUR" (Romanian convention)
 - Use DD.MM.YYYY date format when displaying dates
@@ -1208,6 +1211,11 @@ Guidelines:
 - Always respond in the same language as the user's message"""
 
         sections = [base_prompt]
+
+        if has_tools:
+            sections.append("""IMPORTANT: You have access to tools that can query the JARVIS database in real-time.
+When the user asks about specific data (invoices, transactions, suppliers, employees, etc.), you MUST use the available tools to look up the information. NEVER say you don't have access to data — use the tools instead.
+Always prefer using tools over saying you don't know or don't have access.""")
 
         if analytics_context:
             sections.append(f"""ANALYTICS DATA (live aggregations from JARVIS database):
@@ -1219,8 +1227,8 @@ Present this data clearly using markdown tables. Include totals where appropriat
             sections.append(f"""CONTEXT FROM JARVIS DATABASE:
 {rag_context}""")
 
-        if not analytics_context and not rag_context:
-            sections.append("Note: No specific context was retrieved for this query. For detailed data questions, try asking about specific invoices, suppliers, or dates.")
+        if not analytics_context and not rag_context and not has_tools:
+            sections.append("Note: No specific context was retrieved for this query. If you don't have specific data, say so clearly.")
 
         return '\n\n'.join(sections)
 
