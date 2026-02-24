@@ -765,8 +765,9 @@ class AIAgentService:
                     raw_schemas = tool_registry.get_schemas()
                     if raw_schemas:
                         tool_schemas = provider.format_tool_schemas(raw_schemas)
-                except Exception:
-                    pass
+                        logger.debug(f"Loaded {len(raw_schemas)} tools for {model_config.provider.value}")
+                except Exception as e:
+                    logger.error(f"Failed to load tool schemas for {model_config.provider.value}: {e}", exc_info=True)
 
             # 5. Build system prompt (needs has_tools flag)
             system_prompt = self._build_system_prompt(
