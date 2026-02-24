@@ -45,7 +45,7 @@ export function AiAgentPanel() {
   return (
     <aside
       className={cn(
-        'hidden md:flex flex-col border-l bg-background',
+        'hidden md:flex flex-col border-l bg-background h-full overflow-hidden',
         'w-[420px] lg:w-[480px] xl:w-[540px]',
         'animate-in slide-in-from-right duration-200',
       )}

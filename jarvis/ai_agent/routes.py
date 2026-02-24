@@ -602,6 +602,35 @@ def api_save_ai_settings():
     return jsonify({'success': True})
 
 
+@ai_agent_bp.route('/api/tools-check', methods=['GET'])
+@login_required
+@ai_agent_required
+def api_tools_check():
+    """Diagnostic: verify tool loading works."""
+    try:
+        from ai_agent.tools import tool_registry
+        raw_schemas = tool_registry.get_schemas()
+        service = get_service()
+        results = {}
+        for provider_name, provider in service._providers.items():
+            try:
+                formatted = provider.format_tool_schemas(raw_schemas)
+                results[provider_name] = {
+                    'formatted_count': len(formatted),
+                    'sample_name': formatted[0]['function']['name'] if formatted and 'function' in formatted[0] else (formatted[0].get('function_declarations', [{}])[0].get('name') if formatted else None),
+                }
+            except Exception as e:
+                results[provider_name] = {'error': str(e)}
+        return jsonify({
+            'tool_count': tool_registry.tool_count,
+            'raw_schema_count': len(raw_schemas),
+            'tool_names': [s['name'] for s in raw_schemas],
+            'providers': results,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @ai_agent_bp.route('/api/rag-source-permissions', methods=['GET'])
 @login_required
 @ai_agent_required

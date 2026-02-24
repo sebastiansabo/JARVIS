@@ -148,7 +148,7 @@ export function EphemeralChatPopup({ onClose }: { onClose?: () => void } = {}) {
     : null)
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-2">
         <div className="flex items-center gap-2">
@@ -182,7 +182,7 @@ export function EphemeralChatPopup({ onClose }: { onClose?: () => void } = {}) {
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1" ref={scrollRef}>
+      <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
         <div className="space-y-4 p-4">
           {messages.length === 0 && !isStreaming && (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">

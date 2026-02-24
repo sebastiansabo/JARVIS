@@ -765,9 +765,15 @@ class AIAgentService:
                     raw_schemas = tool_registry.get_schemas()
                     if raw_schemas:
                         tool_schemas = provider.format_tool_schemas(raw_schemas)
-                        logger.debug(f"Loaded {len(raw_schemas)} tools for {model_config.provider.value}")
+                        logger.info(f"Tools loaded: {len(raw_schemas)} tools for {model_config.provider.value}/{model_config.model_name}")
+                    else:
+                        logger.warning(f"Tool registry returned empty schemas (tool_count={tool_registry.tool_count})")
                 except Exception as e:
                     logger.error(f"Failed to load tool schemas for {model_config.provider.value}: {e}", exc_info=True)
+            else:
+                logger.info(f"Skipping tools: complexity='{complexity}' for '{user_message[:50]}'")
+
+            logger.info(f"Tool decision: tool_schemas={'set' if tool_schemas else 'None'}, complexity='{complexity}', provider={model_config.provider.value}")
 
             # 5. Build system prompt (needs has_tools flag)
             system_prompt = self._build_system_prompt(
