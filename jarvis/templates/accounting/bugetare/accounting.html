@@ -2569,95 +2569,79 @@
                         // Helper to check if allocation has reinvoice destinations
                         const hasReinvoice = (s) => (s.reinvoice_destinations && s.reinvoice_destinations.length > 0) || s.reinvoice_to;
 
-                        // Helper to format reinvoice display for an allocation (simplified)
-                        const formatReinvoiceDisplay = (s, currency) => {
-                            if (s.reinvoice_destinations && s.reinvoice_destinations.length > 0) {
-                                // Simplified: (Brand) / Department - Value (comment icon)
-                                return s.reinvoice_destinations.map(dest => {
-                                    let destStr = dest.brand ? `(${dest.brand})` : dest.company;
-                                    if (dest.department) destStr += ` / ${dest.department}`;
-                                    const commentIcon = dest.comment ? ` <span class="text-info"><i class="bi bi-chat-text-fill"></i></span>` : '';
-                                    return `<div class="text-reinvoice"><i class="bi bi-arrow-right"></i> ${destStr} - <strong>${formatCurrency(dest.value)} ${currency}</strong>${commentIcon}</div>`;
-                                }).join('');
-                            } else if (s.reinvoice_to) {
-                                // Legacy single destination
-                                return `<div class="text-reinvoice"><i class="bi bi-arrow-right"></i> ${s.reinvoice_to}</div>`;
-                            }
-                            return '';
+                        // Helper to build location string: Brand / Dept [/ Subdept]
+                        const buildLocation = (s) => {
+                            let loc = s.brand || '';
+                            if (s.department) loc += (loc ? ' / ' : '') + s.department;
+                            if (s.subdepartment) loc += ' / ' + s.subdepartment;
+                            return loc || '-';
+                        };
+
+                        // Helper to build reinvoice destination location
+                        const buildDestLocation = (dest) => {
+                            let loc = dest.company;
+                            if (dest.brand) loc += ` (${dest.brand})`;
+                            if (dest.department) loc += ' / ' + dest.department;
+                            if (dest.subdepartment) loc += ' / ' + dest.subdepartment;
+                            return loc;
                         };
 
                         // Determine currency to use (toggle currency takes precedence)
-                        // Uses global sanitizeCurrency() to prevent duplicates like "RON RON"
                         const displayCurrency = sanitizeCurrency(inv.useCurrency || inv.currency);
 
-                        // Single allocation - show inline (no collapse)
-                        if (value.length === 1) {
-                            const s = value[0];
-                            const displayValue = getValueForCurrency(s, displayCurrency);
-                            const location = s.subdepartment || s.department;
-                            const brandPart = s.brand ? ` (${s.brand})` : '';
-                            const borderColor = hasReinvoice(s) ? 'border-reinvoice' : 'border-primary';
-                            const reinvoiceLine = formatReinvoiceDisplay(s, displayCurrency);
-                            const commentIcon = s.id ? `<a href="#" class="allocation-comment-btn ms-1 ${s.comment ? 'text-info' : 'text-muted'}" data-allocation-id="${s.id}" data-department="${location}" data-brand="${s.brand || ''}" data-value="${displayValue}" data-percent="${s.percent}" data-comment="${(s.comment || '').replace(/"/g, '&quot;')}" title="${s.comment ? 'View/Edit comment' : 'Add comment'}"><i class="bi bi-chat-text${s.comment ? '-fill' : ''}"></i></a>` : '';
+                        // Render a single allocation in waterfall format
+                        const renderAllocation = (s, currency) => {
+                            // allocation_value is already NET (kept). Gross = kept + reinvoiced.
+                            const keptValue = getValueForCurrency(s, currency);
+                            const reinvoiceTotal = (s.reinvoice_destinations || []).reduce((rsum, d) => rsum + (d.value || 0), 0);
+                            const grossValue = keptValue + reinvoiceTotal;
+                            const location = buildLocation(s);
+                            const commentIcon = s.id ? `<a href="#" class="allocation-comment-btn ms-1 ${s.comment ? 'text-info' : 'text-muted'}" data-allocation-id="${s.id}" data-department="${s.department || ''}" data-brand="${s.brand || ''}" data-value="${keptValue}" data-percent="${s.percent}" data-comment="${(s.comment || '').replace(/"/g, '&quot;')}" title="${s.comment ? 'View/Edit comment' : 'Add comment'}"><i class="bi bi-chat-text${s.comment ? '-fill' : ''}"></i></a>` : '';
 
-                            // When has reinvoice: show source with retained value, then reinvoice destinations
                             if (hasReinvoice(s) && s.reinvoice_destinations && s.reinvoice_destinations.length > 0) {
-                                const reinvoiceTotal = s.reinvoice_destinations.reduce((rsum, d) => rsum + (d.value || 0), 0);
-                                const retainedValue = displayValue - reinvoiceTotal;
-                                return `<div class="small border-start ${borderColor} ps-2">
-                                    <div>${location}${brandPart} - <strong>${formatCurrency(retainedValue)} ${displayCurrency}</strong>${commentIcon}</div>
-                                    ${reinvoiceLine}
+                                const keptPct = grossValue > 0 ? Math.round((keptValue / grossValue) * 100) : 0;
+                                const reinvoiceLines = s.reinvoice_destinations.map(dest => {
+                                    const destLoc = buildDestLocation(dest);
+                                    const destPct = dest.percentage ? ` ${dest.percentage}%` : '';
+                                    return `<div class="text-reinvoice ms-2">└ <i class="bi bi-arrow-right"></i> ${destLoc}: <strong>${formatCurrency(dest.value)} ${currency}</strong>${destPct}</div>`;
+                                }).join('');
+
+                                return `<div class="small border-start border-reinvoice ps-2 mb-1">
+                                    <div><strong>${location}</strong> — ${formatCurrency(grossValue)} ${currency} <span class="text-muted">(${s.percent}%)</span>${commentIcon}</div>
+                                    ${keptValue > 0 ? `<div class="text-success ms-2">└ Kept: <strong>${formatCurrency(keptValue)} ${currency}</strong> ${keptPct}%</div>` : ''}
+                                    ${reinvoiceLines}
                                 </div>`;
                             }
 
-                            // No reinvoice: show department/brand and value
-                            return `<div class="small border-start ${borderColor} ps-2">
-                                ${location}${brandPart} - <strong>${formatCurrency(displayValue)} ${displayCurrency}</strong>${commentIcon}
+                            // No reinvoice: simple display
+                            return `<div class="small border-start border-primary ps-2 mb-1">
+                                <strong>${location}</strong> — ${formatCurrency(keptValue)} ${currency} <span class="text-muted">(${s.percent}%)</span>${commentIcon}
                             </div>`;
+                        };
+
+                        // Single allocation - show inline (no collapse)
+                        if (value.length === 1) {
+                            return renderAllocation(value[0], displayCurrency);
                         }
 
                         // Multiple allocations - collapsible
                         const collapseId = 'split-' + Math.random().toString(36).substr(2, 9);
 
-                        // Calculate summary - allocation_value is already the total for each row
-                        const totalValue = value.reduce((sum, s) => sum + getValueForCurrency(s, displayCurrency), 0);
-                        const reinvoicedAllocs = value.filter(s => hasReinvoice(s));
+                        // Calculate totals: kept = sum of allocation_values, reinvoiced = sum of all dest values
+                        const totalKept = value.reduce((sum, s) => sum + getValueForCurrency(s, displayCurrency), 0);
+                        const totalReinvoiced = value.reduce((sum, s) => sum + (s.reinvoice_destinations || []).reduce((rs, d) => rs + (d.value || 0), 0), 0);
                         const allocsWithComments = value.filter(s => s.comment);
 
-                        // Build summary text
                         const currency = displayCurrency;
-                        let summaryText = `Split • ${formatCurrency(totalValue)} ${currency}`;
-                        if (reinvoicedAllocs.length > 0) {
-                            summaryText += ` <span class="text-reinvoice">(→)</span>`;
+                        let summaryText = `Kept ${formatCurrency(totalKept)} ${currency}`;
+                        if (totalReinvoiced > 0) {
+                            summaryText += ` <span class="text-reinvoice">| Reinv. ${formatCurrency(totalReinvoiced)} ${currency}</span>`;
                         }
                         if (allocsWithComments.length > 0) {
                             summaryText += ` <span class="text-info"><i class="bi bi-chat-text-fill"></i></span>`;
                         }
 
-                        // Build allocation details
-                        const allocDetails = value.map(s => {
-                            const displayValue = getValueForCurrency(s, displayCurrency);
-                            const location = s.subdepartment || s.department;
-                            const brandPart = s.brand ? ` (${s.brand})` : '';
-                            const borderColor = hasReinvoice(s) ? 'border-reinvoice' : 'border-primary';
-                            const reinvoiceLine = formatReinvoiceDisplay(s, currency);
-                            const commentIcon = s.id ? `<a href="#" class="allocation-comment-btn ms-1 ${s.comment ? 'text-info' : 'text-muted'}" data-allocation-id="${s.id}" data-department="${location}" data-brand="${s.brand || ''}" data-value="${displayValue}" data-percent="${s.percent}" data-comment="${(s.comment || '').replace(/"/g, '&quot;')}" title="${s.comment ? 'View/Edit comment' : 'Add comment'}"><i class="bi bi-chat-text${s.comment ? '-fill' : ''}"></i></a>` : '';
-
-                            // When has reinvoice: show source with retained value, then reinvoice destinations
-                            if (hasReinvoice(s) && s.reinvoice_destinations && s.reinvoice_destinations.length > 0) {
-                                const reinvoiceTotal = s.reinvoice_destinations.reduce((rsum, d) => rsum + (d.value || 0), 0);
-                                const retainedValue = displayValue - reinvoiceTotal;
-                                return `<div class="small border-start ${borderColor} ps-2 mb-1">
-                                    <div>${location}${brandPart} - <strong>${formatCurrency(retainedValue)} ${currency}</strong>${commentIcon}</div>
-                                    ${reinvoiceLine}
-                                </div>`;
-                            }
-
-                            // No reinvoice: show department/brand and value
-                            return `<div class="small border-start ${borderColor} ps-2 mb-1">
-                                ${location}${brandPart} - <strong>${formatCurrency(displayValue)} ${currency}</strong>${commentIcon}
-                            </div>`;
-                        }).join('');
+                        const allocDetails = value.map(s => renderAllocation(s, currency)).join('');
 
                         return `<div>
                             <a class="text-primary small text-decoration-none" data-bs-toggle="collapse" href="#${collapseId}" role="button" aria-expanded="false">
@@ -2671,89 +2655,58 @@
                     return '-';
                 case 'reinvoice':
                     if (Array.isArray(value) && value.length > 0) {
-                        // Helper to format a single reinvoice_destination
-                        const formatMultiDest = (dest) => {
-                            let str = dest.company;
-                            if (dest.brand) str += ` (${dest.brand})`;
-                            if (dest.department) str += ` / ${dest.department}`;
-                            if (dest.subdepartment) str += ` / ${dest.subdepartment}`;
-                            return `${str} <span class="badge bg-warning text-dark">${dest.percentage}%</span>`;
-                        };
-
-                        // Helper to format legacy single destination
-                        const formatLegacyDest = (r) => {
-                            let dest = r.reinvoice_to || '-';
-                            if (r.reinvoice_department) {
-                                dest += ` / ${r.reinvoice_department}`;
-                                if (r.reinvoice_subdepartment) {
-                                    dest += ` / ${r.reinvoice_subdepartment}`;
-                                }
-                            }
-                            return dest;
-                        };
-
-                        // Helper to render all destinations for an allocation
-                        const renderDestinations = (r) => {
-                            if (r.reinvoice_destinations && r.reinvoice_destinations.length > 0) {
-                                return r.reinvoice_destinations.map(dest =>
-                                    `<span class="text-warning"><i class="bi bi-arrow-right"></i> ${formatMultiDest(dest)}</span>`
-                                ).join('<br>');
-                            } else if (r.reinvoice_to) {
-                                return `<span class="text-warning"><i class="bi bi-arrow-right"></i> ${formatLegacyDest(r)}</span>`;
-                            }
-                            return '';
-                        };
-
                         const reinvCurrency = sanitizeCurrency(inv.currency);
 
-                        // Helper to render destinations with values (uses stored reinvoice values)
-                        const renderDestinationsWithValue = (r) => {
+                        // Build destination string: Company (Brand) / Dept [/ Subdept]
+                        const buildDestStr = (dest) => {
+                            let str = dest.company;
+                            if (dest.brand) str += ` (${dest.brand})`;
+                            if (dest.department) str += ' / ' + dest.department;
+                            if (dest.subdepartment) str += ' / ' + dest.subdepartment;
+                            return str;
+                        };
+
+                        // Render destinations for one allocation
+                        const renderDests = (r) => {
                             if (r.reinvoice_destinations && r.reinvoice_destinations.length > 0) {
+                                const sourceBrand = r.brand ? `from ${r.brand}` : '';
                                 return r.reinvoice_destinations.map(dest => {
-                                    let str = dest.company;
-                                    if (dest.brand) str += ` (${dest.brand})`;
-                                    if (dest.department) str += ` / ${dest.department}`;
-                                    if (dest.subdepartment) str += ` / ${dest.subdepartment}`;
+                                    const destStr = buildDestStr(dest);
+                                    const pctBadge = dest.percentage ? ` <span class="badge bg-warning text-dark">${dest.percentage}%</span>` : '';
                                     return `<div class="small text-reinvoice">
-                                        <i class="bi bi-arrow-right"></i> ${str}<br>
-                                        <strong>${formatCurrency(dest.value)} ${reinvCurrency}</strong>
+                                        <i class="bi bi-arrow-right"></i> ${destStr}${pctBadge}<br>
+                                        <strong>${formatCurrency(dest.value)} ${reinvCurrency}</strong>${sourceBrand ? ` <span class="text-muted">(${sourceBrand})</span>` : ''}
                                     </div>`;
                                 }).join('');
                             } else if (r.reinvoice_to) {
                                 let dest = r.reinvoice_to;
                                 if (r.reinvoice_department) {
-                                    dest += ` / ${r.reinvoice_department}`;
-                                    if (r.reinvoice_subdepartment) dest += ` / ${r.reinvoice_subdepartment}`;
+                                    dest += ' / ' + r.reinvoice_department;
+                                    if (r.reinvoice_subdepartment) dest += ' / ' + r.reinvoice_subdepartment;
                                 }
-                                return `<div class="small text-reinvoice">
-                                    <i class="bi bi-arrow-right"></i> ${dest}
-                                </div>`;
+                                return `<div class="small text-reinvoice"><i class="bi bi-arrow-right"></i> ${dest}</div>`;
                             }
                             return '';
                         };
 
                         // Single allocation - show destinations only
                         if (value.length === 1) {
-                            const r = value[0];
-                            return `<div class="border-start border-reinvoice ps-2">
-                                ${renderDestinationsWithValue(r)}
-                            </div>`;
+                            return `<div class="border-start border-reinvoice ps-2">${renderDests(value[0])}</div>`;
                         }
 
-                        // Multiple allocations - collapsible, destinations only
+                        // Multiple - collapsible
                         const reinvCollapseId = `reinv-collapse-${inv.id}-${col.id}`;
                         const totalReinvoiceValue = value.reduce((sum, r) => {
                             if (r.reinvoice_destinations && r.reinvoice_destinations.length > 0) {
                                 return sum + r.reinvoice_destinations.reduce((s, d) => s + (d.value || 0), 0);
                             }
-                            return sum + r.value;
+                            return sum;
                         }, 0);
-                        const summaryText = `${value.length} reinvoices • ${formatCurrency(totalReinvoiceValue)} ${reinvCurrency}`;
+                        const destCount = value.reduce((c, r) => c + (r.reinvoice_destinations ? r.reinvoice_destinations.length : (r.reinvoice_to ? 1 : 0)), 0);
+                        const summaryText = `${destCount} reinvoice${destCount !== 1 ? 's' : ''} • ${formatCurrency(totalReinvoiceValue)} ${reinvCurrency}`;
 
                         const reinvoiceDetails = value.map(r =>
-                            `<div class="border-start border-reinvoice ps-2 mb-1">
-                                ${renderDestinationsWithValue(r)}
-                            </div>`
+                            `<div class="border-start border-reinvoice ps-2 mb-1">${renderDests(r)}</div>`
                         ).join('');
 
                         return `<div>
@@ -3368,35 +3321,58 @@
                         <div class="col-md-6">
                             <h6>Cost Allocations</h6>
                             ${invoice.allocations.map(a => {
-                                // Calculate reinvoice total for this allocation
+                                // allocation_value is NET (kept). Gross = kept + reinvoiced.
+                                const keptValue = a.allocation_value || 0;
                                 const reinvoiceTotal = (a.reinvoice_destinations && a.reinvoice_destinations.length > 0)
                                     ? a.reinvoice_destinations.reduce((sum, rd) => sum + (rd.value || 0), 0)
                                     : 0;
-                                // allocation_value is the total; retained = total - reinvoice
-                                const retainedValue = (a.allocation_value || 0) - reinvoiceTotal;
+                                const grossValue = keptValue + reinvoiceTotal;
                                 const hasReinvoice = reinvoiceTotal > 0;
+                                const keptPct = grossValue > 0 ? Math.round((keptValue / grossValue) * 100) : 100;
+
+                                // Build location: Brand / Dept [/ Subdept]
+                                let loc = a.brand || '';
+                                if (a.department) loc += (loc ? ' / ' : '') + a.department;
+                                if (a.subdepartment) loc += ' / ' + a.subdepartment;
+                                loc = loc || '-';
 
                                 return `
                                 <div class="allocation-row">
                                     ${a.comment ? `<div class="small text-info mb-1"><i class="bi bi-chat-text-fill"></i> ${a.comment}</div>` : ''}
                                     <div class="d-flex justify-content-between align-items-center">
-                                        <strong>${formatCurrency(a.allocation_value)} ${invCurrency}</strong>
+                                        <div>
+                                            <strong>${loc}</strong>
+                                            <span class="text-muted ms-1">— ${formatCurrency(grossValue)} ${invCurrency}</span>
+                                        </div>
                                         <span class="badge bg-primary">${a.allocation_percent}%</span>
                                     </div>
                                     ${hasReinvoice ? `
-                                        <div class="small text-success ms-2">└ ${formatCurrency(retainedValue)} ${invCurrency} - ${a.department}${a.brand ? ' (' + a.brand + ')' : ''}</div>
+                                        ${keptValue > 0 ? `<div class="small text-success ms-2">└ Kept: <strong>${formatCurrency(keptValue)} ${invCurrency}</strong> (${keptPct}%)</div>` : ''}
+                                        ${a.reinvoice_destinations.map(rd => {
+                                            let destLoc = rd.company;
+                                            if (rd.brand) destLoc += ' (' + rd.brand + ')';
+                                            if (rd.department) destLoc += ' / ' + rd.department;
+                                            if (rd.subdepartment) destLoc += ' / ' + rd.subdepartment;
+                                            const pctStr = rd.percentage ? ` (${rd.percentage}%)` : '';
+                                            return `<div class="small text-reinvoice ms-2">└ <i class="bi bi-arrow-right"></i> ${destLoc}: <strong>${formatCurrency(rd.value)} ${invCurrency}</strong>${pctStr}${rd.comment ? ` <span class="text-info"><i class="bi bi-chat-text"></i></span>` : ''}</div>`;
+                                        }).join('')}
                                     ` : `
-                                        <div class="small text-muted ms-2">└ ${a.department}${a.subdepartment ? ' > ' + a.subdepartment : ''}${a.brand ? ' (' + a.brand + ')' : ''}</div>
+                                        <div class="small text-success ms-2">└ Kept: <strong>${formatCurrency(keptValue)} ${invCurrency}</strong></div>
                                     `}
-                                    ${(a.reinvoice_destinations && a.reinvoice_destinations.length > 0) ?
-                                        a.reinvoice_destinations.map(rd => `<div class="small text-reinvoice ms-2">└ ${formatCurrency(rd.value)} ${invCurrency} - ${rd.company}${rd.brand ? ' (' + rd.brand + ')' : ''}${rd.department ? ' / ' + rd.department : ''}${rd.comment ? ` <span class="text-info"><i class="bi bi-chat-text"></i></span>` : ''}</div>`).join('')
-                                        : (a.reinvoice_to ? `<div class="small text-reinvoice ms-2">└ Reinvoice to: ${a.reinvoice_to}${a.reinvoice_brand ? ' (' + a.reinvoice_brand + ')' : ''}${a.reinvoice_department ? ' / ' + a.reinvoice_department : ''}${a.reinvoice_subdepartment ? ' / ' + a.reinvoice_subdepartment : ''}</div>` : '')}
+                                    ${(!hasReinvoice && !a.reinvoice_destinations?.length && a.reinvoice_to) ? `
+                                        <div class="small text-reinvoice ms-2">└ <i class="bi bi-arrow-right"></i> ${a.reinvoice_to}${a.reinvoice_brand ? ' (' + a.reinvoice_brand + ')' : ''}${a.reinvoice_department ? ' / ' + a.reinvoice_department : ''}${a.reinvoice_subdepartment ? ' / ' + a.reinvoice_subdepartment : ''}</div>
+                                    ` : ''}
                                 </div>
                             `}).join('')}
                             <div class="border-top mt-3 pt-2">
                                 <div class="d-flex justify-content-between fw-bold">
                                     <span>Total (${invoice.allocations.length} allocation${invoice.allocations.length !== 1 ? 's' : ''})${invoice.subtract_vat ? ' <small class="text-muted fw-normal">excl. VAT</small>' : ''}</span>
-                                    <span class="text-success">${formatCurrency(invoice.allocations.reduce((sum, a) => sum + (a.allocation_value || 0), 0))} ${invCurrency}</span>
+                                    <span>
+                                        <span class="text-success">${formatCurrency(invoice.allocations.reduce((sum, a) => sum + (a.allocation_value || 0), 0))} ${invCurrency}</span>
+                                        ${invoice.allocations.some(a => a.reinvoice_destinations?.length > 0) ? `
+                                            <span class="text-reinvoice ms-2">| Reinv. ${formatCurrency(invoice.allocations.reduce((sum, a) => sum + (a.reinvoice_destinations || []).reduce((rs, d) => rs + (d.value || 0), 0), 0))} ${invCurrency}</span>
+                                        ` : ''}
+                                    </span>
                                 </div>
                             </div>
                         </div>
