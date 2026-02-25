@@ -16,6 +16,14 @@ from .models import ConversationStatus
 
 logger = get_logger('jarvis.ai_agent.routes')
 
+
+def _iso(val):
+    """Safely serialize a date/datetime — handles both datetime objects and pre-serialized strings."""
+    if val is None:
+        return None
+    return val.isoformat() if hasattr(val, 'isoformat') else val
+
+
 # Initialize service (singleton pattern)
 _service = None
 
@@ -24,7 +32,11 @@ def get_service() -> AIAgentService:
     """Get or create AI Agent service instance."""
     global _service
     if _service is None:
-        _service = AIAgentService()
+        try:
+            _service = AIAgentService()
+        except Exception as e:
+            logger.error(f"Failed to initialize AIAgentService: {e}", exc_info=True)
+            raise
     return _service
 
 
@@ -63,42 +75,46 @@ def conversations_page():
 @ai_agent_required
 def api_list_conversations():
     """API: List user's conversations."""
-    service = get_service()
-
-    status_str = request.args.get('status', 'active')
     try:
-        status = ConversationStatus(status_str)
-    except ValueError:
-        status = ConversationStatus.ACTIVE
+        service = get_service()
 
-    limit = request.args.get('limit', 50, type=int)
-    offset = request.args.get('offset', 0, type=int)
+        status_str = request.args.get('status', 'active')
+        try:
+            status = ConversationStatus(status_str)
+        except ValueError:
+            status = ConversationStatus.ACTIVE
 
-    result = service.list_conversations(
-        user_id=current_user.id,
-        status=status,
-        limit=min(limit, 100),  # Cap at 100
-        offset=offset,
-    )
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
 
-    if not result.success:
-        return error_response(result.error, 500)
+        result = service.list_conversations(
+            user_id=current_user.id,
+            status=status,
+            limit=min(limit, 100),  # Cap at 100
+            offset=offset,
+        )
 
-    # Convert to serializable format
-    conversations = []
-    for conv in result.data:
-        conversations.append({
-            'id': conv.id,
-            'title': conv.title,
-            'status': conv.status.value,
-            'message_count': conv.message_count,
-            'total_tokens': conv.total_tokens,
-            'total_cost': str(conv.total_cost),
-            'created_at': conv.created_at.isoformat() if conv.created_at else None,
-            'updated_at': conv.updated_at.isoformat() if conv.updated_at else None,
-        })
+        if not result.success:
+            return error_response(result.error, 500)
 
-    return jsonify({'conversations': conversations})
+        # Convert to serializable format
+        conversations = []
+        for conv in result.data:
+            conversations.append({
+                'id': conv.id,
+                'title': conv.title,
+                'status': conv.status.value if conv.status else 'active',
+                'message_count': conv.message_count or 0,
+                'total_tokens': conv.total_tokens or 0,
+                'total_cost': str(conv.total_cost or 0),
+                'created_at': _iso(conv.created_at),
+                'updated_at': _iso(conv.updated_at),
+            })
+
+        return jsonify({'conversations': conversations})
+    except Exception as e:
+        logger.error(f"Error listing conversations: {e}", exc_info=True)
+        return error_response(str(e), 500)
 
 
 @ai_agent_bp.route('/api/conversations', methods=['POST'])
@@ -123,7 +139,7 @@ def api_create_conversation():
         'id': conv.id,
         'title': conv.title,
         'status': conv.status.value,
-        'created_at': conv.created_at.isoformat() if conv.created_at else None,
+        'created_at': _iso(conv.created_at),
     }), 201
 
 
@@ -155,8 +171,8 @@ def api_get_conversation(conversation_id: int):
             'total_tokens': conv.total_tokens,
             'total_cost': str(conv.total_cost),
             'model_config_id': conv.model_config_id,
-            'created_at': conv.created_at.isoformat() if conv.created_at else None,
-            'updated_at': conv.updated_at.isoformat() if conv.updated_at else None,
+            'created_at': _iso(conv.created_at),
+            'updated_at': _iso(conv.updated_at),
         },
         'messages': [
             {
@@ -167,7 +183,7 @@ def api_get_conversation(conversation_id: int):
                 'output_tokens': msg.output_tokens,
                 'cost': str(msg.cost),
                 'response_time_ms': msg.response_time_ms,
-                'created_at': msg.created_at.isoformat() if msg.created_at else None,
+                'created_at': _iso(msg.created_at),
             }
             for msg in messages
         ],
@@ -276,7 +292,7 @@ def api_chat():
             'output_tokens': msg.output_tokens,
             'cost': str(msg.cost),
             'response_time_ms': msg.response_time_ms,
-            'created_at': msg.created_at.isoformat() if msg.created_at else None,
+            'created_at': _iso(msg.created_at),
         },
         'rag_sources': [
             {
