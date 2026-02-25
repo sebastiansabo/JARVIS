@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Bot } from 'lucide-react'
 import { useAiAgentStore } from '@/stores/aiAgentStore'
 import { EphemeralChatPopup } from './EphemeralChatPopup'
@@ -8,6 +9,10 @@ import { cn } from '@/lib/utils'
 export function AiAgentWidget() {
   const isWidgetOpen = useAiAgentStore((s) => s.isWidgetOpen)
   const setWidgetOpen = useAiAgentStore((s) => s.setWidgetOpen)
+  const { pathname } = useLocation()
+
+  // Hide on the full AI Agent page — the full chat is already there
+  const onAiAgentPage = pathname.startsWith('/app/ai-agent')
 
   // Close on Escape
   useEffect(() => {
@@ -17,6 +22,8 @@ export function AiAgentWidget() {
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [isWidgetOpen, setWidgetOpen])
+
+  if (onAiAgentPage) return null
 
   return (
     <>
