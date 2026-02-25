@@ -19,9 +19,12 @@ import type { Message, RagSource as RagSourceType } from '@/types/aiAgent'
 
 interface ChatWindowProps {
   conversationId: number | null
+  pendingMessage?: string | null
+  onPendingConsumed?: () => void
+  onSuggestionClick?: (text: string) => void
 }
 
-export function ChatWindow({ conversationId: selectedConversationId }: ChatWindowProps) {
+export function ChatWindow({ conversationId: selectedConversationId, pendingMessage, onPendingConsumed, onSuggestionClick }: ChatWindowProps) {
   const queryClient = useQueryClient()
   const selectedModel = useAiAgentStore((s) => s.selectedModel)
   const setModel = useAiAgentStore((s) => s.setModel)
@@ -59,6 +62,16 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
   useEffect(() => {
     inputRef.current?.focus()
   }, [selectedConversationId])
+
+  // Pre-fill input from suggestion click (don't auto-send — let user edit first)
+  useEffect(() => {
+    if (pendingMessage && selectedConversationId) {
+      setInput(pendingMessage)
+      onPendingConsumed?.()
+      // Focus the input so user can edit right away
+      setTimeout(() => inputRef.current?.focus(), 100)
+    }
+  }, [pendingMessage, selectedConversationId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Easter egg: secret /seba command
   const [easterEggMsg, setEasterEggMsg] = useState<Message | null>(null)
@@ -205,7 +218,7 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
               <button
                 key={s}
                 className="rounded-lg border bg-card px-3 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-                onClick={() => toast(s, { description: 'Start a new chat to ask this question' })}
+                onClick={() => onSuggestionClick?.(s)}
               >
                 &ldquo;{s}&rdquo;
               </button>
