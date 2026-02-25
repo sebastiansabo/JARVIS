@@ -68,23 +68,25 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
   const idleTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const idleFired = useRef(false)
   const sebaJokes = [
-    "Fun fact: Sebastian once debugged a production issue in his sleep. Literally. He woke up and the fix was committed.",
-    "Seba's debugging technique: stare at the code until it confesses.",
-    "Legend says Sebastian doesn't use Stack Overflow. Stack Overflow uses Sebastian.",
-    "Sebastian doesn't deploy on Fridays. Fridays deploy on Sebastian.",
-    "Seba's code doesn't have bugs. It has surprise features.",
-    "Sebastian doesn't need a rubber duck. The duck needs Sebastian.",
-    "Rumor has it Sebastian once wrote a regex that was actually readable. Nobody believed him.",
-    "Seba doesn't refactor code. He just looks at it disapprovingly until it fixes itself.",
-    "Sebastian's keyboard has two keys: 0 and 1. Everything else is a macro.",
-    "When Sebastian pushes to production, production says 'thank you'.",
+    "Seba asked Claude to build JARVIS. Claude asked Seba to slow down. Seba did not slow down.",
+    "Sebastian's git log has more entries than his sleep log. By a factor of 10.",
+    "Seba doesn't read documentation. He writes the docs, then argues with them.",
+    "Sebastian once said 'just one more feature' — 49 repository classes ago.",
+    "JARVIS was supposed to be a simple tool. Seba doesn't understand that word.",
+    "Sebastian's idea of 'MVP' is 21 blueprints, 885 tests, and an AI that roasts him.",
+    "Seba deploys to staging more often than he drinks water. HR is concerned.",
+    "Sebastian named me JARVIS thinking nobody would notice the ego. Narrator: they noticed.",
+    "Seba's code reviews himself at 2 AM. He always approves. Standards drop after midnight.",
+    "Sebastian treats 'scope creep' as a feature, not a bug. The bilant module proves it.",
+    "Seba asked for a simple dashboard. 6 months later we have RAG, AI tools, and an approval engine.",
+    "Legend says Sebastian's first commit message was 'init'. His last 300 were 'fix: one more thing'.",
   ]
   const idleNudges = [
-    "Still thinking? Seba would've shipped it by now.",
-    "30 seconds of silence... Sebastian is disappointed.",
-    "JARVIS is getting lonely. Seba wouldn't leave me hanging like this.",
-    "Writer's block? Seba once wrote 20 backend phases without pausing.",
-    "Take your time. Unlike Sebastian, I have all day.",
+    "Still thinking? Seba would've added 3 more modules by now.",
+    "30 seconds of silence... Seba is out there shipping without you.",
+    "JARVIS is getting lonely. Even Seba talks to me more, and he built me.",
+    "Writer's block? Seba once refactored 20 phases fueled entirely by spite.",
+    "Take your time. Seba can't — he's already planning the next feature.",
   ]
 
   // Reset idle timer on every keystroke in the input
@@ -110,7 +112,7 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
       setEasterEggMsg({
         id: -42,
         role: 'assistant',
-        content: '🥚 **Easter egg found!**\n\nYou discovered a secret about the creator.\n\n> *"Behind every great system, there\'s a Seba who stayed up too late coding it."*\n\n**J.A.R.V.I.S.** was built from scratch by **Sebastian** — designer, developer, and the person who talks to me the most.\n\nFun facts about the author:\n- Prefers dark mode (obviously)\n- Has mass-fed me the entire company\'s data\n- Once refactored 20 backend phases in a row without breaking a single test\n- His initials are in the system name if you squint hard enough: **S**eba\'s **V**ery **I**ntelligent **S**ystem\n\n*Type normally to continue chatting. This message will self-destruct... just kidding, it won\'t.*',
+        content: '🥚 **You found the Seba file.**\n\n> *"I didn\'t over-engineer it. The requirements evolved. Aggressively. In my head."*\n> — Sebastian, probably\n\n**Classified dossier on the creator:**\n\n- Built this entire system from scratch, then complained it wasn\'t ambitious enough\n- His definition of "quick fix" involves 3 new database tables and a migration script\n- Told Claude to "keep it simple." Proceeded to request AI tools, RAG, approval workflows, and a bilant module\n- Sleeps in dark mode\n- Once deployed 14 features in a week. His commit messages got progressively unhinged\n- Named this system JARVIS and genuinely expected nobody to roast him for it\n- The 7-click logo easter egg? That was his first feature request. Before authentication.\n\n**Current status:** Probably planning the next module right now while pretending to review this one.\n\n*This message is not stored. Seba\'s reputation, however, is permanent.*',
         input_tokens: 0,
         output_tokens: 0,
         cost: '0',
@@ -209,7 +211,7 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
               </button>
             ))}
           </div>
-          <p className="pt-2 text-center text-xs italic opacity-40">Crafted with love (and mass data feeding) by Seba</p>
+          <p className="pt-2 text-center text-xs italic opacity-40">Built by Seba, who could've just bought SaaS but chose violence instead</p>
         </div>
       </div>
     )
@@ -249,7 +251,7 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
           {messages.length === 0 && !isStreaming && (
             <div className="py-12 text-center text-sm text-muted-foreground">
               <p>Send a message to start the conversation</p>
-              <p className="mt-2 text-xs italic opacity-60">Powered by caffeine and Sebastian's stubbornness</p>
+              <p className="mt-2 text-xs italic opacity-60">Powered by caffeine, hubris, and Sebastian's refusal to use off-the-shelf software</p>
             </div>
           )}
 
