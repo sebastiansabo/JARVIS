@@ -177,13 +177,40 @@ export function ChatWindow({ conversationId: selectedConversationId }: ChatWindo
     }
   }
 
+  // Welcome prompt suggestions
+  const suggestions = [
+    'Arată-mi facturile de la furnizorul X.',
+    'Câte facturi avem în luna curentă?',
+    'Care sunt cei mai mari 5 furnizori?',
+    'Ce aprobări am de făcut?',
+    'Bonusuri angajatul Y din luna trecută?',
+    'Proiecte marketing active în acest moment?',
+    'Tranzacții bancare în luna precedentă?',
+    'Evenimente HR din anul trecut?',
+  ]
+
   // Empty state
   if (!selectedConversationId) {
     return (
-      <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
+      <div className="flex h-full flex-col items-center justify-center px-4 text-muted-foreground">
         <Bot className="mb-4 h-12 w-12" />
         <h2 className="text-lg font-medium">JARVIS AI Agent</h2>
         <p className="mt-1 text-sm">Select a conversation or start a new chat</p>
+        <div className="mt-6 w-full max-w-md space-y-2">
+          <p className="text-center text-xs font-medium uppercase tracking-wide opacity-60">Try asking</p>
+          <div className="grid gap-2">
+            {suggestions.map((s) => (
+              <button
+                key={s}
+                className="rounded-lg border bg-card px-3 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                onClick={() => toast(s, { description: 'Start a new chat to ask this question' })}
+              >
+                &ldquo;{s}&rdquo;
+              </button>
+            ))}
+          </div>
+          <p className="pt-2 text-center text-xs italic opacity-40">Crafted with love (and mass data feeding) by Seba</p>
+        </div>
       </div>
     )
   }
