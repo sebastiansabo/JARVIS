@@ -3,7 +3,6 @@ import { Link, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
-import { useAiAgentStore } from '@/stores/aiAgentStore'
 import { ThemeToggle } from './ThemeToggle'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -22,11 +21,9 @@ interface NavItem {
   action?: () => void
 }
 
-const AI_AGENT_ITEM_LABEL = 'AI Agent'
-
-const navItemsDef: Omit<NavItem, 'action'>[] = [
+const navItemsDef: NavItem[] = [
   { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '', label: AI_AGENT_ITEM_LABEL, icon: Bot },
+  { path: '/app/ai-agent', label: 'AI Agent', icon: Bot },
   {
     path: '/app/accounting',
     label: 'Accounting',
@@ -53,8 +50,6 @@ interface SidebarProps {
 export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const { user } = useAuth()
   const location = useLocation()
-  const toggleWidget = useAiAgentStore((s) => s.toggleWidget)
-
   // Easter egg: 7-click logo reveal
   const clickCount = useRef(0)
   const clickTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -72,12 +67,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
     }
   }, [])
 
-  // Wire up AI Agent action
-  const navItems: NavItem[] = navItemsDef.map((item) =>
-    item.label === AI_AGENT_ITEM_LABEL ? { ...item, action: toggleWidget } : item,
-  )
-
-  const visibleItems = navItems.filter((item) => {
+  const visibleItems = navItemsDef.filter((item) => {
     if (!item.permission) return true
     return user?.[item.permission as keyof typeof user]
   })
@@ -85,7 +75,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   // Auto-open groups whose children match current path
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     const initial = new Set<string>()
-    navItems.forEach((item) => {
+    navItemsDef.forEach((item) => {
       if (item.children?.some((c) => location.pathname.startsWith(c.path))) {
         initial.add(item.label)
       }

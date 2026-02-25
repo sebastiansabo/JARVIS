@@ -29,6 +29,11 @@ const markdownComponents = {
       </code>
     )
   },
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="overflow-x-auto">
+      <table>{children}</table>
+    </div>
+  ),
 }
 
 const remarkPlugins = [remarkGfm]
