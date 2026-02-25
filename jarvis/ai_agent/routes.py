@@ -645,3 +645,133 @@ def api_rag_source_permissions():
     else:
         all_sources = [s.value for s in allowed]
     return jsonify({'allowed_sources': all_sources})
+
+
+# ============== Feedback Routes ==============
+
+@ai_agent_bp.route('/api/feedback', methods=['POST'])
+@login_required
+@ai_agent_required
+def api_submit_feedback():
+    """API: Submit or toggle feedback on a message."""
+    data = request.get_json() or {}
+    message_id = data.get('message_id')
+    feedback_type = data.get('feedback_type')
+
+    if not message_id:
+        return error_response('message_id required')
+    if feedback_type not in ('positive', 'negative'):
+        return error_response('feedback_type must be positive or negative')
+
+    from .repositories import FeedbackRepository
+    repo = FeedbackRepository()
+
+    # Check if same feedback exists (toggle off)
+    existing = repo.get_by_message(message_id, current_user.id)
+    if existing and existing['feedback_type'] == feedback_type:
+        repo.delete(message_id, current_user.id)
+        return jsonify({'feedback': None})
+
+    result = repo.upsert(message_id, current_user.id, feedback_type)
+    return jsonify({'feedback': result})
+
+
+@ai_agent_bp.route('/api/feedback/<int:message_id>', methods=['GET'])
+@login_required
+@ai_agent_required
+def api_get_feedback(message_id: int):
+    """API: Get current user's feedback for a message."""
+    from .repositories import FeedbackRepository
+    repo = FeedbackRepository()
+    feedback = repo.get_by_message(message_id, current_user.id)
+    return jsonify({'feedback': feedback})
+
+
+# ============== Knowledge Management Routes (Admin) ==============
+
+@ai_agent_bp.route('/api/feedback/stats', methods=['GET'])
+@login_required
+@ai_agent_required
+def api_feedback_stats():
+    """API: Get feedback statistics."""
+    if not getattr(current_user, 'can_access_settings', False):
+        return error_response('Admin access required', 403)
+
+    from .repositories import FeedbackRepository
+    repo = FeedbackRepository()
+    return jsonify({'stats': repo.get_stats()})
+
+
+@ai_agent_bp.route('/api/knowledge', methods=['GET'])
+@login_required
+@ai_agent_required
+def api_list_knowledge():
+    """API: List all learned patterns (admin)."""
+    if not getattr(current_user, 'can_access_settings', False):
+        return error_response('Admin access required', 403)
+
+    from .repositories import KnowledgeRepository
+    repo = KnowledgeRepository()
+
+    limit = request.args.get('limit', 100, type=int)
+    offset = request.args.get('offset', 0, type=int)
+    patterns = repo.get_all(limit=min(limit, 200), offset=offset)
+
+    for p in patterns:
+        for k in ('created_at', 'updated_at'):
+            if p.get(k) and hasattr(p[k], 'isoformat'):
+                p[k] = p[k].isoformat()
+
+    stats = repo.get_stats()
+    return jsonify({'patterns': patterns, 'stats': stats})
+
+
+@ai_agent_bp.route('/api/knowledge/<int:knowledge_id>', methods=['DELETE'])
+@login_required
+@ai_agent_required
+def api_delete_knowledge(knowledge_id: int):
+    """API: Delete a learned pattern."""
+    if not getattr(current_user, 'can_access_settings', False):
+        return error_response('Admin access required', 403)
+
+    from .repositories import KnowledgeRepository
+    repo = KnowledgeRepository()
+
+    if not repo.delete_pattern(knowledge_id):
+        return error_response('Pattern not found', 404)
+    return jsonify({'success': True})
+
+
+@ai_agent_bp.route('/api/knowledge/<int:knowledge_id>', methods=['PATCH'])
+@login_required
+@ai_agent_required
+def api_toggle_knowledge(knowledge_id: int):
+    """API: Toggle active status of a learned pattern."""
+    if not getattr(current_user, 'can_access_settings', False):
+        return error_response('Admin access required', 403)
+
+    from .repositories import KnowledgeRepository
+    repo = KnowledgeRepository()
+
+    result = repo.toggle_active(knowledge_id)
+    if not result:
+        return error_response('Pattern not found', 404)
+    return jsonify({'success': True, 'is_active': result['is_active']})
+
+
+@ai_agent_bp.route('/api/knowledge/extract', methods=['POST'])
+@login_required
+@ai_agent_required
+def api_trigger_extraction():
+    """API: Manually trigger knowledge extraction from positive feedback."""
+    if not getattr(current_user, 'can_access_settings', False):
+        return error_response('Admin access required', 403)
+
+    try:
+        from .services.knowledge_service import KnowledgeService
+        svc = KnowledgeService()
+        result = svc.extract_from_feedback()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Manual knowledge extraction failed: {e}")
+        return error_response(str(e), 500)

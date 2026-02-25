@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Star, Key, RefreshCw, Database, Lock } from 'lucide-react'
+import { Save, Star, Key, RefreshCw, Database, Lock, Brain, ThumbsUp, ThumbsDown, Trash2, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { settingsApi, type AiModel } from '@/api/settings'
+import { aiAgentApi } from '@/api/aiAgent'
 import { toast } from 'sonner'
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -46,6 +47,16 @@ export default function AiTab() {
   const { data: ragPerms } = useQuery({
     queryKey: ['settings', 'rag-source-permissions'],
     queryFn: settingsApi.getRagSourcePermissions,
+  })
+
+  const { data: feedbackStats } = useQuery({
+    queryKey: ['settings', 'feedback-stats'],
+    queryFn: aiAgentApi.getFeedbackStats,
+  })
+
+  const { data: knowledgeData, isLoading: knowledgeLoading } = useQuery({
+    queryKey: ['settings', 'learned-knowledge'],
+    queryFn: () => aiAgentApi.getLearnedKnowledge(100, 0),
   })
 
   // ── Form state ──
@@ -107,6 +118,33 @@ export default function AiTab() {
       toast.success('API key updated')
     },
     onError: () => toast.error('Failed to update API key'),
+  })
+
+  const deleteKnowledgeMutation = useMutation({
+    mutationFn: (id: number) => aiAgentApi.deleteKnowledge(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'learned-knowledge'] })
+      toast.success('Pattern deleted')
+    },
+    onError: () => toast.error('Failed to delete pattern'),
+  })
+
+  const toggleKnowledgeMutation = useMutation({
+    mutationFn: (id: number) => aiAgentApi.toggleKnowledge(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'learned-knowledge'] })
+    },
+    onError: () => toast.error('Failed to toggle pattern'),
+  })
+
+  const extractMutation = useMutation({
+    mutationFn: () => aiAgentApi.triggerExtraction(),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'learned-knowledge'] })
+      queryClient.invalidateQueries({ queryKey: ['settings', 'feedback-stats'] })
+      toast.success(`Extracted ${data.extracted} new, ${data.merged} merged patterns`)
+    },
+    onError: () => toast.error('Extraction failed'),
   })
 
   const handleSaveSettings = () => {
@@ -381,6 +419,122 @@ export default function AiTab() {
               })}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      {/* Card 4: Learning & Feedback */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Brain className="h-5 w-5" />
+                Learning & Feedback
+              </CardTitle>
+              <CardDescription>
+                AI learns from positively-rated interactions across all users. Conversations remain private.
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={extractMutation.isPending}
+              onClick={() => extractMutation.mutate()}
+            >
+              <Zap className={`mr-1.5 h-4 w-4 ${extractMutation.isPending ? 'animate-pulse' : ''}`} />
+              {extractMutation.isPending ? 'Extracting...' : 'Extract Now'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Feedback stats */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="rounded-lg border p-3 text-center">
+              <div className="flex items-center justify-center gap-1.5 text-green-600">
+                <ThumbsUp className="h-4 w-4" />
+                <span className="text-2xl font-bold tabular-nums">{feedbackStats?.stats?.positive ?? 0}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Positive</p>
+            </div>
+            <div className="rounded-lg border p-3 text-center">
+              <div className="flex items-center justify-center gap-1.5 text-red-600">
+                <ThumbsDown className="h-4 w-4" />
+                <span className="text-2xl font-bold tabular-nums">{feedbackStats?.stats?.negative ?? 0}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Negative</p>
+            </div>
+            <div className="rounded-lg border p-3 text-center">
+              <div className="flex items-center justify-center gap-1.5">
+                <Brain className="h-4 w-4 text-muted-foreground" />
+                <span className="text-2xl font-bold tabular-nums">{knowledgeData?.stats?.active ?? 0}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Active Patterns</p>
+            </div>
+          </div>
+
+          {/* Learned patterns table */}
+          {knowledgeLoading ? (
+            <div className="h-24 animate-pulse rounded bg-muted" />
+          ) : knowledgeData?.patterns?.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Pattern</TableHead>
+                  <TableHead className="w-28">Category</TableHead>
+                  <TableHead className="w-20 text-center">Sources</TableHead>
+                  <TableHead className="w-24 text-center">Confidence</TableHead>
+                  <TableHead className="w-20 text-center">Active</TableHead>
+                  <TableHead className="w-16" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {knowledgeData.patterns.map((p) => (
+                  <TableRow key={p.id} className={p.is_active ? '' : 'opacity-50'}>
+                    <TableCell>
+                      <p className="max-w-md truncate text-sm">{p.pattern}</p>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs capitalize">
+                        {p.category.replace('_', ' ')}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center tabular-nums text-sm">
+                      {p.source_count}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="mx-auto h-2 w-16 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all"
+                          style={{ width: `${Math.round(p.confidence * 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground">{Math.round(p.confidence * 100)}%</span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Switch
+                        checked={p.is_active}
+                        onCheckedChange={() => toggleKnowledgeMutation.mutate(p.id)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => deleteKnowledgeMutation.mutate(p.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              No learned patterns yet. Patterns are extracted from positively-rated AI responses.
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

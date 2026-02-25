@@ -427,16 +427,20 @@ class AIAgentService:
             )
             saved_user_msg = self.message_repo.create(user_msg)  # noqa: F841
 
-            # 4. Retrieve RAG + analytics context (parallel, skip for simple queries)
+            # 4. Retrieve RAG + analytics + knowledge context (parallel, skip for simple queries)
             rag_sources = []
             rag_context = None
             analytics_context = None
+            learned_patterns = []
             complexity = classify_complexity(user_message)
 
             if complexity != 'simple':
-                # Run RAG and analytics in PARALLEL
+                # Run RAG, analytics, and knowledge retrieval in PARALLEL
                 rag_future = None
                 analytics_future = None
+                knowledge_future = self._executor.submit(
+                    self._get_learned_patterns, user_message
+                )
 
                 if self.config.RAG_ENABLED:
                     def _do_rag():
@@ -476,6 +480,11 @@ class AIAgentService:
                     except Exception as e:
                         logger.warning(f"Analytics context failed: {e}")
 
+                try:
+                    learned_patterns = knowledge_future.result(timeout=2)
+                except Exception as e:
+                    logger.debug(f"Knowledge retrieval failed: {e}")
+
             # 5. Get provider and load tools
             provider = self.get_provider(model_config.provider.value)
 
@@ -495,6 +504,7 @@ class AIAgentService:
                 rag_context=rag_context,
                 analytics_context=analytics_context,
                 has_tools=bool(tool_schemas),
+                learned_patterns=learned_patterns,
             )
             system_prompt_tokens = estimate_tokens(system_prompt)
 
@@ -709,6 +719,7 @@ class AIAgentService:
             rag_sources = []
             rag_context = None
             analytics_context = None
+            learned_patterns = []
 
             if complexity == 'simple':
                 logger.debug("Simple query — skipping RAG and analytics")
@@ -716,9 +727,12 @@ class AIAgentService:
                 # Emit status so frontend shows what we're doing
                 yield f"event: status\ndata: {json.dumps({'status': 'Searching knowledge base...'})}\n\n"
 
-                # Run RAG and analytics in PARALLEL
+                # Run RAG, analytics, and knowledge retrieval in PARALLEL
                 rag_future = None
                 analytics_future = None
+                knowledge_future = self._executor.submit(
+                    self._get_learned_patterns, user_message
+                )
 
                 if self.config.RAG_ENABLED:
                     def _do_rag():
@@ -757,6 +771,11 @@ class AIAgentService:
                     except Exception as e:
                         logger.warning(f"Analytics context failed: {e}")
 
+                try:
+                    learned_patterns = knowledge_future.result(timeout=2)
+                except Exception as e:
+                    logger.debug(f"Knowledge retrieval failed: {e}")
+
             provider = self.get_provider(model_config.provider.value)
 
             # 4. Load tools for all providers (skip only for simple queries)
@@ -782,6 +801,7 @@ class AIAgentService:
                 rag_context=rag_context,
                 analytics_context=analytics_context,
                 has_tools=bool(tool_schemas),
+                learned_patterns=learned_patterns,
             )
             system_prompt_tokens = estimate_tokens(system_prompt)
 
@@ -1185,20 +1205,32 @@ class AIAgentService:
             logger.warning(f"Analytics context failed: {e}")
             return None
 
+    def _get_learned_patterns(self, query: str) -> List[str]:
+        """Get learned patterns relevant to the current query."""
+        try:
+            from .knowledge_service import KnowledgeService
+            svc = KnowledgeService(self.config)
+            return svc.get_relevant_patterns(query, limit=5)
+        except Exception as e:
+            logger.debug(f"Knowledge retrieval skipped: {e}")
+            return []
+
     def _build_system_prompt(
         self,
         rag_context: Optional[str] = None,
         analytics_context: Optional[str] = None,
         has_tools: bool = False,
+        learned_patterns: Optional[List[str]] = None,
     ) -> str:
         """
         Build system prompt for LLM with domain knowledge, tool examples,
-        and Romanian glossary.
+        Romanian glossary, and learned patterns from user feedback.
 
         Args:
             rag_context: Optional RAG context to include
             analytics_context: Optional analytics data to include
             has_tools: Whether tools are available for this request
+            learned_patterns: Optional list of learned pattern strings
 
         Returns:
             Complete system prompt
@@ -1259,6 +1291,13 @@ departament = department, angajat = employee, bonus/bonusuri = bonus(es), evenim
 luna/lună = month, an/anul = year, total/totaluri = total(s), aprobare = approval,
 tranzacție = transaction, extras bancar = bank statement, buget = budget, proiect = project,
 ultima/ultimele = last/recent, câte/câți = how many, arată = show, caută = search""")
+
+        if learned_patterns:
+            patterns_text = '\n'.join(f'- {p}' for p in learned_patterns)
+            sections.append(f"""LEARNED PATTERNS (from past successful interactions):
+{patterns_text}
+
+Use these patterns to improve your responses when they are relevant to the current query.""")
 
         if analytics_context:
             sections.append(f"""ANALYTICS DATA (live aggregations from JARVIS database):

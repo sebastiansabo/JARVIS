@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { Bot, User, Wrench } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Message } from '@/types/aiAgent'
+import { FeedbackButtons } from './FeedbackButtons'
 
 interface MessageBubbleProps {
   message: Message
@@ -67,17 +68,20 @@ export const MessageBubble = memo(function MessageBubble({ message, toolsUsed }:
           )}
         </div>
 
-        {message.role === 'assistant' && (message.response_time_ms > 0 || message.output_tokens > 0 || toolsUsed?.length) && (
-          <div className={cn('flex flex-wrap gap-2 text-xs text-muted-foreground', isUser && 'justify-end')}>
-            {toolsUsed?.length && (
-              <span className="flex items-center gap-1">
-                <Wrench className="h-3 w-3" />
-                {toolsUsed.join(', ')}
-              </span>
-            )}
-            {message.response_time_ms > 0 && <span>{(message.response_time_ms / 1000).toFixed(1)}s</span>}
-            {message.output_tokens > 0 && <span>{message.output_tokens} tokens</span>}
-            {message.cost && Number(message.cost) > 0 && <span>${message.cost}</span>}
+        {message.role === 'assistant' && (
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="flex flex-wrap gap-2">
+              {toolsUsed?.length ? (
+                <span className="flex items-center gap-1">
+                  <Wrench className="h-3 w-3" />
+                  {toolsUsed.join(', ')}
+                </span>
+              ) : null}
+              {message.response_time_ms > 0 && <span>{(message.response_time_ms / 1000).toFixed(1)}s</span>}
+              {message.output_tokens > 0 && <span>{message.output_tokens} tokens</span>}
+              {message.cost && Number(message.cost) > 0 && <span>${message.cost}</span>}
+            </div>
+            {message.id > 0 && <FeedbackButtons messageId={message.id} />}
           </div>
         )}
       </div>

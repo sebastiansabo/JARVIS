@@ -984,6 +984,57 @@ def init_db():
             if repair_gens:
                 _recompute_bilant_formula_values(cursor)
 
+            # ── AI Agent learning tables (message_feedback + learned_knowledge) ──
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_schema = 'ai_agent' AND table_name = 'message_feedback'
+                )
+            """)
+            if not cursor.fetchone()['exists']:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS ai_agent.message_feedback (
+                        id SERIAL PRIMARY KEY,
+                        message_id INTEGER NOT NULL REFERENCES ai_agent.messages(id) ON DELETE CASCADE,
+                        user_id INTEGER NOT NULL REFERENCES users(id),
+                        feedback_type VARCHAR(10) NOT NULL CHECK (feedback_type IN ('positive', 'negative')),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(message_id, user_id)
+                    )
+                """)
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_feedback_message ON ai_agent.message_feedback(message_id)')
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_feedback_positive ON ai_agent.message_feedback(feedback_type) WHERE feedback_type = 'positive'")
+                # learned_knowledge with optional vector column
+                cursor.execute("""
+                    DO $$
+                    BEGIN
+                        CREATE TABLE IF NOT EXISTS ai_agent.learned_knowledge (
+                            id SERIAL PRIMARY KEY,
+                            pattern TEXT NOT NULL,
+                            category VARCHAR(50) NOT NULL,
+                            source_count INTEGER DEFAULT 1,
+                            confidence FLOAT DEFAULT 0.5,
+                            embedding vector(1536),
+                            is_active BOOLEAN DEFAULT TRUE,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    EXCEPTION WHEN undefined_object THEN
+                        CREATE TABLE IF NOT EXISTS ai_agent.learned_knowledge (
+                            id SERIAL PRIMARY KEY,
+                            pattern TEXT NOT NULL,
+                            category VARCHAR(50) NOT NULL,
+                            source_count INTEGER DEFAULT 1,
+                            confidence FLOAT DEFAULT 0.5,
+                            is_active BOOLEAN DEFAULT TRUE,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    END $$;
+                """)
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_knowledge_active ON ai_agent.learned_knowledge(is_active, confidence DESC)')
+                logger.info('Created AI agent learning tables (message_feedback, learned_knowledge)')
+
             conn.commit()
             logger.info('Database schema already initialized — skipping init_db()')
             return

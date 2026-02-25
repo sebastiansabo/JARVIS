@@ -107,4 +107,36 @@ export const aiAgentApi = {
 
   getRagStats: () =>
     api.get<{ total_documents: number; total_chunks: number }>('/ai-agent/api/rag/stats'),
+
+  // Feedback
+  submitFeedback: (messageId: number, feedbackType: 'positive' | 'negative') =>
+    api.post<{ feedback: { feedback_type: string } | null }>('/ai-agent/api/feedback', {
+      message_id: messageId,
+      feedback_type: feedbackType,
+    }),
+
+  getFeedback: (messageId: number) =>
+    api.get<{ feedback: { feedback_type: string } | null }>(`/ai-agent/api/feedback/${messageId}`),
+
+  // Knowledge (admin)
+  getFeedbackStats: () =>
+    api.get<{ stats: { positive: number; negative: number; total: number } }>('/ai-agent/api/feedback/stats'),
+
+  getLearnedKnowledge: (limit = 100, offset = 0) =>
+    api.get<{
+      patterns: Array<{
+        id: number; pattern: string; category: string; source_count: number;
+        confidence: number; is_active: boolean; created_at: string; updated_at: string;
+      }>;
+      stats: { total: number; active: number; avg_confidence: number; total_sources: number };
+    }>(`/ai-agent/api/knowledge?limit=${limit}&offset=${offset}`),
+
+  deleteKnowledge: (id: number) =>
+    api.delete<{ success: boolean }>(`/ai-agent/api/knowledge/${id}`),
+
+  toggleKnowledge: (id: number) =>
+    api.patch<{ success: boolean; is_active: boolean }>(`/ai-agent/api/knowledge/${id}`, {}),
+
+  triggerExtraction: () =>
+    api.post<{ extracted: number; merged: number }>('/ai-agent/api/knowledge/extract', {}),
 }

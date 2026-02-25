@@ -282,6 +282,55 @@ SELECT 'ai_agent', 'AI Agent', 'Chat assistant with RAG', 'bi-robot', '/ai-agent
 WHERE NOT EXISTS (SELECT 1 FROM module_menu_items WHERE module_key = 'ai_agent');
 
 -- ============================================================
+-- Message Feedback (thumbs up/down on AI responses)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS ai_agent.message_feedback (
+    id SERIAL PRIMARY KEY,
+    message_id INTEGER NOT NULL REFERENCES ai_agent.messages(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    feedback_type VARCHAR(10) NOT NULL CHECK (feedback_type IN ('positive', 'negative')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(message_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_message ON ai_agent.message_feedback(message_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_positive ON ai_agent.message_feedback(feedback_type) WHERE feedback_type = 'positive';
+
+-- ============================================================
+-- Learned Knowledge (collective patterns from positive feedback)
+-- ============================================================
+
+DO $$
+BEGIN
+    CREATE TABLE IF NOT EXISTS ai_agent.learned_knowledge (
+        id SERIAL PRIMARY KEY,
+        pattern TEXT NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        source_count INTEGER DEFAULT 1,
+        confidence FLOAT DEFAULT 0.5,
+        embedding vector(1536),
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+EXCEPTION WHEN undefined_object THEN
+    CREATE TABLE IF NOT EXISTS ai_agent.learned_knowledge (
+        id SERIAL PRIMARY KEY,
+        pattern TEXT NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        source_count INTEGER DEFAULT 1,
+        confidence FLOAT DEFAULT 0.5,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+END
+$$;
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_active ON ai_agent.learned_knowledge(is_active, confidence DESC);
+
+-- ============================================================
 -- Done
 -- ============================================================
 

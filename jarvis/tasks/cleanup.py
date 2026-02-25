@@ -99,6 +99,20 @@ def sync_marketing_kpis():
         logger.error(f"Marketing KPI sync task failed: {e}")
 
 
+def extract_ai_knowledge():
+    """Extract learned patterns from positively-rated AI responses."""
+    try:
+        from ai_agent.services.knowledge_service import KnowledgeService
+        svc = KnowledgeService()
+        result = svc.extract_from_feedback()
+        extracted = result.get('extracted', 0)
+        merged = result.get('merged', 0)
+        if extracted or merged:
+            logger.info(f"Knowledge extraction: {extracted} new, {merged} merged")
+    except Exception as e:
+        logger.error(f"Knowledge extraction task failed: {e}")
+
+
 def run_daily_digest():
     """Generate and send daily AI-powered digest to admins/managers."""
     try:
@@ -154,10 +168,19 @@ def start_scheduler():
 
     scheduler.add_job(
         reindex_rag_documents,
-        'cron',
-        hour=0,
-        minute=0,
-        id='rag_reindex_daily',
+        'interval',
+        hours=4,
+        id='rag_reindex_periodic',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        extract_ai_knowledge,
+        'interval',
+        hours=6,
+        id='extract_ai_knowledge',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,
