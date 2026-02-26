@@ -3357,12 +3357,7 @@
                             <div class="border-top mt-3 pt-2">
                                 <div class="d-flex justify-content-between fw-bold">
                                     <span>Total (${invoice.allocations.length} allocation${invoice.allocations.length !== 1 ? 's' : ''})${invoice.subtract_vat ? ' <small class="text-muted fw-normal">excl. VAT</small>' : ''}</span>
-                                    <span>
-                                        <span class="text-success">${formatCurrency(invoice.allocations.reduce((sum, a) => sum + (a.allocation_value || 0), 0))} ${invCurrency}</span>
-                                        ${invoice.allocations.some(a => a.reinvoice_destinations?.length > 0) ? `
-                                            <span class="text-reinvoice ms-2">| Reinv. ${formatCurrency(invoice.allocations.reduce((sum, a) => sum + (a.reinvoice_destinations || []).reduce((rs, d) => rs + (d.value || 0), 0), 0))} ${invCurrency}</span>
-                                        ` : ''}
-                                    </span>
+                                    <span>${formatCurrency(invoice.allocations.reduce((sum, a) => sum + (a.allocation_value || 0) + (a.reinvoice_destinations || []).reduce((rs, d) => rs + (d.value || 0), 0), 0))} ${invCurrency}</span>
                                 </div>
                             </div>
                         </div>
