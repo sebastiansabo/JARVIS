@@ -130,9 +130,9 @@ class ClientRepository(BaseRepository):
     def get_stats(self):
         return self.query_one('''
             SELECT
-                COUNT(*) as total,
-                COUNT(*) FILTER (WHERE client_type = 'person') as persons,
-                COUNT(*) FILTER (WHERE client_type = 'company') as companies,
+                COUNT(*) FILTER (WHERE merged_into_id IS NULL AND (is_blacklisted = FALSE OR is_blacklisted IS NULL)) as total,
+                COUNT(*) FILTER (WHERE client_type = 'person' AND merged_into_id IS NULL AND (is_blacklisted = FALSE OR is_blacklisted IS NULL)) as persons,
+                COUNT(*) FILTER (WHERE client_type = 'company' AND merged_into_id IS NULL AND (is_blacklisted = FALSE OR is_blacklisted IS NULL)) as companies,
                 COUNT(*) FILTER (WHERE merged_into_id IS NOT NULL) as merged,
                 COUNT(*) FILTER (WHERE is_blacklisted = TRUE AND merged_into_id IS NULL) as blacklisted
             FROM crm_clients
@@ -163,7 +163,9 @@ class ClientRepository(BaseRepository):
         with_deals = self.query_one('''
             SELECT COUNT(DISTINCT d.client_id) as clients_with_deals,
                    COUNT(*) as total_deals
-            FROM crm_deals d WHERE d.client_id IS NOT NULL
+            FROM crm_deals d
+            JOIN crm_clients c ON c.id = d.client_id
+            WHERE d.client_id IS NOT NULL AND (c.is_blacklisted = FALSE OR c.is_blacklisted IS NULL)
         ''')
 
         # Contact info coverage

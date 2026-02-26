@@ -29,7 +29,7 @@ class DealRepository(BaseRepository):
                date_from=None, date_to=None, client_id=None,
                sort_by=None, sort_order=None,
                limit=50, offset=0):
-        conditions, params = ['1=1'], []
+        conditions, params = ['(c.is_blacklisted = FALSE OR c.is_blacklisted IS NULL OR d.client_id IS NULL)'], []
         if source:
             conditions.append('d.source = %s')
             params.append(source)
@@ -81,7 +81,9 @@ class DealRepository(BaseRepository):
             tuple(params)
         )
         count_row = self.query_one(
-            f'SELECT COUNT(*) as count FROM crm_deals d WHERE {where}',
+            f'''SELECT COUNT(*) as count FROM crm_deals d
+                LEFT JOIN crm_clients c ON c.id = d.client_id
+                WHERE {where}''',
             params_count
         )
         return rows, count_row['count']
@@ -119,10 +121,12 @@ class DealRepository(BaseRepository):
         return self.query_one('''
             SELECT
                 COUNT(*) as total,
-                COUNT(*) FILTER (WHERE source = 'nw') as new_cars,
-                COUNT(*) FILTER (WHERE source = 'gw') as used_cars,
-                COUNT(DISTINCT brand) as brands
-            FROM crm_deals
+                COUNT(*) FILTER (WHERE d.source = 'nw') as new_cars,
+                COUNT(*) FILTER (WHERE d.source = 'gw') as used_cars,
+                COUNT(DISTINCT d.brand) as brands
+            FROM crm_deals d
+            LEFT JOIN crm_clients c ON c.id = d.client_id
+            WHERE (c.is_blacklisted = FALSE OR c.is_blacklisted IS NULL OR d.client_id IS NULL)
         ''')
 
     def get_detailed_stats(self, dealers=None, brands=None, statuses=None, date_from=None, date_to=None):
@@ -196,34 +200,37 @@ class DealRepository(BaseRepository):
             'by_status': by_status,
         }
 
+    _BL_FILTER = """(d.client_id IS NULL OR d.client_id NOT IN (
+        SELECT id FROM crm_clients WHERE is_blacklisted = TRUE))"""
+
     def get_brands(self):
         return self.query_all(
-            "SELECT DISTINCT brand FROM crm_deals WHERE brand IS NOT NULL ORDER BY brand"
+            f"SELECT DISTINCT brand FROM crm_deals d WHERE brand IS NOT NULL AND {self._BL_FILTER} ORDER BY brand"
         )
 
     def get_dealers(self):
         return [r['dealer_name'] for r in self.query_all(
-            "SELECT DISTINCT dealer_name FROM crm_deals WHERE dealer_name IS NOT NULL ORDER BY dealer_name"
+            f"SELECT DISTINCT dealer_name FROM crm_deals d WHERE dealer_name IS NOT NULL AND {self._BL_FILTER} ORDER BY dealer_name"
         )]
 
     def get_sales_persons(self):
         return [r['sales_person'] for r in self.query_all(
-            "SELECT DISTINCT sales_person FROM crm_deals WHERE sales_person IS NOT NULL ORDER BY sales_person"
+            f"SELECT DISTINCT sales_person FROM crm_deals d WHERE sales_person IS NOT NULL AND {self._BL_FILTER} ORDER BY sales_person"
         )]
 
     def get_statuses(self):
         return self.query_all(
-            "SELECT dossier_status, COUNT(*) as count FROM crm_deals WHERE dossier_status IS NOT NULL GROUP BY dossier_status ORDER BY count DESC"
+            f"SELECT dossier_status, COUNT(*) as count FROM crm_deals d WHERE dossier_status IS NOT NULL AND {self._BL_FILTER} GROUP BY dossier_status ORDER BY count DESC"
         )
 
     def get_order_statuses(self):
         return [r['order_status'] for r in self.query_all(
-            "SELECT DISTINCT order_status FROM crm_deals WHERE order_status IS NOT NULL ORDER BY order_status"
+            f"SELECT DISTINCT order_status FROM crm_deals d WHERE order_status IS NOT NULL AND {self._BL_FILTER} ORDER BY order_status"
         )]
 
     def get_contract_statuses(self):
         return [r['contract_status'] for r in self.query_all(
-            "SELECT DISTINCT contract_status FROM crm_deals WHERE contract_status IS NOT NULL ORDER BY contract_status"
+            f"SELECT DISTINCT contract_status FROM crm_deals d WHERE contract_status IS NOT NULL AND {self._BL_FILTER} ORDER BY contract_status"
         )]
 
     _EDITABLE = {
