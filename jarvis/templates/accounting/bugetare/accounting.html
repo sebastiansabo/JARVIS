@@ -3328,40 +3328,30 @@
                                     : 0;
                                 const grossValue = keptValue + reinvoiceTotal;
                                 const hasReinvoice = reinvoiceTotal > 0;
-                                const keptPct = grossValue > 0 ? Math.round((keptValue / grossValue) * 100) : 100;
 
-                                // Build location: Brand / Dept [/ Subdept]
-                                let loc = a.brand || '';
-                                if (a.department) loc += (loc ? ' / ' : '') + a.department;
-                                if (a.subdepartment) loc += ' / ' + a.subdepartment;
-                                loc = loc || '-';
+                                // Build source location: Department (Brand)
+                                let srcLoc = a.department || '';
+                                if (a.subdepartment) srcLoc += ' / ' + a.subdepartment;
+                                if (a.brand) srcLoc += ' (' + a.brand + ')';
 
                                 return `
                                 <div class="allocation-row">
                                     ${a.comment ? `<div class="small text-info mb-1"><i class="bi bi-chat-text-fill"></i> ${a.comment}</div>` : ''}
                                     <div class="d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <strong>${loc}</strong>
-                                            <span class="text-muted ms-1">— ${formatCurrency(grossValue)} ${invCurrency}</span>
-                                        </div>
+                                        <strong>Total: ${formatCurrency(grossValue)} ${invCurrency}</strong>
                                         <span class="badge bg-primary">${a.allocation_percent}%</span>
                                     </div>
-                                    ${hasReinvoice ? `
-                                        ${keptValue > 0 ? `<div class="small text-success ms-2">└ Kept: <strong>${formatCurrency(keptValue)} ${invCurrency}</strong> (${keptPct}%)</div>` : ''}
-                                        ${a.reinvoice_destinations.map(rd => {
+                                    <div class="small ms-2 mt-1">
+                                        <div>└ ${formatCurrency(keptValue)} ${invCurrency} - ${srcLoc || '-'}</div>
+                                        ${hasReinvoice ? a.reinvoice_destinations.map(rd => {
                                             let destLoc = rd.company;
                                             if (rd.brand) destLoc += ' (' + rd.brand + ')';
                                             if (rd.department) destLoc += ' / ' + rd.department;
                                             if (rd.subdepartment) destLoc += ' / ' + rd.subdepartment;
-                                            const pctStr = rd.percentage ? ` (${rd.percentage}%)` : '';
-                                            return `<div class="small text-reinvoice ms-2">└ <i class="bi bi-arrow-right"></i> ${destLoc}: <strong>${formatCurrency(rd.value)} ${invCurrency}</strong>${pctStr}${rd.comment ? ` <span class="text-info"><i class="bi bi-chat-text"></i></span>` : ''}</div>`;
-                                        }).join('')}
-                                    ` : `
-                                        <div class="small text-success ms-2">└ Kept: <strong>${formatCurrency(keptValue)} ${invCurrency}</strong></div>
-                                    `}
-                                    ${(!hasReinvoice && !a.reinvoice_destinations?.length && a.reinvoice_to) ? `
-                                        <div class="small text-reinvoice ms-2">└ <i class="bi bi-arrow-right"></i> ${a.reinvoice_to}${a.reinvoice_brand ? ' (' + a.reinvoice_brand + ')' : ''}${a.reinvoice_department ? ' / ' + a.reinvoice_department : ''}${a.reinvoice_subdepartment ? ' / ' + a.reinvoice_subdepartment : ''}</div>
-                                    ` : ''}
+                                            return `<div class="text-reinvoice">└ ${formatCurrency(rd.value)} ${invCurrency} - ${destLoc}${rd.comment ? ` <span class="text-info"><i class="bi bi-chat-text"></i></span>` : ''}</div>`;
+                                        }).join('') : ''}
+                                        ${(!hasReinvoice && a.reinvoice_to) ? `<div class="text-reinvoice">└ Reinvoice to: ${a.reinvoice_to}${a.reinvoice_brand ? ' (' + a.reinvoice_brand + ')' : ''}${a.reinvoice_department ? ' / ' + a.reinvoice_department : ''}</div>` : ''}
+                                    </div>
                                 </div>
                             `}).join('')}
                             <div class="border-top mt-3 pt-2">
