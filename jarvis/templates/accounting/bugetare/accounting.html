@@ -3342,15 +3342,19 @@
                                         <span class="badge bg-primary">${a.allocation_percent}%</span>
                                     </div>
                                     <div class="small ms-2 mt-1">
-                                        ${keptValue > 0 ? `<div>└ ${formatCurrency(keptValue)} ${invCurrency} - ${srcLoc || '-'}</div>` : ''}
+                                        ${keptValue > 0 ? (() => {
+                                            const keptPct = grossValue > 0 ? Math.round(keptValue / grossValue * 100) : 100;
+                                            return `<div>└ Keep (${keptPct}%): ${formatCurrency(keptValue)} ${invCurrency} - ${srcLoc || '-'}</div>`;
+                                        })() : ''}
                                         ${hasReinvoice ? a.reinvoice_destinations.map(rd => {
+                                            const reinvPct = grossValue > 0 ? Math.round(rd.value / grossValue * 100) : 0;
                                             let destLoc = rd.company;
                                             if (rd.brand) destLoc += ' (' + rd.brand + ')';
                                             if (rd.department) destLoc += ' / ' + rd.department;
                                             if (rd.subdepartment) destLoc += ' / ' + rd.subdepartment;
-                                            return `<div class="text-reinvoice">└ ${formatCurrency(rd.value)} ${invCurrency} - ${destLoc}${rd.comment ? ` <span class="text-info"><i class="bi bi-chat-text"></i></span>` : ''}</div>`;
+                                            return `<div class="text-reinvoice">└ Reinv (${reinvPct}%): ${formatCurrency(rd.value)} ${invCurrency} - ${destLoc}${rd.comment ? ` <span class="text-info"><i class="bi bi-chat-text"></i></span>` : ''}</div>`;
                                         }).join('') : ''}
-                                        ${(!hasReinvoice && a.reinvoice_to) ? `<div class="text-reinvoice">└ Reinvoice to: ${a.reinvoice_to}${a.reinvoice_brand ? ' (' + a.reinvoice_brand + ')' : ''}${a.reinvoice_department ? ' / ' + a.reinvoice_department : ''}</div>` : ''}
+                                        ${(!hasReinvoice && a.reinvoice_to) ? `<div class="text-reinvoice">└ Reinv: ${a.reinvoice_to}${a.reinvoice_brand ? ' (' + a.reinvoice_brand + ')' : ''}${a.reinvoice_department ? ' / ' + a.reinvoice_department : ''}</div>` : ''}
                                     </div>
                                 </div>
                             `}).join('')}
