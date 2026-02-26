@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Users, Car, Upload, BarChart3, PieChart, UserCheck } from 'lucide-react'
+import { Users, Car, Upload, BarChart3, PieChart, UserCheck, Ban } from 'lucide-react'
 import { crmApi, type CrmStats } from '@/api/crm'
 import DealsTab from './DealsTab'
 import StatisticsTab from './StatisticsTab'
@@ -47,6 +47,7 @@ export default function Crm() {
           <TabsTrigger value="clients" className="gap-1.5"><UserCheck className="h-4 w-4" />Clients</TabsTrigger>
           <TabsTrigger value="statistics" className="gap-1.5"><PieChart className="h-4 w-4" />Statistics</TabsTrigger>
           <TabsTrigger value="import" className="gap-1.5"><Upload className="h-4 w-4" />Import</TabsTrigger>
+          <TabsTrigger value="blacklist" className="gap-1.5"><Ban className="h-4 w-4" />Blacklist</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dashboard" className="space-y-4">
@@ -57,6 +58,7 @@ export default function Crm() {
         <TabsContent value="clients"><ClientStatsTab /></TabsContent>
         <TabsContent value="statistics"><StatisticsTab /></TabsContent>
         <TabsContent value="import"><ImportTab /></TabsContent>
+        <TabsContent value="blacklist"><ClientStatsTab blacklistOnly /></TabsContent>
       </Tabs>
     </div>
   )

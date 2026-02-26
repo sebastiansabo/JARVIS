@@ -1169,6 +1169,16 @@ def init_db():
                     END IF;
                 END $$;
             ''')
+            # CRM: is_blacklisted column on crm_clients
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'crm_clients' AND column_name = 'is_blacklisted') THEN
+                        ALTER TABLE crm_clients ADD COLUMN is_blacklisted BOOLEAN DEFAULT FALSE;
+                    END IF;
+                END $$;
+            ''')
             # ── Menu items: add 'archived' status + sync from registry ──
             cursor.execute("""
                 DO $$ BEGIN

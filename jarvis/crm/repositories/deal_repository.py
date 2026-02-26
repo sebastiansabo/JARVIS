@@ -128,8 +128,11 @@ class DealRepository(BaseRepository):
     def get_detailed_stats(self, dealers=None, brands=None, statuses=None, date_from=None, date_to=None):
         """Rich stats for the Statistics tab, with optional filters.
         dealers/brands/statuses can be lists for multi-select.
+        Excludes deals linked to blacklisted clients.
         """
-        conditions, params = ['1=1'], []
+        conditions, params = [
+            '(client_id IS NULL OR client_id NOT IN (SELECT id FROM crm_clients WHERE is_blacklisted = TRUE))'
+        ], []
         if dealers:
             placeholders = ','.join(['%s'] * len(dealers))
             conditions.append(f'dealer_name IN ({placeholders})')

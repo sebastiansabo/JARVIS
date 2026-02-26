@@ -3031,6 +3031,7 @@ def create_schema(conn, cursor):
             company_name TEXT,
             responsible TEXT,
             nr_reg TEXT,
+            is_blacklisted BOOLEAN DEFAULT FALSE,
             source_flags JSONB DEFAULT '{}',
             merged_into_id INTEGER REFERENCES crm_clients(id),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -17,9 +17,13 @@ class ClientRepository(BaseRepository):
 
     def search(self, name=None, phone=None, email=None, client_type=None,
                responsible=None, city=None, date_from=None, date_to=None,
-               sort_by=None, sort_order=None,
+               sort_by=None, sort_order=None, show_blacklisted=None,
                limit=50, offset=0):
         conditions, params = ['c.merged_into_id IS NULL'], []
+        if show_blacklisted == 'only':
+            conditions.append('c.is_blacklisted = TRUE')
+        elif show_blacklisted != 'all':
+            conditions.append('(c.is_blacklisted = FALSE OR c.is_blacklisted IS NULL)')
         if name:
             conditions.append('c.name_normalized ILIKE %s')
             params.append(f'%{name.lower()}%')
@@ -129,13 +133,14 @@ class ClientRepository(BaseRepository):
                 COUNT(*) as total,
                 COUNT(*) FILTER (WHERE client_type = 'person') as persons,
                 COUNT(*) FILTER (WHERE client_type = 'company') as companies,
-                COUNT(*) FILTER (WHERE merged_into_id IS NOT NULL) as merged
+                COUNT(*) FILTER (WHERE merged_into_id IS NOT NULL) as merged,
+                COUNT(*) FILTER (WHERE is_blacklisted = TRUE AND merged_into_id IS NULL) as blacklisted
             FROM crm_clients
         ''')
 
     def get_detailed_stats(self):
         """Client stats for the Statistics tab."""
-        base = "FROM crm_clients WHERE merged_into_id IS NULL"
+        base = "FROM crm_clients WHERE merged_into_id IS NULL AND (is_blacklisted = FALSE OR is_blacklisted IS NULL)"
 
         total = self.query_one(f'SELECT COUNT(*) as count {base}')['count']
 
@@ -229,6 +234,7 @@ class ClientRepository(BaseRepository):
     _EDITABLE = {
         'display_name', 'client_type', 'phone', 'email', 'street',
         'city', 'region', 'company_name', 'responsible', 'nr_reg',
+        'is_blacklisted',
     }
 
     def update(self, client_id, data):
@@ -248,6 +254,13 @@ class ClientRepository(BaseRepository):
 
     def delete(self, client_id):
         return self.execute('DELETE FROM crm_clients WHERE id = %s', (client_id,)) > 0
+
+    def toggle_blacklist(self, client_id, is_blacklisted):
+        self.execute(
+            'UPDATE crm_clients SET is_blacklisted = %s, updated_at = NOW() WHERE id = %s',
+            (is_blacklisted, client_id)
+        )
+        return self.get_by_id(client_id)
 
     def merge(self, keep_id, remove_id):
         """Merge remove_id into keep_id. Updates all FKs."""

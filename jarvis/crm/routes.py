@@ -138,6 +138,7 @@ def api_clients():
         date_to=request.args.get('date_to'),
         sort_by=request.args.get('sort_by'),
         sort_order=request.args.get('sort_order'),
+        show_blacklisted=request.args.get('show_blacklisted'),
         limit=request.args.get('limit', 50, type=int),
         offset=request.args.get('offset', 0, type=int),
     )
@@ -155,6 +156,7 @@ def api_clients_export():
         email=request.args.get('email'), client_type=request.args.get('client_type'),
         responsible=request.args.get('responsible'), city=request.args.get('city'),
         date_from=request.args.get('date_from'), date_to=request.args.get('date_to'),
+        show_blacklisted=request.args.get('show_blacklisted'),
         limit=50000, offset=0,
     )
     return _csv_response(rows, 'clients.csv', [
@@ -209,6 +211,20 @@ def api_merge_clients():
         return jsonify({'success': False, 'error': 'keep_id and remove_id required'}), 400
     _client_repo.merge(keep_id, remove_id)
     return jsonify({'success': True})
+
+
+@crm_bp.route('/api/crm/clients/<int:client_id>/blacklist', methods=['POST'])
+@login_required
+@crm_required
+def api_client_toggle_blacklist(client_id):
+    if not getattr(current_user, 'can_edit_crm', False):
+        return jsonify({'success': False, 'error': 'Edit permission denied'}), 403
+    data = request.get_json(silent=True) or {}
+    is_blacklisted = bool(data.get('is_blacklisted', False))
+    result = _client_repo.toggle_blacklist(client_id, is_blacklisted)
+    if not result:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    return jsonify({'success': True, 'client': result})
 
 
 # ════════════════════════════════════════════════════════════════

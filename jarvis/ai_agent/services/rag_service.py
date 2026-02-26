@@ -1531,6 +1531,8 @@ class RAGService:
                 release_db(conn)
             if not data:
                 return ServiceResult(success=False, error='Client not found')
+            if data.get('is_blacklisted'):
+                return ServiceResult(success=False, error='Client is blacklisted — skipping indexing')
             content = self._build_crm_client_content(data)
             metadata = {
                 'name': data.get('display_name'), 'type': data.get('client_type'),
@@ -1553,6 +1555,7 @@ class RAGService:
                 cursor.execute("""
                     SELECT c.id FROM crm_clients c
                     WHERE c.merged_into_id IS NULL
+                      AND (c.is_blacklisted = FALSE OR c.is_blacklisted IS NULL)
                       AND NOT EXISTS (
                         SELECT 1 FROM ai_agent.rag_documents r
                         WHERE r.source_type = 'crm_client'
@@ -1637,7 +1640,10 @@ class RAGService:
                 # when multiple RAG docs exist for the same source_id
                 cursor.execute("""
                     SELECT d.id FROM crm_deals d
-                    WHERE NOT EXISTS (
+                    WHERE (d.client_id IS NULL OR d.client_id NOT IN (
+                        SELECT id FROM crm_clients WHERE is_blacklisted = TRUE
+                    ))
+                    AND NOT EXISTS (
                         SELECT 1 FROM ai_agent.rag_documents r
                         WHERE r.source_type = 'car_dossier'
                           AND r.source_id = d.id

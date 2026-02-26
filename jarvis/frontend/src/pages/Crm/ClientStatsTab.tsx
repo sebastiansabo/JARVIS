@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search, Download, Pencil, Trash2, Car, FilterX } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck } from 'lucide-react'
 import { crmApi, type CrmClient, type CrmDeal } from '@/api/crm'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
@@ -103,7 +103,12 @@ function EditClientDialog({ client, open, onOpenChange }: { client: CrmClient | 
 /* ── Column definitions ── */
 
 const ALL_COLUMNS: ColumnDef<CrmClient>[] = [
-  { key: 'display_name', label: 'Name', render: (c) => <span className="font-medium">{c.display_name}</span> },
+  { key: 'display_name', label: 'Name', render: (c) => (
+    <span className="font-medium flex items-center gap-1.5">
+      {c.is_blacklisted && <Ban className="h-3.5 w-3.5 text-destructive shrink-0" />}
+      <span className={c.is_blacklisted ? 'line-through text-muted-foreground' : ''}>{c.display_name}</span>
+    </span>
+  )},
   { key: 'nr_reg', label: 'Nr.Reg', className: 'font-mono text-xs whitespace-nowrap', render: (c) => c.nr_reg || '—' },
   { key: 'client_type', label: 'Type', render: (c) => (
     <Badge variant={c.client_type === 'company' ? 'default' : 'secondary'} className="text-xs">{c.client_type}</Badge>
@@ -124,7 +129,7 @@ const DEFAULT_VISIBLE = ['display_name', 'nr_reg', 'client_type', 'phone', 'emai
 const ALL_KEYS = ALL_COLUMNS.map(c => c.key)
 const LOCKED = new Set(['display_name'])
 
-export default function ClientStatsTab() {
+export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: boolean } = {}) {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
 
@@ -136,6 +141,7 @@ export default function ClientStatsTab() {
   const [dateTo, setDateTo] = useState('')
   const [sortBy, setSortBy] = useState('')
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC' | ''>('')
+  const [showBlacklisted, setShowBlacklisted] = useState(blacklistOnly ? 'only' : '')
   const [page, setPage] = useState(0)
   const [limit, setLimit] = usePersistedState('crm-clients-page-size', 30)
 
@@ -151,10 +157,10 @@ export default function ClientStatsTab() {
     setPage(0)
   }
 
-  const hasFilters = !!(search || clientType || responsible || city || dateFrom || dateTo || sortBy)
+  const hasFilters = !!(search || clientType || responsible || city || dateFrom || dateTo || sortBy || showBlacklisted)
   const clearFilters = () => {
     setSearch(''); setClientType(''); setResponsible(''); setCity('')
-    setDateFrom(''); setDateTo(''); setSortBy(''); setSortOrder(''); setPage(0)
+    setDateFrom(''); setDateTo(''); setSortBy(''); setSortOrder(''); setShowBlacklisted(''); setPage(0)
   }
 
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
@@ -182,6 +188,7 @@ export default function ClientStatsTab() {
   if (dateTo) params.date_to = dateTo
   if (sortBy) params.sort_by = sortBy
   if (sortOrder) params.sort_order = sortOrder
+  if (showBlacklisted) params.show_blacklisted = showBlacklisted
 
   const { data, isLoading } = useQuery({
     queryKey: ['crm-clients', params],
@@ -195,6 +202,14 @@ export default function ClientStatsTab() {
       toast.success('Client deleted')
       setDeleteId(null)
       setExpandedRow(null)
+    },
+  })
+
+  const blacklistMutation = useMutation({
+    mutationFn: ({ id, blacklisted }: { id: number; blacklisted: boolean }) => crmApi.toggleBlacklist(id, blacklisted),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['crm-clients'] })
+      toast.success(vars.blacklisted ? 'Client blacklisted' : 'Client removed from blacklist')
     },
   })
 
@@ -215,7 +230,7 @@ export default function ClientStatsTab() {
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base">Clients</CardTitle>
+          <CardTitle className="text-base">{blacklistOnly ? 'Blacklisted Clients' : 'Clients'}</CardTitle>
           <div className="flex items-center gap-2">
             <ColumnToggle
               visibleColumns={visibleColumns}
@@ -262,6 +277,16 @@ export default function ClientStatsTab() {
           </Select>
           <DatePicker value={dateFrom} onChange={v => { setDateFrom(v); setPage(0) }} placeholder="From date" className="w-[155px]" />
           <DatePicker value={dateTo} onChange={v => { setDateTo(v); setPage(0) }} placeholder="To date" className="w-[155px]" />
+          {!blacklistOnly && (
+            <Select value={showBlacklisted || '_default'} onValueChange={v => { setShowBlacklisted(v === '_default' ? '' : v); setPage(0) }}>
+              <SelectTrigger className="w-[140px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_default">Active Only</SelectItem>
+                <SelectItem value="all">All Clients</SelectItem>
+                <SelectItem value="only">Blacklisted</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           {hasFilters && (
             <Button variant="ghost" size="sm" className="h-9 px-2 text-muted-foreground hover:text-foreground" onClick={clearFilters}>
               <FilterX className="h-4 w-4 mr-1" />Clear
@@ -318,6 +343,7 @@ export default function ClientStatsTab() {
                           client={c}
                           onEdit={() => setEditClient(c)}
                           onDelete={() => setDeleteId(c.id)}
+                          onToggleBlacklist={() => blacklistMutation.mutate({ id: c.id, blacklisted: !c.is_blacklisted })}
                         />
                       </TableCell>
                     </TableRow>
@@ -366,7 +392,7 @@ export default function ClientStatsTab() {
   )
 }
 
-function ClientExpandedDetails({ client, onEdit, onDelete }: { client: CrmClient; onEdit: () => void; onDelete: () => void }) {
+function ClientExpandedDetails({ client, onEdit, onDelete, onToggleBlacklist }: { client: CrmClient; onEdit: () => void; onDelete: () => void; onToggleBlacklist: () => void }) {
   const { data, isLoading } = useQuery({
     queryKey: ['crm-client', client.id],
     queryFn: () => crmApi.getClient(client.id),
@@ -437,6 +463,17 @@ function ClientExpandedDetails({ client, onEdit, onDelete }: { client: CrmClient
       <div className="flex gap-2">
         <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); onEdit() }}>
           <Pencil className="h-3.5 w-3.5 mr-1" />Edit
+        </Button>
+        <Button
+          size="sm"
+          variant={client.is_blacklisted ? 'outline' : 'secondary'}
+          onClick={e => { e.stopPropagation(); onToggleBlacklist() }}
+        >
+          {client.is_blacklisted ? (
+            <><ShieldCheck className="h-3.5 w-3.5 mr-1" />Remove from Blacklist</>
+          ) : (
+            <><Ban className="h-3.5 w-3.5 mr-1" />Blacklist</>
+          )}
         </Button>
         <Button size="sm" variant="destructive" onClick={e => { e.stopPropagation(); onDelete() }}>
           <Trash2 className="h-3.5 w-3.5 mr-1" />Delete

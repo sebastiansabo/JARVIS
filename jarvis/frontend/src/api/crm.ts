@@ -16,6 +16,7 @@ export interface CrmClient {
   responsible?: string
   nr_reg?: string
   client_since?: string
+  is_blacklisted?: boolean
   source_flags: Record<string, boolean>
   merged_into_id?: number
   created_at: string
@@ -149,6 +150,7 @@ export const crmApi = {
   updateDeal: (id: number, data: Partial<CrmDeal>) => api.put<{ success: boolean; deal: CrmDeal }>(`/api/crm/deals/${id}`, data),
   deleteDeal: (id: number) => api.delete<{ success: boolean }>(`/api/crm/deals/${id}`),
   updateClient: (id: number, data: Partial<CrmClient>) => api.put<{ success: boolean; client: CrmClient }>(`/api/crm/clients/${id}`, data),
+  toggleBlacklist: (id: number, isBlacklisted: boolean) => api.post<{ success: boolean; client: CrmClient }>(`/api/crm/clients/${id}/blacklist`, { is_blacklisted: isBlacklisted }),
   deleteClient: (id: number) => api.delete<{ success: boolean }>(`/api/crm/clients/${id}`),
   // Export URLs (returns URL string for <a download>)
   exportDealsUrl: (params?: Record<string, string>) => {
