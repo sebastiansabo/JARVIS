@@ -6,6 +6,7 @@ export interface User {
   role_name: string
   is_active: boolean
   company?: string
+  company_id?: number
   brand?: string
   department?: string
   subdepartment?: string

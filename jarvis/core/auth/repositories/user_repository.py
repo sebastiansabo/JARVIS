@@ -22,9 +22,11 @@ class UserRepository(BaseRepository):
                    r.can_access_accounting, r.can_access_settings, r.can_access_connectors,
                    r.can_access_templates, r.can_access_hr, r.is_hr_manager,
                    r.can_access_crm,
-                   r.can_edit_crm, r.can_delete_crm, r.can_export_crm
+                   r.can_edit_crm, r.can_delete_crm, r.can_export_crm,
+                   c.id as company_id
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.id
+            LEFT JOIN companies c ON c.company = u.company
             WHERE u.id = %s
         ''', (user_id,))
 
@@ -36,9 +38,11 @@ class UserRepository(BaseRepository):
                    r.can_access_accounting, r.can_access_settings, r.can_access_connectors,
                    r.can_access_templates, r.can_access_hr, r.is_hr_manager,
                    r.can_access_crm,
-                   r.can_edit_crm, r.can_delete_crm, r.can_export_crm
+                   r.can_edit_crm, r.can_delete_crm, r.can_export_crm,
+                   c.id as company_id
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.id
+            LEFT JOIN companies c ON c.company = u.company
             WHERE u.email = %s
         ''', (email,))
 

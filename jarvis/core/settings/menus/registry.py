@@ -90,6 +90,16 @@ MODULES = [
         ],
     },
     {
+        'module_key': 'dms',
+        'name': 'Documents',
+        'description': 'Document Management System',
+        'icon': 'bi-folder',
+        'url': '/dms',
+        'color': '#0ea5e9',
+        'status': 'active',
+        'sort_order': 7,
+    },
+    {
         'module_key': 'aftersales',
         'name': 'After Sales',
         'description': 'Service, Warranty, Support',
@@ -97,7 +107,7 @@ MODULES = [
         'url': '#',
         'color': '#198754',
         'status': 'coming_soon',
-        'sort_order': 7,
+        'sort_order': 8,
     },
     {
         'module_key': 'settings',
@@ -107,7 +117,7 @@ MODULES = [
         'url': '/settings',
         'color': '#6c757d',
         'status': 'active',
-        'sort_order': 8,
+        'sort_order': 9,
     },
 ]
 

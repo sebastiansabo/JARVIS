@@ -19,6 +19,7 @@ class User(UserMixin):
 
         # Organizational fields (from responsables migration)
         self.company = user_data.get('company')
+        self.company_id = user_data.get('company_id')
         self.brand = user_data.get('brand')
         self.department = user_data.get('department')
         self.subdepartment = user_data.get('subdepartment')

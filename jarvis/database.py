@@ -1179,6 +1179,159 @@ def init_db():
                     END IF;
                 END $$;
             ''')
+            # ── DMS (Document Management System) tables ──
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS dms_categories (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    slug TEXT NOT NULL,
+                    icon TEXT DEFAULT 'bi-folder',
+                    color TEXT DEFAULT '#6c757d',
+                    description TEXT,
+                    company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+                    sort_order INTEGER DEFAULT 0,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_by INTEGER REFERENCES users(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('''
+                DO $$ BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint WHERE conname = 'dms_categories_slug_company'
+                    ) THEN
+                        ALTER TABLE dms_categories ADD CONSTRAINT dms_categories_slug_company
+                            UNIQUE (slug, company_id);
+                    END IF;
+                EXCEPTION WHEN others THEN NULL;
+                END $$;
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_categories_company ON dms_categories(company_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_categories_active ON dms_categories(is_active, sort_order)')
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS dms_documents (
+                    id SERIAL PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    category_id INTEGER REFERENCES dms_categories(id) ON DELETE SET NULL,
+                    company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+                    status TEXT NOT NULL DEFAULT 'draft',
+                    parent_id INTEGER REFERENCES dms_documents(id) ON DELETE CASCADE,
+                    relationship_type TEXT,
+                    metadata JSONB DEFAULT '{}'::jsonb,
+                    doc_number TEXT,
+                    doc_date DATE,
+                    expiry_date DATE,
+                    notify_user_id INTEGER REFERENCES users(id),
+                    created_by INTEGER NOT NULL REFERENCES users(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP,
+                    CONSTRAINT dms_doc_status CHECK (status IN ('draft','active','archived')),
+                    CONSTRAINT dms_doc_rel_type CHECK (
+                        relationship_type IS NULL OR relationship_type IN ('annex','deviz','proof','other')
+                    ),
+                    CONSTRAINT dms_doc_parent_child CHECK (
+                        (parent_id IS NULL AND relationship_type IS NULL) OR
+                        (parent_id IS NOT NULL AND relationship_type IS NOT NULL)
+                    )
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_documents_category ON dms_documents(category_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_documents_company ON dms_documents(company_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_documents_parent ON dms_documents(parent_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_documents_status ON dms_documents(status) WHERE deleted_at IS NULL')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_documents_created ON dms_documents(created_at DESC)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_documents_expiry ON dms_documents(expiry_date) WHERE expiry_date IS NOT NULL')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_documents_doc_number ON dms_documents(doc_number) WHERE doc_number IS NOT NULL')
+
+            # Add columns if upgrading from earlier schema
+            for col, coldef in [
+                ('doc_number', 'TEXT'),
+                ('doc_date', 'DATE'),
+                ('expiry_date', 'DATE'),
+                ('notify_user_id', 'INTEGER REFERENCES users(id)'),
+            ]:
+                cursor.execute(f'''
+                    DO $$ BEGIN
+                        ALTER TABLE dms_documents ADD COLUMN {col} {coldef};
+                    EXCEPTION WHEN duplicate_column THEN NULL;
+                    END $$;
+                ''')
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS dms_files (
+                    id SERIAL PRIMARY KEY,
+                    document_id INTEGER NOT NULL REFERENCES dms_documents(id) ON DELETE CASCADE,
+                    file_name TEXT NOT NULL,
+                    file_type TEXT,
+                    mime_type TEXT,
+                    file_size INTEGER,
+                    storage_type TEXT NOT NULL DEFAULT 'drive',
+                    storage_uri TEXT NOT NULL,
+                    drive_file_id TEXT,
+                    uploaded_by INTEGER NOT NULL REFERENCES users(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT dms_file_storage CHECK (storage_type IN ('drive','local'))
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_files_document ON dms_files(document_id)')
+
+            # Seed default DMS categories (global — company_id NULL)
+            cursor.execute('SELECT COUNT(*) as cnt FROM dms_categories')
+            if cursor.fetchone()['cnt'] == 0:
+                cursor.execute('''
+                    INSERT INTO dms_categories (name, slug, icon, color, description, company_id, sort_order, is_active) VALUES
+                    ('Contracte', 'contracte', 'bi-file-earmark-text', '#0d6efd', 'Contracte si acorduri', NULL, 1, TRUE),
+                    ('Facturi', 'facturi', 'bi-receipt', '#198754', 'Facturi furnizori si clienti', NULL, 2, TRUE),
+                    ('Autorizatii', 'autorizatii', 'bi-shield-check', '#6f42c1', 'Autorizatii si licente', NULL, 3, TRUE),
+                    ('Devize', 'devize', 'bi-calculator', '#fd7e14', 'Devize si estimari de cost', NULL, 4, TRUE),
+                    ('Documente HR', 'documente-hr', 'bi-person-badge', '#d63384', 'Documente resurse umane', NULL, 5, TRUE),
+                    ('Altele', 'altele', 'bi-folder2-open', '#6c757d', 'Alte documente', NULL, 6, TRUE)
+                ''')
+
+            # Seed DMS permissions
+            cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'dms'")
+            if cursor.fetchone()['cnt'] == 0:
+                cursor.execute('''
+                    INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order) VALUES
+                    ('dms', 'Documents', 'bi-folder', 'document', 'Documents', 'view', 'View', 'View documents', TRUE, 1),
+                    ('dms', 'Documents', 'bi-folder', 'document', 'Documents', 'create', 'Create', 'Upload and create documents', TRUE, 2),
+                    ('dms', 'Documents', 'bi-folder', 'document', 'Documents', 'edit', 'Edit', 'Edit documents and metadata', TRUE, 3),
+                    ('dms', 'Documents', 'bi-folder', 'document', 'Documents', 'delete', 'Delete', 'Delete documents', TRUE, 4),
+                    ('dms', 'Documents', 'bi-folder', 'category', 'Categories', 'view', 'View', 'View document categories', FALSE, 5),
+                    ('dms', 'Documents', 'bi-folder', 'category', 'Categories', 'manage', 'Manage', 'Create and edit categories', FALSE, 6)
+                ''')
+                # Grant DMS permissions to existing roles
+                cursor.execute('SELECT id, name FROM roles')
+                roles_for_dms = cursor.fetchall()
+                cursor.execute("SELECT id, is_scope_based, action_key FROM permissions_v2 WHERE module_key = 'dms'")
+                dms_perms = cursor.fetchall()
+                for role in roles_for_dms:
+                    for perm in dms_perms:
+                        if role['name'] == 'Admin':
+                            scope, granted = 'all', True
+                        elif role['name'] == 'Manager':
+                            scope, granted = ('all' if perm['is_scope_based'] else 'all'), True
+                        elif role['name'] == 'User':
+                            if perm['action_key'] in ('view', 'create', 'edit'):
+                                scope = 'own' if perm['is_scope_based'] else 'own'
+                                granted = True
+                            else:
+                                scope, granted = 'deny', False
+                        else:
+                            if perm['action_key'] == 'view':
+                                scope, granted = ('own' if perm['is_scope_based'] else 'own'), True
+                            else:
+                                scope, granted = 'deny', False
+                        cursor.execute('''
+                            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+                            VALUES (%s, %s, %s, %s)
+                            ON CONFLICT (role_id, permission_id) DO NOTHING
+                        ''', (role['id'], perm['id'], scope, granted))
+
             # ── Menu items: add 'archived' status + sync from registry ──
             cursor.execute("""
                 DO $$ BEGIN

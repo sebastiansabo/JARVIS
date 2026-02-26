@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -43,6 +43,7 @@ const navItemsDef: NavItem[] = [
   { path: '/app/hr', label: 'HR', icon: Users, moduleKey: 'hr', permission: 'can_access_hr' },
   { path: '/app/approvals', label: 'Approvals', icon: ClipboardCheck, moduleKey: 'approvals', badge: ApprovalBadge },
   { path: '/app/marketing', label: 'Marketing', icon: Megaphone, moduleKey: 'marketing' },
+  { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms' },
   {
     path: '/app/sales',
     label: 'Sales',

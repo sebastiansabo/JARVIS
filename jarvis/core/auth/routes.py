@@ -170,6 +170,7 @@ def api_current_user():
                 'role_name': current_user.role_name,
                 'is_active': current_user.is_active,
                 'company': current_user.company,
+                'company_id': current_user.company_id,
                 'brand': current_user.brand,
                 'department': current_user.department,
                 'subdepartment': current_user.subdepartment,

@@ -19,6 +19,8 @@ const BilantDetail = lazy(() => import('./pages/Accounting/Bilant/BilantDetail')
 const TemplateEditor = lazy(() => import('./pages/Accounting/Bilant/TemplateEditor'))
 const AiAgent = lazy(() => import('./pages/AiAgent/AiAgent'))
 const Crm = lazy(() => import('./pages/Crm'))
+const Dms = lazy(() => import('./pages/Dms'))
+const DmsDocumentDetail = lazy(() => import('./pages/Dms/DocumentDetail'))
 
 function PageLoader() {
   return (
@@ -59,6 +61,8 @@ export default function App() {
         <Route path="marketing/projects/:projectId" element={<SuspensePage><ProjectDetail /></SuspensePage>} />
         <Route path="ai-agent" element={<SuspensePage><AiAgent /></SuspensePage>} />
         <Route path="sales/crm" element={<SuspensePage><Crm /></SuspensePage>} />
+        <Route path="dms" element={<SuspensePage><Dms /></SuspensePage>} />
+        <Route path="dms/documents/:documentId" element={<SuspensePage><DmsDocumentDetail /></SuspensePage>} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Route>
     </Routes>
