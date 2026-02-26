@@ -12,48 +12,56 @@ class ClientRepository(BaseRepository):
         'updated_at', 'created_at', 'display_name', 'id',
         'nr_reg', 'client_type', 'phone', 'email', 'city',
         'region', 'responsible', 'company_name', 'street', 'country',
+        'client_since',
     }
 
     def search(self, name=None, phone=None, email=None, client_type=None,
                responsible=None, city=None, date_from=None, date_to=None,
                sort_by=None, sort_order=None,
                limit=50, offset=0):
-        conditions, params = ['merged_into_id IS NULL'], []
+        conditions, params = ['c.merged_into_id IS NULL'], []
         if name:
-            conditions.append('name_normalized ILIKE %s')
+            conditions.append('c.name_normalized ILIKE %s')
             params.append(f'%{name.lower()}%')
         if phone:
-            conditions.append('phone = %s')
+            conditions.append('c.phone = %s')
             params.append(phone)
         if email:
-            conditions.append('email ILIKE %s')
+            conditions.append('c.email ILIKE %s')
             params.append(f'%{email}%')
         if client_type:
-            conditions.append('client_type = %s')
+            conditions.append('c.client_type = %s')
             params.append(client_type)
         if responsible:
-            conditions.append('responsible ILIKE %s')
+            conditions.append('c.responsible ILIKE %s')
             params.append(f'%{responsible}%')
         if city:
-            conditions.append('city ILIKE %s')
+            conditions.append('c.city ILIKE %s')
             params.append(f'%{city}%')
         if date_from:
-            conditions.append('created_at >= %s')
+            conditions.append('c.created_at >= %s')
             params.append(date_from)
         if date_to:
-            conditions.append('created_at < (%s::date + INTERVAL \'1 day\')')
+            conditions.append("c.created_at < (%s::date + INTERVAL '1 day')")
             params.append(date_to)
         where = ' AND '.join(conditions)
         col = sort_by if sort_by in self._ALLOWED_SORT else 'updated_at'
         direction = 'ASC' if sort_order and sort_order.upper() == 'ASC' else 'DESC'
+        order_col = 'client_since' if col == 'client_since' else f'c.{col}'
+        params_count = tuple(params)
         params.extend([limit, offset])
         rows = self.query_all(
-            f'SELECT * FROM crm_clients WHERE {where} ORDER BY {col} {direction} LIMIT %s OFFSET %s',
+            f'''SELECT c.*,
+                       (SELECT MIN(d.contract_date) FROM crm_deals d WHERE d.client_id = c.id) as client_since
+                FROM crm_clients c
+                WHERE {where}
+                ORDER BY {order_col} {direction} NULLS LAST
+                LIMIT %s OFFSET %s''',
             tuple(params)
         )
         count_row = self.query_one(
-            f'SELECT COUNT(*) as count FROM crm_clients WHERE {where}',
-            tuple(params[:-2])
+            f'SELECT COUNT(*) as count FROM crm_clients c WHERE {where}',
+            params_count
         )
         return rows, count_row['count']
 

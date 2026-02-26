@@ -15,6 +15,7 @@ export interface CrmClient {
   company_name?: string
   responsible?: string
   nr_reg?: string
+  client_since?: string
   source_flags: Record<string, boolean>
   merged_into_id?: number
   created_at: string

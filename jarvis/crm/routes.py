@@ -230,6 +230,8 @@ def api_deals():
         sales_person=request.args.get('sales_person'),
         date_from=request.args.get('date_from'),
         date_to=request.args.get('date_to'),
+        sort_by=request.args.get('sort_by'),
+        sort_order=request.args.get('sort_order'),
         limit=request.args.get('limit', 50, type=int),
         offset=request.args.get('offset', 0, type=int),
     )
@@ -248,6 +250,7 @@ def api_deals_export():
         vin=request.args.get('vin'), status=request.args.get('status'),
         dealer=request.args.get('dealer'), sales_person=request.args.get('sales_person'),
         date_from=request.args.get('date_from'), date_to=request.args.get('date_to'),
+        sort_by=request.args.get('sort_by'), sort_order=request.args.get('sort_order'),
         limit=50000, offset=0,
     )
     return _csv_response(rows, 'deals.csv', [

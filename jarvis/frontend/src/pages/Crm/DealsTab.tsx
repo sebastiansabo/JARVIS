@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ChevronLeft, ChevronRight, ChevronDown, Search, Download, Pencil, Trash2, Car, TrendingUp, Palette, FilterX } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search, Download, Pencil, Trash2, Car, TrendingUp, Palette, FilterX } from 'lucide-react'
 import { crmApi, type CrmDeal } from '@/api/crm'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -113,12 +113,26 @@ export default function DealsTab() {
   const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(0)
   const [limit, setLimit] = usePersistedState('crm-deals-page-size', 30)
+  const [sortBy, setSortBy] = useState('')
+  const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC' | ''>('')
 
-  const hasFilters = !!(search || source !== 'all' || brand || status || dealer || salesPerson || buyer || vinSearch || dateFrom || dateTo)
+  const toggleSort = (key: string) => {
+    if (sortBy === key) {
+      if (sortOrder === 'ASC') { setSortOrder('DESC') }
+      else if (sortOrder === 'DESC') { setSortBy(''); setSortOrder('') }
+      else { setSortOrder('ASC') }
+    } else {
+      setSortBy(key)
+      setSortOrder('ASC')
+    }
+    setPage(0)
+  }
+
+  const hasFilters = !!(search || source !== 'all' || brand || status || dealer || salesPerson || buyer || vinSearch || dateFrom || dateTo || sortBy)
   const clearFilters = () => {
     setSearch(''); setSource('all'); setBrand(''); setStatus('')
     setDealer(''); setSalesPerson(''); setBuyer(''); setVinSearch('')
-    setDateFrom(''); setDateTo(''); setPage(0)
+    setDateFrom(''); setDateTo(''); setSortBy(''); setSortOrder(''); setPage(0)
   }
 
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
@@ -142,6 +156,8 @@ export default function DealsTab() {
   if (vinSearch) params.vin = vinSearch
   if (dateFrom) params.date_from = dateFrom
   if (dateTo) params.date_to = dateTo
+  if (sortBy) params.sort_by = sortBy
+  if (sortOrder) params.sort_order = sortOrder
 
   const { data, isLoading } = useQuery({
     queryKey: ['crm-deals', params],
@@ -182,6 +198,8 @@ export default function DealsTab() {
   if (vinSearch) exportParams.vin = vinSearch
   if (dateFrom) exportParams.date_from = dateFrom
   if (dateTo) exportParams.date_to = dateTo
+  if (sortBy) exportParams.sort_by = sortBy
+  if (sortOrder) exportParams.sort_order = sortOrder
 
   return (
     <Card>
@@ -299,7 +317,23 @@ export default function DealsTab() {
                 <TableHead className="w-8" />
                 {visibleColumns.map((key) => {
                   const col = columnDefMap.get(key)
-                  return col ? <TableHead key={key} className={col.className}>{col.label}</TableHead> : null
+                  if (!col) return null
+                  return (
+                    <TableHead
+                      key={key}
+                      className="cursor-pointer select-none hover:bg-muted/50"
+                      onClick={() => toggleSort(key)}
+                    >
+                      <div className="flex items-center gap-1">
+                        {col.label}
+                        {sortBy === key ? (
+                          sortOrder === 'ASC' ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />
+                        ) : (
+                          <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground/40" />
+                        )}
+                      </div>
+                    </TableHead>
+                  )
                 })}
               </TableRow>
             </TableHeader>

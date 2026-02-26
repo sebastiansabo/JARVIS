@@ -14,9 +14,20 @@ class DealRepository(BaseRepository):
             (deal_id,)
         )
 
+    _ALLOWED_SORT = {
+        'source', 'dossier_number', 'brand', 'model_name', 'buyer_name',
+        'dossier_status', 'sale_price_net', 'contract_date', 'dealer_name',
+        'branch', 'order_number', 'vin', 'engine_code', 'fuel_type', 'color',
+        'model_year', 'order_status', 'contract_status', 'sales_person',
+        'owner_name', 'list_price', 'purchase_price_net', 'gross_profit',
+        'discount_value', 'vehicle_type', 'registration_number', 'delivery_date',
+        'updated_at', 'created_at', 'id',
+    }
+
     def search(self, source=None, brand=None, model=None, buyer=None, vin=None,
                status=None, dealer=None, sales_person=None,
                date_from=None, date_to=None, client_id=None,
+               sort_by=None, sort_order=None,
                limit=50, offset=0):
         conditions, params = ['1=1'], []
         if source:
@@ -55,12 +66,17 @@ class DealRepository(BaseRepository):
         where = ' AND '.join(conditions)
         params_count = tuple(params)
         params.extend([limit, offset])
+        order = 'd.contract_date DESC NULLS LAST, d.id DESC'
+        if sort_by and sort_by in self._ALLOWED_SORT:
+            direction = 'ASC' if sort_order == 'ASC' else 'DESC'
+            nulls = 'NULLS LAST' if direction == 'ASC' else 'NULLS LAST'
+            order = f'd.{sort_by} {direction} {nulls}, d.id DESC'
         rows = self.query_all(
             f'''SELECT d.*, c.display_name as client_display_name
                 FROM crm_deals d
                 LEFT JOIN crm_clients c ON c.id = d.client_id
                 WHERE {where}
-                ORDER BY d.contract_date DESC NULLS LAST, d.id DESC
+                ORDER BY {order}
                 LIMIT %s OFFSET %s''',
             tuple(params)
         )

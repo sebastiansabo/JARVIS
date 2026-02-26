@@ -116,10 +116,11 @@ const ALL_COLUMNS: ColumnDef<CrmClient>[] = [
   { key: 'company_name', label: 'Company', className: 'text-sm', render: (c) => c.company_name || '—' },
   { key: 'street', label: 'Street', className: 'text-xs', render: (c) => c.street || '—' },
   { key: 'country', label: 'Country', className: 'text-sm', render: (c) => c.country || '—' },
+  { key: 'client_since', label: 'Client Since', className: 'text-xs', render: (c) => c.client_since ? new Date(c.client_since).toLocaleDateString() : '—' },
   { key: 'created_at', label: 'Created', className: 'text-xs', render: (c) => c.created_at ? new Date(c.created_at).toLocaleDateString() : '—' },
 ]
 
-const DEFAULT_VISIBLE = ['display_name', 'nr_reg', 'client_type', 'phone', 'email', 'city', 'region', 'responsible']
+const DEFAULT_VISIBLE = ['display_name', 'nr_reg', 'client_type', 'phone', 'email', 'city', 'region', 'responsible', 'client_since']
 const ALL_KEYS = ALL_COLUMNS.map(c => c.key)
 const LOCKED = new Set(['display_name'])
 
