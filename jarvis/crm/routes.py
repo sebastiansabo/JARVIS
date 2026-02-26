@@ -213,6 +213,39 @@ def api_merge_clients():
     return jsonify({'success': True})
 
 
+@crm_bp.route('/api/crm/clients/batch-blacklist', methods=['POST'])
+@login_required
+@crm_required
+def api_batch_blacklist():
+    if not getattr(current_user, 'can_edit_crm', False):
+        return jsonify({'success': False, 'error': 'Edit permission denied'}), 403
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids', [])
+    is_blacklisted = bool(data.get('is_blacklisted', True))
+    if not ids or not isinstance(ids, list):
+        return jsonify({'success': False, 'error': 'ids required'}), 400
+    if len(ids) > 500:
+        return jsonify({'success': False, 'error': 'Max 500 clients per batch'}), 400
+    count = _client_repo.batch_blacklist(ids, is_blacklisted)
+    return jsonify({'success': True, 'affected': count})
+
+
+@crm_bp.route('/api/crm/clients/batch-delete', methods=['POST'])
+@login_required
+@crm_required
+def api_batch_delete():
+    if not getattr(current_user, 'can_delete_crm', False):
+        return jsonify({'success': False, 'error': 'Delete permission denied'}), 403
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids', [])
+    if not ids or not isinstance(ids, list):
+        return jsonify({'success': False, 'error': 'ids required'}), 400
+    if len(ids) > 500:
+        return jsonify({'success': False, 'error': 'Max 500 clients per batch'}), 400
+    count = _client_repo.batch_delete(ids)
+    return jsonify({'success': True, 'affected': count})
+
+
 @crm_bp.route('/api/crm/clients/<int:client_id>/blacklist', methods=['POST'])
 @login_required
 @crm_required

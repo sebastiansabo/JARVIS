@@ -151,6 +151,8 @@ export const crmApi = {
   deleteDeal: (id: number) => api.delete<{ success: boolean }>(`/api/crm/deals/${id}`),
   updateClient: (id: number, data: Partial<CrmClient>) => api.put<{ success: boolean; client: CrmClient }>(`/api/crm/clients/${id}`, data),
   toggleBlacklist: (id: number, isBlacklisted: boolean) => api.post<{ success: boolean; client: CrmClient }>(`/api/crm/clients/${id}/blacklist`, { is_blacklisted: isBlacklisted }),
+  batchBlacklist: (ids: number[], isBlacklisted: boolean) => api.post<{ success: boolean; affected: number }>('/api/crm/clients/batch-blacklist', { ids, is_blacklisted: isBlacklisted }),
+  batchDeleteClients: (ids: number[]) => api.post<{ success: boolean; affected: number }>('/api/crm/clients/batch-delete', { ids }),
   deleteClient: (id: number) => api.delete<{ success: boolean }>(`/api/crm/clients/${id}`),
   // Export URLs (returns URL string for <a download>)
   exportDealsUrl: (params?: Record<string, string>) => {

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck } from 'lucide-react'
 import { crmApi, type CrmClient, type CrmDeal } from '@/api/crm'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -163,6 +164,9 @@ export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: bool
     setDateFrom(''); setDateTo(''); setSortBy(''); setSortOrder(''); setShowBlacklisted(''); setPage(0)
   }
 
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [massAction, setMassAction] = useState<'blacklist' | 'unblacklist' | 'delete' | null>(null)
+
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
   const [editClient, setEditClient] = useState<CrmClient | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
@@ -173,7 +177,7 @@ export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: bool
 
   const activeColumns = ALL_COLUMNS.filter(c => visibleColumns.includes(c.key))
     .sort((a, b) => visibleColumns.indexOf(a.key) - visibleColumns.indexOf(b.key))
-  const colSpan = activeColumns.length + 1 // +1 for chevron column
+  const colSpan = activeColumns.length + 2 // +1 chevron +1 checkbox
 
   // Metadata for filter dropdowns
   const { data: citiesData } = useQuery({ queryKey: ['crm-client-cities'], queryFn: () => crmApi.getClientCities() })
@@ -212,6 +216,42 @@ export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: bool
       toast.success(vars.blacklisted ? 'Client blacklisted' : 'Client removed from blacklist')
     },
   })
+
+  const batchBlacklistMutation = useMutation({
+    mutationFn: ({ ids, blacklisted }: { ids: number[]; blacklisted: boolean }) => crmApi.batchBlacklist(ids, blacklisted),
+    onSuccess: (data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['crm-clients'] })
+      queryClient.invalidateQueries({ queryKey: ['crm-stats'] })
+      toast.success(`${data.affected} client${data.affected !== 1 ? 's' : ''} ${vars.blacklisted ? 'blacklisted' : 'removed from blacklist'}`)
+      setSelected(new Set())
+      setMassAction(null)
+    },
+  })
+
+  const batchDeleteMutation = useMutation({
+    mutationFn: (ids: number[]) => crmApi.batchDeleteClients(ids),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['crm-clients'] })
+      queryClient.invalidateQueries({ queryKey: ['crm-stats'] })
+      toast.success(`${data.affected} client${data.affected !== 1 ? 's' : ''} deleted`)
+      setSelected(new Set())
+      setMassAction(null)
+    },
+  })
+
+  const toggleSelect = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selected.size === clients.length) setSelected(new Set())
+    else setSelected(new Set(clients.map(c => c.id)))
+  }
 
   const canExport = user?.can_export_crm
   const exportParams: Record<string, string> = {}
@@ -295,10 +335,40 @@ export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: bool
         </div>
       </CardHeader>
       <CardContent>
+        {/* Mass action bar */}
+        {selected.size > 0 && (
+          <div className="flex items-center gap-2 mb-3 rounded-md border bg-muted/50 px-3 py-2">
+            <span className="text-sm font-medium">{selected.size} selected</span>
+            <div className="flex-1" />
+            {!blacklistOnly && (
+              <Button size="sm" variant="secondary" onClick={() => setMassAction('blacklist')}>
+                <Ban className="h-3.5 w-3.5 mr-1" />Blacklist
+              </Button>
+            )}
+            {blacklistOnly && (
+              <Button size="sm" variant="outline" onClick={() => setMassAction('unblacklist')}>
+                <ShieldCheck className="h-3.5 w-3.5 mr-1" />Remove from Blacklist
+              </Button>
+            )}
+            <Button size="sm" variant="destructive" onClick={() => setMassAction('delete')}>
+              <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              Clear
+            </Button>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8 px-2">
+                  <Checkbox
+                    checked={clients.length > 0 && selected.size === clients.length}
+                    onCheckedChange={toggleSelectAll}
+                  />
+                </TableHead>
                 <TableHead className="w-8" />
                 {activeColumns.map(col => (
                   <TableHead
@@ -326,9 +396,15 @@ export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: bool
               ) : clients.map(c => (
                 <Fragment key={c.id}>
                   <TableRow
-                    className="cursor-pointer hover:bg-muted/50"
+                    className={`cursor-pointer hover:bg-muted/50 ${selected.has(c.id) ? 'bg-primary/5' : ''}`}
                     onClick={() => setExpandedRow(expandedRow === c.id ? null : c.id)}
                   >
+                    <TableCell className="px-2" onClick={e => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selected.has(c.id)}
+                        onCheckedChange={() => toggleSelect(c.id)}
+                      />
+                    </TableCell>
                     <TableCell className="px-2">
                       <ChevronDown className={`h-4 w-4 transition-transform ${expandedRow === c.id ? 'rotate-180' : ''}`} />
                     </TableCell>
@@ -387,6 +463,32 @@ export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: bool
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
+      />
+      <ConfirmDialog
+        open={massAction === 'blacklist'}
+        onOpenChange={o => { if (!o) setMassAction(null) }}
+        title="Blacklist Clients"
+        description={`This will blacklist ${selected.size} client${selected.size !== 1 ? 's' : ''}. They will be hidden from Sales, Statistics, and AI indexing.`}
+        confirmLabel="Blacklist"
+        variant="destructive"
+        onConfirm={() => batchBlacklistMutation.mutate({ ids: [...selected], blacklisted: true })}
+      />
+      <ConfirmDialog
+        open={massAction === 'unblacklist'}
+        onOpenChange={o => { if (!o) setMassAction(null) }}
+        title="Remove from Blacklist"
+        description={`This will remove ${selected.size} client${selected.size !== 1 ? 's' : ''} from the blacklist.`}
+        confirmLabel="Remove"
+        onConfirm={() => batchBlacklistMutation.mutate({ ids: [...selected], blacklisted: false })}
+      />
+      <ConfirmDialog
+        open={massAction === 'delete'}
+        onOpenChange={o => { if (!o) setMassAction(null) }}
+        title="Delete Clients"
+        description={`This will permanently delete ${selected.size} client${selected.size !== 1 ? 's' : ''}. This action cannot be undone.`}
+        confirmLabel="Delete All"
+        variant="destructive"
+        onConfirm={() => batchDeleteMutation.mutate([...selected])}
       />
     </Card>
   )

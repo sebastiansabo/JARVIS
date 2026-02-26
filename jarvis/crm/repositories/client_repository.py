@@ -264,6 +264,24 @@ class ClientRepository(BaseRepository):
         )
         return self.get_by_id(client_id)
 
+    def batch_blacklist(self, client_ids, is_blacklisted):
+        if not client_ids:
+            return 0
+        placeholders = ','.join(['%s'] * len(client_ids))
+        return self.execute(
+            f'UPDATE crm_clients SET is_blacklisted = %s, updated_at = NOW() WHERE id IN ({placeholders})',
+            (is_blacklisted, *client_ids)
+        )
+
+    def batch_delete(self, client_ids):
+        if not client_ids:
+            return 0
+        placeholders = ','.join(['%s'] * len(client_ids))
+        return self.execute(
+            f'DELETE FROM crm_clients WHERE id IN ({placeholders})',
+            tuple(client_ids)
+        )
+
     def merge(self, keep_id, remove_id):
         """Merge remove_id into keep_id. Updates all FKs."""
         def _work(cursor):
