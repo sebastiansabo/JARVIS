@@ -1159,6 +1159,16 @@ def init_db():
                 """)
                 logger.info('Created CRM tables (crm_import_batches, crm_clients, crm_deals)')
 
+            # CRM: nr_reg column on crm_clients
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'crm_clients' AND column_name = 'nr_reg') THEN
+                        ALTER TABLE crm_clients ADD COLUMN nr_reg TEXT;
+                    END IF;
+                END $$;
+            ''')
             # ── Menu items: add 'archived' status + sync from registry ──
             cursor.execute("""
                 DO $$ BEGIN

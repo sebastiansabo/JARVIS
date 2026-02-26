@@ -3030,6 +3030,7 @@ def create_schema(conn, cursor):
             country TEXT DEFAULT 'Romania',
             company_name TEXT,
             responsible TEXT,
+            nr_reg TEXT,
             source_flags JSONB DEFAULT '{}',
             merged_into_id INTEGER REFERENCES crm_clients(id),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
