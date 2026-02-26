@@ -604,7 +604,22 @@ def create_schema(conn, cursor):
             ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'event', 'HR Events', 'Access HR event data in AI chat', FALSE, 16),
             ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'marketing', 'Marketing Projects', 'Access marketing project data in AI chat', FALSE, 17),
             ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'approval', 'Approvals', 'Access approval data in AI chat', FALSE, 18),
-            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'tag', 'Tags', 'Access tag data in AI chat', FALSE, 19)
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'tag', 'Tags', 'Access tag data in AI chat', FALSE, 19),
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'crm_client', 'CRM Clients', 'Access CRM client data in AI chat', FALSE, 20),
+            ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'car_dossier', 'Car Dossiers', 'Access car deal data in AI chat', FALSE, 21),
+
+            -- Sales / CRM Module
+            ('sales', 'Sales', 'bi-graph-up', 'module', 'Sales Module', 'access', 'Access', 'Access Sales / CRM module', FALSE, 1),
+            ('sales', 'Sales', 'bi-graph-up', 'clients', 'Clients', 'view', 'View', 'View client list', FALSE, 2),
+            ('sales', 'Sales', 'bi-graph-up', 'clients', 'Clients', 'edit', 'Edit', 'Edit client data', FALSE, 3),
+            ('sales', 'Sales', 'bi-graph-up', 'clients', 'Clients', 'delete', 'Delete', 'Delete clients', FALSE, 4),
+            ('sales', 'Sales', 'bi-graph-up', 'clients', 'Clients', 'merge', 'Merge', 'Merge duplicate clients', FALSE, 5),
+            ('sales', 'Sales', 'bi-graph-up', 'clients', 'Clients', 'export', 'Export', 'Export client data', FALSE, 6),
+            ('sales', 'Sales', 'bi-graph-up', 'deals', 'Deals', 'view', 'View', 'View deal list', FALSE, 7),
+            ('sales', 'Sales', 'bi-graph-up', 'deals', 'Deals', 'edit', 'Edit', 'Edit deal data', FALSE, 8),
+            ('sales', 'Sales', 'bi-graph-up', 'deals', 'Deals', 'delete', 'Delete', 'Delete deals', FALSE, 9),
+            ('sales', 'Sales', 'bi-graph-up', 'deals', 'Deals', 'export', 'Export', 'Export deal data', FALSE, 10),
+            ('sales', 'Sales', 'bi-graph-up', 'import', 'Import', 'access', 'Access', 'Import CRM data from files', FALSE, 11)
         ''')
 
         # Set default permissions for existing roles
@@ -815,6 +830,83 @@ def create_schema(conn, cursor):
             ON CONFLICT (role_id, permission_id) DO NOTHING
         ''')
         conn.commit()
+
+    # Migration: Add Sales/CRM permissions if not already present
+    cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'sales'")
+    if cursor.fetchone()['cnt'] == 0:
+        sales_perms = [
+            ('sales', 'Sales', 'bi-graph-up', 'module', 'Sales Module', 'access', 'Access', 'Access Sales / CRM module', False, 1),
+            ('sales', 'Sales', 'bi-graph-up', 'clients', 'Clients', 'view', 'View', 'View client list', False, 2),
+            ('sales', 'Sales', 'bi-graph-up', 'clients', 'Clients', 'edit', 'Edit', 'Edit client data', False, 3),
+            ('sales', 'Sales', 'bi-graph-up', 'clients', 'Clients', 'delete', 'Delete', 'Delete clients', False, 4),
+            ('sales', 'Sales', 'bi-graph-up', 'clients', 'Clients', 'merge', 'Merge', 'Merge duplicate clients', False, 5),
+            ('sales', 'Sales', 'bi-graph-up', 'clients', 'Clients', 'export', 'Export', 'Export client data', False, 6),
+            ('sales', 'Sales', 'bi-graph-up', 'deals', 'Deals', 'view', 'View', 'View deal list', False, 7),
+            ('sales', 'Sales', 'bi-graph-up', 'deals', 'Deals', 'edit', 'Edit', 'Edit deal data', False, 8),
+            ('sales', 'Sales', 'bi-graph-up', 'deals', 'Deals', 'delete', 'Delete', 'Delete deals', False, 9),
+            ('sales', 'Sales', 'bi-graph-up', 'deals', 'Deals', 'export', 'Export', 'Export deal data', False, 10),
+            ('sales', 'Sales', 'bi-graph-up', 'import', 'Import', 'access', 'Access', 'Import CRM data from files', False, 11),
+        ]
+        for p in sales_perms:
+            cursor.execute('''
+                INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+            ''', p)
+        # Grant all Sales permissions to Admin
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, 'all', TRUE
+            FROM roles r
+            CROSS JOIN permissions_v2 p
+            WHERE r.name = 'Admin' AND p.module_key = 'sales'
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''')
+        # Grant view/access/export to Manager
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, 'all', TRUE
+            FROM roles r
+            CROSS JOIN permissions_v2 p
+            WHERE r.name = 'Manager' AND p.module_key = 'sales'
+              AND p.action_key IN ('access', 'view', 'edit', 'export', 'merge')
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''')
+        # Grant view/access to User
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, 'all', TRUE
+            FROM roles r
+            CROSS JOIN permissions_v2 p
+            WHERE r.name = 'User' AND p.module_key = 'sales'
+              AND p.action_key IN ('access', 'view')
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''')
+        conn.commit()
+
+    # Migration: Add CRM RAG source permissions if not already present
+    crm_rag_perms = [
+        ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'crm_client', 'CRM Clients', 'Access CRM client data in AI chat', False, 20),
+        ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'car_dossier', 'Car Dossiers', 'Access car deal data in AI chat', False, 21),
+    ]
+    for p in crm_rag_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+    # Grant CRM RAG sources to Admin and Manager
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'all', TRUE
+        FROM roles r
+        CROSS JOIN permissions_v2 p
+        WHERE r.name IN ('Admin', 'Manager')
+          AND p.module_key = 'ai_agent' AND p.entity_key = 'rag_source'
+          AND p.action_key IN ('crm_client', 'car_dossier')
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+    ''')
+    conn.commit()
 
     # Seed default permissions if table is empty
     cursor.execute('SELECT COUNT(*) as cnt FROM permissions')
@@ -1238,50 +1330,16 @@ def create_schema(conn, cursor):
             icon TEXT DEFAULT 'bi-grid',
             url TEXT,
             color TEXT DEFAULT '#6c757d',
-            status TEXT DEFAULT 'active' CHECK (status IN ('active', 'coming_soon', 'hidden')),
+            status TEXT DEFAULT 'active' CHECK (status IN ('active', 'coming_soon', 'hidden', 'archived')),
             sort_order INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
-    # Insert default module menu items if table is empty
-    cursor.execute('SELECT COUNT(*) as cnt FROM module_menu_items')
-    if cursor.fetchone()['cnt'] == 0:
-        # Insert parent modules first
-        cursor.execute('''
-            INSERT INTO module_menu_items (module_key, name, description, icon, url, color, status, sort_order)
-            VALUES
-                ('accounting', 'Accounting', 'Invoices, Budgets, Statements', 'bi-calculator', '/accounting', '#0d6efd', 'active', 1),
-                ('hr', 'HR', 'Events, Bonuses, Employees', 'bi-people', '/hr/events/', '#9c27b0', 'active', 2),
-                ('sales', 'Sales', 'Orders, Customers, Reports', 'bi-cart3', '#', '#dc3545', 'coming_soon', 3),
-                ('aftersales', 'After Sales', 'Service, Warranty, Support', 'bi-tools', '#', '#198754', 'coming_soon', 4),
-                ('settings', 'Settings', 'System Configuration', 'bi-gear', '/settings', '#6c757d', 'active', 5)
-            RETURNING id, module_key
-        ''')
-        parent_rows = cursor.fetchall()
-        parent_ids = {row['module_key']: row['id'] for row in parent_rows}
-
-        # Insert submenu items for Accounting
-        if 'accounting' in parent_ids:
-            cursor.execute('''
-                INSERT INTO module_menu_items (parent_id, module_key, name, description, icon, url, color, status, sort_order)
-                VALUES
-                    (%s, 'accounting_dashboard', 'Dashboard', 'View invoices', 'bi-grid-1x2', '/accounting', '#0d6efd', 'active', 1),
-                    (%s, 'accounting_add', 'Add Invoice', 'Create new invoice', 'bi-plus-circle', '/add-invoice', '#0d6efd', 'active', 2),
-                    (%s, 'accounting_templates', 'Templates', 'Manage parsing templates', 'bi-file-earmark-code', '/templates', '#0d6efd', 'active', 3),
-                    (%s, 'accounting_statements', 'Bank Statements', 'Parse statements', 'bi-bank', '/statements/', '#0d6efd', 'active', 4)
-            ''', (parent_ids['accounting'], parent_ids['accounting'], parent_ids['accounting'], parent_ids['accounting']))
-
-        # Insert submenu items for HR
-        if 'hr' in parent_ids:
-            cursor.execute('''
-                INSERT INTO module_menu_items (parent_id, module_key, name, description, icon, url, color, status, sort_order)
-                VALUES
-                    (%s, 'hr_events', 'Event Bonuses', 'Manage bonuses', 'bi-gift', '/hr/events/', '#9c27b0', 'active', 1),
-                    (%s, 'hr_manage_events', 'Manage Events', 'Create/edit events', 'bi-calendar-event', '/hr/events/events', '#9c27b0', 'active', 2),
-                    (%s, 'hr_employees', 'Employees', 'Employee list', 'bi-person-lines-fill', '/hr/events/employees', '#9c27b0', 'active', 3)
-            ''', (parent_ids['hr'], parent_ids['hr'], parent_ids['hr']))
+    # Seed module menu items from registry (single source of truth)
+    from core.settings.menus.registry import sync_menu_items
+    sync_menu_items(cursor)
 
     # Create indexes for invoice queries (most frequently accessed)
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(invoice_date)')
@@ -2934,6 +2992,164 @@ def create_schema(conn, cursor):
                           WHERE table_name = 'bilant_generations' AND column_name = 'ai_analysis') THEN
                 ALTER TABLE bilant_generations ADD COLUMN ai_analysis JSONB;
             END IF;
+        END $$;
+    """)
+
+    # ── CRM / Car Sales Database ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS crm_import_batches (
+            id SERIAL PRIMARY KEY,
+            source_type VARCHAR(20) NOT NULL,
+            filename TEXT NOT NULL,
+            uploaded_by INTEGER REFERENCES users(id),
+            total_rows INTEGER DEFAULT 0,
+            new_rows INTEGER DEFAULT 0,
+            updated_rows INTEGER DEFAULT 0,
+            skipped_rows INTEGER DEFAULT 0,
+            new_clients INTEGER DEFAULT 0,
+            matched_clients INTEGER DEFAULT 0,
+            status VARCHAR(20) DEFAULT 'processing',
+            error_log JSONB DEFAULT '[]',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_import_source ON crm_import_batches(source_type)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS crm_clients (
+            id SERIAL PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            name_normalized TEXT NOT NULL,
+            client_type VARCHAR(20) DEFAULT 'person',
+            phone TEXT,
+            phone_raw TEXT,
+            email TEXT,
+            street TEXT,
+            city TEXT,
+            region TEXT,
+            country TEXT DEFAULT 'Romania',
+            company_name TEXT,
+            responsible TEXT,
+            source_flags JSONB DEFAULT '{}',
+            merged_into_id INTEGER REFERENCES crm_clients(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_clients_phone ON crm_clients(phone)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_clients_email ON crm_clients(email)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_clients_merged ON crm_clients(merged_into_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_clients_name ON crm_clients USING gin (name_normalized gin_trgm_ops)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS crm_deals (
+            id SERIAL PRIMARY KEY,
+            client_id INTEGER REFERENCES crm_clients(id) ON DELETE SET NULL,
+            source VARCHAR(5) NOT NULL,
+            dealer_code TEXT,
+            dealer_name TEXT,
+            branch TEXT,
+            dossier_number TEXT,
+            order_number TEXT,
+            contract_date DATE,
+            order_date DATE,
+            delivery_date DATE,
+            invoice_date DATE,
+            registration_date DATE,
+            entry_date DATE,
+            brand TEXT,
+            model_name TEXT,
+            model_code TEXT,
+            model_year INTEGER, order_year INTEGER,
+            body_code TEXT,
+            vin TEXT,
+            engine_code TEXT,
+            fuel_type TEXT,
+            color TEXT,
+            color_code TEXT,
+            door_count INTEGER,
+            vehicle_type TEXT,
+            list_price NUMERIC(12,2),
+            purchase_price_net NUMERIC(12,2),
+            sale_price_net NUMERIC(12,2),
+            gross_profit NUMERIC(12,2),
+            discount_value NUMERIC(12,2),
+            other_costs NUMERIC(12,2),
+            gw_gross_value NUMERIC(12,2),
+            dossier_status TEXT,
+            order_status TEXT,
+            contract_status TEXT,
+            sales_person TEXT,
+            buyer_name TEXT,
+            buyer_address TEXT,
+            owner_name TEXT,
+            owner_address TEXT,
+            customer_group TEXT,
+            registration_number TEXT,
+            vehicle_specs JSONB DEFAULT '{}',
+            import_batch_id INTEGER REFERENCES crm_import_batches(id),
+            source_row_hash TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_deals_client ON crm_deals(client_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_deals_source ON crm_deals(source)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_deals_vin ON crm_deals(vin)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_deals_brand ON crm_deals(brand)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_deals_dossier ON crm_deals(source, dossier_number)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_deals_contract ON crm_deals(contract_date DESC)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS crm_leads (
+            id SERIAL PRIMARY KEY,
+            client_id INTEGER REFERENCES crm_clients(id) ON DELETE SET NULL,
+            contact_name TEXT,
+            person_type TEXT,
+            phone TEXT,
+            email TEXT,
+            lead_group TEXT,
+            lead_text TEXT,
+            lead_added_by TEXT,
+            added_date TIMESTAMP,
+            responsible TEXT,
+            first_contact_date TIMESTAMP,
+            responsible_assigned_date TIMESTAMP,
+            lead_score NUMERIC(5,1),
+            lead_status TEXT,
+            status_reason TEXT,
+            status_notes TEXT,
+            status_date TIMESTAMP,
+            next_contact TIMESTAMP,
+            last_activity TIMESTAMP,
+            sales_advisor TEXT,
+            model TEXT,
+            model_of_interest TEXT,
+            utm_source TEXT,
+            utm_medium TEXT,
+            utm_campaign TEXT,
+            utm_term TEXT,
+            utm_content TEXT,
+            form_type TEXT,
+            form_data JSONB DEFAULT '{}',
+            import_batch_id INTEGER REFERENCES crm_import_batches(id),
+            source_row_hash TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_leads_client ON crm_leads(client_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_leads_status ON crm_leads(lead_status)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_leads_group ON crm_leads(lead_group)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_leads_phone ON crm_leads(phone)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_leads_added ON crm_leads(added_date DESC)')
+
+    # Enable pg_trgm for fuzzy name matching (ignore if not available)
+    cursor.execute("""
+        DO $$ BEGIN
+            CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        EXCEPTION WHEN OTHERS THEN
+            NULL;
         END $$;
     """)
 

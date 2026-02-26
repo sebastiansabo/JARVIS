@@ -659,6 +659,7 @@ class AIAgentService:
         user_id: int,
         user_message: str,
         model_config_id: Optional[int] = None,
+        page_context: Optional[str] = None,
     ):
         """
         Stream a chat response via SSE events.
@@ -802,6 +803,7 @@ class AIAgentService:
                 analytics_context=analytics_context,
                 has_tools=bool(tool_schemas),
                 learned_patterns=learned_patterns,
+                page_context=page_context,
             )
             system_prompt_tokens = estimate_tokens(system_prompt)
 
@@ -1215,12 +1217,41 @@ class AIAgentService:
             logger.debug(f"Knowledge retrieval skipped: {e}")
             return []
 
+    # Page path → human-readable description for system prompt injection
+    _PAGE_DESCRIPTIONS = {
+        '/app/dashboard': 'Dashboard — company statistics overview',
+        '/app/accounting': 'Accounting — supplier invoice management',
+        '/app/hr': 'HR — employee management, events, and bonuses',
+        '/app/statements': 'Bank Statements — bank transactions and reconciliation',
+        '/app/efactura': 'E-Factura — electronic invoices from ANAF',
+        '/app/approvals': 'Approvals — workflow approval requests',
+        '/app/marketing': 'Marketing — projects and campaigns',
+        '/app/sales/crm': 'CRM (Sales) — client management and car sales dossiers. '
+                          '"Clients" here are car buyers/customers, NOT suppliers. '
+                          '"Furnizor/supplier" refers to invoice suppliers in Accounting.',
+        '/app/settings': 'Settings — system configuration',
+        '/app/profile': 'User Profile',
+    }
+
+    def _describe_page(self, path: Optional[str]) -> Optional[str]:
+        """Map a frontend route path to a human-readable page description."""
+        if not path:
+            return None
+        # Exact match first, then prefix match for nested routes
+        if path in self._PAGE_DESCRIPTIONS:
+            return self._PAGE_DESCRIPTIONS[path]
+        for prefix, desc in self._PAGE_DESCRIPTIONS.items():
+            if path.startswith(prefix):
+                return desc
+        return None
+
     def _build_system_prompt(
         self,
         rag_context: Optional[str] = None,
         analytics_context: Optional[str] = None,
         has_tools: bool = False,
         learned_patterns: Optional[List[str]] = None,
+        page_context: Optional[str] = None,
     ) -> str:
         """
         Build system prompt for LLM with domain knowledge, tool examples,
@@ -1231,6 +1262,7 @@ class AIAgentService:
             analytics_context: Optional analytics data to include
             has_tools: Whether tools are available for this request
             learned_patterns: Optional list of learned pattern strings
+            page_context: Optional frontend route path (e.g. '/app/sales/crm')
 
         Returns:
             Complete system prompt
@@ -1263,6 +1295,16 @@ Response guidelines:
 
         sections = [base_prompt]
 
+        # Inject page context so the model knows what the user is looking at
+        page_desc = self._describe_page(page_context)
+        if page_desc:
+            sections.append(f"""CURRENT PAGE CONTEXT:
+The user is currently viewing: {page_desc}
+Use this context to interpret ambiguous questions. For example:
+- On the CRM page, "client" / "cel mai mare client" means a car buyer/customer — use get_top_clients or search_clients, NOT get_top_suppliers.
+- On the Accounting page, "furnizor" means an invoice supplier — use get_top_suppliers or search_invoices.
+- On the HR page, prefer HR tools (search_hr_events, search_bonuses) over others.""")
+
         if has_tools:
             sections.append("""TOOL USAGE — MANDATORY:
 You have tools that query the JARVIS database in real-time. You MUST use them when the user asks about data.
@@ -1277,20 +1319,28 @@ EXAMPLES of when to use each tool:
 - "Arată-mi facturile de la Porsche" → search_invoices(supplier="Porsche")
 - "Câte facturi avem luna aceasta?" → get_invoice_summary(start_date="2026-02-01")
 - "Top 5 furnizori" → get_top_suppliers(limit=5)
+- "Cel mai mare client" / "Top clienti" → get_top_clients(limit=5)
+- "Caută client Popescu" → search_clients(name="Popescu")
 - "Ce aprobări am de făcut?" → get_pending_approvals(scope="mine")
 - "Detalii factura 123" → get_invoice_details(invoice_id=123)
 - "Sumar e-Factura" → get_efactura_summary()
 - "Bonusuri angajat Ion Popescu" → search_bonuses(employee="Ion Popescu")
 - "Proiecte marketing active" → search_marketing_projects(status="active")
 - "Tranzacții bancare luna ianuarie" → get_transaction_summary(date_from="2026-01-01", date_to="2026-01-31")
-- "Evenimente HR din 2025" → search_hr_events(year=2025)""")
+- "Evenimente HR din 2025" → search_hr_events(year=2025)
+
+IMPORTANT — client ≠ furnizor:
+- "client" / "cel mai mare client" = CRM client (car buyer). Use get_top_clients or search_clients.
+- "furnizor" / "supplier" = invoice supplier (vendor we pay). Use get_top_suppliers or search_invoices.
+Do NOT confuse these — they are different entities in different modules.""")
 
         sections.append("""ROMANIAN GLOSSARY (user may ask in Romanian):
-factura/facturi = invoice(s), furnizor = supplier, cheltuieli = spending/expenses, plată = payment,
-departament = department, angajat = employee, bonus/bonusuri = bonus(es), eveniment = event,
-luna/lună = month, an/anul = year, total/totaluri = total(s), aprobare = approval,
-tranzacție = transaction, extras bancar = bank statement, buget = budget, proiect = project,
-ultima/ultimele = last/recent, câte/câți = how many, arată = show, caută = search""")
+factura/facturi = invoice(s), furnizor = supplier (vendor we pay), client = client (car buyer/customer),
+cheltuieli = spending/expenses, plată = payment, departament = department, angajat = employee,
+bonus/bonusuri = bonus(es), eveniment = event, luna/lună = month, an/anul = year,
+total/totaluri = total(s), aprobare = approval, tranzacție = transaction, extras bancar = bank statement,
+buget = budget, proiect = project, ultima/ultimele = last/recent, câte/câți = how many,
+arată = show, caută = search, dosare = dossiers (car sales files), vânzări = sales""")
 
         if learned_patterns:
             patterns_text = '\n'.join(f'- {p}' for p in learned_patterns)

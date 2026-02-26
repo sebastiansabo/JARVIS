@@ -323,7 +323,7 @@ def init_db():
         cursor.execute("""
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'chart_of_accounts'
+                WHERE table_schema = 'public' AND table_name = 'crm_import_batches'
             )
         """)
         if cursor.fetchone()['exists']:
@@ -354,6 +354,28 @@ def init_db():
                     END IF;
                 END $$;
             ''')
+            # Add can_access_crm permission to roles (if not exists)
+            cursor.execute("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'roles' AND column_name = 'can_access_crm') THEN
+                        ALTER TABLE roles ADD COLUMN can_access_crm BOOLEAN DEFAULT FALSE;
+                        UPDATE roles SET can_access_crm = TRUE WHERE name = 'Admin';
+                    END IF;
+                END $$;
+            """)
+            # CRM CRUD + export permissions
+            cursor.execute("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'roles' AND column_name = 'can_edit_crm') THEN
+                        ALTER TABLE roles ADD COLUMN can_edit_crm BOOLEAN DEFAULT FALSE;
+                        ALTER TABLE roles ADD COLUMN can_delete_crm BOOLEAN DEFAULT FALSE;
+                        ALTER TABLE roles ADD COLUMN can_export_crm BOOLEAN DEFAULT FALSE;
+                        UPDATE roles SET can_edit_crm = TRUE, can_delete_crm = TRUE, can_export_crm = TRUE WHERE name = 'Admin';
+                    END IF;
+                END $$;
+            """)
             # Ensure 'approved' invoice status exists
             cursor.execute('''
                 INSERT INTO dropdown_options (dropdown_type, value, label, color, sort_order, is_active, min_role)
@@ -1034,6 +1056,121 @@ def init_db():
                 """)
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_knowledge_active ON ai_agent.learned_knowledge(is_active, confidence DESC)')
                 logger.info('Created AI agent learning tables (message_feedback, learned_knowledge)')
+
+            # ── CRM / Car Sales Database tables ──
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = 'crm_import_batches'
+                )
+            """)
+            if not cursor.fetchone()['exists']:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS crm_import_batches (
+                        id SERIAL PRIMARY KEY,
+                        source_type VARCHAR(20) NOT NULL,
+                        filename TEXT NOT NULL,
+                        uploaded_by INTEGER REFERENCES users(id),
+                        total_rows INTEGER DEFAULT 0,
+                        new_rows INTEGER DEFAULT 0,
+                        updated_rows INTEGER DEFAULT 0,
+                        skipped_rows INTEGER DEFAULT 0,
+                        new_clients INTEGER DEFAULT 0,
+                        matched_clients INTEGER DEFAULT 0,
+                        status VARCHAR(20) DEFAULT 'processing',
+                        error_log JSONB DEFAULT '[]',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_import_source ON crm_import_batches(source_type)')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS crm_clients (
+                        id SERIAL PRIMARY KEY,
+                        display_name TEXT NOT NULL,
+                        name_normalized TEXT NOT NULL,
+                        client_type VARCHAR(20) DEFAULT 'person',
+                        phone TEXT,
+                        phone_raw TEXT,
+                        email TEXT,
+                        street TEXT,
+                        city TEXT,
+                        region TEXT,
+                        country TEXT DEFAULT 'Romania',
+                        company_name TEXT,
+                        responsible TEXT,
+                        source_flags JSONB DEFAULT '{}',
+                        merged_into_id INTEGER REFERENCES crm_clients(id),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_clients_phone ON crm_clients(phone)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_clients_email ON crm_clients(email)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_clients_merged ON crm_clients(merged_into_id)')
+                cursor.execute("""
+                    DO $$ BEGIN
+                        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+                    EXCEPTION WHEN OTHERS THEN NULL;
+                    END $$;
+                """)
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_clients_name ON crm_clients USING gin (name_normalized gin_trgm_ops)')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS crm_deals (
+                        id SERIAL PRIMARY KEY,
+                        client_id INTEGER REFERENCES crm_clients(id) ON DELETE SET NULL,
+                        source VARCHAR(5) NOT NULL,
+                        dealer_code TEXT, dealer_name TEXT, branch TEXT,
+                        dossier_number TEXT, order_number TEXT,
+                        contract_date DATE, order_date DATE, delivery_date DATE,
+                        invoice_date DATE, registration_date DATE, entry_date DATE,
+                        brand TEXT, model_name TEXT, model_code TEXT, model_year INTEGER, order_year INTEGER,
+                        body_code TEXT, vin TEXT, engine_code TEXT, fuel_type TEXT,
+                        color TEXT, color_code TEXT, door_count INTEGER, vehicle_type TEXT,
+                        list_price NUMERIC(12,2), purchase_price_net NUMERIC(12,2),
+                        sale_price_net NUMERIC(12,2), gross_profit NUMERIC(12,2),
+                        discount_value NUMERIC(12,2), other_costs NUMERIC(12,2),
+                        gw_gross_value NUMERIC(12,2),
+                        dossier_status TEXT, order_status TEXT, contract_status TEXT,
+                        sales_person TEXT, buyer_name TEXT, buyer_address TEXT,
+                        owner_name TEXT, owner_address TEXT, customer_group TEXT,
+                        registration_number TEXT,
+                        vehicle_specs JSONB DEFAULT '{}',
+                        import_batch_id INTEGER REFERENCES crm_import_batches(id),
+                        source_row_hash TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_deals_client ON crm_deals(client_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_deals_source ON crm_deals(source)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_deals_vin ON crm_deals(vin)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_deals_brand ON crm_deals(brand)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_deals_dossier ON crm_deals(source, dossier_number)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_deals_contract ON crm_deals(contract_date DESC)')
+                # Add can_access_crm permission to roles
+                cursor.execute("""
+                    DO $$ BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                       WHERE table_name = 'roles' AND column_name = 'can_access_crm') THEN
+                            ALTER TABLE roles ADD COLUMN can_access_crm BOOLEAN DEFAULT FALSE;
+                            UPDATE roles SET can_access_crm = TRUE WHERE name = 'Admin';
+                        END IF;
+                    END $$;
+                """)
+                logger.info('Created CRM tables (crm_import_batches, crm_clients, crm_deals)')
+
+            # ── Menu items: add 'archived' status + sync from registry ──
+            cursor.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE module_menu_items DROP CONSTRAINT IF EXISTS module_menu_items_status_check;
+                    ALTER TABLE module_menu_items ADD CONSTRAINT module_menu_items_status_check
+                        CHECK (status IN ('active', 'coming_soon', 'hidden', 'archived'));
+                EXCEPTION WHEN others THEN NULL;
+                END $$;
+            """)
+            # Sync menu items from registry (single source of truth)
+            from core.settings.menus.registry import sync_menu_items
+            sync_menu_items(cursor)
 
             conn.commit()
             logger.info('Database schema already initialized — skipping init_db()')

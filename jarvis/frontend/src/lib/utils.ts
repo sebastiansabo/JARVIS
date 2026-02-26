@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -24,4 +24,15 @@ export function usePersistedState<T>(key: string, defaultValue: T): [T, (v: T | 
   }, [key])
 
   return [value, setValue]
+}
+
+/** Debounce a value by `delay` ms. */
+export function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value)
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => {
+    timer.current = setTimeout(() => setDebounced(value), delay)
+    return () => clearTimeout(timer.current)
+  }, [value, delay])
+  return debounced
 }

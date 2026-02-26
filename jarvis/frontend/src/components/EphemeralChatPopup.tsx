@@ -17,7 +17,7 @@ import {
 import { toast } from 'sonner'
 import type { Message, RagSource as RagSourceType } from '@/types/aiAgent'
 
-export function EphemeralChatPopup({ onClose }: { onClose?: () => void } = {}) {
+export function EphemeralChatPopup({ onClose, pageContext }: { onClose?: () => void; pageContext?: string } = {}) {
   const selectedModel = useAiAgentStore((s) => s.selectedModel)
   const setModel = useAiAgentStore((s) => s.setModel)
 
@@ -127,6 +127,8 @@ export function EphemeralChatPopup({ onClose }: { onClose?: () => void } = {}) {
           streamingRef.current = ''
           toast.error(error || 'Failed to send message')
         },
+        undefined, // onStatus
+        pageContext,
       )
     } catch {
       setIsStreaming(false)
@@ -134,7 +136,7 @@ export function EphemeralChatPopup({ onClose }: { onClose?: () => void } = {}) {
       streamingRef.current = ''
       toast.error('Failed to create conversation')
     }
-  }, [input, isStreaming, selectedModel])
+  }, [input, isStreaming, selectedModel, pageContext])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

@@ -185,6 +185,10 @@ def api_current_user():
                 'is_hr_manager': current_user.is_hr_manager,
                 'can_access_efactura': current_user.can_access_efactura,
                 'can_access_statements': current_user.can_access_statements,
+                'can_access_crm': current_user.can_access_crm,
+                'can_edit_crm': current_user.can_edit_crm,
+                'can_delete_crm': current_user.can_delete_crm,
+                'can_export_crm': current_user.can_export_crm,
             }
         })
     return jsonify({'authenticated': False})

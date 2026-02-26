@@ -108,6 +108,7 @@ def api_get_module_menu():
         'accounting': lambda u: u.can_access_accounting or u.can_view_invoices or u.can_add_invoices,
         'hr': lambda u: u.can_access_hr,
         'settings': lambda u: u.can_access_settings,
+        'sales': lambda u: getattr(u, 'can_access_crm', True),
     }
 
     def user_can_access_module(module_key):
@@ -118,7 +119,11 @@ def api_get_module_menu():
 
     filtered_items = []
     for item in items:
-        if item.get('status') == 'coming_soon':
+        # Only include active items (skip archived, hidden, etc.)
+        status = item.get('status', 'active')
+        if status not in ('active', 'coming_soon'):
+            continue
+        if status == 'coming_soon':
             filtered_items.append(item)
         elif user_can_access_module(item.get('module_key', '')):
             filtered_items.append(item)

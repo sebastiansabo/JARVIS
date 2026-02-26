@@ -20,7 +20,9 @@ class UserRepository(BaseRepository):
             SELECT u.*, r.name as role_name, r.description as role_description,
                    r.can_add_invoices, r.can_edit_invoices, r.can_delete_invoices, r.can_view_invoices,
                    r.can_access_accounting, r.can_access_settings, r.can_access_connectors,
-                   r.can_access_templates, r.can_access_hr, r.is_hr_manager
+                   r.can_access_templates, r.can_access_hr, r.is_hr_manager,
+                   r.can_access_crm,
+                   r.can_edit_crm, r.can_delete_crm, r.can_export_crm
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.id
             WHERE u.id = %s
@@ -32,7 +34,9 @@ class UserRepository(BaseRepository):
             SELECT u.*, r.name as role_name, r.description as role_description,
                    r.can_add_invoices, r.can_edit_invoices, r.can_delete_invoices, r.can_view_invoices,
                    r.can_access_accounting, r.can_access_settings, r.can_access_connectors,
-                   r.can_access_templates, r.can_access_hr, r.is_hr_manager
+                   r.can_access_templates, r.can_access_hr, r.is_hr_manager,
+                   r.can_access_crm,
+                   r.can_edit_crm, r.can_delete_crm, r.can_export_crm
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.id
             WHERE u.email = %s

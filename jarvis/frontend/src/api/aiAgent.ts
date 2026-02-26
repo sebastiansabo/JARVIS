@@ -43,6 +43,7 @@ export const aiAgentApi = {
     onDone: (data: StreamDoneEvent) => void,
     onError: (error: string) => void,
     onStatus?: (status: string) => void,
+    pageContext?: string,
   ) => {
     const response = await fetch('/ai-agent/api/chat/stream', {
       method: 'POST',
@@ -52,6 +53,7 @@ export const aiAgentApi = {
         conversation_id: conversationId,
         message: content,
         ...(modelConfigId && { model_config_id: Number(modelConfigId) }),
+        ...(pageContext && { page_context: pageContext }),
       }),
     })
 

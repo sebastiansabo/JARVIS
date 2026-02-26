@@ -370,6 +370,10 @@ class PermissionRepository(BaseRepository):
             'can_access_connectors': perms.get('accounting.connectors.access', False),
             'can_access_hr': perms.get('hr.module.access', False) or perms.get('hr.bonuses.view', False),
             'is_hr_manager': perms.get('hr.bonuses.view_amounts', False),
+            'can_access_crm': perms.get('sales.module.access', False),
+            'can_edit_crm': perms.get('sales.clients.edit', False) or perms.get('sales.deals.edit', False),
+            'can_delete_crm': perms.get('sales.clients.delete', False) or perms.get('sales.deals.delete', False),
+            'can_export_crm': perms.get('sales.clients.export', False) or perms.get('sales.deals.export', False),
         }
         updates = ', '.join([f"{col} = %s" for col in bool_updates.keys()])
         values = list(bool_updates.values()) + [role_id]

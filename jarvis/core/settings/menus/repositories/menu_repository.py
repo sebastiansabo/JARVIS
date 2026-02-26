@@ -66,7 +66,7 @@ class MenuRepository(BaseRepository):
         if include_hidden:
             status_filter = ""
         else:
-            status_filter = "WHERE status != 'hidden'"
+            status_filter = "WHERE status IN ('active', 'coming_soon')"
 
         rows = self.query_all(f'''
             SELECT id, parent_id, module_key, name, description, icon, url, color, status, sort_order

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -59,7 +60,27 @@ export default function MenusTab() {
     onError: () => toast.error('Failed to delete menu item'),
   })
 
-  const sorted = [...items].sort((a, b) => a.sort_order - b.sort_order)
+  // Build hierarchical list: parents first (sorted), then children indented under each parent
+  const structured = (() => {
+    const parents = items.filter((i) => !i.parent_id).sort((a, b) => a.sort_order - b.sort_order)
+    const childMap = new Map<number, MenuItem[]>()
+    for (const item of items) {
+      if (item.parent_id) {
+        const list = childMap.get(item.parent_id) ?? []
+        list.push(item)
+        childMap.set(item.parent_id, list)
+      }
+    }
+    const result: { item: MenuItem; isChild: boolean }[] = []
+    for (const parent of parents) {
+      result.push({ item: parent, isChild: false })
+      const children = (childMap.get(parent.id) ?? []).sort((a, b) => a.sort_order - b.sort_order)
+      for (const child of children) {
+        result.push({ item: child, isChild: true })
+      }
+    }
+    return result
+  })()
 
   return (
     <Card>
@@ -79,7 +100,7 @@ export default function MenusTab() {
               <div key={i} className="h-10 animate-pulse rounded bg-muted" />
             ))}
           </div>
-        ) : sorted.length === 0 ? (
+        ) : structured.length === 0 ? (
           <EmptyState title="No menu items" description="Add your first module menu item." />
         ) : (
           <Table>
@@ -95,12 +116,13 @@ export default function MenusTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sorted.map((item) => (
-                <TableRow key={item.id}>
+              {structured.map(({ item, isChild }) => (
+                <TableRow key={item.id} className={isChild ? 'bg-muted/30' : ''}>
                   <TableCell>
                     <GripVertical className="h-4 w-4 text-muted-foreground" />
                   </TableCell>
                   <TableCell className="font-medium">
+                    {isChild && <span className="mr-2 text-muted-foreground">└</span>}
                     {item.icon && <span className="mr-2">{item.icon}</span>}
                     {item.name}
                   </TableCell>
@@ -108,7 +130,7 @@ export default function MenusTab() {
                   <TableCell className="text-muted-foreground text-xs">{item.url}</TableCell>
                   <TableCell>{item.sort_order}</TableCell>
                   <TableCell>
-                    <StatusBadge status={item.status === 'active' ? 'active' : 'archived'} />
+                    <StatusBadge status={item.status === 'active' ? 'active' : item.status === 'coming_soon' ? 'coming_soon' : 'archived'} />
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
@@ -135,6 +157,7 @@ export default function MenusTab() {
       <MenuFormDialog
         open={showAdd || !!editItem}
         item={editItem}
+        parentModules={items.filter((i) => !i.parent_id)}
         onClose={() => {
           setShowAdd(false)
           setEditItem(null)
@@ -164,12 +187,14 @@ export default function MenusTab() {
 function MenuFormDialog({
   open,
   item,
+  parentModules,
   onClose,
   onSave,
   isPending,
 }: {
   open: boolean
   item: MenuItem | null
+  parentModules: MenuItem[]
   onClose: () => void
   onSave: (data: Partial<MenuItem>) => void
   isPending: boolean
@@ -181,6 +206,7 @@ function MenuFormDialog({
     url: '',
     sort_order: 0,
     status: 'active',
+    parent_id: null as number | null,
   })
 
   const resetForm = () =>
@@ -193,8 +219,9 @@ function MenuFormDialog({
             url: item.url,
             sort_order: item.sort_order,
             status: item.status || 'active',
+            parent_id: item.parent_id,
           }
-        : { name: '', module_key: '', icon: '', url: '', sort_order: 0, status: 'active' },
+        : { name: '', module_key: '', icon: '', url: '', sort_order: 0, status: 'active', parent_id: null },
     )
 
   return (
@@ -230,19 +257,41 @@ function MenuFormDialog({
               <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
             </div>
           </div>
-          <div className="grid gap-2">
-            <Label>Sort Order</Label>
-            <Input
-              type="number"
-              value={form.sort_order}
-              onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })}
-              className="w-24"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label>Parent</Label>
+              <Select
+                value={form.parent_id?.toString() ?? '_none'}
+                onValueChange={(v) => setForm({ ...form, parent_id: v === '_none' ? null : Number(v) })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— Top level —</SelectItem>
+                  {parentModules
+                    .filter((p) => p.id !== item?.id)
+                    .map((p) => (
+                      <SelectItem key={p.id} value={p.id.toString()}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Sort Order</Label>
+              <Input
+                type="number"
+                value={form.sort_order}
+                onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })}
+              />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Switch
               checked={form.status === 'active'}
-              onCheckedChange={(v) => setForm({ ...form, status: v ? 'active' : 'inactive' })}
+              onCheckedChange={(v) => setForm({ ...form, status: v ? 'active' : 'archived' })}
             />
             <Label>Active</Label>
           </div>

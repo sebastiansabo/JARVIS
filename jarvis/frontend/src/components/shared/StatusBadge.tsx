@@ -9,6 +9,7 @@ const statusColors: Record<string, string> = {
   merged: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
   deleted: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
   archived: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
+  coming_soon: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
   paid: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
   unpaid: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
   not_paid: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',

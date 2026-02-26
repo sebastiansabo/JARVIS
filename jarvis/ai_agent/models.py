@@ -57,6 +57,11 @@ class RAGSourceType(Enum):
     MARKETING = "marketing"
     APPROVAL = "approval"
     TAG = "tag"
+    CRM_CLIENT = "crm_client"
+    CAR_DOSSIER = "car_dossier"
+    BANK_STATEMENT = "bank_statement"
+    CHART_ACCOUNT = "chart_account"
+    BILANT_REPORT = "bilant_report"
 
 
 @dataclass

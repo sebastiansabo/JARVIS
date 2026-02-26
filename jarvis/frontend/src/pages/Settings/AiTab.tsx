@@ -23,6 +23,11 @@ const SOURCE_LABELS: Record<string, string> = {
   marketing: 'Marketing Projects',
   approval: 'Approvals',
   tag: 'Tags',
+  crm_client: 'CRM Clients',
+  car_dossier: 'Car Dossiers',
+  bank_statement: 'Bank Statements',
+  chart_account: 'Chart of Accounts',
+  bilant_report: 'Financial Reports',
 }
 
 export default function AiTab() {
@@ -358,7 +363,7 @@ export default function AiTab() {
               <CardTitle>Data Sources & Indexing</CardTitle>
               <CardDescription>
                 {ragStats
-                  ? `${ragStats.total_documents} documents indexed • pgvector: ${ragStats.has_pgvector ? 'active' : 'unavailable'}`
+                  ? `${ragStats.total_documents} documents indexed • pgvector: ${ragStats.has_pgvector ? 'active' : 'unavailable'}${ragStats.embedding_provider ? ` • Embeddings: ${ragStats.embedding_provider} (${ragStats.embedding_dimensions}d)` : ' • Embeddings: no provider configured'}`
                   : 'Loading stats...'}
               </CardDescription>
             </div>

@@ -1,6 +1,7 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -9,11 +10,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ApprovalBadge } from './ApprovalBadge'
 import { NotificationBell } from './NotificationBell'
+import { settingsApi } from '@/api/settings'
 
 interface NavItem {
   path: string
   label: string
   icon: React.ElementType
+  moduleKey?: string           // maps to module_menu_items.module_key
   permission?: string
   external?: boolean
   children?: NavItem[]
@@ -23,23 +26,34 @@ interface NavItem {
 
 const navItemsDef: NavItem[] = [
   { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/app/ai-agent', label: 'AI Agent', icon: Bot },
+  { path: '/app/ai-agent', label: 'AI Agent', icon: Bot, moduleKey: 'ai_agent' },
   {
     path: '/app/accounting',
     label: 'Accounting',
     icon: Calculator,
+    moduleKey: 'accounting',
     permission: 'can_access_accounting',
     children: [
-      { path: '/app/accounting', label: 'Invoices', icon: Calculator },
-      { path: '/app/statements', label: 'Statements', icon: Landmark },
-      { path: '/app/efactura', label: 'e-Factura', icon: FileText },
-      { path: '/app/accounting/bilant', label: 'Bilant', icon: Scale },
+      { path: '/app/accounting', label: 'Invoices', icon: Calculator, moduleKey: 'accounting_dashboard' },
+      { path: '/app/statements', label: 'Statements', icon: Landmark, moduleKey: 'accounting_statements' },
+      { path: '/app/efactura', label: 'e-Factura', icon: FileText, moduleKey: 'accounting_efactura' },
+      { path: '/app/accounting/bilant', label: 'Bilant', icon: Scale, moduleKey: 'accounting_bilant' },
     ],
   },
-  { path: '/app/hr', label: 'HR', icon: Users, permission: 'can_access_hr' },
-  { path: '/app/approvals', label: 'Approvals', icon: ClipboardCheck, badge: ApprovalBadge },
-  { path: '/app/marketing', label: 'Marketing', icon: Megaphone },
-  { path: '/app/settings', label: 'Settings', icon: Settings, permission: 'can_access_settings' },
+  { path: '/app/hr', label: 'HR', icon: Users, moduleKey: 'hr', permission: 'can_access_hr' },
+  { path: '/app/approvals', label: 'Approvals', icon: ClipboardCheck, moduleKey: 'approvals', badge: ApprovalBadge },
+  { path: '/app/marketing', label: 'Marketing', icon: Megaphone, moduleKey: 'marketing' },
+  {
+    path: '/app/sales',
+    label: 'Sales',
+    icon: TrendingUp,
+    moduleKey: 'sales',
+    permission: 'can_access_crm',
+    children: [
+      { path: '/app/sales/crm', label: 'CRM Database', icon: Contact, moduleKey: 'crm_database' },
+    ],
+  },
+  { path: '/app/settings', label: 'Settings', icon: Settings, moduleKey: 'settings', permission: 'can_access_settings' },
 ]
 
 interface SidebarProps {
@@ -50,6 +64,14 @@ interface SidebarProps {
 export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const { user } = useAuth()
   const location = useLocation()
+
+  // Fetch menu config from DB — drives visibility & ordering
+  const { data: menuData } = useQuery({
+    queryKey: ['module-menu'],
+    queryFn: settingsApi.getModuleMenu,
+    staleTime: 5 * 60 * 1000, // 5 min — matches backend cache TTL
+  })
+
   // Easter egg: 7-click logo reveal
   const clickCount = useRef(0)
   const clickTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -67,10 +89,48 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
     }
   }, [])
 
-  const visibleItems = navItemsDef.filter((item) => {
-    if (!item.permission) return true
-    return user?.[item.permission as keyof typeof user]
-  })
+  // Build flat map of all DB module items (parents + children) → { name, sort_order }
+  const dbModuleMap = useMemo(() => {
+    if (!menuData?.items) return null // null = not loaded yet, show all
+    const map = new Map<string, { name: string; sort_order: number }>()
+    for (const item of menuData.items) {
+      map.set(item.module_key, { name: item.name, sort_order: item.sort_order })
+      for (const child of item.children ?? []) {
+        map.set(child.module_key, { name: child.name, sort_order: child.sort_order })
+      }
+    }
+    return map
+  }, [menuData])
+
+  const visibleItems = useMemo(() => {
+    const filtered = navItemsDef.filter((item) => {
+      // Permission check (client-side)
+      if (item.permission && !user?.[item.permission as keyof typeof user]) return false
+      // DB menu check: if item has a moduleKey and DB data is loaded,
+      // only show if that key is in the active set
+      if (item.moduleKey && dbModuleMap !== null) {
+        return dbModuleMap.has(item.moduleKey)
+      }
+      return true
+    })
+    // Sort by DB order where available, keep original order for items without a moduleKey
+    if (dbModuleMap !== null) {
+      filtered.sort((a, b) => {
+        const orderA = a.moduleKey ? (dbModuleMap.get(a.moduleKey)?.sort_order ?? 99) : navItemsDef.indexOf(a)
+        const orderB = b.moduleKey ? (dbModuleMap.get(b.moduleKey)?.sort_order ?? 99) : navItemsDef.indexOf(b)
+        return orderA - orderB
+      })
+    }
+    // Override labels with DB names
+    return filtered.map(item => ({
+      ...item,
+      label: (item.moduleKey && dbModuleMap?.get(item.moduleKey)?.name) || item.label,
+      children: item.children?.map(child => ({
+        ...child,
+        label: (child.moduleKey && dbModuleMap?.get(child.moduleKey)?.name) || child.label,
+      })),
+    }))
+  }, [user, dbModuleMap])
 
   // Auto-open groups whose children match current path
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {

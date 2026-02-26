@@ -36,6 +36,7 @@ export interface MenuItem {
   color: string | null
   description: string | null
   parent_id: number | null
+  children?: MenuItem[]
   created_at?: string
   updated_at?: string
 }

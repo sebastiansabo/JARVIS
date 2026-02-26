@@ -12,6 +12,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useAiAgentStore } from '@/stores/aiAgentStore'
 import type { WidgetLayout } from './types'
 import { useDashboardPrefs } from './useDashboardPrefs'
+import { useWidgetEmptyState } from './useWidgetEmptyState'
 import { CustomizeSheet } from './CustomizeSheet'
 import {
   AccountingInvoicesWidget,
@@ -23,6 +24,48 @@ import {
   OnlineUsersWidget,
   NotificationsWidget,
 } from './widgets'
+
+const COLS = 6
+
+/**
+ * Repack layouts into a compact grid with no gaps.
+ * Uses a height-map approach: for each widget (in order), find the first
+ * position where it fits by scanning left-to-right across the lowest
+ * available row.
+ */
+function repackLayouts(widgets: WidgetLayout[]): WidgetLayout[] {
+  // Height map: for each column, track the lowest occupied row
+  const colHeights = new Array(COLS).fill(0)
+
+  return widgets.map(w => {
+    const width = w.w
+    const height = w.h
+
+    // Find the first x position where this widget fits
+    let bestX = 0
+    let bestY = Infinity
+
+    for (let x = 0; x <= COLS - width; x++) {
+      // The widget spans columns [x, x+width). The top of the slot
+      // is the max height across those columns.
+      let slotY = 0
+      for (let col = x; col < x + width; col++) {
+        slotY = Math.max(slotY, colHeights[col])
+      }
+      if (slotY < bestY) {
+        bestY = slotY
+        bestX = x
+      }
+    }
+
+    // Place the widget
+    for (let col = bestX; col < bestX + width; col++) {
+      colHeights[col] = bestY + height
+    }
+
+    return { ...w, x: bestX, y: bestY }
+  })
+}
 
 const WIDGET_COMPONENTS: Record<string, React.ComponentType<{ enabled: boolean }>> = {
   accounting_invoices: AccountingInvoicesWidget,
@@ -38,6 +81,7 @@ const WIDGET_COMPONENTS: Record<string, React.ComponentType<{ enabled: boolean }
 export default function Dashboard() {
   const { user } = useAuth()
   const { permittedWidgets, visibleWidgets, toggleWidget, updateLayout, setWidgetWidth, resetDefaults } = useDashboardPrefs(user)
+  const emptyWidgets = useWidgetEmptyState()
   const toggleAiWidget = useAiAgentStore(s => s.toggleWidget)
   const { width, containerRef } = useContainerWidth()
 
@@ -53,13 +97,15 @@ export default function Dashboard() {
   const [greetingIdx] = useState(() => Math.floor(Math.random() * sebaGreetings.length))
   const greeting = isSeba ? sebaGreetings[greetingIdx] : `Welcome, ${user?.name}.`
 
-  // Build layouts for react-grid-layout
+  // Filter out widgets with no data, then build layouts
+  const activeWidgets = useMemo(() => {
+    return visibleWidgets.filter(w => !emptyWidgets.has(w.id))
+  }, [visibleWidgets, emptyWidgets])
+
   const lgLayouts = useMemo(() => {
-    return visibleWidgets.map(wp => ({
-      ...wp.layout,
-      i: wp.id,
-    }))
-  }, [visibleWidgets])
+    const raw = activeWidgets.map(wp => ({ ...wp.layout, i: wp.id }))
+    return repackLayouts(raw)
+  }, [activeWidgets])
 
   return (
     <div className="space-y-6">
@@ -97,7 +143,7 @@ export default function Dashboard() {
           onLayoutChange={(layout: Layout) => updateLayout(layout as unknown as WidgetLayout[])}
           margin={[16, 16]}
         >
-          {visibleWidgets.map(wp => {
+          {activeWidgets.map(wp => {
             const Component = WIDGET_COMPONENTS[wp.id]
             if (!Component) return null
             return (

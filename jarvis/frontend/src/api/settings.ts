@@ -86,7 +86,7 @@ export const settingsApi = {
   reindexRag: (sourceType?: string) =>
     api.post<{ success: boolean }>('/ai-agent/api/rag/reindex', sourceType ? { source_type: sourceType } : {}),
   getRagStats: () =>
-    api.get<{ total_documents: number; by_source_type: Record<string, number>; has_pgvector: boolean; has_embeddings: boolean }>('/ai-agent/api/rag/stats'),
+    api.get<{ total_documents: number; by_source_type: Record<string, number>; has_pgvector: boolean; has_embeddings: boolean; embedding_provider: string | null; embedding_dimensions: number | null }>('/ai-agent/api/rag/stats'),
   getRagSourcePermissions: () =>
     api.get<{ allowed_sources: string[] }>('/ai-agent/api/rag-source-permissions'),
 }

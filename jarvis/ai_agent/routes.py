@@ -358,6 +358,7 @@ def api_chat_stream():
     conversation_id = data.get('conversation_id')
     message = data.get('message', '').strip()
     model_config_id = data.get('model_config_id')
+    page_context = data.get('page_context')
 
     if not conversation_id:
         return error_response('conversation_id required')
@@ -370,6 +371,7 @@ def api_chat_stream():
             user_id=current_user.id,
             user_message=message,
             model_config_id=model_config_id,
+            page_context=page_context,
         )),
         mimetype='text/event-stream',
         headers={
@@ -417,6 +419,11 @@ def api_rag_reindex():
         'marketing': rag_service.index_marketing_batch,
         'approval': rag_service.index_approvals_batch,
         'tag': rag_service.index_tags_batch,
+        'crm_client': rag_service.index_crm_clients_batch,
+        'car_dossier': rag_service.index_car_dossiers_batch,
+        'bank_statement': rag_service.index_bank_statements_batch,
+        'chart_account': rag_service.index_chart_accounts_batch,
+        'bilant_report': rag_service.index_bilant_reports_batch,
     }
 
     if source_type:
@@ -425,17 +432,23 @@ def api_rag_reindex():
             valid = ', '.join(BATCH_METHODS.keys())
             return error_response(f'Invalid source_type. Valid: {valid}')
 
-        result = BATCH_METHODS[source_type](limit=limit)
-        if not result.success:
-            return error_response(result.error, 500)
+        # Loop until all items are indexed (batch_size per iteration)
+        total_indexed = 0
+        max_iterations = 200  # safety cap
+        for _ in range(max_iterations):
+            result = BATCH_METHODS[source_type](limit=limit)
+            batch_count = result.data.get('indexed', 0) if result.success else 0
+            total_indexed += batch_count
+            if batch_count == 0:
+                break
 
         return jsonify({
             'success': True,
             'source_type': source_type,
-            'indexed': result.data.get('indexed', 0),
+            'indexed': total_indexed,
         })
     else:
-        # Reindex all sources
+        # Reindex all sources (loops each until done)
         result = rag_service.index_all_sources(limit=limit)
         if not result.success:
             return error_response(result.error, 500)
@@ -466,6 +479,8 @@ def api_rag_stats():
         'by_source_type': stats.get('by_source_type', {}),
         'has_pgvector': stats.get('has_pgvector', False),
         'has_embeddings': stats.get('has_embeddings', False),
+        'embedding_provider': stats.get('embedding_provider'),
+        'embedding_dimensions': stats.get('embedding_dimensions'),
     })
 
 

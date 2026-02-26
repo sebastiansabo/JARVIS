@@ -18,6 +18,7 @@ class RAGDocumentRepository(BaseRepository):
     def __init__(self):
         """Initialize repository and detect pgvector availability."""
         self._has_pgvector = None
+        self._column_dims = None
 
     def _check_pgvector(self, cursor) -> bool:
         """Check if pgvector is available (cached after first call)."""
@@ -202,11 +203,16 @@ class RAGDocumentRepository(BaseRepository):
         row = self.query_one("""
             SELECT id, source_type, source_id, source_table,
                    content, content_hash, metadata, company_id,
-                   is_active, created_at, updated_at
+                   is_active, created_at, updated_at,
+                   (embedding IS NOT NULL) as has_embedding
             FROM ai_agent.rag_documents
             WHERE source_type = %s AND source_id = %s AND is_active = TRUE
         """, (source_type.value, source_id))
-        return self._row_to_document(row) if row else None
+        if not row:
+            return None
+        doc = self._row_to_document(row)
+        doc.has_embedding = row.get('has_embedding', False)
+        return doc
 
     def get_documents_without_embedding(self, limit: int = 100) -> List[RAGDocument]:
         """Get documents that don't have embeddings yet (for batch embedding)."""
@@ -248,6 +254,60 @@ class RAGDocumentRepository(BaseRepository):
         def _work(cursor):
             return self._check_pgvector(cursor)
         return self.execute_many(_work)
+
+    def get_column_dimensions(self) -> Optional[int]:
+        """Get the current embedding column dimension (from pg_attribute)."""
+        if self._column_dims is not None:
+            return self._column_dims
+        row = self.query_one("""
+            SELECT atttypmod as dims
+            FROM pg_attribute
+            WHERE attrelid = 'ai_agent.rag_documents'::regclass
+              AND attname = 'embedding'
+        """)
+        self._column_dims = row['dims'] if row and row['dims'] and row['dims'] > 0 else None
+        return self._column_dims
+
+    def ensure_column_dimensions(self, needed_dims: int) -> bool:
+        """Ensure the embedding column matches the needed dimensions.
+
+        If dimensions differ, ALTERs the column, clears existing embeddings,
+        and recreates the index. Returns True if column was changed.
+        """
+        current = self.get_column_dimensions()
+        if current == needed_dims:
+            return False
+
+        logger.warning(
+            f"Embedding column dimension mismatch: column={current}, provider={needed_dims}. "
+            f"Altering column and clearing existing embeddings."
+        )
+        def _work(cursor):
+            # Drop existing index
+            cursor.execute("""
+                DROP INDEX IF EXISTS ai_agent.idx_rag_documents_embedding
+            """)
+            # Clear all existing embeddings (dimension mismatch makes them unusable)
+            cursor.execute("""
+                UPDATE ai_agent.rag_documents SET embedding = NULL
+            """)
+            # Alter column to new dimension
+            cursor.execute(f"""
+                ALTER TABLE ai_agent.rag_documents
+                ALTER COLUMN embedding TYPE vector({needed_dims})
+            """)
+            # Recreate index
+            cursor.execute(f"""
+                CREATE INDEX idx_rag_documents_embedding
+                ON ai_agent.rag_documents
+                USING ivfflat (embedding vector_cosine_ops)
+                WITH (lists = 100)
+            """)
+            return True
+        result = self.execute_many(_work)
+        self._column_dims = needed_dims
+        logger.info(f"Embedding column updated to vector({needed_dims})")
+        return result
 
     def _row_to_document(self, row: dict) -> RAGDocument:
         """Convert database row to RAGDocument model."""

@@ -21,6 +21,10 @@ export interface User {
   can_access_efactura: boolean
   can_access_statements: boolean
   is_hr_manager: boolean
+  can_access_crm: boolean
+  can_edit_crm: boolean
+  can_delete_crm: boolean
+  can_export_crm: boolean
 }
 
 export interface ApiResponse<T = unknown> {

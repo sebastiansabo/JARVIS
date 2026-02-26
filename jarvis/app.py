@@ -119,6 +119,9 @@ app.register_blueprint(marketing_bp, url_prefix='/marketing')
 from core.signatures import signatures_bp
 app.register_blueprint(signatures_bp, url_prefix='/signatures')
 
+from crm import crm_bp
+app.register_blueprint(crm_bp)
+
 # Register approval notification hooks
 from core.approvals.handlers import register_approval_hooks
 register_approval_hooks()

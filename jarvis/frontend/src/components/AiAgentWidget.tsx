@@ -46,6 +46,7 @@ export function AiAgentWidget() {
 export function AiAgentPanel() {
   const isWidgetOpen = useAiAgentStore((s) => s.isWidgetOpen)
   const setWidgetOpen = useAiAgentStore((s) => s.setWidgetOpen)
+  const { pathname } = useLocation()
 
   if (!isWidgetOpen) return null
 
@@ -57,7 +58,7 @@ export function AiAgentPanel() {
         'animate-in slide-in-from-right duration-200',
       )}
     >
-      <EphemeralChatPopup onClose={() => setWidgetOpen(false)} />
+      <EphemeralChatPopup onClose={() => setWidgetOpen(false)} pageContext={pathname} />
     </aside>
   )
 }

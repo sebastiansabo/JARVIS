@@ -41,7 +41,7 @@ class AIAgentConfig:
     REINDEX_BATCH_SIZE: int = 500
 
     # Feature Flags
-    RAG_ENABLED: bool = True              # Enable RAG (requires OpenAI key)
+    RAG_ENABLED: bool = True              # Enable RAG (requires OpenAI or Gemini key)
     MULTI_PROVIDER_ENABLED: bool = True   # Enable multiple LLM providers
     ANALYTICS_ENABLED: bool = True        # Enable AI-powered analytics queries
 

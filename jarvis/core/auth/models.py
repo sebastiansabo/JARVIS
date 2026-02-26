@@ -41,6 +41,10 @@ class User(UserMixin):
         self.can_access_efactura = user_data.get('can_access_efactura', False)
         self.can_access_statements = user_data.get('can_access_statements', False)
         self.can_access_profile = user_data.get('can_access_profile', True)  # All users can access profile
+        self.can_access_crm = user_data.get('can_access_crm', False)
+        self.can_edit_crm = user_data.get('can_edit_crm', False)
+        self.can_delete_crm = user_data.get('can_delete_crm', False)
+        self.can_export_crm = user_data.get('can_export_crm', False)
 
         # Permission mapping for has_permission method
         self._permission_map = {
@@ -57,6 +61,10 @@ class User(UserMixin):
             'profile.access': self.can_access_profile,
             'hr.access': self.can_access_hr,
             'hr.manager': self.is_hr_manager,
+            'crm.access': self.can_access_crm,
+            'crm.edit': self.can_edit_crm,
+            'crm.delete': self.can_delete_crm,
+            'crm.export': self.can_export_crm,
         }
 
     @property
