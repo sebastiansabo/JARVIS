@@ -14,7 +14,19 @@ export interface DmsCategory {
 }
 
 export type DmsDocumentStatus = 'draft' | 'active' | 'archived'
-export type DmsRelationshipType = 'annex' | 'deviz' | 'proof' | 'other'
+export type DmsRelationshipType = string
+
+export interface DmsRelationshipTypeConfig {
+  id: number
+  slug: string
+  label: string
+  icon: string
+  color: string
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string | null
+}
 
 export interface DmsDocument {
   id: number

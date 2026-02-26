@@ -90,6 +90,8 @@ class BaseRepository:
         """
         conn = get_db()
         try:
+            # Disable autocommit so commit/rollback actually work
+            conn.autocommit = False
             cursor = get_cursor(conn)
             result = callback(cursor)
             conn.commit()

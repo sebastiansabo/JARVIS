@@ -1230,9 +1230,6 @@ def init_db():
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     deleted_at TIMESTAMP,
                     CONSTRAINT dms_doc_status CHECK (status IN ('draft','active','archived')),
-                    CONSTRAINT dms_doc_rel_type CHECK (
-                        relationship_type IS NULL OR relationship_type IN ('annex','deviz','proof','other')
-                    ),
                     CONSTRAINT dms_doc_parent_child CHECK (
                         (parent_id IS NULL AND relationship_type IS NULL) OR
                         (parent_id IS NOT NULL AND relationship_type IS NOT NULL)
@@ -1278,6 +1275,37 @@ def init_db():
                 )
             ''')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_files_document ON dms_files(document_id)')
+
+            # ── dms_relationship_types ──
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS dms_relationship_types (
+                    id SERIAL PRIMARY KEY,
+                    slug TEXT NOT NULL UNIQUE,
+                    label TEXT NOT NULL,
+                    icon TEXT DEFAULT 'bi-file-earmark',
+                    color TEXT DEFAULT '#6c757d',
+                    sort_order INTEGER DEFAULT 0,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Drop old hardcoded CHECK on relationship_type (now dynamic via table)
+            cursor.execute('''
+                ALTER TABLE dms_documents DROP CONSTRAINT IF EXISTS dms_doc_rel_type
+            ''')
+
+            # Seed default relationship types
+            cursor.execute('SELECT COUNT(*) as cnt FROM dms_relationship_types')
+            if cursor.fetchone()['cnt'] == 0:
+                cursor.execute('''
+                    INSERT INTO dms_relationship_types (slug, label, icon, color, sort_order) VALUES
+                    ('annex', 'Anexe', 'bi-paperclip', '#0d6efd', 1),
+                    ('deviz', 'Devize', 'bi-calculator', '#fd7e14', 2),
+                    ('proof', 'Dovezi / Foto', 'bi-camera', '#198754', 3),
+                    ('other', 'Altele', 'bi-file-earmark', '#6c757d', 4)
+                ''')
 
             # Seed default DMS categories (global — company_id NULL)
             cursor.execute('SELECT COUNT(*) as cnt FROM dms_categories')

@@ -64,6 +64,13 @@ export default function UploadDialog({
     enabled: open,
   })
 
+  const { data: relTypesData } = useQuery({
+    queryKey: ['dms-rel-types'],
+    queryFn: () => dmsApi.listRelationshipTypes(),
+    staleTime: 60_000,
+    enabled: !!parentId && open,
+  })
+
   // Sync relType when defaultRelType changes (e.g. different child type button clicked)
   useEffect(() => {
     setRelType(defaultRelType || '')
@@ -327,10 +334,11 @@ export default function UploadDialog({
               <Select value={relType || 'other'} onValueChange={(v) => setRelType(v as DmsRelationshipType)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="annex">Anexa</SelectItem>
-                  <SelectItem value="deviz">Deviz</SelectItem>
-                  <SelectItem value="proof">Dovada / Foto</SelectItem>
-                  <SelectItem value="other">Altele</SelectItem>
+                  {(relTypesData?.types || []).map((rt) => (
+                    <SelectItem key={rt.slug} value={rt.slug}>
+                      {rt.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

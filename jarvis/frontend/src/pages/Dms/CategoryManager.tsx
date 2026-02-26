@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { dmsApi } from '@/api/dms'
-import type { DmsCategory } from '@/types/dms'
+import type { DmsCategory, DmsRelationshipTypeConfig } from '@/types/dms'
 
 interface CategoryManagerProps {
   companyId?: number
@@ -22,12 +22,21 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteCatId, setDeleteCatId] = useState<number | null>(null)
 
-  // Form state
+  // Category form state
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [icon, setIcon] = useState('bi-folder')
   const [color, setColor] = useState('#6c757d')
   const [description, setDescription] = useState('')
+
+  // Relationship types state
+  const [rtCreateOpen, setRtCreateOpen] = useState(false)
+  const [editRt, setEditRt] = useState<DmsRelationshipTypeConfig | null>(null)
+  const [deleteRtId, setDeleteRtId] = useState<number | null>(null)
+  const [rtLabel, setRtLabel] = useState('')
+  const [rtSlug, setRtSlug] = useState('')
+  const [rtIcon, setRtIcon] = useState('bi-file-earmark')
+  const [rtColor, setRtColor] = useState('#6c757d')
 
   const { data, isLoading } = useQuery({
     queryKey: ['dms-categories-all', companyId],
@@ -80,6 +89,66 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
     },
     onError: () => toast.error('Failed to delete category'),
   })
+
+  // ── Relationship Types ──
+  const { data: rtData, isLoading: rtLoading } = useQuery({
+    queryKey: ['dms-rel-types-all'],
+    queryFn: () => dmsApi.listRelationshipTypes(false),
+  })
+  const relTypes: DmsRelationshipTypeConfig[] = rtData?.types || []
+
+  const resetRtForm = () => { setRtLabel(''); setRtSlug(''); setRtIcon('bi-file-earmark'); setRtColor('#6c757d') }
+
+  const createRtMutation = useMutation({
+    mutationFn: (data: Partial<DmsRelationshipTypeConfig>) => dmsApi.createRelationshipType(data),
+    onSuccess: () => {
+      toast.success('Type created')
+      queryClient.invalidateQueries({ queryKey: ['dms-rel-types-all'] })
+      queryClient.invalidateQueries({ queryKey: ['dms-rel-types'] })
+      resetRtForm(); setRtCreateOpen(false)
+    },
+    onError: () => toast.error('Failed to create type'),
+  })
+
+  const updateRtMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<DmsRelationshipTypeConfig> }) =>
+      dmsApi.updateRelationshipType(id, data),
+    onSuccess: () => {
+      toast.success('Type updated')
+      queryClient.invalidateQueries({ queryKey: ['dms-rel-types-all'] })
+      queryClient.invalidateQueries({ queryKey: ['dms-rel-types'] })
+      setEditRt(null); resetRtForm()
+    },
+    onError: () => toast.error('Failed to update type'),
+  })
+
+  const deleteRtMutation = useMutation({
+    mutationFn: (id: number) => dmsApi.deleteRelationshipType(id),
+    onSuccess: () => {
+      toast.success('Type deactivated')
+      queryClient.invalidateQueries({ queryKey: ['dms-rel-types-all'] })
+      queryClient.invalidateQueries({ queryKey: ['dms-rel-types'] })
+      setDeleteRtId(null)
+    },
+    onError: () => toast.error('Failed to delete type'),
+  })
+
+  const openRtEdit = (rt: DmsRelationshipTypeConfig) => {
+    setEditRt(rt); setRtLabel(rt.label); setRtSlug(rt.slug); setRtIcon(rt.icon); setRtColor(rt.color)
+  }
+
+  const handleRtSave = () => {
+    const payload = {
+      label: rtLabel.trim(),
+      slug: rtSlug.trim() || rtLabel.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+      icon: rtIcon, color: rtColor,
+    }
+    if (editRt) {
+      updateRtMutation.mutate({ id: editRt.id, data: payload })
+    } else {
+      createRtMutation.mutate(payload)
+    }
+  }
 
   const openEdit = (cat: DmsCategory) => {
     setEditCat(cat)
@@ -257,6 +326,136 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
         confirmLabel="Deactivate"
         variant="destructive"
         onConfirm={() => deleteCatId && deleteMutation.mutate(deleteCatId)}
+      />
+
+      {/* ── Relationship Types Section ── */}
+      <div className="border-t pt-6 mt-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">Relationship Types</h3>
+          <Button size="sm" onClick={() => { resetRtForm(); setRtCreateOpen(true) }}>
+            <Plus className="h-4 w-4 mr-1" />
+            New Type
+          </Button>
+        </div>
+
+        {rtLoading ? (
+          <p className="text-sm text-muted-foreground">Loading types...</p>
+        ) : relTypes.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">No relationship types yet.</p>
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8" />
+                  <TableHead>Label</TableHead>
+                  <TableHead>Slug</TableHead>
+                  <TableHead>Color</TableHead>
+                  <TableHead className="text-center">Active</TableHead>
+                  <TableHead className="w-[80px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {relTypes.map((rt) => (
+                  <TableRow key={rt.id}>
+                    <TableCell>
+                      <GripVertical className="h-4 w-4 text-muted-foreground" />
+                    </TableCell>
+                    <TableCell className="font-medium">{rt.label}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{rt.slug}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="h-4 w-4 rounded-full border" style={{ backgroundColor: rt.color }} />
+                        <span className="text-xs text-muted-foreground">{rt.color}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {rt.is_active ? (
+                        <Check className="h-4 w-4 text-green-600 mx-auto" />
+                      ) : (
+                        <X className="h-4 w-4 text-muted-foreground mx-auto" />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openRtEdit(rt)}>
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDeleteRtId(rt.id)}>
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
+
+      {/* Relationship Type Create/Edit Dialog */}
+      <Dialog
+        open={rtCreateOpen || !!editRt}
+        onOpenChange={(open) => {
+          if (!open) { setRtCreateOpen(false); setEditRt(null); resetRtForm() }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editRt ? 'Edit Type' : 'New Relationship Type'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Label *</Label>
+              <Input value={rtLabel} onChange={(e) => setRtLabel(e.target.value)} placeholder="e.g. Invoices" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Slug</Label>
+              <Input value={rtSlug} onChange={(e) => setRtSlug(e.target.value)} placeholder="Auto-generated from label" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Icon</Label>
+                <Input value={rtIcon} onChange={(e) => setRtIcon(e.target.value)} placeholder="bi-file-earmark" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Color</Label>
+                <div className="flex gap-2">
+                  <Input value={rtColor} onChange={(e) => setRtColor(e.target.value)} placeholder="#6c757d" />
+                  <input
+                    type="color"
+                    value={rtColor}
+                    onChange={(e) => setRtColor(e.target.value)}
+                    className="h-9 w-9 rounded border cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRtCreateOpen(false); setEditRt(null); resetRtForm() }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRtSave}
+              disabled={!rtLabel.trim() || createRtMutation.isPending || updateRtMutation.isPending}
+            >
+              {editRt ? 'Save' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete RT Confirmation */}
+      <ConfirmDialog
+        open={deleteRtId !== null}
+        onOpenChange={(open) => !open && setDeleteRtId(null)}
+        title="Deactivate Type"
+        description="This will hide the relationship type. Existing child documents won't be affected."
+        confirmLabel="Deactivate"
+        variant="destructive"
+        onConfirm={() => deleteRtId && deleteRtMutation.mutate(deleteRtId)}
       />
     </div>
   )

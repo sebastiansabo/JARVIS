@@ -6,6 +6,7 @@ import type {
   DmsFilters,
   DmsStats,
   DmsRelationshipType,
+  DmsRelationshipTypeConfig,
 } from '@/types/dms'
 
 const BASE = '/dms/api'
@@ -107,4 +108,23 @@ export const dmsApi = {
 
   reorderCategories: (ids: number[]) =>
     api.put<{ success: boolean }>(`/dms/api/dms/categories/reorder`, { ids }),
+
+  // ---- Relationship Types ----
+
+  listRelationshipTypes: (activeOnly = true) =>
+    api.get<{ success: boolean; types: DmsRelationshipTypeConfig[] }>(
+      `/dms/api/dms/relationship-types${toQs({ active_only: activeOnly })}`,
+    ),
+
+  createRelationshipType: (data: Partial<DmsRelationshipTypeConfig>) =>
+    api.post<{ success: boolean; id: number }>(`/dms/api/dms/relationship-types`, data),
+
+  updateRelationshipType: (id: number, data: Partial<DmsRelationshipTypeConfig>) =>
+    api.put<{ success: boolean }>(`/dms/api/dms/relationship-types/${id}`, data),
+
+  deleteRelationshipType: (id: number) =>
+    api.delete<{ success: boolean }>(`/dms/api/dms/relationship-types/${id}`),
+
+  reorderRelationshipTypes: (ids: number[]) =>
+    api.put<{ success: boolean }>(`/dms/api/dms/relationship-types/reorder`, { ids }),
 }

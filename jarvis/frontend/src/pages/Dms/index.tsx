@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { Fragment, useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FolderOpen, FileText, Plus, Search, Trash2, RotateCcw,
-  Settings2, Paperclip, Users as ChildrenIcon,
+  Settings2, Paperclip, Users as ChildrenIcon, ChevronDown,
+  Download, Calendar, Bell, Edit2, File, FileSpreadsheet,
+  Image as ImageIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -21,7 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { dmsApi } from '@/api/dms'
 import { useDmsStore } from '@/stores/dmsStore'
-import type { DmsDocument, DmsCategory } from '@/types/dms'
+import type { DmsDocument, DmsFile, DmsCategory, DmsRelationshipTypeConfig } from '@/types/dms'
 import UploadDialog from './UploadDialog'
 import CategoryManager from './CategoryManager'
 
@@ -69,6 +71,7 @@ export default function Dms() {
   }, [search])
   const [uploadOpen, setUploadOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [expandedRow, setExpandedRow] = useState<number | null>(null)
 
   const companyId = filters.company_id || user?.company_id || undefined
 
@@ -241,6 +244,7 @@ export default function Dms() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-8 px-2" />
                       <TableHead>Title</TableHead>
                       <TableHead>Category</TableHead>
                       <TableHead className="text-center">Files</TableHead>
@@ -254,85 +258,100 @@ export default function Dms() {
                   </TableHeader>
                   <TableBody>
                     {documents.map((doc) => (
-                      <TableRow
-                        key={doc.id}
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => navigate(`/app/dms/documents/${doc.id}`)}
-                      >
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span className="font-medium">{doc.title}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {doc.category_name ? (
-                            <Badge
-                              variant="outline"
-                              style={{ borderColor: doc.category_color || undefined, color: doc.category_color || undefined }}
-                            >
-                              {doc.category_name}
+                      <Fragment key={doc.id}>
+                        <TableRow
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => setExpandedRow(expandedRow === doc.id ? null : doc.id)}
+                        >
+                          <TableCell className="px-2">
+                            <ChevronDown className={cn('h-4 w-4 transition-transform', expandedRow === doc.id ? 'rotate-180' : '')} />
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                              <span className="font-medium">{doc.title}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {doc.category_name ? (
+                              <Badge
+                                variant="outline"
+                                style={{ borderColor: doc.category_color || undefined, color: doc.category_color || undefined }}
+                              >
+                                {doc.category_name}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {(doc.file_count ?? 0) > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-sm">
+                                <Paperclip className="h-3.5 w-3.5" />
+                                {doc.file_count}
+                              </span>
+                            ) : '—'}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {(doc.children_count ?? 0) > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-sm">
+                                <ChildrenIcon className="h-3.5 w-3.5" />
+                                {doc.children_count}
+                              </span>
+                            ) : '—'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={cn('text-xs', STATUS_COLORS[doc.status])}>
+                              {doc.status}
                             </Badge>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {(doc.file_count ?? 0) > 0 ? (
-                            <span className="inline-flex items-center gap-1 text-sm">
-                              <Paperclip className="h-3.5 w-3.5" />
-                              {doc.file_count}
-                            </span>
-                          ) : '—'}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {(doc.children_count ?? 0) > 0 ? (
-                            <span className="inline-flex items-center gap-1 text-sm">
-                              <ChildrenIcon className="h-3.5 w-3.5" />
-                              {doc.children_count}
-                            </span>
-                          ) : '—'}
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={cn('text-xs', STATUS_COLORS[doc.status])}>
-                            {doc.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {doc.expiry_date ? (
-                            <span className={cn('text-sm font-medium', expiryColor(doc.days_to_expiry))}>
-                              {formatDate(doc.expiry_date)}
-                              {doc.days_to_expiry != null && (
-                                <span className="block text-xs font-normal">
-                                  {doc.days_to_expiry < 0
-                                    ? `${Math.abs(doc.days_to_expiry)}d expired`
-                                    : doc.days_to_expiry === 0
-                                      ? 'Expires today'
-                                      : `${doc.days_to_expiry}d left`}
-                                </span>
-                              )}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {doc.created_by_name || '—'}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatDate(doc.created_at)}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={(e) => { e.stopPropagation(); setDeleteId(doc.id) }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
+                          </TableCell>
+                          <TableCell>
+                            {doc.expiry_date ? (
+                              <span className={cn('text-sm font-medium', expiryColor(doc.days_to_expiry))}>
+                                {formatDate(doc.expiry_date)}
+                                {doc.days_to_expiry != null && (
+                                  <span className="block text-xs font-normal">
+                                    {doc.days_to_expiry < 0
+                                      ? `${Math.abs(doc.days_to_expiry)}d expired`
+                                      : doc.days_to_expiry === 0
+                                        ? 'Expires today'
+                                        : `${doc.days_to_expiry}d left`}
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {doc.created_by_name || '—'}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {formatDate(doc.created_at)}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={(e) => { e.stopPropagation(); setDeleteId(doc.id) }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                        {expandedRow === doc.id && (
+                          <TableRow>
+                            <TableCell colSpan={10} className="bg-muted/30 p-4">
+                              <DocumentExpandedDetails
+                                doc={doc}
+                                onViewDetail={() => navigate(`/app/dms/documents/${doc.id}`)}
+                                onDelete={() => setDeleteId(doc.id)}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
                     ))}
                   </TableBody>
                 </Table>
@@ -369,6 +388,188 @@ export default function Dms() {
         variant="destructive"
         onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
       />
+    </div>
+  )
+}
+
+function fileIcon(mimeType: string | null) {
+  if (!mimeType) return <File className="h-4 w-4 text-muted-foreground" />
+  if (mimeType.startsWith('image/')) return <ImageIcon className="h-4 w-4 text-blue-500" />
+  if (mimeType.includes('spreadsheet') || mimeType.includes('excel'))
+    return <FileSpreadsheet className="h-4 w-4 text-green-600" />
+  if (mimeType.includes('pdf')) return <FileText className="h-4 w-4 text-red-500" />
+  return <File className="h-4 w-4 text-muted-foreground" />
+}
+
+function DocumentExpandedDetails({
+  doc,
+  onViewDetail,
+  onDelete,
+}: {
+  doc: DmsDocument
+  onViewDetail: () => void
+  onDelete: () => void
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['dms-document', doc.id],
+    queryFn: () => dmsApi.getDocument(doc.id),
+  })
+
+  const { data: relTypesData } = useQuery({
+    queryKey: ['dms-rel-types'],
+    queryFn: () => dmsApi.listRelationshipTypes(),
+    staleTime: 60_000,
+  })
+
+  const relTypes: DmsRelationshipTypeConfig[] = relTypesData?.types || []
+  const detail = data?.document
+  const files: DmsFile[] = detail?.files || []
+  const children: Partial<Record<string, DmsDocument[]>> = detail?.children || {}
+  const hasChildren = relTypes.some((t) => (children[t.slug]?.length ?? 0) > 0)
+
+  return (
+    <div className="space-y-3">
+      {/* Document info row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+        {doc.doc_number && (
+          <div><span className="text-muted-foreground">Number:</span> <span className="font-medium">{doc.doc_number}</span></div>
+        )}
+        {doc.doc_date && (
+          <div className="flex items-center gap-1">
+            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">Doc Date:</span> {formatDate(doc.doc_date)}
+          </div>
+        )}
+        <div className="flex items-center gap-1">
+          <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-muted-foreground">Expiry:</span>{' '}
+          {doc.expiry_date ? (
+            <span className={cn('font-medium', expiryColor(doc.days_to_expiry))}>
+              {formatDate(doc.expiry_date)}
+              {doc.days_to_expiry != null && (
+                <span className="ml-1 text-xs font-normal">
+                  ({doc.days_to_expiry < 0 ? `${Math.abs(doc.days_to_expiry)}d expired` : doc.days_to_expiry === 0 ? 'today' : `${doc.days_to_expiry}d left`})
+                </span>
+              )}
+            </span>
+          ) : '—'}
+        </div>
+        {doc.notify_user_name && (
+          <div className="flex items-center gap-1">
+            <Bell className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">Notify:</span> {doc.notify_user_name}
+          </div>
+        )}
+        {doc.company_name && (
+          <div><span className="text-muted-foreground">Company:</span> {doc.company_name}</div>
+        )}
+      </div>
+
+      {/* Files */}
+      {isLoading ? (
+        <p className="text-xs text-muted-foreground">Loading files...</p>
+      ) : files.length > 0 && (
+        <div>
+          <p className="text-sm font-medium flex items-center gap-1.5 mb-2">
+            <Paperclip className="h-4 w-4" />
+            Files ({files.length})
+          </p>
+          <div className="rounded border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="text-xs py-1.5">File</TableHead>
+                  <TableHead className="text-xs py-1.5">Type</TableHead>
+                  <TableHead className="text-xs py-1.5 text-right">Size</TableHead>
+                  <TableHead className="text-xs py-1.5">Uploaded</TableHead>
+                  <TableHead className="text-xs py-1.5 w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {files.map((f) => (
+                  <TableRow key={f.id}>
+                    <TableCell className="py-1.5">
+                      <div className="flex items-center gap-1.5">
+                        {fileIcon(f.mime_type)}
+                        <span className="text-xs truncate max-w-[200px]">{f.file_name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs py-1.5 text-muted-foreground">{f.file_type || '—'}</TableCell>
+                    <TableCell className="text-xs py-1.5 text-right">{formatSize(f.file_size)}</TableCell>
+                    <TableCell className="text-xs py-1.5 text-muted-foreground">{formatDate(f.created_at)}</TableCell>
+                    <TableCell className="py-1.5">
+                      <a
+                        href={dmsApi.downloadFileUrl(f.id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex"
+                      >
+                        <Download className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                      </a>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+
+      {/* Children by type */}
+      {!isLoading && hasChildren && (
+        <div>
+          <p className="text-sm font-medium flex items-center gap-1.5 mb-2">
+            <ChildrenIcon className="h-4 w-4" />
+            Child Documents
+          </p>
+          {relTypes.filter((t) => (children[t.slug]?.length ?? 0) > 0).map((rt) => (
+            <div key={rt.slug} className="mb-2">
+              <p className="text-xs font-medium text-muted-foreground mb-1">{rt.label} ({children[rt.slug]!.length})</p>
+              <div className="rounded border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="text-xs py-1.5">Title</TableHead>
+                      <TableHead className="text-xs py-1.5">Number</TableHead>
+                      <TableHead className="text-xs py-1.5">Status</TableHead>
+                      <TableHead className="text-xs py-1.5 text-center">Files</TableHead>
+                      <TableHead className="text-xs py-1.5">Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {children[rt.slug]!.map((child) => (
+                      <TableRow key={child.id}>
+                        <TableCell className="py-1.5">
+                          <span className="text-xs font-medium">{child.title}</span>
+                        </TableCell>
+                        <TableCell className="text-xs py-1.5 text-muted-foreground">{child.doc_number || '—'}</TableCell>
+                        <TableCell className="py-1.5">
+                          <Badge className={cn('text-[10px] px-1.5 py-0', STATUS_COLORS[child.status])}>
+                            {child.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs py-1.5 text-center">{child.file_count ?? 0}</TableCell>
+                        <TableCell className="text-xs py-1.5 text-muted-foreground">{formatDate(child.created_at)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onViewDetail() }}>
+          <Edit2 className="h-3.5 w-3.5 mr-1" />View / Edit
+        </Button>
+        <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); onDelete() }}>
+          <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+        </Button>
+      </div>
     </div>
   )
 }

@@ -6,7 +6,7 @@ from flask import request, jsonify, g
 from flask_login import login_required, current_user
 
 from dms import dms_bp
-from dms.repositories import DocumentRepository, FileRepository
+from dms.repositories import DocumentRepository, FileRepository, RelTypeRepository
 from dms.services.document_service import DocumentService
 from core.roles.repositories import PermissionRepository
 from core.utils.api_helpers import safe_error_response, get_json_or_error
@@ -15,6 +15,7 @@ logger = logging.getLogger('jarvis.dms.routes.documents')
 
 _doc_repo = DocumentRepository()
 _file_repo = FileRepository()
+_rel_type_repo = RelTypeRepository()
 _service = DocumentService()
 _perm_repo = PermissionRepository()
 
@@ -222,7 +223,7 @@ def api_create_child(doc_id):
         return jsonify({'success': False, 'error': 'Title is required'}), 400
 
     relationship_type = data.get('relationship_type', 'other')
-    if relationship_type not in ('annex', 'deviz', 'proof', 'other'):
+    if not _rel_type_repo.get_by_slug(relationship_type):
         return jsonify({'success': False, 'error': 'Invalid relationship_type'}), 400
 
     # Get parent to inherit company_id and category_id
