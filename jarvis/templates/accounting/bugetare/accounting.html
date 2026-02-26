@@ -3342,7 +3342,7 @@
                                         <span class="badge bg-primary">${a.allocation_percent}%</span>
                                     </div>
                                     <div class="small ms-2 mt-1">
-                                        <div>└ ${formatCurrency(keptValue)} ${invCurrency} - ${srcLoc || '-'}</div>
+                                        ${keptValue > 0 ? `<div>└ ${formatCurrency(keptValue)} ${invCurrency} - ${srcLoc || '-'}</div>` : ''}
                                         ${hasReinvoice ? a.reinvoice_destinations.map(rd => {
                                             let destLoc = rd.company;
                                             if (rd.brand) destLoc += ' (' + rd.brand + ')';
