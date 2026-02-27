@@ -179,6 +179,18 @@ export interface BioStarAdjustment {
   created_at: string
 }
 
+export interface BioStarCronJob {
+  id: string
+  label: string
+  description: string
+  enabled: boolean
+  hour: number
+  minute: number
+  last_run: string | null
+  last_success: boolean | null
+  last_message: string | null
+}
+
 export interface JarvisUser {
   id: number
   name: string

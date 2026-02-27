@@ -382,6 +382,107 @@ def revert_adjustment():
     return jsonify({'success': True, 'message': 'Adjustment reverted'})
 
 
+# ── Cron Job Settings ──
+
+BIOSTAR_CRON_JOBS = [
+    {'id': 'biostar_sync_events', 'label': 'Sync Events', 'description': 'Incremental punch log sync', 'default_schedule': '01:00'},
+    {'id': 'biostar_sync_users', 'label': 'Sync Users', 'description': 'Full user sync + auto-mapping', 'default_schedule': '02:00'},
+    {'id': 'biostar_auto_adjust', 'label': 'Auto-Adjust', 'description': "Auto-adjust yesterday's off-schedule punches", 'default_schedule': '03:00'},
+]
+
+
+@biostar_bp.route('/api/cron-jobs', methods=['GET'])
+@api_login_required
+def get_cron_jobs():
+    """Get BioStar cron job settings."""
+    import json as _json
+    connector = service.connector_repo.get_by_type('biostar')
+    config = {}
+    if connector:
+        raw = connector.get('config') or {}
+        config = _json.loads(raw) if isinstance(raw, str) else raw
+
+    cron_settings = config.get('cron_jobs', {})
+    jobs = []
+    for job in BIOSTAR_CRON_JOBS:
+        settings = cron_settings.get(job['id'], {})
+        jobs.append({
+            'id': job['id'],
+            'label': job['label'],
+            'description': job['description'],
+            'enabled': settings.get('enabled', True),
+            'hour': settings.get('hour', int(job['default_schedule'].split(':')[0])),
+            'minute': settings.get('minute', int(job['default_schedule'].split(':')[1])),
+            'last_run': settings.get('last_run'),
+            'last_success': settings.get('last_success'),
+            'last_message': settings.get('last_message'),
+        })
+    return jsonify({'success': True, 'data': jobs})
+
+
+@biostar_bp.route('/api/cron-jobs', methods=['PUT'])
+@api_login_required
+def update_cron_jobs():
+    """Update BioStar cron job settings and reschedule."""
+    import json as _json
+    data = request.get_json()
+    if not data or 'jobs' not in data:
+        return jsonify({'success': False, 'error': 'jobs array required'}), 400
+
+    connector = service.connector_repo.get_by_type('biostar')
+    if not connector:
+        return jsonify({'success': False, 'error': 'BioStar connector not configured'}), 400
+
+    raw = connector.get('config') or {}
+    config = _json.loads(raw) if isinstance(raw, str) else raw
+
+    cron_settings = config.get('cron_jobs', {})
+    for job in data['jobs']:
+        job_id = job.get('id')
+        if not job_id:
+            continue
+        cron_settings[job_id] = {
+            'enabled': bool(job.get('enabled', True)),
+            'hour': int(job.get('hour', 1)),
+            'minute': int(job.get('minute', 0)),
+        }
+    config['cron_jobs'] = cron_settings
+    service.connector_repo.update(connector['id'], config=config)
+
+    # Reschedule jobs in the running scheduler
+    try:
+        from tasks.cleanup import scheduler
+        if scheduler.running:
+            from tasks.cleanup import sync_biostar_events, sync_biostar_users, auto_adjust_biostar_schedules
+            job_funcs = {
+                'biostar_sync_events': sync_biostar_events,
+                'biostar_sync_users': sync_biostar_users,
+                'biostar_auto_adjust': auto_adjust_biostar_schedules,
+            }
+            for job_id, settings in cron_settings.items():
+                if job_id not in job_funcs:
+                    continue
+                try:
+                    scheduler.remove_job(job_id)
+                except Exception:
+                    pass
+                if settings.get('enabled', True):
+                    scheduler.add_job(
+                        job_funcs[job_id],
+                        'cron',
+                        hour=settings['hour'],
+                        minute=settings['minute'],
+                        id=job_id,
+                        replace_existing=True,
+                        misfire_grace_time=300,
+                        coalesce=True,
+                    )
+    except Exception:
+        pass  # Scheduler may not be running in dev
+
+    return jsonify({'success': True, 'message': 'Cron jobs updated'})
+
+
 # ── JARVIS Users (for mapping dropdown) ──
 
 @biostar_bp.route('/api/employees/jarvis-users', methods=['GET'])

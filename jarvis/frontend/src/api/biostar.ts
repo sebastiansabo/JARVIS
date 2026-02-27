@@ -10,6 +10,7 @@ import type {
   BioStarDayHistory,
   BioStarOffScheduleRow,
   BioStarAdjustment,
+  BioStarCronJob,
   JarvisUser,
 } from '@/types/biostar'
 
@@ -201,6 +202,16 @@ export const biostarApi = {
     api.post<{ success: boolean; message: string }>(`${BASE}/adjustments/revert`, {
       biostar_user_id: biostarUserId, date,
     }),
+
+  // ── Cron Jobs ──
+
+  getCronJobs: async () => {
+    const res = await api.get<{ success: boolean; data: BioStarCronJob[] }>(`${BASE}/cron-jobs`)
+    return res.data
+  },
+
+  updateCronJobs: (jobs: Array<{ id: string; enabled: boolean; hour: number; minute: number }>) =>
+    api.put<{ success: boolean; message: string }>(`${BASE}/cron-jobs`, { jobs }),
 
   // ── JARVIS Users (for mapping) ──
 

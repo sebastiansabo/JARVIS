@@ -19,6 +19,7 @@ import {
   Clock,
   Save,
   History,
+  Timer,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,6 +39,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -563,6 +565,7 @@ function BioStarConnectionSection() {
         </div>
       )}
 
+      <BioStarCronJobs />
       <BioStarSyncHistory />
     </div>
   )
@@ -615,6 +618,98 @@ function BioStarSyncHistory() {
             ))}
           </TableBody>
         </Table>
+      </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════
+// BioStar Cron Jobs
+// ════════════════════════════════════════════════
+
+function BioStarCronJobs() {
+  const qc = useQueryClient()
+  const { data: cronJobs = [] } = useQuery({
+    queryKey: ['biostar', 'cronJobs'],
+    queryFn: biostarApi.getCronJobs,
+  })
+
+  const updateMut = useMutation({
+    mutationFn: biostarApi.updateCronJobs,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['biostar', 'cronJobs'] })
+      toast.success('Cron jobs updated')
+    },
+    onError: () => toast.error('Failed to update cron jobs'),
+  })
+
+  const toggleJob = (jobId: string, enabled: boolean) => {
+    const updated = cronJobs.map((j) =>
+      j.id === jobId ? { id: j.id, enabled, hour: j.hour, minute: j.minute } : { id: j.id, enabled: j.enabled, hour: j.hour, minute: j.minute },
+    )
+    updateMut.mutate(updated)
+  }
+
+  const updateSchedule = (jobId: string, hour: number, minute: number) => {
+    const updated = cronJobs.map((j) =>
+      j.id === jobId ? { id: j.id, enabled: j.enabled, hour, minute } : { id: j.id, enabled: j.enabled, hour: j.hour, minute: j.minute },
+    )
+    updateMut.mutate(updated)
+  }
+
+  if (cronJobs.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      <h4 className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+        <Timer className="h-3.5 w-3.5" /> Scheduled Jobs
+      </h4>
+      <div className="space-y-2">
+        {cronJobs.map((job) => (
+          <div key={job.id} className="flex items-center gap-3 rounded border p-3">
+            <Switch
+              checked={job.enabled}
+              onCheckedChange={(v) => toggleJob(job.id, v)}
+              disabled={updateMut.isPending}
+            />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{job.label}</span>
+                <span className="text-xs text-muted-foreground">{job.description}</span>
+              </div>
+              {job.last_run && (
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  {job.last_success ? (
+                    <CheckCircle className="h-3 w-3 text-green-600" />
+                  ) : (
+                    <XCircle className="h-3 w-3 text-red-500" />
+                  )}
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(job.last_run).toLocaleString('ro-RO')} — {job.last_message}
+                  </span>
+                </div>
+              )}
+            </div>
+            <Select
+              value={`${String(job.hour).padStart(2, '0')}:${String(job.minute).padStart(2, '0')}`}
+              onValueChange={(v) => {
+                const [h, m] = v.split(':').map(Number)
+                updateSchedule(job.id, h, m)
+              }}
+            >
+              <SelectTrigger className="w-24 h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: 24 }, (_, h) => (
+                  <SelectItem key={h} value={`${String(h).padStart(2, '0')}:00`}>
+                    {String(h).padStart(2, '0')}:00
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ))}
       </div>
     </div>
   )

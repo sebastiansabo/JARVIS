@@ -126,6 +126,31 @@ def run_daily_digest():
         logger.error(f"Daily digest task failed: {e}")
 
 
+def _save_biostar_cron_log(job_id, success, message):
+    """Persist last-run result into connector config for UI display."""
+    try:
+        import json as _json
+        from datetime import datetime as _dt
+        from core.connectors.repositories.connector_repository import ConnectorRepository
+        repo = ConnectorRepository()
+        connector = repo.get_by_type('biostar')
+        if not connector:
+            return
+        cfg = connector.get('config') or {}
+        if isinstance(cfg, str):
+            cfg = _json.loads(cfg)
+        cron_jobs = cfg.get('cron_jobs', {})
+        job_settings = cron_jobs.get(job_id, {})
+        job_settings['last_run'] = _dt.now().isoformat()
+        job_settings['last_success'] = success
+        job_settings['last_message'] = message
+        cron_jobs[job_id] = job_settings
+        cfg['cron_jobs'] = cron_jobs
+        repo.update(connector['id'], config=cfg)
+    except Exception as e:
+        logger.error(f"Failed to save cron log for {job_id}: {e}")
+
+
 def sync_biostar_events():
     """Incremental sync of BioStar punch events."""
     try:
@@ -133,16 +158,21 @@ def sync_biostar_events():
         svc = BioStarSyncService()
         status = svc.get_status()
         if not status.get('connected'):
+            _save_biostar_cron_log('biostar_sync_events', False, 'Skipped — not connected')
             return
         result = svc.sync_events()
         if result.get('success'):
             data = result.get('data', {})
-            if data.get('inserted', 0) > 0:
-                logger.info(f"BioStar event sync: {data['inserted']} new, {data.get('skipped', 0)} skipped")
+            msg = f"{data.get('inserted', 0)} new, {data.get('skipped', 0)} skipped"
+            logger.info(f"BioStar event sync: {msg}")
+            _save_biostar_cron_log('biostar_sync_events', True, msg)
         else:
-            logger.warning(f"BioStar event sync failed: {result.get('error')}")
+            msg = result.get('error', 'Unknown error')
+            logger.warning(f"BioStar event sync failed: {msg}")
+            _save_biostar_cron_log('biostar_sync_events', False, msg)
     except Exception as e:
         logger.error(f"BioStar event sync task failed: {e}")
+        _save_biostar_cron_log('biostar_sync_events', False, str(e))
 
 
 def sync_biostar_users():
@@ -152,15 +182,21 @@ def sync_biostar_users():
         svc = BioStarSyncService()
         status = svc.get_status()
         if not status.get('connected'):
+            _save_biostar_cron_log('biostar_sync_users', False, 'Skipped — not connected')
             return
         result = svc.sync_users()
         if result.get('success'):
             data = result.get('data', {})
-            logger.info(f"BioStar user sync: {data.get('fetched', 0)} fetched, {data.get('mapped', 0)} mapped")
+            msg = f"{data.get('fetched', 0)} fetched, {data.get('mapped', 0)} mapped"
+            logger.info(f"BioStar user sync: {msg}")
+            _save_biostar_cron_log('biostar_sync_users', True, msg)
         else:
-            logger.warning(f"BioStar user sync failed: {result.get('error')}")
+            msg = result.get('error', 'Unknown error')
+            logger.warning(f"BioStar user sync failed: {msg}")
+            _save_biostar_cron_log('biostar_sync_users', False, msg)
     except Exception as e:
         logger.error(f"BioStar user sync task failed: {e}")
+        _save_biostar_cron_log('biostar_sync_users', False, str(e))
 
 
 def auto_adjust_biostar_schedules():
@@ -171,13 +207,16 @@ def auto_adjust_biostar_schedules():
         svc = BioStarSyncService()
         status = svc.get_status()
         if not status.get('connected'):
+            _save_biostar_cron_log('biostar_auto_adjust', False, 'Skipped — not connected')
             return
         yesterday = (date.today() - timedelta(days=1)).isoformat()
         result = svc.auto_adjust_all(yesterday, threshold=15)
-        if result['adjusted'] > 0:
-            logger.info(f"BioStar auto-adjust: {result['adjusted']} of {result['total_flagged']} employees adjusted for {yesterday}")
+        msg = f"{result['adjusted']} of {result['total_flagged']} adjusted for {yesterday}"
+        logger.info(f"BioStar auto-adjust: {msg}")
+        _save_biostar_cron_log('biostar_auto_adjust', True, msg)
     except Exception as e:
         logger.error(f"BioStar auto-adjust task failed: {e}")
+        _save_biostar_cron_log('biostar_auto_adjust', False, str(e))
 
 
 def _acquire_scheduler_lock():
@@ -293,38 +332,40 @@ def start_scheduler():
         coalesce=True,
     )
 
-    scheduler.add_job(
-        sync_biostar_events,
-        'cron',
-        hour=1,
-        minute=0,
-        id='biostar_sync_events',
-        replace_existing=True,
-        misfire_grace_time=300,
-        coalesce=True,
-    )
+    # BioStar jobs — read schedule from connector config if available
+    _biostar_defaults = {
+        'biostar_sync_events': {'func': sync_biostar_events, 'hour': 1, 'minute': 0},
+        'biostar_sync_users': {'func': sync_biostar_users, 'hour': 2, 'minute': 0},
+        'biostar_auto_adjust': {'func': auto_adjust_biostar_schedules, 'hour': 3, 'minute': 0},
+    }
+    _biostar_cron = {}
+    try:
+        import json as _json
+        from core.connectors.repositories.connector_repository import ConnectorRepository
+        connector = ConnectorRepository().get_by_type('biostar')
+        if connector:
+            cfg = connector.get('config') or {}
+            if isinstance(cfg, str):
+                cfg = _json.loads(cfg)
+            _biostar_cron = cfg.get('cron_jobs', {})
+    except Exception:
+        pass
 
-    scheduler.add_job(
-        sync_biostar_users,
-        'cron',
-        hour=2,
-        minute=0,
-        id='biostar_sync_users',
-        replace_existing=True,
-        misfire_grace_time=300,
-        coalesce=True,
-    )
-
-    scheduler.add_job(
-        auto_adjust_biostar_schedules,
-        'cron',
-        hour=3,
-        minute=0,
-        id='biostar_auto_adjust',
-        replace_existing=True,
-        misfire_grace_time=300,
-        coalesce=True,
-    )
+    for job_id, defaults in _biostar_defaults.items():
+        settings = _biostar_cron.get(job_id, {})
+        if not settings.get('enabled', True):
+            logger.info(f"Skipping disabled cron job: {job_id}")
+            continue
+        scheduler.add_job(
+            defaults['func'],
+            'cron',
+            hour=settings.get('hour', defaults['hour']),
+            minute=settings.get('minute', defaults['minute']),
+            id=job_id,
+            replace_existing=True,
+            misfire_grace_time=300,
+            coalesce=True,
+        )
 
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown(wait=False))
