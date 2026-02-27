@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FolderOpen, FileText, Plus, Search, Trash2, RotateCcw,
-  Settings2, Paperclip, Users as ChildrenIcon, ChevronDown,
+  Paperclip, Users as ChildrenIcon, ChevronDown,
   Download, Calendar, Bell, Edit2, File, FileSpreadsheet,
-  Image as ImageIcon, PenTool, Tags, Shield, Building2, UserCog, X,
+  Image as ImageIcon, PenTool, Tags, Shield, Building2, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -30,11 +30,9 @@ import { tagsApi } from '@/api/tags'
 import { useDmsStore } from '@/stores/dmsStore'
 import type { DmsDocument, DmsFile, DmsCategory, DmsRelationshipTypeConfig } from '@/types/dms'
 import UploadDialog from './UploadDialog'
-import CategoryManager from './CategoryManager'
 import SupplierManager from './SupplierManager'
-import PartyRoleManager from './PartyRoleManager'
 
-type MainTab = 'documents' | 'categories' | 'party-roles' | 'suppliers'
+type MainTab = 'documents' | 'suppliers'
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
@@ -316,34 +314,6 @@ export default function Dms() {
         </button>
         {isAdmin && (
           <button
-            onClick={() => setMainTab('categories')}
-            className={cn(
-              'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-              mainTab === 'categories'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-            Categories
-          </button>
-        )}
-        {isAdmin && (
-          <button
-            onClick={() => setMainTab('party-roles')}
-            className={cn(
-              'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-              mainTab === 'party-roles'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <UserCog className="h-3.5 w-3.5" />
-            Party Roles
-          </button>
-        )}
-        {isAdmin && (
-          <button
             onClick={() => setMainTab('suppliers')}
             className={cn(
               'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
@@ -602,14 +572,6 @@ export default function Dms() {
             </>
           )}
         </>
-      )}
-
-      {mainTab === 'categories' && isAdmin && (
-        <CategoryManager companyId={companyId} />
-      )}
-
-      {mainTab === 'party-roles' && isAdmin && (
-        <PartyRoleManager />
       )}
 
       {mainTab === 'suppliers' && isAdmin && (
