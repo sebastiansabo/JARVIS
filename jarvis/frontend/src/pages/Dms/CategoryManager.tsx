@@ -1,15 +1,17 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Edit2, Trash2, GripVertical, Check, X } from 'lucide-react'
+import { Plus, Edit2, Trash2, GripVertical, Check, X, Shield } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { dmsApi } from '@/api/dms'
+import { rolesApi } from '@/api/roles'
 import type { DmsCategory, DmsRelationshipTypeConfig } from '@/types/dms'
 
 interface CategoryManagerProps {
@@ -28,6 +30,7 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
   const [icon, setIcon] = useState('bi-folder')
   const [color, setColor] = useState('#6c757d')
   const [description, setDescription] = useState('')
+  const [allowedRoleIds, setAllowedRoleIds] = useState<number[]>([])
 
   // Relationship types state
   const [rtCreateOpen, setRtCreateOpen] = useState(false)
@@ -44,7 +47,13 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
     enabled: true,
   })
 
+  const { data: rolesData } = useQuery({
+    queryKey: ['roles-list'],
+    queryFn: () => rolesApi.getRoles(),
+  })
+
   const categories: DmsCategory[] = data?.categories || []
+  const roles = rolesData || []
 
   const resetForm = () => {
     setName('')
@@ -52,6 +61,7 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
     setIcon('bi-folder')
     setColor('#6c757d')
     setDescription('')
+    setAllowedRoleIds([])
   }
 
   const createMutation = useMutation({
@@ -157,16 +167,24 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
     setIcon(cat.icon)
     setColor(cat.color)
     setDescription(cat.description || '')
+    setAllowedRoleIds(cat.allowed_role_ids || [])
+  }
+
+  const toggleRole = (roleId: number) => {
+    setAllowedRoleIds((prev) =>
+      prev.includes(roleId) ? prev.filter((r) => r !== roleId) : [...prev, roleId]
+    )
   }
 
   const handleSave = () => {
-    const payload = {
+    const payload: Record<string, unknown> = {
       name: name.trim(),
       slug: slug.trim() || name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
       icon,
       color,
       description: description.trim() || undefined,
       company_id: companyId,
+      allowed_role_ids: allowedRoleIds.length > 0 ? allowedRoleIds : null,
     }
 
     if (editCat) {
@@ -177,6 +195,8 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
   }
 
   const formDialog = createOpen || editCat
+
+  const roleNameById = (id: number) => roles.find((r) => r.id === id)?.name || `Role ${id}`
 
   return (
     <div className="space-y-4">
@@ -201,6 +221,7 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
                 <TableHead>Name</TableHead>
                 <TableHead>Slug</TableHead>
                 <TableHead>Color</TableHead>
+                <TableHead>Access</TableHead>
                 <TableHead className="text-center">Documents</TableHead>
                 <TableHead className="text-center">Active</TableHead>
                 <TableHead className="w-[80px]" />
@@ -222,6 +243,19 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
                       />
                       <span className="text-xs text-muted-foreground">{cat.color}</span>
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    {cat.allowed_role_ids && cat.allowed_role_ids.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {cat.allowed_role_ids.map((rid) => (
+                          <Badge key={rid} variant="outline" className="text-[10px] px-1.5 py-0">
+                            {roleNameById(rid)}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">All roles</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-center">
                     <Badge variant="secondary">{cat.document_count ?? 0}</Badge>
@@ -297,6 +331,26 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
             <div className="space-y-1.5">
               <Label>Description</Label>
               <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional" />
+            </div>
+
+            {/* Role access */}
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <Shield className="h-3.5 w-3.5" />
+                Restrict to Roles
+              </Label>
+              <p className="text-xs text-muted-foreground">Leave unchecked for all roles to access</p>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {roles.map((role) => (
+                  <label key={role.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={allowedRoleIds.includes(role.id)}
+                      onCheckedChange={() => toggleRole(role.id)}
+                    />
+                    {role.name}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
 

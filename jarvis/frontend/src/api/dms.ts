@@ -7,6 +7,15 @@ import type {
   DmsStats,
   DmsRelationshipType,
   DmsRelationshipTypeConfig,
+  DmsParty,
+  DmsPartyRole,
+  DmsEntityType,
+  DmsSignatureStatus,
+  DmsWmlExtraction,
+  DmsWmlChunk,
+  DmsDriveSync,
+  DmsSupplier,
+  PartySuggestion,
 } from '@/types/dms'
 
 const BASE = '/dms/api'
@@ -59,6 +68,7 @@ export const dmsApi = {
       title: string; description?: string; relationship_type: DmsRelationshipType;
       category_id?: number; status?: string;
       doc_number?: string; doc_date?: string; expiry_date?: string; notify_user_id?: number;
+      visibility?: 'all' | 'restricted'; allowed_role_ids?: number[] | null; allowed_user_ids?: number[] | null;
     },
   ) => api.post<{ success: boolean; id: number }>(`${BASE}/documents/${parentId}/children`, data),
 
@@ -127,4 +137,100 @@ export const dmsApi = {
 
   reorderRelationshipTypes: (ids: number[]) =>
     api.put<{ success: boolean }>(`/dms/api/dms/relationship-types/reorder`, { ids }),
+
+  // ---- Parties ----
+
+  listParties: (documentId: number) =>
+    api.get<{ success: boolean; parties: DmsParty[] }>(
+      `${BASE}/documents/${documentId}/parties`,
+    ),
+
+  createParty: (documentId: number, data: {
+    party_role: DmsPartyRole; entity_type: DmsEntityType;
+    entity_name: string; entity_id?: number; entity_details?: Record<string, unknown>;
+  }) => api.post<{ success: boolean; id: number }>(
+    `${BASE}/documents/${documentId}/parties`, data,
+  ),
+
+  updateParty: (partyId: number, data: Partial<DmsParty>) =>
+    api.put<{ success: boolean }>(`/dms/api/dms/parties/${partyId}`, data),
+
+  deleteParty: (partyId: number) =>
+    api.delete<{ success: boolean }>(`/dms/api/dms/parties/${partyId}`),
+
+  suggestParties: (query: string) =>
+    api.get<{ success: boolean; suggestions: PartySuggestion[] }>(
+      `/dms/api/dms/parties/suggest${toQs({ q: query })}`,
+    ),
+
+  // ---- Signatures ----
+
+  updateSignatureStatus: (documentId: number, data: {
+    signature_status: DmsSignatureStatus; signature_provider?: string;
+  }) => api.put<{ success: boolean }>(
+    `${BASE}/documents/${documentId}/signature-status`, data,
+  ),
+
+  getPendingSignatures: () =>
+    api.get<{ success: boolean; documents: DmsDocument[] }>(
+      `${BASE}/documents/pending-signatures`,
+    ),
+
+  // ---- Extraction ----
+
+  extractText: (documentId: number) =>
+    api.post<{ success: boolean; extractions: DmsWmlExtraction[] }>(
+      `${BASE}/documents/${documentId}/extract`,
+    ),
+
+  getExtractedText: (documentId: number) =>
+    api.get<{ success: boolean; extractions: DmsWmlExtraction[] }>(
+      `${BASE}/documents/${documentId}/text`,
+    ),
+
+  getChunks: (documentId: number) =>
+    api.get<{ success: boolean; chunks: DmsWmlChunk[] }>(
+      `${BASE}/documents/${documentId}/chunks`,
+    ),
+
+  // ---- Drive Sync ----
+
+  getDriveSync: (documentId: number) =>
+    api.get<{ success: boolean; sync: DmsDriveSync | null; drive_available: boolean }>(
+      `${BASE}/documents/${documentId}/drive-sync`,
+    ),
+
+  syncToDrive: (documentId: number) =>
+    api.post<{ success: boolean; folder_url?: string; uploaded?: string[]; skipped?: string[]; errors?: Array<{ file: string; error: string }> }>(
+      `${BASE}/documents/${documentId}/drive-sync`,
+    ),
+
+  unsyncDrive: (documentId: number) =>
+    api.delete<{ success: boolean }>(
+      `${BASE}/documents/${documentId}/drive-sync`,
+    ),
+
+  getDriveStatus: () =>
+    api.get<{ success: boolean; available: boolean }>(
+      `/dms/api/dms/drive-status`,
+    ),
+
+  // ---- Suppliers ----
+
+  listSuppliers: (params?: { search?: string; supplier_type?: string; active_only?: boolean; limit?: number; offset?: number }) =>
+    api.get<{ success: boolean; suppliers: DmsSupplier[]; total: number }>(
+      `/dms/api/dms/suppliers${toQs({ ...params })}`,
+    ),
+
+  getSupplier: (id: number) =>
+    api.get<{ success: boolean; supplier: DmsSupplier }>(`/dms/api/dms/suppliers/${id}`),
+
+  createSupplier: (data: Partial<DmsSupplier>) =>
+    api.post<{ success: boolean; id: number }>(`/dms/api/dms/suppliers`, data),
+
+  updateSupplier: (id: number, data: Partial<DmsSupplier>) =>
+    api.put<{ success: boolean }>(`/dms/api/dms/suppliers/${id}`, data),
+
+  deleteSupplier: (id: number) =>
+    api.delete<{ success: boolean }>(`/dms/api/dms/suppliers/${id}`),
 }

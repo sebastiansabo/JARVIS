@@ -44,8 +44,11 @@ def dms_permission_required(entity, action):
 @login_required
 @dms_permission_required('document', 'view')
 def api_list_documents():
-    """List root documents with filters."""
+    """List root documents with filters and visibility."""
     company_id = getattr(current_user, 'company_id', None)
+    # Non-admin users get visibility filtering
+    user_id = current_user.id if company_id else None
+    role_id = getattr(current_user, 'role_id', None) if company_id else None
 
     result = _doc_repo.list_documents(
         company_id=company_id,
@@ -54,6 +57,8 @@ def api_list_documents():
         search=request.args.get('search'),
         limit=min(request.args.get('limit', 50, type=int), 200),
         offset=request.args.get('offset', 0, type=int),
+        user_id=user_id,
+        role_id=role_id,
     )
     return jsonify({'success': True, **result})
 
@@ -109,6 +114,21 @@ def api_create_document():
         if isinstance(metadata, dict):
             metadata = json.dumps(metadata)
 
+        # Visibility
+        visibility = data.get('visibility', 'all')
+        if visibility not in ('all', 'restricted'):
+            visibility = 'all'
+        allowed_role_ids = data.get('allowed_role_ids')
+        if isinstance(allowed_role_ids, list) and allowed_role_ids:
+            allowed_role_ids = [int(r) for r in allowed_role_ids]
+        else:
+            allowed_role_ids = None
+        allowed_user_ids = data.get('allowed_user_ids')
+        if isinstance(allowed_user_ids, list) and allowed_user_ids:
+            allowed_user_ids = [int(u) for u in allowed_user_ids]
+        else:
+            allowed_user_ids = None
+
         row = _doc_repo.create(
             title=title,
             company_id=company_id,
@@ -121,6 +141,9 @@ def api_create_document():
             doc_date=data.get('doc_date') or None,
             expiry_date=data.get('expiry_date') or None,
             notify_user_id=data.get('notify_user_id'),
+            visibility=visibility,
+            allowed_role_ids=allowed_role_ids,
+            allowed_user_ids=allowed_user_ids,
         )
         return jsonify({'success': True, 'id': row['id']}), 201
     except Exception as e:
@@ -147,11 +170,18 @@ def api_update_document(doc_id):
     try:
         fields = {}
         for key in ('title', 'description', 'category_id', 'status',
-                     'doc_number', 'doc_date', 'expiry_date', 'notify_user_id'):
+                     'doc_number', 'doc_date', 'expiry_date', 'notify_user_id',
+                     'visibility'):
             if key in data:
                 fields[key] = data[key] if data[key] != '' else None
         if 'metadata' in data:
             fields['metadata'] = json.dumps(data['metadata']) if isinstance(data['metadata'], dict) else data['metadata']
+        if 'allowed_role_ids' in data:
+            val = data['allowed_role_ids']
+            fields['allowed_role_ids'] = [int(r) for r in val] if isinstance(val, list) and val else None
+        if 'allowed_user_ids' in data:
+            val = data['allowed_user_ids']
+            fields['allowed_user_ids'] = [int(u) for u in val] if isinstance(val, list) and val else None
 
         _doc_repo.update(doc_id, **fields)
         return jsonify({'success': True})

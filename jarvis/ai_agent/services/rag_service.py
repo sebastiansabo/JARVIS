@@ -265,6 +265,10 @@ class RAGService:
             ('client', 'Client'), ('status', 'Status'), ('price', 'Price'),
             ('dossier_type', 'Type'),
         ],
+        'dms_document': [
+            ('doc_number', 'Nr. Doc'), ('category', 'Categorie'), ('company', 'Companie'),
+            ('status', 'Status'), ('expiry_date', 'Expira'), ('parties', 'Parti'),
+        ],
     }
 
     def format_context(
@@ -1910,6 +1914,129 @@ class RAGService:
             logger.error(f"Bilant report batch indexing failed: {e}")
             return ServiceResult(success=False, error=str(e))
 
+    # ============== DMS Document Indexing ==============
+
+    def _build_dms_document_content(self, data: dict) -> str:
+        """Build searchable content from DMS document data."""
+        parts = []
+        parts.append(f"Document: {data.get('title', '')}")
+        if data.get('doc_number'):
+            parts.append(f"Nr. Document: {data['doc_number']}")
+        if data.get('category_name'):
+            parts.append(f"Categorie: {data['category_name']}")
+        if data.get('company_name'):
+            parts.append(f"Companie: {data['company_name']}")
+        if data.get('status'):
+            parts.append(f"Status: {data['status']}")
+        if data.get('description'):
+            parts.append(f"Descriere: {data['description'][:500]}")
+        if data.get('doc_date'):
+            parts.append(f"Data document: {data['doc_date']}")
+        if data.get('expiry_date'):
+            parts.append(f"Data expirare: {data['expiry_date']}")
+        if data.get('created_by_name'):
+            parts.append(f"Creat de: {data['created_by_name']}")
+        if data.get('file_count'):
+            parts.append(f"Fisiere: {data['file_count']}")
+        if data.get('children_count'):
+            parts.append(f"Documente copil: {data['children_count']}")
+        # Parties
+        for party in data.get('parties', []):
+            parts.append(f"Parte ({party.get('party_role', '?')}): {party.get('entity_name', '?')}")
+        # Signature
+        if data.get('signature_status'):
+            parts.append(f"Semnatura: {data['signature_status']}")
+        return '\n'.join(parts)
+
+    def index_dms_document(self, doc_id: int) -> ServiceResult:
+        """Index a DMS document for RAG search."""
+        try:
+            conn = get_db()
+            try:
+                cursor = get_cursor(conn)
+                cursor.execute("""
+                    SELECT d.*,
+                           c.name AS category_name,
+                           co.company AS company_name,
+                           u.name AS created_by_name,
+                           (SELECT COUNT(*) FROM dms_files WHERE document_id = d.id) AS file_count,
+                           (SELECT COUNT(*) FROM dms_documents
+                            WHERE parent_id = d.id AND deleted_at IS NULL) AS children_count
+                    FROM dms_documents d
+                    LEFT JOIN dms_categories c ON c.id = d.category_id
+                    LEFT JOIN companies co ON co.id = d.company_id
+                    LEFT JOIN users u ON u.id = d.created_by
+                    WHERE d.id = %s AND d.deleted_at IS NULL
+                """, (doc_id,))
+                data = cursor.fetchone()
+                if not data:
+                    return ServiceResult(success=False, error='DMS document not found')
+                data = dict(data)
+                # Fetch parties if table exists
+                try:
+                    cursor.execute("""
+                        SELECT party_role, entity_name
+                        FROM document_parties
+                        WHERE document_id = %s
+                        ORDER BY sort_order
+                    """, (doc_id,))
+                    data['parties'] = [dict(r) for r in cursor.fetchall()]
+                except Exception:
+                    data['parties'] = []
+            finally:
+                release_db(conn)
+
+            content = self._build_dms_document_content(data)
+            party_names = [p['entity_name'] for p in data.get('parties', [])]
+            metadata = {
+                'doc_number': data.get('doc_number'),
+                'category': data.get('category_name'),
+                'company': data.get('company_name'),
+                'status': data.get('status'),
+                'expiry_date': str(data.get('expiry_date') or ''),
+                'date': str(data.get('doc_date') or data.get('created_at') or ''),
+                'parties': ', '.join(party_names) if party_names else None,
+            }
+            return self._index_document(
+                RAGSourceType.DMS_DOCUMENT, doc_id, 'dms_documents',
+                content, metadata, data.get('company_id')
+            )
+        except Exception as e:
+            logger.error(f"DMS document indexing failed for {doc_id}: {e}")
+            return ServiceResult(success=False, error=str(e))
+
+    def index_dms_documents_batch(self, limit: int = 500) -> ServiceResult:
+        """Batch index DMS documents."""
+        try:
+            conn = get_db()
+            try:
+                cursor = get_cursor(conn)
+                cursor.execute("""
+                    SELECT d.id FROM dms_documents d
+                    WHERE d.deleted_at IS NULL
+                      AND d.parent_id IS NULL
+                      AND NOT EXISTS (
+                        SELECT 1 FROM ai_agent.rag_documents r
+                        WHERE r.source_type = 'dms_document'
+                          AND r.source_id = d.id
+                          AND r.is_active = TRUE
+                          AND r.updated_at >= d.updated_at
+                      )
+                    ORDER BY d.updated_at DESC LIMIT %s
+                """, (limit,))
+                rows = cursor.fetchall()
+            finally:
+                release_db(conn)
+            indexed = 0
+            for row in rows:
+                if self.index_dms_document(row['id']).success:
+                    indexed += 1
+            logger.info(f"Batch indexed {indexed} DMS documents")
+            return ServiceResult(success=True, data={'indexed': indexed})
+        except Exception as e:
+            logger.error(f"DMS document batch indexing failed: {e}")
+            return ServiceResult(success=False, error=str(e))
+
     # ============== Orchestration ==============
 
     def index_all_sources(self, limit: int = 500) -> ServiceResult:
@@ -1933,6 +2060,7 @@ class RAGService:
             ('bank_statements', self.index_bank_statements_batch),
             ('chart_accounts', self.index_chart_accounts_batch),
             ('bilant_reports', self.index_bilant_reports_batch),
+            ('dms_documents', self.index_dms_documents_batch),
         ]
 
         for name, method in batch_methods:

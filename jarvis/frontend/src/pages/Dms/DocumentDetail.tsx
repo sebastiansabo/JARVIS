@@ -5,24 +5,35 @@ import {
   ArrowLeft, FileText, Paperclip, Download, Trash2, Plus,
   Image as ImageIcon, File, FileSpreadsheet, FolderOpen,
   Edit2, Check, X, Calendar, Bell, ExternalLink,
+  Users, PenTool, FileSearch, Loader2, Cloud, Shield, Tags,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { TagPicker } from '@/components/shared/TagPicker'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { dmsApi } from '@/api/dms'
 import { usersApi } from '@/api/users'
-import type { DmsDocument, DmsFile, DmsRelationshipType, DmsRelationshipTypeConfig } from '@/types/dms'
+import { rolesApi } from '@/api/roles'
+import { tagsApi } from '@/api/tags'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import type {
+  DmsDocument, DmsFile, DmsRelationshipType, DmsRelationshipTypeConfig,
+  DmsParty, DmsPartyRole, DmsEntityType, DmsSignatureStatus, DmsWmlChunk,
+  PartySuggestion, DmsSupplier, DmsSupplierType,
+} from '@/types/dms'
 import UploadDialog from './UploadDialog'
+import PartyPicker from './PartyPicker'
 import { formatDate, formatSize } from './index'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -30,6 +41,23 @@ const STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
   archived: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
 }
+
+const SIG_COLORS: Record<string, string> = {
+  pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+  sent: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  signed: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  declined: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+  expired: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+}
+
+const PARTY_ROLES: { value: DmsPartyRole; label: string }[] = [
+  { value: 'emitent', label: 'Emitent' },
+  { value: 'beneficiar', label: 'Beneficiar' },
+  { value: 'semnatar', label: 'Semnatar' },
+  { value: 'furnizor', label: 'Furnizor' },
+  { value: 'client', label: 'Client' },
+  { value: 'other', label: 'Altele' },
+]
 
 function expiryColor(daysToExpiry: number | null) {
   if (daysToExpiry == null) return 'text-muted-foreground'
@@ -65,6 +93,24 @@ export default function DocumentDetail() {
   const [editDocDate, setEditDocDate] = useState('')
   const [editExpiryDate, setEditExpiryDate] = useState('')
   const [editNotifyUserId, setEditNotifyUserId] = useState('')
+  const [editVisibility, setEditVisibility] = useState<'all' | 'restricted'>('all')
+  const [editAllowedRoleIds, setEditAllowedRoleIds] = useState<number[]>([])
+  const [editAllowedUserIds, setEditAllowedUserIds] = useState<number[]>([])
+
+  // Party state
+  const [addingParty, setAddingParty] = useState(false)
+  const [partyRole, setPartyRole] = useState<DmsPartyRole>('emitent')
+  const [partyEntityType, setPartyEntityType] = useState<DmsEntityType>('company')
+  const [partyName, setPartyName] = useState('')
+  const [selectedSuggestion, setSelectedSuggestion] = useState<PartySuggestion | null>(null)
+  const [deletePartyId, setDeletePartyId] = useState<number | null>(null)
+  const [newSupplierOpen, setNewSupplierOpen] = useState(false)
+  const [newSupForm, setNewSupForm] = useState({ name: '', supplier_type: 'company' as DmsSupplierType, cui: '', phone: '', email: '' })
+
+  // Signature state
+  const [sigEditing, setSigEditing] = useState(false)
+  const [sigStatus, setSigStatus] = useState<string>('')
+  const [sigProvider, setSigProvider] = useState<string>('')
 
   const { data, isLoading } = useQuery({
     queryKey: ['dms-document', docId],
@@ -88,11 +134,127 @@ export default function DocumentDetail() {
     staleTime: 60_000,
   })
 
+  // Parties
+  const { data: partiesData } = useQuery({
+    queryKey: ['dms-parties', docId],
+    queryFn: () => dmsApi.listParties(docId),
+    enabled: !!docId,
+  })
+
+  // Extraction
+  const { data: chunksData } = useQuery({
+    queryKey: ['dms-chunks', docId],
+    queryFn: () => dmsApi.getChunks(docId),
+    enabled: !!docId,
+  })
+
+  // Drive sync
+  const { data: driveSyncData } = useQuery({
+    queryKey: ['dms-drive-sync', docId],
+    queryFn: () => dmsApi.getDriveSync(docId),
+    enabled: !!docId,
+  })
+
+  // Roles (for visibility editing)
+  const { data: rolesData } = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => rolesApi.getRoles(),
+    enabled: editing,
+  })
+
+  // Tags
+  const { data: entityTags = [] } = useQuery({
+    queryKey: ['entity-tags', 'dms_document', docId],
+    queryFn: () => tagsApi.getEntityTags('dms_document', docId),
+    enabled: !!docId,
+  })
+
   const doc: DmsDocument | undefined = data?.document
   const files: DmsFile[] = doc?.files || []
   const children: Partial<Record<string, DmsDocument[]>> = doc?.children || {}
   const categories = categoriesData?.categories || []
   const relTypes: DmsRelationshipTypeConfig[] = relTypesData?.types || []
+  const parties: DmsParty[] = partiesData?.parties || []
+  const chunks: DmsWmlChunk[] = chunksData?.chunks || []
+
+  const addPartyMutation = useMutation({
+    mutationFn: (data: { party_role: DmsPartyRole; entity_type: DmsEntityType; entity_name: string; entity_id?: number; entity_details?: Record<string, unknown> }) =>
+      dmsApi.createParty(docId, data),
+    onSuccess: () => {
+      toast.success('Party added')
+      queryClient.invalidateQueries({ queryKey: ['dms-parties', docId] })
+      setAddingParty(false)
+      setPartyName('')
+      setSelectedSuggestion(null)
+    },
+    onError: () => toast.error('Failed to add party'),
+  })
+
+  const createSupplierMutation = useMutation({
+    mutationFn: (data: Partial<DmsSupplier>) => dmsApi.createSupplier(data),
+    onSuccess: (res) => {
+      toast.success('Supplier created')
+      queryClient.invalidateQueries({ queryKey: ['dms-suppliers'] })
+      queryClient.invalidateQueries({ queryKey: ['dms-party-suggest'] })
+      setNewSupplierOpen(false)
+      // Auto-select the new supplier
+      setPartyName(newSupForm.name)
+      setPartyEntityType(newSupForm.supplier_type === 'person' ? 'person' : 'company')
+      setSelectedSuggestion({
+        id: res.id,
+        name: newSupForm.name,
+        entity_type: newSupForm.supplier_type === 'person' ? 'person' : 'company',
+        source: 'supplier',
+        cui: newSupForm.cui || null,
+        phone: newSupForm.phone || null,
+        email: newSupForm.email || null,
+      })
+      setNewSupForm({ name: '', supplier_type: 'company', cui: '', phone: '', email: '' })
+    },
+    onError: () => toast.error('Failed to create supplier'),
+  })
+
+  const deletePartyMutation = useMutation({
+    mutationFn: (id: number) => dmsApi.deleteParty(id),
+    onSuccess: () => {
+      toast.success('Party removed')
+      queryClient.invalidateQueries({ queryKey: ['dms-parties', docId] })
+      setDeletePartyId(null)
+    },
+    onError: () => toast.error('Failed to remove party'),
+  })
+
+  const sigMutation = useMutation({
+    mutationFn: (data: { signature_status: DmsSignatureStatus; signature_provider?: string }) =>
+      dmsApi.updateSignatureStatus(docId, data),
+    onSuccess: () => {
+      toast.success('Signature status updated')
+      queryClient.invalidateQueries({ queryKey: ['dms-document', docId] })
+      setSigEditing(false)
+    },
+    onError: () => toast.error('Failed to update signature'),
+  })
+
+  const extractMutation = useMutation({
+    mutationFn: () => dmsApi.extractText(docId),
+    onSuccess: (res) => {
+      const count = res.extractions?.length || 0
+      toast.success(`Text extracted from ${count} file(s)`)
+      queryClient.invalidateQueries({ queryKey: ['dms-chunks', docId] })
+    },
+    onError: () => toast.error('Extraction failed'),
+  })
+
+  const driveSyncMutation = useMutation({
+    mutationFn: () => dmsApi.syncToDrive(docId),
+    onSuccess: (res) => {
+      const count = res.uploaded?.length || 0
+      toast.success(`${count} file(s) synced to Drive`)
+      queryClient.invalidateQueries({ queryKey: ['dms-drive-sync', docId] })
+      queryClient.invalidateQueries({ queryKey: ['dms-document', docId] })
+    },
+    onError: () => toast.error('Drive sync failed'),
+  })
 
   const uploadFilesMutation = useMutation({
     mutationFn: ({ files: fileList }: { files: File[] }) => dmsApi.uploadFiles(docId, fileList),
@@ -145,6 +307,9 @@ export default function DocumentDetail() {
     setEditDocDate(doc.doc_date || '')
     setEditExpiryDate(doc.expiry_date || '')
     setEditNotifyUserId(doc.notify_user_id?.toString() || '')
+    setEditVisibility(doc.visibility || 'all')
+    setEditAllowedRoleIds(doc.allowed_role_ids || [])
+    setEditAllowedUserIds(doc.allowed_user_ids || [])
     setEditing(true)
   }
 
@@ -157,6 +322,9 @@ export default function DocumentDetail() {
       doc_date: editDocDate || null,
       expiry_date: editExpiryDate || null,
       notify_user_id: editNotifyUserId ? Number(editNotifyUserId) : null,
+      visibility: editVisibility,
+      allowed_role_ids: editVisibility === 'restricted' && editAllowedRoleIds.length ? editAllowedRoleIds : null,
+      allowed_user_ids: editVisibility === 'restricted' && editAllowedUserIds.length ? editAllowedUserIds : null,
     })
   }
 
@@ -222,6 +390,36 @@ export default function DocumentDetail() {
             ) : (
               <Badge className={cn('text-xs', STATUS_COLORS[doc.status])}>{doc.status}</Badge>
             )}
+            {doc.visibility === 'restricted' && (
+              <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700 dark:text-amber-400">
+                <Shield className="h-3 w-3 mr-0.5" />
+                Restricted
+              </Badge>
+            )}
+            {/* Tags */}
+            <TagPicker
+              entityType="dms_document"
+              entityId={docId}
+              currentTags={entityTags}
+              onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags', 'dms_document', docId] })}
+            >
+              <button className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs hover:bg-accent/50">
+                <Tags className="h-3 w-3" />
+                {entityTags.length > 0 ? (
+                  entityTags.map((t) => (
+                    <span
+                      key={t.id}
+                      className="inline-flex items-center gap-0.5 rounded px-1 py-0 text-[10px] font-medium"
+                      style={{ backgroundColor: (t.color ?? '#6c757d') + '20', color: t.color ?? '#6c757d' }}
+                    >
+                      {t.name}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-muted-foreground">Tags</span>
+                )}
+              </button>
+            </TagPicker>
             <span className="text-sm text-muted-foreground">by {doc.created_by_name}</span>
             <span className="text-sm text-muted-foreground">{formatDate(doc.created_at)}</span>
           </span>
@@ -293,6 +491,65 @@ export default function DocumentDetail() {
         </div>
       )}
 
+      {/* Visibility edit */}
+      {editing && (
+        <div className="space-y-2">
+          <Label className="text-xs flex items-center gap-1">
+            <Shield className="h-3 w-3" />
+            Visibility
+          </Label>
+          <div className="flex items-start gap-4">
+            <Select value={editVisibility} onValueChange={(v) => setEditVisibility(v as 'all' | 'restricted')}>
+              <SelectTrigger className="h-8 w-36 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Everyone</SelectItem>
+                <SelectItem value="restricted">Restricted</SelectItem>
+              </SelectContent>
+            </Select>
+            {editVisibility === 'restricted' && (
+              <div className="flex-1 space-y-2 rounded border p-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Roles</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {(rolesData || []).map((r) => (
+                      <label key={r.id} className="flex items-center gap-1 text-xs cursor-pointer">
+                        <Checkbox
+                          checked={editAllowedRoleIds.includes(r.id)}
+                          onCheckedChange={(checked) =>
+                            setEditAllowedRoleIds((prev) =>
+                              checked ? [...prev, r.id] : prev.filter((id) => id !== r.id),
+                            )
+                          }
+                        />
+                        {r.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Users</Label>
+                  <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
+                    {(usersData || []).map((u) => (
+                      <label key={u.id} className="flex items-center gap-1 text-xs cursor-pointer">
+                        <Checkbox
+                          checked={editAllowedUserIds.includes(u.id)}
+                          onCheckedChange={(checked) =>
+                            setEditAllowedUserIds((prev) =>
+                              checked ? [...prev, u.id] : prev.filter((id) => id !== u.id),
+                            )
+                          }
+                        />
+                        {u.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Document details (view mode) — compact inline */}
       {!editing && (
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm border-b pb-3">
@@ -329,8 +586,167 @@ export default function DocumentDetail() {
           {doc.company_name && (
             <span><span className="text-muted-foreground">Company:</span> {doc.company_name}</span>
           )}
+          {/* Signature status inline */}
+          <span className="inline-flex items-center gap-1">
+            <PenTool className="h-3 w-3 text-muted-foreground" />
+            <span className="text-muted-foreground">Signature:</span>{' '}
+            {sigEditing ? (
+              <span className="inline-flex items-center gap-1">
+                <Select value={sigStatus} onValueChange={setSigStatus}>
+                  <SelectTrigger className="h-6 w-24 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="sent">Sent</SelectItem>
+                    <SelectItem value="signed">Signed</SelectItem>
+                    <SelectItem value="declined">Declined</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={sigProvider} onValueChange={setSigProvider}>
+                  <SelectTrigger className="h-6 w-20 text-xs"><SelectValue placeholder="Provider" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">Manual</SelectItem>
+                    <SelectItem value="docusign">DocuSign</SelectItem>
+                    <SelectItem value="validsign">ValidSign</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => {
+                  sigMutation.mutate({
+                    signature_status: sigStatus === 'none' ? null : sigStatus as DmsSignatureStatus,
+                    signature_provider: sigProvider || undefined,
+                  })
+                }}>
+                  <Check className="h-3 w-3" />
+                </Button>
+                <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => setSigEditing(false)}>
+                  <X className="h-3 w-3" />
+                </Button>
+              </span>
+            ) : doc.signature_status ? (
+              <Badge
+                className={cn('text-[10px] px-1.5 py-0 cursor-pointer', SIG_COLORS[doc.signature_status])}
+                onClick={() => {
+                  setSigStatus(doc.signature_status || 'none')
+                  setSigProvider(doc.signature_provider || 'manual')
+                  setSigEditing(true)
+                }}
+              >
+                {doc.signature_status}
+              </Badge>
+            ) : (
+              <Button variant="ghost" size="sm" className="h-5 text-xs px-1" onClick={() => {
+                setSigStatus('pending')
+                setSigProvider('manual')
+                setSigEditing(true)
+              }}>
+                Set
+              </Button>
+            )}
+          </span>
         </div>
       )}
+
+      {/* Parties */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-medium flex items-center gap-1.5">
+            <Users className="h-4 w-4" />
+            Parties ({parties.length})
+          </h3>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAddingParty(true)}>
+            <Plus className="h-3 w-3 mr-1" />
+            Add Party
+          </Button>
+        </div>
+        {addingParty && (
+          <div className="flex items-end gap-2 mb-2 p-2 rounded border bg-muted/30">
+            <div className="space-y-1">
+              <Label className="text-xs">Role</Label>
+              <Select value={partyRole} onValueChange={(v) => setPartyRole(v as DmsPartyRole)}>
+                <SelectTrigger className="h-7 w-28 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PARTY_ROLES.map((r) => (
+                    <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1 flex-1">
+              <Label className="text-xs">Name</Label>
+              <PartyPicker
+                value={partyName}
+                onChange={(name) => { setPartyName(name); setSelectedSuggestion(null) }}
+                onSelect={(s) => {
+                  setPartyName(s.name)
+                  setPartyEntityType(s.entity_type)
+                  setSelectedSuggestion(s)
+                }}
+                onCreateNew={() => {
+                  setNewSupForm({ name: partyName, supplier_type: 'company', cui: '', phone: '', email: '' })
+                  setNewSupplierOpen(true)
+                }}
+              />
+            </div>
+            <Button size="sm" className="h-7 text-xs" disabled={!partyName.trim() || addPartyMutation.isPending}
+              onClick={() => {
+                const payload: { party_role: DmsPartyRole; entity_type: DmsEntityType; entity_name: string; entity_id?: number; entity_details?: Record<string, unknown> } = {
+                  party_role: partyRole,
+                  entity_type: selectedSuggestion?.entity_type || partyEntityType,
+                  entity_name: partyName.trim(),
+                }
+                if (selectedSuggestion?.id) {
+                  payload.entity_id = selectedSuggestion.id
+                  payload.entity_details = {
+                    source: selectedSuggestion.source,
+                    cui: selectedSuggestion.cui,
+                    phone: selectedSuggestion.phone,
+                    email: selectedSuggestion.email,
+                  }
+                }
+                addPartyMutation.mutate(payload)
+              }}>
+              Add
+            </Button>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setAddingParty(false); setPartyName(''); setSelectedSuggestion(null); setPartyEntityType('company'); setPartyRole('emitent') }}>
+              Cancel
+            </Button>
+          </div>
+        )}
+        {parties.length > 0 && (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Role</TableHead>
+                  <TableHead className="text-xs">Name</TableHead>
+                  <TableHead className="text-xs">Type</TableHead>
+                  <TableHead className="text-xs w-12" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {parties.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="py-1.5">
+                      <Badge variant="outline" className="text-[10px]">{p.party_role}</Badge>
+                    </TableCell>
+                    <TableCell className="py-1.5 text-sm">{p.entity_name}</TableCell>
+                    <TableCell className="py-1.5 text-xs text-muted-foreground">{p.entity_type}</TableCell>
+                    <TableCell className="py-1.5">
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDeletePartyId(p.id)}>
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+        {parties.length === 0 && !addingParty && (
+          <p className="text-xs text-muted-foreground py-2">No parties linked yet.</p>
+        )}
+      </div>
 
       {/* Files table */}
       <div>
@@ -407,6 +823,58 @@ export default function DocumentDetail() {
         )}
       </div>
 
+      {/* Google Drive Sync */}
+      {driveSyncData?.drive_available && files.length > 0 && (
+        <div className="flex items-center gap-3 p-2.5 rounded border bg-muted/20">
+          <Cloud className="h-4 w-4 text-blue-500 shrink-0" />
+          <div className="flex-1 min-w-0">
+            {driveSyncData.sync ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge className={cn('text-[10px] px-1.5 py-0', {
+                  'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400': driveSyncData.sync.status === 'synced',
+                  'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400': driveSyncData.sync.status === 'partial',
+                  'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400': driveSyncData.sync.status === 'error',
+                })}>
+                  {driveSyncData.sync.status}
+                </Badge>
+                {driveSyncData.sync.folder_url && (
+                  <a href={driveSyncData.sync.folder_url} target="_blank" rel="noreferrer"
+                    className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1">
+                    <ExternalLink className="h-3 w-3" />
+                    Open in Drive
+                  </a>
+                )}
+                {driveSyncData.sync.last_synced_at && (
+                  <span className="text-[10px] text-muted-foreground">
+                    Last: {formatDate(driveSyncData.sync.last_synced_at)}
+                  </span>
+                )}
+                {driveSyncData.sync.error_message && (
+                  <span className="text-[10px] text-red-500 truncate max-w-[300px]" title={driveSyncData.sync.error_message}>{driveSyncData.sync.error_message}</span>
+                )}
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground">Not synced to Google Drive</span>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs shrink-0"
+            disabled={driveSyncMutation.isPending || uploadFilesMutation.isPending}
+            onClick={() => driveSyncMutation.mutate()}
+          >
+            {driveSyncMutation.isPending ? (
+              <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Syncing...</>
+            ) : driveSyncData.sync?.synced ? (
+              <><Cloud className="h-3 w-3 mr-1" />Re-sync</>
+            ) : (
+              <><Cloud className="h-3 w-3 mr-1" />Sync to Drive</>
+            )}
+          </Button>
+        </div>
+      )}
+
       {/* Children by Relationship Type — tables with row actions */}
       {relTypes.map((rt) => {
         const items: DmsDocument[] = children[rt.slug] || []
@@ -476,6 +944,58 @@ export default function DocumentDetail() {
         )
       })}
 
+      {/* Extracted Content */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-medium flex items-center gap-1.5">
+            <FileSearch className="h-4 w-4" />
+            Extracted Text ({chunks.length} chunks)
+          </h3>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            disabled={extractMutation.isPending || files.length === 0}
+            onClick={() => extractMutation.mutate()}
+          >
+            {extractMutation.isPending ? (
+              <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Extracting...</>
+            ) : (
+              <><FileSearch className="h-3 w-3 mr-1" />Extract Text</>
+            )}
+          </Button>
+        </div>
+        {chunks.length > 0 ? (
+          <div className="space-y-2 max-h-60 overflow-y-auto rounded border p-2 bg-muted/20">
+            {chunks.map((c) => (
+              <div key={c.id} className="text-xs border-b pb-1.5 last:border-0">
+                {c.heading && (
+                  <p className="font-medium text-foreground mb-0.5">{c.heading}</p>
+                )}
+                <p className="text-muted-foreground whitespace-pre-wrap line-clamp-4">{c.content}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground py-2">
+            {files.length === 0
+              ? 'Upload files first, then extract text.'
+              : 'No text extracted yet. Click "Extract Text" to process files.'}
+          </p>
+        )}
+      </div>
+
+      {/* Delete party confirmation */}
+      <ConfirmDialog
+        open={deletePartyId !== null}
+        onOpenChange={(open) => !open && setDeletePartyId(null)}
+        title="Remove Party"
+        description="This party will be removed from the document."
+        confirmLabel="Remove"
+        variant="destructive"
+        onConfirm={() => deletePartyId && deletePartyMutation.mutate(deletePartyId)}
+      />
+
       {/* Upload child dialog */}
       <UploadDialog
         open={uploadOpen}
@@ -507,6 +1027,62 @@ export default function DocumentDetail() {
         variant="destructive"
         onConfirm={() => deleteChildId && deleteChildMutation.mutate(deleteChildId)}
       />
+
+      {/* New Supplier inline dialog */}
+      <Dialog open={newSupplierOpen} onOpenChange={setNewSupplierOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>New Supplier</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-[1fr_120px] gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Name *</Label>
+                <Input value={newSupForm.name} onChange={(e) => setNewSupForm((p) => ({ ...p, name: e.target.value }))} placeholder="Supplier name" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Type</Label>
+                <Select value={newSupForm.supplier_type} onValueChange={(v) => setNewSupForm((p) => ({ ...p, supplier_type: v as DmsSupplierType }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="company">Company</SelectItem>
+                    <SelectItem value="person">Person</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">CUI / CIF</Label>
+                <Input value={newSupForm.cui} onChange={(e) => setNewSupForm((p) => ({ ...p, cui: e.target.value }))} placeholder="Tax ID" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Phone</Label>
+                <Input value={newSupForm.phone} onChange={(e) => setNewSupForm((p) => ({ ...p, phone: e.target.value }))} placeholder="Phone" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Email</Label>
+              <Input value={newSupForm.email} onChange={(e) => setNewSupForm((p) => ({ ...p, email: e.target.value }))} placeholder="Email" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewSupplierOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!newSupForm.name.trim() || createSupplierMutation.isPending}
+              onClick={() => createSupplierMutation.mutate({
+                name: newSupForm.name.trim(),
+                supplier_type: newSupForm.supplier_type,
+                cui: newSupForm.cui.trim() || undefined,
+                phone: newSupForm.phone.trim() || undefined,
+                email: newSupForm.email.trim() || undefined,
+              })}
+            >
+              Create & Select
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

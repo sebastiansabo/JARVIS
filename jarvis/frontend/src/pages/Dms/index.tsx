@@ -1,11 +1,11 @@
-import { Fragment, useState, useEffect, useRef } from 'react'
+import { Fragment, useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FolderOpen, FileText, Plus, Search, Trash2, RotateCcw,
   Settings2, Paperclip, Users as ChildrenIcon, ChevronDown,
   Download, Calendar, Bell, Edit2, File, FileSpreadsheet,
-  Image as ImageIcon,
+  Image as ImageIcon, PenTool, Tags, Shield, Building2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -14,6 +14,7 @@ import { useTabParam } from '@/hooks/useTabParam'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { TagPicker } from '@/components/shared/TagPicker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -22,12 +23,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { dmsApi } from '@/api/dms'
+import { tagsApi } from '@/api/tags'
 import { useDmsStore } from '@/stores/dmsStore'
 import type { DmsDocument, DmsFile, DmsCategory, DmsRelationshipTypeConfig } from '@/types/dms'
 import UploadDialog from './UploadDialog'
 import CategoryManager from './CategoryManager'
+import SupplierManager from './SupplierManager'
 
-type MainTab = 'documents' | 'categories'
+type MainTab = 'documents' | 'categories' | 'suppliers'
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
@@ -109,6 +112,14 @@ export default function Dms() {
   const total = docsData?.total || 0
   const stats = statsData?.by_status
 
+  // Bulk entity tags for visible documents
+  const docIds = useMemo(() => documents.map((d) => d.id), [documents])
+  const { data: entityTagsMap = {} } = useQuery({
+    queryKey: ['entity-tags', 'dms_document', docIds],
+    queryFn: () => tagsApi.getEntityTagsBulk('dms_document', docIds),
+    enabled: docIds.length > 0 && mainTab === 'documents',
+  })
+
   const isAdmin = user?.can_access_settings
 
   return (
@@ -153,6 +164,20 @@ export default function Dms() {
           >
             <Settings2 className="h-3.5 w-3.5" />
             Categories
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            onClick={() => setMainTab('suppliers')}
+            className={cn(
+              'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+              mainTab === 'suppliers'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <Building2 className="h-3.5 w-3.5" />
+            Suppliers
           </button>
         )}
       </div>
@@ -270,6 +295,18 @@ export default function Dms() {
                             <div className="flex items-center gap-2">
                               <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                               <span className="font-medium">{doc.title}</span>
+                              {doc.visibility === 'restricted' && (
+                                <span title="Restricted visibility"><Shield className="h-3 w-3 text-amber-500 shrink-0" /></span>
+                              )}
+                              {(entityTagsMap[String(doc.id)] || []).map((t) => (
+                                <span
+                                  key={t.id}
+                                  className="inline-block rounded px-1 py-0 text-[10px] font-medium whitespace-nowrap"
+                                  style={{ backgroundColor: (t.color ?? '#6c757d') + '20', color: t.color ?? '#6c757d' }}
+                                >
+                                  {t.name}
+                                </span>
+                              ))}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -345,8 +382,10 @@ export default function Dms() {
                             <TableCell colSpan={10} className="bg-muted/30 p-4">
                               <DocumentExpandedDetails
                                 doc={doc}
+                                tags={entityTagsMap[String(doc.id)] || []}
                                 onViewDetail={() => navigate(`/app/dms/documents/${doc.id}`)}
                                 onDelete={() => setDeleteId(doc.id)}
+                                onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
                               />
                             </TableCell>
                           </TableRow>
@@ -368,6 +407,10 @@ export default function Dms() {
 
       {mainTab === 'categories' && isAdmin && (
         <CategoryManager companyId={companyId} />
+      )}
+
+      {mainTab === 'suppliers' && isAdmin && (
+        <SupplierManager companyId={companyId} />
       )}
 
       {/* Upload Dialog */}
@@ -403,12 +446,16 @@ function fileIcon(mimeType: string | null) {
 
 function DocumentExpandedDetails({
   doc,
+  tags,
   onViewDetail,
   onDelete,
+  onTagsChanged,
 }: {
   doc: DmsDocument
+  tags: import('@/types/tags').EntityTag[]
   onViewDetail: () => void
   onDelete: () => void
+  onTagsChanged: () => void
 }) {
   const { data, isLoading } = useQuery({
     queryKey: ['dms-document', doc.id],
@@ -462,6 +509,19 @@ function DocumentExpandedDetails({
         )}
         {doc.company_name && (
           <div><span className="text-muted-foreground">Company:</span> {doc.company_name}</div>
+        )}
+        {doc.signature_status && (
+          <div className="flex items-center gap-1">
+            <PenTool className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">Signature:</span>{' '}
+            <Badge className={cn('text-[10px] px-1.5 py-0', {
+              'bg-yellow-100 text-yellow-800': doc.signature_status === 'pending',
+              'bg-blue-100 text-blue-800': doc.signature_status === 'sent',
+              'bg-green-100 text-green-800': doc.signature_status === 'signed',
+              'bg-red-100 text-red-800': doc.signature_status === 'declined',
+              'bg-gray-100 text-gray-600': doc.signature_status === 'expired',
+            })}>{doc.signature_status}</Badge>
+          </div>
         )}
       </div>
 
@@ -566,6 +626,16 @@ function DocumentExpandedDetails({
         <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onViewDetail() }}>
           <Edit2 className="h-3.5 w-3.5 mr-1" />View / Edit
         </Button>
+        <TagPicker
+          entityType="dms_document"
+          entityId={doc.id}
+          currentTags={tags}
+          onTagsChanged={onTagsChanged}
+        >
+          <Button size="sm" variant="outline" onClick={(e) => e.stopPropagation()}>
+            <Tags className="h-3.5 w-3.5 mr-1" />Tags
+          </Button>
+        </TagPicker>
         <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); onDelete() }}>
           <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
         </Button>

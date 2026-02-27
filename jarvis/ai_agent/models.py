@@ -62,6 +62,7 @@ class RAGSourceType(Enum):
     BANK_STATEMENT = "bank_statement"
     CHART_ACCOUNT = "chart_account"
     BILANT_REPORT = "bilant_report"
+    DMS_DOCUMENT = "dms_document"
 
 
 @dataclass

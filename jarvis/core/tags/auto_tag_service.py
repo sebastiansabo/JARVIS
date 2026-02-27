@@ -20,6 +20,7 @@ ENTITY_FIELDS = {
     'transaction': ['vendor_name', 'description', 'amount', 'currency', 'status',
                      'company_name', 'transaction_type'],
     'event': ['name', 'company', 'brand', 'description'],
+    'dms_document': ['title', 'description', 'status', 'doc_number'],
 }
 
 OPERATORS = {
@@ -151,9 +152,7 @@ class AutoTagService:
         try:
             cursor = get_cursor(conn)
             extra = ''
-            if entity_type == 'invoice':
-                extra = ' WHERE deleted_at IS NULL'
-            elif entity_type == 'efactura_invoice':
+            if entity_type in ('invoice', 'efactura_invoice', 'dms_document'):
                 extra = ' WHERE deleted_at IS NULL'
             cursor.execute(f'SELECT * FROM {table}{extra}')
             return [dict(row) for row in cursor.fetchall()]
@@ -168,4 +167,5 @@ class AutoTagService:
             'efactura_invoice': 'efactura_invoices',
             'transaction': 'bank_statement_transactions',
             'event': 'hr.events',
+            'dms_document': 'dms_documents',
         }.get(entity_type)

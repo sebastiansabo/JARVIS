@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Upload, X, FileText, Image as ImageIcon } from 'lucide-react'
+import { Upload, X, FileText, Image as ImageIcon, Shield } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -8,10 +8,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { dmsApi } from '@/api/dms'
 import { organizationApi } from '@/api/organization'
 import { usersApi } from '@/api/users'
+import { rolesApi } from '@/api/roles'
 import type { DmsCategory, DmsRelationshipType } from '@/types/dms'
 
 const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'xlsx', 'jpg', 'jpeg', 'png', 'tiff', 'tif', 'gif']
@@ -47,6 +49,9 @@ export default function UploadDialog({
   const [expiryDate, setExpiryDate] = useState('')
   const [notifyUserId, setNotifyUserId] = useState<string>('')
   const [relType, setRelType] = useState<DmsRelationshipType | ''>(defaultRelType || '')
+  const [visibility, setVisibility] = useState<'all' | 'restricted'>('all')
+  const [allowedRoleIds, setAllowedRoleIds] = useState<number[]>([])
+  const [allowedUserIds, setAllowedUserIds] = useState<number[]>([])
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const [uploading, setUploading] = useState(false)
 
@@ -61,6 +66,12 @@ export default function UploadDialog({
   const { data: users } = useQuery({
     queryKey: ['users-list'],
     queryFn: () => usersApi.getUsers(),
+    enabled: open,
+  })
+
+  const { data: roles } = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => rolesApi.getRoles(),
     enabled: open,
   })
 
@@ -87,6 +98,9 @@ export default function UploadDialog({
     setExpiryDate('')
     setNotifyUserId('')
     setRelType(defaultRelType || '')
+    setVisibility('all')
+    setAllowedRoleIds([])
+    setAllowedUserIds([])
     // Revoke ObjectURLs to prevent memory leaks
     setPendingFiles((prev) => {
       prev.forEach((f) => { if (f.preview) URL.revokeObjectURL(f.preview) })
@@ -150,6 +164,9 @@ export default function UploadDialog({
         doc_date: docDate || undefined,
         expiry_date: expiryDate || undefined,
         notify_user_id: notifyUserId ? Number(notifyUserId) : undefined,
+        visibility,
+        allowed_role_ids: visibility === 'restricted' && allowedRoleIds.length ? allowedRoleIds : null,
+        allowed_user_ids: visibility === 'restricted' && allowedUserIds.length ? allowedUserIds : null,
       }
 
       let docId: number
@@ -164,6 +181,9 @@ export default function UploadDialog({
           doc_date: docDate || undefined,
           expiry_date: expiryDate || undefined,
           notify_user_id: notifyUserId ? Number(notifyUserId) : undefined,
+          visibility,
+          allowed_role_ids: visibility === 'restricted' && allowedRoleIds.length ? allowedRoleIds : null,
+          allowed_user_ids: visibility === 'restricted' && allowedUserIds.length ? allowedUserIds : null,
         })
         docId = res.id
       } else {
@@ -343,6 +363,71 @@ export default function UploadDialog({
               </Select>
             </div>
           )}
+
+          {/* Visibility */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1.5">
+              <Shield className="h-3.5 w-3.5" />
+              Visibility
+            </Label>
+            <Select value={visibility} onValueChange={(v) => setVisibility(v as 'all' | 'restricted')}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Everyone</SelectItem>
+                <SelectItem value="restricted">Restricted</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {visibility === 'restricted' && (
+              <div className="space-y-3 rounded-md border p-3">
+                {/* Role picker */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Allowed Roles</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {(roles || []).map((r) => (
+                      <label key={r.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                        <Checkbox
+                          checked={allowedRoleIds.includes(r.id)}
+                          onCheckedChange={(checked) => {
+                            setAllowedRoleIds((prev) =>
+                              checked ? [...prev, r.id] : prev.filter((id) => id !== r.id),
+                            )
+                          }}
+                        />
+                        {r.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* User picker */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Allowed Users</Label>
+                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                    {(users || []).map((u) => (
+                      <label key={u.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                        <Checkbox
+                          checked={allowedUserIds.includes(u.id)}
+                          onCheckedChange={(checked) => {
+                            setAllowedUserIds((prev) =>
+                              checked ? [...prev, u.id] : prev.filter((id) => id !== u.id),
+                            )
+                          }}
+                        />
+                        {u.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {allowedRoleIds.length === 0 && allowedUserIds.length === 0 && (
+                  <p className="text-xs text-amber-600">
+                    No roles or users selected — only you and admins will see this document.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* File drop zone */}
           <div

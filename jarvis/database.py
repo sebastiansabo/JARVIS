@@ -1210,6 +1210,14 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_categories_company ON dms_categories(company_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_dms_categories_active ON dms_categories(is_active, sort_order)')
 
+            # Category permissions (NULL = all roles can see)
+            cursor.execute('''
+                DO $$ BEGIN
+                    ALTER TABLE dms_categories ADD COLUMN allowed_role_ids INTEGER[] DEFAULT NULL;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            ''')
+
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS dms_documents (
                     id SERIAL PRIMARY KEY,
@@ -1250,6 +1258,9 @@ def init_db():
                 ('doc_date', 'DATE'),
                 ('expiry_date', 'DATE'),
                 ('notify_user_id', 'INTEGER REFERENCES users(id)'),
+                ('visibility', "TEXT DEFAULT 'all'"),
+                ('allowed_role_ids', 'INTEGER[] DEFAULT NULL'),
+                ('allowed_user_ids', 'INTEGER[] DEFAULT NULL'),
             ]:
                 cursor.execute(f'''
                     DO $$ BEGIN
@@ -1294,6 +1305,114 @@ def init_db():
             # Drop old hardcoded CHECK on relationship_type (now dynamic via table)
             cursor.execute('''
                 ALTER TABLE dms_documents DROP CONSTRAINT IF EXISTS dms_doc_rel_type
+            ''')
+
+            # ── Signature columns on dms_documents (Phase A) ──
+            for col, coldef in [
+                ('signature_status', 'TEXT'),
+                ('signature_request_id', 'TEXT'),
+                ('signature_requested_at', 'TIMESTAMP'),
+                ('signature_completed_at', 'TIMESTAMP'),
+                ('signature_provider', 'TEXT'),
+            ]:
+                cursor.execute(f'''
+                    DO $$ BEGIN
+                        ALTER TABLE dms_documents ADD COLUMN {col} {coldef};
+                    EXCEPTION WHEN duplicate_column THEN NULL;
+                    END $$;
+                ''')
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_dms_documents_sig_status
+                ON dms_documents(signature_status)
+                WHERE signature_status IS NOT NULL
+            ''')
+
+            # ── document_parties (Phase B) ──
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS document_parties (
+                    id SERIAL PRIMARY KEY,
+                    document_id INTEGER NOT NULL REFERENCES dms_documents(id) ON DELETE CASCADE,
+                    party_role TEXT NOT NULL,
+                    entity_type TEXT NOT NULL DEFAULT 'company',
+                    entity_id INTEGER,
+                    entity_name TEXT NOT NULL,
+                    entity_details JSONB DEFAULT '{}'::jsonb,
+                    sort_order INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_document_parties_doc ON document_parties(document_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_document_parties_entity ON document_parties(entity_type, entity_id)')
+
+            # ── suppliers (master table) ──
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS suppliers (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    supplier_type TEXT NOT NULL DEFAULT 'company',
+                    cui TEXT,
+                    j_number TEXT,
+                    address TEXT,
+                    city TEXT,
+                    bank_account TEXT,
+                    iban TEXT,
+                    bank_name TEXT,
+                    phone TEXT,
+                    email TEXT,
+                    company_id INTEGER REFERENCES companies(id),
+                    created_by INTEGER REFERENCES users(id),
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_suppliers_company ON suppliers(company_id)')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_suppliers_name ON suppliers USING gin (name gin_trgm_ops)")
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_suppliers_active ON suppliers(is_active)')
+
+            # ── document_wml + chunks (Phase D) ──
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS document_wml (
+                    id SERIAL PRIMARY KEY,
+                    document_id INTEGER NOT NULL REFERENCES dms_documents(id) ON DELETE CASCADE,
+                    file_id INTEGER NOT NULL REFERENCES dms_files(id) ON DELETE CASCADE,
+                    raw_text TEXT,
+                    structured_json JSONB,
+                    extraction_method TEXT DEFAULT 'mammoth',
+                    extracted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(file_id)
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_wml_document ON document_wml(document_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_wml_file ON document_wml(file_id)')
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS document_wml_chunks (
+                    id SERIAL PRIMARY KEY,
+                    wml_id INTEGER NOT NULL REFERENCES document_wml(id) ON DELETE CASCADE,
+                    chunk_index INTEGER NOT NULL,
+                    heading TEXT,
+                    content TEXT NOT NULL,
+                    token_count INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_wml_chunks_wml ON document_wml_chunks(wml_id)')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_wml_chunks_fts ON document_wml_chunks USING GIN (to_tsvector('simple', content))")
+
+            # ── DMS Drive Sync ──
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS dms_drive_sync (
+                    id SERIAL PRIMARY KEY,
+                    document_id INTEGER NOT NULL REFERENCES dms_documents(id) ON DELETE CASCADE,
+                    drive_folder_id TEXT NOT NULL,
+                    drive_folder_url TEXT,
+                    last_synced_at TIMESTAMP,
+                    sync_status TEXT DEFAULT 'pending',
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(document_id)
+                )
             ''')
 
             # Seed default relationship types
@@ -1354,6 +1473,32 @@ def init_db():
                                 scope, granted = ('own' if perm['is_scope_based'] else 'own'), True
                             else:
                                 scope, granted = 'deny', False
+                        cursor.execute('''
+                            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+                            VALUES (%s, %s, %s, %s)
+                            ON CONFLICT (role_id, permission_id) DO NOTHING
+                        ''', (role['id'], perm['id'], scope, granted))
+
+            # Seed supplier permissions (incremental — safe to re-run)
+            cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'dms' AND entity_key = 'supplier'")
+            if cursor.fetchone()['cnt'] == 0:
+                cursor.execute('''
+                    INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order) VALUES
+                    ('dms', 'Documents', 'bi-folder', 'supplier', 'Suppliers', 'view', 'View', 'View supplier list', FALSE, 7),
+                    ('dms', 'Documents', 'bi-folder', 'supplier', 'Suppliers', 'manage', 'Manage', 'Manage supplier list', FALSE, 8)
+                ''')
+                # Grant supplier permissions to Admin + Manager
+                cursor.execute('SELECT id, name FROM roles')
+                roles_for_sup = cursor.fetchall()
+                cursor.execute("SELECT id, action_key FROM permissions_v2 WHERE module_key = 'dms' AND entity_key = 'supplier'")
+                sup_perms = cursor.fetchall()
+                for role in roles_for_sup:
+                    for perm in sup_perms:
+                        if role['name'] in ('Admin', 'Manager'):
+                            scope, granted = 'all', True
+                        else:
+                            scope = 'all' if perm['action_key'] == 'view' else 'deny'
+                            granted = perm['action_key'] == 'view'
                         cursor.execute('''
                             INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
                             VALUES (%s, %s, %s, %s)

@@ -18,10 +18,12 @@ _cat_repo = CategoryRepository()
 @login_required
 @dms_permission_required('category', 'view')
 def api_list_categories():
-    """List categories."""
+    """List categories (filtered by role for non-admin users)."""
     company_id = getattr(current_user, 'company_id', None)
     active_only = request.args.get('active_only', 'true').lower() != 'false'
-    categories = _cat_repo.list_all(company_id=company_id, active_only=active_only)
+    # Non-admin users only see categories their role has access to
+    role_id = getattr(current_user, 'role_id', None) if company_id else None
+    categories = _cat_repo.list_all(company_id=company_id, active_only=active_only, role_id=role_id)
     return jsonify({'success': True, 'categories': categories})
 
 
@@ -56,6 +58,11 @@ def api_create_category():
     company_id = getattr(current_user, 'company_id', None)
 
     try:
+        allowed_role_ids = data.get('allowed_role_ids')
+        if isinstance(allowed_role_ids, list):
+            allowed_role_ids = [int(r) for r in allowed_role_ids] or None
+        else:
+            allowed_role_ids = None
         row = _cat_repo.create(
             name=name, slug=slug, company_id=company_id,
             icon=data.get('icon', 'bi-folder'),
@@ -63,6 +70,7 @@ def api_create_category():
             description=data.get('description'),
             sort_order=data.get('sort_order', 0),
             created_by=current_user.id,
+            allowed_role_ids=allowed_role_ids,
         )
         return jsonify({'success': True, 'id': row['id']}), 201
     except Exception as e:
@@ -87,6 +95,9 @@ def api_update_category(cat_id):
         for key in ('name', 'slug', 'icon', 'color', 'description', 'sort_order', 'is_active'):
             if key in data:
                 fields[key] = data[key]
+        if 'allowed_role_ids' in data:
+            val = data['allowed_role_ids']
+            fields['allowed_role_ids'] = [int(r) for r in val] if isinstance(val, list) and val else None
         _cat_repo.update(cat_id, **fields)
         return jsonify({'success': True})
     except Exception as e:

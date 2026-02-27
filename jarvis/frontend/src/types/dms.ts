@@ -11,6 +11,7 @@ export interface DmsCategory {
   created_at: string
   updated_at: string | null
   document_count?: number
+  allowed_role_ids: number[] | null
 }
 
 export type DmsDocumentStatus = 'draft' | 'active' | 'archived'
@@ -26,6 +27,39 @@ export interface DmsRelationshipTypeConfig {
   is_active: boolean
   created_at: string
   updated_at: string | null
+}
+
+export type DmsSignatureStatus = 'pending' | 'sent' | 'signed' | 'declined' | 'expired' | null
+export type DmsPartyRole = 'emitent' | 'beneficiar' | 'semnatar' | 'furnizor' | 'client' | 'other'
+export type DmsEntityType = 'company' | 'person' | 'external'
+
+export interface DmsParty {
+  id: number
+  document_id: number
+  party_role: DmsPartyRole
+  entity_type: DmsEntityType
+  entity_id: number | null
+  entity_name: string
+  entity_details: Record<string, unknown> | null
+  sort_order: number
+  created_at: string
+}
+
+export interface DmsWmlExtraction {
+  file_id: number
+  file_name: string
+  raw_text: string | null
+  extraction_method: string | null
+  extracted_at: string | null
+  chunk_count?: number
+}
+
+export interface DmsWmlChunk {
+  id: number
+  chunk_index: number
+  heading: string | null
+  content: string
+  token_count: number | null
 }
 
 export interface DmsDocument {
@@ -48,6 +82,13 @@ export interface DmsDocument {
   days_to_expiry: number | null
   notify_user_id: number | null
   notify_user_name: string | null
+  signature_status: DmsSignatureStatus
+  signature_provider: string | null
+  signature_requested_at: string | null
+  signature_completed_at: string | null
+  visibility: 'all' | 'restricted'
+  allowed_role_ids: number[] | null
+  allowed_user_ids: number[] | null
   created_by: number
   created_by_name: string | null
   created_at: string
@@ -57,6 +98,7 @@ export interface DmsDocument {
   children_count?: number
   children?: Record<DmsRelationshipType, DmsDocument[]>
   files?: DmsFile[]
+  parties?: DmsParty[]
 }
 
 export interface DmsFile {
@@ -72,6 +114,46 @@ export interface DmsFile {
   uploaded_by: number
   uploaded_by_name: string | null
   created_at: string
+}
+
+export interface DmsDriveSync {
+  synced: boolean
+  status: 'pending' | 'synced' | 'partial' | 'error' | null
+  folder_url: string | null
+  last_synced_at: string | null
+  error_message: string | null
+}
+
+export type DmsSupplierType = 'company' | 'person'
+
+export interface DmsSupplier {
+  id: number
+  name: string
+  supplier_type: DmsSupplierType
+  cui: string | null
+  j_number: string | null
+  address: string | null
+  city: string | null
+  bank_account: string | null
+  iban: string | null
+  bank_name: string | null
+  phone: string | null
+  email: string | null
+  company_id: number | null
+  is_active: boolean
+  created_at: string
+  updated_at: string | null
+}
+
+export interface PartySuggestion {
+  id: number | null
+  name: string
+  entity_type: DmsEntityType
+  source: 'company' | 'supplier' | 'invoice'
+  cui?: string | null
+  vat?: string | null
+  phone?: string | null
+  email?: string | null
 }
 
 export interface DmsFilters {

@@ -5,8 +5,9 @@ from core.base_repository import BaseRepository
 class DocumentRepository(BaseRepository):
 
     def list_documents(self, company_id=None, category_id=None, status=None,
-                       search=None, limit=50, offset=0):
-        """List root documents (parent_id IS NULL) with filters."""
+                       search=None, limit=50, offset=0,
+                       user_id=None, role_id=None):
+        """List root documents (parent_id IS NULL) with filters and visibility."""
         conditions = ['d.parent_id IS NULL', 'd.deleted_at IS NULL']
         params = []
 
@@ -25,12 +26,28 @@ class DocumentRepository(BaseRepository):
             like = f'%{search}%'
             params.extend([like, like])
 
+        # Visibility: non-admin users only see permitted documents + categories
+        if user_id and role_id:
+            conditions.append(
+                "(d.visibility = 'all' OR d.created_by = %s"
+                " OR %s = ANY(d.allowed_user_ids)"
+                " OR %s = ANY(d.allowed_role_ids))"
+            )
+            params.extend([user_id, user_id, role_id])
+            conditions.append(
+                '(c.allowed_role_ids IS NULL OR %s = ANY(c.allowed_role_ids))'
+            )
+            params.append(role_id)
+
         where = 'WHERE ' + ' AND '.join(conditions)
 
-        # Get total count
-        count_row = self.query_one(
-            f'SELECT COUNT(*) AS total FROM dms_documents d {where}', tuple(params)
-        )
+        # Get total count (needs category JOIN for visibility filter)
+        count_row = self.query_one(f'''
+            SELECT COUNT(*) AS total
+            FROM dms_documents d
+            LEFT JOIN dms_categories c ON c.id = d.category_id
+            {where}
+        ''', tuple(params))
         total = count_row['total'] if count_row else 0
 
         # Get page
@@ -143,8 +160,8 @@ class DocumentRepository(BaseRepository):
             INSERT INTO dms_documents (title, description, category_id, company_id, status,
                                        parent_id, relationship_type, metadata,
                                        doc_number, doc_date, expiry_date, notify_user_id,
-                                       created_by)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s)
+                                       created_by, visibility, allowed_role_ids, allowed_user_ids)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (
             title,
@@ -160,13 +177,17 @@ class DocumentRepository(BaseRepository):
             kwargs.get('expiry_date'),
             kwargs.get('notify_user_id'),
             created_by,
+            kwargs.get('visibility', 'all'),
+            kwargs.get('allowed_role_ids'),
+            kwargs.get('allowed_user_ids'),
         ), returning=True)
 
     def update(self, doc_id, **fields):
         sets = []
         params = []
         for key in ('title', 'description', 'category_id', 'status', 'metadata',
-                     'doc_number', 'doc_date', 'expiry_date', 'notify_user_id'):
+                     'doc_number', 'doc_date', 'expiry_date', 'notify_user_id',
+                     'visibility', 'allowed_role_ids', 'allowed_user_ids'):
             if key in fields:
                 if key == 'metadata':
                     sets.append(f'{key} = %s::jsonb')

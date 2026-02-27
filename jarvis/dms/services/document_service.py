@@ -137,16 +137,27 @@ class DocumentService:
 
             service = get_drive_service()
 
-            # Folder: Root / DMS / CompanyName / CategoryName / DocTitle
+            from datetime import datetime
+
+            # Folder: Root / DMS / CompanyName / Year / CategoryName / DocTitle
             dms_folder = find_or_create_folder(service, 'DMS', ROOT_FOLDER_ID)
 
             company_name = doc.get('company_name') or f"Company-{doc['company_id']}"
             clean_company = ''.join(c for c in company_name if c.isalnum() or c in ' -_').strip() or 'Unknown'
             company_folder = find_or_create_folder(service, clean_company, dms_folder)
 
+            # Year from doc_date, fallback to created_at, then current year
+            year_str = str(datetime.now().year)
+            for date_field in ('doc_date', 'created_at'):
+                val = doc.get(date_field)
+                if val:
+                    year_str = str(val)[:4]
+                    break
+            year_folder = find_or_create_folder(service, year_str, company_folder)
+
             category_name = doc.get('category_name') or 'Uncategorized'
             clean_category = ''.join(c for c in category_name if c.isalnum() or c in ' -_').strip() or 'General'
-            category_folder = find_or_create_folder(service, clean_category, company_folder)
+            category_folder = find_or_create_folder(service, clean_category, year_folder)
 
             doc_title = doc.get('title', f"Doc-{doc['id']}")
             clean_title = ''.join(c for c in doc_title if c.isalnum() or c in ' -_').strip() or f"Doc-{doc['id']}"

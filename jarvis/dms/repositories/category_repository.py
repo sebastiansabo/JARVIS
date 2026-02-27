@@ -4,8 +4,8 @@ from core.base_repository import BaseRepository
 
 class CategoryRepository(BaseRepository):
 
-    def list_all(self, company_id=None, active_only=True):
-        """List categories for a company, falling back to global defaults."""
+    def list_all(self, company_id=None, active_only=True, role_id=None):
+        """List categories for a company, optionally filtered by role access."""
         conditions = []
         params = []
 
@@ -15,6 +15,10 @@ class CategoryRepository(BaseRepository):
 
         if active_only:
             conditions.append('c.is_active = TRUE')
+
+        if role_id:
+            conditions.append('(c.allowed_role_ids IS NULL OR %s = ANY(c.allowed_role_ids))')
+            params.append(role_id)
 
         where = 'WHERE ' + ' AND '.join(conditions) if conditions else ''
 
@@ -39,8 +43,9 @@ class CategoryRepository(BaseRepository):
 
     def create(self, name, slug, company_id=None, **kwargs):
         return self.execute('''
-            INSERT INTO dms_categories (name, slug, icon, color, description, company_id, sort_order, is_active, created_by)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO dms_categories (name, slug, icon, color, description, company_id,
+                                        sort_order, is_active, created_by, allowed_role_ids)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (
             name, slug,
@@ -51,12 +56,14 @@ class CategoryRepository(BaseRepository):
             kwargs.get('sort_order', 0),
             kwargs.get('is_active', True),
             kwargs.get('created_by'),
+            kwargs.get('allowed_role_ids'),
         ), returning=True)
 
     def update(self, category_id, **fields):
         sets = []
         params = []
-        for key in ('name', 'slug', 'icon', 'color', 'description', 'sort_order', 'is_active'):
+        for key in ('name', 'slug', 'icon', 'color', 'description', 'sort_order', 'is_active',
+                    'allowed_role_ids'):
             if key in fields:
                 sets.append(f'{key} = %s')
                 params.append(fields[key])
