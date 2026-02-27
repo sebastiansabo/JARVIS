@@ -703,6 +703,28 @@ def create_schema(conn, cursor):
         ON CONFLICT (role_id, permission_id) DO NOTHING
     ''')
 
+    # Migration: Add hr.pontaje_adjustments permissions (for schedule adjustment feature)
+    pontaje_adj_perms = [
+        ('hr', 'HR', 'bi-people-fill', 'pontaje_adjustments', 'Pontaje Adjustments', 'view', 'View', 'View schedule adjustment history', False, 20),
+        ('hr', 'HR', 'bi-people-fill', 'pontaje_adjustments', 'Pontaje Adjustments', 'edit', 'Edit', 'Adjust employee punch records to schedule', False, 21),
+    ]
+    for p in pontaje_adj_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+    # Grant to Admin role by default
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'all', TRUE
+        FROM roles r
+        CROSS JOIN permissions_v2 p
+        WHERE r.name = 'Admin'
+        AND p.module_key = 'hr' AND p.entity_key = 'pontaje_adjustments'
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+    ''')
+
     # Migration: Add AI Agent permissions if they don't exist (for existing databases)
     ai_agent_perms = [
         ('ai_agent', 'AI Agent', 'bi-robot', 'chat', 'Chat', 'access', 'Access', 'Access AI Agent chat', False, 1),

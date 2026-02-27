@@ -1,11 +1,12 @@
-import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, FileText, Paperclip, Download, Trash2, Plus,
+  FileText, Paperclip, Download, Trash2, Plus,
   Image as ImageIcon, File, FileSpreadsheet, FolderOpen,
   Edit2, Check, X, Calendar, Bell, ExternalLink,
   Users, PenTool, FileSearch, Loader2, Cloud, Shield, Tags,
+  ChevronRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -17,7 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Checkbox } from '@/components/ui/checkbox'
+import { MultiSelectPills } from '@/components/shared/MultiSelectPills'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -68,9 +69,84 @@ function fileIcon(mimeType: string | null) {
   return <File className="h-4 w-4 text-muted-foreground" />
 }
 
+function ChildRow({ child, navigate, onDelete, queryClient }: {
+  child: DmsDocument
+  navigate: (path: string) => void
+  onDelete: () => void
+  queryClient: QueryClient
+}) {
+  const { data: childTags = [] } = useQuery({
+    queryKey: ['entity-tags', 'dms_document', child.id],
+    queryFn: () => tagsApi.getEntityTags('dms_document', child.id),
+  })
+
+  return (
+    <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/app/dms/documents/${child.id}`)}>
+      <TableCell className="py-2">
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="text-sm font-medium">{child.title}</span>
+        </div>
+      </TableCell>
+      <TableCell className="text-xs text-muted-foreground py-2 hidden sm:table-cell">{child.doc_number || '—'}</TableCell>
+      <TableCell className="py-2">
+        <Badge className={cn('text-[10px] px-1.5 py-0', STATUS_COLORS[child.status])}>{child.status}</Badge>
+      </TableCell>
+      <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
+        <TagPicker
+          entityType="dms_document"
+          entityId={child.id}
+          currentTags={childTags}
+          onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags', 'dms_document', child.id] })}
+        >
+          <button className="inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-xs hover:bg-accent/50">
+            <Tags className="h-3 w-3" />
+            {childTags.length > 0 ? (
+              childTags.map((t) => (
+                <span
+                  key={t.id}
+                  className="inline-flex rounded px-1 py-0 text-[10px] font-medium"
+                  style={{ backgroundColor: (t.color ?? '#6c757d') + '20', color: t.color ?? '#6c757d' }}
+                >
+                  {t.name}
+                </span>
+              ))
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </button>
+        </TagPicker>
+      </TableCell>
+      <TableCell className="text-xs py-2 text-center">
+        {(child.file_count ?? 0) > 0 ? (
+          <span className="inline-flex items-center gap-1">
+            <Paperclip className="h-3 w-3" />
+            {child.file_count}
+          </span>
+        ) : '—'}
+      </TableCell>
+      <TableCell className="text-xs text-muted-foreground py-2 hidden sm:table-cell">{formatDate(child.created_at)}</TableCell>
+      <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
+        <div className="flex gap-1 justify-end">
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="View" onClick={() => navigate(`/app/dms/documents/${child.id}`)}>
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => navigate(`/app/dms/documents/${child.id}?edit=1`)}>
+            <Edit2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Delete" onClick={onDelete}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  )
+}
+
 export default function DocumentDetail() {
   const { documentId } = useParams<{ documentId: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const docId = Number(documentId)
 
@@ -313,6 +389,14 @@ export default function DocumentDetail() {
     setEditing(true)
   }
 
+  // Auto-enter edit mode from ?edit=1
+  useEffect(() => {
+    if (doc && searchParams.get('edit') === '1' && !editing) {
+      startEdit()
+      setSearchParams({}, { replace: true })
+    }
+  }, [doc, searchParams])
+
   const saveEdit = () => {
     updateMutation.mutate({
       title: editTitle.trim(),
@@ -358,15 +442,35 @@ export default function DocumentDetail() {
       {/* Header */}
       <PageHeader
         title={
-          editing ? (
-            <Input
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              className="text-lg font-semibold h-9 w-80"
-            />
-          ) : (
-            doc.title
-          )
+          <div className="flex items-center gap-1 flex-wrap">
+            <button
+              onClick={() => navigate('/app/dms')}
+              className="text-muted-foreground hover:text-foreground transition-colors text-lg font-semibold"
+            >
+              Documents
+            </button>
+            {(doc.ancestors || []).map((a) => (
+              <span key={a.id} className="flex items-center gap-1">
+                <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />
+                <button
+                  onClick={() => navigate(`/app/dms/documents/${a.id}`)}
+                  className="text-muted-foreground hover:text-foreground transition-colors text-lg font-semibold"
+                >
+                  {a.title}
+                </button>
+              </span>
+            ))}
+            <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />
+            {editing ? (
+              <Input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="text-lg font-semibold h-9 w-80"
+              />
+            ) : (
+              <span className="text-lg font-semibold">{doc.title}</span>
+            )}
+          </div>
         }
         description={
           <span className="inline-flex items-center gap-2 flex-wrap">
@@ -426,10 +530,6 @@ export default function DocumentDetail() {
         }
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/app/dms')}>
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Back
-            </Button>
             {editing ? (
               <>
                 <Button size="sm" onClick={saveEdit} disabled={updateMutation.isPending}>
@@ -507,42 +607,24 @@ export default function DocumentDetail() {
               </SelectContent>
             </Select>
             {editVisibility === 'restricted' && (
-              <div className="flex-1 space-y-2 rounded border p-2">
+              <div className="flex-1 space-y-2 rounded border border-dashed border-amber-400/50 p-2">
                 <div className="space-y-1">
                   <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Roles</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {(rolesData || []).map((r) => (
-                      <label key={r.id} className="flex items-center gap-1 text-xs cursor-pointer">
-                        <Checkbox
-                          checked={editAllowedRoleIds.includes(r.id)}
-                          onCheckedChange={(checked) =>
-                            setEditAllowedRoleIds((prev) =>
-                              checked ? [...prev, r.id] : prev.filter((id) => id !== r.id),
-                            )
-                          }
-                        />
-                        {r.name}
-                      </label>
-                    ))}
-                  </div>
+                  <MultiSelectPills
+                    options={(rolesData || []).map((r) => ({ value: r.id, label: r.name }))}
+                    selected={editAllowedRoleIds}
+                    onChange={(v) => setEditAllowedRoleIds(v as number[])}
+                    placeholder="Select roles..."
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Users</Label>
-                  <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
-                    {(usersData || []).map((u) => (
-                      <label key={u.id} className="flex items-center gap-1 text-xs cursor-pointer">
-                        <Checkbox
-                          checked={editAllowedUserIds.includes(u.id)}
-                          onCheckedChange={(checked) =>
-                            setEditAllowedUserIds((prev) =>
-                              checked ? [...prev, u.id] : prev.filter((id) => id !== u.id),
-                            )
-                          }
-                        />
-                        {u.name}
-                      </label>
-                    ))}
-                  </div>
+                  <MultiSelectPills
+                    options={(usersData || []).map((u) => ({ value: u.id, label: u.name }))}
+                    selected={editAllowedUserIds}
+                    onChange={(v) => setEditAllowedUserIds(v as number[])}
+                    placeholder="Search users..."
+                  />
                 </div>
               </div>
             )}
@@ -686,6 +768,7 @@ export default function DocumentDetail() {
                   setNewSupForm({ name: partyName, supplier_type: 'company', cui: '', phone: '', email: '', city: '', county: '', address: '', nr_reg_com: '' })
                   setNewSupplierOpen(true)
                 }}
+                parentId={doc.parent_id ?? undefined}
               />
             </div>
             <Button size="sm" className="h-7 text-xs" disabled={!partyName.trim() || addPartyMutation.isPending}
@@ -897,44 +980,15 @@ export default function DocumentDetail() {
                       <TableHead className="text-xs">Title</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Number</TableHead>
                       <TableHead className="text-xs">Status</TableHead>
+                      <TableHead className="text-xs">Tags</TableHead>
                       <TableHead className="text-xs text-center">Files</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Date</TableHead>
-                      <TableHead className="text-xs w-20">Actions</TableHead>
+                      <TableHead className="text-xs text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {items.map((child) => (
-                      <TableRow key={child.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/app/dms/documents/${child.id}`)}>
-                        <TableCell className="py-2">
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span className="text-sm font-medium">{child.title}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground py-2 hidden sm:table-cell">{child.doc_number || '—'}</TableCell>
-                        <TableCell className="py-2">
-                          <Badge className={cn('text-[10px] px-1.5 py-0', STATUS_COLORS[child.status])}>{child.status}</Badge>
-                        </TableCell>
-                        <TableCell className="text-xs py-2 text-center">
-                          {(child.file_count ?? 0) > 0 ? (
-                            <span className="inline-flex items-center gap-1">
-                              <Paperclip className="h-3 w-3" />
-                              {child.file_count}
-                            </span>
-                          ) : '—'}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground py-2 hidden sm:table-cell">{formatDate(child.created_at)}</TableCell>
-                        <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex gap-1">
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => navigate(`/app/dms/documents/${child.id}`)}>
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDeleteChildId(child.id)}>
-                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                      <ChildRow key={child.id} child={child} navigate={navigate} onDelete={() => setDeleteChildId(child.id)} queryClient={queryClient} />
                     ))}
                   </TableBody>
                 </Table>

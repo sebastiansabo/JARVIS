@@ -109,6 +109,7 @@ export interface DmsDocument {
   children?: Record<DmsRelationshipType, DmsDocument[]>
   files?: DmsFile[]
   parties?: DmsParty[]
+  ancestors?: { id: number; title: string }[]
 }
 
 export interface DmsFile {
@@ -151,8 +152,21 @@ export interface DmsSupplier {
   bank_name: string | null
   phone: string | null
   email: string | null
+  contact_name: string | null
+  contact_function: string | null
+  contact_email: string | null
+  contact_phone: string | null
+  owner_name: string | null
+  owner_function: string | null
+  owner_email: string | null
+  owner_phone: string | null
   company_id: number | null
   is_active: boolean
+  document_count?: number
+  linked_documents?: { id: number; title: string }[] | null
+  invoice_count?: number
+  total_ron?: number
+  total_eur?: number
   created_at: string
   updated_at: string | null
 }
@@ -161,7 +175,7 @@ export interface PartySuggestion {
   id: number | null
   name: string
   entity_type: DmsEntityType
-  source: 'company' | 'supplier' | 'invoice'
+  source: 'company' | 'supplier' | 'invoice' | 'parent'
   cui?: string | null
   vat?: string | null
   phone?: string | null

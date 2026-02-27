@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -40,10 +40,38 @@ const navItemsDef: NavItem[] = [
       { path: '/app/accounting/bilant', label: 'Bilant', icon: Scale, moduleKey: 'accounting_bilant' },
     ],
   },
-  { path: '/app/hr', label: 'HR', icon: Users, moduleKey: 'hr', permission: 'can_access_hr' },
+  {
+    path: '/app/hr',
+    label: 'HR',
+    icon: Users,
+    moduleKey: 'hr',
+    permission: 'can_access_hr',
+    children: [
+      { path: '/app/hr/pontaje', label: 'Pontaje', icon: Fingerprint, moduleKey: 'hr_pontaje' },
+      { path: '/app/hr/bonuses', label: 'Bonuses', icon: Award, moduleKey: 'hr_bonuses' },
+    ],
+  },
   { path: '/app/approvals', label: 'Approvals', icon: ClipboardCheck, moduleKey: 'approvals', badge: ApprovalBadge },
-  { path: '/app/marketing', label: 'Marketing', icon: Megaphone, moduleKey: 'marketing' },
-  { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms' },
+  {
+    path: '/app/marketing',
+    label: 'Marketing',
+    icon: Megaphone,
+    moduleKey: 'marketing',
+    children: [
+      { path: '/app/marketing', label: 'Campaigns', icon: Megaphone, moduleKey: 'marketing_campaigns' },
+      { path: '/app/marketing/events', label: 'Events', icon: CalendarDays, moduleKey: 'marketing_events' },
+    ],
+  },
+  {
+    path: '/app/dms',
+    label: 'Documents',
+    icon: FolderOpen,
+    moduleKey: 'dms',
+    children: [
+      { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms_documents' },
+      { path: '/app/dms/suppliers', label: 'Suppliers', icon: Building2, moduleKey: 'dms_suppliers' },
+    ],
+  },
   {
     path: '/app/sales',
     label: 'Sales',

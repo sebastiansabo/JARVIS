@@ -1395,6 +1395,17 @@ def init_db():
                                    WHERE table_name = 'suppliers' AND column_name = 'nr_reg_com') THEN
                         ALTER TABLE suppliers ADD COLUMN nr_reg_com TEXT;
                     END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'suppliers' AND column_name = 'contact_name') THEN
+                        ALTER TABLE suppliers ADD COLUMN contact_name TEXT;
+                        ALTER TABLE suppliers ADD COLUMN contact_function TEXT;
+                        ALTER TABLE suppliers ADD COLUMN contact_email TEXT;
+                        ALTER TABLE suppliers ADD COLUMN contact_phone TEXT;
+                        ALTER TABLE suppliers ADD COLUMN owner_name TEXT;
+                        ALTER TABLE suppliers ADD COLUMN owner_function TEXT;
+                        ALTER TABLE suppliers ADD COLUMN owner_email TEXT;
+                        ALTER TABLE suppliers ADD COLUMN owner_phone TEXT;
+                    END IF;
                 END $$;
             ''')
 

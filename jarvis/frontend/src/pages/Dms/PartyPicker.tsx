@@ -15,15 +15,17 @@ interface PartyPickerProps {
   onChange: (name: string) => void
   onCreateNew?: () => void
   placeholder?: string
+  parentId?: number
 }
 
 const SOURCE_CONFIG: Record<string, { label: string; color: string; icon: typeof Building2 }> = {
+  parent: { label: 'Parent', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400', icon: FileText },
   company: { label: 'Company', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400', icon: Building2 },
   supplier: { label: 'Supplier', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400', icon: Building2 },
   invoice: { label: 'Invoice', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400', icon: FileText },
 }
 
-export default function PartyPicker({ value, onSelect, onChange, onCreateNew, placeholder }: PartyPickerProps) {
+export default function PartyPicker({ value, onSelect, onChange, onCreateNew, placeholder, parentId }: PartyPickerProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -33,17 +35,17 @@ export default function PartyPicker({ value, onSelect, onChange, onCreateNew, pl
   useEffect(() => { setSearch(value) }, [value])
 
   const { data, isFetching } = useQuery({
-    queryKey: ['dms-party-suggest', debouncedSearch],
-    queryFn: () => dmsApi.suggestParties(debouncedSearch),
-    enabled: debouncedSearch.length >= 2 && open,
+    queryKey: ['dms-party-suggest', debouncedSearch, parentId],
+    queryFn: () => dmsApi.suggestParties(debouncedSearch, parentId),
+    enabled: (debouncedSearch.length >= 2 || !!parentId) && open,
   })
   const suggestions: PartySuggestion[] = data?.suggestions || []
 
   const handleInputChange = (val: string) => {
     setSearch(val)
     onChange(val)
-    if (val.length >= 2 && !open) setOpen(true)
-    if (val.length < 2 && open) setOpen(false)
+    if ((val.length >= 2 || parentId) && !open) setOpen(true)
+    if (val.length < 2 && !parentId && open) setOpen(false)
   }
 
   const handleSelect = (s: PartySuggestion) => {
@@ -61,7 +63,7 @@ export default function PartyPicker({ value, onSelect, onChange, onCreateNew, pl
             ref={inputRef}
             value={search}
             onChange={(e) => handleInputChange(e.target.value)}
-            onFocus={() => { if (search.length >= 2) setOpen(true) }}
+            onFocus={() => { if (search.length >= 2 || parentId) setOpen(true) }}
             placeholder={placeholder || 'Search company, supplier...'}
             className="pl-8"
           />

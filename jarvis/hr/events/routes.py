@@ -787,6 +787,7 @@ def api_permissions():
         ('bonuses', 'view'), ('bonuses', 'add'), ('bonuses', 'edit'), ('bonuses', 'delete'),
         ('bonuses', 'view_amounts'), ('bonuses', 'export'),
         ('structure', 'view'), ('structure', 'edit'),
+        ('pontaje_adjustments', 'view'), ('pontaje_adjustments', 'edit'),
     ]
 
     role_id = getattr(current_user, 'role_id', None)

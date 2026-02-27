@@ -73,6 +73,22 @@ export default defineConfig({
         target: 'http://localhost:5001',
         changeOrigin: true,
       },
+      '/biostar': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
+      '/efactura': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
+      '/settings': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
+      '/connectors': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
     },
   },
 })

@@ -13,6 +13,7 @@ const Statements = lazy(() => import('./pages/Statements'))
 const EFactura = lazy(() => import('./pages/EFactura'))
 const Approvals = lazy(() => import('./pages/Approvals'))
 const Marketing = lazy(() => import('./pages/Marketing'))
+const MarketingEvents = lazy(() => import('./pages/Marketing/Events'))
 const ProjectDetail = lazy(() => import('./pages/Marketing/ProjectDetail'))
 const Bilant = lazy(() => import('./pages/Accounting/Bilant'))
 const BilantDetail = lazy(() => import('./pages/Accounting/Bilant/BilantDetail'))
@@ -21,6 +22,8 @@ const AiAgent = lazy(() => import('./pages/AiAgent/AiAgent'))
 const Crm = lazy(() => import('./pages/Crm'))
 const Dms = lazy(() => import('./pages/Dms'))
 const DmsDocumentDetail = lazy(() => import('./pages/Dms/DocumentDetail'))
+const SuppliersPage = lazy(() => import('./pages/Dms/SuppliersPage'))
+const SupplierProfile = lazy(() => import('./pages/Dms/SupplierProfile'))
 
 function PageLoader() {
   return (
@@ -58,11 +61,14 @@ export default function App() {
         <Route path="efactura/*" element={<SuspensePage><EFactura /></SuspensePage>} />
         <Route path="approvals" element={<SuspensePage><Approvals /></SuspensePage>} />
         <Route path="marketing" element={<SuspensePage><Marketing /></SuspensePage>} />
+        <Route path="marketing/events/*" element={<SuspensePage><MarketingEvents /></SuspensePage>} />
         <Route path="marketing/projects/:projectId" element={<SuspensePage><ProjectDetail /></SuspensePage>} />
         <Route path="ai-agent" element={<SuspensePage><AiAgent /></SuspensePage>} />
         <Route path="sales/crm" element={<SuspensePage><Crm /></SuspensePage>} />
         <Route path="dms" element={<SuspensePage><Dms /></SuspensePage>} />
         <Route path="dms/documents/:documentId" element={<SuspensePage><DmsDocumentDetail /></SuspensePage>} />
+        <Route path="dms/suppliers" element={<SuspensePage><SuppliersPage /></SuspensePage>} />
+        <Route path="dms/suppliers/:supplierId" element={<SuspensePage><SupplierProfile /></SuspensePage>} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Route>
     </Routes>

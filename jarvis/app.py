@@ -71,6 +71,9 @@ app.register_blueprint(profile_bp)
 from core.connectors.efactura import efactura_bp
 app.register_blueprint(efactura_bp)
 
+from core.connectors.biostar import biostar_bp
+app.register_blueprint(biostar_bp)
+
 from core.settings import settings_bp
 app.register_blueprint(settings_bp)
 

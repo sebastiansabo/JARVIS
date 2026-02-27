@@ -170,9 +170,9 @@ export const dmsApi = {
   deleteParty: (partyId: number) =>
     api.delete<{ success: boolean }>(`/dms/api/dms/parties/${partyId}`),
 
-  suggestParties: (query: string) =>
+  suggestParties: (query: string, parentId?: number) =>
     api.get<{ success: boolean; suggestions: PartySuggestion[] }>(
-      `/dms/api/dms/parties/suggest${toQs({ q: query })}`,
+      `/dms/api/dms/parties/suggest${toQs({ q: query, parent_id: parentId })}`,
     ),
 
   // ---- Signatures ----
@@ -245,6 +245,38 @@ export const dmsApi = {
 
   deleteSupplier: (id: number) =>
     api.delete<{ success: boolean }>(`/dms/api/dms/suppliers/${id}`),
+
+  batchDeactivateSuppliers: (ids: number[]) =>
+    api.post<{ success: boolean; affected: number }>('/dms/api/dms/suppliers/batch-deactivate', { ids }),
+
+  getSupplierDocuments: (supId: number, limit = 20) =>
+    api.get<{ success: boolean; documents: Array<{
+      id: number; title: string; status: string; doc_number: string | null;
+      doc_date: string | null; expiry_date: string | null; parent_id: number | null;
+      relationship_type: string | null; party_role: string; category_name: string | null;
+    }> }>(`/dms/api/dms/suppliers/${supId}/documents?limit=${limit}`),
+
+  getSupplierInvoices: (supId: number, limit = 10) =>
+    api.get<{ success: boolean; invoices: Array<{
+      id: number; supplier: string; invoice_number: string; invoice_date: string;
+      invoice_value: number; currency: string; value_ron: number | null;
+      value_eur: number | null; status: string; payment_status: string; drive_link: string | null;
+    }> }>(`/dms/api/dms/suppliers/${supId}/invoices?limit=${limit}`),
+
+  syncAnaf: (supId: number) =>
+    api.post<{
+      success: boolean; error?: string; anaf_name?: string;
+      updated_fields?: string[]; supplier?: DmsSupplier;
+    }>(`/dms/api/dms/suppliers/${supId}/sync-anaf`, {}),
+
+  syncAnafBatch: () =>
+    api.post<{
+      success: boolean; error?: string; synced: number; total: number;
+      results: Array<{
+        id: number; name: string; cui: string; status: string;
+        anaf_name?: string; updated_fields?: string[];
+      }>;
+    }>('/dms/api/dms/suppliers/sync-anaf-batch', {}),
 
   // ---- Party Roles ----
 

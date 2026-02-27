@@ -14,7 +14,7 @@ _tag_repo = TagRepository()
 _auto_tag_repo = AutoTagRepository()
 _auto_tag_service = AutoTagService()
 
-VALID_ENTITY_TYPES = {'invoice', 'efactura_invoice', 'transaction', 'employee', 'event', 'event_bonus', 'mkt_project', 'dms_document'}
+VALID_ENTITY_TYPES = {'invoice', 'efactura_invoice', 'transaction', 'employee', 'event', 'event_bonus', 'mkt_project', 'dms_document', 'supplier'}
 
 
 # ============== TAG GROUP ENDPOINTS ==============

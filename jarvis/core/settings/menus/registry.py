@@ -44,16 +44,15 @@ MODULES = [
     {
         'module_key': 'hr',
         'name': 'HR',
-        'description': 'Events, Bonuses, Employees',
+        'description': 'Pontaje, Bonuses, Employees',
         'icon': 'bi-people',
-        'url': '/hr/events/',
+        'url': '/hr',
         'color': '#9c27b0',
         'status': 'active',
         'sort_order': 3,
         'children': [
-            {'module_key': 'hr_events', 'name': 'Event Bonuses', 'description': 'Manage bonuses', 'icon': 'bi-gift', 'url': '/hr/events/', 'sort_order': 1},
-            {'module_key': 'hr_manage_events', 'name': 'Manage Events', 'description': 'Create/edit events', 'icon': 'bi-calendar-event', 'url': '/hr/events/events', 'sort_order': 2},
-            {'module_key': 'hr_employees', 'name': 'Employees', 'description': 'Employee list', 'icon': 'bi-person-lines-fill', 'url': '/hr/events/employees', 'sort_order': 3},
+            {'module_key': 'hr_pontaje', 'name': 'Pontaje', 'description': 'Time tracking', 'icon': 'bi-fingerprint', 'url': '/hr/pontaje', 'sort_order': 1},
+            {'module_key': 'hr_bonuses', 'name': 'Bonuses', 'description': 'Event bonuses', 'icon': 'bi-gift', 'url': '/hr/bonuses', 'sort_order': 2},
         ],
     },
     {
@@ -69,12 +68,16 @@ MODULES = [
     {
         'module_key': 'marketing',
         'name': 'Marketing',
-        'description': 'Campaigns & Content',
+        'description': 'Campaigns, Events & Content',
         'icon': 'bi-megaphone',
         'url': '/marketing',
         'color': '#ec4899',
         'status': 'active',
         'sort_order': 5,
+        'children': [
+            {'module_key': 'marketing_campaigns', 'name': 'Campaigns', 'description': 'Marketing campaigns', 'icon': 'bi-megaphone', 'url': '/marketing', 'sort_order': 1},
+            {'module_key': 'marketing_events', 'name': 'Events', 'description': 'Events management', 'icon': 'bi-calendar-event', 'url': '/marketing/events', 'sort_order': 2},
+        ],
     },
     {
         'module_key': 'sales',
@@ -98,6 +101,10 @@ MODULES = [
         'color': '#0ea5e9',
         'status': 'active',
         'sort_order': 7,
+        'children': [
+            {'module_key': 'dms_documents', 'name': 'Documents', 'description': 'Document list', 'icon': 'bi-folder', 'url': '/dms', 'sort_order': 1},
+            {'module_key': 'dms_suppliers', 'name': 'Suppliers', 'description': 'Master supplier list', 'icon': 'bi-building', 'url': '/dms/suppliers', 'sort_order': 2},
+        ],
     },
     {
         'module_key': 'aftersales',

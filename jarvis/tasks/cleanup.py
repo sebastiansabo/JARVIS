@@ -126,6 +126,60 @@ def run_daily_digest():
         logger.error(f"Daily digest task failed: {e}")
 
 
+def sync_biostar_events():
+    """Incremental sync of BioStar punch events."""
+    try:
+        from core.connectors.biostar.services.biostar_sync_service import BioStarSyncService
+        svc = BioStarSyncService()
+        status = svc.get_status()
+        if not status.get('connected'):
+            return
+        result = svc.sync_events()
+        if result.get('success'):
+            data = result.get('data', {})
+            if data.get('inserted', 0) > 0:
+                logger.info(f"BioStar event sync: {data['inserted']} new, {data.get('skipped', 0)} skipped")
+        else:
+            logger.warning(f"BioStar event sync failed: {result.get('error')}")
+    except Exception as e:
+        logger.error(f"BioStar event sync task failed: {e}")
+
+
+def sync_biostar_users():
+    """Full sync of BioStar users with auto-mapping."""
+    try:
+        from core.connectors.biostar.services.biostar_sync_service import BioStarSyncService
+        svc = BioStarSyncService()
+        status = svc.get_status()
+        if not status.get('connected'):
+            return
+        result = svc.sync_users()
+        if result.get('success'):
+            data = result.get('data', {})
+            logger.info(f"BioStar user sync: {data.get('fetched', 0)} fetched, {data.get('mapped', 0)} mapped")
+        else:
+            logger.warning(f"BioStar user sync failed: {result.get('error')}")
+    except Exception as e:
+        logger.error(f"BioStar user sync task failed: {e}")
+
+
+def auto_adjust_biostar_schedules():
+    """Auto-adjust yesterday's off-schedule punches to comply with work schedule."""
+    try:
+        from datetime import date, timedelta
+        from core.connectors.biostar.services.biostar_sync_service import BioStarSyncService
+        svc = BioStarSyncService()
+        status = svc.get_status()
+        if not status.get('connected'):
+            return
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        result = svc.auto_adjust_all(yesterday, threshold=15)
+        if result['adjusted'] > 0:
+            logger.info(f"BioStar auto-adjust: {result['adjusted']} of {result['total_flagged']} employees adjusted for {yesterday}")
+    except Exception as e:
+        logger.error(f"BioStar auto-adjust task failed: {e}")
+
+
 def _acquire_scheduler_lock():
     """Try to acquire an exclusive file lock. Returns True if this process won."""
     global _lock_file
@@ -234,6 +288,39 @@ def start_scheduler():
         hour=8,
         minute=0,
         id='daily_digest',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        sync_biostar_events,
+        'cron',
+        hour=1,
+        minute=0,
+        id='biostar_sync_events',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        sync_biostar_users,
+        'cron',
+        hour=2,
+        minute=0,
+        id='biostar_sync_users',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        auto_adjust_biostar_schedules,
+        'cron',
+        hour=3,
+        minute=0,
+        id='biostar_auto_adjust',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,

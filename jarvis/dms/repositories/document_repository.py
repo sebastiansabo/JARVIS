@@ -93,6 +93,22 @@ class DocumentRepository(BaseRepository):
             WHERE d.id = %s AND d.deleted_at IS NULL
         ''', (doc_id,))
 
+    def get_ancestors(self, doc_id):
+        """Walk up parent chain and return list from root → immediate parent."""
+        return self.query_all('''
+            WITH RECURSIVE chain AS (
+                SELECT id, title, parent_id, 0 AS depth
+                FROM dms_documents WHERE id = (
+                    SELECT parent_id FROM dms_documents WHERE id = %s
+                )
+                UNION ALL
+                SELECT d.id, d.title, d.parent_id, c.depth + 1
+                FROM dms_documents d
+                JOIN chain c ON c.parent_id = d.id
+            )
+            SELECT id, title FROM chain ORDER BY depth DESC
+        ''', (doc_id,))
+
     def get_children(self, parent_id):
         """Get children of a document, including their file counts."""
         return self.query_all('''

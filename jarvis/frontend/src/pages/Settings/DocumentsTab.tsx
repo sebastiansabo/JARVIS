@@ -1,13 +1,20 @@
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import CategoryManager from '@/pages/Dms/CategoryManager'
 import PartyRoleManager from '@/pages/Dms/PartyRoleManager'
 
 export default function DocumentsTab() {
   return (
-    <div className="space-y-8">
-      <CategoryManager />
-      <div className="border-t pt-6">
+    <Tabs defaultValue="categories" className="space-y-4">
+      <TabsList>
+        <TabsTrigger value="categories">Categories</TabsTrigger>
+        <TabsTrigger value="party-roles">Party Roles</TabsTrigger>
+      </TabsList>
+      <TabsContent value="categories">
+        <CategoryManager />
+      </TabsContent>
+      <TabsContent value="party-roles">
         <PartyRoleManager />
-      </div>
-    </div>
+      </TabsContent>
+    </Tabs>
   )
 }

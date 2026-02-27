@@ -1,6 +1,6 @@
-import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate, NavLink } from 'react-router-dom'
-import { Award, CalendarDays, Download, LayoutDashboard } from 'lucide-react'
+import { lazy, Suspense, useMemo } from 'react'
+import { Routes, Route, Navigate, NavLink, useMatch } from 'react-router-dom'
+import { Award, ClipboardCheck, Download, Fingerprint, LayoutDashboard } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -12,11 +12,9 @@ import { cn } from '@/lib/utils'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 
 const BonusesTab = lazy(() => import('./BonusesTab'))
-const EventsTab = lazy(() => import('./EventsTab'))
-const tabs = [
-  { to: '/app/hr/bonuses', label: 'Bonuses', icon: Award },
-  { to: '/app/hr/events', label: 'Events', icon: CalendarDays },
-] as const
+const PontajeTab = lazy(() => import('./PontajeTab'))
+const AdjustmentsTab = lazy(() => import('./AdjustmentsTab'))
+const EmployeeProfile = lazy(() => import('./EmployeeProfile'))
 
 const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -31,6 +29,7 @@ function TabLoader() {
 }
 
 export default function Hr() {
+  const isProfilePage = useMatch('/app/hr/pontaje/:biostarUserId')
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('hr_summary')
   const filters = useHrStore((s) => s.filters)
 
@@ -47,12 +46,35 @@ export default function Hr() {
 
   const canExport = permissions?.permissions?.['hr.bonuses.export']?.allowed ?? false
   const canViewAmounts = permissions?.permissions?.['hr.bonuses.view_amounts']?.allowed ?? false
+  const canViewAdjustments = permissions?.permissions?.['hr.pontaje_adjustments.view']?.allowed ?? false
+
+  const tabs = useMemo(() => {
+    const t: { to: string; label: string; icon: typeof Fingerprint }[] = [
+      { to: '/app/hr/pontaje', label: 'Pontaje', icon: Fingerprint },
+      { to: '/app/hr/bonuses', label: 'Bonuses', icon: Award },
+    ]
+    if (canViewAdjustments) {
+      t.push({ to: '/app/hr/adjustments', label: 'Adjustments', icon: ClipboardCheck })
+    }
+    return t
+  }, [canViewAdjustments])
+
+  // Profile page — standalone, no tabs/stats
+  if (isProfilePage) {
+    return (
+      <Suspense fallback={<TabLoader />}>
+        <Routes>
+          <Route path="pontaje/:biostarUserId" element={<EmployeeProfile />} />
+        </Routes>
+      </Suspense>
+    )
+  }
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="HR Events"
-        description={`Bonuses, events & employee management${filters.year ? ` — ${filters.year}` : ''}${filters.month ? ` ${MONTHS[filters.month]}` : ''}`}
+        title="HR"
+        description={`Pontaje, bonuses & employee management${filters.year ? ` — ${filters.year}` : ''}${filters.month ? ` ${MONTHS[filters.month]}` : ''}`}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
@@ -75,9 +97,9 @@ export default function Hr() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <StatCard title="Bonuses" value={summary?.total_bonuses ?? 0} icon={<Award className="h-4 w-4" />} />
         <StatCard title="Employees" value={summary?.total_employees ?? 0} icon={<Award className="h-4 w-4" />} />
-        <StatCard title="Events" value={summary?.total_events ?? 0} icon={<CalendarDays className="h-4 w-4" />} />
-        <StatCard title="Total Days" value={summary?.total_days ?? 0} icon={<CalendarDays className="h-4 w-4" />} />
-        <StatCard title="Total Hours" value={summary?.total_hours ?? 0} icon={<CalendarDays className="h-4 w-4" />} />
+        <StatCard title="Events" value={summary?.total_events ?? 0} icon={<Award className="h-4 w-4" />} />
+        <StatCard title="Total Days" value={summary?.total_days ?? 0} icon={<Award className="h-4 w-4" />} />
+        <StatCard title="Total Hours" value={summary?.total_hours ?? 0} icon={<Fingerprint className="h-4 w-4" />} />
         {canViewAmounts && (
           <StatCard
             title="Total Amount"
@@ -95,11 +117,11 @@ export default function Hr() {
 
       {/* Tab nav */}
       <nav className="flex gap-1 border-b">
-        {tabs.map((tab) => (
+        {tabs.map((t) => (
           <NavLink
-            key={tab.to}
-            to={tab.to}
-            end={tab.to === '/app/hr/bonuses'}
+            key={t.to}
+            to={t.to}
+            end={t.to !== '/app/hr/pontaje'}
             className={({ isActive }) =>
               cn(
                 'flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors',
@@ -109,8 +131,8 @@ export default function Hr() {
               )
             }
           >
-            <tab.icon className="h-4 w-4" />
-            {tab.label}
+            <t.icon className="h-4 w-4" />
+            {t.label}
           </NavLink>
         ))}
       </nav>
@@ -118,9 +140,10 @@ export default function Hr() {
       {/* Tab content */}
       <Suspense fallback={<TabLoader />}>
         <Routes>
-          <Route index element={<Navigate to="bonuses" replace />} />
+          <Route index element={<Navigate to="pontaje" replace />} />
+          <Route path="pontaje" element={<PontajeTab />} />
           <Route path="bonuses" element={<BonusesTab canViewAmounts={canViewAmounts} />} />
-          <Route path="events/*" element={<EventsTab />} />
+          {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab />} />}
         </Routes>
       </Suspense>
     </div>

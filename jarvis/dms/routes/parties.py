@@ -4,7 +4,7 @@ from flask import request, jsonify
 from flask_login import login_required, current_user
 
 from dms import dms_bp
-from dms.repositories import DocumentRepository, PartyRepository, PartyRoleRepository
+from dms.repositories import DocumentRepository, PartyRepository, PartyRoleRepository, SupplierRepository
 from dms.routes.documents import dms_permission_required
 from core.utils.api_helpers import safe_error_response, get_json_or_error
 
@@ -13,6 +13,7 @@ logger = logging.getLogger('jarvis.dms.routes.parties')
 _doc_repo = DocumentRepository()
 _party_repo = PartyRepository()
 _party_role_repo = PartyRoleRepository()
+_sup_repo = SupplierRepository()
 
 _VALID_ENTITY_TYPES = ('company', 'person', 'external')
 
@@ -85,6 +86,24 @@ def api_create_party(doc_id):
     if not isinstance(sort_order, int) or sort_order < 0 or sort_order > 999:
         return jsonify({'success': False, 'error': 'sort_order must be 0-999'}), 400
 
+    # Auto-create supplier if no existing entity selected
+    if not entity_id and entity_type in ('company', 'person'):
+        company_id = getattr(current_user, 'company_id', None)
+        try:
+            sup = _sup_repo.create(
+                name=entity_name,
+                company_id=company_id,
+                created_by=current_user.id,
+                supplier_type=entity_type,
+                cui=entity_details.get('cui'),
+                phone=entity_details.get('phone'),
+                email=entity_details.get('email'),
+            )
+            entity_id = sup['id']
+            entity_details['auto_created'] = True
+        except Exception:
+            logger.warning('Auto-create supplier failed for %s', entity_name, exc_info=True)
+
     try:
         row = _party_repo.create(
             document_id=doc_id,
@@ -95,7 +114,7 @@ def api_create_party(doc_id):
             entity_details=entity_details,
             sort_order=sort_order,
         )
-        return jsonify({'success': True, 'id': row['id']}), 201
+        return jsonify({'success': True, 'id': row['id'], 'entity_id': entity_id}), 201
     except Exception as e:
         return safe_error_response(e)
 
@@ -177,8 +196,38 @@ def api_delete_party(party_id):
 def api_suggest_parties():
     """Auto-suggest parties from companies and users."""
     q = request.args.get('q', '').strip()
-    if len(q) < 2:
-        return jsonify({'success': True, 'suggestions': []})
+    parent_id = request.args.get('parent_id', type=int)
     company_id = getattr(current_user, 'company_id', None)
-    suggestions = _party_repo.suggest(q, company_id=company_id, limit=10)
+
+    suggestions = []
+
+    # Prepend parent document's parties when available
+    if parent_id:
+        parent_parties = _party_repo.get_by_document(parent_id)
+        seen = set()
+        for p in parent_parties:
+            name = p['entity_name']
+            if name and name.lower() not in seen and (len(q) < 2 or q.lower() in name.lower()):
+                seen.add(name.lower())
+                suggestions.append({
+                    'id': p.get('entity_id'),
+                    'name': name,
+                    'entity_type': p.get('entity_type', 'company'),
+                    'source': 'parent',
+                    'cui': (p.get('entity_details') or {}).get('cui'),
+                    'phone': None,
+                    'email': None,
+                    'vat': None,
+                })
+
+    if len(q) < 2:
+        return jsonify({'success': True, 'suggestions': suggestions})
+
+    # Add regular suggestions, skip duplicates from parent
+    parent_names = {s['name'].lower() for s in suggestions}
+    regular = _party_repo.suggest(q, company_id=company_id, limit=10)
+    for s in regular:
+        if s['name'].lower() not in parent_names:
+            suggestions.append(s)
+
     return jsonify({'success': True, 'suggestions': suggestions})

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Checkbox } from '@/components/ui/checkbox'
+import { MultiSelectPills } from '@/components/shared/MultiSelectPills'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { dmsApi } from '@/api/dms'
 import { organizationApi } from '@/api/organization'
@@ -379,47 +379,25 @@ export default function UploadDialog({
             </Select>
 
             {visibility === 'restricted' && (
-              <div className="space-y-3 rounded-md border p-3">
-                {/* Role picker */}
+              <div className="space-y-3 rounded-md border border-dashed border-amber-400/50 p-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Allowed Roles</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {(roles || []).map((r) => (
-                      <label key={r.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                        <Checkbox
-                          checked={allowedRoleIds.includes(r.id)}
-                          onCheckedChange={(checked) => {
-                            setAllowedRoleIds((prev) =>
-                              checked ? [...prev, r.id] : prev.filter((id) => id !== r.id),
-                            )
-                          }}
-                        />
-                        {r.name}
-                      </label>
-                    ))}
-                  </div>
+                  <MultiSelectPills
+                    options={(roles || []).map((r) => ({ value: r.id, label: r.name }))}
+                    selected={allowedRoleIds}
+                    onChange={(v) => setAllowedRoleIds(v as number[])}
+                    placeholder="Select roles..."
+                  />
                 </div>
-
-                {/* User picker */}
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Allowed Users</Label>
-                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                    {(users || []).map((u) => (
-                      <label key={u.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                        <Checkbox
-                          checked={allowedUserIds.includes(u.id)}
-                          onCheckedChange={(checked) => {
-                            setAllowedUserIds((prev) =>
-                              checked ? [...prev, u.id] : prev.filter((id) => id !== u.id),
-                            )
-                          }}
-                        />
-                        {u.name}
-                      </label>
-                    ))}
-                  </div>
+                  <MultiSelectPills
+                    options={(users || []).map((u) => ({ value: u.id, label: u.name }))}
+                    selected={allowedUserIds}
+                    onChange={(v) => setAllowedUserIds(v as number[])}
+                    placeholder="Search users..."
+                  />
                 </div>
-
                 {allowedRoleIds.length === 0 && allowedUserIds.length === 0 && (
                   <p className="text-xs text-amber-600">
                     No roles or users selected — only you and admins will see this document.

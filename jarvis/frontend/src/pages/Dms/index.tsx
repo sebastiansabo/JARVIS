@@ -5,12 +5,11 @@ import {
   FolderOpen, FileText, Plus, Search, Trash2, RotateCcw,
   Paperclip, Users as ChildrenIcon, ChevronDown,
   Download, Calendar, Bell, Edit2, File, FileSpreadsheet,
-  Image as ImageIcon, PenTool, Tags, Shield, Building2, X,
+  Image as ImageIcon, PenTool, Tags, Shield, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
-import { useTabParam } from '@/hooks/useTabParam'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -30,10 +29,6 @@ import { tagsApi } from '@/api/tags'
 import { useDmsStore } from '@/stores/dmsStore'
 import type { DmsDocument, DmsFile, DmsCategory, DmsRelationshipTypeConfig } from '@/types/dms'
 import UploadDialog from './UploadDialog'
-import SupplierManager from './SupplierManager'
-
-type MainTab = 'documents' | 'suppliers'
-
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
   active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
@@ -77,7 +72,6 @@ export default function Dms() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const queryClient = useQueryClient()
-  const [mainTab, setMainTab] = useTabParam<MainTab>('documents')
   const { filters, updateFilter, clearFilters, selectedIds, toggleSelected, selectAll, clearSelected, visibleColumns, setVisibleColumns } = useDmsStore()
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -96,7 +90,6 @@ export default function Dms() {
   const { data: statsData, isLoading: statsLoading } = useQuery({
     queryKey: ['dms-stats', companyId],
     queryFn: () => dmsApi.getStats(companyId),
-    enabled: mainTab === 'documents',
   })
 
   const { data: categoriesData } = useQuery({
@@ -107,7 +100,6 @@ export default function Dms() {
   const { data: docsData, isLoading: docsLoading } = useQuery({
     queryKey: ['dms-documents', { ...filters, search: debouncedSearch, company_id: companyId }],
     queryFn: () => dmsApi.listDocuments({ ...filters, search: debouncedSearch, company_id: companyId }),
-    enabled: mainTab === 'documents',
   })
 
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false)
@@ -181,10 +173,8 @@ export default function Dms() {
   const { data: entityTagsMap = {} } = useQuery({
     queryKey: ['entity-tags', 'dms_document', docIds],
     queryFn: () => tagsApi.getEntityTagsBulk('dms_document', docIds),
-    enabled: docIds.length > 0 && mainTab === 'documents',
+    enabled: docIds.length > 0,
   })
-
-  const isAdmin = user?.can_access_settings
 
   // Column definitions for dynamic table
   const columnDefs: ColumnDef<DmsDocument>[] = useMemo(() => [
@@ -297,40 +287,7 @@ export default function Dms() {
         }
       />
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 border-b">
-        <button
-          onClick={() => setMainTab('documents')}
-          className={cn(
-            'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-            mainTab === 'documents'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <FolderOpen className="h-3.5 w-3.5" />
-          Documents
-          {stats?.total ? <Badge variant="secondary" className="ml-1 text-xs">{stats.total}</Badge> : null}
-        </button>
-        {isAdmin && (
-          <button
-            onClick={() => setMainTab('suppliers')}
-            className={cn(
-              'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-              mainTab === 'suppliers'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <Building2 className="h-3.5 w-3.5" />
-            Suppliers
-          </button>
-        )}
-      </div>
-
-      {mainTab === 'documents' && (
-        <>
-          {/* Stats — compact gap */}
+      {/* Stats — compact gap */}
           <div className="grid grid-cols-4 gap-2">
             <StatCard title="Total" value={stats?.total ?? 0} isLoading={statsLoading} />
             <StatCard title="Draft" value={stats?.draft ?? 0} isLoading={statsLoading} />
@@ -555,6 +512,7 @@ export default function Dms() {
                                 onViewDetail={() => navigate(`/app/dms/documents/${doc.id}`)}
                                 onDelete={() => setDeleteId(doc.id)}
                                 onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
+                                navigate={navigate}
                               />
                             </TableCell>
                           </TableRow>
@@ -571,12 +529,6 @@ export default function Dms() {
               </div>
             </>
           )}
-        </>
-      )}
-
-      {mainTab === 'suppliers' && isAdmin && (
-        <SupplierManager companyId={companyId} />
-      )}
 
       {/* Upload Dialog */}
       <UploadDialog
@@ -620,18 +572,86 @@ function fileIcon(mimeType: string | null) {
   return <File className="h-4 w-4 text-muted-foreground" />
 }
 
+function ChildDocRow({ child, navigate, onDelete }: {
+  child: DmsDocument
+  navigate: (path: string) => void
+  onDelete: () => void
+}) {
+  const queryClient = useQueryClient()
+  const { data: childTags = [] } = useQuery({
+    queryKey: ['entity-tags', 'dms_document', child.id],
+    queryFn: () => tagsApi.getEntityTags('dms_document', child.id),
+  })
+
+  return (
+    <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/app/dms/documents/${child.id}`)}>
+      <TableCell className="py-1.5">
+        <span className="text-xs font-medium">{child.title}</span>
+      </TableCell>
+      <TableCell className="text-xs py-1.5 text-muted-foreground">{child.doc_number || '—'}</TableCell>
+      <TableCell className="py-1.5">
+        <Badge className={cn('text-[10px] px-1.5 py-0', STATUS_COLORS[child.status])}>
+          {child.status}
+        </Badge>
+      </TableCell>
+      <TableCell className="py-1.5" onClick={(e) => e.stopPropagation()}>
+        <TagPicker
+          entityType="dms_document"
+          entityId={child.id}
+          currentTags={childTags}
+          onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags', 'dms_document', child.id] })}
+        >
+          <button className="inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-xs hover:bg-accent/50">
+            <Tags className="h-3 w-3" />
+            {childTags.length > 0 ? (
+              childTags.map((t) => (
+                <span
+                  key={t.id}
+                  className="inline-flex rounded px-1 py-0 text-[10px] font-medium"
+                  style={{ backgroundColor: (t.color ?? '#6c757d') + '20', color: t.color ?? '#6c757d' }}
+                >
+                  {t.name}
+                </span>
+              ))
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </button>
+        </TagPicker>
+      </TableCell>
+      <TableCell className="text-xs py-1.5 text-center">{child.file_count ?? 0}</TableCell>
+      <TableCell className="text-xs py-1.5 text-muted-foreground">{formatDate(child.created_at)}</TableCell>
+      <TableCell className="py-1.5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex gap-1 justify-end">
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="View" onClick={() => navigate(`/app/dms/documents/${child.id}`)}>
+            <FileText className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => navigate(`/app/dms/documents/${child.id}?edit=1`)}>
+            <Edit2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Delete" onClick={onDelete}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  )
+}
+
 function DocumentExpandedDetails({
   doc,
   tags,
   onViewDetail,
   onDelete,
   onTagsChanged,
+  navigate,
 }: {
   doc: DmsDocument
   tags: import('@/types/tags').EntityTag[]
   onViewDetail: () => void
   onDelete: () => void
   onTagsChanged: () => void
+  navigate: (path: string) => void
 }) {
   const { data, isLoading } = useQuery({
     queryKey: ['dms-document', doc.id],
@@ -769,25 +789,15 @@ function DocumentExpandedDetails({
                       <TableHead className="text-xs py-1.5">Title</TableHead>
                       <TableHead className="text-xs py-1.5">Number</TableHead>
                       <TableHead className="text-xs py-1.5">Status</TableHead>
+                      <TableHead className="text-xs py-1.5">Tags</TableHead>
                       <TableHead className="text-xs py-1.5 text-center">Files</TableHead>
                       <TableHead className="text-xs py-1.5">Date</TableHead>
+                      <TableHead className="text-xs py-1.5 text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {children[rt.slug]!.map((child) => (
-                      <TableRow key={child.id}>
-                        <TableCell className="py-1.5">
-                          <span className="text-xs font-medium">{child.title}</span>
-                        </TableCell>
-                        <TableCell className="text-xs py-1.5 text-muted-foreground">{child.doc_number || '—'}</TableCell>
-                        <TableCell className="py-1.5">
-                          <Badge className={cn('text-[10px] px-1.5 py-0', STATUS_COLORS[child.status])}>
-                            {child.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs py-1.5 text-center">{child.file_count ?? 0}</TableCell>
-                        <TableCell className="text-xs py-1.5 text-muted-foreground">{formatDate(child.created_at)}</TableCell>
-                      </TableRow>
+                      <ChildDocRow key={child.id} child={child} navigate={navigate} onDelete={onDelete} />
                     ))}
                   </TableBody>
                 </Table>
@@ -797,7 +807,7 @@ function DocumentExpandedDetails({
         </div>
       )}
 
-      {/* Actions */}
+      {/* Actions for parent doc */}
       <div className="flex gap-2">
         <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onViewDetail() }}>
           <Edit2 className="h-3.5 w-3.5 mr-1" />View / Edit

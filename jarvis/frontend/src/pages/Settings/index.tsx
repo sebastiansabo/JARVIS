@@ -16,6 +16,7 @@ import {
   ClipboardCheck,
   Megaphone,
   FileText,
+  Fingerprint,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -36,6 +37,7 @@ const ConnectorsTab = lazy(() => import('./ConnectorsTab'))
 const ApprovalsTab = lazy(() => import('./ApprovalsTab'))
 const MarketingTab = lazy(() => import('./MarketingTab'))
 const DocumentsTab = lazy(() => import('./DocumentsTab'))
+const PontajeTab = lazy(() => import('./PontajeTab'))
 
 const tabs = [
   // Access
@@ -46,6 +48,7 @@ const tabs = [
   // Domain config
   { path: 'accounting', label: 'Accounting', icon: Calculator },
   { path: 'hr', label: 'HR', icon: Briefcase },
+  { path: 'pontaje', label: 'Pontaje', icon: Fingerprint },
   { path: 'documents', label: 'Documents', icon: FileText },
   // Appearance
   { path: 'themes', label: 'Themes', icon: Palette },
@@ -120,6 +123,7 @@ export default function Settings() {
               <Route path="activity" element={<ActivityTab />} />
               <Route path="tags" element={<TagsTab />} />
               <Route path="hr" element={<HrTab />} />
+              <Route path="pontaje" element={<PontajeTab />} />
               <Route path="documents" element={<DocumentsTab />} />
               <Route path="approvals" element={<ApprovalsTab />} />
               <Route path="marketing" element={<MarketingTab />} />

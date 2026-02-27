@@ -89,6 +89,7 @@ def api_get_document(doc_id):
 
     doc['children'] = children
     doc['files'] = files
+    doc['ancestors'] = _doc_repo.get_ancestors(doc_id) if doc.get('parent_id') else []
     return jsonify({'success': True, 'document': doc})
 
 

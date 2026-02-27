@@ -88,9 +88,9 @@ class PartyRepository(BaseRepository):
             results.append(c)
             seen_names.add(c['name'].lower())
 
-        # 2. Suppliers table
-        scond = 'WHERE is_active = TRUE AND name ILIKE %s'
-        sparams = [like]
+        # 2. Suppliers table (search by name or CUI)
+        scond = 'WHERE is_active = TRUE AND (name ILIKE %s OR cui ILIKE %s)'
+        sparams = [like, like]
         if company_id:
             scond += ' AND company_id = %s'
             sparams.append(company_id)
