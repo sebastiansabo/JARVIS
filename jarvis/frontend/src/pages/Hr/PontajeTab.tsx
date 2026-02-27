@@ -65,11 +65,12 @@ export default function PontajeTab() {
     queryFn: biostarApi.getStatus,
   })
 
+  const connected = !!status?.connected
+
   const { data: summary = [], isLoading } = useQuery({
     queryKey: ['biostar', 'daily-summary', today],
     queryFn: () => biostarApi.getDailySummary(today),
-    enabled: !!status?.connected,
-    refetchInterval: 60_000,
+    refetchInterval: connected ? 60_000 : false,
   })
 
   const groups = useMemo(() => {
@@ -142,21 +143,20 @@ export default function PontajeTab() {
     return new Date(e.first_punch).getHours() < 8
   }).length
 
-  if (!status?.connected) {
-    return (
-      <EmptyState
-        title="BioStar not connected"
-        description="Configure the BioStar 2 connection in Settings > Connectors first."
-      />
-    )
-  }
-
   const SortIcon = ({ field }: { field: SortField }) => (
     <ArrowUpDown className={cn('ml-1 h-3 w-3 inline', sortField === field ? 'opacity-100' : 'opacity-40')} />
   )
 
   return (
     <div className="space-y-4">
+      {/* Connection warning */}
+      {!connected && (
+        <div className="flex items-center gap-2 rounded-md border border-orange-300 bg-orange-50 px-4 py-2 text-sm text-orange-800 dark:border-orange-700 dark:bg-orange-950/30 dark:text-orange-300">
+          <Clock className="h-4 w-4 shrink-0" />
+          <span>BioStar not connected — showing cached data. Configure connection in Settings &gt; Connectors.</span>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard title="Present Today" value={totalPresent} icon={<UserCheck className="h-4 w-4" />} />
