@@ -50,14 +50,7 @@ const SIG_COLORS: Record<string, string> = {
   expired: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
 }
 
-const PARTY_ROLES: { value: DmsPartyRole; label: string }[] = [
-  { value: 'emitent', label: 'Emitent' },
-  { value: 'beneficiar', label: 'Beneficiar' },
-  { value: 'semnatar', label: 'Semnatar' },
-  { value: 'furnizor', label: 'Furnizor' },
-  { value: 'client', label: 'Client' },
-  { value: 'other', label: 'Altele' },
-]
+// Party roles loaded dynamically from API
 
 function expiryColor(daysToExpiry: number | null) {
   if (daysToExpiry == null) return 'text-muted-foreground'
@@ -99,13 +92,13 @@ export default function DocumentDetail() {
 
   // Party state
   const [addingParty, setAddingParty] = useState(false)
-  const [partyRole, setPartyRole] = useState<DmsPartyRole>('emitent')
+  const [partyRole, setPartyRole] = useState<DmsPartyRole>('')
   const [partyEntityType, setPartyEntityType] = useState<DmsEntityType>('company')
   const [partyName, setPartyName] = useState('')
   const [selectedSuggestion, setSelectedSuggestion] = useState<PartySuggestion | null>(null)
   const [deletePartyId, setDeletePartyId] = useState<number | null>(null)
   const [newSupplierOpen, setNewSupplierOpen] = useState(false)
-  const [newSupForm, setNewSupForm] = useState({ name: '', supplier_type: 'company' as DmsSupplierType, cui: '', phone: '', email: '' })
+  const [newSupForm, setNewSupForm] = useState({ name: '', supplier_type: 'company' as DmsSupplierType, cui: '', phone: '', email: '', city: '', county: '', address: '', nr_reg_com: '' })
 
   // Signature state
   const [sigEditing, setSigEditing] = useState(false)
@@ -133,6 +126,13 @@ export default function DocumentDetail() {
     queryFn: () => dmsApi.listRelationshipTypes(),
     staleTime: 60_000,
   })
+
+  const { data: partyRolesData } = useQuery({
+    queryKey: ['dms-party-roles'],
+    queryFn: () => dmsApi.listPartyRoles(),
+    staleTime: 60_000,
+  })
+  const partyRoleOptions = (partyRolesData?.roles || []).map((r: { slug: string; label: string }) => ({ value: r.slug, label: r.label }))
 
   // Parties
   const { data: partiesData } = useQuery({
@@ -209,7 +209,7 @@ export default function DocumentDetail() {
         phone: newSupForm.phone || null,
         email: newSupForm.email || null,
       })
-      setNewSupForm({ name: '', supplier_type: 'company', cui: '', phone: '', email: '' })
+      setNewSupForm({ name: '', supplier_type: 'company', cui: '', phone: '', email: '', city: '', county: '', address: '', nr_reg_com: '' })
     },
     onError: () => toast.error('Failed to create supplier'),
   })
@@ -663,10 +663,10 @@ export default function DocumentDetail() {
           <div className="flex items-end gap-2 mb-2 p-2 rounded border bg-muted/30">
             <div className="space-y-1">
               <Label className="text-xs">Role</Label>
-              <Select value={partyRole} onValueChange={(v) => setPartyRole(v as DmsPartyRole)}>
+              <Select value={partyRole || partyRoleOptions[0]?.value || ''} onValueChange={(v) => setPartyRole(v as DmsPartyRole)}>
                 <SelectTrigger className="h-7 w-28 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {PARTY_ROLES.map((r) => (
+                  {partyRoleOptions.map((r: { value: string; label: string }) => (
                     <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
                   ))}
                 </SelectContent>
@@ -683,7 +683,7 @@ export default function DocumentDetail() {
                   setSelectedSuggestion(s)
                 }}
                 onCreateNew={() => {
-                  setNewSupForm({ name: partyName, supplier_type: 'company', cui: '', phone: '', email: '' })
+                  setNewSupForm({ name: partyName, supplier_type: 'company', cui: '', phone: '', email: '', city: '', county: '', address: '', nr_reg_com: '' })
                   setNewSupplierOpen(true)
                 }}
               />
@@ -691,7 +691,7 @@ export default function DocumentDetail() {
             <Button size="sm" className="h-7 text-xs" disabled={!partyName.trim() || addPartyMutation.isPending}
               onClick={() => {
                 const payload: { party_role: DmsPartyRole; entity_type: DmsEntityType; entity_name: string; entity_id?: number; entity_details?: Record<string, unknown> } = {
-                  party_role: partyRole,
+                  party_role: partyRole || partyRoleOptions[0]?.value || 'emitent',
                   entity_type: selectedSuggestion?.entity_type || partyEntityType,
                   entity_name: partyName.trim(),
                 }
@@ -708,7 +708,7 @@ export default function DocumentDetail() {
               }}>
               Add
             </Button>
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setAddingParty(false); setPartyName(''); setSelectedSuggestion(null); setPartyEntityType('company'); setPartyRole('emitent') }}>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setAddingParty(false); setPartyName(''); setSelectedSuggestion(null); setPartyEntityType('company'); setPartyRole('') }}>
               Cancel
             </Button>
           </div>
@@ -1057,13 +1057,33 @@ export default function DocumentDetail() {
                 <Input value={newSupForm.cui} onChange={(e) => setNewSupForm((p) => ({ ...p, cui: e.target.value }))} placeholder="Tax ID" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Phone</Label>
-                <Input value={newSupForm.phone} onChange={(e) => setNewSupForm((p) => ({ ...p, phone: e.target.value }))} placeholder="Phone" />
+                <Label className="text-xs">Nr. Reg. Com.</Label>
+                <Input value={newSupForm.nr_reg_com} onChange={(e) => setNewSupForm((p) => ({ ...p, nr_reg_com: e.target.value }))} placeholder="J00/000/0000" />
               </div>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Email</Label>
-              <Input value={newSupForm.email} onChange={(e) => setNewSupForm((p) => ({ ...p, email: e.target.value }))} placeholder="Email" />
+              <Label className="text-xs">Address</Label>
+              <Input value={newSupForm.address} onChange={(e) => setNewSupForm((p) => ({ ...p, address: e.target.value }))} placeholder="Street address" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">City</Label>
+                <Input value={newSupForm.city} onChange={(e) => setNewSupForm((p) => ({ ...p, city: e.target.value }))} placeholder="City" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">County</Label>
+                <Input value={newSupForm.county} onChange={(e) => setNewSupForm((p) => ({ ...p, county: e.target.value }))} placeholder="County" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Phone</Label>
+                <Input value={newSupForm.phone} onChange={(e) => setNewSupForm((p) => ({ ...p, phone: e.target.value }))} placeholder="Phone" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Email</Label>
+                <Input value={newSupForm.email} onChange={(e) => setNewSupForm((p) => ({ ...p, email: e.target.value }))} placeholder="Email" />
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -1074,6 +1094,10 @@ export default function DocumentDetail() {
                 name: newSupForm.name.trim(),
                 supplier_type: newSupForm.supplier_type,
                 cui: newSupForm.cui.trim() || undefined,
+                nr_reg_com: newSupForm.nr_reg_com.trim() || undefined,
+                address: newSupForm.address.trim() || undefined,
+                city: newSupForm.city.trim() || undefined,
+                county: newSupForm.county.trim() || undefined,
                 phone: newSupForm.phone.trim() || undefined,
                 email: newSupForm.email.trim() || undefined,
               })}

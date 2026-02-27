@@ -5,7 +5,7 @@ import {
   FolderOpen, FileText, Plus, Search, Trash2, RotateCcw,
   Settings2, Paperclip, Users as ChildrenIcon, ChevronDown,
   Download, Calendar, Bell, Edit2, File, FileSpreadsheet,
-  Image as ImageIcon, PenTool, Tags, Shield, Building2,
+  Image as ImageIcon, PenTool, Tags, Shield, Building2, UserCog, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -15,10 +15,13 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TagPicker } from '@/components/shared/TagPicker'
+import { ColumnToggle, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -29,8 +32,9 @@ import type { DmsDocument, DmsFile, DmsCategory, DmsRelationshipTypeConfig } fro
 import UploadDialog from './UploadDialog'
 import CategoryManager from './CategoryManager'
 import SupplierManager from './SupplierManager'
+import PartyRoleManager from './PartyRoleManager'
 
-type MainTab = 'documents' | 'categories' | 'suppliers'
+type MainTab = 'documents' | 'categories' | 'party-roles' | 'suppliers'
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
@@ -59,12 +63,24 @@ function expiryColor(daysToExpiry: number | null) {
 
 export { formatDate, formatSize }
 
+const ALL_COLUMN_KEYS = [
+  'title', 'category_name', 'file_count', 'children_count', 'status',
+  'expiry_date', 'doc_number', 'doc_date', 'company_name', 'created_by_name', 'created_at',
+]
+
+const DEFAULT_COLUMNS = [
+  'title', 'category_name', 'file_count', 'children_count', 'status',
+  'expiry_date', 'created_by_name', 'created_at',
+]
+
+const LOCKED_COLUMNS = new Set(['title'])
+
 export default function Dms() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [mainTab, setMainTab] = useTabParam<MainTab>('documents')
-  const { filters, updateFilter, clearFilters } = useDmsStore()
+  const { filters, updateFilter, clearFilters, selectedIds, toggleSelected, selectAll, clearSelected, visibleColumns, setVisibleColumns } = useDmsStore()
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -96,6 +112,12 @@ export default function Dms() {
     enabled: mainTab === 'documents',
   })
 
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false)
+  const [batchCategoryOpen, setBatchCategoryOpen] = useState(false)
+  const [batchStatusOpen, setBatchStatusOpen] = useState(false)
+  const [, setBatchCategoryId] = useState<number | null>(null)
+  const [, setBatchStatusValue] = useState<string | null>(null)
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => dmsApi.deleteDocument(id),
     onSuccess: () => {
@@ -105,6 +127,50 @@ export default function Dms() {
       setDeleteId(null)
     },
     onError: () => toast.error('Failed to delete document'),
+  })
+
+  const batchDeleteMutation = useMutation({
+    mutationFn: (ids: number[]) => dmsApi.batchDelete(ids),
+    onSuccess: (res) => {
+      toast.success(`${res.affected} document(s) deleted`)
+      queryClient.invalidateQueries({ queryKey: ['dms-documents'] })
+      queryClient.invalidateQueries({ queryKey: ['dms-stats'] })
+      clearSelected()
+      setBatchDeleteOpen(false)
+    },
+    onError: () => toast.error('Batch delete failed'),
+  })
+
+  const batchCategoryMutation = useMutation({
+    mutationFn: ({ ids, categoryId }: { ids: number[]; categoryId: number }) => dmsApi.batchCategory(ids, categoryId),
+    onSuccess: (res) => {
+      toast.success(`${res.affected} document(s) updated`)
+      queryClient.invalidateQueries({ queryKey: ['dms-documents'] })
+      clearSelected()
+      setBatchCategoryOpen(false)
+      setBatchCategoryId(null)
+    },
+    onError: () => toast.error('Batch category update failed'),
+  })
+
+  const batchStatusMutation = useMutation({
+    mutationFn: ({ ids, status }: { ids: number[]; status: string }) => dmsApi.batchStatus(ids, status),
+    onSuccess: (res) => {
+      toast.success(`${res.affected} document(s) updated`)
+      queryClient.invalidateQueries({ queryKey: ['dms-documents'] })
+      queryClient.invalidateQueries({ queryKey: ['dms-stats'] })
+      clearSelected()
+      setBatchStatusOpen(false)
+      setBatchStatusValue(null)
+    },
+    onError: () => toast.error('Batch status update failed'),
+  })
+
+  // Tags for batch tagging
+  const { data: allTags = [] } = useQuery({
+    queryKey: ['tags'],
+    queryFn: () => tagsApi.getTags(),
+    staleTime: 60_000,
   })
 
   const categories: DmsCategory[] = categoriesData?.categories || []
@@ -121,6 +187,102 @@ export default function Dms() {
   })
 
   const isAdmin = user?.can_access_settings
+
+  // Column definitions for dynamic table
+  const columnDefs: ColumnDef<DmsDocument>[] = useMemo(() => [
+    {
+      key: 'title', label: 'Title',
+      render: (doc: DmsDocument) => (
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="font-medium">{doc.title}</span>
+          {doc.visibility === 'restricted' && (
+            <span title="Restricted visibility"><Shield className="h-3 w-3 text-amber-500 shrink-0" /></span>
+          )}
+          {(entityTagsMap[String(doc.id)] || []).map((t) => (
+            <span
+              key={t.id}
+              className="inline-block rounded px-1 py-0 text-[10px] font-medium whitespace-nowrap"
+              style={{ backgroundColor: (t.color ?? '#6c757d') + '20', color: t.color ?? '#6c757d' }}
+            >
+              {t.name}
+            </span>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: 'category_name', label: 'Category',
+      render: (doc: DmsDocument) => doc.category_name ? (
+        <Badge variant="outline" style={{ borderColor: doc.category_color || undefined, color: doc.category_color || undefined }}>
+          {doc.category_name}
+        </Badge>
+      ) : <span className="text-muted-foreground">—</span>,
+    },
+    {
+      key: 'file_count', label: 'Files', className: 'text-center',
+      render: (doc: DmsDocument) => (doc.file_count ?? 0) > 0 ? (
+        <span className="inline-flex items-center gap-1 text-sm"><Paperclip className="h-3.5 w-3.5" />{doc.file_count}</span>
+      ) : <span>—</span>,
+    },
+    {
+      key: 'children_count', label: 'Annexes', className: 'text-center',
+      render: (doc: DmsDocument) => (doc.children_count ?? 0) > 0 ? (
+        <span className="inline-flex items-center gap-1 text-sm"><ChildrenIcon className="h-3.5 w-3.5" />{doc.children_count}</span>
+      ) : <span>—</span>,
+    },
+    {
+      key: 'status', label: 'Status',
+      render: (doc: DmsDocument) => <Badge className={cn('text-xs', STATUS_COLORS[doc.status])}>{doc.status}</Badge>,
+    },
+    {
+      key: 'expiry_date', label: 'Expiry',
+      render: (doc: DmsDocument) => doc.expiry_date ? (
+        <span className={cn('text-sm font-medium', expiryColor(doc.days_to_expiry))}>
+          {formatDate(doc.expiry_date)}
+          {doc.days_to_expiry != null && (
+            <span className="block text-xs font-normal">
+              {doc.days_to_expiry < 0 ? `${Math.abs(doc.days_to_expiry)}d expired` : doc.days_to_expiry === 0 ? 'Expires today' : `${doc.days_to_expiry}d left`}
+            </span>
+          )}
+        </span>
+      ) : <span className="text-muted-foreground">—</span>,
+    },
+    {
+      key: 'doc_number', label: 'Number',
+      render: (doc: DmsDocument) => <span className="text-sm text-muted-foreground">{doc.doc_number || '—'}</span>,
+    },
+    {
+      key: 'doc_date', label: 'Doc Date',
+      render: (doc: DmsDocument) => <span className="text-sm text-muted-foreground">{formatDate(doc.doc_date)}</span>,
+    },
+    {
+      key: 'company_name', label: 'Company',
+      render: (doc: DmsDocument) => <span className="text-sm text-muted-foreground">{doc.company_name || '—'}</span>,
+    },
+    {
+      key: 'created_by_name', label: 'Created By',
+      render: (doc: DmsDocument) => <span className="text-sm text-muted-foreground">{doc.created_by_name || '—'}</span>,
+    },
+    {
+      key: 'created_at', label: 'Date',
+      render: (doc: DmsDocument) => <span className="text-sm text-muted-foreground">{formatDate(doc.created_at)}</span>,
+    },
+  ], [entityTagsMap])
+
+  const safeVisibleColumns = visibleColumns.length > 0 ? visibleColumns.filter((k) => ALL_COLUMN_KEYS.includes(k)) : DEFAULT_COLUMNS
+  const activeColumnDefs = safeVisibleColumns.map((key) => columnDefs.find((c) => c.key === key)).filter(Boolean) as ColumnDef<DmsDocument>[]
+  const colSpanTotal = activeColumnDefs.length + 3 // checkbox + chevron + actions
+
+  const allSelected = documents.length > 0 && documents.every((d) => selectedIds.includes(d.id))
+
+  const handleBatchTag = (tagId: number, action: 'add' | 'remove') => {
+    tagsApi.bulkEntityTags('dms_document', selectedIds, tagId, action).then((res) => {
+      toast.success(`${action === 'add' ? 'Added' : 'Removed'} tag on ${res.count} document(s)`)
+      queryClient.invalidateQueries({ queryKey: ['entity-tags'] })
+      clearSelected()
+    }).catch(() => toast.error('Tag operation failed'))
+  }
 
   return (
     <div className="space-y-6">
@@ -168,6 +330,20 @@ export default function Dms() {
         )}
         {isAdmin && (
           <button
+            onClick={() => setMainTab('party-roles')}
+            className={cn(
+              'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+              mainTab === 'party-roles'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <UserCog className="h-3.5 w-3.5" />
+            Party Roles
+          </button>
+        )}
+        {isAdmin && (
+          <button
             onClick={() => setMainTab('suppliers')}
             className={cn(
               'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
@@ -184,15 +360,15 @@ export default function Dms() {
 
       {mainTab === 'documents' && (
         <>
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard title="Total Documents" value={stats?.total ?? 0} isLoading={statsLoading} />
+          {/* Stats — compact gap */}
+          <div className="grid grid-cols-4 gap-2">
+            <StatCard title="Total" value={stats?.total ?? 0} isLoading={statsLoading} />
             <StatCard title="Draft" value={stats?.draft ?? 0} isLoading={statsLoading} />
             <StatCard title="Active" value={stats?.active ?? 0} isLoading={statsLoading} />
             <StatCard title="Archived" value={stats?.archived ?? 0} isLoading={statsLoading} />
           </div>
 
-          {/* Filters */}
+          {/* Filters + Column Toggle */}
           <div className="flex flex-wrap gap-3 items-center">
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -242,7 +418,90 @@ export default function Dms() {
                 Clear
               </Button>
             )}
+
+            <ColumnToggle
+              visibleColumns={safeVisibleColumns}
+              defaultColumns={DEFAULT_COLUMNS}
+              columnDefs={columnDefs as ColumnDef<never>[]}
+              lockedColumns={LOCKED_COLUMNS}
+              onChange={setVisibleColumns}
+            />
           </div>
+
+          {/* Batch Action Bar */}
+          {selectedIds.length > 0 && (
+            <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
+              <span className="text-sm font-medium">{selectedIds.length} selected</span>
+              <div className="h-4 w-px bg-border" />
+
+              {/* Batch Category */}
+              <Popover open={batchCategoryOpen} onOpenChange={setBatchCategoryOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm">Category</Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-48 p-2" align="start">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Set category</p>
+                  {categories.map((c) => (
+                    <button
+                      key={c.id}
+                      className="w-full text-left text-sm px-2 py-1 rounded hover:bg-accent"
+                      onClick={() => { setBatchCategoryId(c.id); batchCategoryMutation.mutate({ ids: selectedIds, categoryId: c.id }) }}
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
+
+              {/* Batch Status */}
+              <Popover open={batchStatusOpen} onOpenChange={setBatchStatusOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm">Status</Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-36 p-2" align="start">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Set status</p>
+                  {['draft', 'active', 'archived'].map((s) => (
+                    <button
+                      key={s}
+                      className="w-full text-left text-sm px-2 py-1 rounded hover:bg-accent capitalize"
+                      onClick={() => { setBatchStatusValue(s); batchStatusMutation.mutate({ ids: selectedIds, status: s }) }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
+
+              {/* Batch Tag */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm"><Tags className="h-3.5 w-3.5 mr-1" />Tag</Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-48 p-2" align="start">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Add tag</p>
+                  {allTags.map((t) => (
+                    <button
+                      key={t.id}
+                      className="w-full text-left text-sm px-2 py-1 rounded hover:bg-accent flex items-center gap-1.5"
+                      onClick={() => handleBatchTag(t.id, 'add')}
+                    >
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#6c757d' }} />
+                      {t.name}
+                    </button>
+                  ))}
+                  {allTags.length === 0 && <p className="text-xs text-muted-foreground">No tags available</p>}
+                </PopoverContent>
+              </Popover>
+
+              <Button variant="destructive" size="sm" onClick={() => setBatchDeleteOpen(true)}>
+                <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+              </Button>
+
+              <Button variant="ghost" size="sm" onClick={clearSelected}>
+                <X className="h-3.5 w-3.5 mr-1" />Clear
+              </Button>
+            </div>
+          )}
 
           {/* Table */}
           {docsLoading ? (
@@ -269,15 +528,16 @@ export default function Dms() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-8 px-2">
+                        <Checkbox
+                          checked={allSelected}
+                          onCheckedChange={() => allSelected ? clearSelected() : selectAll(docIds)}
+                        />
+                      </TableHead>
                       <TableHead className="w-8 px-2" />
-                      <TableHead>Title</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead className="text-center">Files</TableHead>
-                      <TableHead className="text-center">Annexes</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Expiry</TableHead>
-                      <TableHead>Created By</TableHead>
-                      <TableHead>Date</TableHead>
+                      {activeColumnDefs.map((col) => (
+                        <TableHead key={col.key} className={col.className}>{col.label}</TableHead>
+                      ))}
                       <TableHead className="w-[60px]" />
                     </TableRow>
                   </TableHeader>
@@ -285,87 +545,26 @@ export default function Dms() {
                     {documents.map((doc) => (
                       <Fragment key={doc.id}>
                         <TableRow
-                          className="cursor-pointer hover:bg-muted/50"
+                          className={cn(
+                            'cursor-pointer hover:bg-muted/50',
+                            selectedIds.includes(doc.id) && 'bg-primary/5',
+                          )}
                           onClick={() => setExpandedRow(expandedRow === doc.id ? null : doc.id)}
                         >
+                          <TableCell className="px-2" onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedIds.includes(doc.id)}
+                              onCheckedChange={() => toggleSelected(doc.id)}
+                            />
+                          </TableCell>
                           <TableCell className="px-2">
                             <ChevronDown className={cn('h-4 w-4 transition-transform', expandedRow === doc.id ? 'rotate-180' : '')} />
                           </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                              <span className="font-medium">{doc.title}</span>
-                              {doc.visibility === 'restricted' && (
-                                <span title="Restricted visibility"><Shield className="h-3 w-3 text-amber-500 shrink-0" /></span>
-                              )}
-                              {(entityTagsMap[String(doc.id)] || []).map((t) => (
-                                <span
-                                  key={t.id}
-                                  className="inline-block rounded px-1 py-0 text-[10px] font-medium whitespace-nowrap"
-                                  style={{ backgroundColor: (t.color ?? '#6c757d') + '20', color: t.color ?? '#6c757d' }}
-                                >
-                                  {t.name}
-                                </span>
-                              ))}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {doc.category_name ? (
-                              <Badge
-                                variant="outline"
-                                style={{ borderColor: doc.category_color || undefined, color: doc.category_color || undefined }}
-                              >
-                                {doc.category_name}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {(doc.file_count ?? 0) > 0 ? (
-                              <span className="inline-flex items-center gap-1 text-sm">
-                                <Paperclip className="h-3.5 w-3.5" />
-                                {doc.file_count}
-                              </span>
-                            ) : '—'}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {(doc.children_count ?? 0) > 0 ? (
-                              <span className="inline-flex items-center gap-1 text-sm">
-                                <ChildrenIcon className="h-3.5 w-3.5" />
-                                {doc.children_count}
-                              </span>
-                            ) : '—'}
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={cn('text-xs', STATUS_COLORS[doc.status])}>
-                              {doc.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {doc.expiry_date ? (
-                              <span className={cn('text-sm font-medium', expiryColor(doc.days_to_expiry))}>
-                                {formatDate(doc.expiry_date)}
-                                {doc.days_to_expiry != null && (
-                                  <span className="block text-xs font-normal">
-                                    {doc.days_to_expiry < 0
-                                      ? `${Math.abs(doc.days_to_expiry)}d expired`
-                                      : doc.days_to_expiry === 0
-                                        ? 'Expires today'
-                                        : `${doc.days_to_expiry}d left`}
-                                  </span>
-                                )}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {doc.created_by_name || '—'}
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {formatDate(doc.created_at)}
-                          </TableCell>
+                          {activeColumnDefs.map((col) => (
+                            <TableCell key={col.key} className={col.className}>
+                              {col.render(doc)}
+                            </TableCell>
+                          ))}
                           <TableCell>
                             <Button
                               variant="ghost"
@@ -379,7 +578,7 @@ export default function Dms() {
                         </TableRow>
                         {expandedRow === doc.id && (
                           <TableRow>
-                            <TableCell colSpan={10} className="bg-muted/30 p-4">
+                            <TableCell colSpan={colSpanTotal} className="bg-muted/30 p-4">
                               <DocumentExpandedDetails
                                 doc={doc}
                                 tags={entityTagsMap[String(doc.id)] || []}
@@ -409,6 +608,10 @@ export default function Dms() {
         <CategoryManager companyId={companyId} />
       )}
 
+      {mainTab === 'party-roles' && isAdmin && (
+        <PartyRoleManager />
+      )}
+
       {mainTab === 'suppliers' && isAdmin && (
         <SupplierManager companyId={companyId} />
       )}
@@ -430,6 +633,17 @@ export default function Dms() {
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
+      />
+
+      {/* Batch Delete Confirmation */}
+      <ConfirmDialog
+        open={batchDeleteOpen}
+        onOpenChange={(open) => !open && setBatchDeleteOpen(false)}
+        title="Delete Selected Documents"
+        description={`This will move ${selectedIds.length} document(s) to trash. You can restore them later.`}
+        confirmLabel="Delete All"
+        variant="destructive"
+        onConfirm={() => batchDeleteMutation.mutate(selectedIds)}
       />
     </div>
   )

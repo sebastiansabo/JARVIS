@@ -77,6 +77,8 @@ def api_create_supplier():
             j_number=data.get('j_number'),
             address=data.get('address'),
             city=data.get('city'),
+            county=data.get('county'),
+            nr_reg_com=data.get('nr_reg_com'),
             bank_account=data.get('bank_account'),
             iban=data.get('iban'),
             bank_name=data.get('bank_name'),
@@ -105,7 +107,8 @@ def api_update_supplier(sup_id):
     try:
         fields = {}
         for key in ('name', 'supplier_type', 'cui', 'j_number', 'address', 'city',
-                     'bank_account', 'iban', 'bank_name', 'phone', 'email', 'is_active'):
+                     'county', 'nr_reg_com', 'bank_account', 'iban', 'bank_name',
+                     'phone', 'email', 'is_active'):
             if key in data:
                 fields[key] = data[key]
         _sup_repo.update(sup_id, **fields)

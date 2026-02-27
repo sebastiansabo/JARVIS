@@ -23,8 +23,10 @@ const EMPTY: Partial<DmsSupplier> = {
   supplier_type: 'company',
   cui: '',
   j_number: '',
+  nr_reg_com: '',
   address: '',
   city: '',
+  county: '',
   bank_account: '',
   iban: '',
   bank_name: '',
@@ -93,8 +95,10 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
       supplier_type: sup.supplier_type,
       cui: sup.cui || '',
       j_number: sup.j_number || '',
+      nr_reg_com: sup.nr_reg_com || '',
       address: sup.address || '',
       city: sup.city || '',
+      county: sup.county || '',
       bank_account: sup.bank_account || '',
       iban: sup.iban || '',
       bank_name: sup.bank_name || '',
@@ -109,8 +113,10 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
       supplier_type: form.supplier_type || 'company',
       cui: (form.cui || '').trim() || null,
       j_number: (form.j_number || '').trim() || null,
+      nr_reg_com: (form.nr_reg_com || '').trim() || null,
       address: (form.address || '').trim() || null,
       city: (form.city || '').trim() || null,
+      county: (form.county || '').trim() || null,
       bank_account: (form.bank_account || '').trim() || null,
       iban: (form.iban || '').trim() || null,
       bank_name: (form.bank_name || '').trim() || null,
@@ -243,8 +249,19 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
                 <Input value={form.cui || ''} onChange={(e) => setField('cui', e.target.value)} placeholder="Tax ID" />
               </div>
               <div className="space-y-1.5">
+                <Label>Nr. Reg. Com.</Label>
+                <Input value={form.nr_reg_com || ''} onChange={(e) => setField('nr_reg_com', e.target.value)} placeholder="J00/000/0000" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
                 <Label>J Number</Label>
                 <Input value={form.j_number || ''} onChange={(e) => setField('j_number', e.target.value)} placeholder="Trade registry" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Phone</Label>
+                <Input value={form.phone || ''} onChange={(e) => setField('phone', e.target.value)} placeholder="Phone number" />
               </div>
             </div>
 
@@ -259,8 +276,8 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
                 <Input value={form.city || ''} onChange={(e) => setField('city', e.target.value)} placeholder="City" />
               </div>
               <div className="space-y-1.5">
-                <Label>Phone</Label>
-                <Input value={form.phone || ''} onChange={(e) => setField('phone', e.target.value)} placeholder="Phone number" />
+                <Label>County</Label>
+                <Input value={form.county || ''} onChange={(e) => setField('county', e.target.value)} placeholder="County" />
               </div>
             </div>
 

@@ -4,7 +4,7 @@ from flask import request, jsonify
 from flask_login import login_required, current_user
 
 from dms import dms_bp
-from dms.repositories import DocumentRepository, PartyRepository
+from dms.repositories import DocumentRepository, PartyRepository, PartyRoleRepository
 from dms.routes.documents import dms_permission_required
 from core.utils.api_helpers import safe_error_response, get_json_or_error
 
@@ -12,9 +12,14 @@ logger = logging.getLogger('jarvis.dms.routes.parties')
 
 _doc_repo = DocumentRepository()
 _party_repo = PartyRepository()
+_party_role_repo = PartyRoleRepository()
 
-_VALID_ROLES = ('emitent', 'beneficiar', 'semnatar', 'furnizor', 'client', 'other')
 _VALID_ENTITY_TYPES = ('company', 'person', 'external')
+
+
+def _valid_roles():
+    """Get active party role slugs from the database."""
+    return [r['slug'] for r in _party_role_repo.list_all(active_only=True)]
 
 
 def _check_doc_access(doc_id):
@@ -54,8 +59,9 @@ def api_create_party(doc_id):
         return error
 
     party_role = data.get('party_role', '').strip()
-    if not party_role or party_role not in _VALID_ROLES:
-        return jsonify({'success': False, 'error': f'Invalid party_role. Must be one of: {", ".join(_VALID_ROLES)}'}), 400
+    valid_roles = _valid_roles()
+    if not party_role or party_role not in valid_roles:
+        return jsonify({'success': False, 'error': f'Invalid party_role. Must be one of: {", ".join(valid_roles)}'}), 400
 
     entity_name = data.get('entity_name', '').strip()
     if not entity_name:
@@ -113,7 +119,7 @@ def api_update_party(party_id):
 
     fields = {}
     if 'party_role' in data:
-        if data['party_role'] not in _VALID_ROLES:
+        if data['party_role'] not in _valid_roles():
             return jsonify({'success': False, 'error': 'Invalid party_role'}), 400
         fields['party_role'] = data['party_role']
     if 'entity_name' in data:

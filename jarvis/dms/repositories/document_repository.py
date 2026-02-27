@@ -220,3 +220,53 @@ class DocumentRepository(BaseRepository):
             'DELETE FROM dms_documents WHERE id = %s AND deleted_at IS NOT NULL',
             (doc_id,)
         )
+
+    # ---- Batch operations ----
+
+    def batch_soft_delete(self, doc_ids, company_id=None):
+        """Soft-delete multiple documents, scoped by company."""
+        if not doc_ids:
+            return 0
+        placeholders = ','.join(['%s'] * len(doc_ids))
+        params = list(doc_ids)
+        where_extra = ''
+        if company_id:
+            where_extra = ' AND company_id = %s'
+            params.append(company_id)
+        return self.execute(
+            f'UPDATE dms_documents SET deleted_at = CURRENT_TIMESTAMP'
+            f' WHERE id IN ({placeholders}) AND deleted_at IS NULL{where_extra}',
+            tuple(params)
+        )
+
+    def batch_update_category(self, doc_ids, category_id, company_id=None):
+        """Update category for multiple documents."""
+        if not doc_ids:
+            return 0
+        placeholders = ','.join(['%s'] * len(doc_ids))
+        params = [category_id] + list(doc_ids)
+        where_extra = ''
+        if company_id:
+            where_extra = ' AND company_id = %s'
+            params.append(company_id)
+        return self.execute(
+            f'UPDATE dms_documents SET category_id = %s, updated_at = CURRENT_TIMESTAMP'
+            f' WHERE id IN ({placeholders}) AND deleted_at IS NULL{where_extra}',
+            tuple(params)
+        )
+
+    def batch_update_status(self, doc_ids, status, company_id=None):
+        """Update status for multiple documents."""
+        if not doc_ids:
+            return 0
+        placeholders = ','.join(['%s'] * len(doc_ids))
+        params = [status] + list(doc_ids)
+        where_extra = ''
+        if company_id:
+            where_extra = ' AND company_id = %s'
+            params.append(company_id)
+        return self.execute(
+            f'UPDATE dms_documents SET status = %s, updated_at = CURRENT_TIMESTAMP'
+            f' WHERE id IN ({placeholders}) AND deleted_at IS NULL{where_extra}',
+            tuple(params)
+        )

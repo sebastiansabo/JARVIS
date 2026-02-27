@@ -1344,6 +1344,19 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_document_parties_doc ON document_parties(document_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_document_parties_entity ON document_parties(entity_type, entity_id)')
 
+            # ── dms_party_roles (configurable party roles) ──
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS dms_party_roles (
+                    id SERIAL PRIMARY KEY,
+                    slug TEXT NOT NULL UNIQUE,
+                    label TEXT NOT NULL,
+                    sort_order INTEGER DEFAULT 0,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             # ── suppliers (master table) ──
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS suppliers (
@@ -1354,6 +1367,8 @@ def init_db():
                     j_number TEXT,
                     address TEXT,
                     city TEXT,
+                    county TEXT,
+                    nr_reg_com TEXT,
                     bank_account TEXT,
                     iban TEXT,
                     bank_name TEXT,
@@ -1369,6 +1384,19 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_suppliers_company ON suppliers(company_id)')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_suppliers_name ON suppliers USING gin (name gin_trgm_ops)")
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_suppliers_active ON suppliers(is_active)')
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'suppliers' AND column_name = 'county') THEN
+                        ALTER TABLE suppliers ADD COLUMN county TEXT;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'suppliers' AND column_name = 'nr_reg_com') THEN
+                        ALTER TABLE suppliers ADD COLUMN nr_reg_com TEXT;
+                    END IF;
+                END $$;
+            ''')
 
             # ── document_wml + chunks (Phase D) ──
             cursor.execute('''
@@ -1424,6 +1452,19 @@ def init_db():
                     ('deviz', 'Devize', 'bi-calculator', '#fd7e14', 2),
                     ('proof', 'Dovezi / Foto', 'bi-camera', '#198754', 3),
                     ('other', 'Altele', 'bi-file-earmark', '#6c757d', 4)
+                ''')
+
+            # Seed default party roles
+            cursor.execute('SELECT COUNT(*) as cnt FROM dms_party_roles')
+            if cursor.fetchone()['cnt'] == 0:
+                cursor.execute('''
+                    INSERT INTO dms_party_roles (slug, label, sort_order) VALUES
+                    ('emitent', 'Emitent', 1),
+                    ('beneficiar', 'Beneficiar', 2),
+                    ('semnatar', 'Semnatar', 3),
+                    ('furnizor', 'Furnizor', 4),
+                    ('client', 'Client', 5),
+                    ('other', 'Altele', 6)
                 ''')
 
             # Seed default DMS categories (global — company_id NULL)

@@ -30,7 +30,17 @@ export interface DmsRelationshipTypeConfig {
 }
 
 export type DmsSignatureStatus = 'pending' | 'sent' | 'signed' | 'declined' | 'expired' | null
-export type DmsPartyRole = 'emitent' | 'beneficiar' | 'semnatar' | 'furnizor' | 'client' | 'other'
+export type DmsPartyRole = string
+
+export interface DmsPartyRoleConfig {
+  id: number
+  slug: string
+  label: string
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string | null
+}
 export type DmsEntityType = 'company' | 'person' | 'external'
 
 export interface DmsParty {
@@ -134,6 +144,8 @@ export interface DmsSupplier {
   j_number: string | null
   address: string | null
   city: string | null
+  county: string | null
+  nr_reg_com: string | null
   bank_account: string | null
   iban: string | null
   bank_name: string | null

@@ -58,10 +58,10 @@ class SupplierRepository(BaseRepository):
     def create(self, name, company_id, created_by, **kwargs):
         return self.execute('''
             INSERT INTO suppliers
-                (name, supplier_type, cui, j_number, address, city,
+                (name, supplier_type, cui, j_number, address, city, county, nr_reg_com,
                  bank_account, iban, bank_name, phone, email,
                  company_id, created_by, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (
             name,
@@ -70,6 +70,8 @@ class SupplierRepository(BaseRepository):
             kwargs.get('j_number'),
             kwargs.get('address'),
             kwargs.get('city'),
+            kwargs.get('county'),
+            kwargs.get('nr_reg_com'),
             kwargs.get('bank_account'),
             kwargs.get('iban'),
             kwargs.get('bank_name'),
@@ -84,7 +86,8 @@ class SupplierRepository(BaseRepository):
         sets = []
         params = []
         allowed = ('name', 'supplier_type', 'cui', 'j_number', 'address', 'city',
-                    'bank_account', 'iban', 'bank_name', 'phone', 'email', 'is_active')
+                    'county', 'nr_reg_com', 'bank_account', 'iban', 'bank_name',
+                    'phone', 'email', 'is_active')
         for key in allowed:
             if key in fields:
                 sets.append(f'{key} = %s')

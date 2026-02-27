@@ -7,8 +7,8 @@ import {
 } from './dataTableFactory'
 
 const defaultColumns = [
-  'title', 'category_name', 'company_name', 'status',
-  'file_count', 'children_count', 'created_by_name', 'created_at',
+  'title', 'category_name', 'file_count', 'children_count', 'status',
+  'expiry_date', 'created_by_name', 'created_at',
 ]
 
 interface DmsState

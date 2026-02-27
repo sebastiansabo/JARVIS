@@ -224,6 +224,85 @@ def api_permanent_delete_document(doc_id):
     return jsonify({'success': True})
 
 
+# ---- Batch Operations ----
+
+_VALID_STATUSES = ('draft', 'active', 'archived')
+_MAX_BATCH = 500
+
+
+@dms_bp.route('/api/dms/documents/batch-delete', methods=['POST'])
+@login_required
+@dms_permission_required('document', 'delete')
+def api_batch_delete():
+    """Soft-delete multiple documents."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+    ids = data.get('ids', [])
+    if not ids or not isinstance(ids, list):
+        return jsonify({'success': False, 'error': 'ids array required'}), 400
+    if len(ids) > _MAX_BATCH:
+        return jsonify({'success': False, 'error': f'Max {_MAX_BATCH} items per batch'}), 400
+    try:
+        ids = [int(i) for i in ids]
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'All ids must be integers'}), 400
+    company_id = getattr(current_user, 'company_id', None)
+    affected = _doc_repo.batch_soft_delete(ids, company_id) or 0
+    return jsonify({'success': True, 'affected': affected})
+
+
+@dms_bp.route('/api/dms/documents/batch-category', methods=['POST'])
+@login_required
+@dms_permission_required('document', 'edit')
+def api_batch_category():
+    """Update category for multiple documents."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+    ids = data.get('ids', [])
+    category_id = data.get('category_id')
+    if not ids or not isinstance(ids, list):
+        return jsonify({'success': False, 'error': 'ids array required'}), 400
+    if category_id is None:
+        return jsonify({'success': False, 'error': 'category_id required'}), 400
+    if len(ids) > _MAX_BATCH:
+        return jsonify({'success': False, 'error': f'Max {_MAX_BATCH} items per batch'}), 400
+    try:
+        ids = [int(i) for i in ids]
+        category_id = int(category_id)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Invalid ids or category_id'}), 400
+    company_id = getattr(current_user, 'company_id', None)
+    affected = _doc_repo.batch_update_category(ids, category_id, company_id) or 0
+    return jsonify({'success': True, 'affected': affected})
+
+
+@dms_bp.route('/api/dms/documents/batch-status', methods=['POST'])
+@login_required
+@dms_permission_required('document', 'edit')
+def api_batch_status():
+    """Update status for multiple documents."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+    ids = data.get('ids', [])
+    status = data.get('status', '')
+    if not ids or not isinstance(ids, list):
+        return jsonify({'success': False, 'error': 'ids array required'}), 400
+    if status not in _VALID_STATUSES:
+        return jsonify({'success': False, 'error': f'status must be one of: {", ".join(_VALID_STATUSES)}'}), 400
+    if len(ids) > _MAX_BATCH:
+        return jsonify({'success': False, 'error': f'Max {_MAX_BATCH} items per batch'}), 400
+    try:
+        ids = [int(i) for i in ids]
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'All ids must be integers'}), 400
+    company_id = getattr(current_user, 'company_id', None)
+    affected = _doc_repo.batch_update_status(ids, status, company_id) or 0
+    return jsonify({'success': True, 'affected': affected})
+
+
 # ---- Children ----
 
 @dms_bp.route('/api/documents/<int:doc_id>/children', methods=['GET'])

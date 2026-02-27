@@ -9,6 +9,7 @@ import type {
   DmsRelationshipTypeConfig,
   DmsParty,
   DmsPartyRole,
+  DmsPartyRoleConfig,
   DmsEntityType,
   DmsSignatureStatus,
   DmsWmlExtraction,
@@ -54,6 +55,17 @@ export const dmsApi = {
 
   permanentDelete: (id: number) =>
     api.delete<{ success: boolean }>(`${BASE}/documents/${id}/permanent`),
+
+  // ---- Batch Operations ----
+
+  batchDelete: (ids: number[]) =>
+    api.post<{ success: boolean; affected: number }>(`/dms/api/dms/documents/batch-delete`, { ids }),
+
+  batchCategory: (ids: number[], categoryId: number) =>
+    api.post<{ success: boolean; affected: number }>(`/dms/api/dms/documents/batch-category`, { ids, category_id: categoryId }),
+
+  batchStatus: (ids: number[], status: string) =>
+    api.post<{ success: boolean; affected: number }>(`/dms/api/dms/documents/batch-status`, { ids, status }),
 
   // ---- Children ----
 
@@ -233,4 +245,23 @@ export const dmsApi = {
 
   deleteSupplier: (id: number) =>
     api.delete<{ success: boolean }>(`/dms/api/dms/suppliers/${id}`),
+
+  // ---- Party Roles ----
+
+  listPartyRoles: (activeOnly = true) =>
+    api.get<{ success: boolean; roles: DmsPartyRoleConfig[] }>(
+      `/dms/api/dms/party-roles${toQs({ active_only: activeOnly })}`,
+    ),
+
+  createPartyRole: (data: Partial<DmsPartyRoleConfig>) =>
+    api.post<{ success: boolean; id: number }>(`/dms/api/dms/party-roles`, data),
+
+  updatePartyRole: (id: number, data: Partial<DmsPartyRoleConfig>) =>
+    api.put<{ success: boolean }>(`/dms/api/dms/party-roles/${id}`, data),
+
+  deletePartyRole: (id: number) =>
+    api.delete<{ success: boolean }>(`/dms/api/dms/party-roles/${id}`),
+
+  reorderPartyRoles: (ids: number[]) =>
+    api.put<{ success: boolean }>(`/dms/api/dms/party-roles/reorder`, { ids }),
 }
