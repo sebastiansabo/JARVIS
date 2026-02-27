@@ -62,16 +62,8 @@ const navItemsDef: NavItem[] = [
       { path: '/app/marketing/events', label: 'Events', icon: CalendarDays, moduleKey: 'marketing_events' },
     ],
   },
-  {
-    path: '/app/dms',
-    label: 'Documents',
-    icon: FolderOpen,
-    moduleKey: 'dms',
-    children: [
-      { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms_documents' },
-      { path: '/app/dms/suppliers', label: 'Suppliers', icon: Building2, moduleKey: 'dms_suppliers' },
-    ],
-  },
+  { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms' },
+  { path: '/app/dms/suppliers', label: 'Suppliers', icon: Building2, moduleKey: 'dms_suppliers' },
   {
     path: '/app/sales',
     label: 'Sales',
