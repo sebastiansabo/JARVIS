@@ -291,7 +291,15 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
     }
 
     // --- Regular item (no children) ---
-    const isActive = item.path ? location.pathname.startsWith(item.path) : false
+    // Use exact match when a sibling has a longer path starting with this one (e.g. /app/dms vs /app/dms/suppliers)
+    const hasLongerSibling = visibleItems.some(
+      (s) => s.path !== item.path && s.path.startsWith(item.path)
+    )
+    const isActive = item.path
+      ? hasLongerSibling
+        ? location.pathname === item.path
+        : location.pathname.startsWith(item.path)
+      : false
     const classes = cn(
       'flex items-center rounded-md text-sm font-medium transition-colors',
       collapsed ? 'justify-center px-2 py-2' : 'gap-3 px-3 py-2',
