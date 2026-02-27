@@ -263,7 +263,7 @@ class BioStarSyncService:
             if not start_date:
                 last_dt = self.repo.get_last_event_datetime()
                 if last_dt:
-                    start_date = last_dt.isoformat()
+                    start_date = last_dt.isoformat() if isinstance(last_dt, datetime) else str(last_dt)
                 else:
                     start_date = (datetime.now() - timedelta(days=SYNC_EVENTS_DEFAULT_DAYS)).strftime('%Y-%m-%dT00:00:00.00Z')
 
