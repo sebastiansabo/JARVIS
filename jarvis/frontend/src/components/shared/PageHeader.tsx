@@ -15,7 +15,7 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, breadcrumbs, actions }: PageHeaderProps) {
   return (
-    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex items-center justify-between gap-2">
       <div className="min-w-0">
         {breadcrumbs && breadcrumbs.length > 0 ? (
           <h1 className="flex items-center gap-1.5 flex-wrap">

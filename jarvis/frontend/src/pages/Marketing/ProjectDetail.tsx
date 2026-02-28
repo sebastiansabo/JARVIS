@@ -89,11 +89,13 @@ export default function ProjectDetail() {
         }
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => exportProjectPdf(project)}>
-              <Download className="h-3.5 w-3.5 mr-1.5" /> PDF
+            <Button variant="outline" size="icon" className="h-8 w-8 md:size-auto md:px-3" onClick={() => exportProjectPdf(project)}>
+              <Download className="h-3.5 w-3.5 md:mr-1.5" />
+              <span className="hidden md:inline">PDF</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setShowEditDialog(true)}>
-              <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+            <Button variant="outline" size="icon" className="h-8 w-8 md:size-auto md:px-3" onClick={() => setShowEditDialog(true)}>
+              <Pencil className="h-3.5 w-3.5 md:mr-1.5" />
+              <span className="hidden md:inline">Edit</span>
             </Button>
             <StatusActions project={project} onDone={() => queryClient.invalidateQueries({ queryKey: ['mkt-project', id] })} />
           </div>

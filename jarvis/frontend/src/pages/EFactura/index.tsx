@@ -63,13 +63,13 @@ export default function EFactura() {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
-              <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
-              {isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}
+            <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
+              <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
+              <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
             </Button>
-            <Button onClick={() => setSyncOpen(true)}>
-              <RefreshCw className="mr-1.5 h-4 w-4" />
-              Sync
+            <Button size="icon" className="md:size-auto md:px-4" onClick={() => setSyncOpen(true)}>
+              <RefreshCw className="h-4 w-4 md:mr-1.5" />
+              <span className="hidden md:inline">Sync</span>
             </Button>
           </div>
         }

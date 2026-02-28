@@ -376,14 +376,14 @@ export default function Accounting() {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
-              <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
-              {isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}
+            <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
+              <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
+              <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
             </Button>
-            <Button asChild>
+            <Button size="icon" className="md:size-auto md:px-4" asChild>
               <Link to="/app/accounting/add">
-                <Plus className="mr-1.5 h-4 w-4" />
-                New Invoice
+                <Plus className="h-4 w-4 md:mr-1.5" />
+                <span className="hidden md:inline">New Invoice</span>
               </Link>
             </Button>
           </div>
@@ -905,20 +905,20 @@ function InvoiceTable({
             <div className="flex items-center gap-1">
               {isBin ? (
                 <>
-                  <Button variant="ghost" size="sm" className="h-8" onClick={() => onRestore(inv.id)}>
-                    <RotateCcw className="h-3.5 w-3.5 mr-1" />Restore
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onRestore(inv.id)}>
+                    <RotateCcw className="h-3.5 w-3.5" />
                   </Button>
-                  <Button variant="ghost" size="sm" className="h-8 text-destructive" onClick={() => onPermanentDelete(inv.id)}>
-                    <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => onPermanentDelete(inv.id)}>
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </>
               ) : (
                 <>
-                  <Button variant="ghost" size="sm" className="h-8" onClick={() => onEdit(inv)}>
-                    <Pencil className="h-3.5 w-3.5 mr-1" />Edit
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(inv)}>
+                    <Pencil className="h-3.5 w-3.5" />
                   </Button>
-                  <Button variant="ghost" size="sm" className="h-8 text-destructive" onClick={() => onDelete(inv.id)}>
-                    <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => onDelete(inv.id)}>
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </>
               )}

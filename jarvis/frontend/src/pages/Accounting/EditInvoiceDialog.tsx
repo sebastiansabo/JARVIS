@@ -99,7 +99,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>Edit Invoice #{invoice.id}</DialogTitle>
           <DialogDescription>
@@ -107,7 +107,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Supplier</Label>
               <Input value={supplier} onChange={(e) => setSupplier(e.target.value)} />
@@ -117,7 +117,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
               <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Date</Label>
               <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
@@ -131,7 +131,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
               <Input value={currency} onChange={(e) => setCurrency(e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Status</Label>
               <Select value={status} onValueChange={setStatus}>
@@ -163,18 +163,18 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
               </Select>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <Switch checked={subtractVat} onCheckedChange={setSubtractVat} id="subtract-vat" />
               <Label htmlFor="subtract-vat" className="text-xs">Subtract VAT</Label>
             </div>
             {subtractVat && (
               <>
-                <div className="space-y-1.5 flex-1">
+                <div className="space-y-1.5 flex-1 min-w-[100px]">
                   <Label className="text-xs">VAT Rate (%)</Label>
                   <Input type="number" step="0.01" value={vatRate} onChange={(e) => setVatRate(e.target.value)} placeholder="19" />
                 </div>
-                <div className="space-y-1.5 flex-1">
+                <div className="space-y-1.5 flex-1 min-w-[100px]">
                   <Label className="text-xs">Net Value</Label>
                   <Input type="number" step="0.01" value={netValue} onChange={(e) => setNetValue(e.target.value)} />
                 </div>

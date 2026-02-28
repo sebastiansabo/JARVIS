@@ -212,20 +212,20 @@ export default function Bilant() {
         actions={
           <div className="flex items-center gap-2">
             {tab === 'generations' && (
-              <Button size="sm" onClick={() => setShowUpload(true)}>
-                <Upload className="mr-1.5 h-4 w-4" />
-                New Generation
+              <Button size="icon" className="md:size-auto md:px-3" onClick={() => setShowUpload(true)}>
+                <Upload className="h-4 w-4 md:mr-1.5" />
+                <span className="hidden md:inline">New Generation</span>
               </Button>
             )}
             {tab === 'templates' && (
               <>
-                <Button size="sm" variant="outline" onClick={() => setShowAnafImport(true)}>
-                  <FileUp className="mr-1.5 h-4 w-4" />
-                  Import ANAF PDF
+                <Button size="icon" variant="outline" className="md:size-auto md:px-3" onClick={() => setShowAnafImport(true)}>
+                  <FileUp className="h-4 w-4 md:mr-1.5" />
+                  <span className="hidden md:inline">Import ANAF PDF</span>
                 </Button>
-                <Button size="sm" onClick={() => setShowNewTemplate(true)}>
-                  <Plus className="mr-1.5 h-4 w-4" />
-                  New Template
+                <Button size="icon" className="md:size-auto md:px-3" onClick={() => setShowNewTemplate(true)}>
+                  <Plus className="h-4 w-4 md:mr-1.5" />
+                  <span className="hidden md:inline">New Template</span>
                 </Button>
               </>
             )}

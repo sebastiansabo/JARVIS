@@ -283,9 +283,9 @@ export default function Approvals() {
           { label: tabs.find(t => t.key === activeTab)?.label ?? 'My Queue' },
         ]}
         actions={
-          <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
-            <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
-            {isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}
+          <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
+            <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
+            <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
           </Button>
         }
       />

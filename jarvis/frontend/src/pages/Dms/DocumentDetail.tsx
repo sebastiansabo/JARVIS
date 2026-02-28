@@ -532,19 +532,19 @@ export default function DocumentDetail() {
           <div className="flex items-center gap-2">
             {editing ? (
               <>
-                <Button size="sm" onClick={saveEdit} disabled={updateMutation.isPending}>
-                  <Check className="h-4 w-4 mr-1" />
-                  Save
+                <Button size="icon" className="md:size-auto md:px-3" onClick={saveEdit} disabled={updateMutation.isPending}>
+                  <Check className="h-4 w-4 md:mr-1" />
+                  <span className="hidden md:inline">Save</span>
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
-                  <X className="h-4 w-4 mr-1" />
-                  Cancel
+                <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={() => setEditing(false)}>
+                  <X className="h-4 w-4 md:mr-1" />
+                  <span className="hidden md:inline">Cancel</span>
                 </Button>
               </>
             ) : (
-              <Button variant="outline" size="sm" onClick={startEdit}>
-                <Edit2 className="h-4 w-4 mr-1" />
-                Edit
+              <Button variant="outline" size="icon" className="md:size-auto md:px-3" onClick={startEdit}>
+                <Edit2 className="h-4 w-4 md:mr-1" />
+                <span className="hidden md:inline">Edit</span>
               </Button>
             )}
           </div>

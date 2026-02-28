@@ -20,9 +20,9 @@ export function CustomizeSheet({ permittedWidgets, toggleWidget, setWidgetWidth,
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Settings2 className="mr-1.5 h-4 w-4" />
-          Customize
+        <Button variant="outline" size="icon" className="md:size-auto md:px-3">
+          <Settings2 className="h-4 w-4 md:mr-1.5" />
+          <span className="hidden md:inline">Customize</span>
         </Button>
       </SheetTrigger>
       <SheetContent className="w-[340px] sm:w-[380px]">

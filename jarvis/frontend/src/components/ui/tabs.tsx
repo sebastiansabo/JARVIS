@@ -56,8 +56,21 @@ function TabsList({
 
 function TabsTrigger({
   className,
+  children,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+  // On mobile: show only icons, hide text labels (when icons are present)
+  const childArray = React.Children.toArray(children)
+  const hasIcon = childArray.some(c => React.isValidElement(c))
+  const rendered = hasIcon
+    ? React.Children.map(children, (child) => {
+        if (typeof child === 'string' && child.trim()) {
+          return <span className="max-md:hidden">{child}</span>
+        }
+        return child
+      })
+    : children
+
   return (
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
@@ -69,7 +82,9 @@ function TabsTrigger({
         className
       )}
       {...props}
-    />
+    >
+      {rendered}
+    </TabsPrimitive.Trigger>
   )
 }
 

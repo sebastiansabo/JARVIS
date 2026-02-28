@@ -122,9 +122,9 @@ export default function Dashboard() {
             setWidgetWidth={setWidgetWidth}
             resetDefaults={resetDefaults}
           />
-          <Button variant="outline" size="sm" onClick={toggleAiWidget}>
-            <Bot className="mr-1.5 h-4 w-4" />
-            New Chat
+          <Button variant="outline" size="icon" className="md:size-auto md:px-3" onClick={toggleAiWidget}>
+            <Bot className="h-4 w-4 md:mr-1.5" />
+            <span className="hidden md:inline">New Chat</span>
           </Button>
         </div>
       </div>

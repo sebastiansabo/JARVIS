@@ -144,10 +144,10 @@ export default function BilantDetail() {
             {gen.status === 'completed' && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline">
-                    <Download className="mr-1.5 h-4 w-4" />
-                    Download
-                    <ChevronDown className="ml-1 h-3 w-3" />
+                  <Button size="icon" variant="outline" className="md:size-auto md:px-3">
+                    <Download className="h-4 w-4 md:mr-1.5" />
+                    <span className="hidden md:inline">Download</span>
+                    <ChevronDown className="hidden md:block ml-1 h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">

@@ -74,15 +74,15 @@ export default function Hr() {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
-              <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
-              {isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}
+            <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
+              <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
+              <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
             </Button>
             {canExport && (
-              <Button variant="outline" asChild>
+              <Button variant="outline" size="icon" className="md:size-auto md:px-4" asChild>
                 <a href={hrApi.exportUrl({ year: filters.year, month: filters.month })} download>
-                  <Download className="mr-1.5 h-4 w-4" />
-                  Export
+                  <Download className="h-4 w-4 md:mr-1.5" />
+                  <span className="hidden md:inline">Export</span>
                 </a>
               </Button>
             )}
