@@ -120,7 +120,7 @@ function MappingFormDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label className="text-xs">Supplier Name (e-Factura) *</Label>
               <Input value={form.partner_name} onChange={(e) => set('partner_name', e.target.value)} />
@@ -131,7 +131,7 @@ function MappingFormDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label className="text-xs">Mapped Name *</Label>
               <Input value={form.supplier_name} onChange={(e) => set('supplier_name', e.target.value)} />

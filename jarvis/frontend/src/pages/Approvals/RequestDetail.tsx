@@ -145,7 +145,7 @@ export default function RequestDetail({ requestId, open, onClose }: RequestDetai
         ) : detail ? (
           <div className="space-y-4 py-2">
             {/* Info grid */}
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <div className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
               <div>
                 <span className="text-muted-foreground">Requester:</span>{' '}
                 <span className="font-medium">{detail.requested_by?.name || '—'}</span>
