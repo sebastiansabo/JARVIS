@@ -8,6 +8,7 @@ import {
   Search,
   Users,
   CalendarDays,
+  ChevronRight,
   Lock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -355,10 +356,75 @@ function BonusListTable({
   )
 }
 
+/* ──── Expanded row: employee's events ──── */
+
+function EmployeeEventsDetail({ employeeId, year, month, canViewAmounts }: {
+  employeeId: number; year?: number; month?: number; canViewAmounts: boolean
+}) {
+  const { data: bonuses = [], isLoading } = useQuery({
+    queryKey: ['hr-employee-bonuses', employeeId, year, month],
+    queryFn: () => hrApi.getBonuses({ employee_id: employeeId, year, month }),
+  })
+
+  if (isLoading) return <div className="p-4 text-sm text-muted-foreground">Loading events...</div>
+  if (bonuses.length === 0) return <div className="p-4 text-sm text-muted-foreground">No events found.</div>
+
+  return (
+    <div className="px-6 py-4 space-y-3 bg-muted/30">
+      <p className="text-sm font-medium flex items-center gap-1.5">
+        <CalendarDays className="h-4 w-4" /> Events ({bonuses.length})
+      </p>
+      <div className="rounded-md border bg-background">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Event</TableHead>
+              <TableHead>Year</TableHead>
+              <TableHead>Month</TableHead>
+              <TableHead>Period</TableHead>
+              <TableHead className="text-right">Days</TableHead>
+              <TableHead className="text-right">Hours</TableHead>
+              {canViewAmounts && <TableHead className="text-right">Bonus (Net)</TableHead>}
+              <TableHead>Details</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {bonuses.map((b) => (
+              <TableRow key={b.id}>
+                <TableCell className="text-sm font-medium">{b.event_name}</TableCell>
+                <TableCell className="text-sm">{b.year}</TableCell>
+                <TableCell><Badge variant="outline" className="text-xs">{MONTH_SHORT[b.month] || b.month}</Badge></TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {b.participation_start && b.participation_end
+                    ? `${new Date(b.participation_start).toLocaleDateString('ro-RO')} — ${new Date(b.participation_end).toLocaleDateString('ro-RO')}`
+                    : '—'}
+                </TableCell>
+                <TableCell className="text-right text-sm">{b.bonus_days ?? '—'}</TableCell>
+                <TableCell className="text-right text-sm">{b.hours_free ?? '—'}</TableCell>
+                {canViewAmounts && (
+                  <TableCell className="text-right text-sm font-medium text-green-600">
+                    {b.bonus_net != null ? `${Number(b.bonus_net).toFixed(0)} RON` : '—'}
+                  </TableCell>
+                )}
+                <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate">{b.details ?? '—'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  )
+}
+
 /* ──── By Employee Table ──── */
 
 function ByEmployeeTable({ data, canViewAmounts }: { data: BonusSummaryByEmployee[]; canViewAmounts: boolean }) {
+  const [expandedRow, setExpandedRow] = useState<number | null>(null)
+  const filters = useHrStore((s) => s.filters)
+
   if (data.length === 0) return <EmptyState icon={<Users className="h-8 w-8" />} title="No data" description="Adjust filters." />
+
+  const colCount = canViewAmounts ? 9 : 8
 
   return (
     <Card>
@@ -366,6 +432,7 @@ function ByEmployeeTable({ data, canViewAmounts }: { data: BonusSummaryByEmploye
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8" />
               <TableHead>Employee</TableHead>
               <TableHead>Department</TableHead>
               <TableHead>Company</TableHead>
@@ -378,23 +445,45 @@ function ByEmployeeTable({ data, canViewAmounts }: { data: BonusSummaryByEmploye
           </TableHeader>
           <TableBody>
             {data.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className="text-sm font-medium">{row.name}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{row.department ?? '—'}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{row.company ?? '—'}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{row.brand ?? '—'}</TableCell>
-                <TableCell className="text-right text-sm">{row.bonus_count}</TableCell>
-                <TableCell className="text-right text-sm">{row.total_days}</TableCell>
-                <TableCell className="text-right text-sm">{row.total_hours}</TableCell>
-                {canViewAmounts && (
-                  <TableCell className="text-right text-sm font-medium text-green-600">
-                    {Number(row.total_bonus).toFixed(0)} RON
+              <>
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer"
+                  onClick={() => setExpandedRow(expandedRow === row.id ? null : row.id)}
+                >
+                  <TableCell className="w-8 px-2">
+                    <ChevronRight className={cn('h-4 w-4 transition-transform', expandedRow === row.id ? 'rotate-90' : '')} />
                   </TableCell>
+                  <TableCell className="text-sm font-medium">{row.name}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{row.department ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{row.company ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{row.brand ?? '—'}</TableCell>
+                  <TableCell className="text-right text-sm">{row.bonus_count}</TableCell>
+                  <TableCell className="text-right text-sm">{row.total_days}</TableCell>
+                  <TableCell className="text-right text-sm">{row.total_hours}</TableCell>
+                  {canViewAmounts && (
+                    <TableCell className="text-right text-sm font-medium text-green-600">
+                      {Number(row.total_bonus).toFixed(0)} RON
+                    </TableCell>
+                  )}
+                </TableRow>
+                {expandedRow === row.id && (
+                  <TableRow key={`${row.id}-detail`}>
+                    <TableCell colSpan={colCount} className="p-0">
+                      <EmployeeEventsDetail
+                        employeeId={row.id}
+                        year={filters.year}
+                        month={filters.month}
+                        canViewAmounts={canViewAmounts}
+                      />
+                    </TableCell>
+                  </TableRow>
                 )}
-              </TableRow>
+              </>
             ))}
             {/* Footer totals */}
             <TableRow className="bg-muted/50 font-medium">
+              <TableCell />
               <TableCell className="text-sm">Total ({data.length})</TableCell>
               <TableCell />
               <TableCell />

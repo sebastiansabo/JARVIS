@@ -17,7 +17,13 @@ function Loader() {
 export default function MarketingEvents() {
   return (
     <div className="space-y-4">
-      <PageHeader title="Events" description="Create and manage events" />
+      <PageHeader
+        title="Events"
+        breadcrumbs={[
+          { label: 'Marketing', href: '/app/marketing' },
+          { label: 'Events' },
+        ]}
+      />
       <Suspense fallback={<Loader />}>
         <EventsTab />
       </Suspense>

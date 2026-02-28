@@ -11,6 +11,10 @@ export default function SuppliersPage() {
       <PageHeader
         title="Suppliers"
         description="Master supplier list"
+        breadcrumbs={[
+          { label: 'Documents', href: '/app/dms' },
+          { label: 'Suppliers' },
+        ]}
       />
       <SupplierManager companyId={companyId} />
     </div>

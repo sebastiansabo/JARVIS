@@ -401,6 +401,10 @@ export default function AddInvoice() {
       <PageHeader
         title="Add Invoice"
         description="Create a new invoice and distribute costs."
+        breadcrumbs={[
+          { label: 'Accounting', href: '/app/accounting' },
+          { label: 'Add Invoice' },
+        ]}
         actions={
           <div className="flex items-center gap-2">
             {invoiceType !== 'standard' && (

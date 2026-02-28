@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft,
+  ChevronRight,
   Clock,
   Fingerprint,
   LogIn,
@@ -168,7 +168,6 @@ export default function EmployeeProfile() {
     return (
       <div className="space-y-4">
         <Button variant="ghost" size="sm" onClick={() => navigate('/app/hr/pontaje')}>
-          <ArrowLeft className="mr-1.5 h-4 w-4" />
           Back to Pontaje
         </Button>
         <p className="text-muted-foreground">Employee not found.</p>
@@ -180,41 +179,43 @@ export default function EmployeeProfile() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/app/hr/pontaje')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-xl font-semibold">{employee.name}</h1>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              {employee.email && (
-                <span className="inline-flex items-center gap-1">
-                  <Mail className="h-3.5 w-3.5" />
-                  {employee.email}
-                </span>
-              )}
-              {employee.phone && (
-                <span className="inline-flex items-center gap-1">
-                  <Phone className="h-3.5 w-3.5" />
-                  {employee.phone}
-                </span>
-              )}
-              {employee.user_group_name && (
-                <span className="inline-flex items-center gap-1">
-                  <Users className="h-3.5 w-3.5" />
-                  {employee.user_group_name}
-                </span>
-              )}
-            </div>
-            {employee.mapped_jarvis_user_name && (
-              <div className="mt-1">
-                <Badge variant="outline" className="text-xs">
-                  <UserCheck className="mr-1 h-3 w-3" />
-                  Mapped: {employee.mapped_jarvis_user_name}
-                </Badge>
-              </div>
+        <div>
+          <nav className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
+            <button onClick={() => navigate('/app/hr/pontaje')} className="hover:text-foreground">HR</button>
+            <ChevronRight className="h-3 w-3" />
+            <button onClick={() => navigate('/app/hr/pontaje')} className="hover:text-foreground">Pontaje</button>
+            <ChevronRight className="h-3 w-3" />
+            <span>{employee.name}</span>
+          </nav>
+          <h1 className="text-xl font-semibold">{employee.name}</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            {employee.email && (
+              <span className="inline-flex items-center gap-1">
+                <Mail className="h-3.5 w-3.5" />
+                {employee.email}
+              </span>
+            )}
+            {employee.phone && (
+              <span className="inline-flex items-center gap-1">
+                <Phone className="h-3.5 w-3.5" />
+                {employee.phone}
+              </span>
+            )}
+            {employee.user_group_name && (
+              <span className="inline-flex items-center gap-1">
+                <Users className="h-3.5 w-3.5" />
+                {employee.user_group_name}
+              </span>
             )}
           </div>
+          {employee.mapped_jarvis_user_name && (
+            <div className="mt-1">
+              <Badge variant="outline" className="text-xs">
+                <UserCheck className="mr-1 h-3 w-3" />
+                Mapped: {employee.mapped_jarvis_user_name}
+              </Badge>
+            </div>
+          )}
         </div>
       </div>
 

@@ -7,8 +7,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import {
-  ArrowLeft, Pencil, BarChart3, DollarSign, Target, Users,
-  CalendarDays, Clock, FileText, MessageSquare, Download,
+  Pencil, BarChart3, DollarSign, Target, Users,
+  CalendarDays, Clock, FileText, MessageSquare, Download, ChevronRight,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { exportProjectPdf } from './exportProjectPdf'
@@ -70,16 +70,20 @@ export default function ProjectDetail() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
+          <nav className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
+            <button onClick={() => navigate('/app/marketing')} className="hover:text-foreground">Marketing</button>
+            <ChevronRight className="h-3 w-3" />
+            <button onClick={() => navigate('/app/marketing')} className="hover:text-foreground">Campaigns</button>
+            <ChevronRight className="h-3 w-3" />
+            <span>{project.name}</span>
+          </nav>
           <div className="flex items-center gap-2 mb-1">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate('/app/marketing')}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
             <h1 className="text-2xl font-bold truncate">{project.name}</h1>
             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[project.status] ?? ''}`}>
               {(project.status ?? '').replace('_', ' ')}
             </span>
           </div>
-          <p className="text-sm text-muted-foreground ml-9">
+          <p className="text-sm text-muted-foreground">
             {project.company_name}{project.brand_name ? ` / ${project.brand_name}` : ''}
             {' · '}
             {(project.project_type ?? '').replace('_', ' ')}

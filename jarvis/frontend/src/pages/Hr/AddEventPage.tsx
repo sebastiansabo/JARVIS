@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
-  ArrowLeft,
   Plus,
   Trash2,
   Search,
@@ -220,12 +219,11 @@ export default function AddEventPage() {
       <PageHeader
         title="Add Event + Employees"
         description="Create an event and assign employees with bonuses."
-        actions={
-          <Button variant="outline" onClick={() => navigate('/app/hr/events')}>
-            <ArrowLeft className="mr-1.5 h-4 w-4" />
-            Back
-          </Button>
-        }
+        breadcrumbs={[
+          { label: 'HR', href: '/app/hr/pontaje' },
+          { label: 'Events', href: '/app/hr/events' },
+          { label: 'Add Event' },
+        ]}
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">

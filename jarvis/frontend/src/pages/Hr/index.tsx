@@ -1,11 +1,10 @@
 import { lazy, Suspense, useMemo } from 'react'
 import { Routes, Route, Navigate, NavLink, useMatch } from 'react-router-dom'
-import { Award, ClipboardCheck, Download, Fingerprint, LayoutDashboard } from 'lucide-react'
+import { ClipboardCheck, Download, Fingerprint, LayoutDashboard } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { StatCard } from '@/components/shared/StatCard'
 import { hrApi } from '@/api/hr'
 import { useHrStore } from '@/stores/hrStore'
 import { cn } from '@/lib/utils'
@@ -15,8 +14,6 @@ const BonusesTab = lazy(() => import('./BonusesTab'))
 const PontajeTab = lazy(() => import('./PontajeTab'))
 const AdjustmentsTab = lazy(() => import('./AdjustmentsTab'))
 const EmployeeProfile = lazy(() => import('./EmployeeProfile'))
-
-const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 function TabLoader() {
   return (
@@ -30,13 +27,10 @@ function TabLoader() {
 
 export default function Hr() {
   const isProfilePage = useMatch('/app/hr/pontaje/:biostarUserId')
+  const isBonusesPage = useMatch('/app/hr/bonuses')
+  const isAdjustmentsPage = useMatch('/app/hr/adjustments')
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('hr_summary')
   const filters = useHrStore((s) => s.filters)
-
-  const { data: summary } = useQuery({
-    queryKey: ['hr-summary', filters.year],
-    queryFn: () => hrApi.getSummary({ year: filters.year }),
-  })
 
   const { data: permissions } = useQuery({
     queryKey: ['hr-permissions'],
@@ -51,7 +45,6 @@ export default function Hr() {
   const tabs = useMemo(() => {
     const t: { to: string; label: string; icon: typeof Fingerprint }[] = [
       { to: '/app/hr/pontaje', label: 'Pontaje', icon: Fingerprint },
-      { to: '/app/hr/bonuses', label: 'Bonuses', icon: Award },
     ]
     if (canViewAdjustments) {
       t.push({ to: '/app/hr/adjustments', label: 'Adjustments', icon: ClipboardCheck })
@@ -73,8 +66,11 @@ export default function Hr() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="HR"
-        description={`Pontaje, bonuses & employee management${filters.year ? ` — ${filters.year}` : ''}${filters.month ? ` ${MONTHS[filters.month]}` : ''}`}
+        title={isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : 'Pontaje'}
+        breadcrumbs={[
+          { label: 'HR', href: '/app/hr/pontaje' },
+          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : [{ label: 'Pontaje' }]),
+        ]}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
@@ -93,30 +89,8 @@ export default function Hr() {
         }
       />
 
-      {/* Summary stats */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-        <StatCard title="Bonuses" value={summary?.total_bonuses ?? 0} icon={<Award className="h-4 w-4" />} />
-        <StatCard title="Employees" value={summary?.total_employees ?? 0} icon={<Award className="h-4 w-4" />} />
-        <StatCard title="Events" value={summary?.total_events ?? 0} icon={<Award className="h-4 w-4" />} />
-        <StatCard title="Total Days" value={summary?.total_days ?? 0} icon={<Award className="h-4 w-4" />} />
-        <StatCard title="Total Hours" value={summary?.total_hours ?? 0} icon={<Fingerprint className="h-4 w-4" />} />
-        {canViewAmounts && (
-          <StatCard
-            title="Total Amount"
-            value={
-              summary?.total_bonus_amount != null
-                ? new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(
-                    summary.total_bonus_amount,
-                  ) + ' RON'
-                : '—'
-            }
-            icon={<Award className="h-4 w-4" />}
-          />
-        )}
-      </div>
-
-      {/* Tab nav */}
-      <nav className="flex gap-1 border-b">
+      {/* Tab nav — hidden on Bonuses page */}
+      {!isBonusesPage && <nav className="flex gap-1 border-b">
         {tabs.map((t) => (
           <NavLink
             key={t.to}
@@ -135,7 +109,7 @@ export default function Hr() {
             {t.label}
           </NavLink>
         ))}
-      </nav>
+      </nav>}
 
       {/* Tab content */}
       <Suspense fallback={<TabLoader />}>

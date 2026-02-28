@@ -866,6 +866,17 @@ def api_get_by_employee():
     return jsonify(data)
 
 
+@events_bp.route('/api/summary/by-event', methods=['GET'])
+@login_required
+@hr_required
+def api_get_by_event():
+    """API: Get bonuses grouped by event."""
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+    data = get_bonuses_by_event(year=year, month=month)
+    return jsonify(data)
+
+
 # ============== Structure Data Routes ==============
 
 @events_bp.route('/api/structure/companies', methods=['GET'])
