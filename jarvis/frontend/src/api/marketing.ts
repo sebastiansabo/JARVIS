@@ -19,6 +19,8 @@ import type {
   MktProjectEvent,
   HrEventSearchResult,
   InvoiceSearchResult,
+  MktDmsLink,
+  DmsDocSearchResult,
   MktObjective,
   MktKeyResult,
   SimBenchmark,
@@ -224,6 +226,9 @@ export const marketingApi = {
   searchHrEvents: (q?: string, limit = 20) =>
     api.get<{ events: HrEventSearchResult[] }>(`${BASE}/hr-events/search${toQs({ q, limit })}`),
 
+  getEventParticipants: (eventId: number) =>
+    api.get<{ participants: import('@/types/marketing').EventParticipant[] }>(`${BASE}/events/${eventId}/participants`),
+
   // ---- Invoice search (for budget linking) ----
 
   searchInvoices: (q?: string, company?: string, limit = 20) =>
@@ -312,6 +317,20 @@ export const marketingApi = {
 
   updateSimSettings: (data: Partial<SimSettings>) =>
     api.put<{ success: boolean }>(`${BASE}/simulator/settings`, data),
+
+  // ---- DMS Document Links ----
+
+  getDmsDocuments: (projectId: number) =>
+    api.get<{ documents: MktDmsLink[] }>(`${BASE}/projects/${projectId}/dms-documents`),
+
+  linkDmsDocument: (projectId: number, documentId: number) =>
+    api.post<{ success: boolean; id: number }>(`${BASE}/projects/${projectId}/dms-documents`, { document_id: documentId }),
+
+  unlinkDmsDocument: (projectId: number, documentId: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/projects/${projectId}/dms-documents/${documentId}`),
+
+  searchDmsDocuments: (q?: string, limit = 20) =>
+    api.get<{ documents: DmsDocSearchResult[] }>(`${BASE}/dms-documents/search${toQs({ q, limit })}`),
 
   // ---- OKRs ----
 

@@ -2592,6 +2592,20 @@ def create_schema(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_events_project ON mkt_project_events(project_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_events_event ON mkt_project_events(event_id)')
 
+    # Project ↔ DMS Document linking
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_project_dms_links (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES mkt_projects(id) ON DELETE CASCADE,
+            document_id INTEGER NOT NULL REFERENCES dms_documents(id) ON DELETE CASCADE,
+            linked_by INTEGER NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT mkt_project_dms_links_unique UNIQUE (project_id, document_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_dms_links_project ON mkt_project_dms_links(project_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_dms_links_doc ON mkt_project_dms_links(document_id)')
+
     # KPI ↔ Budget Line linking
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS mkt_kpi_budget_lines (

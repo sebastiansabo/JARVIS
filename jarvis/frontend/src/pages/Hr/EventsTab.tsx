@@ -8,6 +8,9 @@ import {
   Search,
   CalendarDays,
   Users,
+  ChevronRight,
+  Calendar,
+  Banknote,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -22,6 +25,8 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { QueryError } from '@/components/QueryError'
 import { hrApi } from '@/api/hr'
+import { marketingApi } from '@/api/marketing'
+import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
@@ -36,6 +41,81 @@ function formatDate(d: string) {
   return new Date(d).toLocaleDateString('ro-RO')
 }
 
+function fmtCurrency(v: number | string | null) {
+  if (v == null) return '—'
+  return Number(v).toLocaleString('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' RON'
+}
+
+/* ──── Expanded row: participants ──── */
+
+function EventParticipants({ eventId }: { eventId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['event-participants', eventId],
+    queryFn: () => marketingApi.getEventParticipants(eventId),
+  })
+  const participants = data?.participants ?? []
+
+  if (isLoading) return <div className="p-4 text-sm text-muted-foreground">Loading participants...</div>
+
+  return (
+    <div className="px-6 py-4 space-y-3 bg-muted/30">
+      <p className="text-sm font-medium flex items-center gap-1.5">
+        <Users className="h-4 w-4" /> Participants ({participants.length})
+      </p>
+      {participants.length === 0 ? (
+        <div className="text-sm text-muted-foreground">No participants recorded for this event.</div>
+      ) : (
+        <div className="rounded-md border bg-background">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Period</TableHead>
+                <TableHead className="text-right">Days</TableHead>
+                <TableHead className="text-right">Free Hours</TableHead>
+                <TableHead className="text-right">Bonus (RON)</TableHead>
+                <TableHead>Details</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {participants.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell className="text-sm font-medium">{p.user_name}</TableCell>
+                  <TableCell className="text-sm">
+                    {p.bonus_type_name ? (
+                      <Badge variant="secondary" className="text-xs">{p.bonus_type_name}</Badge>
+                    ) : '—'}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {p.participation_start && p.participation_end ? (
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3 text-muted-foreground" />
+                        {formatDate(p.participation_start)} — {formatDate(p.participation_end)}
+                      </span>
+                    ) : '—'}
+                  </TableCell>
+                  <TableCell className="text-sm text-right tabular-nums">{p.bonus_days ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-right tabular-nums">{p.hours_free ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-right tabular-nums">
+                    {p.bonus_net != null && Number(p.bonus_net) > 0 ? (
+                      <span className="flex items-center justify-end gap-1">
+                        <Banknote className="h-3 w-3 text-green-600" />
+                        {fmtCurrency(p.bonus_net)}
+                      </span>
+                    ) : '—'}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">{p.details ?? '—'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ──── Events List ──── */
 
 function EventsList() {
@@ -47,6 +127,7 @@ function EventsList() {
   const [editEvent, setEditEvent] = useState<HrEvent | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteIds, setDeleteIds] = useState<number[] | null>(null)
+  const [expandedRow, setExpandedRow] = useState<number | null>(null)
 
   const { data: events = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['hr-events'],
@@ -157,6 +238,7 @@ function EventsList() {
                       }}
                     />
                   </TableHead>
+                  <TableHead className="w-8" />
                   <TableHead>Event Name</TableHead>
                   <TableHead>Start Date</TableHead>
                   <TableHead>End Date</TableHead>
@@ -170,33 +252,49 @@ function EventsList() {
               </TableHeader>
               <TableBody>
                 {displayedEvents.map((ev) => (
-                  <TableRow key={ev.id} className={cn(selected.includes(ev.id) && 'bg-muted/50')}>
-                    <TableCell>
-                      <Checkbox checked={selected.includes(ev.id)} onCheckedChange={() => toggleSelect(ev.id)} />
-                    </TableCell>
-                    <TableCell className="text-sm font-medium">{ev.name}</TableCell>
-                    <TableCell className="text-sm whitespace-nowrap">{formatDate(ev.start_date)}</TableCell>
-                    <TableCell className="text-sm whitespace-nowrap">{formatDate(ev.end_date)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{ev.company ?? '—'}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{ev.brand ?? '—'}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[180px] truncate">{ev.description ?? ''}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{ev.created_by_name ?? '—'}</TableCell>
-                    <TableCell>
-                      <TagPicker entityType="event" entityId={ev.id} currentTags={eventTagsMap[String(ev.id)] ?? []} onTagsChanged={() => {}}>
-                        <TagBadgeList tags={eventTagsMap[String(ev.id)] ?? []} />
-                      </TagPicker>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditEvent(ev); setDialogOpen(true) }}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteIds([ev.id])}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                  <>
+                    <TableRow
+                      key={ev.id}
+                      className={cn('cursor-pointer', selected.includes(ev.id) && 'bg-muted/50')}
+                      onClick={() => setExpandedRow(expandedRow === ev.id ? null : ev.id)}
+                    >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox checked={selected.includes(ev.id)} onCheckedChange={() => toggleSelect(ev.id)} />
+                      </TableCell>
+                      <TableCell className="w-8 px-2">
+                        <ChevronRight className={cn('h-4 w-4 transition-transform', expandedRow === ev.id ? 'rotate-90' : '')} />
+                      </TableCell>
+                      <TableCell className="text-sm font-medium">{ev.name}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">{formatDate(ev.start_date)}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">{formatDate(ev.end_date)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{ev.company ?? '—'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{ev.brand ?? '—'}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-[180px] truncate">{ev.description ?? ''}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{ev.created_by_name ?? '—'}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <TagPicker entityType="event" entityId={ev.id} currentTags={eventTagsMap[String(ev.id)] ?? []} onTagsChanged={() => {}}>
+                          <TagBadgeList tags={eventTagsMap[String(ev.id)] ?? []} />
+                        </TagPicker>
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditEvent(ev); setDialogOpen(true) }}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteIds([ev.id])}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {expandedRow === ev.id && (
+                      <TableRow key={`${ev.id}-detail`}>
+                        <TableCell colSpan={11} className="p-0">
+                          <EventParticipants eventId={ev.id} />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
                 ))}
               </TableBody>
             </Table>

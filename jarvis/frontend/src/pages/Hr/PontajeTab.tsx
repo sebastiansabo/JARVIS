@@ -12,6 +12,7 @@ import {
   UserCheck,
   Fingerprint,
   ExternalLink,
+  Calendar,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,10 +23,11 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { StatCard } from '@/components/shared/StatCard'
 import { biostarApi } from '@/api/biostar'
 import { cn } from '@/lib/utils'
-import type { BioStarDailySummary, BioStarPunchLog } from '@/types/biostar'
+import type { BioStarDailySummary, BioStarRangeSummary, BioStarPunchLog } from '@/types/biostar'
 
 type SortField = 'name' | 'group' | 'check_in' | 'check_out' | 'duration' | 'punches'
 type SortDir = 'asc' | 'desc'
+type QuickFilter = 'today' | '7d' | 'month' | 'last_month' | 'ytd' | 'custom'
 
 function formatTime(dt: string | null) {
   if (!dt) return '-'
@@ -43,7 +45,6 @@ function formatDuration(seconds: number | null) {
 function netSeconds(durationSec: number | null, lunchMin: number) {
   if (!durationSec || durationSec <= 0) return 0
   const lunchSec = lunchMin * 60
-  // Only subtract lunch if duration > lunch (person was there long enough)
   return durationSec > lunchSec ? durationSec - lunchSec : durationSec
 }
 
@@ -51,14 +52,62 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10)
 }
 
+function getDateRange(filter: QuickFilter, customStart: string, customEnd: string): { start: string; end: string; isSingleDay: boolean } {
+  const now = new Date()
+  const today = todayStr()
+
+  switch (filter) {
+    case 'today':
+      return { start: today, end: today, isSingleDay: true }
+    case '7d': {
+      const d = new Date(now)
+      d.setDate(d.getDate() - 6)
+      return { start: d.toISOString().slice(0, 10), end: today, isSingleDay: false }
+    }
+    case 'month': {
+      const start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+      return { start, end: today, isSingleDay: false }
+    }
+    case 'last_month': {
+      const d = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const last = new Date(now.getFullYear(), now.getMonth(), 0)
+      return {
+        start: d.toISOString().slice(0, 10),
+        end: last.toISOString().slice(0, 10),
+        isSingleDay: false,
+      }
+    }
+    case 'ytd': {
+      return { start: `${now.getFullYear()}-01-01`, end: today, isSingleDay: false }
+    }
+    case 'custom':
+      if (customStart && customEnd && customStart === customEnd) {
+        return { start: customStart, end: customEnd, isSingleDay: true }
+      }
+      return { start: customStart || today, end: customEnd || today, isSingleDay: false }
+  }
+}
+
+const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
+  { value: 'today', label: 'Today' },
+  { value: '7d', label: 'Last 7 Days' },
+  { value: 'month', label: 'This Month' },
+  { value: 'last_month', label: 'Last Month' },
+  { value: 'ytd', label: 'YTD' },
+]
+
 export default function PontajeTab() {
   const navigate = useNavigate()
-  const today = todayStr()
   const [search, setSearch] = useState('')
   const [groupFilter, setGroupFilter] = useState<string>('all')
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('today')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
+
+  const { start, end, isSingleDay } = getDateRange(quickFilter, customStart, customEnd)
 
   const { data: status } = useQuery({
     queryKey: ['biostar', 'status'],
@@ -67,17 +116,30 @@ export default function PontajeTab() {
 
   const connected = !!status?.connected
 
-  const { data: summary = [], isLoading } = useQuery({
-    queryKey: ['biostar', 'daily-summary', today],
-    queryFn: () => biostarApi.getDailySummary(today),
-    refetchInterval: connected ? 60_000 : false,
+  // Single day query
+  const { data: dailySummary = [], isLoading: loadingDaily } = useQuery({
+    queryKey: ['biostar', 'daily-summary', start],
+    queryFn: () => biostarApi.getDailySummary(start),
+    enabled: isSingleDay,
+    refetchInterval: isSingleDay && connected ? 60_000 : false,
   })
 
+  // Range query
+  const { data: rangeSummary = [], isLoading: loadingRange } = useQuery({
+    queryKey: ['biostar', 'range-summary', start, end],
+    queryFn: () => biostarApi.getRangeSummary(start, end),
+    enabled: !isSingleDay && !!start && !!end,
+  })
+
+  const isLoading = isSingleDay ? loadingDaily : loadingRange
+
+  // Groups from whichever data is active
+  const activeData = isSingleDay ? dailySummary : rangeSummary
   const groups = useMemo(() => {
     const set = new Set<string>()
-    summary.forEach((e) => { if (e.user_group_name) set.add(e.user_group_name) })
+    activeData.forEach((e) => { if (e.user_group_name) set.add(e.user_group_name) })
     return Array.from(set).sort()
-  }, [summary])
+  }, [activeData])
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -88,64 +150,85 @@ export default function PontajeTab() {
     }
   }
 
-  const processed = useMemo(() => {
-    let list = [...summary]
-
-    if (groupFilter !== 'all') {
-      list = list.filter((e) => e.user_group_name === groupFilter)
-    }
-
+  // Process single-day data
+  const processedDaily = useMemo(() => {
+    if (!isSingleDay) return []
+    let list = [...dailySummary]
+    if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
     if (search) {
       const s = search.toLowerCase()
-      list = list.filter(
-        (e) =>
-          (e.name || '').toLowerCase().includes(s) ||
-          (e.email || '').toLowerCase().includes(s) ||
-          (e.user_group_name || '').toLowerCase().includes(s) ||
-          (e.mapped_jarvis_user_name || '').toLowerCase().includes(s),
+      list = list.filter((e) =>
+        (e.name || '').toLowerCase().includes(s) ||
+        (e.email || '').toLowerCase().includes(s) ||
+        (e.user_group_name || '').toLowerCase().includes(s) ||
+        (e.mapped_jarvis_user_name || '').toLowerCase().includes(s),
       )
     }
-
     list.sort((a, b) => {
       let cmp = 0
       switch (sortField) {
-        case 'name':
-          cmp = (a.name || '').localeCompare(b.name || '')
-          break
-        case 'group':
-          cmp = (a.user_group_name || '').localeCompare(b.user_group_name || '')
-          break
-        case 'check_in':
-          cmp = (a.first_punch || '').localeCompare(b.first_punch || '')
-          break
-        case 'check_out':
-          cmp = (a.last_punch || '').localeCompare(b.last_punch || '')
-          break
-        case 'duration':
-          cmp = netSeconds(a.duration_seconds, a.lunch_break_minutes ?? 60) - netSeconds(b.duration_seconds, b.lunch_break_minutes ?? 60)
-          break
-        case 'punches':
-          cmp = a.total_punches - b.total_punches
-          break
+        case 'name': cmp = (a.name || '').localeCompare(b.name || ''); break
+        case 'group': cmp = (a.user_group_name || '').localeCompare(b.user_group_name || ''); break
+        case 'check_in': cmp = (a.first_punch || '').localeCompare(b.first_punch || ''); break
+        case 'check_out': cmp = (a.last_punch || '').localeCompare(b.last_punch || ''); break
+        case 'duration': cmp = netSeconds(a.duration_seconds, a.lunch_break_minutes ?? 60) - netSeconds(b.duration_seconds, b.lunch_break_minutes ?? 60); break
+        case 'punches': cmp = a.total_punches - b.total_punches; break
       }
       return sortDir === 'asc' ? cmp : -cmp
     })
-
     return list
-  }, [summary, groupFilter, search, sortField, sortDir])
+  }, [dailySummary, groupFilter, search, sortField, sortDir, isSingleDay])
 
-  // Stats (net = minus lunch break)
-  const totalPresent = summary.length
-  const totalHours = summary.reduce((acc, e) => acc + netSeconds(e.duration_seconds, e.lunch_break_minutes ?? 60), 0) / 3600
+  // Process range data
+  const processedRange = useMemo(() => {
+    if (isSingleDay) return []
+    let list = [...rangeSummary]
+    if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
+    if (search) {
+      const s = search.toLowerCase()
+      list = list.filter((e) =>
+        (e.name || '').toLowerCase().includes(s) ||
+        (e.email || '').toLowerCase().includes(s) ||
+        (e.user_group_name || '').toLowerCase().includes(s) ||
+        (e.mapped_jarvis_user_name || '').toLowerCase().includes(s),
+      )
+    }
+    list.sort((a, b) => {
+      let cmp = 0
+      switch (sortField) {
+        case 'name': cmp = (a.name || '').localeCompare(b.name || ''); break
+        case 'group': cmp = (a.user_group_name || '').localeCompare(b.user_group_name || ''); break
+        case 'duration': cmp = netSeconds(a.total_duration_seconds, (a.lunch_break_minutes ?? 60) * a.days_present) - netSeconds(b.total_duration_seconds, (b.lunch_break_minutes ?? 60) * b.days_present); break
+        case 'punches': cmp = a.total_punches - b.total_punches; break
+        default: cmp = (a.name || '').localeCompare(b.name || ''); break
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return list
+  }, [rangeSummary, groupFilter, search, sortField, sortDir, isSingleDay])
+
+  // Stats
+  const totalPresent = isSingleDay ? dailySummary.length : rangeSummary.length
+  const totalHours = isSingleDay
+    ? dailySummary.reduce((acc, e) => acc + netSeconds(e.duration_seconds, e.lunch_break_minutes ?? 60), 0) / 3600
+    : rangeSummary.reduce((acc, e) => acc + netSeconds(e.total_duration_seconds, (e.lunch_break_minutes ?? 60) * e.days_present), 0) / 3600
   const avgHours = totalPresent > 0 ? totalHours / totalPresent : 0
-  const earlyBirds = summary.filter((e) => {
-    if (!e.first_punch) return false
-    return new Date(e.first_punch).getHours() < 8
-  }).length
+  const earlyBirds = isSingleDay
+    ? dailySummary.filter((e) => e.first_punch && new Date(e.first_punch).getHours() < 8).length
+    : 0
+
+  const handleQuickFilter = (f: QuickFilter) => {
+    setQuickFilter(f)
+    setExpandedId(null)
+  }
 
   const SortIcon = ({ field }: { field: SortField }) => (
     <ArrowUpDown className={cn('ml-1 h-3 w-3 inline', sortField === field ? 'opacity-100' : 'opacity-40')} />
   )
+
+  const rangeLabel = isSingleDay
+    ? new Date(start).toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })
+    : `${new Date(start).toLocaleDateString('ro-RO')} — ${new Date(end).toLocaleDateString('ro-RO')}`
 
   return (
     <div className="space-y-4">
@@ -157,12 +240,58 @@ export default function PontajeTab() {
         </div>
       )}
 
+      {/* Quick filters + date pickers */}
+      <div className="flex flex-wrap items-center gap-2">
+        {QUICK_FILTERS.map((f) => (
+          <Button
+            key={f.value}
+            size="sm"
+            variant={quickFilter === f.value ? 'default' : 'outline'}
+            className="h-8 text-xs"
+            onClick={() => handleQuickFilter(f.value)}
+          >
+            {f.label}
+          </Button>
+        ))}
+        <div className="flex items-center gap-1.5 ml-auto">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <Input
+            type="date"
+            className="h-8 w-36 text-xs"
+            value={quickFilter === 'custom' ? customStart : start}
+            onChange={(e) => {
+              setQuickFilter('custom')
+              setCustomStart(e.target.value)
+              if (!customEnd || e.target.value > customEnd) setCustomEnd(e.target.value)
+            }}
+          />
+          <span className="text-xs text-muted-foreground">—</span>
+          <Input
+            type="date"
+            className="h-8 w-36 text-xs"
+            value={quickFilter === 'custom' ? customEnd : end}
+            onChange={(e) => {
+              setQuickFilter('custom')
+              setCustomEnd(e.target.value)
+              if (!customStart || e.target.value < customStart) setCustomStart(e.target.value)
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Date label */}
+      <p className="text-xs text-muted-foreground">{rangeLabel}</p>
+
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard title="Present Today" value={totalPresent} icon={<UserCheck className="h-4 w-4" />} />
+        <StatCard title={isSingleDay ? 'Present Today' : 'Employees'} value={totalPresent} icon={<UserCheck className="h-4 w-4" />} />
         <StatCard title="Total Hours" value={totalHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
-        <StatCard title="Avg Hours" value={avgHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
-        <StatCard title="Early (<8:00)" value={earlyBirds} icon={<LogIn className="h-4 w-4" />} />
+        <StatCard title={isSingleDay ? 'Avg Hours' : 'Avg Hours / Employee'} value={avgHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
+        {isSingleDay ? (
+          <StatCard title="Early (<8:00)" value={earlyBirds} icon={<LogIn className="h-4 w-4" />} />
+        ) : (
+          <StatCard title="Avg Days Present" value={totalPresent > 0 ? (rangeSummary.reduce((a, e) => a + e.days_present, 0) / totalPresent).toFixed(1) : '0'} icon={<Calendar className="h-4 w-4" />} />
+        )}
       </div>
 
       {/* Filters */}
@@ -181,10 +310,10 @@ export default function PontajeTab() {
             <SelectValue placeholder="All Groups" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Groups ({summary.length})</SelectItem>
+            <SelectItem value="all">All Groups ({activeData.length})</SelectItem>
             {groups.map((g) => (
               <SelectItem key={g} value={g}>
-                {g} ({summary.filter((e) => e.user_group_name === g).length})
+                {g} ({activeData.filter((e) => e.user_group_name === g).length})
               </SelectItem>
             ))}
           </SelectContent>
@@ -198,63 +327,156 @@ export default function PontajeTab() {
             <div key={i} className="h-10 animate-pulse rounded bg-muted" />
           ))}
         </div>
-      ) : processed.length === 0 ? (
-        <EmptyState
-          title="No attendance data"
-          description={search ? 'Try a different search term.' : 'No punch logs found for today.'}
-        />
+      ) : isSingleDay ? (
+        /* Single-day table */
+        processedDaily.length === 0 ? (
+          <EmptyState
+            title="No attendance data"
+            description={search ? 'Try a different search term.' : 'No punch logs found for this date.'}
+          />
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8" />
+                  <TableHead className="cursor-pointer select-none" onClick={() => handleSort('name')}>
+                    Employee <SortIcon field="name" />
+                  </TableHead>
+                  <TableHead className="hidden md:table-cell cursor-pointer select-none" onClick={() => handleSort('group')}>
+                    Group <SortIcon field="group" />
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_in')}>
+                    Check In <SortIcon field="check_in" />
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_out')}>
+                    Check Out <SortIcon field="check_out" />
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('duration')}>
+                    Duration <SortIcon field="duration" />
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('punches')}>
+                    Punches <SortIcon field="punches" />
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {processedDaily.map((emp) => (
+                  <EmployeeRow
+                    key={emp.biostar_user_id}
+                    employee={emp}
+                    date={start}
+                    isExpanded={expandedId === emp.biostar_user_id}
+                    onToggle={() => setExpandedId(expandedId === emp.biostar_user_id ? null : emp.biostar_user_id)}
+                    onProfile={() => navigate(`/app/hr/pontaje/${emp.biostar_user_id}`)}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )
       ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8" />
-                <TableHead className="cursor-pointer select-none" onClick={() => handleSort('name')}>
-                  Employee <SortIcon field="name" />
-                </TableHead>
-                <TableHead className="hidden md:table-cell cursor-pointer select-none" onClick={() => handleSort('group')}>
-                  Group <SortIcon field="group" />
-                </TableHead>
-                <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_in')}>
-                  Check In <SortIcon field="check_in" />
-                </TableHead>
-                <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_out')}>
-                  Check Out <SortIcon field="check_out" />
-                </TableHead>
-                <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('duration')}>
-                  Duration <SortIcon field="duration" />
-                </TableHead>
-                <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('punches')}>
-                  Punches <SortIcon field="punches" />
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {processed.map((emp) => (
-                <EmployeeRow
-                  key={emp.biostar_user_id}
-                  employee={emp}
-                  date={today}
-                  isExpanded={expandedId === emp.biostar_user_id}
-                  onToggle={() =>
-                    setExpandedId(expandedId === emp.biostar_user_id ? null : emp.biostar_user_id)
-                  }
-                  onProfile={() => navigate(`/app/hr/pontaje/${emp.biostar_user_id}`)}
-                />
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        /* Range table */
+        processedRange.length === 0 ? (
+          <EmptyState
+            title="No attendance data"
+            description={search ? 'Try a different search term.' : 'No punch logs found for this period.'}
+          />
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="cursor-pointer select-none" onClick={() => handleSort('name')}>
+                    Employee <SortIcon field="name" />
+                  </TableHead>
+                  <TableHead className="hidden md:table-cell cursor-pointer select-none" onClick={() => handleSort('group')}>
+                    Group <SortIcon field="group" />
+                  </TableHead>
+                  <TableHead className="text-center">Days</TableHead>
+                  <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('duration')}>
+                    Total Hours <SortIcon field="duration" />
+                  </TableHead>
+                  <TableHead className="text-center">Avg/Day</TableHead>
+                  <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('punches')}>
+                    Punches <SortIcon field="punches" />
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {processedRange.map((emp) => (
+                  <RangeEmployeeRow
+                    key={emp.biostar_user_id}
+                    employee={emp}
+                    onProfile={() => navigate(`/app/hr/pontaje/${emp.biostar_user_id}`)}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )
       )}
 
       <div className="text-sm text-muted-foreground">
-        Showing {processed.length} of {summary.length} employees
+        Showing {isSingleDay ? processedDaily.length : processedRange.length} of {activeData.length} employees
       </div>
     </div>
   )
 }
 
-// ── Employee Row ──
+// ── Range Employee Row ──
+
+function RangeEmployeeRow({
+  employee,
+  onProfile,
+}: {
+  employee: BioStarRangeSummary
+  onProfile: () => void
+}) {
+  const lunch = employee.lunch_break_minutes ?? 60
+  const expectedH = (employee.working_hours ?? 8) * employee.days_present
+  const totalNet = netSeconds(employee.total_duration_seconds, lunch * employee.days_present)
+  const totalH = totalNet / 3600
+  const avgNet = employee.days_present > 0 ? totalNet / employee.days_present : 0
+  const avgH = avgNet / 3600
+  const isShort = totalH > 0 && totalH < expectedH
+
+  return (
+    <TableRow className="cursor-pointer hover:bg-muted/50" onClick={onProfile}>
+      <TableCell>
+        <div className="min-w-0">
+          <button className="font-medium hover:underline text-left" onClick={(e) => { e.stopPropagation(); onProfile() }}>
+            {employee.name}
+          </button>
+          {employee.mapped_jarvis_user_name && (
+            <Badge variant="outline" className="ml-2 text-[10px] font-normal">
+              {employee.mapped_jarvis_user_name}
+            </Badge>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+        {employee.user_group_name || '-'}
+      </TableCell>
+      <TableCell className="text-center">
+        <Badge variant="secondary" className="text-xs">{employee.days_present}</Badge>
+      </TableCell>
+      <TableCell className="text-center">
+        <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
+          {formatDuration(totalNet)}
+        </span>
+      </TableCell>
+      <TableCell className="text-center">
+        <span className="text-sm">{avgH.toFixed(1)}h</span>
+      </TableCell>
+      <TableCell className="text-center">
+        <Badge variant="secondary" className="text-xs">{employee.total_punches}</Badge>
+      </TableCell>
+    </TableRow>
+  )
+}
+
+// ── Single-day Employee Row ──
 
 function EmployeeRow({
   employee,
@@ -348,7 +570,7 @@ function EmployeeRow({
       {isExpanded && (
         <TableRow>
           <TableCell colSpan={7} className="bg-muted/30 p-0">
-            <TodayPunches biostarUserId={employee.biostar_user_id} date={date} onProfile={onProfile} />
+            <DayPunches biostarUserId={employee.biostar_user_id} date={date} onProfile={onProfile} />
           </TableCell>
         </TableRow>
       )}
@@ -356,9 +578,9 @@ function EmployeeRow({
   )
 }
 
-// ── Today's punches inline ──
+// ── Day's punches inline ──
 
-function TodayPunches({ biostarUserId, date, onProfile }: { biostarUserId: string; date: string; onProfile: () => void }) {
+function DayPunches({ biostarUserId, date, onProfile }: { biostarUserId: string; date: string; onProfile: () => void }) {
   const { data: punches = [], isLoading } = useQuery({
     queryKey: ['biostar', 'employee-punches', biostarUserId, date],
     queryFn: () => biostarApi.getEmployeePunches(biostarUserId, date),
@@ -379,7 +601,7 @@ function TodayPunches({ biostarUserId, date, onProfile }: { biostarUserId: strin
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
           <Fingerprint className="h-3.5 w-3.5" />
-          Today — {punches.length} events
+          {date} — {punches.length} events
         </div>
         <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onProfile}>
           <ExternalLink className="mr-1 h-3 w-3" />

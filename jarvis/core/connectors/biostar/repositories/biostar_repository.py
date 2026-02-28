@@ -270,6 +270,47 @@ class BioStarRepository(BaseRepository):
             ORDER BY be.name
         ''', (date_str,))
 
+    def get_range_summary(self, start_date, end_date):
+        """Get per-employee aggregated punch summary over a date range."""
+        return self.query_all('''
+            WITH daily AS (
+                SELECT
+                    pl.biostar_user_id,
+                    pl.event_datetime::date AS day,
+                    MIN(pl.event_datetime) AS first_punch,
+                    MAX(pl.event_datetime) AS last_punch,
+                    COUNT(*) AS punches,
+                    EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds
+                FROM biostar_punch_logs pl
+                WHERE pl.event_datetime::date BETWEEN %s::date AND %s::date
+                GROUP BY pl.biostar_user_id, pl.event_datetime::date
+            )
+            SELECT
+                d.biostar_user_id,
+                be.name,
+                be.email,
+                be.user_group_name,
+                be.mapped_jarvis_user_id,
+                u.name AS mapped_jarvis_user_name,
+                be.lunch_break_minutes,
+                be.working_hours,
+                be.schedule_start,
+                be.schedule_end,
+                COUNT(d.day) AS days_present,
+                SUM(d.duration_seconds) AS total_duration_seconds,
+                AVG(d.duration_seconds) AS avg_duration_seconds,
+                SUM(d.punches) AS total_punches,
+                MIN(d.first_punch) AS earliest_punch,
+                MAX(d.last_punch) AS latest_punch
+            FROM daily d
+            LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
+            LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+            GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
+                     be.mapped_jarvis_user_id, u.name, be.lunch_break_minutes, be.working_hours,
+                     be.schedule_start, be.schedule_end
+            ORDER BY be.name
+        ''', (start_date, end_date))
+
     def get_employee_punches(self, biostar_user_id, date_str):
         """Get all punch events for one employee on a specific date."""
         return self.query_all('''

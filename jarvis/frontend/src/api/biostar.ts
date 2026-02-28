@@ -7,6 +7,7 @@ import type {
   BioStarStatus,
   BioStarSyncRun,
   BioStarDailySummary,
+  BioStarRangeSummary,
   BioStarDayHistory,
   BioStarOffScheduleRow,
   BioStarAdjustment,
@@ -124,6 +125,14 @@ export const biostarApi = {
     const res = await api.get<{ success: boolean; data: BioStarDailySummary[] }>(
       `${BASE}/punch-logs/summary`,
       { date },
+    )
+    return res.data
+  },
+
+  getRangeSummary: async (start: string, end: string) => {
+    const res = await api.get<{ success: boolean; data: BioStarRangeSummary[] }>(
+      `${BASE}/punch-logs/range-summary`,
+      { start, end },
     )
     return res.data
   },

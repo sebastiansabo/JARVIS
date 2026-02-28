@@ -179,6 +179,25 @@ export interface BioStarAdjustment {
   created_at: string
 }
 
+export interface BioStarRangeSummary {
+  biostar_user_id: string
+  name: string
+  email: string | null
+  user_group_name: string | null
+  mapped_jarvis_user_id: number | null
+  mapped_jarvis_user_name: string | null
+  lunch_break_minutes: number
+  working_hours: number
+  schedule_start: string | null
+  schedule_end: string | null
+  days_present: number
+  total_duration_seconds: number | null
+  avg_duration_seconds: number | null
+  total_punches: number
+  earliest_punch: string | null
+  latest_punch: string | null
+}
+
 export interface BioStarCronJob {
   id: string
   label: string

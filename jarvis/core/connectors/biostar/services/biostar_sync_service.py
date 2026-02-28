@@ -433,6 +433,10 @@ class BioStarSyncService:
         """Get per-employee daily punch summary."""
         return self.repo.get_daily_summary(date_str)
 
+    def get_range_summary(self, start_date, end_date):
+        """Get per-employee aggregated summary over a date range."""
+        return self.repo.get_range_summary(start_date, end_date)
+
     def get_employee_punches(self, biostar_user_id, date_str):
         """Get all punch events for one employee on a specific date."""
         return self.repo.get_employee_punches(biostar_user_id, date_str)

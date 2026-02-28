@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FolderOpen, FileText, Plus, Search, Trash2, RotateCcw,
-  Paperclip, Users as ChildrenIcon, ChevronDown,
+  Paperclip, Users as ChildrenIcon, ChevronRight,
   Download, Calendar, Bell, Edit2, File, FileSpreadsheet,
   Image as ImageIcon, PenTool, Tags, Shield, X,
 } from 'lucide-react'
@@ -485,7 +485,7 @@ export default function Dms() {
                             />
                           </TableCell>
                           <TableCell className="px-2">
-                            <ChevronDown className={cn('h-4 w-4 transition-transform', expandedRow === doc.id ? 'rotate-180' : '')} />
+                            <ChevronRight className={cn('h-4 w-4 transition-transform', expandedRow === doc.id ? 'rotate-90' : '')} />
                           </TableCell>
                           {activeColumnDefs.map((col) => (
                             <TableCell key={col.key} className={col.className}>

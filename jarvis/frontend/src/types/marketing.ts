@@ -285,6 +285,20 @@ export interface HrEventSearchResult {
   description: string | null
 }
 
+export interface EventParticipant {
+  id: number
+  user_id: number
+  user_name: string
+  participation_start: string | null
+  participation_end: string | null
+  bonus_days: number | null
+  hours_free: number | null
+  bonus_net: number | null
+  details: string | null
+  allocation_month: string | null
+  bonus_type_name: string | null
+}
+
 export interface MktKpiBudgetLine {
   id: number
   project_kpi_id: number
@@ -338,6 +352,49 @@ export interface MktKeyResult {
   created_at: string
   updated_at: string | null
   progress: number
+}
+
+// ── DMS Document Links ──
+
+export interface MktDmsLink {
+  id: number
+  project_id: number
+  document_id: number
+  linked_by: number
+  linked_by_name: string | null
+  created_at: string
+  // Document fields
+  title: string
+  description: string | null
+  status: string
+  doc_number: string | null
+  doc_date: string | null
+  expiry_date: string | null
+  days_to_expiry: number | null
+  category_id: number | null
+  category_name: string | null
+  category_color: string | null
+  signature_status: string | null
+  company_id: number | null
+  company_name: string | null
+  created_by: number
+  created_by_name: string | null
+  doc_created_at: string
+  visibility: string
+  file_count: number
+  children_count: number
+}
+
+export interface DmsDocSearchResult {
+  id: number
+  title: string
+  status: string
+  doc_number: string | null
+  doc_date: string | null
+  expiry_date: string | null
+  category_name: string | null
+  category_color: string | null
+  file_count: number
 }
 
 export interface InvoiceSearchResult {

@@ -42,6 +42,21 @@ class ProjectEventRepository(BaseRepository):
             (project_id, event_id),
         ) > 0
 
+    def get_event_participants(self, event_id):
+        """Get all participants (bonus records) for an HR event."""
+        return self.query_all('''
+            SELECT eb.id, eb.user_id, u.name as user_name,
+                   eb.participation_start, eb.participation_end,
+                   eb.bonus_days, eb.hours_free, eb.bonus_net,
+                   eb.details, eb.allocation_month,
+                   bt.name as bonus_type_name
+            FROM hr.event_bonuses eb
+            JOIN users u ON u.id = eb.user_id
+            LEFT JOIN hr.bonus_types bt ON bt.id = eb.bonus_type_id
+            WHERE eb.event_id = %s
+            ORDER BY u.name
+        ''', (event_id,))
+
     def search_invoices(self, query='', company=None, limit=20):
         """Search invoices for budget linking. Uses trigram similarity + ILIKE."""
         sql = '''

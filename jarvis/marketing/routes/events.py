@@ -62,6 +62,15 @@ def api_unlink_event(project_id, event_id):
     return jsonify({'success': False, 'error': 'Link not found'}), 404
 
 
+@marketing_bp.route('/api/events/<int:event_id>/participants', methods=['GET'])
+@login_required
+@mkt_permission_required('project', 'view')
+def api_get_event_participants(event_id):
+    """Get participants for an HR event."""
+    participants = _event_repo.get_event_participants(event_id)
+    return jsonify({'participants': participants})
+
+
 @marketing_bp.route('/api/hr-events/search', methods=['GET'])
 @login_required
 @mkt_permission_required('project', 'view')

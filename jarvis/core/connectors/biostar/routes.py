@@ -267,6 +267,18 @@ def get_daily_summary():
     return jsonify({'success': True, 'data': summary})
 
 
+@biostar_bp.route('/api/punch-logs/range-summary', methods=['GET'])
+@api_login_required
+def get_range_summary():
+    """Get per-employee aggregated summary over a date range."""
+    start = request.args.get('start')
+    end = request.args.get('end')
+    if not start or not end:
+        return jsonify({'success': False, 'error': 'start and end parameters required'}), 400
+    summary = service.get_range_summary(start, end)
+    return jsonify({'success': True, 'data': summary})
+
+
 # ── Sync History ──
 
 @biostar_bp.route('/api/sync/history', methods=['GET'])

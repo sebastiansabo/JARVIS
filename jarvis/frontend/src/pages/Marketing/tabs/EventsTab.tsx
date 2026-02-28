@@ -5,10 +5,83 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Plus, Trash2, Search } from 'lucide-react'
+import { Plus, Trash2, Search, ChevronRight, Users, Calendar, Banknote } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { marketingApi } from '@/api/marketing'
-import type { HrEventSearchResult } from '@/types/marketing'
+import type { HrEventSearchResult, EventParticipant } from '@/types/marketing'
 import { fmt, fmtDate } from './utils'
+
+/* ── Expanded row: participants ─────────────────────────── */
+
+function EventExpandedDetails({ eventId }: { eventId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['mkt-event-participants', eventId],
+    queryFn: () => marketingApi.getEventParticipants(eventId),
+  })
+  const participants: EventParticipant[] = data?.participants ?? []
+
+  if (isLoading) return <div className="p-4 text-sm text-muted-foreground">Loading participants...</div>
+
+  return (
+    <div className="px-6 py-4 space-y-3 bg-muted/30">
+      <p className="text-sm font-medium flex items-center gap-1.5">
+        <Users className="h-4 w-4" /> Participants ({participants.length})
+      </p>
+      {participants.length === 0 ? (
+        <div className="text-sm text-muted-foreground">No participants recorded for this event.</div>
+      ) : (
+        <div className="rounded-md border bg-background">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Period</TableHead>
+                <TableHead className="text-right">Days</TableHead>
+                <TableHead className="text-right">Free Hours</TableHead>
+                <TableHead className="text-right">Bonus (RON)</TableHead>
+                <TableHead>Details</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {participants.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell className="text-sm font-medium">{p.user_name}</TableCell>
+                  <TableCell className="text-sm">
+                    {p.bonus_type_name ? (
+                      <Badge variant="secondary" className="text-xs">{p.bonus_type_name}</Badge>
+                    ) : '—'}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {p.participation_start && p.participation_end ? (
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3 text-muted-foreground" />
+                        {fmtDate(p.participation_start)} — {fmtDate(p.participation_end)}
+                      </span>
+                    ) : '—'}
+                  </TableCell>
+                  <TableCell className="text-sm text-right tabular-nums">{p.bonus_days ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-right tabular-nums">{p.hours_free ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-right tabular-nums">
+                    {p.bonus_net != null && Number(p.bonus_net) > 0 ? (
+                      <span className="flex items-center justify-end gap-1">
+                        <Banknote className="h-3 w-3 text-green-600" />
+                        {fmt(p.bonus_net)}
+                      </span>
+                    ) : '—'}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">{p.details ?? '—'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Main tab ───────────────────────────────────────────── */
 
 export function EventsTab({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient()
@@ -16,6 +89,7 @@ export function EventsTab({ projectId }: { projectId: number }) {
   const [eventSearch, setEventSearch] = useState('')
   const [eventResults, setEventResults] = useState<HrEventSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  const [expandedRow, setExpandedRow] = useState<number | null>(null)
 
   const { data } = useQuery({
     queryKey: ['mkt-project-events', projectId],
@@ -39,6 +113,7 @@ export function EventsTab({ projectId }: { projectId: number }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-project-events', projectId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
+      if (expandedRow) setExpandedRow(null)
     },
   })
 
@@ -55,6 +130,10 @@ export function EventsTab({ projectId }: { projectId: number }) {
 
   const linkedIds = new Set(events.map((e) => e.event_id))
 
+  function toggleExpand(eventId: number) {
+    setExpandedRow(expandedRow === eventId ? null : eventId)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
@@ -70,6 +149,7 @@ export function EventsTab({ projectId }: { projectId: number }) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8" />
                 <TableHead>Event</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Start</TableHead>
@@ -81,26 +161,45 @@ export function EventsTab({ projectId }: { projectId: number }) {
             </TableHeader>
             <TableBody>
               {events.map((e) => (
-                <TableRow key={e.id}>
-                  <TableCell>
-                    <div>
-                      <div className="text-sm font-medium">{e.event_name}</div>
-                      {e.event_description && (
-                        <div className="text-xs text-muted-foreground truncate max-w-[250px]">{e.event_description}</div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm">{e.event_company ?? '—'}</TableCell>
-                  <TableCell className="text-sm">{fmtDate(e.event_start_date)}</TableCell>
-                  <TableCell className="text-sm">{fmtDate(e.event_end_date)}</TableCell>
-                  <TableCell className="text-sm text-right tabular-nums">{Number(e.event_cost) > 0 ? fmt(e.event_cost) : '—'}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{e.linked_by_name}</TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => unlinkMut.mutate(e.event_id)}>
-                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                <>
+                  <TableRow
+                    key={e.id}
+                    className="cursor-pointer"
+                    onClick={() => toggleExpand(e.event_id)}
+                  >
+                    <TableCell className="w-8 px-2">
+                      <ChevronRight className={cn('h-4 w-4 transition-transform', expandedRow === e.event_id ? 'rotate-90' : '')} />
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <div className="text-sm font-medium">{e.event_name}</div>
+                        {e.event_description && (
+                          <div className="text-xs text-muted-foreground truncate max-w-[250px]">{e.event_description}</div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm">{e.event_company ?? '—'}</TableCell>
+                    <TableCell className="text-sm">{fmtDate(e.event_start_date)}</TableCell>
+                    <TableCell className="text-sm">{fmtDate(e.event_end_date)}</TableCell>
+                    <TableCell className="text-sm text-right tabular-nums">{Number(e.event_cost) > 0 ? fmt(e.event_cost) : '—'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{e.linked_by_name}</TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost" size="icon" className="h-7 w-7"
+                        onClick={(ev) => { ev.stopPropagation(); unlinkMut.mutate(e.event_id) }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                  {expandedRow === e.event_id && (
+                    <TableRow key={`${e.id}-detail`}>
+                      <TableCell colSpan={8} className="p-0">
+                        <EventExpandedDetails eventId={e.event_id} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </>
               ))}
             </TableBody>
           </Table>
