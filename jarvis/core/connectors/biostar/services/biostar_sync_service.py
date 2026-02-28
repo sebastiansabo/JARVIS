@@ -346,6 +346,11 @@ class BioStarSyncService:
         if not user_id:
             return None
 
+        # Skip unrecognized card swipes — user_id_name ends with "(-)"
+        user_id_name = raw.get('user_id_name', '')
+        if user_id_name.endswith('(-)'):
+            return None
+
         # Device — dict with id/name
         device = raw.get('device_id', {})
         if isinstance(device, dict):
