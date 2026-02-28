@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 import {
   Plus, Search, LayoutGrid, LayoutDashboard, List,
   DollarSign, Target, AlertTriangle, FolderOpen,
-  BarChart3, PieChart, Calculator, Download,
+  BarChart3, PieChart, Download,
   Archive, Trash2, RotateCcw, AlertCircle,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -28,7 +28,7 @@ import { useMarketingStore } from '@/stores/marketingStore'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import type { MktProject, MktKpiScoreboardItem } from '@/types/marketing'
 import ProjectForm from './ProjectForm'
-import CampaignSimulator from './CampaignSimulator'
+
 
 const statusColors: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
@@ -51,7 +51,7 @@ function burnRate(spent: number, budget: number) {
   return Math.round((spent / budget) * 100)
 }
 
-type MainTab = 'projects' | 'dashboard' | 'simulator' | 'archived' | 'trash'
+type MainTab = 'projects' | 'dashboard' | 'archived' | 'trash'
 
 export default function Marketing() {
   const queryClient = useQueryClient()
@@ -98,7 +98,7 @@ export default function Marketing() {
         title="Marketing"
         breadcrumbs={[
           { label: 'Marketing' },
-          { label: mainTab === 'projects' ? `Campaigns (${total})` : mainTab === 'dashboard' ? 'Dashboard' : mainTab === 'simulator' ? 'Simulator' : mainTab === 'archived' ? 'Archived' : 'Trash' },
+          { label: mainTab === 'projects' ? `Campaigns (${total})` : mainTab === 'dashboard' ? 'Dashboard' : mainTab === 'archived' ? 'Archived' : 'Trash' },
         ]}
         actions={
           <div className="flex items-center gap-2">
@@ -118,7 +118,6 @@ export default function Marketing() {
         <TabsList>
           <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
           <TabsTrigger value="projects"><FolderOpen className="h-3.5 w-3.5" />Campaigns</TabsTrigger>
-          <TabsTrigger value="simulator"><Calculator className="h-3.5 w-3.5" />Simulator</TabsTrigger>
           <TabsTrigger value="archived"><Archive className="h-3.5 w-3.5" />Archived</TabsTrigger>
           <TabsTrigger value="trash"><Trash2 className="h-3.5 w-3.5" />Trash</TabsTrigger>
         </TabsList>
@@ -305,7 +304,7 @@ export default function Marketing() {
 
       {mainTab === 'dashboard' && <DashboardView />}
 
-      {mainTab === 'simulator' && <CampaignSimulator />}
+
 
       {mainTab === 'archived' && (
         <ArchivedView

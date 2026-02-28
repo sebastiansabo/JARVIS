@@ -16,6 +16,7 @@ import {
   Target, DollarSign, Car, TrendingUp, ChevronDown, ChevronRight,
   Info, Sparkles, Settings2, Loader2, Save, X, Columns3, SlidersHorizontal,
 } from 'lucide-react'
+import { PageHeader } from '@/components/shared/PageHeader'
 import { marketingApi } from '@/api/marketing'
 import type { SimBenchmark, SimSettings, SimStageTotal, SimTotals } from '@/types/marketing'
 
@@ -321,7 +322,14 @@ export default function CampaignSimulator() {
   if (isLoading) return <div className="space-y-4 mt-4"><Skeleton className="h-32 w-full" /><Skeleton className="h-96 w-full" /></div>
 
   return (
-    <div className="space-y-4 mt-4">
+    <div className="space-y-4">
+      <PageHeader
+        title="Simulator"
+        breadcrumbs={[
+          { label: 'Marketing', href: '/app/marketing' },
+          { label: 'Simulator' },
+        ]}
+      />
       {/* ── Header ── */}
       <Card>
         <CardContent className="pt-4 pb-4">
