@@ -213,7 +213,7 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
       ) : categories.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-8">No categories yet.</p>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -397,7 +397,7 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
         ) : relTypes.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">No relationship types yet.</p>
         ) : (
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>

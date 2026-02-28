@@ -121,7 +121,7 @@ export default function PartyRoleManager() {
           No party roles yet. Add your first role.
         </p>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

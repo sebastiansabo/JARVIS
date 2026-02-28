@@ -442,7 +442,7 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
           {search ? 'No suppliers match your search.' : 'No suppliers yet. Add your first supplier.'}
         </p>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

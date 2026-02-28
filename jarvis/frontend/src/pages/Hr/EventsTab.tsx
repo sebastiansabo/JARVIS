@@ -65,7 +65,7 @@ function EventParticipants({ eventId }: { eventId: number }) {
       {participants.length === 0 ? (
         <div className="text-sm text-muted-foreground">No participants recorded for this event.</div>
       ) : (
-        <div className="rounded-md border bg-background">
+        <div className="rounded-md border bg-background overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

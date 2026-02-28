@@ -377,7 +377,7 @@ export default function Approvals() {
           ))}
         </div>
       ) : activeTab === 'delegations' ? (
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b bg-muted/50">
@@ -398,7 +398,7 @@ export default function Approvals() {
           </table>
         </div>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b bg-muted/50">

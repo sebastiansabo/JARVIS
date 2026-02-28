@@ -104,7 +104,7 @@ export function ResultsTable({ results }: ResultsTableProps) {
   }
 
   return (
-    <div className="rounded-md border overflow-hidden">
+    <div className="rounded-md border overflow-x-auto">
       <Table className="table-fixed">
         <TableHeader>
           <TableRow>
