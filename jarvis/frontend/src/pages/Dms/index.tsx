@@ -307,52 +307,54 @@ export default function Dms() {
               />
             </div>
 
-            <Select
-              value={filters.category_id?.toString() || 'all'}
-              onValueChange={(v) => updateFilter('category_id', v === 'all' ? undefined : Number(v))}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={c.id.toString()}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="ml-auto flex items-center gap-3">
+              <Select
+                value={filters.category_id?.toString() || 'all'}
+                onValueChange={(v) => updateFilter('category_id', v === 'all' ? undefined : Number(v))}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={c.id.toString()}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            <Select
-              value={filters.status || 'all'}
-              onValueChange={(v) => updateFilter('status', v === 'all' ? undefined : v)}
-            >
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="archived">Archived</SelectItem>
-              </SelectContent>
-            </Select>
+              <Select
+                value={filters.status || 'all'}
+                onValueChange={(v) => updateFilter('status', v === 'all' ? undefined : v)}
+              >
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="archived">Archived</SelectItem>
+                </SelectContent>
+              </Select>
 
-            {(filters.category_id || filters.status || search) && (
-              <Button variant="ghost" size="sm" onClick={() => { clearFilters(); setSearch(''); setDebouncedSearch('') }}>
-                <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                Clear
-              </Button>
-            )}
+              {(filters.category_id || filters.status || search) && (
+                <Button variant="ghost" size="sm" onClick={() => { clearFilters(); setSearch(''); setDebouncedSearch('') }}>
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                  Clear
+                </Button>
+              )}
 
-            <ColumnToggle
-              visibleColumns={safeVisibleColumns}
-              defaultColumns={DEFAULT_COLUMNS}
-              columnDefs={columnDefs as ColumnDef<never>[]}
-              lockedColumns={LOCKED_COLUMNS}
-              onChange={setVisibleColumns}
-            />
+              <ColumnToggle
+                visibleColumns={safeVisibleColumns}
+                defaultColumns={DEFAULT_COLUMNS}
+                columnDefs={columnDefs as ColumnDef<never>[]}
+                lockedColumns={LOCKED_COLUMNS}
+                onChange={setVisibleColumns}
+              />
+            </div>
           </div>
 
           {/* Batch Action Bar */}
