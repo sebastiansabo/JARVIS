@@ -5,6 +5,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/api/client'
 import { Sidebar } from './Sidebar'
 import { AiAgentWidget, AiAgentPanel } from './AiAgentWidget'
+import { BottomNav } from './BottomNav'
+import { NotificationBell } from './NotificationBell'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -73,18 +75,21 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Mobile header */}
-        <header className="flex h-14 items-center border-b px-4 md:hidden">
-          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Menu className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-          </Sheet>
-          <span className="ml-2 text-lg font-semibold">JARVIS</span>
+        <header className="flex h-14 items-center justify-between border-b px-4 md:hidden">
+          <div className="flex items-center">
+            <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+            </Sheet>
+            <span className="ml-2 text-lg font-semibold">JARVIS</span>
+          </div>
+          <NotificationBell />
         </header>
 
-        <main className="flex-1 overflow-auto p-6 pb-20">
+        <main className="flex-1 overflow-auto p-4 pb-16 md:p-6 md:pb-6">
           <Outlet />
         </main>
       </div>
@@ -94,6 +99,9 @@ export default function Layout() {
 
       {/* Floating trigger button (only visible when panel is closed) */}
       <AiAgentWidget />
+
+      {/* Mobile bottom navigation */}
+      <BottomNav onMore={() => setSidebarOpen(true)} />
       <Toaster />
     </div>
   )

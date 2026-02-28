@@ -153,3 +153,19 @@
   box-shadow: 0 8px 25px -5px rgb(0 0 0 / 0.15);
   z-index: 50;
 }
+
+/* Mobile: safe-area insets for notched devices */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Touch-friendly minimum tap target (44px per Apple HIG) */
+@utility touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
