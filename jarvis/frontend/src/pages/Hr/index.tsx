@@ -65,7 +65,7 @@ export default function Hr() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 md:space-y-6">
       <PageHeader
         title={isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : 'Pontaje'}
         breadcrumbs={[

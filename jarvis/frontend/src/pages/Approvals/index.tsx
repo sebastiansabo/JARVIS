@@ -275,7 +275,7 @@ export default function Approvals() {
     : undefined
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Approvals"
         breadcrumbs={[

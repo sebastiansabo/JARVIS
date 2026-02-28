@@ -15,10 +15,12 @@ import {
   EyeOff,
   ChevronDown,
   ChevronRight,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -72,6 +74,7 @@ export default function TransactionsTab() {
   const isMobile = useIsMobile()
 
   // Filters
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [status, setStatus] = useState('__all__')
   const [companyCui, setCompanyCui] = useState('__all__')
   const [supplier, setSupplier] = useState('__all__')
@@ -341,80 +344,139 @@ export default function TransactionsTab() {
 
   return (
     <div className="space-y-4">
-      {/* Filters row */}
-      <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
-        <Select value={status} onValueChange={(v) => { setStatus(v); setPage(0) }}>
-          <SelectTrigger className="w-28">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* Filters */}
+      {(() => {
+        const activeFilterCount = [
+          status !== '__all__',
+          companyCui !== '__all__',
+          supplier !== '__all__',
+          dateFrom,
+          dateTo,
+          sort !== 'newest',
+          hideIgnored,
+          filterTagIds.length > 0,
+        ].filter(Boolean).length
 
-        <Select value={companyCui} onValueChange={(v) => { setCompanyCui(v); setPage(0) }}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Company" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All companies</SelectItem>
-            {filterOpts?.companies?.map((c) => (
-              <SelectItem key={c.company_cui} value={c.company_cui}>{c.company_name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        const filterControls = (
+          <>
+            <Select value={status} onValueChange={(v) => { setStatus(v); setPage(0) }}>
+              <SelectTrigger className={cn(isMobile ? 'w-full' : 'w-28')}>
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        <Select value={supplier} onValueChange={(v) => { setSupplier(v); setPage(0) }}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Supplier" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All suppliers</SelectItem>
-            {filterOpts?.suppliers?.map((s) => (
-              <SelectItem key={s} value={s}>{s}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            <Select value={companyCui} onValueChange={(v) => { setCompanyCui(v); setPage(0) }}>
+              <SelectTrigger className={cn(isMobile ? 'w-full' : 'w-40')}>
+                <SelectValue placeholder="Company" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All companies</SelectItem>
+                {filterOpts?.companies?.map((c) => (
+                  <SelectItem key={c.company_cui} value={c.company_cui}>{c.company_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        <DatePresetSelect
-          startDate={dateFrom}
-          endDate={dateTo}
-          onChange={(s, e) => { setDateFrom(s); setDateTo(e); setPage(0) }}
-        />
-        <Input type="date" className="w-36" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }} />
-        <Input type="date" className="w-36" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }} />
+            <Select value={supplier} onValueChange={(v) => { setSupplier(v); setPage(0) }}>
+              <SelectTrigger className={cn(isMobile ? 'w-full' : 'w-40')}>
+                <SelectValue placeholder="Supplier" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All suppliers</SelectItem>
+                {filterOpts?.suppliers?.map((s) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        <div className="relative w-full md:flex-1 md:max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-8" placeholder="Search..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} />
-        </div>
+            <DatePresetSelect
+              startDate={dateFrom}
+              endDate={dateTo}
+              onChange={(s, e) => { setDateFrom(s); setDateTo(e); setPage(0) }}
+            />
+            <Input type="date" className={cn(isMobile ? 'w-full' : 'w-36')} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }} />
+            <Input type="date" className={cn(isMobile ? 'w-full' : 'w-36')} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }} />
 
-        <Select value={sort} onValueChange={(v) => { setSort(v); setPage(0) }}>
-          <SelectTrigger className="w-36">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            <Select value={sort} onValueChange={(v) => { setSort(v); setPage(0) }}>
+              <SelectTrigger className={cn(isMobile ? 'w-full' : 'w-36')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        <Button
-          variant={hideIgnored ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setHideIgnored(!hideIgnored)}
-        >
-          {hideIgnored ? <EyeOff className="mr-1 h-3.5 w-3.5" /> : <Eye className="mr-1 h-3.5 w-3.5" />}
-          {hideIgnored ? 'Showing non-ignored' : 'Hide ignored'}
-        </Button>
+            <Button
+              variant={hideIgnored ? 'default' : 'outline'}
+              size="sm"
+              className={cn(isMobile && 'w-full')}
+              onClick={() => setHideIgnored(!hideIgnored)}
+            >
+              {hideIgnored ? <EyeOff className="mr-1 h-3.5 w-3.5" /> : <Eye className="mr-1 h-3.5 w-3.5" />}
+              {hideIgnored ? 'Showing non-ignored' : 'Hide ignored'}
+            </Button>
 
-        <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
+            <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
+          </>
+        )
 
-        <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
-      </div>
+        if (isMobile) {
+          return (
+            <>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input className="pl-8" placeholder="Search..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} />
+                </div>
+                <Button variant="outline" size="icon" className="shrink-0" onClick={() => setFiltersOpen(true)}>
+                  <SlidersHorizontal className="h-4 w-4" />
+                  {activeFilterCount > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </Button>
+              </div>
+              <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+                <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
+                  <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
+                  <div className="space-y-3 py-4">
+                    {filterControls}
+                    <div className="flex gap-2 pt-2">
+                      {activeFilterCount > 0 && (
+                        <Button variant="outline" size="sm" onClick={() => { clearFilters(); setFiltersOpen(false) }} className="flex-1">
+                          Clear All
+                        </Button>
+                      )}
+                      <Button size="sm" onClick={() => setFiltersOpen(false)} className="flex-1">
+                        Apply
+                      </Button>
+                    </div>
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </>
+          )
+        }
+
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            {filterControls}
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input className="pl-8" placeholder="Search..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} />
+            </div>
+            <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
+          </div>
+        )
+      })()}
 
       {/* Bulk actions */}
       {selected.size > 0 && (

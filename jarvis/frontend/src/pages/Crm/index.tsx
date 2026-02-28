@@ -33,7 +33,7 @@ export default function Crm() {
   const { data: stats } = useQuery({ queryKey: ['crm-stats'], queryFn: crmApi.getStats })
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Samsaru"
         breadcrumbs={[
@@ -71,7 +71,7 @@ export default function Crm() {
 function DashboardContent({ stats }: { stats: CrmStats }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2 md:gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <StatsCard title="Total Clients" value={stats.clients.total} sub={`${stats.clients.persons} persons, ${stats.clients.companies} companies`} icon={Users} />
         <StatsCard title="Car Deals" value={stats.deals.total} sub={`${stats.deals.new_cars} NW, ${stats.deals.used_cars} GW`} icon={Car} />
       </div>

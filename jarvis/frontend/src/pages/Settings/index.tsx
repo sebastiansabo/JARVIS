@@ -80,7 +80,7 @@ export default function Settings() {
   const { pathname } = useLocation()
   const basePath = splat ? pathname.replace(new RegExp(`/${splat}$`), '') : pathname
   return (
-    <div>
+    <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Settings"
         breadcrumbs={[
@@ -89,7 +89,7 @@ export default function Settings() {
         ]}
       />
 
-      <div className="mt-6 flex flex-col gap-6 lg:flex-row">
+      <div className="flex flex-col gap-4 md:gap-6 lg:flex-row">
         {/* Tab Navigation */}
         <nav className="flex gap-1 overflow-x-auto lg:w-48 lg:shrink-0 lg:flex-col">
           {tabs.map((tab) => {

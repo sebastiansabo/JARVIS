@@ -332,7 +332,7 @@ export default function Dms() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Documents"
         breadcrumbs={[{ label: 'Documents' }]}
@@ -347,7 +347,7 @@ export default function Dms() {
       />
 
       {/* Stats — compact gap */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard title="Total" value={stats?.total ?? 0} isLoading={statsLoading} />
             <StatCard title="Draft" value={stats?.draft ?? 0} isLoading={statsLoading} />
             <StatCard title="Active" value={stats?.active ?? 0} isLoading={statsLoading} />

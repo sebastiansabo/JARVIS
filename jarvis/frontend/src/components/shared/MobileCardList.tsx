@@ -65,10 +65,10 @@ export function MobileCardList<T>({
 
   if (isLoading) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-2">
         {Array.from({ length: 5 }).map((_, i) => (
-          <Card key={i}>
-            <CardContent className="space-y-2 p-3">
+          <Card key={i} className="gap-0 py-0">
+            <CardContent className="space-y-2 px-3 py-2.5">
               <Skeleton className="h-5 w-3/4" />
               <Skeleton className="h-4 w-1/2" />
               <div className="grid grid-cols-2 gap-2 pt-1">
@@ -101,7 +101,7 @@ export function MobileCardList<T>({
           <Card
             key={id}
             className={cn(
-              'transition-colors',
+              'gap-0 py-0 transition-colors',
               isSelected && 'border-primary/50 bg-primary/5',
               onRowClick && 'cursor-pointer active:bg-accent/50',
             )}
@@ -110,7 +110,7 @@ export function MobileCardList<T>({
               else if (hasExpandable) toggleExpand(id)
             }}
           >
-            <CardContent className="p-3">
+            <CardContent className="px-3 py-2.5">
               {/* Header: primary + checkbox */}
               <div className="flex items-start gap-2">
                 {selectable && (
@@ -156,7 +156,7 @@ export function MobileCardList<T>({
 
               {/* Body fields — 2-column grid */}
               {bodyFields.length > 0 && (
-                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5">
                   {bodyFields.map((f) => (
                     <div key={f.key} className="min-w-0">
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -170,8 +170,8 @@ export function MobileCardList<T>({
 
               {/* Expanded fields */}
               {isExpanded && expandFields.length > 0 && (
-                <div className="mt-2 border-t pt-2">
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                <div className="mt-1.5 border-t pt-1.5">
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
                     {expandFields.map((f) => (
                       <div key={f.key} className="min-w-0">
                         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -186,7 +186,7 @@ export function MobileCardList<T>({
 
               {/* Actions row */}
               {actions && (
-                <div className="mt-2 flex items-center justify-end gap-1 border-t pt-2" onClick={(e) => e.stopPropagation()}>
+                <div className="mt-1.5 flex items-center justify-end gap-1 border-t pt-1.5" onClick={(e) => e.stopPropagation()}>
                   {actions(row)}
                 </div>
               )}

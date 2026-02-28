@@ -93,7 +93,7 @@ export default function Marketing() {
   const companies = companiesData ?? []
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Marketing"
         breadcrumbs={[

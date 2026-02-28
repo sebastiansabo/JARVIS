@@ -50,11 +50,16 @@ export default function Statements() {
   const totalCount = (bs?.pending?.count ?? 0) + (bs?.resolved?.count ?? 0) + (bs?.ignored?.count ?? 0) + (bs?.merged?.count ?? 0)
   const totalAmount = (bs?.pending?.total ?? 0) + (bs?.resolved?.total ?? 0) + (bs?.ignored?.total ?? 0) + (bs?.merged?.total ?? 0)
 
+  const activeTab = tabs.find(t => location.pathname.startsWith(t.to))
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Bank Statements"
-        breadcrumbs={[{ label: 'Bank Statements' }]}
+        breadcrumbs={[
+          { label: 'Bank Statements' },
+          { label: activeTab?.label ?? 'Transactions' },
+        ]}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
