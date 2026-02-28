@@ -20,10 +20,12 @@ import { usersApi } from '@/api/users'
 import { rolesApi } from '@/api/roles'
 import { hrApi } from '@/api/hr'
 import { toast } from 'sonner'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import type { UserDetail, CreateUserInput, UpdateUserInput } from '@/types/users'
 
 export default function UsersTab() {
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [editUser, setEditUser] = useState<UserDetail | null>(null)
@@ -117,7 +119,7 @@ export default function UsersTab() {
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm">
                       <Shield className="mr-1.5 h-4 w-4" />
-                      Set Role ({selectedIds.length})
+                      {!isMobile && `Set Role (${selectedIds.length})`}
                       <ChevronDown className="ml-1.5 h-3.5 w-3.5 opacity-50" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -131,7 +133,7 @@ export default function UsersTab() {
                 </DropdownMenu>
                 <Button variant="destructive" size="sm" onClick={() => setShowBulkDelete(true)}>
                   <Trash2 className="mr-1.5 h-4 w-4" />
-                  Delete ({selectedIds.length})
+                  {!isMobile && `Delete (${selectedIds.length})`}
                 </Button>
               </>
             )}

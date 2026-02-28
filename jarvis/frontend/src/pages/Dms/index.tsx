@@ -420,7 +420,10 @@ export default function Dms() {
 
           {/* Batch Action Bar */}
           {selectedIds.length > 0 && (
-            <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
+            <div className={cn(
+              'flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2',
+              isMobile && 'fixed inset-x-0 bottom-14 z-40 mx-2 rounded-lg border bg-background shadow-lg',
+            )}>
               <span className="text-sm font-medium">{selectedIds.length} selected</span>
               <div className="h-4 w-px bg-border" />
 
@@ -443,52 +446,56 @@ export default function Dms() {
                 </PopoverContent>
               </Popover>
 
-              {/* Batch Status */}
-              <Popover open={batchStatusOpen} onOpenChange={setBatchStatusOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm">Status</Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-36 p-2" align="start">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Set status</p>
-                  {['draft', 'active', 'archived'].map((s) => (
-                    <button
-                      key={s}
-                      className="w-full text-left text-sm px-2 py-1 rounded hover:bg-accent capitalize"
-                      onClick={() => { setBatchStatusValue(s); batchStatusMutation.mutate({ ids: selectedIds, status: s }) }}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </PopoverContent>
-              </Popover>
+              {!isMobile && (
+                <>
+                  {/* Batch Status */}
+                  <Popover open={batchStatusOpen} onOpenChange={setBatchStatusOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm">Status</Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-36 p-2" align="start">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Set status</p>
+                      {['draft', 'active', 'archived'].map((s) => (
+                        <button
+                          key={s}
+                          className="w-full text-left text-sm px-2 py-1 rounded hover:bg-accent capitalize"
+                          onClick={() => { setBatchStatusValue(s); batchStatusMutation.mutate({ ids: selectedIds, status: s }) }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
 
-              {/* Batch Tag */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm"><Tags className="h-3.5 w-3.5 mr-1" />Tag</Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-48 p-2" align="start">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Add tag</p>
-                  {allTags.map((t) => (
-                    <button
-                      key={t.id}
-                      className="w-full text-left text-sm px-2 py-1 rounded hover:bg-accent flex items-center gap-1.5"
-                      onClick={() => handleBatchTag(t.id, 'add')}
-                    >
-                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#6c757d' }} />
-                      {t.name}
-                    </button>
-                  ))}
-                  {allTags.length === 0 && <p className="text-xs text-muted-foreground">No tags available</p>}
-                </PopoverContent>
-              </Popover>
+                  {/* Batch Tag */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm"><Tags className="h-3.5 w-3.5 mr-1" />Tag</Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-48 p-2" align="start">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Add tag</p>
+                      {allTags.map((t) => (
+                        <button
+                          key={t.id}
+                          className="w-full text-left text-sm px-2 py-1 rounded hover:bg-accent flex items-center gap-1.5"
+                          onClick={() => handleBatchTag(t.id, 'add')}
+                        >
+                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#6c757d' }} />
+                          {t.name}
+                        </button>
+                      ))}
+                      {allTags.length === 0 && <p className="text-xs text-muted-foreground">No tags available</p>}
+                    </PopoverContent>
+                  </Popover>
+                </>
+              )}
 
               <Button variant="destructive" size="sm" onClick={() => setBatchDeleteOpen(true)}>
-                <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                <Trash2 className="h-3.5 w-3.5 mr-1" />{!isMobile && 'Delete'}
               </Button>
 
               <Button variant="ghost" size="sm" onClick={clearSelected}>
-                <X className="h-3.5 w-3.5 mr-1" />Clear
+                <X className="h-3.5 w-3.5 mr-1" />{!isMobile && 'Clear'}
               </Button>
             </div>
           )}

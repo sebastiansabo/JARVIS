@@ -47,7 +47,7 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
-import { usePersistedState } from '@/lib/utils'
+import { cn, usePersistedState } from '@/lib/utils'
 import { efacturaApi } from '@/api/efactura'
 import { organizationApi } from '@/api/organization'
 import { TagBadgeList } from '@/components/shared/TagBadge'
@@ -659,7 +659,10 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
 
       {/* Bulk actions */}
       {selectedIds.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded border bg-muted/30 px-3 py-2">
+        <div className={cn(
+          'flex flex-wrap items-center gap-2 rounded border bg-muted/30 px-3 py-2',
+          isMobile && 'fixed inset-x-0 bottom-14 z-40 mx-2 rounded-lg border bg-background shadow-lg',
+        )}>
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
 
           {hasUnallocSelected && (() => {

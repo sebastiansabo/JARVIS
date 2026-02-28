@@ -418,29 +418,36 @@ export default function TransactionsTab() {
 
       {/* Bulk actions */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-2 rounded-lg border px-4 py-2 text-sm">
+        <div className={cn(
+          'flex items-center gap-2 rounded-lg border px-4 py-2 text-sm',
+          isMobile && 'fixed inset-x-0 bottom-14 z-40 mx-2 rounded-lg border bg-background shadow-lg',
+        )}>
           <span className="font-medium">{selected.size} selected</span>
-          <div className="ml-auto flex gap-1.5">
+          <div className="ml-auto flex flex-wrap gap-1.5">
             <Button size="sm" variant="outline" onClick={() => setBulkIgnoreIds(Array.from(selected))}>
               <Trash2 className="mr-1 h-3.5 w-3.5" />
-              Ignore
+              {!isMobile && 'Ignore'}
             </Button>
             {canMerge && (
               <Button size="sm" variant="outline" onClick={() => setMergeDialogOpen(true)}>
                 <Merge className="mr-1 h-3.5 w-3.5" />
-                Merge
+                {!isMobile && 'Merge'}
               </Button>
             )}
             <Button size="sm" variant="outline" onClick={() => autoMatchMutation.mutate()} disabled={autoMatchMutation.isPending}>
               <Wand2 className="mr-1 h-3.5 w-3.5" />
-              Auto-Match
+              {!isMobile && 'Auto-Match'}
             </Button>
-            <TagPickerButton
-              entityType="transaction"
-              entityIds={Array.from(selected)}
-              onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
-            />
-            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Deselect</Button>
+            {!isMobile && (
+              <TagPickerButton
+                entityType="transaction"
+                entityIds={Array.from(selected)}
+                onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
+              />
+            )}
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              {isMobile ? 'Clear' : 'Deselect'}
+            </Button>
           </div>
         </div>
       )}
