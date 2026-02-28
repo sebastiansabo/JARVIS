@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { cn } from '@/lib/utils'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { approvalsApi } from '@/api/approvals'
 import { usersApi } from '@/api/users'
@@ -319,31 +319,24 @@ export default function Approvals() {
       </div>
 
       {/* Tab nav */}
-      <nav className="flex gap-1 border-b">
-        {tabs.map((tab) => {
-          const Icon = tab.icon
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                'flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-                activeTab === tab.key
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-              {tab.count !== undefined && tab.count > 0 && (
-                <Badge variant="default" className="ml-1 h-5 min-w-5 px-1.5 text-xs">
-                  {tab.count}
-                </Badge>
-              )}
-            </button>
-          )
-        })}
-      </nav>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
+        <TabsList>
+          {tabs.map((tab) => {
+            const Icon = tab.icon
+            return (
+              <TabsTrigger key={tab.key} value={tab.key}>
+                <Icon className="h-4 w-4" />
+                {tab.label}
+                {tab.count !== undefined && tab.count > 0 && (
+                  <Badge variant="default" className="ml-1 h-5 min-w-5 px-1.5 text-xs">
+                    {tab.count}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            )
+          })}
+        </TabsList>
+      </Tabs>
 
       {/* Status filter for All tab */}
       {activeTab === 'all' && (

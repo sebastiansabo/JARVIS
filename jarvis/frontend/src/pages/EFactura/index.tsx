@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react'
-import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   FileStack,
@@ -13,7 +13,7 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { efacturaApi } from '@/api/efactura'
-import { cn } from '@/lib/utils'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { SyncDialog } from './SyncDialog'
 
@@ -36,6 +36,7 @@ function TabLoader() {
 }
 
 export default function EFactura() {
+  const navigate = useNavigate()
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('efactura_status')
   const [syncOpen, setSyncOpen] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
@@ -75,36 +76,31 @@ export default function EFactura() {
       />
 
       {/* Tab nav */}
-      <nav className="flex items-center gap-1 overflow-x-auto border-b">
-        {tabs.map((tab) => (
-          <NavLink
-            key={tab.to}
-            to={tab.to}
-            className={({ isActive }) =>
-              cn(
-                'flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )
-            }
-          >
-            <tab.icon className="h-4 w-4" />
-            {tab.label}
-            {tab.label === 'Unallocated' && (unallocatedCount ?? 0) > 0 && (
-              <span className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                {unallocatedCount}
-              </span>
-            )}
-          </NavLink>
-        ))}
-        <div className="ml-auto flex items-center gap-2 pb-0.5">
-          <Switch id="show-hidden" checked={showHidden} onCheckedChange={setShowHidden} />
-          <Label htmlFor="show-hidden" className="text-xs cursor-pointer text-muted-foreground">
-            Show Hidden ({hiddenCount ?? 0})
-          </Label>
+      <Tabs value={location.pathname.split('/').pop() || 'unallocated'} onValueChange={(v) => navigate(`/app/efactura/${v}`)}>
+        <div className="flex items-center gap-2">
+          <TabsList>
+            <TabsTrigger value="unallocated">
+              <FileStack className="h-4 w-4" />
+              Unallocated
+              {(unallocatedCount ?? 0) > 0 && (
+                <span className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                  {unallocatedCount}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="mappings">
+              <Tags className="h-4 w-4" />
+              Mappings
+            </TabsTrigger>
+          </TabsList>
+          <div className="ml-auto flex items-center gap-2">
+            <Switch id="show-hidden" checked={showHidden} onCheckedChange={setShowHidden} />
+            <Label htmlFor="show-hidden" className="text-xs cursor-pointer text-muted-foreground">
+              Show Hidden ({hiddenCount ?? 0})
+            </Label>
+          </div>
         </div>
-      </nav>
+      </Tabs>
 
       {/* Tab content */}
       <Suspense fallback={<TabLoader />}>

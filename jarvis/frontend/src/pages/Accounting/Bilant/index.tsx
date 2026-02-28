@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { bilantApi } from '@/api/bilant'
 import { organizationApi } from '@/api/organization'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { StatCard } from '@/components/shared/StatCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { useTabParam } from '@/hooks/useTabParam'
@@ -233,35 +234,28 @@ export default function Bilant() {
       />
 
       {/* Tabs */}
-      <div className="flex items-center gap-4 border-b">
-        {tabs.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`pb-2 text-sm font-medium transition-colors ${
-              tab === t.key
-                ? 'border-b-2 border-primary text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-
-        <div className="ml-auto pb-2">
-          <Select value={companyFilter} onValueChange={setCompanyFilter}>
-            <SelectTrigger className="h-8 w-[180px] text-xs">
-              <SelectValue placeholder="All companies" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All companies</SelectItem>
-              {companies.map(c => (
-                <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as MainTab)}>
+        <div className="flex items-center gap-4">
+          <TabsList>
+            {tabs.map(t => (
+              <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>
+            ))}
+          </TabsList>
+          <div className="ml-auto">
+            <Select value={companyFilter} onValueChange={setCompanyFilter}>
+              <SelectTrigger className="h-8 w-[180px] text-xs">
+                <SelectValue placeholder="All companies" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All companies</SelectItem>
+                {companies.map(c => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-      </div>
+      </Tabs>
 
       {/* Generations Tab */}
       {tab === 'generations' && (

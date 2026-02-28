@@ -36,6 +36,7 @@ import {
   SelectTrigger,
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { StatCard } from '@/components/shared/StatCard'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -418,35 +419,24 @@ export default function Accounting() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 overflow-x-auto border-b">
-        {tabs.map((tab) => {
-          const Icon = tab.icon
-          return (
-            <button
-              key={tab.key}
-              onClick={() => {
-                setActiveTab(tab.key)
-                clearSelected()
-                setSearch('')
-              }}
-              className={cn(
-                'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-                activeTab === tab.key
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {tab.label}
-              {tab.key === 'bin' && binInvoices.length > 0 && (
-                <span className="ml-1 rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground">
-                  {binInvoices.length}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
+      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as TabKey); clearSelected(); setSearch('') }}>
+        <TabsList>
+          {tabs.map((tab) => {
+            const Icon = tab.icon
+            return (
+              <TabsTrigger key={tab.key} value={tab.key}>
+                <Icon className="h-3.5 w-3.5" />
+                {tab.label}
+                {tab.key === 'bin' && binInvoices.length > 0 && (
+                  <span className="ml-1 rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground">
+                    {binInvoices.length}
+                  </span>
+                )}
+              </TabsTrigger>
+            )
+          })}
+        </TabsList>
+      </Tabs>
 
       {/* Filter + Search bar */}
       {(activeTab === 'invoices' || activeTab === 'bin') && (

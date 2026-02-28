@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import {
   Plus, Search, LayoutGrid, LayoutDashboard, List,
@@ -97,9 +98,8 @@ export default function Marketing() {
         title="Marketing"
         breadcrumbs={[
           { label: 'Marketing' },
-          { label: mainTab === 'projects' ? 'Campaigns' : mainTab === 'dashboard' ? 'Dashboard' : mainTab === 'simulator' ? 'Simulator' : mainTab === 'archived' ? 'Archived' : 'Trash' },
+          { label: mainTab === 'projects' ? `Campaigns (${total})` : mainTab === 'dashboard' ? 'Dashboard' : mainTab === 'simulator' ? 'Simulator' : mainTab === 'archived' ? 'Archived' : 'Trash' },
         ]}
-        description={mainTab === 'projects' ? `${total} project${total !== 1 ? 's' : ''}` : undefined}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
@@ -114,28 +114,15 @@ export default function Marketing() {
       />
 
       {/* Main Tabs */}
-      <div className="flex items-center gap-1 border-b">
-        {([
-          { key: 'dashboard' as MainTab, label: 'Dashboard', Icon: BarChart3 },
-          { key: 'projects' as MainTab, label: 'Campaigns', Icon: FolderOpen },
-          { key: 'simulator' as MainTab, label: 'Simulator', Icon: Calculator },
-          { key: 'archived' as MainTab, label: 'Archived', Icon: Archive },
-          { key: 'trash' as MainTab, label: 'Trash', Icon: Trash2 },
-        ]).map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setMainTab(tab.key)}
-            className={cn(
-              'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-              mainTab === tab.key
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <tab.Icon className="h-3.5 w-3.5" /> {tab.label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
+        <TabsList>
+          <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
+          <TabsTrigger value="projects"><FolderOpen className="h-3.5 w-3.5" />Campaigns</TabsTrigger>
+          <TabsTrigger value="simulator"><Calculator className="h-3.5 w-3.5" />Simulator</TabsTrigger>
+          <TabsTrigger value="archived"><Archive className="h-3.5 w-3.5" />Archived</TabsTrigger>
+          <TabsTrigger value="trash"><Trash2 className="h-3.5 w-3.5" />Trash</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {mainTab === 'projects' && (
         <>

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo } from 'react'
-import { Routes, Route, Navigate, NavLink, useMatch } from 'react-router-dom'
+import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
 import { ClipboardCheck, Download, Fingerprint, LayoutDashboard } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { hrApi } from '@/api/hr'
 import { useHrStore } from '@/stores/hrStore'
-import { cn } from '@/lib/utils'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 
 const BonusesTab = lazy(() => import('./BonusesTab'))
@@ -26,6 +26,7 @@ function TabLoader() {
 }
 
 export default function Hr() {
+  const navigate = useNavigate()
   const isProfilePage = useMatch('/app/hr/pontaje/:biostarUserId')
   const isBonusesPage = useMatch('/app/hr/bonuses')
   const isAdjustmentsPage = useMatch('/app/hr/adjustments')
@@ -90,26 +91,21 @@ export default function Hr() {
       />
 
       {/* Tab nav — hidden on Bonuses page */}
-      {!isBonusesPage && <nav className="flex gap-1 border-b">
-        {tabs.map((t) => (
-          <NavLink
-            key={t.to}
-            to={t.to}
-            end={t.to !== '/app/hr/pontaje'}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
+      {!isBonusesPage && (
+        <Tabs value={isAdjustmentsPage ? 'adjustments' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+          <TabsList>
+            {tabs.map((t) => {
+              const val = t.to.split('/').pop()!
+              return (
+                <TabsTrigger key={val} value={val}>
+                  <t.icon className="h-4 w-4" />
+                  {t.label}
+                </TabsTrigger>
               )
-            }
-          >
-            <t.icon className="h-4 w-4" />
-            {t.label}
-          </NavLink>
-        ))}
-      </nav>}
+            })}
+          </TabsList>
+        </Tabs>
+      )}
 
       {/* Tab content */}
       <Suspense fallback={<TabLoader />}>
