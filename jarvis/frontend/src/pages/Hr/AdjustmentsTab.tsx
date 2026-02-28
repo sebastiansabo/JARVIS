@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import {
   Search,
   AlertTriangle,
@@ -73,6 +75,7 @@ function formatWorked(durationSeconds: number | null, lunchMinutes: number) {
 
 export default function AdjustmentsTab() {
   const qc = useQueryClient()
+  const isMobile = useIsMobile()
   const [date, setDate] = useState(shiftDate(todayStr(), -1)) // yesterday by default
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<'pending' | 'adjusted'>('pending')
@@ -204,11 +207,11 @@ export default function AdjustmentsTab() {
           </Button>
         </div>
 
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative flex-1 min-w-0">
           <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-9 h-8"
-            placeholder="Search by name, group..."
+            placeholder="Search by name..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -221,8 +224,9 @@ export default function AdjustmentsTab() {
             className="h-8"
             onClick={() => setTab('pending')}
           >
-            <AlertTriangle className="mr-1.5 h-3.5 w-3.5" />
-            Pending ({offSchedule.length})
+            <AlertTriangle className="h-3.5 w-3.5 md:mr-1.5" />
+            <span className="hidden md:inline">Pending ({offSchedule.length})</span>
+            <span className="md:hidden">{offSchedule.length}</span>
           </Button>
           <Button
             variant={tab === 'adjusted' ? 'default' : 'outline'}
@@ -230,20 +234,22 @@ export default function AdjustmentsTab() {
             className="h-8"
             onClick={() => setTab('adjusted')}
           >
-            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-            Adjusted ({adjustments.length})
+            <CheckCircle2 className="h-3.5 w-3.5 md:mr-1.5" />
+            <span className="hidden md:inline">Adjusted ({adjustments.length})</span>
+            <span className="md:hidden">{adjustments.length}</span>
           </Button>
         </div>
 
         {tab === 'pending' && offSchedule.length > 0 && (
           <Button
-            size="sm"
-            className="h-8"
+            size="icon"
+            className="h-8 w-8 md:size-auto md:px-3"
             onClick={() => autoAdjustMut.mutate()}
             disabled={autoAdjustMut.isPending}
+            title="Auto-Adjust All"
           >
-            <Wand2 className="mr-1.5 h-3.5 w-3.5" />
-            {autoAdjustMut.isPending ? 'Adjusting...' : 'Auto-Adjust All'}
+            <Wand2 className="h-3.5 w-3.5 md:mr-1.5" />
+            <span className="hidden md:inline">{autoAdjustMut.isPending ? 'Adjusting...' : 'Auto-Adjust All'}</span>
           </Button>
         )}
       </div>
@@ -256,9 +262,9 @@ export default function AdjustmentsTab() {
           ))}
         </div>
       ) : tab === 'pending' ? (
-        <PendingTable rows={filteredOff} onAdjust={(row) => adjustMut.mutate(row)} adjusting={adjustMut.isPending} />
+        <PendingTable rows={filteredOff} onAdjust={(row) => adjustMut.mutate(row)} adjusting={adjustMut.isPending} isMobile={isMobile} />
       ) : (
-        <AdjustedTable rows={filteredAdj} onRevert={(row) => revertMut.mutate(row)} reverting={revertMut.isPending} />
+        <AdjustedTable rows={filteredAdj} onRevert={(row) => revertMut.mutate(row)} reverting={revertMut.isPending} isMobile={isMobile} />
       )}
     </div>
   )
@@ -266,17 +272,55 @@ export default function AdjustmentsTab() {
 
 // ── Pending (Off-Schedule) Table ──
 
+const pendingMobileFields: MobileCardField<BioStarOffScheduleRow>[] = [
+  { key: 'name', label: 'Employee', isPrimary: true, render: (r) => r.name },
+  { key: 'schedule', label: 'Schedule', isSecondary: true, render: (r) => `${fmtScheduleTime(r.schedule_start)} — ${fmtScheduleTime(r.schedule_end)}` },
+  { key: 'actual_in', label: 'Actual In', render: (r) => <span className="text-xs font-medium">{formatTime(r.first_punch)}</span> },
+  { key: 'actual_out', label: 'Actual Out', render: (r) => <span className="text-xs font-medium">{formatTime(r.last_punch)}</span> },
+  { key: 'worked', label: 'Worked', render: (r) => <span className="text-xs">{formatWorked(r.duration_seconds, r.lunch_break_minutes)}</span> },
+  { key: 'dev_in', label: 'Dev. In', render: (r) => <span className={cn('text-xs font-medium', deviationColor(r.deviation_in))}>{deviationLabel(r.deviation_in)}</span> },
+  { key: 'dev_out', label: 'Dev. Out', expandOnly: true, render: (r) => <span className={cn('text-xs font-medium', deviationColor(r.deviation_out))}>{deviationLabel(r.deviation_out)}</span> },
+  { key: 'group', label: 'Group', expandOnly: true, render: (r) => <span className="text-xs">{r.user_group_name || '—'}</span> },
+]
+
+const adjustedMobileFields: MobileCardField<BioStarAdjustment>[] = [
+  { key: 'name', label: 'Employee', isPrimary: true, render: (r) => r.name },
+  { key: 'type', label: 'Type', isSecondary: true, render: (r) => <Badge variant={r.adjustment_type === 'auto' ? 'secondary' : 'outline'} className="text-xs">{r.adjustment_type}</Badge> },
+  { key: 'orig_in', label: 'Original In', render: (r) => <span className="text-xs text-muted-foreground">{formatTime(r.original_first_punch)}</span> },
+  { key: 'orig_out', label: 'Original Out', render: (r) => <span className="text-xs text-muted-foreground">{formatTime(r.original_last_punch)}</span> },
+  { key: 'adj_in', label: 'Adjusted In', render: (r) => <span className="text-xs font-medium text-green-600">{formatTime(r.adjusted_first_punch)}</span> },
+  { key: 'adj_out', label: 'Adjusted Out', render: (r) => <span className="text-xs font-medium text-green-600">{formatTime(r.adjusted_last_punch)}</span> },
+  { key: 'group', label: 'Group', expandOnly: true, render: (r) => <span className="text-xs">{r.user_group_name || '—'}</span> },
+]
+
 function PendingTable({
   rows,
   onAdjust,
   adjusting,
+  isMobile,
 }: {
   rows: BioStarOffScheduleRow[]
   onAdjust: (row: BioStarOffScheduleRow) => void
   adjusting: boolean
+  isMobile: boolean
 }) {
   if (rows.length === 0) {
     return <EmptyState title="All compliant" description="No off-schedule employees for this date." />
+  }
+
+  if (isMobile) {
+    return (
+      <MobileCardList
+        data={rows}
+        fields={pendingMobileFields}
+        getRowId={(r) => Number(r.biostar_user_id)}
+        actions={(row) => (
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onAdjust(row)} disabled={adjusting}>
+            <CheckCircle2 className="mr-1 h-3 w-3" /> Adjust
+          </Button>
+        )}
+      />
+    )
   }
 
   return (
@@ -351,13 +395,30 @@ function AdjustedTable({
   rows,
   onRevert,
   reverting,
+  isMobile,
 }: {
   rows: BioStarAdjustment[]
   onRevert: (row: BioStarAdjustment) => void
   reverting: boolean
+  isMobile: boolean
 }) {
   if (rows.length === 0) {
     return <EmptyState title="No adjustments" description="No adjustments have been made for this date." />
+  }
+
+  if (isMobile) {
+    return (
+      <MobileCardList
+        data={rows}
+        fields={adjustedMobileFields}
+        getRowId={(r) => Number(r.biostar_user_id)}
+        actions={(row) => (
+          <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" onClick={() => onRevert(row)} disabled={reverting}>
+            <RotateCcw className="mr-1 h-3 w-3" /> Revert
+          </Button>
+        )}
+      />
+    )
   }
 
   return (

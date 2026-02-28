@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useTabParam } from '@/hooks/useTabParam'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -57,7 +58,9 @@ export default function Marketing() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('marketing_summary')
+  const isMobile = useIsMobile()
   const { filters, updateFilter, clearFilters, viewMode, setViewMode } = useMarketingStore()
+  const effectiveViewMode = isMobile ? 'cards' : viewMode
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [mainTab, setMainTab] = useTabParam<MainTab>('dashboard')
 
@@ -157,8 +160,8 @@ export default function Marketing() {
           </div>
 
           {/* Filter Bar */}
-          <div className="flex flex-wrap gap-3 items-center">
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <div className="flex flex-wrap gap-2 md:gap-3 items-center">
+            <div className="relative flex-1 min-w-0 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search projects..."
@@ -172,7 +175,7 @@ export default function Marketing() {
               value={filters.status ?? 'all'}
               onValueChange={(v) => updateFilter('status', v === 'all' ? undefined : v)}
             >
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-[130px] md:w-[160px]">
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
               <SelectContent>
@@ -187,7 +190,7 @@ export default function Marketing() {
               value={filters.project_type ?? 'all'}
               onValueChange={(v) => updateFilter('project_type', v === 'all' ? undefined : v)}
             >
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="hidden sm:flex w-[160px]">
                 <SelectValue placeholder="All types" />
               </SelectTrigger>
               <SelectContent>
@@ -202,7 +205,7 @@ export default function Marketing() {
               value={filters.company_id ? String(filters.company_id) : 'all'}
               onValueChange={(v) => updateFilter('company_id', v === 'all' ? undefined : Number(v))}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="hidden sm:flex w-[180px]">
                 <SelectValue placeholder="All companies" />
               </SelectTrigger>
               <SelectContent>
@@ -217,7 +220,7 @@ export default function Marketing() {
               <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
             )}
 
-            <div className="ml-auto flex gap-1">
+            <div className="ml-auto hidden md:flex gap-1">
               <Button
                 variant={viewMode === 'table' ? 'secondary' : 'ghost'}
                 size="icon"
@@ -240,7 +243,7 @@ export default function Marketing() {
             <QueryError message="Failed to load projects" onRetry={() => refetchProjects()} />
           ) : projectsLoading ? (
             <TableSkeleton rows={6} columns={7} />
-          ) : viewMode === 'table' ? (
+          ) : effectiveViewMode === 'table' ? (
             <ProjectTable
               projects={projects}
               onSelect={(p) => navigate(`/app/marketing/projects/${p.id}`)}

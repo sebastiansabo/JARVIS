@@ -465,7 +465,7 @@ export default function DocumentDetail() {
               <Input
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
-                className="text-lg font-semibold h-9 w-80"
+                className="text-lg font-semibold h-9 w-full max-w-80"
               />
             ) : (
               <span className="text-lg font-semibold">{doc.title}</span>

@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import {
   Plus,
   Pencil,
@@ -36,8 +38,17 @@ function formatDate(d: string) {
   return new Date(d).toLocaleDateString('ro-RO')
 }
 
+const mappingsMobileFields: MobileCardField<VendorMapping>[] = [
+  { key: 'supplier', label: 'Supplier', isPrimary: true, render: (m) => m.supplier_name },
+  { key: 'pattern', label: 'Pattern', isSecondary: true, render: (m) => <code className="font-mono text-xs">{m.pattern}</code> },
+  { key: 'status', label: 'Status', render: (m) => <Badge variant={m.is_active ? 'default' : 'secondary'} className="text-xs">{m.is_active ? 'Active' : 'Inactive'}</Badge> },
+  { key: 'vat', label: 'VAT', render: (m) => <span className="text-xs">{m.supplier_vat ?? '—'}</span> },
+  { key: 'created', label: 'Created', expandOnly: true, render: (m) => <span className="text-xs">{formatDate(m.created_at)}</span> },
+]
+
 export default function MappingsTab() {
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [showInactive, setShowInactive] = useState(false)
   const [editMapping, setEditMapping] = useState<VendorMapping | null>(null)
@@ -82,19 +93,19 @@ export default function MappingsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-0 max-w-xs">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input className="pl-8" placeholder="Search mappings..." value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground">
           <Switch checked={showInactive} onCheckedChange={setShowInactive} id="show-inactive" />
           <Label htmlFor="show-inactive" className="cursor-pointer text-xs">Show inactive</Label>
         </div>
-        <span className="text-xs text-muted-foreground">{mappings.length} mappings</span>
-        <Button size="sm" className="ml-auto" onClick={() => setAddOpen(true)}>
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          Add Mapping
+        <span className="hidden sm:inline text-xs text-muted-foreground">{mappings.length} mappings</span>
+        <Button size="icon" className="ml-auto md:size-auto md:px-3" onClick={() => setAddOpen(true)}>
+          <Plus className="h-4 w-4 md:mr-1" />
+          <span className="hidden md:inline">Add Mapping</span>
         </Button>
       </div>
 
@@ -115,6 +126,25 @@ export default function MappingsTab() {
               Add Mapping
             </Button>
           }
+        />
+      ) : isMobile ? (
+        <MobileCardList
+          data={mappings}
+          fields={mappingsMobileFields}
+          getRowId={(m) => m.id}
+          actions={(m) => (
+            <>
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Test pattern" onClick={() => setTestOpen(m)}>
+                <FlaskConical className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditMapping(m)}>
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(m.id)}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </>
+          )}
         />
       ) : (
         <Card>

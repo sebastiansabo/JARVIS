@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import {
   Upload,
   FileText,
@@ -22,6 +24,17 @@ import type { UploadResult } from '@/types/statements'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const MAX_TOTAL_SIZE = 50 * 1024 * 1024 // 50MB
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const filesMobileFields: MobileCardField<any>[] = [
+  { key: 'filename', label: 'Filename', isPrimary: true, render: (s) => s.filename },
+  { key: 'company', label: 'Company', isSecondary: true, render: (s) => s.company_name ?? '—' },
+  { key: 'period', label: 'Period', render: (s) => s.period_from && s.period_to ? `${formatDate(s.period_from)} — ${formatDate(s.period_to)}` : '—' },
+  { key: 'txns', label: 'Transactions', render: (s) => <span className="text-xs">{s.total_transactions} total / <span className="text-green-500">{s.new_transactions} new</span></span> },
+  { key: 'account', label: 'Account', expandOnly: true, render: (s) => <span className="text-xs">{s.account_number ?? '—'}</span> },
+  { key: 'uploaded', label: 'Uploaded', expandOnly: true, render: (s) => <span className="text-xs">{formatDateTime(s.uploaded_at)}</span> },
+  { key: 'dupes', label: 'Duplicates', expandOnly: true, render: (s) => <span className="text-xs text-muted-foreground">{s.duplicate_transactions}</span> },
+]
+
 function formatDate(d: string | null) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('ro-RO')
@@ -39,6 +52,7 @@ function formatFileSize(bytes: number) {
 
 export default function FilesTab() {
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [uploadOpen, setUploadOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<number | null>(null)
@@ -72,15 +86,15 @@ export default function FilesTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-0 max-w-xs">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input className="pl-8" placeholder="Search statements..." value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <span className="text-xs text-muted-foreground">{filtered.length} statements</span>
-        <Button size="sm" className="ml-auto" onClick={() => setUploadOpen(true)}>
-          <Upload className="mr-1 h-3.5 w-3.5" />
-          Upload Statement
+        <span className="hidden sm:inline text-xs text-muted-foreground">{filtered.length} statements</span>
+        <Button size="icon" className="ml-auto md:size-auto md:px-3" onClick={() => setUploadOpen(true)}>
+          <Upload className="h-4 w-4 md:mr-1" />
+          <span className="hidden md:inline">Upload Statement</span>
         </Button>
       </div>
 
@@ -101,6 +115,17 @@ export default function FilesTab() {
               Upload Statement
             </Button>
           }
+        />
+      ) : isMobile ? (
+        <MobileCardList
+          data={filtered}
+          fields={filesMobileFields}
+          getRowId={(s) => s.id}
+          actions={(s) => (
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(s.id)}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         />
       ) : (
         <Card>

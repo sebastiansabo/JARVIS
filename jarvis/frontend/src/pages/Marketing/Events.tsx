@@ -16,7 +16,7 @@ function Loader() {
 
 export default function MarketingEvents() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Events"
         breadcrumbs={[

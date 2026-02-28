@@ -333,29 +333,39 @@ export default function CampaignSimulator() {
       {/* ── Header ── */}
       <Card>
         <CardContent className="pt-4 pb-4">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" /> Dimensiune audienta</Label>
-              <Input type="number" className="w-36 h-8 text-sm" value={audienceSize} onChange={e => setAudienceSize(parseInt(e.target.value) || 0)} />
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-wrap items-end gap-3 flex-1 min-w-0">
+              <div className="space-y-1 flex-1 min-w-[120px] max-w-[160px]">
+                <Label className="text-xs text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" /> Dimensiune audienta</Label>
+                <Input type="number" className="h-8 text-sm" value={audienceSize} onChange={e => setAudienceSize(parseInt(e.target.value) || 0)} />
+              </div>
+              <div className="space-y-1 flex-1 min-w-[120px] max-w-[160px]">
+                <Label className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3" /> Buget Disponibil (EUR)</Label>
+                <Input type="number" className="h-8 text-sm" value={totalBudget} onChange={e => setTotalBudget(parseFloat(e.target.value) || 0)} />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Ramas:</span>
+                <Badge variant={budgetRemaining < 0 ? 'destructive' : budgetRemaining === 0 ? 'default' : 'secondary'} className="text-xs tabular-nums">{fmtEur(budgetRemaining)}</Badge>
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3" /> Buget Disponibil (EUR)</Label>
-              <Input type="number" className="w-36 h-8 text-sm" value={totalBudget} onChange={e => setTotalBudget(parseFloat(e.target.value) || 0)} />
-            </div>
-            <div className="flex gap-2 ml-auto">
-              <Button variant={showCalcCols ? 'default' : 'outline'} size="sm" onClick={() => setShowCalcCols(!showCalcCols)} title="Toggle Clicks/Leads columns">
-                <Columns3 className="h-3.5 w-3.5 mr-1" /> {showCalcCols ? 'Hide' : 'Show'} KPI
+            <div className="flex gap-1.5 flex-wrap">
+              <Button variant={showCalcCols ? 'default' : 'outline'} size="icon" className="md:size-auto md:px-3" onClick={() => setShowCalcCols(!showCalcCols)} title="Toggle KPI columns">
+                <Columns3 className="h-3.5 w-3.5 md:mr-1" />
+                <span className="hidden md:inline">{showCalcCols ? 'Hide' : 'Show'} KPI</span>
               </Button>
-              <Button variant="outline" size="sm" onClick={handleReset}><RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset</Button>
-              <Button variant="outline" size="sm" onClick={handleAutoDistribute}><Wand2 className="h-3.5 w-3.5 mr-1" /> Auto-Distribute</Button>
-              <Button size="sm" onClick={handleAiDistribute} disabled={aiLoading} className="bg-purple-600 hover:bg-purple-700 text-white">
-                {aiLoading ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />} AI Distribute
+              <Button variant="outline" size="icon" className="md:size-auto md:px-3" onClick={handleReset} title="Reset">
+                <RotateCcw className="h-3.5 w-3.5 md:mr-1" />
+                <span className="hidden md:inline">Reset</span>
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowBenchmarks(true)} title="Settings"><Settings2 className="h-3.5 w-3.5" /></Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Ramas:</span>
-              <Badge variant={budgetRemaining < 0 ? 'destructive' : budgetRemaining === 0 ? 'default' : 'secondary'} className="text-xs tabular-nums">{fmtEur(budgetRemaining)}</Badge>
+              <Button variant="outline" size="icon" className="md:size-auto md:px-3" onClick={handleAutoDistribute} title="Auto-Distribute">
+                <Wand2 className="h-3.5 w-3.5 md:mr-1" />
+                <span className="hidden md:inline">Auto-Distribute</span>
+              </Button>
+              <Button size="icon" className="md:size-auto md:px-3 bg-purple-600 hover:bg-purple-700 text-white" onClick={handleAiDistribute} disabled={aiLoading} title="AI Distribute">
+                {aiLoading ? <Loader2 className="h-3.5 w-3.5 md:mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 md:mr-1" />}
+                <span className="hidden md:inline">AI Distribute</span>
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setShowBenchmarks(true)} title="Settings"><Settings2 className="h-3.5 w-3.5" /></Button>
             </div>
           </div>
         </CardContent>
@@ -378,7 +388,7 @@ export default function CampaignSimulator() {
             <Table>
               <TableHeader>
                 <TableRow className="text-xs">
-                  <TableHead className="w-64 sticky left-0 bg-background z-10 font-bold">Canal / Funnel</TableHead>
+                  <TableHead className="w-40 md:w-64 sticky left-0 bg-background z-10 font-bold">Canal / Funnel</TableHead>
                   {[1, 2, 3].map(m => (
                     <Fragment key={m}>
                       <TableHead className={cn('text-center w-28 border-l', !showCalcCols && 'w-28')}>Luna {m}</TableHead>

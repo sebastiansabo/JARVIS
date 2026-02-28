@@ -227,13 +227,13 @@ function EventsList() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 max-w-xs">
+        <div className="relative flex-1 min-w-0 max-w-xs">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input className="pl-8" placeholder="Search events..." value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <span className="text-xs text-muted-foreground">{displayedEvents.length} events</span>
+        <span className="hidden sm:inline text-xs text-muted-foreground">{displayedEvents.length} events</span>
         <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
           {selected.length > 0 && (
             <>
               <TagPickerButton
@@ -241,19 +241,19 @@ function EventsList() {
                 entityIds={selected}
                 onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
               />
-              <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selected)}>
-                <Trash2 className="mr-1 h-3.5 w-3.5" />
-                Delete ({selected.length})
+              <Button variant="destructive" size="icon" className="md:size-auto md:px-3" onClick={() => setDeleteIds(selected)}>
+                <Trash2 className="h-3.5 w-3.5 md:mr-1" />
+                <span className="hidden md:inline">Delete ({selected.length})</span>
               </Button>
             </>
           )}
-          <Button size="sm" variant="outline" onClick={() => { setEditEvent(null); setDialogOpen(true) }}>
-            <Plus className="mr-1 h-3.5 w-3.5" />
-            Quick Add
+          <Button size="icon" variant="outline" className="md:size-auto md:px-3" onClick={() => { setEditEvent(null); setDialogOpen(true) }}>
+            <Plus className="h-4 w-4 md:mr-1" />
+            <span className="hidden md:inline">Quick Add</span>
           </Button>
-          <Button size="sm" onClick={() => navigate('new')}>
-            <Users className="mr-1 h-3.5 w-3.5" />
-            Add Event + Employees
+          <Button size="icon" className="md:size-auto md:px-3" onClick={() => navigate('new')}>
+            <Users className="h-4 w-4 md:mr-1" />
+            <span className="hidden md:inline">Add Event + Employees</span>
           </Button>
         </div>
       </div>
