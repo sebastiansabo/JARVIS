@@ -259,11 +259,18 @@ class BioStarSyncService:
         try:
             client = self._get_client()
 
-            # Determine start date
+            # Determine start date — BioStar API requires .00Z suffix
             if not start_date:
                 last_dt = self.repo.get_last_event_datetime()
                 if last_dt:
-                    start_date = last_dt.isoformat() if isinstance(last_dt, datetime) else str(last_dt)
+                    if isinstance(last_dt, datetime):
+                        start_date = last_dt.strftime('%Y-%m-%dT%H:%M:%S.00Z')
+                    else:
+                        # DB might return string — ensure .00Z suffix
+                        s = str(last_dt)
+                        if not s.endswith('Z'):
+                            s = s.split('.')[0] + '.00Z'
+                        start_date = s
                 else:
                     start_date = (datetime.now() - timedelta(days=SYNC_EVENTS_DEFAULT_DAYS)).strftime('%Y-%m-%dT00:00:00.00Z')
 
