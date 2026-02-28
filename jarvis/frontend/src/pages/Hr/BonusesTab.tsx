@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import {
   Plus,
   Trash2,
@@ -35,6 +37,7 @@ const MONTH_SHORT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
 
 export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean }) {
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const filters = useHrStore((s) => s.filters)
   const updateFilter = useHrStore((s) => s.updateFilter)
   const selectedBonusIds = useHrStore((s) => s.selectedIds)
@@ -217,15 +220,16 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
           onDuplicate={(b) => { setEditBonus(b); setIsDuplicate(true); setAddOpen(true) }}
           onDelete={(id) => setDeleteIds([id])}
           canViewAmounts={canViewAmounts}
+          isMobile={isMobile}
         />
       )}
 
       {subTab === 'by-employee' && (
-        <ByEmployeeTable data={byEmployee} canViewAmounts={canViewAmounts} />
+        <ByEmployeeTable data={byEmployee} canViewAmounts={canViewAmounts} isMobile={isMobile} />
       )}
 
       {subTab === 'by-event' && (
-        <ByEventTable data={byEvent} canViewAmounts={canViewAmounts} />
+        <ByEventTable data={byEvent} canViewAmounts={canViewAmounts} isMobile={isMobile} />
       )}
 
       {/* Add/Edit/Duplicate Bonus Dialog */}
@@ -255,7 +259,7 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
 
 function BonusListTable({
   bonuses, isLoading, selectedIds, allSelected, someSelected,
-  onToggleSelect, onSelectAll, onEdit, onDuplicate, onDelete, canViewAmounts,
+  onToggleSelect, onSelectAll, onEdit, onDuplicate, onDelete, canViewAmounts, isMobile,
 }: {
   bonuses: EventBonus[]
   isLoading: boolean
@@ -268,8 +272,75 @@ function BonusListTable({
   onDuplicate: (b: EventBonus) => void
   onDelete: (id: number) => void
   canViewAmounts: boolean
+  isMobile: boolean
 }) {
+  const mobileFields: MobileCardField<EventBonus>[] = useMemo(() => [
+    {
+      key: 'employee',
+      label: 'Employee',
+      isPrimary: true,
+      render: (b) => b.employee_name,
+    },
+    {
+      key: 'event',
+      label: 'Event',
+      isSecondary: true,
+      render: (b) => (
+        <span className="flex items-center gap-1.5">
+          {b.event_name}
+          <Badge variant="outline" className="text-[10px]">{MONTH_SHORT[b.month] || b.month} {b.year}</Badge>
+        </span>
+      ),
+    },
+    {
+      key: 'days',
+      label: 'Days',
+      render: (b) => <span className="text-xs">{b.bonus_days ?? '—'}</span>,
+    },
+    {
+      key: 'hours',
+      label: 'Hours',
+      render: (b) => <span className="text-xs">{b.hours_free ?? '—'}</span>,
+    },
+    ...(canViewAmounts ? [{
+      key: 'bonus_net',
+      label: 'Bonus (Net)',
+      render: (b: EventBonus) => (
+        <span className="text-xs font-medium">
+          {b.bonus_net != null ? `${Number(b.bonus_net).toFixed(0)} RON` : '—'}
+        </span>
+      ),
+    }] : []),
+    {
+      key: 'company',
+      label: 'Company',
+      expandOnly: true,
+      render: (b) => <span className="text-xs text-muted-foreground">{b.company ?? '—'}</span>,
+    },
+    {
+      key: 'department',
+      label: 'Department',
+      expandOnly: true,
+      render: (b) => <span className="text-xs text-muted-foreground">{b.department ?? '—'}</span>,
+    },
+    {
+      key: 'brand',
+      label: 'Brand',
+      expandOnly: true,
+      render: (b) => <span className="text-xs text-muted-foreground">{b.brand ?? '—'}</span>,
+    },
+    {
+      key: 'details',
+      label: 'Details',
+      expandOnly: true,
+      render: (b) => <span className="text-xs text-muted-foreground">{b.details || '—'}</span>,
+    },
+  ] as MobileCardField<EventBonus>[], [canViewAmounts])
+
   if (isLoading) {
+    if (isMobile) {
+      return <MobileCardList data={[]} fields={mobileFields} getRowId={() => 0} isLoading />
+    }
     return (
       <Card>
         <CardContent className="p-6">
@@ -283,6 +354,37 @@ function BonusListTable({
 
   if (bonuses.length === 0) {
     return <EmptyState icon={<CalendarDays className="h-8 w-8" />} title="No bonuses found" description="Adjust filters or add a new bonus." />
+  }
+
+  if (isMobile) {
+    return (
+      <>
+        <MobileCardList
+          data={bonuses}
+          fields={mobileFields}
+          getRowId={(b) => b.id}
+          selectable
+          selectedIds={selectedIds}
+          onToggleSelect={onToggleSelect}
+          actions={(b) => (
+            <>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(b)} title="Edit">
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDuplicate(b)} title="Duplicate">
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(b.id)} title="Delete">
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </>
+          )}
+        />
+        <div className="text-xs text-muted-foreground px-1">
+          {bonuses.length} bonus(es)
+        </div>
+      </>
+    )
   }
 
   return (
@@ -418,11 +520,75 @@ function EmployeeEventsDetail({ employeeId, year, month, canViewAmounts }: {
 
 /* ──── By Employee Table ──── */
 
-function ByEmployeeTable({ data, canViewAmounts }: { data: BonusSummaryByEmployee[]; canViewAmounts: boolean }) {
+function ByEmployeeTable({ data, canViewAmounts, isMobile }: { data: BonusSummaryByEmployee[]; canViewAmounts: boolean; isMobile: boolean }) {
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
   const filters = useHrStore((s) => s.filters)
 
+  const mobileFields: MobileCardField<BonusSummaryByEmployee>[] = useMemo(() => [
+    {
+      key: 'name',
+      label: 'Employee',
+      isPrimary: true,
+      render: (row) => row.name,
+    },
+    {
+      key: 'company',
+      label: 'Company',
+      isSecondary: true,
+      render: (row) => (
+        <span className="flex items-center gap-1.5">
+          {row.company ?? '—'}
+          {row.department ? <span className="text-muted-foreground">/ {row.department}</span> : null}
+        </span>
+      ),
+    },
+    {
+      key: 'bonus_count',
+      label: '# Bonuses',
+      render: (row) => <Badge variant="secondary" className="text-xs">{row.bonus_count}</Badge>,
+    },
+    {
+      key: 'total_days',
+      label: 'Total Days',
+      render: (row) => <span className="text-xs">{row.total_days}</span>,
+    },
+    {
+      key: 'total_hours',
+      label: 'Total Hours',
+      render: (row) => <span className="text-xs">{row.total_hours}</span>,
+    },
+    ...(canViewAmounts ? [{
+      key: 'total_bonus',
+      label: 'Total Bonus',
+      render: (row: BonusSummaryByEmployee) => (
+        <span className="text-xs font-medium text-green-600">{Number(row.total_bonus).toFixed(0)} RON</span>
+      ),
+    }] : []),
+    {
+      key: 'brand',
+      label: 'Brand',
+      expandOnly: true,
+      render: (row) => <span className="text-xs text-muted-foreground">{row.brand ?? '—'}</span>,
+    },
+  ] as MobileCardField<BonusSummaryByEmployee>[], [canViewAmounts])
+
   if (data.length === 0) return <EmptyState icon={<Users className="h-8 w-8" />} title="No data" description="Adjust filters." />
+
+  if (isMobile) {
+    return (
+      <>
+        <MobileCardList
+          data={data}
+          fields={mobileFields}
+          getRowId={(row) => row.id}
+        />
+        <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs font-medium">
+          Total ({data.length}) — {data.reduce((s, r) => s + r.bonus_count, 0)} bonuses, {data.reduce((s, r) => s + r.total_days, 0)} days, {data.reduce((s, r) => s + r.total_hours, 0)} hours
+          {canViewAmounts && `, ${data.reduce((s, r) => s + Number(r.total_bonus), 0).toFixed(0)} RON`}
+        </div>
+      </>
+    )
+  }
 
   const colCount = canViewAmounts ? 9 : 8
 
@@ -506,8 +672,72 @@ function ByEmployeeTable({ data, canViewAmounts }: { data: BonusSummaryByEmploye
 
 /* ──── By Event Table ──── */
 
-function ByEventTable({ data, canViewAmounts }: { data: BonusSummaryByEvent[]; canViewAmounts: boolean }) {
+function ByEventTable({ data, canViewAmounts, isMobile }: { data: BonusSummaryByEvent[]; canViewAmounts: boolean; isMobile: boolean }) {
+  const mobileFields: MobileCardField<BonusSummaryByEvent>[] = useMemo(() => [
+    {
+      key: 'name',
+      label: 'Event',
+      isPrimary: true,
+      render: (row) => row.name,
+    },
+    {
+      key: 'period',
+      label: 'Period',
+      isSecondary: true,
+      render: (row) => (
+        <span className="flex items-center gap-1.5">
+          <Badge variant="outline" className="text-[10px]">{MONTH_SHORT[row.month] || row.month} {row.year}</Badge>
+          <span>{row.start_date} — {row.end_date}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'employees',
+      label: '# Employees',
+      render: (row) => <Badge variant="secondary" className="text-xs">{row.employee_count}</Badge>,
+    },
+    {
+      key: 'total_days',
+      label: 'Total Days',
+      render: (row) => <span className="text-xs">{row.total_days}</span>,
+    },
+    {
+      key: 'total_hours',
+      label: 'Total Hours',
+      render: (row) => <span className="text-xs">{row.total_hours}</span>,
+    },
+    ...(canViewAmounts ? [{
+      key: 'total_bonus',
+      label: 'Total Bonus',
+      render: (row: BonusSummaryByEvent) => (
+        <span className="text-xs font-medium text-green-600">{Number(row.total_bonus).toFixed(0)} RON</span>
+      ),
+    }] : []),
+    {
+      key: 'company',
+      label: 'Company',
+      expandOnly: true,
+      render: (row) => <span className="text-xs text-muted-foreground">{row.company ?? '—'}</span>,
+    },
+  ] as MobileCardField<BonusSummaryByEvent>[], [canViewAmounts])
+
   if (data.length === 0) return <EmptyState icon={<CalendarDays className="h-8 w-8" />} title="No data" description="Adjust filters." />
+
+  if (isMobile) {
+    return (
+      <>
+        <MobileCardList
+          data={data}
+          fields={mobileFields}
+          getRowId={(row) => row.id * 10000 + row.year * 100 + row.month}
+        />
+        <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs font-medium">
+          Total ({data.length}) — {data.reduce((s, r) => s + r.employee_count, 0)} employees, {data.reduce((s, r) => s + r.total_days, 0)} days, {data.reduce((s, r) => s + r.total_hours, 0)} hours
+          {canViewAmounts && `, ${data.reduce((s, r) => s + Number(r.total_bonus), 0).toFixed(0)} RON`}
+        </div>
+      </>
+    )
+  }
 
   return (
     <Card>

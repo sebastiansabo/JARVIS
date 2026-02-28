@@ -1,4 +1,4 @@
-import { useState, Fragment } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -13,6 +13,8 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EditDealDialog } from './EditDealDialog'
 import { usePersistedState } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
+import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { DatePicker } from '@/components/ui/date-picker'
 import { toast } from 'sonner'
 
@@ -100,6 +102,7 @@ function formatVal(v: unknown): string {
 export default function DealsTab() {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
 
   const [search, setSearch] = useState('')
   const [source, setSource] = useState<string>('all')
@@ -185,6 +188,30 @@ export default function DealsTab() {
   const canEdit = user?.can_edit_crm
   const canDelete = user?.can_delete_crm
   const canExport = user?.can_export_crm
+
+  const mobileFields: MobileCardField<CrmDeal>[] = useMemo(() => [
+    { key: 'buyer_name', label: 'Client', isPrimary: true, render: (d) => d.buyer_name || d.client_display_name || 'Unknown' },
+    { key: 'source', label: 'Type', isSecondary: true, render: (d) => <Badge variant={d.source === 'nw' ? 'default' : 'secondary'}>{d.source.toUpperCase()}</Badge> },
+    { key: 'dossier_status', label: 'Status', isSecondary: true, render: (d) => d.dossier_status ? <Badge variant="outline">{d.dossier_status}</Badge> : '-' },
+    { key: 'brand', label: 'Brand', render: (d) => d.brand || '-' },
+    { key: 'model_name', label: 'Model', render: (d) => d.model_name || '-' },
+    { key: 'sale_price_net', label: 'Price', render: (d) => {
+      const v = d.sale_price_net || d.gw_gross_value
+      return v ? Number(v).toLocaleString('ro-RO', { minimumFractionDigits: 0 }) : '-'
+    }},
+    { key: 'contract_date', label: 'Date', render: (d) => d.contract_date ? new Date(d.contract_date).toLocaleDateString() : '-' },
+    { key: 'dossier_number', label: 'Dossier', expandOnly: true, render: (d) => d.dossier_number || '-' },
+    { key: 'sales_person', label: 'Sales Person', expandOnly: true, render: (d) => d.sales_person || '-' },
+    { key: 'dealer_name', label: 'Dealer', expandOnly: true, render: (d) => d.dealer_name || '-' },
+    { key: 'branch', label: 'Branch', expandOnly: true, render: (d) => d.branch || '-' },
+    { key: 'vin', label: 'VIN', expandOnly: true, render: (d) => d.vin || '-' },
+    { key: 'order_number', label: 'Order #', expandOnly: true, render: (d) => d.order_number || '-' },
+    { key: 'color', label: 'Color', expandOnly: true, render: (d) => d.color || '-' },
+    { key: 'fuel_type', label: 'Fuel', expandOnly: true, render: (d) => d.fuel_type || '-' },
+    { key: 'model_year', label: 'Year', expandOnly: true, render: (d) => d.model_year ?? '-' },
+    { key: 'delivery_date', label: 'Delivery', expandOnly: true, render: (d) => d.delivery_date ? new Date(d.delivery_date).toLocaleDateString() : '-' },
+    { key: 'owner_name', label: 'Owner', expandOnly: true, render: (d) => d.owner_name || '-' },
+  ], [])
 
   // Build export params (same filters, no pagination)
   const exportParams: Record<string, string> = {}
@@ -310,6 +337,29 @@ export default function DealsTab() {
         </div>
       </CardHeader>
       <CardContent>
+        {isMobile ? (
+          <MobileCardList
+            data={deals}
+            fields={mobileFields}
+            getRowId={(d) => d.id}
+            emptyMessage="No deals found."
+            isLoading={isLoading}
+            actions={(d) => (
+              <>
+                {canEdit && (
+                  <Button size="sm" variant="outline" onClick={() => setEditDeal(d)}>
+                    <Pencil className="h-3.5 w-3.5 mr-1" />Edit
+                  </Button>
+                )}
+                {canDelete && (
+                  <Button size="sm" variant="outline" className="text-destructive" onClick={() => setDeleteId(d.id)}>
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                  </Button>
+                )}
+              </>
+            )}
+          />
+        ) : (
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -386,6 +436,7 @@ export default function DealsTab() {
             </TableBody>
           </Table>
         </div>
+        )}
 
         {/* Pagination + page size */}
         <div className="flex items-center justify-between mt-4">

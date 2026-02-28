@@ -15,7 +15,7 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, breadcrumbs, actions }: PageHeaderProps) {
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
       <div className="min-w-0">
         {breadcrumbs && breadcrumbs.length > 0 ? (
           <h1 className="flex items-center gap-1.5 flex-wrap">
@@ -24,20 +24,20 @@ export function PageHeader({ title, description, breadcrumbs, actions }: PageHea
                 {i > 0 && <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
                 {i < breadcrumbs.length - 1 ? (
                   crumb.href ? (
-                    <Link to={crumb.href} className="text-muted-foreground hover:text-foreground transition-colors text-lg font-medium">
+                    <Link to={crumb.href} className="text-muted-foreground hover:text-foreground transition-colors text-base sm:text-lg font-medium">
                       {crumb.label}
                     </Link>
                   ) : (
-                    <span className="text-muted-foreground text-lg font-medium">{crumb.label}</span>
+                    <span className="text-muted-foreground text-base sm:text-lg font-medium">{crumb.label}</span>
                   )
                 ) : (
-                  <span className="text-2xl font-semibold tracking-tight">{crumb.label}</span>
+                  <span className="text-xl sm:text-2xl font-semibold tracking-tight">{crumb.label}</span>
                 )}
               </span>
             ))}
           </h1>
         ) : (
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">{title}</h1>
         )}
         {description && <p className="text-sm text-muted-foreground">{description}</p>}
       </div>

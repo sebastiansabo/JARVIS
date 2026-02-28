@@ -10,6 +10,8 @@ import { StatCard } from '@/components/shared/StatCard'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
+import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { approvalsApi } from '@/api/approvals'
 import { usersApi } from '@/api/users'
 import { QueryError } from '@/components/QueryError'
@@ -54,6 +56,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 export default function Approvals() {
+  const isMobile = useIsMobile()
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('approvals_queue')
   const [activeTab, setActiveTab] = useTabParam<Tab>('queue')
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null)
@@ -261,6 +264,44 @@ export default function Approvals() {
     })
   }
 
+  /* ── Mobile card field definitions ── */
+
+  const queueMobileFields: MobileCardField<ApprovalQueueItem>[] = [
+    { key: 'title', label: 'Title', isPrimary: true, render: (r) => r.title },
+    { key: 'requester', label: 'Requester', isSecondary: true, render: (r) => r.requested_by?.name ?? '—' },
+    { key: 'waiting', label: 'Waiting', isSecondary: true, render: (r) => `${r.waiting_hours}h` },
+    { key: 'priority', label: 'Priority', render: (r) => renderPriority(r.priority) },
+    { key: 'status', label: 'Status', render: (r) => renderStatusBadge(r.status) },
+    { key: 'type', label: 'Type', expandOnly: true, render: (r) => r.entity_type ?? '—' },
+    { key: 'step', label: 'Step', expandOnly: true, render: (r) => r.current_step_name ?? '—' },
+  ]
+
+  const requestMobileFields: MobileCardField<ApprovalRequest>[] = [
+    {
+      key: 'title',
+      label: 'Title',
+      isPrimary: true,
+      render: (r) => {
+        const ctx = r.context_snapshot || {}
+        return (ctx.title as string) || `${r.entity_type}/${r.entity_id}`
+      },
+    },
+    { key: 'requester', label: 'Requester', isSecondary: true, render: (r) => r.requested_by?.name ?? '—' },
+    { key: 'submitted', label: 'Submitted', isSecondary: true, render: (r) => timeAgo(r.requested_at) },
+    { key: 'status', label: 'Status', render: (r) => renderStatusBadge(r.status) },
+    { key: 'priority', label: 'Priority', render: (r) => renderPriority(r.priority) },
+    { key: 'type', label: 'Type', expandOnly: true, render: (r) => r.entity_type ?? '—' },
+    { key: 'step', label: 'Step', expandOnly: true, render: (r) => r.current_step_name ?? '—' },
+  ]
+
+  const delegationMobileFields: MobileCardField<ApprovalDelegation>[] = [
+    { key: 'delegate', label: 'Delegate', isPrimary: true, render: (d) => d.delegate_name || `User #${d.delegate_id}` },
+    { key: 'from', label: 'From', isSecondary: true, render: (d) => formatDate(d.starts_at) },
+    { key: 'until', label: 'Until', isSecondary: true, render: (d) => formatDate(d.ends_at) },
+    { key: 'scope', label: 'Scope', render: (d) => d.entity_type || 'All' },
+    { key: 'reason', label: 'Reason', expandOnly: true, render: (d) => d.reason || '—' },
+  ]
+
   const isLoading = activeTab === 'queue' ? queueLoading
     : activeTab === 'my-requests' ? myRequestsLoading
     : activeTab === 'all' ? allLoading
@@ -383,26 +424,92 @@ export default function Approvals() {
           ))}
         </div>
       ) : activeTab === 'delegations' ? (
-        <div className="rounded-md border overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Delegate</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">From</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Until</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Scope</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Reason</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {delegations.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">No active delegations</td></tr>
-              )}
-              {delegations.map(renderDelegationRow)}
-            </tbody>
-          </table>
-        </div>
+        isMobile ? (
+          <MobileCardList<ApprovalDelegation>
+            data={delegations}
+            fields={delegationMobileFields}
+            getRowId={(d) => d.id}
+            emptyMessage="No active delegations"
+            actions={(d) => (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                onClick={() => deleteDelegationMutation.mutate(d.id)}
+                disabled={deleteDelegationMutation.isPending}
+              >
+                <Trash2 className="mr-1 h-3 w-3" />
+                Revoke
+              </Button>
+            )}
+          />
+        ) : (
+          <div className="rounded-md border overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Delegate</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">From</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Until</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Scope</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Reason</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {delegations.length === 0 && (
+                  <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">No active delegations</td></tr>
+                )}
+                {delegations.map(renderDelegationRow)}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : isMobile ? (
+        activeTab === 'queue' ? (
+          <MobileCardList<ApprovalQueueItem>
+            data={queue}
+            fields={queueMobileFields}
+            getRowId={(r) => r.id}
+            onRowClick={(r) => setSelectedRequestId(r.id)}
+            emptyMessage="No pending approvals in your queue"
+            actions={(item) => (
+              <div className="flex gap-1.5">
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => decideMutation.mutate({ requestId: item.id, decision: 'approved' })}
+                  disabled={decideMutation.isPending}
+                >
+                  <CheckCircle className="mr-1 h-3 w-3" />
+                  Approve
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setSelectedRequestId(item.id)}
+                >
+                  <XCircle className="mr-1 h-3 w-3" />
+                  Reject
+                </Button>
+              </div>
+            )}
+          />
+        ) : (
+          <MobileCardList<ApprovalRequest>
+            data={activeTab === 'my-requests' ? myRequests : allRequests}
+            fields={requestMobileFields}
+            getRowId={(r) => r.id}
+            onRowClick={(r) => setSelectedRequestId(r.id)}
+            emptyMessage={
+              activeTab === 'my-requests'
+                ? "You haven't submitted any requests"
+                : 'No approval requests found'
+            }
+          />
+        )
       ) : (
         <div className="rounded-md border overflow-x-auto">
           <table className="w-full">

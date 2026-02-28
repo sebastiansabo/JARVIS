@@ -12,6 +12,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { toast } from 'sonner'
 import { tagsApi } from '@/api/tags'
 import type { TagGroup, Tag, AutoTagRule, RuleCondition } from '@/types/tags'
@@ -49,6 +51,7 @@ export default function TagsTab() {
 
 function TagGroupsSection() {
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [showAdd, setShowAdd] = useState(false)
   const [editGroup, setEditGroup] = useState<TagGroup | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
@@ -111,6 +114,32 @@ function TagGroupsSection() {
           </div>
         ) : groups.length === 0 ? (
           <EmptyState title="No tag groups" description="Add your first group." />
+        ) : isMobile ? (
+          <MobileCardList
+            data={groups}
+            fields={[
+              { key: 'name', label: 'Name', isPrimary: true, render: (g) => (
+                <span className="flex items-center gap-2">
+                  {g.color && <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: g.color }} />}
+                  {g.name}
+                </span>
+              )},
+              { key: 'description', label: 'Description', isSecondary: true, render: (g) => g.description || '-' },
+              { key: 'status', label: 'Status', render: (g) => <StatusBadge status={g.is_active ? 'active' : 'archived'} /> },
+              { key: 'order', label: 'Sort Order', render: (g) => g.sort_order },
+            ] satisfies MobileCardField<TagGroup>[]}
+            getRowId={(g) => g.id}
+            actions={(g) => (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setEditGroup(g)}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteId(g.id)}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
+          />
         ) : (
           <Table>
             <TableHeader>
@@ -230,6 +259,7 @@ function TagGroupFormDialog({ open, group, onClose, onSave, isPending }: {
 
 function TagsSection() {
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [showAdd, setShowAdd] = useState(false)
   const [editTag, setEditTag] = useState<Tag | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
@@ -292,6 +322,32 @@ function TagsSection() {
           </div>
         ) : tags.length === 0 ? (
           <EmptyState title="No tags" description="Add your first tag." />
+        ) : isMobile ? (
+          <MobileCardList
+            data={tags}
+            fields={[
+              { key: 'name', label: 'Name', isPrimary: true, render: (t) => (
+                <span className="flex items-center gap-2">
+                  {t.color && <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: t.color }} />}
+                  {t.name}
+                </span>
+              )},
+              { key: 'group', label: 'Group', isSecondary: true, render: (t) => t.group_name || '-' },
+              { key: 'scope', label: 'Scope', render: (t) => t.is_global ? 'Global' : 'Personal' },
+              { key: 'status', label: 'Status', render: (t) => <StatusBadge status={t.is_active ? 'active' : 'archived'} /> },
+            ] satisfies MobileCardField<Tag>[]}
+            getRowId={(t) => t.id}
+            actions={(t) => (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setEditTag(t)}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteId(t.id)}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
+          />
         ) : (
           <Table>
             <TableHeader>
@@ -408,6 +464,7 @@ function TagFormDialog({ open, tag, onClose, onSave, isPending }: {
 
 function AutoTagRulesSection() {
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [showForm, setShowForm] = useState(false)
   const [editRule, setEditRule] = useState<AutoTagRule | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
@@ -484,6 +541,55 @@ function AutoTagRulesSection() {
           </div>
         ) : rules.length === 0 ? (
           <EmptyState title="No auto-tag rules" description="Create rules to automatically tag entities." />
+        ) : isMobile ? (
+          <MobileCardList
+            data={rules}
+            fields={[
+              { key: 'name', label: 'Name', isPrimary: true, render: (r) => r.name },
+              { key: 'entity_type', label: 'Entity Type', isSecondary: true, render: (r) => ENTITY_TYPE_LABELS[r.entity_type] ?? r.entity_type },
+              { key: 'tag', label: 'Tag', render: (r) => (
+                <span
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white"
+                  style={{ backgroundColor: r.tag_color ?? '#6c757d' }}
+                >
+                  {r.tag_name}
+                </span>
+              )},
+              { key: 'active', label: 'Active', render: (r) => (
+                <Switch checked={r.is_active} onCheckedChange={() => toggleActive(r)} />
+              )},
+              { key: 'on_create', label: 'On Create', expandOnly: true, render: (r) => r.run_on_create ? 'Yes' : 'No' },
+              { key: 'conditions', label: 'Conditions', expandOnly: true, render: (r) => (
+                <div className="flex flex-col gap-0.5">
+                  {(r.conditions || []).map((c, i) => (
+                    <span key={i} className="text-xs">
+                      {i > 0 && <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase mr-1">{r.match_mode === 'any' ? 'or' : 'and'}</span>}
+                      {c.field} {OPERATOR_LABELS[c.operator] ?? c.operator} "{c.value}"
+                    </span>
+                  ))}
+                  {(!r.conditions || r.conditions.length === 0) && <span className="italic text-xs">No conditions</span>}
+                </div>
+              )},
+            ] satisfies MobileCardField<AutoTagRule>[]}
+            getRowId={(r) => r.id}
+            actions={(rule) => (
+              <>
+                <Button
+                  variant="ghost" size="sm" title="Run now"
+                  disabled={runMutation.isPending}
+                  onClick={() => runMutation.mutate(rule.id)}
+                >
+                  <Play className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => { setEditRule(rule); setShowForm(true) }}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteId(rule.id)}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
+          />
         ) : (
           <Table>
             <TableHeader>

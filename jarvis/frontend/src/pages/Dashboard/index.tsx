@@ -8,6 +8,8 @@ import {
 import 'react-grid-layout/css/styles.css'
 import { Bot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useAuth } from '@/hooks/useAuth'
 import { useAiAgentStore } from '@/stores/aiAgentStore'
 import type { WidgetLayout } from './types'
@@ -107,27 +109,29 @@ export default function Dashboard() {
     return repackLayouts(raw)
   }, [activeWidgets])
 
+  const isMobile = useIsMobile()
+
   return (
     <div className="space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{greeting}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <CustomizeSheet
-            permittedWidgets={permittedWidgets}
-            toggleWidget={toggleWidget}
-            setWidgetWidth={setWidgetWidth}
-            resetDefaults={resetDefaults}
-          />
-          <Button variant="outline" size="icon" className="md:size-auto md:px-3" onClick={toggleAiWidget}>
-            <Bot className="h-4 w-4 md:mr-1.5" />
-            <span className="hidden md:inline">New Chat</span>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description={greeting}
+        actions={
+          <div className="flex items-center gap-2">
+            <CustomizeSheet
+              permittedWidgets={permittedWidgets}
+              toggleWidget={toggleWidget}
+              setWidgetWidth={setWidgetWidth}
+              resetDefaults={resetDefaults}
+            />
+            <Button variant="outline" size="icon" className="md:size-auto md:px-3" onClick={toggleAiWidget}>
+              <Bot className="h-4 w-4 md:mr-1.5" />
+              <span className="hidden md:inline">New Chat</span>
+            </Button>
+          </div>
+        }
+      />
 
       {/* Widget Grid — drag & resize */}
       <div ref={containerRef}>
@@ -137,11 +141,11 @@ export default function Dashboard() {
           breakpoints={{ lg: 1024, md: 768, sm: 0 }}
           cols={{ lg: 6, md: 4, sm: 1 }}
           rowHeight={80}
-          dragConfig={{ enabled: true, handle: '.widget-drag-handle', bounded: false, threshold: 3 }}
-          resizeConfig={{ enabled: true, handles: ['se'] }}
+          dragConfig={{ enabled: !isMobile, handle: '.widget-drag-handle', bounded: false, threshold: 3 }}
+          resizeConfig={{ enabled: !isMobile, handles: ['se'] }}
           compactor={verticalCompactor}
           onLayoutChange={(layout: Layout) => updateLayout(layout as unknown as WidgetLayout[])}
-          margin={[16, 16]}
+          margin={isMobile ? [12, 12] : [16, 16]}
         >
           {activeWidgets.map(wp => {
             const Component = WIDGET_COMPONENTS[wp.id]

@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react'
 import { Routes, Route, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import {
   Plus,
   Trash2,
@@ -121,6 +123,7 @@ function EventParticipants({ eventId }: { eventId: number }) {
 function EventsList() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
   const [selected, setSelected] = useState<number[]>([])
@@ -179,6 +182,48 @@ function EventsList() {
   const toggleSelect = (id: number) =>
     setSelected((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
 
+  const mobileFields: MobileCardField<HrEvent>[] = useMemo(() => [
+    {
+      key: 'name',
+      label: 'Event Name',
+      isPrimary: true,
+      render: (ev) => ev.name,
+    },
+    {
+      key: 'dates',
+      label: 'Dates',
+      isSecondary: true,
+      render: (ev) => `${formatDate(ev.start_date)} — ${formatDate(ev.end_date)}`,
+    },
+    {
+      key: 'company',
+      label: 'Company',
+      render: (ev) => <span className="text-xs">{ev.company ?? '—'}</span>,
+    },
+    {
+      key: 'brand',
+      label: 'Brand',
+      render: (ev) => <span className="text-xs">{ev.brand ?? '—'}</span>,
+    },
+    {
+      key: 'created_by',
+      label: 'Created By',
+      render: (ev) => <span className="text-xs">{ev.created_by_name ?? '—'}</span>,
+    },
+    {
+      key: 'description',
+      label: 'Description',
+      expandOnly: true,
+      render: (ev) => <span className="text-xs text-muted-foreground">{ev.description || '—'}</span>,
+    },
+    {
+      key: 'tags',
+      label: 'Tags',
+      expandOnly: true,
+      render: (ev) => <TagBadgeList tags={eventTagsMap[String(ev.id)] ?? []} />,
+    },
+  ], [eventTagsMap])
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -223,6 +268,25 @@ function EventsList() {
         </Card>
       ) : displayedEvents.length === 0 ? (
         <EmptyState icon={<CalendarDays className="h-8 w-8" />} title="No events" description="Create your first event." />
+      ) : isMobile ? (
+        <MobileCardList
+          data={displayedEvents}
+          fields={mobileFields}
+          getRowId={(ev) => ev.id}
+          selectable
+          selectedIds={selected}
+          onToggleSelect={toggleSelect}
+          actions={(ev) => (
+            <>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditEvent(ev); setDialogOpen(true) }}>
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteIds([ev.id])}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </>
+          )}
+        />
       ) : (
         <Card>
           <div className="overflow-x-auto">

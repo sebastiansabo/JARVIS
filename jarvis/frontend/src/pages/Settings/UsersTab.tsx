@@ -21,6 +21,7 @@ import { rolesApi } from '@/api/roles'
 import { hrApi } from '@/api/hr'
 import { toast } from 'sonner'
 import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import type { UserDetail, CreateUserInput, UpdateUserInput } from '@/types/users'
 
 export default function UsersTab() {
@@ -107,6 +108,17 @@ export default function UsersTab() {
   const toggleAll = () =>
     setSelectedIds((prev) => (prev.length === filtered.length ? [] : filtered.map((u) => u.id)))
 
+  const userMobileFields: MobileCardField<UserDetail>[] = [
+    { key: 'name', label: 'Name', isPrimary: true, render: (u) => u.name },
+    { key: 'email', label: 'Email', isSecondary: true, render: (u) => u.email },
+    { key: 'role', label: 'Role', isSecondary: true, render: (u) => u.role_name },
+    { key: 'company', label: 'Company', render: (u) => u.company || '-' },
+    { key: 'status', label: 'Status', render: (u) => <StatusBadge status={u.is_active ? 'active' : 'archived'} /> },
+    { key: 'brand', label: 'Brand', expandOnly: true, render: (u) => u.brand || '-' },
+    { key: 'department', label: 'Department', expandOnly: true, render: (u) => u.department || '-' },
+    { key: 'phone', label: 'Phone', expandOnly: true, render: (u) => u.phone || '-' },
+  ]
+
   return (
     <Card>
       <CardHeader>
@@ -155,58 +167,77 @@ export default function UsersTab() {
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState title="No users found" description={search ? 'Try a different search term.' : 'Add your first user.'} />
+        ) : isMobile ? (
+          <MobileCardList
+            data={filtered}
+            fields={userMobileFields}
+            getRowId={(u) => u.id}
+            selectable
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            actions={(user) => (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setEditUser(user)}>
+                  Edit
+                </Button>
+                <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteId(user.id)}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
+          />
         ) : (
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={selectedIds.length === filtered.length && filtered.length > 0}
-                    onCheckedChange={toggleAll}
-                  />
-                </TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Brand</TableHead>
-                <TableHead>Department</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-20">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
                     <Checkbox
-                      checked={selectedIds.includes(user.id)}
-                      onCheckedChange={() => toggleSelect(user.id)}
+                      checked={selectedIds.length === filtered.length && filtered.length > 0}
+                      onCheckedChange={toggleAll}
                     />
-                  </TableCell>
-                  <TableCell className="font-medium">{user.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                  <TableCell>{user.role_name}</TableCell>
-                  <TableCell className="text-muted-foreground">{user.company || '-'}</TableCell>
-                  <TableCell className="text-muted-foreground">{user.brand || '-'}</TableCell>
-                  <TableCell className="text-muted-foreground">{user.department || '-'}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={user.is_active ? 'active' : 'archived'} />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => setEditUser(user)}>
-                        Edit
-                      </Button>
-                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteId(user.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
+                  </TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Company</TableHead>
+                  <TableHead>Brand</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-20">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedIds.includes(user.id)}
+                        onCheckedChange={() => toggleSelect(user.id)}
+                      />
+                    </TableCell>
+                    <TableCell className="font-medium">{user.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                    <TableCell>{user.role_name}</TableCell>
+                    <TableCell className="text-muted-foreground">{user.company || '-'}</TableCell>
+                    <TableCell className="text-muted-foreground">{user.brand || '-'}</TableCell>
+                    <TableCell className="text-muted-foreground">{user.department || '-'}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={user.is_active ? 'active' : 'archived'} />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => setEditUser(user)}>
+                          Edit
+                        </Button>
+                        <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteId(user.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
         )}
       </CardContent>
 

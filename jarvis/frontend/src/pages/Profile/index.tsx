@@ -27,6 +27,8 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { SearchInput } from '@/components/shared/SearchInput'
+import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { profileApi } from '@/api/profile'
 import { cn, usePersistedState } from '@/lib/utils'
 import type { ProfileInvoice, ProfileActivity, ProfileBonus } from '@/types/profile'
@@ -182,6 +184,7 @@ export default function Profile() {
 // ─── Invoices Panel ─────────────────────────────────────────────────
 
 function InvoicesPanel() {
+  const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = usePersistedState('profile-invoices-page-size', 25)
@@ -222,57 +225,79 @@ function InvoicesPanel() {
           <EmptyState title="No invoices" description="No invoices assigned to you yet." />
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Invoice #</TableHead>
-                    <TableHead>Supplier</TableHead>
-                    <TableHead>Company</TableHead>
-                    <TableHead>Department</TableHead>
-                    <TableHead className="text-right">Value</TableHead>
-                    <TableHead className="text-right">%</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-10" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {invoices.map((inv: ProfileInvoice) => (
-                    <TableRow key={inv.id}>
-                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                        {new Date(inv.invoice_date).toLocaleDateString('ro-RO')}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{inv.invoice_number}</TableCell>
-                      <TableCell className="max-w-[200px] truncate font-medium">{inv.supplier}</TableCell>
-                      <TableCell className="text-sm">{inv.company}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{inv.department || '-'}</TableCell>
-                      <TableCell className="text-right">
-                        <CurrencyDisplay value={inv.allocation_value} currency={inv.currency} className="text-sm" />
-                      </TableCell>
-                      <TableCell className="text-right text-sm text-muted-foreground">
-                        {inv.allocation_percent}%
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={inv.status} />
-                      </TableCell>
-                      <TableCell>
-                        {inv.drive_link && (
-                          <a
-                            href={inv.drive_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-muted-foreground hover:text-foreground"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </a>
-                        )}
-                      </TableCell>
+            {isMobile ? (
+              <MobileCardList
+                data={invoices}
+                fields={[
+                  { key: 'supplier', label: 'Supplier', isPrimary: true, render: (inv) => inv.supplier },
+                  { key: 'invoice_number', label: 'Invoice #', isSecondary: true, render: (inv) => <span className="font-mono">{inv.invoice_number}</span> },
+                  { key: 'date', label: 'Date', isSecondary: true, render: (inv) => new Date(inv.invoice_date).toLocaleDateString('ro-RO') },
+                  { key: 'value', label: 'Value', render: (inv) => <CurrencyDisplay value={inv.allocation_value} currency={inv.currency} className="text-xs" /> },
+                  { key: 'status', label: 'Status', render: (inv) => <StatusBadge status={inv.status} /> },
+                  { key: 'company', label: 'Company', expandOnly: true, render: (inv) => inv.company },
+                  { key: 'department', label: 'Department', expandOnly: true, render: (inv) => inv.department || '-' },
+                  { key: 'percent', label: 'Allocation %', expandOnly: true, render: (inv) => `${inv.allocation_percent}%` },
+                ] satisfies MobileCardField<ProfileInvoice>[]}
+                getRowId={(inv) => inv.id}
+                actions={(inv) => inv.drive_link ? (
+                  <a href={inv.drive_link} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                ) : null}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Invoice #</TableHead>
+                      <TableHead>Supplier</TableHead>
+                      <TableHead>Company</TableHead>
+                      <TableHead>Department</TableHead>
+                      <TableHead className="text-right">Value</TableHead>
+                      <TableHead className="text-right">%</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-10" />
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {invoices.map((inv: ProfileInvoice) => (
+                      <TableRow key={inv.id}>
+                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                          {new Date(inv.invoice_date).toLocaleDateString('ro-RO')}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">{inv.invoice_number}</TableCell>
+                        <TableCell className="max-w-[200px] truncate font-medium">{inv.supplier}</TableCell>
+                        <TableCell className="text-sm">{inv.company}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{inv.department || '-'}</TableCell>
+                        <TableCell className="text-right">
+                          <CurrencyDisplay value={inv.allocation_value} currency={inv.currency} className="text-sm" />
+                        </TableCell>
+                        <TableCell className="text-right text-sm text-muted-foreground">
+                          {inv.allocation_percent}%
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={inv.status} />
+                        </TableCell>
+                        <TableCell>
+                          {inv.drive_link && (
+                            <a
+                              href={inv.drive_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-muted-foreground hover:text-foreground"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
 
             <Pagination page={page} totalPages={totalPages} total={total} perPage={perPage} onPageChange={setPage} onPerPageChange={(n) => { setPerPage(n); setPage(1) }} />
           </>
@@ -285,6 +310,7 @@ function InvoicesPanel() {
 // ─── HR Events Panel ────────────────────────────────────────────────
 
 function HrEventsPanel() {
+  const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = usePersistedState('profile-hr-page-size', 25)
@@ -325,42 +351,58 @@ function HrEventsPanel() {
           <EmptyState title="No HR events" description="No event bonuses assigned to you." />
         ) : (
           <>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Period</TableHead>
-                  <TableHead>Event</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead className="text-right">Days</TableHead>
-                  <TableHead className="text-right">Hours</TableHead>
-                  <TableHead className="text-right">Net Bonus</TableHead>
-                  <TableHead>Details</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {bonuses.map((b: ProfileBonus) => (
-                  <TableRow key={b.id}>
-                    <TableCell className="whitespace-nowrap text-sm">
-                      {String(b.month).padStart(2, '0')}/{b.year}
-                    </TableCell>
-                    <TableCell className="font-medium">{b.event_name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{b.company || '-'}</TableCell>
-                    <TableCell className="text-right text-sm">{b.bonus_days ?? '-'}</TableCell>
-                    <TableCell className="text-right text-sm">{b.hours_free ?? '-'}</TableCell>
-                    <TableCell className="text-right">
-                      {b.bonus_net != null ? (
-                        <CurrencyDisplay value={b.bonus_net} currency="RON" className="text-sm" />
-                      ) : (
-                        '-'
-                      )}
-                    </TableCell>
-                    <TableCell className="max-w-[150px] truncate text-xs text-muted-foreground">
-                      {b.details || '-'}
-                    </TableCell>
+            {isMobile ? (
+              <MobileCardList
+                data={bonuses}
+                fields={[
+                  { key: 'event_name', label: 'Event', isPrimary: true, render: (b) => b.event_name },
+                  { key: 'period', label: 'Period', isSecondary: true, render: (b) => `${String(b.month).padStart(2, '0')}/${b.year}` },
+                  { key: 'bonus_net', label: 'Net Bonus', render: (b) => b.bonus_net != null ? <CurrencyDisplay value={b.bonus_net} currency="RON" className="text-xs" /> : '-' },
+                  { key: 'bonus_days', label: 'Days', render: (b) => b.bonus_days ?? '-' },
+                  { key: 'company', label: 'Company', expandOnly: true, render: (b) => b.company || '-' },
+                  { key: 'hours_free', label: 'Hours', expandOnly: true, render: (b) => b.hours_free ?? '-' },
+                  { key: 'details', label: 'Details', expandOnly: true, render: (b) => b.details || '-' },
+                ] satisfies MobileCardField<ProfileBonus>[]}
+                getRowId={(b) => b.id}
+              />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Period</TableHead>
+                    <TableHead>Event</TableHead>
+                    <TableHead>Company</TableHead>
+                    <TableHead className="text-right">Days</TableHead>
+                    <TableHead className="text-right">Hours</TableHead>
+                    <TableHead className="text-right">Net Bonus</TableHead>
+                    <TableHead>Details</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {bonuses.map((b: ProfileBonus) => (
+                    <TableRow key={b.id}>
+                      <TableCell className="whitespace-nowrap text-sm">
+                        {String(b.month).padStart(2, '0')}/{b.year}
+                      </TableCell>
+                      <TableCell className="font-medium">{b.event_name}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{b.company || '-'}</TableCell>
+                      <TableCell className="text-right text-sm">{b.bonus_days ?? '-'}</TableCell>
+                      <TableCell className="text-right text-sm">{b.hours_free ?? '-'}</TableCell>
+                      <TableCell className="text-right">
+                        {b.bonus_net != null ? (
+                          <CurrencyDisplay value={b.bonus_net} currency="RON" className="text-sm" />
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
+                      <TableCell className="max-w-[150px] truncate text-xs text-muted-foreground">
+                        {b.details || '-'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
 
             <Pagination page={page} totalPages={totalPages} total={total} perPage={perPage} onPageChange={setPage} onPerPageChange={(n) => { setPerPage(n); setPage(1) }} />
           </>
