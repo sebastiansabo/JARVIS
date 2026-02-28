@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react'
+import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -98,6 +100,7 @@ const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
 
 export default function PontajeTab() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [groupFilter, setGroupFilter] = useState<string>('all')
   const [sortField, setSortField] = useState<SortField>('name')
@@ -217,6 +220,120 @@ export default function PontajeTab() {
     ? dailySummary.filter((e) => e.first_punch && new Date(e.first_punch).getHours() < 8).length
     : 0
 
+  const dailyMobileFields: MobileCardField<BioStarDailySummary>[] = useMemo(() => [
+    {
+      key: 'name',
+      label: 'Employee',
+      isPrimary: true,
+      render: (e) => e.name || '—',
+    },
+    {
+      key: 'group',
+      label: 'Group',
+      isSecondary: true,
+      render: (e) => e.user_group_name || '—',
+    },
+    {
+      key: 'checkin',
+      label: 'Check In',
+      render: (e) => (
+        <span className="inline-flex items-center gap-1 text-sm">
+          <LogIn className="h-3 w-3 text-green-600" />
+          {formatTime(e.first_punch)}
+        </span>
+      ),
+    },
+    {
+      key: 'checkout',
+      label: 'Check Out',
+      render: (e) =>
+        e.total_punches === 1
+          ? <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
+          : (
+            <span className="inline-flex items-center gap-1 text-sm">
+              <LogOut className="h-3 w-3 text-red-500" />
+              {formatTime(e.last_punch)}
+            </span>
+          ),
+    },
+    {
+      key: 'duration',
+      label: 'Duration',
+      render: (e) => {
+        const net = netSeconds(e.duration_seconds, e.lunch_break_minutes ?? 60)
+        const isShort = net / 3600 > 0 && net / 3600 < (e.working_hours ?? 8)
+        return (
+          <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
+            {e.total_punches === 1 ? '—' : formatDuration(net)}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'punches',
+      label: 'Punches',
+      expandOnly: true,
+      render: (e) => <Badge variant="secondary" className="text-xs">{e.total_punches}</Badge>,
+    },
+    {
+      key: 'email',
+      label: 'Email',
+      expandOnly: true,
+      render: (e) => <span className="text-xs text-muted-foreground">{e.email || '—'}</span>,
+    },
+  ], [])
+
+  const rangeMobileFields: MobileCardField<BioStarRangeSummary>[] = useMemo(() => [
+    {
+      key: 'name',
+      label: 'Employee',
+      isPrimary: true,
+      render: (e) => e.name || '—',
+    },
+    {
+      key: 'group',
+      label: 'Group',
+      isSecondary: true,
+      render: (e) => e.user_group_name || '—',
+    },
+    {
+      key: 'days',
+      label: 'Days Present',
+      render: (e) => <Badge variant="secondary" className="text-xs">{e.days_present}</Badge>,
+    },
+    {
+      key: 'total_hours',
+      label: 'Total Hours',
+      render: (e) => {
+        const lunch = e.lunch_break_minutes ?? 60
+        const totalNet = netSeconds(e.total_duration_seconds, lunch * e.days_present)
+        const expectedH = (e.working_hours ?? 8) * e.days_present
+        const isShort = totalNet / 3600 > 0 && totalNet / 3600 < expectedH
+        return (
+          <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
+            {formatDuration(totalNet)}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'avg_day',
+      label: 'Avg/Day',
+      render: (e) => {
+        const lunch = e.lunch_break_minutes ?? 60
+        const totalNet = netSeconds(e.total_duration_seconds, lunch * e.days_present)
+        const avgH = e.days_present > 0 ? totalNet / e.days_present / 3600 : 0
+        return <span className="text-sm">{avgH.toFixed(1)}h</span>
+      },
+    },
+    {
+      key: 'punches',
+      label: 'Punches',
+      expandOnly: true,
+      render: (e) => <Badge variant="secondary" className="text-xs">{e.total_punches}</Badge>,
+    },
+  ], [])
+
   const handleQuickFilter = (f: QuickFilter) => {
     setQuickFilter(f)
     setExpandedId(null)
@@ -320,19 +437,30 @@ export default function PontajeTab() {
         </Select>
       </div>
 
-      {/* Table */}
+      {/* Table / Card list */}
       {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <div key={i} className="h-10 animate-pulse rounded bg-muted" />
-          ))}
-        </div>
+        isMobile ? (
+          <MobileCardList data={[]} fields={dailyMobileFields} getRowId={() => 0} isLoading />
+        ) : (
+          <div className="space-y-2">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div key={i} className="h-10 animate-pulse rounded bg-muted" />
+            ))}
+          </div>
+        )
       ) : isSingleDay ? (
-        /* Single-day table */
+        /* Single-day */
         processedDaily.length === 0 ? (
           <EmptyState
             title="No attendance data"
             description={search ? 'Try a different search term.' : 'No punch logs found for this date.'}
+          />
+        ) : isMobile ? (
+          <MobileCardList
+            data={processedDaily}
+            fields={dailyMobileFields}
+            getRowId={(e) => Number(e.biostar_user_id)}
+            onRowClick={(e) => navigate(`/app/hr/pontaje/${e.biostar_user_id}`)}
           />
         ) : (
           <div className="rounded-md border">
@@ -376,11 +504,18 @@ export default function PontajeTab() {
           </div>
         )
       ) : (
-        /* Range table */
+        /* Range */
         processedRange.length === 0 ? (
           <EmptyState
             title="No attendance data"
             description={search ? 'Try a different search term.' : 'No punch logs found for this period.'}
+          />
+        ) : isMobile ? (
+          <MobileCardList
+            data={processedRange}
+            fields={rangeMobileFields}
+            getRowId={(e) => Number(e.biostar_user_id)}
+            onRowClick={(e) => navigate(`/app/hr/pontaje/${e.biostar_user_id}`)}
           />
         ) : (
           <div className="rounded-md border">

@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react'
+import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Send,
@@ -298,6 +300,7 @@ function ColumnToggle({
 // ── Main Component ──────────────────────────────────────────
 export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) {
   const qc = useQueryClient()
+  const isMobile = useIsMobile()
   const [savedLimit, setSavedLimit] = usePersistedState('efactura-page-size', 50)
   const [filters, setFilters] = useState<EFacturaInvoiceFilters>({ page: 1, limit: savedLimit })
   const [search, setSearch] = useState('')
@@ -467,6 +470,65 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
     !!(inv.type_override || inv.mapped_type_names?.length) &&
     !!(inv.department_override || inv.mapped_department)
 
+  const efacturaMobileFields: MobileCardField<InvoiceRow>[] = useMemo(() => [
+    {
+      key: 'supplier',
+      label: 'Supplier',
+      isPrimary: true,
+      render: (inv) => (
+        <span>
+          {inv.partner_name}
+          {inv._hidden && <span className="ml-1 text-[10px] text-muted-foreground">(hidden)</span>}
+        </span>
+      ),
+    },
+    {
+      key: 'invoice_number',
+      label: 'Invoice #',
+      isSecondary: true,
+      render: (inv) => (
+        <span className="font-mono text-xs">
+          {inv.invoice_series ? `${inv.invoice_series}-` : ''}
+          {inv.invoice_number}
+        </span>
+      ),
+    },
+    {
+      key: 'date',
+      label: 'Date',
+      isSecondary: true,
+      render: (inv) => fmtDate(inv.issue_date),
+    },
+    {
+      key: 'amount',
+      label: 'Amount',
+      render: (inv) => <CurrencyDisplay value={inv.total_amount} currency={inv.currency} />,
+    },
+    {
+      key: 'direction',
+      label: 'Direction',
+      render: (inv) => <StatusBadge status={inv.direction} />,
+    },
+    {
+      key: 'company',
+      label: 'Company',
+      expandOnly: true,
+      render: (inv) => <span className="text-xs">{inv.company_name || inv.cif_owner || '—'}</span>,
+    },
+    {
+      key: 'type',
+      label: 'Type',
+      expandOnly: true,
+      render: (inv) => <span className="text-xs">{inv.type_override || inv.mapped_type_names?.join(', ') || '—'}</span>,
+    },
+    {
+      key: 'department',
+      label: 'Department',
+      expandOnly: true,
+      render: (inv) => <span className="text-xs">{inv.department_override || inv.mapped_department || '—'}</span>,
+    },
+  ], [])
+
   const executeAction = () => {
     if (!confirmAction) return
     const { action, ids } = confirmAction
@@ -507,7 +569,7 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
         {companies.length > 0 && (
           <div className="space-y-1">
             <Label className="text-xs">Company</Label>
@@ -588,9 +650,11 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
 
         <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
 
-        <div className="ml-auto">
-          <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
-        </div>
+        {!isMobile && (
+          <div className="ml-auto">
+            <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
+          </div>
+        )}
       </div>
 
       {/* Bulk actions */}
@@ -656,18 +720,60 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
         </div>
       )}
 
-      {/* Invoice table */}
+      {/* Invoice table / Card list */}
       {unallocError ? (
         <QueryError message="Failed to load e-Factura data" onRetry={() => refetchUnalloc()} />
       ) : isLoading ? (
-        <div className="space-y-2">
-          {[1, 2, 3].map((i) => <div key={i} className="h-12 animate-pulse rounded bg-muted/50" />)}
-        </div>
+        isMobile ? (
+          <MobileCardList data={[]} fields={efacturaMobileFields} getRowId={(inv) => inv.id} isLoading />
+        ) : (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => <div key={i} className="h-12 animate-pulse rounded bg-muted/50" />)}
+          </div>
+        )
       ) : invoices.length === 0 ? (
         <EmptyState
           icon={<FileStack className="h-10 w-10" />}
           title={showHidden ? 'No unallocated or hidden invoices' : 'No unallocated invoices'}
           description={!showHidden ? 'All imported invoices have been allocated' : undefined}
+        />
+      ) : isMobile ? (
+        <MobileCardList
+          data={displayedInvoices}
+          fields={efacturaMobileFields}
+          getRowId={(inv) => inv.id}
+          selectable
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+          actions={(inv) => (
+            <>
+              {inv._hidden ? (
+                <Button variant="ghost" size="icon" className="h-8 w-8" title="Restore"
+                  onClick={() => setConfirmAction({ action: 'restore-hidden', ids: [inv.id] })}>
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              ) : (
+                <>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" title="Send"
+                    disabled={!canSend(inv)} onClick={() => setConfirmAction({ action: 'send', ids: [inv.id] })}>
+                    <Send className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600" title="Edit"
+                    onClick={() => openEdit(inv)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600" title="View"
+                    onClick={() => setViewInvoice(inv)}>
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" title="Hide"
+                    onClick={() => setConfirmAction({ action: 'hide', ids: [inv.id] })}>
+                    <EyeOff className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+            </>
+          )}
         />
       ) : (
         <div className="rounded border overflow-x-auto">

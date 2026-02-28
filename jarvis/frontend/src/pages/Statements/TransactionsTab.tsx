@@ -1,4 +1,6 @@
 import { useState, useMemo, useCallback, memo } from 'react'
+import { useIsMobile } from '@/hooks/useMediaQuery'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search,
@@ -67,6 +69,7 @@ const statusColors: Record<string, string> = {
 
 export default function TransactionsTab() {
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
 
   // Filters
   const [status, setStatus] = useState('__all__')
@@ -259,6 +262,62 @@ export default function TransactionsTab() {
   const selectedTxns = displayedTxns.filter((t) => selected.has(t.id))
   const canMerge = selectedTxns.length >= 2 && selectedTxns.every((t) => t.status === 'pending')
 
+  const mobileFields: MobileCardField<Transaction>[] = useMemo(() => [
+    {
+      key: 'vendor',
+      label: 'Vendor',
+      isPrimary: true,
+      render: (t) => t.matched_supplier || t.vendor_name || t.description?.slice(0, 40) || '—',
+    },
+    {
+      key: 'date',
+      label: 'Date',
+      isSecondary: true,
+      render: (t) => formatDate(t.transaction_date),
+    },
+    {
+      key: 'amount',
+      label: 'Amount',
+      isSecondary: true,
+      render: (t) => (
+        <span className={t.amount < 0 ? 'text-red-500' : 'text-green-500'}>
+          {formatAmount(t.amount, t.currency)}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (t) => (
+        <Badge variant="outline" className={cn('text-xs', statusColors[t.status])}>
+          {t.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'company',
+      label: 'Company',
+      render: (t) => <span className="text-xs">{t.company_name ?? t.company_cui ?? '—'}</span>,
+    },
+    {
+      key: 'invoice',
+      label: 'Invoice',
+      expandOnly: true,
+      render: (t) =>
+        t.invoice_id
+          ? <Badge variant="secondary" className="text-xs">{t.invoice_number || `#${t.invoice_id}`}</Badge>
+          : t.suggested_invoice_id
+            ? <Badge variant="outline" className="text-xs border-yellow-500/50 text-yellow-600">Suggested ({Math.round((t.suggested_confidence ?? 0) * 100)}%)</Badge>
+            : <span className="text-muted-foreground">—</span>,
+    },
+    {
+      key: 'description',
+      label: 'Description',
+      expandOnly: true,
+      render: (t) => <span className="text-xs text-muted-foreground">{t.description || '—'}</span>,
+    },
+  ], [])
+
   const totalPages = Math.ceil(totalCount / pageSize)
 
   // Stable callbacks for memoized TransactionRow
@@ -283,7 +342,7 @@ export default function TransactionsTab() {
   return (
     <div className="space-y-4">
       {/* Filters row */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
         <Select value={status} onValueChange={(v) => { setStatus(v); setPage(0) }}>
           <SelectTrigger className="w-28">
             <SelectValue placeholder="Status" />
@@ -327,7 +386,7 @@ export default function TransactionsTab() {
         <Input type="date" className="w-36" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }} />
         <Input type="date" className="w-36" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }} />
 
-        <div className="relative flex-1 max-w-xs">
+        <div className="relative w-full md:flex-1 md:max-w-xs">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input className="pl-8" placeholder="Search..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} />
         </div>
@@ -386,23 +445,65 @@ export default function TransactionsTab() {
         </div>
       )}
 
-      {/* Table */}
+      {/* Table / Card list */}
       {isError ? (
         <QueryError message="Failed to load transactions" onRetry={() => refetch()} />
       ) : isLoading ? (
-        <Card>
-          <CardContent className="p-6">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-10 animate-pulse rounded bg-muted mb-2" />
-            ))}
-          </CardContent>
-        </Card>
+        isMobile ? (
+          <MobileCardList data={[]} fields={mobileFields} getRowId={(t) => t.id} isLoading />
+        ) : (
+          <Card>
+            <CardContent className="p-6">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="h-10 animate-pulse rounded bg-muted mb-2" />
+              ))}
+            </CardContent>
+          </Card>
+        )
       ) : displayedTxns.length === 0 ? (
         <EmptyState
           icon={<ArrowLeftRight className="h-8 w-8" />}
           title="No transactions found"
           description="Upload a bank statement or adjust your filters."
         />
+      ) : isMobile ? (
+        <>
+          <MobileCardList
+            data={displayedTxns}
+            fields={mobileFields}
+            getRowId={(t) => t.id}
+            selectable
+            selectedIds={selected}
+            onToggleSelect={toggleSelect}
+            actions={(txn) => (
+              <>
+                {!txn.invoice_id && txn.status !== 'ignored' && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleLink(txn.id)} title="Link invoice">
+                    <Link2 className="h-4 w-4" />
+                  </Button>
+                )}
+                {txn.status !== 'ignored' ? (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => handleStatusChange(txn.id, 'ignored')} title="Ignore">
+                    <EyeOff className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleStatusChange(txn.id, 'pending')} title="Restore">
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                )}
+              </>
+            )}
+          />
+          {/* Mobile pagination */}
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{displayedTxns.length} of {totalCount}</span>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>Prev</Button>
+              <span>{page + 1}/{Math.max(1, totalPages)}</span>
+              <Button variant="outline" size="sm" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)}>Next</Button>
+            </div>
+          </div>
+        </>
       ) : (
         <Card>
           <div className="overflow-x-auto">
