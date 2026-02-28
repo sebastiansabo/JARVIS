@@ -13,15 +13,15 @@ import ImportTab from './ImportTab'
 
 function StatsCard({ title, value, sub, icon: Icon }: { title: string; value: number | string; sub?: string; icon: React.ElementType }) {
   return (
-    <Card>
-      <CardContent className="p-3 flex items-center gap-2.5">
-        <div className="rounded-md bg-primary/10 p-1.5">
-          <Icon className="h-4 w-4 text-primary" />
+    <Card className="shadow-none">
+      <CardContent className="p-2 md:p-3 flex items-center gap-2">
+        <div className="rounded-md bg-primary/10 p-1 md:p-1.5 shrink-0">
+          <Icon className="h-3.5 w-3.5 text-primary" />
         </div>
-        <div>
-          <p className="text-lg font-bold leading-none">{typeof value === 'number' ? value.toLocaleString() : value}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">{title}</p>
-          {sub && <p className="text-[10px] text-muted-foreground">{sub}</p>}
+        <div className="min-w-0">
+          <p className="text-sm md:text-lg font-bold leading-none">{typeof value === 'number' ? value.toLocaleString() : value}</p>
+          <p className="text-[10px] md:text-xs text-muted-foreground mt-0.5">{title}</p>
+          {sub && <p className="text-[9px] md:text-[10px] text-muted-foreground truncate">{sub}</p>}
         </div>
       </CardContent>
     </Card>
@@ -71,7 +71,7 @@ export default function Crm() {
 function DashboardContent({ stats }: { stats: CrmStats }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2 md:gap-3">
         <StatsCard title="Total Clients" value={stats.clients.total} sub={`${stats.clients.persons} persons, ${stats.clients.companies} companies`} icon={Users} />
         <StatsCard title="Car Deals" value={stats.deals.total} sub={`${stats.deals.new_cars} NW, ${stats.deals.used_cars} GW`} icon={Car} />
       </div>
