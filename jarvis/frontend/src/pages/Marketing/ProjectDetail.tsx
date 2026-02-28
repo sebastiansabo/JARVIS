@@ -102,17 +102,19 @@ export default function ProjectDetail() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
-        <TabsList>
-          {tabs.map((tab) => {
-            const Icon = tab.icon
-            return (
-              <TabsTrigger key={tab.key} value={tab.key}>
-                <Icon className="h-3.5 w-3.5" />
-                {tab.label}
-              </TabsTrigger>
-            )
-          })}
-        </TabsList>
+        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
+          <TabsList className="w-max md:w-auto">
+            {tabs.map((tab) => {
+              const Icon = tab.icon
+              return (
+                <TabsTrigger key={tab.key} value={tab.key}>
+                  <Icon className="h-3.5 w-3.5" />
+                  {tab.label}
+                </TabsTrigger>
+              )
+            })}
+          </TabsList>
+        </div>
       </Tabs>
 
       {/* Tab Content */}

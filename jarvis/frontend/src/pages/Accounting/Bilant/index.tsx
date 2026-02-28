@@ -235,12 +235,14 @@ export default function Bilant() {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as MainTab)}>
-        <div className="flex items-center gap-4">
-          <TabsList>
-            {tabs.map(t => (
-              <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>
-            ))}
-          </TabsList>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center">
+          <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
+            <TabsList className="w-max md:w-auto">
+              {tabs.map(t => (
+                <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
           <div className="ml-auto">
             <Select value={companyFilter} onValueChange={setCompanyFilter}>
               <SelectTrigger className="h-8 w-[180px] text-xs">

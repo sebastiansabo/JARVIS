@@ -93,17 +93,19 @@ export default function Hr() {
       {/* Tab nav — hidden on Bonuses page */}
       {!isBonusesPage && (
         <Tabs value={isAdjustmentsPage ? 'adjustments' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
-          <TabsList>
-            {tabs.map((t) => {
-              const val = t.to.split('/').pop()!
-              return (
-                <TabsTrigger key={val} value={val}>
-                  <t.icon className="h-4 w-4" />
-                  {t.label}
-                </TabsTrigger>
-              )
-            })}
-          </TabsList>
+          <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
+            <TabsList className="w-max md:w-auto">
+              {tabs.map((t) => {
+                const val = t.to.split('/').pop()!
+                return (
+                  <TabsTrigger key={val} value={val}>
+                    <t.icon className="h-4 w-4" />
+                    {t.label}
+                  </TabsTrigger>
+                )
+              })}
+            </TabsList>
+          </div>
         </Tabs>
       )}
 

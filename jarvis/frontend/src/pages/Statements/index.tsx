@@ -1,13 +1,13 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate, NavLink } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { statementsApi } from '@/api/statements'
-import { cn } from '@/lib/utils'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import type { TransactionFilters } from '@/types/statements'
 import { useState } from 'react'
@@ -33,6 +33,8 @@ function TabLoader() {
 }
 
 export default function Statements() {
+  const navigate = useNavigate()
+  const location = useLocation()
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('statements_summary')
   const [filters] = useState<TransactionFilters>({})
 
@@ -98,28 +100,21 @@ export default function Statements() {
       </div>
 
       {/* Tab nav */}
-      <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
-        <nav className="flex w-max gap-1 border-b md:w-auto">
-          {tabs.map((tab) => (
-            <NavLink
-              key={tab.to}
-              to={tab.to}
-              end={tab.to === '/app/statements/transactions'}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-muted-foreground hover:text-foreground',
-                )
-              }
-            >
-              <tab.icon className="h-4 w-4" />
-              {tab.label}
-            </NavLink>
-          ))}
-        </nav>
-      </div>
+      <Tabs value={location.pathname.split('/').pop() || 'transactions'} onValueChange={(v) => navigate(`/app/statements/${v}`)}>
+        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
+          <TabsList className="w-max md:w-auto">
+            {tabs.map((tab) => {
+              const val = tab.to.split('/').pop()!
+              return (
+                <TabsTrigger key={val} value={val}>
+                  <tab.icon className="h-4 w-4" />
+                  {tab.label}
+                </TabsTrigger>
+              )
+            })}
+          </TabsList>
+        </div>
+      </Tabs>
 
       {/* Tab content */}
       <Suspense fallback={<TabLoader />}>
