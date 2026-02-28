@@ -12,6 +12,7 @@ import {
   CalendarDays,
   ChevronRight,
   Lock,
+  CheckSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -50,6 +51,7 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
   const [addOpen, setAddOpen] = useState(false)
   const [isDuplicate, setIsDuplicate] = useState(false)
   const [deleteIds, setDeleteIds] = useState<number[] | null>(null)
+  const [selectMode, setSelectMode] = useState(false)
 
   // Data
   const { data: bonuses = [], isLoading, isError, refetch } = useQuery({
@@ -174,6 +176,15 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
               Delete ({selectedBonusIds.length})
             </Button>
           )}
+          {isMobile && (
+            selectMode ? (
+              <Button variant="ghost" size="sm" onClick={() => { clearSelected(); setSelectMode(false) }}>Cancel</Button>
+            ) : (
+              <Button variant="outline" size="icon" onClick={() => setSelectMode(true)} title="Select">
+                <CheckSquare className="h-4 w-4" />
+              </Button>
+            )
+          )}
           <Button size="sm" onClick={() => { setEditBonus(null); setAddOpen(true) }}>
             <Plus className="mr-1 h-3.5 w-3.5" />
             Add Bonus
@@ -221,6 +232,7 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
           onDelete={(id) => setDeleteIds([id])}
           canViewAmounts={canViewAmounts}
           isMobile={isMobile}
+          selectMode={selectMode}
         />
       )}
 
@@ -259,7 +271,7 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
 
 function BonusListTable({
   bonuses, isLoading, selectedIds, allSelected, someSelected,
-  onToggleSelect, onSelectAll, onEdit, onDuplicate, onDelete, canViewAmounts, isMobile,
+  onToggleSelect, onSelectAll, onEdit, onDuplicate, onDelete, canViewAmounts, isMobile, selectMode,
 }: {
   bonuses: EventBonus[]
   isLoading: boolean
@@ -273,6 +285,7 @@ function BonusListTable({
   onDelete: (id: number) => void
   canViewAmounts: boolean
   isMobile: boolean
+  selectMode?: boolean
 }) {
   const mobileFields: MobileCardField<EventBonus>[] = useMemo(() => [
     {
@@ -363,7 +376,7 @@ function BonusListTable({
           data={bonuses}
           fields={mobileFields}
           getRowId={(b) => b.id}
-          selectable
+          selectable={selectMode}
           selectedIds={selectedIds}
           onToggleSelect={onToggleSelect}
           actions={(b) => (

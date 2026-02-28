@@ -72,8 +72,8 @@ export default function ProjectDetail() {
       <PageHeader
         title={project.name}
         breadcrumbs={[
-          { label: 'Marketing', href: '/app/marketing' },
-          { label: 'Campaigns', href: '/app/marketing?tab=projects' },
+          { label: 'Marketing', shortLabel: 'Mkt.', href: '/app/marketing' },
+          { label: 'Campaigns', shortLabel: 'Camp.', href: '/app/marketing?tab=projects' },
           { label: project.name },
         ]}
         description={

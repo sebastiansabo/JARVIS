@@ -14,6 +14,8 @@ import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { efacturaApi } from '@/api/efactura'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { SyncDialog } from './SyncDialog'
 
@@ -37,6 +39,7 @@ function TabLoader() {
 
 export default function EFactura() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('efactura_status')
   const [syncOpen, setSyncOpen] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
@@ -58,12 +61,12 @@ export default function EFactura() {
       <PageHeader
         title="e-Factura"
         breadcrumbs={[
-          { label: 'e-Factura' },
+          { label: 'e-Factura', shortLabel: 'e-Fact.' },
           { label: activeEfTab?.label ?? 'Unallocated' },
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
+            <Button variant="ghost" size="icon" className="hidden md:inline-flex md:size-auto md:px-3" onClick={toggleDashboardWidget}>
               <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
               <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
             </Button>
@@ -77,9 +80,9 @@ export default function EFactura() {
 
       {/* Tab nav */}
       <Tabs value={location.pathname.split('/').pop() || 'unallocated'} onValueChange={(v) => navigate(`/app/efactura/${v}`)}>
-        <div className="flex flex-col gap-2 md:flex-row md:items-center">
-          <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
-            <TabsList className="w-max md:w-auto">
+        {isMobile ? (
+          <MobileBottomTabs>
+            <TabsList className="w-full">
               <TabsTrigger value="unallocated">
                 <FileStack className="h-4 w-4" />
                 Unallocated
@@ -94,14 +97,40 @@ export default function EFactura() {
                 Mappings
               </TabsTrigger>
             </TabsList>
+          </MobileBottomTabs>
+        ) : (
+          <div className="flex items-center">
+            <TabsList className="w-auto">
+              <TabsTrigger value="unallocated">
+                <FileStack className="h-4 w-4" />
+                Unallocated
+                {(unallocatedCount ?? 0) > 0 && (
+                  <span className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                    {unallocatedCount}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="mappings">
+                <Tags className="h-4 w-4" />
+                Mappings
+              </TabsTrigger>
+            </TabsList>
+            <div className="flex items-center gap-2 ml-auto">
+              <Switch id="show-hidden" checked={showHidden} onCheckedChange={setShowHidden} />
+              <Label htmlFor="show-hidden" className="text-xs cursor-pointer text-muted-foreground">
+                Show Hidden ({hiddenCount ?? 0})
+              </Label>
+            </div>
           </div>
-          <div className="flex items-center gap-2 md:ml-auto">
+        )}
+        {isMobile && (
+          <div className="flex items-center gap-2">
             <Switch id="show-hidden" checked={showHidden} onCheckedChange={setShowHidden} />
             <Label htmlFor="show-hidden" className="text-xs cursor-pointer text-muted-foreground">
               Show Hidden ({hiddenCount ?? 0})
             </Label>
           </div>
-        </div>
+        )}
       </Tabs>
 
       {/* Tab content */}

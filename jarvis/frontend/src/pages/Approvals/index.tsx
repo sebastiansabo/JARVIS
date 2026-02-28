@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
@@ -321,7 +322,7 @@ export default function Approvals() {
       <PageHeader
         title="Approvals"
         breadcrumbs={[
-          { label: 'Approvals' },
+          { label: 'Approvals', shortLabel: 'Appr.' },
           { label: tabs.find(t => t.key === activeTab)?.label ?? 'My Queue' },
         ]}
         actions={
@@ -329,7 +330,7 @@ export default function Approvals() {
             <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
               <BarChart3 className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
+            <Button variant="ghost" size="icon" className="hidden md:inline-flex md:size-auto md:px-3" onClick={toggleDashboardWidget}>
               <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
               <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
             </Button>
@@ -367,24 +368,43 @@ export default function Approvals() {
 
       {/* Tab nav */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
-        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
-        <TabsList className="w-max md:w-auto">
-          {tabs.map((tab) => {
-            const Icon = tab.icon
-            return (
-              <TabsTrigger key={tab.key} value={tab.key}>
-                <Icon className="h-4 w-4" />
-                {tab.label}
-                {tab.count !== undefined && tab.count > 0 && (
-                  <Badge variant="default" className="ml-1 h-5 min-w-5 px-1.5 text-xs">
-                    {tab.count}
-                  </Badge>
-                )}
-              </TabsTrigger>
-            )
-          })}
-        </TabsList>
-        </div>
+        {isMobile ? (
+          <MobileBottomTabs>
+            <TabsList className="w-full">
+              {tabs.map((tab) => {
+                const Icon = tab.icon
+                return (
+                  <TabsTrigger key={tab.key} value={tab.key}>
+                    <Icon className="h-4 w-4" />
+                    {tab.label}
+                    {tab.count !== undefined && tab.count > 0 && (
+                      <Badge variant="default" className="ml-1 h-5 min-w-5 px-1.5 text-xs">
+                        {tab.count}
+                      </Badge>
+                    )}
+                  </TabsTrigger>
+                )
+              })}
+            </TabsList>
+          </MobileBottomTabs>
+        ) : (
+          <TabsList className="w-auto">
+            {tabs.map((tab) => {
+              const Icon = tab.icon
+              return (
+                <TabsTrigger key={tab.key} value={tab.key}>
+                  <Icon className="h-4 w-4" />
+                  {tab.label}
+                  {tab.count !== undefined && tab.count > 0 && (
+                    <Badge variant="default" className="ml-1 h-5 min-w-5 px-1.5 text-xs">
+                      {tab.count}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              )
+            })}
+          </TabsList>
+        )}
       </Tabs>
 
       {/* Status filter for All tab */}

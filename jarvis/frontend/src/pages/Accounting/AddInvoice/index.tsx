@@ -400,9 +400,9 @@ export default function AddInvoice() {
     <form onSubmit={onFormSubmit} className="space-y-4">
       <PageHeader
         title="Add Invoice"
-        description="Create a new invoice and distribute costs."
+        description=""
         breadcrumbs={[
-          { label: 'Accounting', href: '/app/accounting' },
+          { label: 'Accounting', shortLabel: 'Acc.', href: '/app/accounting' },
           { label: 'Add Invoice' },
         ]}
         actions={

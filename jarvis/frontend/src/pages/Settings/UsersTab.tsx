@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Shield, ChevronDown } from 'lucide-react'
+import { Plus, Trash2, Shield, ChevronDown, CheckSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -33,6 +33,7 @@ export default function UsersTab() {
   const [showAdd, setShowAdd] = useState(false)
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [showBulkDelete, setShowBulkDelete] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['settings', 'users'],
@@ -149,6 +150,15 @@ export default function UsersTab() {
                 </Button>
               </>
             )}
+            {isMobile && (
+              selectMode ? (
+                <Button variant="ghost" size="sm" onClick={() => { setSelectedIds([]); setSelectMode(false) }}>Cancel</Button>
+              ) : (
+                <Button variant="outline" size="icon" onClick={() => setSelectMode(true)} title="Select">
+                  <CheckSquare className="h-4 w-4" />
+                </Button>
+              )
+            )}
             <Button size="sm" onClick={() => setShowAdd(true)}>
               <Plus className="mr-1.5 h-4 w-4" />
               Add User
@@ -172,7 +182,7 @@ export default function UsersTab() {
             data={filtered}
             fields={userMobileFields}
             getRowId={(u) => u.id}
-            selectable
+            selectable={selectMode}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             actions={(user) => (

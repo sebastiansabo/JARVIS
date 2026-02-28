@@ -1,12 +1,14 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard, BarChart3 } from 'lucide-react'
+import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard, BarChart3, Clock, CheckCircle, DollarSign } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { statementsApi } from '@/api/statements'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import type { TransactionFilters } from '@/types/statements'
@@ -35,6 +37,7 @@ function TabLoader() {
 export default function Statements() {
   const navigate = useNavigate()
   const location = useLocation()
+  const isMobile = useIsMobile()
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('statements_summary')
   const [filters] = useState<TransactionFilters>({})
   const [showStats, setShowStats] = useState(false)
@@ -58,7 +61,7 @@ export default function Statements() {
       <PageHeader
         title="Bank Statements"
         breadcrumbs={[
-          { label: 'Bank Statements' },
+          { label: 'Bank Statements', shortLabel: 'Stmt.' },
           { label: activeTab?.label ?? 'Transactions' },
         ]}
         actions={
@@ -66,11 +69,11 @@ export default function Statements() {
             <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
               <BarChart3 className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
+            <Button variant="ghost" size="icon" className="hidden md:inline-flex md:size-auto md:px-3" onClick={toggleDashboardWidget}>
               <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
               <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
             </Button>
-            <Button variant="outline" size="icon" className="md:size-auto md:px-4" asChild>
+            <Button variant="outline" size="icon" className="hidden md:inline-flex md:size-auto md:px-4" asChild>
               <a href={statementsApi.exportUrl(filters)} download>
                 <Download className="h-4 w-4 md:mr-1.5" />
                 <span className="hidden md:inline">Export CSV</span>
@@ -91,27 +94,41 @@ export default function Statements() {
         <StatCard
           title="Pending"
           value={summary?.by_status?.pending?.count ?? 0}
-          icon={<ArrowLeftRight className="h-4 w-4" />}
+          icon={<Clock className="h-4 w-4" />}
           isLoading={isLoading}
         />
         <StatCard
           title="Resolved"
           value={summary?.by_status?.resolved?.count ?? 0}
-          icon={<ArrowLeftRight className="h-4 w-4" />}
+          icon={<CheckCircle className="h-4 w-4" />}
           isLoading={isLoading}
         />
         <StatCard
           title="Total Amount"
           value={totalAmount !== 0 ? `${fmtAmount(Math.abs(totalAmount))} RON` : '—'}
-          icon={<ArrowLeftRight className="h-4 w-4" />}
+          icon={<DollarSign className="h-4 w-4" />}
           isLoading={isLoading}
         />
       </div>
 
       {/* Tab nav */}
       <Tabs value={location.pathname.split('/').pop() || 'transactions'} onValueChange={(v) => navigate(`/app/statements/${v}`)}>
-        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
-          <TabsList className="w-max md:w-auto">
+        {isMobile ? (
+          <MobileBottomTabs>
+            <TabsList className="w-full">
+              {tabs.map((tab) => {
+                const val = tab.to.split('/').pop()!
+                return (
+                  <TabsTrigger key={val} value={val}>
+                    <tab.icon className="h-4 w-4" />
+                    {tab.label}
+                  </TabsTrigger>
+                )
+              })}
+            </TabsList>
+          </MobileBottomTabs>
+        ) : (
+          <TabsList className="w-auto">
             {tabs.map((tab) => {
               const val = tab.to.split('/').pop()!
               return (
@@ -122,7 +139,7 @@ export default function Statements() {
               )
             })}
           </TabsList>
-        </div>
+        )}
       </Tabs>
 
       {/* Tab content */}

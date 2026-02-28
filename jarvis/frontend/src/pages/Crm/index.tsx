@@ -3,33 +3,25 @@ import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Users, Car, Upload, BarChart3, PieChart, UserCheck, Ban } from 'lucide-react'
+import { Users, Car, Upload, BarChart3, PieChart, UserCheck, Ban, Filter } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { StatCard } from '@/components/shared/StatCard'
+import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { crmApi, type CrmStats } from '@/api/crm'
 import DealsTab from './DealsTab'
 import StatisticsTab from './StatisticsTab'
 import ClientStatsTab from './ClientStatsTab'
 import ImportTab from './ImportTab'
 
-function StatsCard({ title, value, sub, icon: Icon }: { title: string; value: number | string; sub?: string; icon: React.ElementType }) {
-  return (
-    <Card className="shadow-none">
-      <CardContent className="p-2 md:p-3 flex items-center gap-2">
-        <div className="rounded-md bg-primary/10 p-1 md:p-1.5 shrink-0">
-          <Icon className="h-3.5 w-3.5 text-primary" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm md:text-lg font-bold leading-none">{typeof value === 'number' ? value.toLocaleString() : value}</p>
-          <p className="text-[10px] md:text-xs text-muted-foreground mt-0.5">{title}</p>
-          {sub && <p className="text-[9px] md:text-[10px] text-muted-foreground truncate">{sub}</p>}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
 export default function Crm() {
+  const isMobile = useIsMobile()
   const [tab, setTab] = useState('dashboard')
+  const [showStats, setShowStats] = useState(false)
+  const [dealsShowStats, setDealsShowStats] = useState(false)
+  const [statsShowFilters, setStatsShowFilters] = useState(false)
+  const [statsShowCards, setStatsShowCards] = useState(false)
   const { data: stats } = useQuery({ queryKey: ['crm-stats'], queryFn: crmApi.getStats })
 
   return (
@@ -40,27 +32,58 @@ export default function Crm() {
           { label: 'Samsaru' },
           { label: tab === 'dashboard' ? 'Dashboard' : tab === 'deals' ? 'Sales' : tab === 'clients' ? 'Clients' : tab === 'statistics' ? 'Statistics' : tab === 'import' ? 'Import' : 'Blacklist' },
         ]}
+        actions={isMobile ? (
+          tab === 'dashboard' ? (
+            <Button variant="ghost" size="icon" onClick={() => setShowStats(s => !s)}>
+              <BarChart3 className="h-4 w-4" />
+            </Button>
+          ) : tab === 'deals' ? (
+            <Button variant="ghost" size="icon" onClick={() => setDealsShowStats(s => !s)}>
+              <BarChart3 className="h-4 w-4" />
+            </Button>
+          ) : tab === 'statistics' ? (
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setStatsShowCards(s => !s)}>
+                <BarChart3 className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setStatsShowFilters(s => !s)}>
+                <Filter className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : undefined
+        ) : undefined}
       />
 
       <Tabs value={tab} onValueChange={setTab}>
-        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
-        <TabsList className="w-max md:w-auto">
-          <TabsTrigger value="dashboard" className="gap-1.5"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
-          <TabsTrigger value="deals" className="gap-1.5"><Car className="h-4 w-4" />Sales</TabsTrigger>
-          <TabsTrigger value="clients" className="gap-1.5"><UserCheck className="h-4 w-4" />Clients</TabsTrigger>
-          <TabsTrigger value="statistics" className="gap-1.5"><PieChart className="h-4 w-4" />Statistics</TabsTrigger>
-          <TabsTrigger value="import" className="gap-1.5"><Upload className="h-4 w-4" />Import</TabsTrigger>
-          <TabsTrigger value="blacklist" className="gap-1.5"><Ban className="h-4 w-4" />Blacklist</TabsTrigger>
-        </TabsList>
-        </div>
+        {isMobile ? (
+          <MobileBottomTabs>
+            <TabsList className="w-full">
+              <TabsTrigger value="dashboard"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
+              <TabsTrigger value="deals"><Car className="h-4 w-4" />Sales</TabsTrigger>
+              <TabsTrigger value="clients"><UserCheck className="h-4 w-4" />Clients</TabsTrigger>
+              <TabsTrigger value="statistics"><PieChart className="h-4 w-4" />Statistics</TabsTrigger>
+              <TabsTrigger value="import"><Upload className="h-4 w-4" />Import</TabsTrigger>
+              <TabsTrigger value="blacklist"><Ban className="h-4 w-4" />Blacklist</TabsTrigger>
+            </TabsList>
+          </MobileBottomTabs>
+        ) : (
+          <TabsList className="w-auto">
+            <TabsTrigger value="dashboard"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
+            <TabsTrigger value="deals"><Car className="h-4 w-4" />Sales</TabsTrigger>
+            <TabsTrigger value="clients"><UserCheck className="h-4 w-4" />Clients</TabsTrigger>
+            <TabsTrigger value="statistics"><PieChart className="h-4 w-4" />Statistics</TabsTrigger>
+            <TabsTrigger value="import"><Upload className="h-4 w-4" />Import</TabsTrigger>
+            <TabsTrigger value="blacklist"><Ban className="h-4 w-4" />Blacklist</TabsTrigger>
+          </TabsList>
+        )}
 
         <TabsContent value="dashboard" className="space-y-4">
-          {stats && <DashboardContent stats={stats} />}
+          {stats && <DashboardContent stats={stats} showStats={showStats} />}
         </TabsContent>
 
-        <TabsContent value="deals"><DealsTab /></TabsContent>
+        <TabsContent value="deals"><DealsTab showStats={dealsShowStats} /></TabsContent>
         <TabsContent value="clients"><ClientStatsTab /></TabsContent>
-        <TabsContent value="statistics"><StatisticsTab /></TabsContent>
+        <TabsContent value="statistics"><StatisticsTab showFilters={statsShowFilters} setShowFilters={setStatsShowFilters} showStats={statsShowCards} /></TabsContent>
         <TabsContent value="import"><ImportTab /></TabsContent>
         <TabsContent value="blacklist"><ClientStatsTab blacklistOnly /></TabsContent>
       </Tabs>
@@ -68,12 +91,12 @@ export default function Crm() {
   )
 }
 
-function DashboardContent({ stats }: { stats: CrmStats }) {
+function DashboardContent({ stats, showStats }: { stats: CrmStats; showStats: boolean }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <StatsCard title="Total Clients" value={stats.clients.total} sub={`${stats.clients.persons} persons, ${stats.clients.companies} companies`} icon={Users} />
-        <StatsCard title="Car Deals" value={stats.deals.total} sub={`${stats.deals.new_cars} NW, ${stats.deals.used_cars} GW`} icon={Car} />
+      <div className={`grid grid-cols-2 gap-3 ${showStats ? '' : 'hidden md:grid'}`}>
+        <StatCard title="Total Clients" value={stats.clients.total.toLocaleString()} description={`${stats.clients.persons} persons, ${stats.clients.companies} companies`} icon={<Users className="h-4 w-4" />} />
+        <StatCard title="Car Deals" value={stats.deals.total.toLocaleString()} description={`${stats.deals.new_cars} NW, ${stats.deals.used_cars} GW`} icon={<Car className="h-4 w-4" />} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

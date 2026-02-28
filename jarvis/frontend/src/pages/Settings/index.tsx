@@ -84,7 +84,7 @@ export default function Settings() {
       <PageHeader
         title="Settings"
         breadcrumbs={[
-          { label: 'Settings' },
+          { label: 'Settings', shortLabel: 'Set.' },
           { label: tabs.find(t => t.path === (splat || 'users'))?.label ?? 'Settings' },
         ]}
       />

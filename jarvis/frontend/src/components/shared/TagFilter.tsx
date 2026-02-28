@@ -11,9 +11,10 @@ import type { Tag } from '@/types/tags'
 interface TagFilterProps {
   selectedTagIds: number[]
   onChange: (ids: number[]) => void
+  iconOnly?: boolean
 }
 
-export function TagFilter({ selectedTagIds, onChange }: TagFilterProps) {
+export function TagFilter({ selectedTagIds, onChange, iconOnly }: TagFilterProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
 
@@ -55,13 +56,19 @@ export function TagFilter({ selectedTagIds, onChange }: TagFilterProps) {
   return (
     <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSearch('') }}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5">
-          <Filter className="h-3.5 w-3.5" />
-          Tags
+        <Button variant="outline" size={iconOnly ? 'icon' : 'sm'} className={iconOnly ? 'relative shrink-0' : 'h-8 gap-1.5'}>
+          <Filter className={iconOnly ? 'h-4 w-4' : 'h-3.5 w-3.5'} />
+          {!iconOnly && 'Tags'}
           {activeCount > 0 && (
-            <span className="ml-0.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary-foreground">
-              {activeCount}
-            </span>
+            iconOnly ? (
+              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+                {activeCount}
+              </span>
+            ) : (
+              <span className="ml-0.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary-foreground">
+                {activeCount}
+              </span>
+            )
           )}
         </Button>
       </PopoverTrigger>

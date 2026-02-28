@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Building2, User, Pencil, Save, X, ExternalLink, UserCircle, Briefcase,
-  FileText, Receipt, Mail, Phone, MapPin, Landmark, Hash, Shield, RefreshCw,
+  FileText, Receipt, Mail, Phone, MapPin, Landmark, Hash, Shield, RefreshCw, BarChart3,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -49,6 +49,7 @@ export default function SupplierProfile() {
   const id = Number(supplierId)
 
   const [editing, setEditing] = useState(false)
+  const [showStats, setShowStats] = useState(false)
   const [form, setForm] = useState<Partial<DmsSupplier>>({})
   const [tab, setTab] = useState<'documents' | 'invoices'>('documents')
 
@@ -217,6 +218,9 @@ export default function SupplierProfile() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+            <BarChart3 className="h-4 w-4" />
+          </Button>
           <TagBadgeList tags={tags} />
           <TagPickerButton
             entityType="supplier"
@@ -253,7 +257,7 @@ export default function SupplierProfile() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
         <StatCard title="Documents" value={docs.length} icon={<FileText className="h-4 w-4" />} />
         <StatCard title="Invoices" value={invoices.length} icon={<Receipt className="h-4 w-4" />} />
         <StatCard title="Total RON" value={formatNum(totalRon)} icon={<Landmark className="h-4 w-4" />} />

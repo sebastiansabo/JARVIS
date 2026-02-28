@@ -326,7 +326,7 @@ export default function CampaignSimulator() {
       <PageHeader
         title="Simulator"
         breadcrumbs={[
-          { label: 'Marketing', href: '/app/marketing' },
+          { label: 'Marketing', shortLabel: 'Mkt.', href: '/app/marketing' },
           { label: 'Simulator' },
         ]}
       />

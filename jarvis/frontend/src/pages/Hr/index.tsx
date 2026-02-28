@@ -1,6 +1,6 @@
-import { lazy, Suspense, useMemo } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { ClipboardCheck, Download, Fingerprint, LayoutDashboard } from 'lucide-react'
+import { ClipboardCheck, Download, Fingerprint, LayoutDashboard, BarChart3 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -8,6 +8,8 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { hrApi } from '@/api/hr'
 import { useHrStore } from '@/stores/hrStore'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 
 const BonusesTab = lazy(() => import('./BonusesTab'))
@@ -27,6 +29,7 @@ function TabLoader() {
 
 export default function Hr() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const isProfilePage = useMatch('/app/hr/pontaje/:biostarUserId')
   const isBonusesPage = useMatch('/app/hr/bonuses')
   const isAdjustmentsPage = useMatch('/app/hr/adjustments')
@@ -39,6 +42,7 @@ export default function Hr() {
     staleTime: 5 * 60 * 1000,
   })
 
+  const [showStats, setShowStats] = useState(false)
   const canExport = permissions?.permissions?.['hr.bonuses.export']?.allowed ?? false
   const canViewAmounts = permissions?.permissions?.['hr.bonuses.view_amounts']?.allowed ?? false
   const canViewAdjustments = permissions?.permissions?.['hr.pontaje_adjustments.view']?.allowed ?? false
@@ -74,12 +78,17 @@ export default function Hr() {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
+            {!isBonusesPage && !isAdjustmentsPage && isMobile && (
+              <Button variant="ghost" size="icon" onClick={() => setShowStats(s => !s)}>
+                <BarChart3 className="h-4 w-4" />
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" className="hidden md:inline-flex md:size-auto md:px-3" onClick={toggleDashboardWidget}>
               <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
               <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
             </Button>
             {canExport && (
-              <Button variant="outline" size="icon" className="md:size-auto md:px-4" asChild>
+              <Button variant="outline" size="icon" className="hidden md:inline-flex md:size-auto md:px-4" asChild>
                 <a href={hrApi.exportUrl({ year: filters.year, month: filters.month })} download>
                   <Download className="h-4 w-4 md:mr-1.5" />
                   <span className="hidden md:inline">Export</span>
@@ -93,8 +102,22 @@ export default function Hr() {
       {/* Tab nav — hidden on Bonuses page */}
       {!isBonusesPage && (
         <Tabs value={isAdjustmentsPage ? 'adjustments' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
-          <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
-            <TabsList className="w-max md:w-auto">
+          {isMobile ? (
+            <MobileBottomTabs>
+              <TabsList className="w-full">
+                {tabs.map((t) => {
+                  const val = t.to.split('/').pop()!
+                  return (
+                    <TabsTrigger key={val} value={val}>
+                      <t.icon className="h-4 w-4" />
+                      {t.label}
+                    </TabsTrigger>
+                  )
+                })}
+              </TabsList>
+            </MobileBottomTabs>
+          ) : (
+            <TabsList className="w-auto">
               {tabs.map((t) => {
                 const val = t.to.split('/').pop()!
                 return (
@@ -105,7 +128,7 @@ export default function Hr() {
                 )
               })}
             </TabsList>
-          </div>
+          )}
         </Tabs>
       )}
 
@@ -113,7 +136,7 @@ export default function Hr() {
       <Suspense fallback={<TabLoader />}>
         <Routes>
           <Route index element={<Navigate to="pontaje" replace />} />
-          <Route path="pontaje" element={<PontajeTab />} />
+          <Route path="pontaje" element={<PontajeTab showStats={showStats} />} />
           <Route path="bonuses" element={<BonusesTab canViewAmounts={canViewAmounts} />} />
           {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab />} />}
         </Routes>

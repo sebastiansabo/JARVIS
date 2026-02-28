@@ -20,6 +20,8 @@ interface FilterBarProps {
   values: Record<string, string>
   onChange: (values: Record<string, string>) => void
   className?: string
+  /** Render as icon-only button on mobile (for inline toolbar use) */
+  iconOnly?: boolean
 }
 
 function FilterControls({
@@ -73,7 +75,7 @@ function FilterControls({
   )
 }
 
-export function FilterBar({ fields, values, onChange, className }: FilterBarProps) {
+export function FilterBar({ fields, values, onChange, className, iconOnly }: FilterBarProps) {
   const isMobile = useIsMobile()
   const [sheetOpen, setSheetOpen] = useState(false)
   const activeCount = Object.values(values).filter(Boolean).length
@@ -93,33 +95,39 @@ export function FilterBar({ fields, values, onChange, className }: FilterBarProp
       <>
         <Button
           variant="outline"
-          size="sm"
+          size={iconOnly ? 'icon' : 'sm'}
           onClick={() => setSheetOpen(true)}
-          className={cn('w-full justify-start', className)}
+          className={cn(iconOnly ? 'relative' : 'w-full justify-start', className)}
         >
-          <SlidersHorizontal className="mr-2 h-4 w-4" />
-          Filters
+          <SlidersHorizontal className={cn(iconOnly ? 'h-4 w-4' : 'mr-2 h-4 w-4')} />
+          {!iconOnly && 'Filters'}
           {activeCount > 0 && (
-            <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
-              {activeCount}
-            </span>
+            iconOnly ? (
+              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                {activeCount}
+              </span>
+            ) : (
+              <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                {activeCount}
+              </span>
+            )
           )}
         </Button>
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
+          <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto px-4">
             <SheetHeader>
               <SheetTitle>Filters</SheetTitle>
             </SheetHeader>
-            <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-2 py-4">
               <FilterControls fields={fields} values={values} onChange={updateField} vertical />
-              <div className="flex gap-2 pt-2">
+              <div className="col-span-2 flex gap-2 pt-2">
                 {activeCount > 0 && (
-                  <Button variant="outline" size="sm" onClick={clearAll} className="flex-1">
+                  <Button variant="outline" onClick={clearAll} className="flex-1">
                     <X className="mr-1 h-3 w-3" />
                     Clear All
                   </Button>
                 )}
-                <Button size="sm" onClick={() => setSheetOpen(false)} className="flex-1">
+                <Button onClick={() => setSheetOpen(false)} className="flex-1">
                   Apply
                 </Button>
               </div>

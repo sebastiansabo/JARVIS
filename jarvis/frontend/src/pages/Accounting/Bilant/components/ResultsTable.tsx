@@ -108,10 +108,10 @@ export function ResultsTable({ results }: ResultsTableProps) {
       <Table className="table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead className="w-14">Nr.</TableHead>
-            <TableHead>Description</TableHead>
-            <TableHead className="w-28 text-right">Value</TableHead>
-            <TableHead className="w-8" />
+            <TableHead className="w-8 md:w-14 px-2">Nr.</TableHead>
+            <TableHead className="px-2">Description</TableHead>
+            <TableHead className="w-16 md:w-28 text-right px-2">Value</TableHead>
+            <TableHead className="w-6 md:w-8 px-0" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -140,30 +140,30 @@ export function ResultsTable({ results }: ResultsTableProps) {
                   )}
                   onClick={hasVerification ? () => toggleRow(r.id) : undefined}
                 >
-                  <TableCell className="text-xs text-muted-foreground">{r.nr_rd || ''}</TableCell>
-                  <TableCell className="break-words whitespace-normal">
+                  <TableCell className="text-xs text-muted-foreground px-2">{r.nr_rd || ''}</TableCell>
+                  <TableCell className="break-words whitespace-normal px-2">
                     <span
-                      className={cn('text-sm text-justify block', isSection && 'font-semibold text-muted-foreground uppercase text-xs')}
-                      style={{ paddingLeft: `${(r.indent_level || 0) * 16}px` }}
+                      className={cn('text-xs md:text-sm block', isSection && 'font-semibold text-muted-foreground uppercase')}
+                      style={{ paddingLeft: `${(r.indent_level || 0) * 12}px` }}
                     >
                       {r.description}
                     </span>
                   </TableCell>
-                  <TableCell className={cn('text-right tabular-nums text-sm', isTotal && 'font-bold')}>
+                  <TableCell className={cn('text-right tabular-nums text-xs md:text-sm px-2', isTotal && 'font-bold')}>
                     {isSection ? '' : (r.value !== 0 || isTotal ? fmtValue(r.value) : '')}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-0">
                     {hasVerification && (
                       isExpanded
-                        ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                        : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        ? <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                        : <ChevronRight className="h-3 w-3 text-muted-foreground" />
                     )}
                   </TableCell>
                 </TableRow>
                 {isExpanded && hasVerification && (
                   <TableRow className="bg-muted/30">
-                    <TableCell />
-                    <TableCell colSpan={3}>
+                    <TableCell className="px-2" />
+                    <TableCell colSpan={3} className="px-2">
                       <div className="py-1 text-xs text-muted-foreground font-mono whitespace-pre-wrap">
                         {r.formula_ct && <div className="mb-1"><span className="font-medium">CT:</span> {enrichCtFormula(r.formula_ct, r.verification || '')} <span className="font-medium">= {fmtValue(r.value)}</span></div>}
                         {r.formula_rd && <div className="mb-1"><span className="font-medium">RD:</span> {r.formula_rd}</div>}

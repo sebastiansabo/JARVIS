@@ -25,6 +25,7 @@ import {
   ArrowDown,
   ArrowUpDown,
   BarChart3,
+  CheckSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -39,6 +40,7 @@ import {
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { StatCard } from '@/components/shared/StatCard'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -48,7 +50,7 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
 import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
+import { Skeleton } from '@/components/ui/skeleton'
 import { QueryError } from '@/components/QueryError'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { TagBadgeList } from '@/components/shared/TagBadge'
@@ -96,6 +98,7 @@ export default function Accounting() {
   const [sort, setSort] = usePersistedState<SortState | null>('accounting-sort', null)
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
   const [showStats, setShowStats] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
 
   const filters = useAccountingStore((s) => s.filters)
   const selectedInvoiceIds = useAccountingStore((s) => s.selectedIds)
@@ -373,7 +376,7 @@ export default function Accounting() {
       <PageHeader
         title="Accounting"
         breadcrumbs={[
-          { label: 'Accounting' },
+          { label: 'Accounting', shortLabel: 'Acc.' },
           { label: tabs.find(t => t.key === activeTab)?.label ?? 'Invoices' },
         ]}
         actions={
@@ -381,7 +384,7 @@ export default function Accounting() {
             <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
               <BarChart3 className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
+            <Button variant="ghost" size="icon" className="hidden md:inline-flex md:size-auto md:px-3" onClick={toggleDashboardWidget}>
               <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
               <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
             </Button>
@@ -427,37 +430,74 @@ export default function Accounting() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as TabKey); clearSelected(); setSearch('') }}>
-        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
-        <TabsList className="w-max md:w-auto">
-          {tabs.map((tab) => {
-            const Icon = tab.icon
-            return (
-              <TabsTrigger key={tab.key} value={tab.key}>
-                <Icon className="h-3.5 w-3.5" />
-                {tab.label}
-                {tab.key === 'bin' && binInvoices.length > 0 && (
-                  <span className="ml-1 rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground">
-                    {binInvoices.length}
-                  </span>
-                )}
-              </TabsTrigger>
-            )
-          })}
-        </TabsList>
-        </div>
+      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as TabKey); clearSelected(); setSelectMode(false); setSearch('') }}>
+        {isMobile ? (
+          <MobileBottomTabs>
+            <TabsList className="w-full">
+              {tabs.map((tab) => {
+                const Icon = tab.icon
+                return (
+                  <TabsTrigger key={tab.key} value={tab.key}>
+                    <Icon className="h-3.5 w-3.5" />
+                    {tab.label}
+                    {tab.key === 'bin' && binInvoices.length > 0 && (
+                      <span className="ml-1 rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground">
+                        {binInvoices.length}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                )
+              })}
+            </TabsList>
+          </MobileBottomTabs>
+        ) : (
+          <TabsList className="w-auto">
+            {tabs.map((tab) => {
+              const Icon = tab.icon
+              return (
+                <TabsTrigger key={tab.key} value={tab.key}>
+                  <Icon className="h-3.5 w-3.5" />
+                  {tab.label}
+                  {tab.key === 'bin' && binInvoices.length > 0 && (
+                    <span className="ml-1 rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground">
+                      {binInvoices.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+              )
+            })}
+          </TabsList>
+        )}
       </Tabs>
 
       {/* Filter + Search bar */}
       {(activeTab === 'invoices' || activeTab === 'bin') && (
-        <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Search supplier or invoice #..."
-            className="w-full md:w-48"
-          />
+        isMobile ? (
+          <div className="flex items-center gap-2">
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search..."
+              className="flex-1"
+            />
+            <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} iconOnly />
+            <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
+            {selectMode ? (
+              <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { clearSelected(); setSelectMode(false) }}>Cancel</Button>
+            ) : (
+              <Button variant="outline" size="icon" className="shrink-0" onClick={() => setSelectMode(true)} title="Select">
+                <CheckSquare className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        ) : (
           <div className="flex flex-wrap items-center gap-2">
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search supplier or invoice #..."
+              className="w-48"
+            />
             <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} />
             <DatePresetSelect
               startDate={filters.start_date ?? ''}
@@ -465,13 +505,11 @@ export default function Accounting() {
               onChange={(s, e) => handleFilterChange({ ...filterValues, start_date: s, end_date: e })}
             />
             <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
-          </div>
-          {!isMobile && (
             <div className="ml-auto flex items-center gap-2">
               <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
             </div>
-          )}
-        </div>
+          </div>
+        )
       )}
 
       {/* Bulk action bar */}
@@ -504,7 +542,7 @@ export default function Accounting() {
               </Button>
             </>
           )}
-          <Button variant="ghost" size="sm" onClick={clearSelected}>
+          <Button variant="ghost" size="sm" onClick={() => { clearSelected(); setSelectMode(false) }}>
             Cancel
           </Button>
         </div>
@@ -536,6 +574,7 @@ export default function Accounting() {
           sort={sort}
           onSort={setSort}
           isMobile={isMobile}
+          selectMode={selectMode}
         />
       ) : activeTab === 'company' ? (
         <SummaryTable data={companySummary} nameKey="company" label="Company" />
@@ -815,6 +854,7 @@ function InvoiceTable({
   sort,
   onSort,
   isMobile,
+  selectMode,
 }: {
   invoices: Invoice[]
   isLoading: boolean
@@ -834,49 +874,37 @@ function InvoiceTable({
   sort: SortState | null
   onSort: (s: SortState | null) => void
   isMobile?: boolean
+  selectMode?: boolean
 }) {
   const colCount = 2 + activeCols.length + 1 // checkbox + ID + visible cols + actions
 
-  // Mobile card fields for invoice cards
-  const mobileFields: MobileCardField<Invoice>[] = useMemo(() => [
-    {
-      key: 'supplier', label: 'Supplier', isPrimary: true,
-      render: (inv) => <span className="font-medium">{inv.supplier}</span>,
-    },
-    {
-      key: 'meta', label: 'Invoice', isSecondary: true,
-      render: (inv) => (
-        <span className="flex items-center gap-2">
-          <span>#{inv.invoice_number}</span>
-          <span>{formatDate(inv.invoice_date)}</span>
-        </span>
-      ),
-    },
-    {
-      key: 'value', label: 'Total',
-      render: (inv) => <CurrencyDisplay value={inv.invoice_value} currency={inv.currency} />,
-    },
-    {
-      key: 'status', label: 'Status',
-      render: (inv) => <StatusBadge status={inv.status} />,
-    },
-    {
-      key: 'payment', label: 'Payment',
-      render: (inv) => <StatusBadge status={inv.payment_status} />,
-    },
-    {
-      key: 'company', label: 'Company', expandOnly: true,
-      render: (inv) => <span className="text-xs">{inv.allocations?.[0]?.company ?? '—'}</span>,
-    },
-    {
-      key: 'department', label: 'Department', expandOnly: true,
-      render: (inv) => <span className="text-xs">{inv.allocations?.[0]?.department ?? '—'}</span>,
-    },
-  ], [])
+  // Payment status → dot color (Apple-style minimal indicator)
+  const paymentDotColor = useCallback((status: string | undefined | null) => {
+    if (!status) return 'bg-gray-300'
+    switch (status.toLowerCase()) {
+      case 'paid': return 'bg-green-500'
+      case 'partial': return 'bg-orange-500'
+      case 'unpaid': case 'not_paid': return 'bg-red-500'
+      default: return 'bg-yellow-500'
+    }
+  }, [])
 
   if (isLoading) {
     return isMobile ? (
-      <MobileCardList data={[]} fields={mobileFields} getRowId={() => 0} isLoading />
+      <div className="space-y-1.5">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="rounded-xl border bg-card px-3.5 py-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-5 w-2/5" />
+              <Skeleton className="h-5 w-24" />
+            </div>
+            <div className="flex items-center justify-between ml-[30px]">
+              <Skeleton className="h-4 w-3/5" />
+              <Skeleton className="h-4 w-14" />
+            </div>
+          </div>
+        ))}
+      </div>
     ) : (
       <Card>
         <CardContent className="p-0">
@@ -896,44 +924,71 @@ function InvoiceTable({
   }
 
   if (isMobile) {
+    const selectedSet = new Set(selectedIds)
     return (
-      <>
-        <MobileCardList
-          data={invoices}
-          fields={mobileFields}
-          getRowId={(inv) => inv.id}
-          onRowClick={(inv) => onEdit(inv)}
-          selectable
-          selectedIds={selectedIds}
-          onToggleSelect={onToggleSelect}
-          actions={(inv) => (
-            <div className="flex items-center gap-1">
-              {isBin ? (
-                <>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onRestore(inv.id)}>
-                    <RotateCcw className="h-3.5 w-3.5" />
+      <div className="space-y-1.5">
+        {invoices.map((inv) => {
+          const isSelected = selectedSet.has(inv.id)
+          const company = inv.allocations?.[0]?.company
+          return (
+            <div
+              key={inv.id}
+              className={cn(
+                'rounded-xl border bg-card px-3.5 py-3 active:bg-accent/50 transition-colors',
+                isSelected && 'border-primary/50 bg-primary/5',
+              )}
+              onClick={() => onEdit(inv)}
+            >
+              {/* Row 1: Checkbox + Supplier + Amount */}
+              <div className="flex items-center gap-2.5">
+                {selectMode && (
+                  <div className="-m-2 p-2" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => onToggleSelect(inv.id)}
+                    />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <span className="text-[15px] font-semibold leading-tight truncate block">
+                    {inv.supplier}
+                  </span>
+                </div>
+                <span className="shrink-0 text-[15px] font-semibold tabular-nums">
+                  <CurrencyDisplay value={inv.invoice_value} currency={inv.currency} />
+                </span>
+              </div>
+
+              {/* Row 2: Invoice meta + Status badge */}
+              <div className={cn('flex items-center justify-between mt-1', selectMode && 'ml-[30px]')}>
+                <span className="text-[13px] text-muted-foreground truncate">
+                  #{inv.invoice_number} · {formatDate(inv.invoice_date)}
+                  {company ? ` · ${company}` : ''}
+                </span>
+                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                  <span className={cn('h-2 w-2 rounded-full shrink-0', paymentDotColor(inv.payment_status))} />
+                  <StatusBadge status={inv.status} className="text-[11px] px-1.5 py-0" />
+                </div>
+              </div>
+
+              {/* Actions — only in bin mode (normal mode: tap = edit) */}
+              {isBin && (
+                <div className={cn('flex items-center justify-end gap-1 mt-2 border-t pt-2', selectMode && 'ml-[30px]')} onClick={(e) => e.stopPropagation()}>
+                  <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => onRestore(inv.id)}>
+                    <RotateCcw className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => onPermanentDelete(inv.id)}>
-                    <Trash2 className="h-3.5 w-3.5" />
+                  <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive" onClick={() => onPermanentDelete(inv.id)}>
+                    <Trash2 className="h-4 w-4" />
                   </Button>
-                </>
-              ) : (
-                <>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(inv)}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => onDelete(inv.id)}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </>
+                </div>
               )}
             </div>
-          )}
-        />
-        <div className="text-xs text-muted-foreground">
+          )
+        })}
+        <p className="text-xs text-muted-foreground pt-1">
           {invoices.length} invoice{invoices.length !== 1 ? 's' : ''}
-        </div>
-      </>
+        </p>
+      </div>
     )
   }
 

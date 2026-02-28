@@ -2,11 +2,13 @@ import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, Link } from 'react-router-dom'
 import { useDebounce } from '@/lib/utils'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import {
-  Plus, Edit2, Trash2, Check, X, Search, Building2, User, FileText,
+  Plus, Edit2, Trash2, Check, X, Search, Building2, User, FileText, CheckSquare,
   ChevronRight, ChevronDown, Tags, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,6 +20,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { StatusBadge } from '@/components/shared/StatusBadge'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { dmsApi } from '@/api/dms'
 import { tagsApi } from '@/api/tags'
 import type { DmsSupplier, DmsSupplierType } from '@/types/dms'
@@ -268,17 +272,125 @@ function SupplierExpandedDetail({ supId }: { supId: number }) {
   )
 }
 
+/* ── Invoices popup for mobile ── */
+function SupplierInvoicesDialog({ supId, supName, open, onClose }: { supId: number; supName: string; open: boolean; onClose: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['supplier-invoices', supId],
+    queryFn: () => dmsApi.getSupplierInvoices(supId, 50),
+    enabled: open,
+  })
+  const invoices = data?.invoices || []
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="text-base">Invoices — {supName}</DialogTitle>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto -mx-6 px-6">
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground py-4">Loading...</p>
+          ) : invoices.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">No invoices found.</p>
+          ) : (
+            <div className="space-y-2">
+              {invoices.map((inv) => (
+                <div key={inv.id} className="rounded-lg border px-3 py-2 text-sm space-y-0.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{inv.invoice_number || '—'}</span>
+                    <span className="tabular-nums font-medium">
+                      {new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(inv.invoice_value)} {inv.currency}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{inv.invoice_date || '—'}</span>
+                    <div className="flex gap-1">
+                      <StatusBadge status={inv.status} className="text-[10px] px-1.5 py-0" />
+                      <StatusBadge status={inv.payment_status} className="text-[10px] px-1.5 py-0" />
+                    </div>
+                  </div>
+                  {inv.value_ron && inv.currency !== 'RON' && (
+                    <div className="text-xs text-muted-foreground text-right">{formatNum(inv.value_ron)} RON</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ── Documents popup for mobile ── */
+function SupplierDocsDialog({ supId, supName, open, onClose }: { supId: number; supName: string; open: boolean; onClose: () => void }) {
+  const navigate = useNavigate()
+  const { data, isLoading } = useQuery({
+    queryKey: ['supplier-documents', supId],
+    queryFn: () => dmsApi.getSupplierDocuments(supId, 50),
+    enabled: open,
+  })
+  const docs = data?.documents || []
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="text-base">Documents — {supName}</DialogTitle>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto -mx-6 px-6">
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground py-4">Loading...</p>
+          ) : docs.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">No documents linked.</p>
+          ) : (
+            <div className="space-y-2">
+              {docs.map((doc) => (
+                <button
+                  key={doc.id}
+                  type="button"
+                  className="w-full text-left rounded-lg border px-3 py-2 text-sm space-y-0.5 active:bg-accent/50 transition-colors"
+                  onClick={() => { onClose(); navigate(`/app/dms/documents/${doc.id}`) }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium truncate">
+                      {doc.parent_id && <span className="text-muted-foreground mr-1">↳</span>}
+                      {doc.title}
+                    </span>
+                    <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{doc.doc_date || '—'}</span>
+                    <div className="flex gap-1">
+                      {doc.category_name && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{doc.category_name}</Badge>}
+                      <StatusBadge status={doc.status} className="text-[10px] px-1.5 py-0" />
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /* ── Main component ── */
 export default function SupplierManager({ companyId }: SupplierManagerProps) {
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [editSup, setEditSup] = useState<DmsSupplier | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteSupId, setDeleteSupId] = useState<number | null>(null)
   const [form, setForm] = useState<Partial<DmsSupplier>>(EMPTY)
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [selectMode, setSelectMode] = useState(false)
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [invoicesSup, setInvoicesSup] = useState<{ id: number; name: string } | null>(null)
+  const [docsSup, setDocsSup] = useState<{ id: number; name: string } | null>(null)
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'name', dir: 'asc' })
 
   const debouncedSearch = useDebounce(search, 300)
@@ -301,6 +413,40 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
       return dir * (av - bv)
     })
   }, [data?.suppliers, sort])
+
+  const mobileFields: MobileCardField<DmsSupplier>[] = useMemo(() => [
+    { key: 'name', label: 'Name', isPrimary: true, render: (s) => s.name },
+    { key: 'total', label: 'Total', isPrimary: true, alignRight: true, render: (s) => (s.invoice_count ?? 0) > 0 ? formatNum(s.total_ron) + ' RON' : '' },
+    { key: 'type', label: 'Type', isSecondary: true, render: (s) => (
+      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+        {s.supplier_type === 'company' ? <><Building2 className="h-3 w-3 mr-0.5 inline" />Company</> : <><User className="h-3 w-3 mr-0.5 inline" />Person</>}
+      </Badge>
+    ) },
+    { key: 'cui', label: 'CUI', isSecondary: true, render: (s) => s.cui || '' },
+    { key: 'active', label: 'Active', isSecondary: true, render: (s) => s.is_active ? <Check className="h-3.5 w-3.5 text-green-600 inline" /> : <X className="h-3.5 w-3.5 text-muted-foreground inline" /> },
+    { key: 'docs', label: 'Linked Docs', render: (s) => (s.document_count ?? 0) > 0 ? (
+      <button
+        type="button"
+        className="text-primary underline underline-offset-2"
+        onClick={(e) => { e.stopPropagation(); setDocsSup({ id: s.id, name: s.name }) }}
+      >
+        {s.document_count}
+      </button>
+    ) : '—' },
+    { key: 'invoices', label: 'Invoices', render: (s) => (s.invoice_count ?? 0) > 0 ? (
+      <button
+        type="button"
+        className="text-primary underline underline-offset-2"
+        onClick={(e) => { e.stopPropagation(); setInvoicesSup({ id: s.id, name: s.name }) }}
+      >
+        {s.invoice_count}
+      </button>
+    ) : '—' },
+    { key: 'city', label: 'City', expandOnly: true, render: (s) => s.city || '—' },
+    { key: 'county', label: 'County', expandOnly: true, render: (s) => s.county || '—' },
+    { key: 'email', label: 'Email', expandOnly: true, render: (s) => s.email || '—' },
+    { key: 'phone', label: 'Phone', expandOnly: true, render: (s) => s.phone || '—' },
+  ], [])
 
   const resetForm = () => setForm({ ...EMPTY })
   const setField = (key: keyof DmsSupplier, value: unknown) =>
@@ -383,64 +529,101 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
   const formDialog = createOpen || editSup
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="text-lg font-semibold">Supplier List</h3>
-        <div className="flex items-center gap-2 flex-wrap">
-          {selected.size > 0 && (
-            <>
-              {/* Batch Tag */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm"><Tags className="h-3.5 w-3.5 mr-1" />Tag ({selected.size})</Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[180px] p-1" align="end">
-                  {(allTags as Tag[]).map((t) => (
-                    <button
-                      key={t.id}
-                      className="w-full text-left text-sm px-2 py-1 rounded hover:bg-accent flex items-center gap-1.5"
-                      onClick={() => handleBatchTag(t.id, 'add')}
-                    >
-                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#6c757d' }} />
-                      {t.name}
-                    </button>
-                  ))}
-                </PopoverContent>
-              </Popover>
-              {/* Batch Deactivate */}
-              <Button variant="destructive" size="sm" onClick={() => setBatchDeleteOpen(true)}>
-                <Trash2 className="h-4 w-4 mr-1" />Deactivate ({selected.size})
+    <div className="space-y-4 md:space-y-6">
+      <PageHeader
+        title="Suppliers"
+        breadcrumbs={[
+          { label: 'Documents', shortLabel: 'Docs.', href: '/app/dms' },
+          { label: 'Suppliers' },
+        ]}
+        actions={
+          <div className="flex items-center gap-1.5">
+            {isMobile && (
+              <Button
+                variant={selectMode ? 'secondary' : 'outline'}
+                size="icon"
+                onClick={() => { setSelectMode((p) => !p); if (selectMode) setSelected(new Set()) }}
+              >
+                {selectMode ? <X className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
               </Button>
-            </>
-          )}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search suppliers..." className="pl-8 w-[220px] h-9" />
+            )}
+            <Button
+              variant="outline"
+              size="icon"
+              className="md:size-auto md:px-3"
+              onClick={() => anafBatchMutation.mutate()}
+              disabled={anafBatchMutation.isPending}
+              title="Sync all suppliers with CUI from ANAF"
+            >
+              <RefreshCw className={`h-4 w-4 md:mr-1 ${anafBatchMutation.isPending ? 'animate-spin' : ''}`} />
+              <span className="hidden md:inline">Sync ANAF</span>
+            </Button>
+            <Button size="icon" className="md:size-auto md:px-3" onClick={() => { resetForm(); setCreateOpen(true) }}>
+              <Plus className="h-4 w-4 md:mr-1" />
+              <span className="hidden md:inline">New Supplier</span>
+            </Button>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => anafBatchMutation.mutate()}
-            disabled={anafBatchMutation.isPending}
-            title="Sync all suppliers with CUI from ANAF"
-          >
-            <RefreshCw className={`h-4 w-4 mr-1 ${anafBatchMutation.isPending ? 'animate-spin' : ''}`} />
-            Sync ANAF
-          </Button>
-          <Button size="sm" onClick={() => { resetForm(); setCreateOpen(true) }}>
-            <Plus className="h-4 w-4 mr-1" />New Supplier
-          </Button>
+        }
+      />
+
+      {/* Search + Batch actions */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {selected.size > 0 && (
+          <>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm"><Tags className="h-3.5 w-3.5 mr-1" />Tag ({selected.size})</Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[180px] p-1" align="end">
+                {(allTags as Tag[]).map((t) => (
+                  <button
+                    key={t.id}
+                    className="w-full text-left text-sm px-2 py-1 rounded hover:bg-accent flex items-center gap-1.5"
+                    onClick={() => handleBatchTag(t.id, 'add')}
+                  >
+                    <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#6c757d' }} />
+                    {t.name}
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+            <Button variant="destructive" size="sm" onClick={() => setBatchDeleteOpen(true)}>
+              <Trash2 className="h-4 w-4 mr-1" />Deactivate ({selected.size})
+            </Button>
+          </>
+        )}
+        <div className="relative flex-1 md:flex-none">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search suppliers..." className="pl-8 md:w-[220px] h-9" />
         </div>
       </div>
 
-      {/* Table */}
+      {/* List */}
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading suppliers...</p>
       ) : suppliers.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-8">
           {search ? 'No suppliers match your search.' : 'No suppliers yet. Add your first supplier.'}
         </p>
+      ) : isMobile ? (
+        <MobileCardList
+          data={suppliers}
+          fields={mobileFields}
+          getRowId={(s) => s.id}
+          selectable={selectMode}
+          selectedIds={selected}
+          onToggleSelect={toggleSelect}
+          actions={(sup) => (
+            <>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(sup)} title="Edit">
+                <Edit2 className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteSupId(sup.id)} title="Delete">
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </>
+          )}
+        />
       ) : (
         <div className="rounded-md border overflow-x-auto">
           <Table>
@@ -643,6 +826,23 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
         title={`Deactivate ${selected.size} Supplier(s)`}
         description={`This will deactivate ${selected.size} selected supplier(s). They won't appear in search results anymore.`}
         confirmLabel="Deactivate All" variant="destructive" onConfirm={() => batchDeactivateMutation.mutate([...selected])} />
+
+      {invoicesSup && (
+        <SupplierInvoicesDialog
+          supId={invoicesSup.id}
+          supName={invoicesSup.name}
+          open
+          onClose={() => setInvoicesSup(null)}
+        />
+      )}
+      {docsSup && (
+        <SupplierDocsDialog
+          supId={docsSup.id}
+          supName={docsSup.name}
+          open
+          onClose={() => setDocsSup(null)}
+        />
+      )}
     </div>
   )
 }

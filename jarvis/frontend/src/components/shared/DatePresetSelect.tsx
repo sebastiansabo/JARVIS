@@ -5,6 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { cn } from '@/lib/utils'
 
 type DateRange = { start: string; end: string }
 
@@ -56,9 +57,10 @@ interface DatePresetSelectProps {
   startDate: string
   endDate: string
   onChange: (start: string, end: string) => void
+  className?: string
 }
 
-export function DatePresetSelect({ startDate, endDate, onChange }: DatePresetSelectProps) {
+export function DatePresetSelect({ startDate, endDate, onChange, className }: DatePresetSelectProps) {
   const current = detectPreset(startDate, endDate)
 
   const handleChange = (v: string) => {
@@ -72,7 +74,7 @@ export function DatePresetSelect({ startDate, endDate, onChange }: DatePresetSel
 
   return (
     <Select value={current} onValueChange={handleChange}>
-      <SelectTrigger className="h-8 w-auto min-w-[130px] gap-1 text-xs">
+      <SelectTrigger className={cn("h-8 w-auto min-w-[130px] gap-1 text-xs", className)}>
         <span className="text-muted-foreground">Period:</span>
         <SelectValue />
       </SelectTrigger>

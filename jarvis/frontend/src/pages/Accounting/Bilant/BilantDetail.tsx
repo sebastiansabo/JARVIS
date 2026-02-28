@@ -8,17 +8,18 @@ import { bilantApi } from '@/api/bilant'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ResultsTable } from './components/ResultsTable'
 import { RatioCard } from './components/RatioCard'
 import { StructureChart } from './components/StructureChart'
 import { AiInsightsCard } from './components/AiInsightsCard'
 import type { BilantMetrics, BilantMetricConfig } from '@/types/bilant'
-
-type DetailTab = 'results' | 'metrics' | 'info'
 
 const statusColors: Record<string, string> = {
   completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
@@ -60,7 +61,8 @@ export default function BilantDetail() {
   const { generationId } = useParams<{ generationId: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<DetailTab>('results')
+  const isMobile = useIsMobile()
+  const [tab, setTab] = useState('results')
   const [showDelete, setShowDelete] = useState(false)
   const [editNotes, setEditNotes] = useState(false)
   const [notes, setNotes] = useState('')
@@ -124,27 +126,23 @@ export default function BilantDetail() {
     )
   }
 
-  const tabs: { key: DetailTab; label: string }[] = [
-    { key: 'results', label: `Results (${results.length})` },
-    { key: 'metrics', label: 'Metrics' },
-    { key: 'info', label: 'Info' },
-  ]
-
   return (
     <div className="space-y-4">
       <PageHeader
         title={`${gen.company_name || 'Bilant'} — ${gen.period_label || `#${gen.id}`}`}
         breadcrumbs={[
-          { label: 'Accounting', href: '/app/accounting' },
+          { label: 'Accounting', shortLabel: 'Acc.', href: '/app/accounting' },
           { label: 'Bilant', href: '/app/accounting/bilant' },
           { label: gen.period_label || `Generation #${gen.id}` },
         ]}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <Badge variant="secondary" className={statusColors[gen.status] || ''}>{gen.status}</Badge>
-            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
-              <BarChart3 className="h-4 w-4" />
-            </Button>
+            {isMobile && (
+              <Button variant="ghost" size="icon" onClick={() => setShowStats(s => !s)}>
+                <BarChart3 className="h-4 w-4" />
+              </Button>
+            )}
             {gen.status === 'completed' && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -219,136 +217,138 @@ export default function BilantDetail() {
       )}
 
       {/* Tabs */}
-      <div className="flex items-center gap-4 border-b">
-        {tabs.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`pb-2 text-sm font-medium transition-colors ${
-              tab === t.key
-                ? 'border-b-2 border-primary text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={tab} onValueChange={setTab}>
+        {isMobile ? (
+          <MobileBottomTabs>
+            <TabsList className="w-full">
+              <TabsTrigger value="results">Results ({results.length})</TabsTrigger>
+              <TabsTrigger value="metrics">Metrics</TabsTrigger>
+              <TabsTrigger value="info">Info</TabsTrigger>
+            </TabsList>
+          </MobileBottomTabs>
+        ) : (
+          <TabsList className="w-auto">
+            <TabsTrigger value="results">Results ({results.length})</TabsTrigger>
+            <TabsTrigger value="metrics">Metrics</TabsTrigger>
+            <TabsTrigger value="info">Info</TabsTrigger>
+          </TabsList>
+        )}
 
-      {/* Results Tab */}
-      {tab === 'results' && <ResultsTable results={results} />}
+        {/* Results Tab */}
+        <TabsContent value="results"><ResultsTable results={results} /></TabsContent>
 
-      {/* Metrics Tab */}
-      {tab === 'metrics' && (
-        <div className="space-y-6">
-          {/* Financial Ratios */}
-          <div>
-            <h3 className="mb-3 text-sm font-semibold">Financial Ratios</h3>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {hasDynamicConfigs && ratioConfigs.length > 0
-                ? ratioConfigs
-                    .sort((a, b) => a.sort_order - b.sort_order)
-                    .map(cfg => {
-                      const ratioVal = metrics.ratios[cfg.metric_key]
-                      const value = ratioVal && typeof ratioVal === 'object' && 'value' in ratioVal
-                        ? ratioVal.value
-                        : typeof ratioVal === 'number' ? ratioVal : null
-                      const suffix = cfg.display_format === 'percent' ? '%' : ''
-                      const thresholds = cfg.threshold_good != null && cfg.threshold_warning != null
-                        ? { good: cfg.threshold_good, warning: cfg.threshold_warning }
-                        : undefined
+        {/* Metrics Tab */}
+        <TabsContent value="metrics">
+          <div className="space-y-6">
+            {/* Financial Ratios */}
+            <div>
+              <h3 className="mb-3 text-sm font-semibold">Financial Ratios</h3>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {hasDynamicConfigs && ratioConfigs.length > 0
+                  ? ratioConfigs
+                      .sort((a, b) => a.sort_order - b.sort_order)
+                      .map(cfg => {
+                        const ratioVal = metrics.ratios[cfg.metric_key]
+                        const value = ratioVal && typeof ratioVal === 'object' && 'value' in ratioVal
+                          ? ratioVal.value
+                          : typeof ratioVal === 'number' ? ratioVal : null
+                        const suffix = cfg.display_format === 'percent' ? '%' : ''
+                        const thresholds = cfg.threshold_good != null && cfg.threshold_warning != null
+                          ? { good: cfg.threshold_good, warning: cfg.threshold_warning }
+                          : undefined
+                        return (
+                          <RatioCard
+                            key={cfg.metric_key}
+                            label={cfg.metric_label}
+                            value={value}
+                            suffix={suffix}
+                            thresholds={thresholds}
+                            description={cfg.interpretation || undefined}
+                          />
+                        )
+                      })
+                  : Object.entries(FALLBACK_RATIO_THRESHOLDS).map(([key, meta]) => {
+                      const ratioVal = metrics.ratios[key]
+                      const value = typeof ratioVal === 'number'
+                        ? ratioVal
+                        : ratioVal && typeof ratioVal === 'object' && 'value' in ratioVal
+                          ? ratioVal.value
+                          : null
+                      const thresholds = key === 'indatorare'
+                        ? { good: meta.warning, warning: meta.good }
+                        : { good: meta.good, warning: meta.warning }
                       return (
                         <RatioCard
-                          key={cfg.metric_key}
-                          label={cfg.metric_label}
+                          key={key}
+                          label={meta.label}
                           value={value}
-                          suffix={suffix}
+                          suffix={meta.suffix}
                           thresholds={thresholds}
-                          description={cfg.interpretation || undefined}
+                          description={undefined}
                         />
                       )
                     })
-                : Object.entries(FALLBACK_RATIO_THRESHOLDS).map(([key, meta]) => {
-                    const ratioVal = metrics.ratios[key]
-                    const value = typeof ratioVal === 'number'
-                      ? ratioVal
-                      : ratioVal && typeof ratioVal === 'object' && 'value' in ratioVal
-                        ? ratioVal.value
-                        : null
-                    const thresholds = key === 'indatorare'
-                      ? { good: meta.warning, warning: meta.good }
-                      : { good: meta.good, warning: meta.warning }
-                    return (
-                      <RatioCard
-                        key={key}
-                        label={meta.label}
-                        value={value}
-                        suffix={meta.suffix}
-                        thresholds={thresholds}
-                        description={undefined}
-                      />
-                    )
-                  })
-              }
+                }
+              </div>
             </div>
+
+            {/* Structure Charts */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <StructureChart
+                title="Asset Structure"
+                items={metrics.structure.assets}
+                colorScheme="blue"
+              />
+              <StructureChart
+                title="Liability Structure"
+                items={metrics.structure.liabilities}
+                colorScheme="amber"
+              />
+            </div>
+
+            {/* AI Financial Analyst */}
+            <AiInsightsCard generationId={gen.id} initialAnalysis={data?.ai_analysis} />
           </div>
+        </TabsContent>
 
-          {/* Structure Charts */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <StructureChart
-              title="Asset Structure"
-              items={metrics.structure.assets}
-              colorScheme="blue"
-            />
-            <StructureChart
-              title="Liability Structure"
-              items={metrics.structure.liabilities}
-              colorScheme="amber"
-            />
-          </div>
+        {/* Info Tab */}
+        <TabsContent value="info">
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <InfoItem icon={<FileSpreadsheet className="h-4 w-4" />} label="Template" value={gen.template_name || '-'} />
+              <InfoItem icon={<Calendar className="h-4 w-4" />} label="Created" value={fmtDate(gen.created_at)} />
+              <InfoItem icon={<User className="h-4 w-4" />} label="Created by" value={gen.generated_by_name || '-'} />
+              <InfoItem icon={<FileSpreadsheet className="h-4 w-4" />} label="Original file" value={gen.original_filename || '-'} />
+              <InfoItem icon={<Calendar className="h-4 w-4" />} label="Period date" value={gen.period_date ? fmtDate(gen.period_date) : '-'} />
+              <InfoItem label="Rows" value={String(results.length)} />
+            </div>
 
-          {/* AI Financial Analyst */}
-          <AiInsightsCard generationId={gen.id} initialAnalysis={data?.ai_analysis} />
-        </div>
-      )}
-
-      {/* Info Tab */}
-      {tab === 'info' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <InfoItem icon={<FileSpreadsheet className="h-4 w-4" />} label="Template" value={gen.template_name || '-'} />
-            <InfoItem icon={<Calendar className="h-4 w-4" />} label="Created" value={fmtDate(gen.created_at)} />
-            <InfoItem icon={<User className="h-4 w-4" />} label="Created by" value={gen.generated_by_name || '-'} />
-            <InfoItem icon={<FileSpreadsheet className="h-4 w-4" />} label="Original file" value={gen.original_filename || '-'} />
-            <InfoItem icon={<Calendar className="h-4 w-4" />} label="Period date" value={gen.period_date ? fmtDate(gen.period_date) : '-'} />
-            <InfoItem label="Rows" value={String(results.length)} />
-          </div>
-
-          {/* Notes */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <StickyNote className="h-4 w-4 text-muted-foreground" />
-              <h3 className="text-sm font-medium">Notes</h3>
-              {!editNotes && (
-                <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => { setNotes(gen.notes || ''); setEditNotes(true) }}>
-                  Edit
-                </Button>
+            {/* Notes */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <StickyNote className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">Notes</h3>
+                {!editNotes && (
+                  <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => { setNotes(gen.notes || ''); setEditNotes(true) }}>
+                    Edit
+                  </Button>
+                )}
+              </div>
+              {editNotes ? (
+                <div className="space-y-2">
+                  <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} placeholder="Add notes..." />
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => notesMut.mutate()} disabled={notesMut.isPending}>Save</Button>
+                    <Button size="sm" variant="outline" onClick={() => setEditNotes(false)}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{gen.notes || 'No notes'}</p>
               )}
             </div>
-            {editNotes ? (
-              <div className="space-y-2">
-                <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} placeholder="Add notes..." />
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={() => notesMut.mutate()} disabled={notesMut.isPending}>Save</Button>
-                  <Button size="sm" variant="outline" onClick={() => setEditNotes(false)}>Cancel</Button>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{gen.notes || 'No notes'}</p>
-            )}
           </div>
-        </div>
-      )}
+        </TabsContent>
+      </Tabs>
 
       {/* Delete Confirm */}
       <ConfirmDialog

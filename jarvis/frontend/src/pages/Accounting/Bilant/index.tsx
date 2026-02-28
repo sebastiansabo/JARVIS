@@ -8,6 +8,8 @@ import { bilantApi } from '@/api/bilant'
 import { organizationApi } from '@/api/organization'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { StatCard } from '@/components/shared/StatCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { useTabParam } from '@/hooks/useTabParam'
@@ -49,6 +51,7 @@ const CLASS_NAMES: [number, string][] = [
 export default function Bilant() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const isMobile = useIsMobile()
   const [tab, setTab] = useTabParam<MainTab>('generations')
   const [companyFilter, setCompanyFilter] = useState<string>('')
   const [showUpload, setShowUpload] = useState(false)
@@ -204,9 +207,9 @@ export default function Bilant() {
     <div className="space-y-4">
       <PageHeader
         title="Bilant"
-        description="Balance sheet generator — upload Balanta, generate Bilant with financial ratios"
+        description=""
         breadcrumbs={[
-          { label: 'Accounting', href: '/app/accounting' },
+          { label: 'Accounting', shortLabel: 'Acc.', href: '/app/accounting' },
           { label: 'Bilant' },
           { label: tabs.find(t => t.key === tab)?.label ?? 'Generations' },
         ]}
@@ -241,20 +244,10 @@ export default function Bilant() {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as MainTab)}>
-        <div className="flex flex-col gap-2 md:flex-row md:items-center">
-          <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
-            <TabsList className="w-max md:w-auto">
-              {tabs.map(t => (
-                <TabsTrigger key={t.key} value={t.key}>
-                  <t.icon className="h-4 w-4" />
-                  {t.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
-          <div className="ml-auto">
+        {isMobile ? (
+          <>
             <Select value={companyFilter} onValueChange={setCompanyFilter}>
-              <SelectTrigger className="h-8 w-[180px] text-xs">
+              <SelectTrigger className="h-8 w-full text-xs">
                 <SelectValue placeholder="All companies" />
               </SelectTrigger>
               <SelectContent>
@@ -264,18 +257,52 @@ export default function Bilant() {
                 ))}
               </SelectContent>
             </Select>
+            <MobileBottomTabs>
+              <TabsList className="w-full">
+                {tabs.map(t => (
+                  <TabsTrigger key={t.key} value={t.key}>
+                    <t.icon className="h-4 w-4" />
+                    {t.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </MobileBottomTabs>
+          </>
+        ) : (
+          <div className="flex items-center gap-2">
+            <TabsList className="w-auto">
+              {tabs.map(t => (
+                <TabsTrigger key={t.key} value={t.key}>
+                  <t.icon className="h-4 w-4" />
+                  {t.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <div className="ml-auto">
+              <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                <SelectTrigger className="h-8 w-[180px] text-xs">
+                  <SelectValue placeholder="All companies" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All companies</SelectItem>
+                  {companies.map(c => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-        </div>
+        )}
       </Tabs>
 
       {/* Generations Tab */}
       {tab === 'generations' && (
         <div className="space-y-4">
-          <div className={`grid grid-cols-2 gap-3 sm:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
+          <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
             <StatCard title="Total Generations" value={fmt(genTotal)} icon={<Scale className="h-4 w-4" />} isLoading={genLoading} />
             <StatCard title="Completed" value={fmt(completedCount)} icon={<FileSpreadsheet className="h-4 w-4" />} isLoading={genLoading} />
-            <StatCard title="Companies" value={fmt(uniqueCompanies)} isLoading={genLoading} />
-            <StatCard title="Templates" value={fmt(templates.length)} isLoading={tplLoading} />
+            <StatCard title="Companies" value={fmt(uniqueCompanies)} icon={<LayoutList className="h-4 w-4" />} isLoading={genLoading} />
+            <StatCard title="Templates" value={fmt(templates.length)} icon={<FileText className="h-4 w-4" />} isLoading={tplLoading} />
           </div>
 
           {generations.length === 0 && !genLoading ? (

@@ -9,13 +9,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 import { crmApi, type CrmClient, type CrmDeal } from '@/api/crm'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { usePersistedState } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
 import { DatePicker } from '@/components/ui/date-picker'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { toast } from 'sonner'
 
 function EditClientDialog({ client, open, onOpenChange }: { client: CrmClient | null; open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -159,11 +161,14 @@ export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: bool
   }
 
   const hasFilters = !!(search || clientType || responsible || city || dateFrom || dateTo || sortBy || showBlacklisted)
+  const filterCount = [clientType, city, responsible, dateFrom, dateTo, showBlacklisted].filter(Boolean).length
   const clearFilters = () => {
     setSearch(''); setClientType(''); setResponsible(''); setCity('')
     setDateFrom(''); setDateTo(''); setSortBy(''); setSortOrder(''); setShowBlacklisted(''); setPage(0)
   }
 
+  const isMobile = useIsMobile()
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [massAction, setMassAction] = useState<'blacklist' | 'unblacklist' | 'delete' | null>(null)
 
@@ -280,7 +285,7 @@ export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: bool
               onChange={setVisibleColumns}
             />
             {canExport && (
-              <Button variant="outline" size="sm" asChild>
+              <Button variant="outline" size="sm" className="hidden md:inline-flex" asChild>
                 <a href={crmApi.exportClientsUrl(exportParams)} download><Download className="h-4 w-4 mr-1" />Export CSV</a>
               </Button>
             )}
@@ -288,51 +293,113 @@ export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: bool
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-1.5 mt-3">
-          <div className="relative flex-1 min-w-[180px]">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search name..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-8 h-9" />
-          </div>
-          <Select value={clientType || '_all'} onValueChange={v => { setClientType(v === '_all' ? '' : v); setPage(0) }}>
-            <SelectTrigger className="w-[130px] h-9"><SelectValue placeholder="Type" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all">All Types</SelectItem>
-              <SelectItem value="person">Person</SelectItem>
-              <SelectItem value="company">Company</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={city || '_all'} onValueChange={v => { setCity(v === '_all' ? '' : v); setPage(0) }}>
-            <SelectTrigger className="w-[150px] h-9"><SelectValue placeholder="City" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all">All Cities</SelectItem>
-              {(citiesData?.cities ?? []).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={responsible || '_all'} onValueChange={v => { setResponsible(v === '_all' ? '' : v); setPage(0) }}>
-            <SelectTrigger className="w-[160px] h-9"><SelectValue placeholder="Responsible" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all">All Responsibles</SelectItem>
-              {(responsiblesData?.responsibles ?? []).map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <DatePicker value={dateFrom} onChange={v => { setDateFrom(v); setPage(0) }} placeholder="From date" className="w-[155px]" />
-          <DatePicker value={dateTo} onChange={v => { setDateTo(v); setPage(0) }} placeholder="To date" className="w-[155px]" />
-          {!blacklistOnly && (
-            <Select value={showBlacklisted || '_default'} onValueChange={v => { setShowBlacklisted(v === '_default' ? '' : v); setPage(0) }}>
-              <SelectTrigger className="w-[140px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+        {isMobile ? (
+          <>
+            <div className="flex items-center gap-2 mt-3">
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Search name..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-8 h-9" />
+              </div>
+              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 relative" onClick={() => setFiltersOpen(true)}>
+                <SlidersHorizontal className="h-4 w-4" />
+                {filterCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">{filterCount}</span>
+                )}
+              </Button>
+            </div>
+            <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+              <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto px-4">
+                <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
+                <div className="grid grid-cols-2 gap-2 py-4">
+                  <Select value={clientType || '_all'} onValueChange={v => { setClientType(v === '_all' ? '' : v); setPage(0) }}>
+                    <SelectTrigger className="w-full h-9"><SelectValue placeholder="Type" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_all">All Types</SelectItem>
+                      <SelectItem value="person">Person</SelectItem>
+                      <SelectItem value="company">Company</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={city || '_all'} onValueChange={v => { setCity(v === '_all' ? '' : v); setPage(0) }}>
+                    <SelectTrigger className="w-full h-9"><SelectValue placeholder="City" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_all">All Cities</SelectItem>
+                      {(citiesData?.cities ?? []).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={responsible || '_all'} onValueChange={v => { setResponsible(v === '_all' ? '' : v); setPage(0) }}>
+                    <SelectTrigger className="w-full h-9"><SelectValue placeholder="Responsible" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_all">All Responsibles</SelectItem>
+                      {(responsiblesData?.responsibles ?? []).map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {!blacklistOnly && (
+                    <Select value={showBlacklisted || '_default'} onValueChange={v => { setShowBlacklisted(v === '_default' ? '' : v); setPage(0) }}>
+                      <SelectTrigger className="w-full h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_default">Active Only</SelectItem>
+                        <SelectItem value="all">All Clients</SelectItem>
+                        <SelectItem value="only">Blacklisted</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <DatePicker value={dateFrom} onChange={v => { setDateFrom(v); setPage(0) }} placeholder="From date" className="w-full" />
+                  <DatePicker value={dateTo} onChange={v => { setDateTo(v); setPage(0) }} placeholder="To date" className="w-full" />
+                  <Button className="col-span-2" onClick={() => setFiltersOpen(false)}>Apply</Button>
+                  {filterCount > 0 && (
+                    <Button variant="ghost" className="col-span-2" onClick={() => { clearFilters(); setFiltersOpen(false) }}>Clear All</Button>
+                  )}
+                </div>
+              </SheetContent>
+            </Sheet>
+          </>
+        ) : (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Search name..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-8 h-9" />
+            </div>
+            <Select value={clientType || '_all'} onValueChange={v => { setClientType(v === '_all' ? '' : v); setPage(0) }}>
+              <SelectTrigger className="w-[130px] h-9"><SelectValue placeholder="Type" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="_default">Active Only</SelectItem>
-                <SelectItem value="all">All Clients</SelectItem>
-                <SelectItem value="only">Blacklisted</SelectItem>
+                <SelectItem value="_all">All Types</SelectItem>
+                <SelectItem value="person">Person</SelectItem>
+                <SelectItem value="company">Company</SelectItem>
               </SelectContent>
             </Select>
-          )}
-          {hasFilters && (
-            <Button variant="ghost" size="sm" className="h-9 px-2 text-muted-foreground hover:text-foreground" onClick={clearFilters}>
-              <FilterX className="h-4 w-4 mr-1" />Clear
-            </Button>
-          )}
-        </div>
+            <Select value={city || '_all'} onValueChange={v => { setCity(v === '_all' ? '' : v); setPage(0) }}>
+              <SelectTrigger className="w-[150px] h-9"><SelectValue placeholder="City" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all">All Cities</SelectItem>
+                {(citiesData?.cities ?? []).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={responsible || '_all'} onValueChange={v => { setResponsible(v === '_all' ? '' : v); setPage(0) }}>
+              <SelectTrigger className="w-[160px] h-9"><SelectValue placeholder="Responsible" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all">All Responsibles</SelectItem>
+                {(responsiblesData?.responsibles ?? []).map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <DatePicker value={dateFrom} onChange={v => { setDateFrom(v); setPage(0) }} placeholder="From date" className="w-[155px]" />
+            <DatePicker value={dateTo} onChange={v => { setDateTo(v); setPage(0) }} placeholder="To date" className="w-[155px]" />
+            {!blacklistOnly && (
+              <Select value={showBlacklisted || '_default'} onValueChange={v => { setShowBlacklisted(v === '_default' ? '' : v); setPage(0) }}>
+                <SelectTrigger className="w-[140px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_default">Active Only</SelectItem>
+                  <SelectItem value="all">All Clients</SelectItem>
+                  <SelectItem value="only">Blacklisted</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {hasFilters && (
+              <Button variant="ghost" size="sm" className="h-9 px-2 text-muted-foreground hover:text-foreground" onClick={clearFilters}>
+                <FilterX className="h-4 w-4 mr-1" />Clear
+              </Button>
+            )}
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         {/* Mass action bar */}

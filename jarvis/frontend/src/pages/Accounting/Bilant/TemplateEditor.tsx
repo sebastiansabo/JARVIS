@@ -166,7 +166,7 @@ export default function TemplateEditor() {
         title={template.name}
         description={`v${template.version} — ${rows.length} rows`}
         breadcrumbs={[
-          { label: 'Accounting', href: '/app/accounting' },
+          { label: 'Accounting', shortLabel: 'Acc.', href: '/app/accounting' },
           { label: 'Bilant', href: '/app/accounting/bilant?tab=templates' },
           { label: template.name },
         ]}

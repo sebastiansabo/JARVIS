@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Pencil, Building2, Layers, GitBranch } from 'lucide-react'
+import { Plus, Trash2, Pencil, Building2, Layers, GitBranch, BarChart3 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -19,6 +19,7 @@ import type { CompanyWithBrands, DepartmentStructure } from '@/types/organizatio
 type SubTab = 'companies' | 'structures'
 
 export default function StructureTab() {
+  const [showStats, setShowStats] = useState(false)
   const [activeTab, setActiveTab] = useState<SubTab>('companies')
 
   const { data: companies = [] } = useQuery({
@@ -36,26 +37,31 @@ export default function StructureTab() {
   return (
     <div className="space-y-6">
       {/* Summary Stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-3 ${showStats ? '' : 'hidden md:grid'}`}>
         <StatCard title="Companies" value={companies.length} icon={<Building2 className="h-4 w-4" />} />
         <StatCard title="Departments" value={uniqueDepts.size} icon={<Layers className="h-4 w-4" />} />
         <StatCard title="Structure Mappings" value={structures.length} icon={<GitBranch className="h-4 w-4" />} />
       </div>
 
       {/* Sub-tab Navigation */}
-      <div className="flex gap-1 rounded-lg border p-1">
-        {(['companies', 'structures'] as SubTab[]).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              'rounded-md px-4 py-1.5 text-sm font-medium capitalize transition-colors',
-              activeTab === tab ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent',
-            )}
-          >
-            {tab}
-          </button>
-        ))}
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+          <BarChart3 className="h-4 w-4" />
+        </Button>
+        <div className="flex flex-1 gap-1 rounded-lg border p-1">
+          {(['companies', 'structures'] as SubTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                'rounded-md px-4 py-1.5 text-sm font-medium capitalize transition-colors',
+                activeTab === tab ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent',
+              )}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
       </div>
 
       {activeTab === 'companies' && <CompaniesSection companies={companies} />}

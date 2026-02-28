@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search, Download, Pencil, Trash2, Car, TrendingUp, Palette, FilterX } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search, Download, Pencil, Trash2, Car, TrendingUp, Palette, FilterX, SlidersHorizontal } from 'lucide-react'
 import { crmApi, type CrmDeal } from '@/api/crm'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { DatePicker } from '@/components/ui/date-picker'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { toast } from 'sonner'
 
 const columnDefs: ColumnDef<CrmDeal>[] = [
@@ -99,7 +100,7 @@ function formatVal(v: unknown): string {
   return String(v)
 }
 
-export default function DealsTab() {
+export default function DealsTab({ showStats = false }: { showStats?: boolean }) {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
@@ -138,6 +139,7 @@ export default function DealsTab() {
     setDateFrom(''); setDateTo(''); setSortBy(''); setSortOrder(''); setPage(0)
   }
 
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
   const [editDeal, setEditDeal] = useState<CrmDeal | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
@@ -191,20 +193,19 @@ export default function DealsTab() {
 
   const mobileFields: MobileCardField<CrmDeal>[] = useMemo(() => [
     { key: 'buyer_name', label: 'Client', isPrimary: true, render: (d) => d.buyer_name || d.client_display_name || 'Unknown' },
-    { key: 'source', label: 'Type', isSecondary: true, render: (d) => <Badge variant={d.source === 'nw' ? 'default' : 'secondary'}>{d.source.toUpperCase()}</Badge> },
-    { key: 'dossier_status', label: 'Status', isSecondary: true, render: (d) => d.dossier_status ? <Badge variant="outline">{d.dossier_status}</Badge> : '-' },
-    { key: 'brand', label: 'Brand', render: (d) => d.brand || '-' },
-    { key: 'model_name', label: 'Model', render: (d) => d.model_name || '-' },
-    { key: 'sale_price_net', label: 'Price', render: (d) => {
+    { key: 'sale_price_net', label: 'Price', isPrimary: true, alignRight: true, render: (d) => {
       const v = d.sale_price_net || d.gw_gross_value
-      return v ? Number(v).toLocaleString('ro-RO', { minimumFractionDigits: 0 }) : '-'
+      return v ? <span className="tabular-nums">{Number(v).toLocaleString('ro-RO', { minimumFractionDigits: 0 })}</span> : '-'
     }},
+    { key: 'model', label: 'Vehicle', isSecondary: true, render: (d) => [d.brand, d.model_name].filter(Boolean).join(' ') || '-' },
+    { key: 'dossier_status', label: 'Status', isSecondary: true, render: (d) => d.dossier_status ? <Badge variant="outline" className="text-[11px] px-1.5 py-0">{d.dossier_status}</Badge> : null },
+    { key: 'source', label: 'Type', render: (d) => <Badge variant={d.source === 'nw' ? 'default' : 'secondary'} className="text-[11px]">{d.source.toUpperCase()}</Badge> },
     { key: 'contract_date', label: 'Date', render: (d) => d.contract_date ? new Date(d.contract_date).toLocaleDateString() : '-' },
     { key: 'dossier_number', label: 'Dossier', expandOnly: true, render: (d) => d.dossier_number || '-' },
     { key: 'sales_person', label: 'Sales Person', expandOnly: true, render: (d) => d.sales_person || '-' },
     { key: 'dealer_name', label: 'Dealer', expandOnly: true, render: (d) => d.dealer_name || '-' },
     { key: 'branch', label: 'Branch', expandOnly: true, render: (d) => d.branch || '-' },
-    { key: 'vin', label: 'VIN', expandOnly: true, render: (d) => d.vin || '-' },
+    { key: 'vin', label: 'VIN', expandOnly: true, render: (d) => <span className="font-mono text-xs">{d.vin || '-'}</span> },
     { key: 'order_number', label: 'Order #', expandOnly: true, render: (d) => d.order_number || '-' },
     { key: 'color', label: 'Color', expandOnly: true, render: (d) => d.color || '-' },
     { key: 'fuel_type', label: 'Fuel', expandOnly: true, render: (d) => d.fuel_type || '-' },
@@ -235,7 +236,7 @@ export default function DealsTab() {
           <CardTitle className="text-base">Car Sales (NW + GW)</CardTitle>
           <div className="flex items-center gap-2">
             {canExport && (
-              <Button variant="outline" size="sm" asChild>
+              <Button variant="outline" size="sm" className="hidden md:inline-flex" asChild>
                 <a href={crmApi.exportDealsUrl(exportParams)} download><Download className="h-4 w-4 mr-1" />Export CSV</a>
               </Button>
             )}
@@ -251,7 +252,7 @@ export default function DealsTab() {
 
         {/* Info cards */}
         {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
+          <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 mt-2 ${showStats ? '' : 'hidden md:grid'}`}>
             <div className="rounded-lg border bg-card p-3 flex items-center gap-2.5">
               <div className="rounded-md bg-primary/10 p-1.5"><Car className="h-4 w-4 text-primary" /></div>
               <div>
@@ -283,58 +284,109 @@ export default function DealsTab() {
           </div>
         )}
 
-        {/* Compact filters — single wrapping row */}
-        <div className="flex flex-wrap gap-1.5 mt-3">
-          <div className="relative flex-1 min-w-[160px]">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Model..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-8 h-9" />
-          </div>
-          <Select value={source} onValueChange={v => { setSource(v); setPage(0) }}>
-            <SelectTrigger className="w-[110px] h-9"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="nw">NW</SelectItem>
-              <SelectItem value="gw">GW</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={brand || '_all'} onValueChange={v => { setBrand(v === '_all' ? '' : v); setPage(0) }}>
-            <SelectTrigger className="w-[130px] h-9"><SelectValue placeholder="Brand" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all">All Brands</SelectItem>
-              {brandsData?.brands.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={status || '_all'} onValueChange={v => { setStatus(v === '_all' ? '' : v); setPage(0) }}>
-            <SelectTrigger className="w-[130px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all">All Statuses</SelectItem>
-              {statusesData?.statuses.map(s => <SelectItem key={s.dossier_status} value={s.dossier_status}>{s.dossier_status} ({s.count})</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={dealer || '_all'} onValueChange={v => { setDealer(v === '_all' ? '' : v); setPage(0) }}>
-            <SelectTrigger className="w-[130px] h-9"><SelectValue placeholder="Dealer" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all">All Dealers</SelectItem>
-              {dealersData?.dealers.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={salesPerson || '_all'} onValueChange={v => { setSalesPerson(v === '_all' ? '' : v); setPage(0) }}>
-            <SelectTrigger className="w-[130px] h-9"><SelectValue placeholder="Sales Person" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all">All Sales</SelectItem>
-              {salesPersonsData?.sales_persons.map(sp => <SelectItem key={sp} value={sp}>{sp}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Input placeholder="Buyer..." value={buyer} onChange={e => { setBuyer(e.target.value); setPage(0) }} className="w-[120px] h-9" />
-          <Input placeholder="VIN..." value={vinSearch} onChange={e => { setVinSearch(e.target.value); setPage(0) }} className="w-[120px] h-9 font-mono" />
-          <DatePicker value={dateFrom} onChange={v => { setDateFrom(v); setPage(0) }} placeholder="From date" className="w-[155px]" />
-          <DatePicker value={dateTo} onChange={v => { setDateTo(v); setPage(0) }} placeholder="To date" className="w-[155px]" />
-          {hasFilters && (
-            <Button variant="ghost" size="sm" className="h-9 px-2 text-muted-foreground hover:text-foreground" onClick={clearFilters}>
-              <FilterX className="h-4 w-4 mr-1" />Clear
-            </Button>
-          )}
-        </div>
+        {/* Filters */}
+        {(() => {
+          const activeFilterCount = [source !== 'all', brand, status, dealer, salesPerson, buyer, vinSearch, dateFrom, dateTo].filter(Boolean).length
+
+          const filterControls = (
+            <>
+              <Select value={source} onValueChange={v => { setSource(v); setPage(0) }}>
+                <SelectTrigger className={isMobile ? 'w-full' : 'w-[110px] h-9'}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="nw">NW</SelectItem>
+                  <SelectItem value="gw">GW</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={brand || '_all'} onValueChange={v => { setBrand(v === '_all' ? '' : v); setPage(0) }}>
+                <SelectTrigger className={isMobile ? 'w-full' : 'w-[130px] h-9'}><SelectValue placeholder="Brand" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">All Brands</SelectItem>
+                  {brandsData?.brands.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={status || '_all'} onValueChange={v => { setStatus(v === '_all' ? '' : v); setPage(0) }}>
+                <SelectTrigger className={isMobile ? 'w-full' : 'w-[130px] h-9'}><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">All Statuses</SelectItem>
+                  {statusesData?.statuses.map(s => <SelectItem key={s.dossier_status} value={s.dossier_status}>{s.dossier_status} ({s.count})</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={dealer || '_all'} onValueChange={v => { setDealer(v === '_all' ? '' : v); setPage(0) }}>
+                <SelectTrigger className={isMobile ? 'w-full' : 'w-[130px] h-9'}><SelectValue placeholder="Dealer" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">All Dealers</SelectItem>
+                  {dealersData?.dealers.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={salesPerson || '_all'} onValueChange={v => { setSalesPerson(v === '_all' ? '' : v); setPage(0) }}>
+                <SelectTrigger className={isMobile ? 'w-full' : 'w-[130px] h-9'}><SelectValue placeholder="Sales Person" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">All Sales</SelectItem>
+                  {salesPersonsData?.sales_persons.map(sp => <SelectItem key={sp} value={sp}>{sp}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Input placeholder="Buyer..." value={buyer} onChange={e => { setBuyer(e.target.value); setPage(0) }} className={isMobile ? 'w-full' : 'w-[120px] h-9'} />
+              <Input placeholder="VIN..." value={vinSearch} onChange={e => { setVinSearch(e.target.value); setPage(0) }} className={isMobile ? 'w-full font-mono' : 'w-[120px] h-9 font-mono'} />
+              <DatePicker value={dateFrom} onChange={v => { setDateFrom(v); setPage(0) }} placeholder="From date" className={isMobile ? 'w-full' : 'w-[155px]'} />
+              <DatePicker value={dateTo} onChange={v => { setDateTo(v); setPage(0) }} placeholder="To date" className={isMobile ? 'w-full' : 'w-[155px]'} />
+            </>
+          )
+
+          if (isMobile) {
+            return (
+              <div className="mt-3 space-y-2">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input placeholder="Model..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-8" />
+                  </div>
+                  <Button variant="outline" size="icon" className="shrink-0" onClick={() => setFiltersOpen(true)}>
+                    <SlidersHorizontal className="h-4 w-4" />
+                    {activeFilterCount > 0 && (
+                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </Button>
+                </div>
+                <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+                  <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto px-4">
+                    <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
+                    <div className="grid grid-cols-2 gap-2 py-4">
+                      {filterControls}
+                      <div className="col-span-2 flex gap-2 pt-2">
+                        {hasFilters && (
+                          <Button variant="outline" onClick={() => { clearFilters(); setFiltersOpen(false) }} className="flex-1">
+                            Clear All
+                          </Button>
+                        )}
+                        <Button onClick={() => setFiltersOpen(false)} className="flex-1">
+                          Apply
+                        </Button>
+                      </div>
+                    </div>
+                  </SheetContent>
+                </Sheet>
+              </div>
+            )
+          }
+
+          return (
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              <div className="relative flex-1 min-w-[160px]">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Model..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-8 h-9" />
+              </div>
+              {filterControls}
+              {hasFilters && (
+                <Button variant="ghost" size="sm" className="h-9 px-2 text-muted-foreground hover:text-foreground" onClick={clearFilters}>
+                  <FilterX className="h-4 w-4 mr-1" />Clear
+                </Button>
+              )}
+            </div>
+          )
+        })()}
       </CardHeader>
       <CardContent>
         {isMobile ? (

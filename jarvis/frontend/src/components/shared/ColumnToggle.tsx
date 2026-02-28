@@ -2,6 +2,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button'
 import { Columns3, GripVertical, ChevronUp, ChevronDown, EyeOff, Eye } from 'lucide-react'
 import { usePersistedState } from '@/lib/utils'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 
 export interface ColumnDef<T = unknown> {
   key: string
@@ -41,8 +42,11 @@ export function ColumnToggle({
   lockedColumns?: Set<string>
   onChange: (cols: string[]) => void
 }) {
+  const isMobile = useIsMobile()
   const locked = lockedColumns ?? new Set<string>()
   const columnDefMap = new Map(columnDefs.map((c) => [c.key, c]))
+
+  if (isMobile) return null
   const hiddenColumns = columnDefs.filter((c) => !visibleColumns.includes(c.key) && !locked.has(c.key))
 
   const moveUp = (idx: number) => {

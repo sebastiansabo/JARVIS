@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -78,8 +79,21 @@ function MultiSelect({ label, options, selected, onChange }: {
   )
 }
 
-export default function StatisticsTab() {
-  const [showFilters, setShowFilters] = useState(false)
+export default function StatisticsTab({
+  showFilters: showFiltersProp,
+  setShowFilters: setShowFiltersProp,
+  showStats: showStatsProp,
+}: {
+  showFilters?: boolean
+  setShowFilters?: (v: boolean) => void
+  showStats?: boolean
+} = {}) {
+  const isMobile = useIsMobile()
+  const [showStatsLocal] = useState(false)
+  const [showFiltersLocal, setShowFiltersLocal] = useState(false)
+  const showStats = showStatsProp ?? showStatsLocal
+  const showFilters = showFiltersProp ?? showFiltersLocal
+  const setShowFilters = setShowFiltersProp ?? setShowFiltersLocal
   const [dealers, setDealers] = useState<string[]>([])
   const [brands, setBrands] = useState<string[]>([])
   const [statuses, setStatuses] = useState<string[]>([])
@@ -106,37 +120,40 @@ export default function StatisticsTab() {
 
   return (
     <div className="space-y-4">
-      {/* Filter toggle button */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button
-          variant={hasFilters ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setShowFilters(!showFilters)}
-        >
-          <Filter className="h-4 w-4 mr-1" />
-          Filters{hasFilters ? ` (${activeFilterCount})` : ''}
-        </Button>
-        {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={() => { setDealers([]); setBrands([]); setStatuses([]); setDateFrom(''); setDateTo('') }}>
-            <X className="h-4 w-4 mr-1" />Clear all
+      {/* ═══════════ DEAL STATISTICS ═══════════ */}
+      {!isMobile && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <h2 className="text-lg font-semibold">Deal Statistics</h2>
+          <Button
+            variant={hasFilters ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter className="h-4 w-4" />
+            Filters{hasFilters ? ` (${activeFilterCount})` : ''}
           </Button>
-        )}
-        {dealers.map(d => (
-          <Badge key={`d-${d}`} variant="secondary" className="gap-1 cursor-pointer" onClick={() => setDealers(dealers.filter(x => x !== d))}>
-            {d} <X className="h-3 w-3" />
-          </Badge>
-        ))}
-        {brands.map(b => (
-          <Badge key={`b-${b}`} variant="secondary" className="gap-1 cursor-pointer" onClick={() => setBrands(brands.filter(x => x !== b))}>
-            {b} <X className="h-3 w-3" />
-          </Badge>
-        ))}
-        {statuses.map(s => (
-          <Badge key={`s-${s}`} variant="secondary" className="gap-1 cursor-pointer" onClick={() => setStatuses(statuses.filter(x => x !== s))}>
-            {s} <X className="h-3 w-3" />
-          </Badge>
-        ))}
-      </div>
+          {hasFilters && (
+            <Button variant="ghost" size="sm" onClick={() => { setDealers([]); setBrands([]); setStatuses([]); setDateFrom(''); setDateTo('') }}>
+              <X className="h-4 w-4 mr-1" />Clear all
+            </Button>
+          )}
+          {dealers.map(d => (
+            <Badge key={`d-${d}`} variant="secondary" className="gap-1 cursor-pointer" onClick={() => setDealers(dealers.filter(x => x !== d))}>
+              {d} <X className="h-3 w-3" />
+            </Badge>
+          ))}
+          {brands.map(b => (
+            <Badge key={`b-${b}`} variant="secondary" className="gap-1 cursor-pointer" onClick={() => setBrands(brands.filter(x => x !== b))}>
+              {b} <X className="h-3 w-3" />
+            </Badge>
+          ))}
+          {statuses.map(s => (
+            <Badge key={`s-${s}`} variant="secondary" className="gap-1 cursor-pointer" onClick={() => setStatuses(statuses.filter(x => x !== s))}>
+              {s} <X className="h-3 w-3" />
+            </Badge>
+          ))}
+        </div>
+      )}
 
       {/* Collapsible filter panel */}
       {showFilters && (
@@ -153,14 +170,11 @@ export default function StatisticsTab() {
         </Card>
       )}
 
-      {/* ═══════════ DEAL STATISTICS ═══════════ */}
-      <h2 className="text-lg font-semibold">Deal Statistics</h2>
-
       {isLoading || !data ? (
         <div className="flex items-center justify-center py-12 text-muted-foreground">Loading statistics...</div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 ${showStats ? '' : 'hidden md:grid'}`}>
             <SummaryCard icon={Car} label="Total Deals" value={fmt(data.totals.total_deals)} color="text-primary" bg="bg-primary/10" />
             <SummaryCard icon={DollarSign} label="Total Revenue" value={fmt(data.totals.total_revenue)} color="text-green-500" bg="bg-green-500/10" />
             <SummaryCard icon={TrendingUp} label="Avg Price" value={fmt(data.totals.avg_price)} color="text-blue-500" bg="bg-blue-500/10" />
@@ -224,7 +238,7 @@ export default function StatisticsTab() {
             <h2 className="text-lg font-semibold pt-4">Client Statistics</h2>
 
             {/* Summary cards */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 ${showStats ? '' : 'hidden md:grid'}`}>
               <SummaryCard icon={Users} label="Total Clients" value={fmt(total)} color="text-primary" bg="bg-primary/10" />
               <SummaryCard icon={Link2} label="With Deals" value={fmt(clientStats.clients_with_deals)} sub={pct(clientStats.clients_with_deals, total)} color="text-green-500" bg="bg-green-500/10" />
               <SummaryCard icon={UserCheck} label="Linked Deals" value={fmt(clientStats.total_deals_linked)} color="text-blue-500" bg="bg-blue-500/10" />

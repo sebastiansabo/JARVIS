@@ -98,7 +98,7 @@ const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
   { value: 'ytd', label: 'YTD' },
 ]
 
-export default function PontajeTab() {
+export default function PontajeTab({ showStats = false }: { showStats?: boolean }) {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
@@ -109,6 +109,7 @@ export default function PontajeTab() {
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('today')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
+  const [showDatePickers, setShowDatePickers] = useState(false)
 
   const { start, end, isSingleDay } = getDateRange(quickFilter, customStart, customEnd)
 
@@ -365,44 +366,56 @@ export default function PontajeTab() {
               key={f.value}
               size="sm"
               variant={quickFilter === f.value ? 'default' : 'outline'}
-              className="h-8 shrink-0 text-xs"
+              className="h-8 flex-1 md:flex-none shrink-0 text-xs"
               onClick={() => handleQuickFilter(f.value)}
             >
               {f.label}
             </Button>
           ))}
+          {isMobile && (
+            <Button
+              size="icon"
+              variant={quickFilter === 'custom' ? 'default' : 'outline'}
+              className="h-8 shrink-0"
+              onClick={() => { setShowDatePickers((p) => !p); if (quickFilter !== 'custom') { setQuickFilter('custom'); setCustomStart(start); setCustomEnd(end) } }}
+            >
+              <Calendar className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
-        <div className="flex items-center gap-1.5 md:ml-auto">
-          <Calendar className="h-4 w-4 text-muted-foreground" />
-          <Input
-            type="date"
-            className="h-8 w-36 text-xs"
-            value={quickFilter === 'custom' ? customStart : start}
-            onChange={(e) => {
-              setQuickFilter('custom')
-              setCustomStart(e.target.value)
-              if (!customEnd || e.target.value > customEnd) setCustomEnd(e.target.value)
-            }}
-          />
-          <span className="text-xs text-muted-foreground">—</span>
-          <Input
-            type="date"
-            className="h-8 w-36 text-xs"
-            value={quickFilter === 'custom' ? customEnd : end}
-            onChange={(e) => {
-              setQuickFilter('custom')
-              setCustomEnd(e.target.value)
-              if (!customStart || e.target.value < customStart) setCustomStart(e.target.value)
-            }}
-          />
-        </div>
+        {(!isMobile || showDatePickers) && (
+          <div className="flex items-center gap-1.5 md:ml-auto">
+            <Calendar className="hidden md:block h-4 w-4 text-muted-foreground" />
+            <Input
+              type="date"
+              className="h-8 w-36 text-xs"
+              value={quickFilter === 'custom' ? customStart : start}
+              onChange={(e) => {
+                setQuickFilter('custom')
+                setCustomStart(e.target.value)
+                if (!customEnd || e.target.value > customEnd) setCustomEnd(e.target.value)
+              }}
+            />
+            <span className="text-xs text-muted-foreground">—</span>
+            <Input
+              type="date"
+              className="h-8 w-36 text-xs"
+              value={quickFilter === 'custom' ? customEnd : end}
+              onChange={(e) => {
+                setQuickFilter('custom')
+                setCustomEnd(e.target.value)
+                if (!customStart || e.target.value < customStart) setCustomStart(e.target.value)
+              }}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Date label */}
-      <p className="text-xs text-muted-foreground">{rangeLabel}</p>
+      {/* Date label — desktop only */}
+      <p className="hidden md:block text-xs text-muted-foreground">{rangeLabel}</p>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
         <StatCard title={isSingleDay ? 'Present Today' : 'Employees'} value={totalPresent} icon={<UserCheck className="h-4 w-4" />} />
         <StatCard title="Total Hours" value={totalHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
         <StatCard title={isSingleDay ? 'Avg Hours' : 'Avg Hours / Employee'} value={avgHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
@@ -414,8 +427,8 @@ export default function PontajeTab() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px]">
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-9"
@@ -425,7 +438,7 @@ export default function PontajeTab() {
           />
         </div>
         <Select value={groupFilter} onValueChange={setGroupFilter}>
-          <SelectTrigger className="w-44">
+          <SelectTrigger className="w-40 md:w-44 shrink-0">
             <SelectValue placeholder="All Groups" />
           </SelectTrigger>
           <SelectContent>

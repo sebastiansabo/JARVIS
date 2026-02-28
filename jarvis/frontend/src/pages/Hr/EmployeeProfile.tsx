@@ -10,6 +10,7 @@ import {
   Phone,
   Users,
   UserCheck,
+  BarChart3,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -61,6 +62,7 @@ export default function EmployeeProfile() {
   const { biostarUserId } = useParams<{ biostarUserId: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const [showStats, setShowStats] = useState(false)
   const today = todayStr()
 
   // Employee profile
@@ -185,6 +187,11 @@ export default function EmployeeProfile() {
           { label: 'Pontaje', href: '/app/hr/pontaje' },
           { label: employee.name },
         ]}
+        actions={
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+            <BarChart3 className="h-4 w-4" />
+          </Button>
+        }
         description={
           <span className="flex flex-wrap items-center gap-2">
             {employee.email && (
@@ -310,7 +317,7 @@ export default function EmployeeProfile() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
         <StatCard
           title="Days Present (90d)"
           value={stats.daysPresent}

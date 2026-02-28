@@ -20,7 +20,7 @@ export default function MarketingEvents() {
       <PageHeader
         title="Events"
         breadcrumbs={[
-          { label: 'Marketing', href: '/app/marketing' },
+          { label: 'Marketing', shortLabel: 'Mkt.', href: '/app/marketing' },
           { label: 'Events' },
         ]}
       />

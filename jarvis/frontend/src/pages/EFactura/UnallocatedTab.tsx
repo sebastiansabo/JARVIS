@@ -16,6 +16,9 @@ import {
   GripVertical,
   ChevronUp,
   ChevronDown,
+  CheckSquare,
+  SlidersHorizontal,
+  Search,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -40,6 +43,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { QueryError } from '@/components/QueryError'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -305,7 +309,9 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
   const [filters, setFilters] = useState<EFacturaInvoiceFilters>({ page: 1, limit: savedLimit })
   const [search, setSearch] = useState('')
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [selectMode, setSelectMode] = useState(false)
   const [confirmAction, setConfirmAction] = useState<{ action: string; ids: number[] } | null>(null)
   const [viewInvoice, setViewInvoice] = useState<InvoiceRow | null>(null)
   const [editInvoice, setEditInvoice] = useState<InvoiceRow | null>(null)
@@ -483,31 +489,28 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
       ),
     },
     {
+      key: 'amount',
+      label: 'Amount',
+      isPrimary: true,
+      alignRight: true,
+      render: (inv) => <CurrencyDisplay value={inv.total_amount} currency={inv.currency} />,
+    },
+    {
       key: 'invoice_number',
       label: 'Invoice #',
       isSecondary: true,
       render: (inv) => (
-        <span className="font-mono text-xs">
+        <span className="font-mono">
           {inv.invoice_series ? `${inv.invoice_series}-` : ''}
-          {inv.invoice_number}
+          {inv.invoice_number} · {fmtDate(inv.issue_date)}
         </span>
       ),
     },
     {
-      key: 'date',
-      label: 'Date',
-      isSecondary: true,
-      render: (inv) => fmtDate(inv.issue_date),
-    },
-    {
-      key: 'amount',
-      label: 'Amount',
-      render: (inv) => <CurrencyDisplay value={inv.total_amount} currency={inv.currency} />,
-    },
-    {
       key: 'direction',
       label: 'Direction',
-      render: (inv) => <StatusBadge status={inv.direction} />,
+      isSecondary: true,
+      render: (inv) => <StatusBadge status={inv.direction} className="text-[11px] px-1.5 py-0" />,
     },
     {
       key: 'company',
@@ -569,93 +572,145 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
-        {companies.length > 0 && (
-          <div className="space-y-1">
-            <Label className="text-xs">Company</Label>
+      {(() => {
+        const activeFilterCount = [
+          filters.company_id != null,
+          filters.direction != null,
+          filters.start_date,
+          filters.end_date,
+          filterTagIds.length > 0,
+        ].filter(Boolean).length
+
+        const filterControls = (
+          <>
+            {companies.length > 0 && (
+              <Select
+                value={filters.company_id?.toString() ?? 'all'}
+                onValueChange={(v) => updateFilter('company_id', v === 'all' ? undefined : Number(v))}
+              >
+                <SelectTrigger className={isMobile ? 'w-full' : 'w-[200px]'}>
+                  <SelectValue placeholder="All companies" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All companies</SelectItem>
+                  {companies.map((c) => (
+                    <SelectItem key={c.id} value={c.id.toString()}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
             <Select
-              value={filters.company_id?.toString() ?? 'all'}
-              onValueChange={(v) => updateFilter('company_id', v === 'all' ? undefined : Number(v))}
+              value={filters.direction ?? 'all'}
+              onValueChange={(v) => updateFilter('direction', v === 'all' ? undefined : v)}
             >
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="All companies" />
+              <SelectTrigger className={isMobile ? 'w-full' : 'w-[130px]'}>
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All companies</SelectItem>
-                {companies.map((c) => (
-                  <SelectItem key={c.id} value={c.id.toString()}>
-                    {c.name}
-                  </SelectItem>
-                ))}
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="received">Received</SelectItem>
+                <SelectItem value="sent">Sent</SelectItem>
               </SelectContent>
             </Select>
+
+            <DatePresetSelect
+              startDate={filters.start_date ?? ''}
+              endDate={filters.end_date ?? ''}
+              onChange={(s, e) => {
+                setFilters((f) => ({ ...f, start_date: s || undefined, end_date: e || undefined, page: 1 }))
+                setSelectedIds(new Set())
+              }}
+              className={isMobile ? 'w-full h-9 text-sm' : undefined}
+            />
+
+            <Input
+              type="date"
+              className={isMobile ? 'w-full' : 'w-[150px]'}
+              value={filters.start_date ?? ''}
+              onChange={(e) => updateFilter('start_date', e.target.value)}
+            />
+            <Input
+              type="date"
+              className={isMobile ? 'w-full' : 'w-[150px]'}
+              value={filters.end_date ?? ''}
+              onChange={(e) => updateFilter('end_date', e.target.value)}
+            />
+          </>
+        )
+
+        const clearFilters = () => {
+          setFilters((f) => ({ page: 1, limit: f.limit }))
+          setSearch('')
+          setFilterTagIds([])
+          setSelectedIds(new Set())
+        }
+
+        if (isMobile) {
+          return (
+            <>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input className="pl-8" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
+                </div>
+                <Button variant="outline" size="icon" className="shrink-0" onClick={() => setFiltersOpen(true)}>
+                  <SlidersHorizontal className="h-4 w-4" />
+                  {activeFilterCount > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </Button>
+                <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
+                {selectMode ? (
+                  <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { setSelectedIds(new Set()); setSelectMode(false) }}>Cancel</Button>
+                ) : (
+                  <Button variant="outline" size="icon" className="shrink-0" onClick={() => setSelectMode(true)} title="Select">
+                    <CheckSquare className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+                <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto px-4">
+                  <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
+                  <div className="grid grid-cols-2 gap-2 py-4">
+                    {filterControls}
+                    <div className="col-span-2 flex gap-2 pt-2">
+                      {activeFilterCount > 0 && (
+                        <Button variant="outline" onClick={() => { clearFilters(); setFiltersOpen(false) }} className="flex-1">
+                          Clear All
+                        </Button>
+                      )}
+                      <Button onClick={() => setFiltersOpen(false)} className="flex-1">
+                        Apply
+                      </Button>
+                    </div>
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </>
+          )
+        }
+
+        return (
+          <div className="flex flex-wrap items-end gap-2">
+            {filterControls}
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search supplier, invoice#..."
+              className="w-[200px]"
+            />
+            <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
+            <div className="ml-auto">
+              <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
+            </div>
           </div>
-        )}
-
-        <div className="space-y-1">
-          <Label className="text-xs">Direction</Label>
-          <Select
-            value={filters.direction ?? 'all'}
-            onValueChange={(v) => updateFilter('direction', v === 'all' ? undefined : v)}
-          >
-            <SelectTrigger className="w-[130px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="received">Received</SelectItem>
-              <SelectItem value="sent">Sent</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">Period</Label>
-          <DatePresetSelect
-            startDate={filters.start_date ?? ''}
-            endDate={filters.end_date ?? ''}
-            onChange={(s, e) => {
-              setFilters((f) => ({ ...f, start_date: s || undefined, end_date: e || undefined, page: 1 }))
-              setSelectedIds(new Set())
-            }}
-          />
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">From</Label>
-          <Input
-            type="date"
-            className="w-[150px]"
-            value={filters.start_date ?? ''}
-            onChange={(e) => updateFilter('start_date', e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">To</Label>
-          <Input
-            type="date"
-            className="w-[150px]"
-            value={filters.end_date ?? ''}
-            onChange={(e) => updateFilter('end_date', e.target.value)}
-          />
-        </div>
-
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Search supplier, invoice#..."
-          className="w-[200px]"
-        />
-
-        <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
-
-        {!isMobile && (
-          <div className="ml-auto">
-            <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
-          </div>
-        )}
-      </div>
+        )
+      })()}
 
       {/* Bulk actions */}
       {selectedIds.size > 0 && (
@@ -710,7 +765,9 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
             entityIds={Array.from(selectedIds)}
             onTagsChanged={() => qc.invalidateQueries({ queryKey: ['entity-tags'] })}
           />
-          <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear</Button>
+          <Button size="sm" variant="ghost" onClick={() => { setSelectedIds(new Set()); setSelectMode(false) }}>
+            {isMobile ? 'Cancel' : 'Clear'}
+          </Button>
         </div>
       )}
 
@@ -745,31 +802,31 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
           data={displayedInvoices}
           fields={efacturaMobileFields}
           getRowId={(inv) => inv.id}
-          selectable
+          selectable={selectMode}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           actions={(inv) => (
             <>
               {inv._hidden ? (
-                <Button variant="ghost" size="icon" className="h-8 w-8" title="Restore"
+                <Button variant="ghost" size="icon" className="h-9 w-9" title="Restore"
                   onClick={() => setConfirmAction({ action: 'restore-hidden', ids: [inv.id] })}>
                   <RotateCcw className="h-4 w-4" />
                 </Button>
               ) : (
                 <>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" title="Send"
+                  <Button variant="ghost" size="icon" className="h-9 w-9 text-green-600" title="Send"
                     disabled={!canSend(inv)} onClick={() => setConfirmAction({ action: 'send', ids: [inv.id] })}>
                     <Send className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600" title="Edit"
+                  <Button variant="ghost" size="icon" className="h-9 w-9 text-amber-600" title="Edit"
                     onClick={() => openEdit(inv)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600" title="View"
+                  <Button variant="ghost" size="icon" className="h-9 w-9 text-blue-600" title="View"
                     onClick={() => setViewInvoice(inv)}>
                     <Eye className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" title="Hide"
+                  <Button variant="ghost" size="icon" className="h-9 w-9" title="Hide"
                     onClick={() => setConfirmAction({ action: 'hide', ids: [inv.id] })}>
                     <EyeOff className="h-4 w-4" />
                   </Button>

@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ChevronRight,
   SlidersHorizontal,
+  CheckSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -89,6 +90,7 @@ export default function TransactionsTab() {
 
   // Selection
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [selectMode, setSelectMode] = useState(false)
 
   // Expanded merged
   const [expandedMerged, setExpandedMerged] = useState<Set<number>>(new Set())
@@ -273,26 +275,28 @@ export default function TransactionsTab() {
       render: (t) => t.matched_supplier || t.vendor_name || t.description?.slice(0, 40) || '—',
     },
     {
+      key: 'amount',
+      label: 'Amount',
+      isPrimary: true,
+      alignRight: true,
+      render: (t) => (
+        <span className={cn('tabular-nums', t.amount < 0 ? 'text-red-500' : 'text-green-500')}>
+          {formatAmount(t.amount, t.currency)}
+        </span>
+      ),
+    },
+    {
       key: 'date',
       label: 'Date',
       isSecondary: true,
       render: (t) => formatDate(t.transaction_date),
     },
     {
-      key: 'amount',
-      label: 'Amount',
-      isSecondary: true,
-      render: (t) => (
-        <span className={t.amount < 0 ? 'text-red-500' : 'text-green-500'}>
-          {formatAmount(t.amount, t.currency)}
-        </span>
-      ),
-    },
-    {
       key: 'status',
       label: 'Status',
+      isSecondary: true,
       render: (t) => (
-        <Badge variant="outline" className={cn('text-xs', statusColors[t.status])}>
+        <Badge variant="outline" className={cn('text-[11px] px-1.5 py-0', statusColors[t.status])}>
           {t.status}
         </Badge>
       ),
@@ -394,14 +398,6 @@ export default function TransactionsTab() {
               </SelectContent>
             </Select>
 
-            <DatePresetSelect
-              startDate={dateFrom}
-              endDate={dateTo}
-              onChange={(s, e) => { setDateFrom(s); setDateTo(e); setPage(0) }}
-            />
-            <Input type="date" className={cn(isMobile ? 'w-full' : 'w-36')} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }} />
-            <Input type="date" className={cn(isMobile ? 'w-full' : 'w-36')} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }} />
-
             <Select value={sort} onValueChange={(v) => { setSort(v); setPage(0) }}>
               <SelectTrigger className={cn(isMobile ? 'w-full' : 'w-36')}>
                 <SelectValue />
@@ -413,17 +409,27 @@ export default function TransactionsTab() {
               </SelectContent>
             </Select>
 
-            <Button
-              variant={hideIgnored ? 'default' : 'outline'}
-              size="sm"
-              className={cn(isMobile && 'w-full')}
-              onClick={() => setHideIgnored(!hideIgnored)}
-            >
-              {hideIgnored ? <EyeOff className="mr-1 h-3.5 w-3.5" /> : <Eye className="mr-1 h-3.5 w-3.5" />}
-              {hideIgnored ? 'Showing non-ignored' : 'Hide ignored'}
-            </Button>
+            <DatePresetSelect
+              startDate={dateFrom}
+              endDate={dateTo}
+              onChange={(s, e) => { setDateFrom(s); setDateTo(e); setPage(0) }}
+              className={isMobile ? 'w-full h-9 text-sm' : undefined}
+            />
+            <Input type="date" className={cn(isMobile ? 'w-full' : 'w-36')} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }} />
+            <Input type="date" className={cn(isMobile ? 'w-full' : 'w-36')} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }} />
 
-            <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
+            {!isMobile && (
+              <Button
+                variant={hideIgnored ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setHideIgnored(!hideIgnored)}
+              >
+                {hideIgnored ? <EyeOff className="mr-1 h-3.5 w-3.5" /> : <Eye className="mr-1 h-3.5 w-3.5" />}
+                {hideIgnored ? 'Showing non-ignored' : 'Hide ignored'}
+              </Button>
+            )}
+
+            {!isMobile && <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />}
           </>
         )
 
@@ -443,19 +449,36 @@ export default function TransactionsTab() {
                     </span>
                   )}
                 </Button>
+                <Button
+                  variant={hideIgnored ? 'default' : 'outline'}
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => setHideIgnored(!hideIgnored)}
+                  title={hideIgnored ? 'Showing non-ignored' : 'Hide ignored'}
+                >
+                  {hideIgnored ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+                <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
+                {selectMode ? (
+                  <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { setSelected(new Set()); setSelectMode(false) }}>Cancel</Button>
+                ) : (
+                  <Button variant="outline" size="icon" className="shrink-0" onClick={() => setSelectMode(true)} title="Select">
+                    <CheckSquare className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
               <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-                <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
+                <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto px-4">
                   <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
-                  <div className="space-y-3 py-4">
+                  <div className="grid grid-cols-2 gap-2 py-4">
                     {filterControls}
-                    <div className="flex gap-2 pt-2">
+                    <div className="col-span-2 flex gap-2 pt-2">
                       {activeFilterCount > 0 && (
-                        <Button variant="outline" size="sm" onClick={() => { clearFilters(); setFiltersOpen(false) }} className="flex-1">
+                        <Button variant="outline" onClick={() => { clearFilters(); setFiltersOpen(false) }} className="flex-1">
                           Clear All
                         </Button>
                       )}
-                      <Button size="sm" onClick={() => setFiltersOpen(false)} className="flex-1">
+                      <Button onClick={() => setFiltersOpen(false)} className="flex-1">
                         Apply
                       </Button>
                     </div>
@@ -507,8 +530,8 @@ export default function TransactionsTab() {
                 onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
               />
             )}
-            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-              {isMobile ? 'Clear' : 'Deselect'}
+            <Button size="sm" variant="ghost" onClick={() => { setSelected(new Set()); setSelectMode(false) }}>
+              {isMobile ? 'Cancel' : 'Deselect'}
             </Button>
           </div>
         </div>
@@ -531,7 +554,7 @@ export default function TransactionsTab() {
         )
       ) : displayedTxns.length === 0 ? (
         <EmptyState
-          icon={<ArrowLeftRight className="h-8 w-8" />}
+          icon={<ArrowLeftRight className="h-9 w-9" />}
           title="No transactions found"
           description="Upload a bank statement or adjust your filters."
         />
@@ -541,13 +564,13 @@ export default function TransactionsTab() {
             data={displayedTxns}
             fields={mobileFields}
             getRowId={(t) => t.id}
-            selectable
+            selectable={selectMode}
             selectedIds={selected}
             onToggleSelect={toggleSelect}
             actions={(txn) => (
               <>
                 {!txn.invoice_id && txn.status !== 'ignored' && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleLink(txn.id)} title="Link invoice">
+                  <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => handleLink(txn.id)} title="Link invoice">
                     <Link2 className="h-4 w-4" />
                   </Button>
                 )}
@@ -556,7 +579,7 @@ export default function TransactionsTab() {
                     <EyeOff className="h-4 w-4" />
                   </Button>
                 ) : (
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleStatusChange(txn.id, 'pending')} title="Restore">
+                  <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => handleStatusChange(txn.id, 'pending')} title="Restore">
                     <Eye className="h-4 w-4" />
                   </Button>
                 )}

@@ -15,8 +15,11 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
+  BarChart3,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -42,7 +45,9 @@ const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
 ]
 
 export default function Profile() {
+  const isMobile = useIsMobile()
   const [activeTab, setActiveTab] = useTabParam<Tab>('invoices')
+  const [showStats, setShowStats] = useState(false)
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ['profile', 'summary'],
@@ -53,7 +58,15 @@ export default function Profile() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="My Profile" breadcrumbs={[{ label: 'My Profile' }]} />
+      <PageHeader
+        title="My Profile"
+        breadcrumbs={[{ label: 'My Profile' }]}
+        actions={
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+            <BarChart3 className="h-4 w-4" />
+          </Button>
+        }
+      />
 
       {/* User Info Card */}
       <Card>
@@ -118,7 +131,7 @@ export default function Profile() {
       </Card>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
         <StatCard
           title="Invoices"
           value={summary?.invoices.total ?? 0}
@@ -152,26 +165,35 @@ export default function Profile() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 rounded-lg border p-1 w-fit">
-        {tabs.map((tab) => {
-          const Icon = tab.icon
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors',
-                activeTab === tab.key
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-            </button>
-          )
-        })}
-      </div>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
+        {isMobile ? (
+          <MobileBottomTabs>
+            <TabsList className="w-full">
+              {tabs.map((tab) => {
+                const Icon = tab.icon
+                return (
+                  <TabsTrigger key={tab.key} value={tab.key}>
+                    <Icon className="h-4 w-4" />
+                    {tab.label}
+                  </TabsTrigger>
+                )
+              })}
+            </TabsList>
+          </MobileBottomTabs>
+        ) : (
+          <TabsList className="w-auto">
+            {tabs.map((tab) => {
+              const Icon = tab.icon
+              return (
+                <TabsTrigger key={tab.key} value={tab.key}>
+                  <Icon className="h-4 w-4" />
+                  {tab.label}
+                </TabsTrigger>
+              )
+            })}
+          </TabsList>
+        )}
+      </Tabs>
 
       {/* Tab Content */}
       {activeTab === 'invoices' && <InvoicesPanel />}

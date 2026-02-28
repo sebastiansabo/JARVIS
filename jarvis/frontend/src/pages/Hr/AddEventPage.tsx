@@ -218,7 +218,7 @@ export default function AddEventPage() {
     <form onSubmit={onFormSubmit} className="space-y-4">
       <PageHeader
         title="Add Event + Employees"
-        description="Create an event and assign employees with bonuses."
+        description=""
         breadcrumbs={[
           { label: 'HR', href: '/app/hr/pontaje' },
           { label: 'Events', href: '/app/hr/events' },

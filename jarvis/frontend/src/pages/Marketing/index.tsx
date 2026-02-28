@@ -13,14 +13,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { cn } from '@/lib/utils'
 import {
   Plus, Search, LayoutGrid, LayoutDashboard, List,
-  DollarSign, Target, AlertTriangle, FolderOpen,
-  BarChart3, PieChart, Download,
+  DollarSign, Target, AlertTriangle, FolderOpen, FileText,
+  BarChart3, PieChart, Download, SlidersHorizontal,
   Archive, Trash2, RotateCcw, AlertCircle,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { marketingApi } from '@/api/marketing'
 import { settingsApi } from '@/api/settings'
 import { organizationApi } from '@/api/organization'
@@ -60,8 +62,10 @@ export default function Marketing() {
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('marketing_summary')
   const isMobile = useIsMobile()
   const { filters, updateFilter, clearFilters, viewMode, setViewMode } = useMarketingStore()
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const effectiveViewMode = isMobile ? 'cards' : viewMode
   const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [showStats, setShowStats] = useState(false)
   const [mainTab, setMainTab] = useTabParam<MainTab>('dashboard')
 
   // Data queries
@@ -100,12 +104,15 @@ export default function Marketing() {
       <PageHeader
         title="Marketing"
         breadcrumbs={[
-          { label: 'Marketing' },
+          { label: 'Marketing', shortLabel: 'Mkt.' },
           { label: mainTab === 'projects' ? `Campaigns (${total})` : mainTab === 'dashboard' ? 'Dashboard' : mainTab === 'archived' ? 'Archived' : 'Trash' },
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+              <BarChart3 className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="hidden md:inline-flex md:size-auto md:px-3" onClick={toggleDashboardWidget}>
               <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
               <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
             </Button>
@@ -119,20 +126,29 @@ export default function Marketing() {
 
       {/* Main Tabs */}
       <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
-        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
-        <TabsList className="w-max md:w-auto">
-          <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
-          <TabsTrigger value="projects"><FolderOpen className="h-3.5 w-3.5" />Campaigns</TabsTrigger>
-          <TabsTrigger value="archived"><Archive className="h-3.5 w-3.5" />Archived</TabsTrigger>
-          <TabsTrigger value="trash"><Trash2 className="h-3.5 w-3.5" />Trash</TabsTrigger>
-        </TabsList>
-        </div>
+        {isMobile ? (
+          <MobileBottomTabs>
+            <TabsList className="w-full">
+              <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
+              <TabsTrigger value="projects"><FolderOpen className="h-3.5 w-3.5" />Campaigns</TabsTrigger>
+              <TabsTrigger value="archived"><Archive className="h-3.5 w-3.5" />Archived</TabsTrigger>
+              <TabsTrigger value="trash"><Trash2 className="h-3.5 w-3.5" />Trash</TabsTrigger>
+            </TabsList>
+          </MobileBottomTabs>
+        ) : (
+          <TabsList className="w-auto">
+            <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
+            <TabsTrigger value="projects"><FolderOpen className="h-3.5 w-3.5" />Campaigns</TabsTrigger>
+            <TabsTrigger value="archived"><Archive className="h-3.5 w-3.5" />Archived</TabsTrigger>
+            <TabsTrigger value="trash"><Trash2 className="h-3.5 w-3.5" />Trash</TabsTrigger>
+          </TabsList>
+        )}
       </Tabs>
 
       {mainTab === 'projects' && (
         <>
           {/* Stat Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
             <StatCard
               title="Active"
               value={summary?.active_count ?? 0}
@@ -160,83 +176,118 @@ export default function Marketing() {
           </div>
 
           {/* Filter Bar */}
-          <div className="flex flex-wrap gap-2 md:gap-3 items-center">
-            <div className="relative flex-1 min-w-0 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search projects..."
-                className="pl-9"
-                value={filters.search ?? ''}
-                onChange={(e) => updateFilter('search', e.target.value || undefined)}
-              />
-            </div>
+          {(() => {
+            const activeFilterCount = [filters.status, filters.project_type, filters.company_id].filter(Boolean).length
 
-            <Select
-              value={filters.status ?? 'all'}
-              onValueChange={(v) => updateFilter('status', v === 'all' ? undefined : v)}
-            >
-              <SelectTrigger className="w-[130px] md:w-[160px]">
-                <SelectValue placeholder="All statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                {(statusOptions ?? []).map((opt: { value: string; label: string }) => (
-                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            const filterControls = (
+              <>
+                <Select
+                  value={filters.status ?? 'all'}
+                  onValueChange={(v) => updateFilter('status', v === 'all' ? undefined : v)}
+                >
+                  <SelectTrigger className={isMobile ? 'w-full' : 'w-[160px]'}>
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {(statusOptions ?? []).map((opt: { value: string; label: string }) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-            <Select
-              value={filters.project_type ?? 'all'}
-              onValueChange={(v) => updateFilter('project_type', v === 'all' ? undefined : v)}
-            >
-              <SelectTrigger className="hidden sm:flex w-[160px]">
-                <SelectValue placeholder="All types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
-                {(typeOptions ?? []).map((opt: { value: string; label: string }) => (
-                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                <Select
+                  value={filters.project_type ?? 'all'}
+                  onValueChange={(v) => updateFilter('project_type', v === 'all' ? undefined : v)}
+                >
+                  <SelectTrigger className={isMobile ? 'w-full' : 'w-[160px]'}>
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    {(typeOptions ?? []).map((opt: { value: string; label: string }) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-            <Select
-              value={filters.company_id ? String(filters.company_id) : 'all'}
-              onValueChange={(v) => updateFilter('company_id', v === 'all' ? undefined : Number(v))}
-            >
-              <SelectTrigger className="hidden sm:flex w-[180px]">
-                <SelectValue placeholder="All companies" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All companies</SelectItem>
-                {companies.map((c: { id: number; company: string }) => (
-                  <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                <Select
+                  value={filters.company_id ? String(filters.company_id) : 'all'}
+                  onValueChange={(v) => updateFilter('company_id', v === 'all' ? undefined : Number(v))}
+                >
+                  <SelectTrigger className={isMobile ? 'w-full' : 'w-[180px]'}>
+                    <SelectValue placeholder="All companies" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All companies</SelectItem>
+                    {companies.map((c: { id: number; company: string }) => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            )
 
-            {Object.values(filters).some((v) => v != null && v !== '' && v !== 50 && v !== 0) && (
-              <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
-            )}
+            if (isMobile) {
+              return (
+                <>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input className="pl-8" placeholder="Search..." value={filters.search ?? ''} onChange={(e) => updateFilter('search', e.target.value || undefined)} />
+                    </div>
+                    <Button variant="outline" size="icon" className="shrink-0" onClick={() => setFiltersOpen(true)}>
+                      <SlidersHorizontal className="h-4 w-4" />
+                      {activeFilterCount > 0 && (
+                        <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+                          {activeFilterCount}
+                        </span>
+                      )}
+                    </Button>
+                  </div>
+                  <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+                    <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto px-4">
+                      <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
+                      <div className="grid grid-cols-2 gap-2 py-4">
+                        {filterControls}
+                        <div className="col-span-2 flex gap-2 pt-2">
+                          {activeFilterCount > 0 && (
+                            <Button variant="outline" onClick={() => { clearFilters(); setFiltersOpen(false) }} className="flex-1">
+                              Clear All
+                            </Button>
+                          )}
+                          <Button onClick={() => setFiltersOpen(false)} className="flex-1">
+                            Apply
+                          </Button>
+                        </div>
+                      </div>
+                    </SheetContent>
+                  </Sheet>
+                </>
+              )
+            }
 
-            <div className="ml-auto hidden md:flex gap-1">
-              <Button
-                variant={viewMode === 'table' ? 'secondary' : 'ghost'}
-                size="icon"
-                onClick={() => setViewMode('table')}
-              >
-                <List className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewMode === 'cards' ? 'secondary' : 'ghost'}
-                size="icon"
-                onClick={() => setViewMode('cards')}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+            return (
+              <div className="flex flex-wrap gap-3 items-center">
+                <div className="relative flex-1 min-w-0 max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="Search projects..." className="pl-9" value={filters.search ?? ''} onChange={(e) => updateFilter('search', e.target.value || undefined)} />
+                </div>
+                {filterControls}
+                {Object.values(filters).some((v) => v != null && v !== '' && v !== 50 && v !== 0) && (
+                  <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
+                )}
+                <div className="ml-auto flex gap-1">
+                  <Button variant={viewMode === 'table' ? 'secondary' : 'ghost'} size="icon" onClick={() => setViewMode('table')}>
+                    <List className="h-4 w-4" />
+                  </Button>
+                  <Button variant={viewMode === 'cards' ? 'secondary' : 'ghost'} size="icon" onClick={() => setViewMode('cards')}>
+                    <LayoutGrid className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Project List */}
           {projectsError ? (
@@ -308,7 +359,7 @@ export default function Marketing() {
         </>
       )}
 
-      {mainTab === 'dashboard' && <DashboardView />}
+      {mainTab === 'dashboard' && <DashboardView showStats={showStats} />}
 
 
 
@@ -575,7 +626,7 @@ function ProjectCards({ projects, onSelect, onArchive, onDelete }: {
 
 // ---- Dashboard View ----
 
-function DashboardView() {
+function DashboardView({ showStats }: { showStats: boolean }) {
   const navigate = useNavigate()
 
   const { data: summaryData, isLoading: summaryLoading } = useQuery({
@@ -614,9 +665,9 @@ function DashboardView() {
   return (
     <div className="space-y-6">
       {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-5 ${showStats ? '' : 'hidden md:grid'}`}>
         <StatCard title="Active" value={summary?.active_count ?? 0} icon={<FolderOpen className="h-4 w-4" />} isLoading={summaryLoading} />
-        <StatCard title="Draft" value={summary?.draft_count ?? 0} icon={<FolderOpen className="h-4 w-4" />} isLoading={summaryLoading} />
+        <StatCard title="Draft" value={summary?.draft_count ?? 0} icon={<FileText className="h-4 w-4" />} isLoading={summaryLoading} />
         <StatCard title="Total Budget" value={formatCurrency(summary?.total_budget)} icon={<DollarSign className="h-4 w-4" />} isLoading={summaryLoading} />
         <StatCard title="Total Spent" value={formatCurrency(summary?.total_spent)} icon={<Target className="h-4 w-4" />} isLoading={summaryLoading} />
         <StatCard title="KPI Alerts" value={summary?.kpi_alerts ?? 0} icon={<AlertTriangle className="h-4 w-4" />} isLoading={summaryLoading} />

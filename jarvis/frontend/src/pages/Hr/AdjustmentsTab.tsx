@@ -11,6 +11,7 @@ import {
   RotateCcw,
   ChevronLeft,
   ChevronRight,
+  BarChart3,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -78,6 +79,7 @@ export default function AdjustmentsTab() {
   const isMobile = useIsMobile()
   const [date, setDate] = useState(shiftDate(todayStr(), -1)) // yesterday by default
   const [search, setSearch] = useState('')
+  const [showStats, setShowStats] = useState(false)
   const [tab, setTab] = useState<'pending' | 'adjusted'>('pending')
 
   const { data: status } = useQuery({
@@ -176,7 +178,7 @@ export default function AdjustmentsTab() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
         <StatCard title="Off-Schedule" value={offSchedule.length} icon={<AlertTriangle className="h-4 w-4" />} />
         <StatCard title="Adjusted" value={adjustments.length} icon={<CheckCircle2 className="h-4 w-4" />} />
         <StatCard title="Total Flagged" value={offSchedule.length + adjustments.length} icon={<Clock className="h-4 w-4" />} />
@@ -185,6 +187,9 @@ export default function AdjustmentsTab() {
 
       {/* Date nav + Filters */}
       <div className="flex flex-wrap items-center gap-3">
+        <Button variant="ghost" size="icon" className="md:hidden h-8 w-8" onClick={() => setShowStats(s => !s)}>
+          <BarChart3 className="h-4 w-4" />
+        </Button>
         <div className="flex items-center gap-1">
           <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setDate(shiftDate(date, -1))}>
             <ChevronLeft className="h-4 w-4" />

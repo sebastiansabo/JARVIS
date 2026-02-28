@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Calendar,
   Banknote,
+  CheckSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -127,6 +128,7 @@ function EventsList() {
   const [search, setSearch] = useState('')
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
   const [selected, setSelected] = useState<number[]>([])
+  const [selectMode, setSelectMode] = useState(false)
   const [editEvent, setEditEvent] = useState<HrEvent | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteIds, setDeleteIds] = useState<number[] | null>(null)
@@ -232,7 +234,7 @@ function EventsList() {
           <Input className="pl-8" placeholder="Search events..." value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <span className="hidden sm:inline text-xs text-muted-foreground">{displayedEvents.length} events</span>
-        <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
+        <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly={isMobile} />
         <div className="ml-auto flex items-center gap-1.5">
           {selected.length > 0 && (
             <>
@@ -246,6 +248,15 @@ function EventsList() {
                 <span className="hidden md:inline">Delete ({selected.length})</span>
               </Button>
             </>
+          )}
+          {isMobile && (
+            selectMode ? (
+              <Button variant="ghost" size="sm" onClick={() => { setSelected([]); setSelectMode(false) }}>Cancel</Button>
+            ) : (
+              <Button variant="outline" size="icon" onClick={() => setSelectMode(true)} title="Select">
+                <CheckSquare className="h-4 w-4" />
+              </Button>
+            )
           )}
           <Button size="icon" variant="outline" className="md:size-auto md:px-3" onClick={() => { setEditEvent(null); setDialogOpen(true) }}>
             <Plus className="h-4 w-4 md:mr-1" />
@@ -273,7 +284,7 @@ function EventsList() {
           data={displayedEvents}
           fields={mobileFields}
           getRowId={(ev) => ev.id}
-          selectable
+          selectable={selectMode}
           selectedIds={selected}
           onToggleSelect={toggleSelect}
           actions={(ev) => (

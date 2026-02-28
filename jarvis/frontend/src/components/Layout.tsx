@@ -5,7 +5,6 @@ import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/api/client'
 import { Sidebar } from './Sidebar'
 import { AiAgentWidget, AiAgentPanel } from './AiAgentWidget'
-import { BottomNav } from './BottomNav'
 import { NotificationBell } from './NotificationBell'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
@@ -100,8 +99,6 @@ export default function Layout() {
       {/* Floating trigger button (only visible when panel is closed) */}
       <AiAgentWidget />
 
-      {/* Mobile bottom navigation */}
-      <BottomNav onMore={() => setSidebarOpen(true)} />
       <Toaster />
     </div>
   )

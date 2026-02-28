@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FolderOpen, FileText, Plus, Search, Trash2, RotateCcw,
-  Paperclip, Users as ChildrenIcon, ChevronRight,
+  Paperclip, Users as ChildrenIcon, ChevronRight, BarChart3,
   Download, Calendar, Bell, Edit2, File, FileSpreadsheet,
-  Image as ImageIcon, PenTool, Tags, Shield, X,
+  Image as ImageIcon, PenTool, Tags, Shield, X, CheckSquare, SlidersHorizontal,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { dmsApi } from '@/api/dms'
 import { tagsApi } from '@/api/tags'
@@ -83,8 +84,11 @@ export default function Dms() {
     debounceRef.current = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(debounceRef.current)
   }, [search])
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [selectMode, setSelectMode] = useState(false)
+  const [showStats, setShowStats] = useState(false)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
 
   const companyId = filters.company_id || user?.company_id || undefined
@@ -335,9 +339,14 @@ export default function Dms() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Documents"
-        breadcrumbs={[{ label: 'Documents' }]}
+        breadcrumbs={[{ label: 'Documents', shortLabel: 'Docs.' }]}
         actions={
           <div className="flex items-center gap-2">
+            {isMobile && (
+              <Button variant="ghost" size="icon" onClick={() => setShowStats(s => !s)}>
+                <BarChart3 className="h-4 w-4" />
+              </Button>
+            )}
             <Button size="icon" className="md:size-auto md:px-4" onClick={() => setUploadOpen(true)}>
               <Plus className="h-4 w-4 md:mr-2" />
               <span className="hidden md:inline">Upload Document</span>
@@ -346,77 +355,125 @@ export default function Dms() {
         }
       />
 
-      {/* Stats — compact gap */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard title="Total" value={stats?.total ?? 0} isLoading={statsLoading} />
-            <StatCard title="Draft" value={stats?.draft ?? 0} isLoading={statsLoading} />
-            <StatCard title="Active" value={stats?.active ?? 0} isLoading={statsLoading} />
-            <StatCard title="Archived" value={stats?.archived ?? 0} isLoading={statsLoading} />
-          </div>
-
           {/* Filters + Column Toggle */}
-          <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-3">
-            <div className="relative w-full md:flex-1 md:min-w-[200px] md:max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search documents..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
+          {(() => {
+            const activeFilterCount = [filters.category_id, filters.status].filter(Boolean).length
 
-            <div className="flex items-center gap-2 md:ml-auto md:gap-3">
-              <Select
-                value={filters.category_id?.toString() || 'all'}
-                onValueChange={(v) => updateFilter('category_id', v === 'all' ? undefined : Number(v))}
-              >
-                <SelectTrigger className="w-full md:w-[180px]">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={c.id.toString()}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            const filterControls = (
+              <>
+                <Select
+                  value={filters.category_id?.toString() || 'all'}
+                  onValueChange={(v) => updateFilter('category_id', v === 'all' ? undefined : Number(v))}
+                >
+                  <SelectTrigger className={isMobile ? 'w-full' : 'w-[180px]'}>
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {categories.map((c) => (
+                      <SelectItem key={c.id} value={c.id.toString()}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-              <Select
-                value={filters.status || 'all'}
-                onValueChange={(v) => updateFilter('status', v === 'all' ? undefined : v)}
-              >
-                <SelectTrigger className="w-full md:w-[140px]">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="archived">Archived</SelectItem>
-                </SelectContent>
-              </Select>
+                <Select
+                  value={filters.status || 'all'}
+                  onValueChange={(v) => updateFilter('status', v === 'all' ? undefined : v)}
+                >
+                  <SelectTrigger className={isMobile ? 'w-full' : 'w-[140px]'}>
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="archived">Archived</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
+            )
 
-              {(filters.category_id || filters.status || search) && (
-                <Button variant="ghost" size="sm" onClick={() => { clearFilters(); setSearch(''); setDebouncedSearch('') }}>
-                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                  Clear
-                </Button>
-              )}
+            if (isMobile) {
+              return (
+                <>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input className="pl-8" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
+                    </div>
+                    <Button variant="outline" size="icon" className="shrink-0" onClick={() => setFiltersOpen(true)}>
+                      <SlidersHorizontal className="h-4 w-4" />
+                      {activeFilterCount > 0 && (
+                        <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+                          {activeFilterCount}
+                        </span>
+                      )}
+                    </Button>
+                    {selectMode ? (
+                      <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { clearSelected(); setSelectMode(false) }}>Cancel</Button>
+                    ) : (
+                      <Button variant="outline" size="icon" className="shrink-0" onClick={() => setSelectMode(true)} title="Select">
+                        <CheckSquare className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+                    <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto px-4">
+                      <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
+                      <div className="grid grid-cols-2 gap-2 py-4">
+                        {filterControls}
+                        <div className="col-span-2 flex gap-2 pt-2">
+                          {activeFilterCount > 0 && (
+                            <Button variant="outline" onClick={() => { clearFilters(); setSearch(''); setDebouncedSearch(''); setFiltersOpen(false) }} className="flex-1">
+                              Clear All
+                            </Button>
+                          )}
+                          <Button onClick={() => setFiltersOpen(false)} className="flex-1">
+                            Apply
+                          </Button>
+                        </div>
+                      </div>
+                    </SheetContent>
+                  </Sheet>
+                </>
+              )
+            }
 
-              {!isMobile && (
-                <ColumnToggle
-                  visibleColumns={safeVisibleColumns}
-                  defaultColumns={DEFAULT_COLUMNS}
-                  columnDefs={columnDefs as ColumnDef<never>[]}
-                  lockedColumns={LOCKED_COLUMNS}
-                  onChange={setVisibleColumns}
-                />
-              )}
-            </div>
-          </div>
+            return (
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="Search documents..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+                </div>
+                <div className="ml-auto flex items-center gap-3">
+                  {filterControls}
+                  {(filters.category_id || filters.status || search) && (
+                    <Button variant="ghost" size="sm" onClick={() => { clearFilters(); setSearch(''); setDebouncedSearch('') }}>
+                      <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                      Clear
+                    </Button>
+                  )}
+                  <ColumnToggle
+                    visibleColumns={safeVisibleColumns}
+                    defaultColumns={DEFAULT_COLUMNS}
+                    columnDefs={columnDefs as ColumnDef<never>[]}
+                    lockedColumns={LOCKED_COLUMNS}
+                    onChange={setVisibleColumns}
+                  />
+                </div>
+              </div>
+            )
+          })()}
+
+      {/* Stats — toggle on mobile, always on desktop */}
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
+        <StatCard title="Total" value={stats?.total ?? 0} icon={<FolderOpen className="h-4 w-4" />} isLoading={statsLoading} />
+        <StatCard title="Draft" value={stats?.draft ?? 0} icon={<Edit2 className="h-4 w-4" />} isLoading={statsLoading} />
+        <StatCard title="Active" value={stats?.active ?? 0} icon={<FileText className="h-4 w-4" />} isLoading={statsLoading} />
+        <StatCard title="Archived" value={stats?.archived ?? 0} icon={<Trash2 className="h-4 w-4" />} isLoading={statsLoading} />
+      </div>
 
           {/* Batch Action Bar */}
           {selectedIds.length > 0 && (
@@ -494,7 +551,7 @@ export default function Dms() {
                 <Trash2 className="h-3.5 w-3.5 mr-1" />{!isMobile && 'Delete'}
               </Button>
 
-              <Button variant="ghost" size="sm" onClick={clearSelected}>
+              <Button variant="ghost" size="sm" onClick={() => { clearSelected(); setSelectMode(false) }}>
                 <X className="h-3.5 w-3.5 mr-1" />{!isMobile && 'Clear'}
               </Button>
             </div>
@@ -526,7 +583,7 @@ export default function Dms() {
                 fields={mobileFields}
                 getRowId={(doc) => doc.id}
                 onRowClick={(doc) => navigate(`/app/dms/documents/${doc.id}`)}
-                selectable
+                selectable={selectMode}
                 selectedIds={selectedIds}
                 onToggleSelect={toggleSelected}
                 actions={(doc) => (
