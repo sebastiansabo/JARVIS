@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, memo } from 'react'
 import { Link } from 'react-router-dom'
 import { useTabParam } from '@/hooks/useTabParam'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
@@ -46,6 +47,7 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
 import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { QueryError } from '@/components/QueryError'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { TagBadgeList } from '@/components/shared/TagBadge'
@@ -82,6 +84,7 @@ function formatDate(dateStr: string) {
 
 export default function Accounting() {
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('accounting_invoices')
   const [activeTab, setActiveTab] = useTabParam<TabKey>('invoices')
   const [search, setSearch] = useState('')
@@ -420,7 +423,8 @@ export default function Accounting() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as TabKey); clearSelected(); setSearch('') }}>
-        <TabsList>
+        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
+        <TabsList className="w-max md:w-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon
             return (
@@ -436,27 +440,32 @@ export default function Accounting() {
             )
           })}
         </TabsList>
+        </div>
       </Tabs>
 
       {/* Filter + Search bar */}
       {(activeTab === 'invoices' || activeTab === 'bin') && (
-        <div className="flex flex-wrap items-center gap-2">
-          <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} />
-          <DatePresetSelect
-            startDate={filters.start_date ?? ''}
-            endDate={filters.end_date ?? ''}
-            onChange={(s, e) => handleFilterChange({ ...filterValues, start_date: s, end_date: e })}
+        <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search supplier or invoice #..."
+            className="w-full md:w-48"
           />
-          <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
-          <div className="ml-auto flex items-center gap-2">
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder="Search supplier or invoice #..."
-              className="w-48"
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} />
+            <DatePresetSelect
+              startDate={filters.start_date ?? ''}
+              endDate={filters.end_date ?? ''}
+              onChange={(s, e) => handleFilterChange({ ...filterValues, start_date: s, end_date: e })}
             />
-            <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
+            <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
           </div>
+          {!isMobile && (
+            <div className="ml-auto flex items-center gap-2">
+              <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
+            </div>
+          )}
         </div>
       )}
 
@@ -521,6 +530,7 @@ export default function Accounting() {
           activeCols={activeCols}
           sort={sort}
           onSort={setSort}
+          isMobile={isMobile}
         />
       ) : activeTab === 'company' ? (
         <SummaryTable data={companySummary} nameKey="company" label="Company" />
@@ -799,6 +809,7 @@ function InvoiceTable({
   activeCols,
   sort,
   onSort,
+  isMobile,
 }: {
   invoices: Invoice[]
   isLoading: boolean
@@ -817,11 +828,51 @@ function InvoiceTable({
   activeCols: ColumnDef[]
   sort: SortState | null
   onSort: (s: SortState | null) => void
+  isMobile?: boolean
 }) {
   const colCount = 2 + activeCols.length + 1 // checkbox + ID + visible cols + actions
 
+  // Mobile card fields for invoice cards
+  const mobileFields: MobileCardField<Invoice>[] = useMemo(() => [
+    {
+      key: 'supplier', label: 'Supplier', isPrimary: true,
+      render: (inv) => <span className="font-medium">{inv.supplier}</span>,
+    },
+    {
+      key: 'meta', label: 'Invoice', isSecondary: true,
+      render: (inv) => (
+        <span className="flex items-center gap-2">
+          <span>#{inv.invoice_number}</span>
+          <span>{formatDate(inv.invoice_date)}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'value', label: 'Total',
+      render: (inv) => <CurrencyDisplay value={inv.invoice_value} currency={inv.currency} />,
+    },
+    {
+      key: 'status', label: 'Status',
+      render: (inv) => <StatusBadge status={inv.status} />,
+    },
+    {
+      key: 'payment', label: 'Payment',
+      render: (inv) => <StatusBadge status={inv.payment_status} />,
+    },
+    {
+      key: 'company', label: 'Company', expandOnly: true,
+      render: (inv) => <span className="text-xs">{inv.allocations?.[0]?.company ?? '—'}</span>,
+    },
+    {
+      key: 'department', label: 'Department', expandOnly: true,
+      render: (inv) => <span className="text-xs">{inv.allocations?.[0]?.department ?? '—'}</span>,
+    },
+  ], [])
+
   if (isLoading) {
-    return (
+    return isMobile ? (
+      <MobileCardList data={[]} fields={mobileFields} getRowId={() => 0} isLoading />
+    ) : (
       <Card>
         <CardContent className="p-0">
           <TableSkeleton rows={8} columns={6} showCheckbox />
@@ -836,6 +887,48 @@ function InvoiceTable({
         title={isBin ? 'Recycle bin is empty' : 'No invoices found'}
         description={isBin ? 'Deleted invoices will appear here.' : 'Try adjusting your filters or add a new invoice.'}
       />
+    )
+  }
+
+  if (isMobile) {
+    return (
+      <>
+        <MobileCardList
+          data={invoices}
+          fields={mobileFields}
+          getRowId={(inv) => inv.id}
+          onRowClick={(inv) => onEdit(inv)}
+          selectable
+          selectedIds={selectedIds}
+          onToggleSelect={onToggleSelect}
+          actions={(inv) => (
+            <div className="flex items-center gap-1">
+              {isBin ? (
+                <>
+                  <Button variant="ghost" size="sm" className="h-8" onClick={() => onRestore(inv.id)}>
+                    <RotateCcw className="h-3.5 w-3.5 mr-1" />Restore
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-8 text-destructive" onClick={() => onPermanentDelete(inv.id)}>
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="ghost" size="sm" className="h-8" onClick={() => onEdit(inv)}>
+                    <Pencil className="h-3.5 w-3.5 mr-1" />Edit
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-8 text-destructive" onClick={() => onDelete(inv.id)}>
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        />
+        <div className="text-xs text-muted-foreground">
+          {invoices.length} invoice{invoices.length !== 1 ? 's' : ''}
+        </div>
+      </>
     )
   }
 

@@ -10,10 +10,12 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TagPicker } from '@/components/shared/TagPicker'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { ColumnToggle, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -72,6 +74,7 @@ export default function Dms() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const { filters, updateFilter, clearFilters, selectedIds, toggleSelected, selectAll, clearSelected, visibleColumns, setVisibleColumns } = useDmsStore()
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -264,6 +267,62 @@ export default function Dms() {
 
   const allSelected = documents.length > 0 && documents.every((d) => selectedIds.includes(d.id))
 
+  // Mobile card fields for responsive table→card view
+  const mobileFields: MobileCardField<DmsDocument>[] = useMemo(() => [
+    {
+      key: 'title', label: 'Title', isPrimary: true,
+      render: (doc) => (
+        <span className="flex items-center gap-1.5">
+          <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          {doc.title}
+          {doc.visibility === 'restricted' && <Shield className="h-3 w-3 text-amber-500 shrink-0" />}
+        </span>
+      ),
+    },
+    {
+      key: 'category_status', label: 'Category & Status', isSecondary: true,
+      render: (doc) => (
+        <span className="flex items-center gap-2">
+          {doc.category_name && (
+            <Badge variant="outline" className="text-[10px] px-1 py-0" style={{ borderColor: doc.category_color || undefined, color: doc.category_color || undefined }}>
+              {doc.category_name}
+            </Badge>
+          )}
+          <Badge className={cn('text-[10px] px-1 py-0', STATUS_COLORS[doc.status])}>{doc.status}</Badge>
+        </span>
+      ),
+    },
+    {
+      key: 'expiry_date', label: 'Expiry',
+      render: (doc) => doc.expiry_date ? (
+        <span className={cn('text-xs font-medium', expiryColor(doc.days_to_expiry))}>
+          {formatDate(doc.expiry_date)}
+          {doc.days_to_expiry != null && (
+            <span className="ml-1 text-[10px]">
+              ({doc.days_to_expiry < 0 ? `${Math.abs(doc.days_to_expiry)}d ago` : `${doc.days_to_expiry}d`})
+            </span>
+          )}
+        </span>
+      ) : <span className="text-muted-foreground">—</span>,
+    },
+    {
+      key: 'files', label: 'Files',
+      render: (doc) => <span className="text-xs">{doc.file_count ?? 0} files, {doc.children_count ?? 0} annexes</span>,
+    },
+    {
+      key: 'created_at', label: 'Created', expandOnly: true,
+      render: (doc) => <span className="text-xs">{formatDate(doc.created_at)}</span>,
+    },
+    {
+      key: 'created_by', label: 'By', expandOnly: true,
+      render: (doc) => <span className="text-xs">{doc.created_by_name || '—'}</span>,
+    },
+    {
+      key: 'company', label: 'Company', expandOnly: true,
+      render: (doc) => <span className="text-xs">{doc.company_name || '—'}</span>,
+    },
+  ], [entityTagsMap])
+
   const handleBatchTag = (tagId: number, action: 'add' | 'remove') => {
     tagsApi.bulkEntityTags('dms_document', selectedIds, tagId, action).then((res) => {
       toast.success(`${action === 'add' ? 'Added' : 'Removed'} tag on ${res.count} document(s)`)
@@ -288,7 +347,7 @@ export default function Dms() {
       />
 
       {/* Stats — compact gap */}
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <StatCard title="Total" value={stats?.total ?? 0} isLoading={statsLoading} />
             <StatCard title="Draft" value={stats?.draft ?? 0} isLoading={statsLoading} />
             <StatCard title="Active" value={stats?.active ?? 0} isLoading={statsLoading} />
@@ -296,8 +355,8 @@ export default function Dms() {
           </div>
 
           {/* Filters + Column Toggle */}
-          <div className="flex flex-wrap gap-3 items-center">
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-3">
+            <div className="relative w-full md:flex-1 md:min-w-[200px] md:max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search documents..."
@@ -307,12 +366,12 @@ export default function Dms() {
               />
             </div>
 
-            <div className="ml-auto flex items-center gap-3">
+            <div className="flex items-center gap-2 md:ml-auto md:gap-3">
               <Select
                 value={filters.category_id?.toString() || 'all'}
                 onValueChange={(v) => updateFilter('category_id', v === 'all' ? undefined : Number(v))}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full md:w-[180px]">
                   <SelectValue placeholder="Category" />
                 </SelectTrigger>
                 <SelectContent>
@@ -329,7 +388,7 @@ export default function Dms() {
                 value={filters.status || 'all'}
                 onValueChange={(v) => updateFilter('status', v === 'all' ? undefined : v)}
               >
-                <SelectTrigger className="w-[140px]">
+                <SelectTrigger className="w-full md:w-[140px]">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -347,13 +406,15 @@ export default function Dms() {
                 </Button>
               )}
 
-              <ColumnToggle
-                visibleColumns={safeVisibleColumns}
-                defaultColumns={DEFAULT_COLUMNS}
-                columnDefs={columnDefs as ColumnDef<never>[]}
-                lockedColumns={LOCKED_COLUMNS}
-                onChange={setVisibleColumns}
-              />
+              {!isMobile && (
+                <ColumnToggle
+                  visibleColumns={safeVisibleColumns}
+                  defaultColumns={DEFAULT_COLUMNS}
+                  columnDefs={columnDefs as ColumnDef<never>[]}
+                  lockedColumns={LOCKED_COLUMNS}
+                  onChange={setVisibleColumns}
+                />
+              )}
             </div>
           </div>
 
@@ -432,7 +493,7 @@ export default function Dms() {
             </div>
           )}
 
-          {/* Table */}
+          {/* Table / Card List */}
           {docsLoading ? (
             <div className="space-y-2">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -451,6 +512,31 @@ export default function Dms() {
                 </Button>
               }
             />
+          ) : isMobile ? (
+            <>
+              <MobileCardList
+                data={documents}
+                fields={mobileFields}
+                getRowId={(doc) => doc.id}
+                onRowClick={(doc) => navigate(`/app/dms/documents/${doc.id}`)}
+                selectable
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelected}
+                actions={(doc) => (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-destructive"
+                    onClick={() => setDeleteId(doc.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                  </Button>
+                )}
+              />
+              <div className="text-sm text-muted-foreground">
+                Showing {documents.length} of {total} documents
+              </div>
+            </>
           ) : (
             <>
               <div className="rounded-md border">
