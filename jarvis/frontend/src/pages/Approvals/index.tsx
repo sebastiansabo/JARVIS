@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTabParam } from '@/hooks/useTabParam'
-import { ClipboardCheck, Inbox, Send, Clock, CheckCircle, XCircle, RotateCcw, AlertTriangle, Users2, Plus, Trash2, LayoutDashboard } from 'lucide-react'
+import { ClipboardCheck, Inbox, Send, Clock, CheckCircle, XCircle, RotateCcw, AlertTriangle, Users2, Plus, Trash2, LayoutDashboard, BarChart3 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -57,6 +57,7 @@ export default function Approvals() {
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('approvals_queue')
   const [activeTab, setActiveTab] = useTabParam<Tab>('queue')
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null)
+  const [showStats, setShowStats] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [showDelegationDialog, setShowDelegationDialog] = useState(false)
   const [newDelegation, setNewDelegation] = useState({ delegate_id: '', starts_at: '', ends_at: '', reason: '' })
@@ -283,15 +284,20 @@ export default function Approvals() {
           { label: tabs.find(t => t.key === activeTab)?.label ?? 'My Queue' },
         ]}
         actions={
-          <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
-            <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
-            <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+              <BarChart3 className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
+              <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
+              <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
+            </Button>
+          </div>
         }
       />
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
         <StatCard
           title="Pending Queue"
           value={queueCount}

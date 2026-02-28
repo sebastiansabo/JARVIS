@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Scale, Plus, Upload, FileSpreadsheet, Trash2, Copy, Eye, Download, Pencil, ChevronRight, ChevronDown, Search, BookOpen, FileUp, X } from 'lucide-react'
+import { Scale, Plus, Upload, FileSpreadsheet, Trash2, Copy, Eye, Download, Pencil, ChevronRight, ChevronDown, Search, BookOpen, FileUp, X, BarChart3, FileText, LayoutList } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { bilantApi } from '@/api/bilant'
@@ -66,6 +66,7 @@ export default function Bilant() {
   const [anafFile, setAnafFile] = useState<File | null>(null)
   const [anafName, setAnafName] = useState('')
   const [anafCompany, setAnafCompany] = useState<string>('')
+  const [showStats, setShowStats] = useState(false)
 
   // ── Queries ──
 
@@ -193,10 +194,10 @@ export default function Bilant() {
   const uniqueCompanies = new Set(generations.map(g => g.company_id)).size
 
   // ── Tabs ──
-  const tabs: { key: MainTab; label: string }[] = [
-    { key: 'generations', label: 'Generations' },
-    { key: 'templates', label: 'Templates' },
-    { key: 'plan-conturi', label: 'Plan de Conturi' },
+  const tabs: { key: MainTab; label: string; icon: React.ElementType }[] = [
+    { key: 'generations', label: 'Generations', icon: Scale },
+    { key: 'templates', label: 'Templates', icon: FileText },
+    { key: 'plan-conturi', label: 'Plan de Conturi', icon: LayoutList },
   ]
 
   return (
@@ -211,6 +212,11 @@ export default function Bilant() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            {tab === 'generations' && (
+              <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+                <BarChart3 className="h-4 w-4" />
+              </Button>
+            )}
             {tab === 'generations' && (
               <Button size="icon" className="md:size-auto md:px-3" onClick={() => setShowUpload(true)}>
                 <Upload className="h-4 w-4 md:mr-1.5" />
@@ -239,7 +245,10 @@ export default function Bilant() {
           <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
             <TabsList className="w-max md:w-auto">
               {tabs.map(t => (
-                <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>
+                <TabsTrigger key={t.key} value={t.key}>
+                  <t.icon className="h-4 w-4" />
+                  {t.label}
+                </TabsTrigger>
               ))}
             </TabsList>
           </div>
@@ -262,7 +271,7 @@ export default function Bilant() {
       {/* Generations Tab */}
       {tab === 'generations' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className={`grid grid-cols-2 gap-3 sm:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
             <StatCard title="Total Generations" value={fmt(genTotal)} icon={<Scale className="h-4 w-4" />} isLoading={genLoading} />
             <StatCard title="Completed" value={fmt(completedCount)} icon={<FileSpreadsheet className="h-4 w-4" />} isLoading={genLoading} />
             <StatCard title="Companies" value={fmt(uniqueCompanies)} isLoading={genLoading} />

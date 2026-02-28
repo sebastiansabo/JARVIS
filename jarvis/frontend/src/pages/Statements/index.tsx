@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard } from 'lucide-react'
+import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard, BarChart3 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -37,6 +37,7 @@ export default function Statements() {
   const location = useLocation()
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('statements_summary')
   const [filters] = useState<TransactionFilters>({})
+  const [showStats, setShowStats] = useState(false)
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ['statements-summary', filters],
@@ -62,6 +63,9 @@ export default function Statements() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+              <BarChart3 className="h-4 w-4" />
+            </Button>
             <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
               <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
               <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
@@ -77,7 +81,7 @@ export default function Statements() {
       />
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
         <StatCard
           title="Total Transactions"
           value={totalCount}

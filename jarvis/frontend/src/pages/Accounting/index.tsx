@@ -24,6 +24,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  BarChart3,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -94,6 +95,7 @@ export default function Accounting() {
   const [permanentDeleteIds, setPermanentDeleteIds] = useState<number[] | null>(null)
   const [sort, setSort] = usePersistedState<SortState | null>('accounting-sort', null)
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
+  const [showStats, setShowStats] = useState(false)
 
   const filters = useAccountingStore((s) => s.filters)
   const selectedInvoiceIds = useAccountingStore((s) => s.selectedIds)
@@ -376,6 +378,9 @@ export default function Accounting() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+              <BarChart3 className="h-4 w-4" />
+            </Button>
             <Button variant="ghost" size="icon" className="md:size-auto md:px-3" onClick={toggleDashboardWidget}>
               <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
               <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
@@ -391,7 +396,7 @@ export default function Accounting() {
       />
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-5 ${showStats ? '' : 'hidden md:grid'}`}>
         <StatCard
           title="Invoices"
           value={invoices.length}
