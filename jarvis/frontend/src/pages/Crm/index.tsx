@@ -43,7 +43,8 @@ export default function Crm() {
       />
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
+        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
+        <TabsList className="w-max md:w-auto">
           <TabsTrigger value="dashboard" className="gap-1.5"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
           <TabsTrigger value="deals" className="gap-1.5"><Car className="h-4 w-4" />Sales</TabsTrigger>
           <TabsTrigger value="clients" className="gap-1.5"><UserCheck className="h-4 w-4" />Clients</TabsTrigger>
@@ -51,6 +52,7 @@ export default function Crm() {
           <TabsTrigger value="import" className="gap-1.5"><Upload className="h-4 w-4" />Import</TabsTrigger>
           <TabsTrigger value="blacklist" className="gap-1.5"><Ban className="h-4 w-4" />Blacklist</TabsTrigger>
         </TabsList>
+        </div>
 
         <TabsContent value="dashboard" className="space-y-4">
           {stats && <DashboardContent stats={stats} />}

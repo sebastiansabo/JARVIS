@@ -98,26 +98,28 @@ export default function Statements() {
       </div>
 
       {/* Tab nav */}
-      <nav className="flex gap-1 border-b">
-        {tabs.map((tab) => (
-          <NavLink
-            key={tab.to}
-            to={tab.to}
-            end={tab.to === '/app/statements/transactions'}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )
-            }
-          >
-            <tab.icon className="h-4 w-4" />
-            {tab.label}
-          </NavLink>
-        ))}
-      </nav>
+      <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+        <nav className="flex w-max gap-1 border-b md:w-auto">
+          {tabs.map((tab) => (
+            <NavLink
+              key={tab.to}
+              to={tab.to}
+              end={tab.to === '/app/statements/transactions'}
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition-colors',
+                  isActive
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground',
+                )
+              }
+            >
+              <tab.icon className="h-4 w-4" />
+              {tab.label}
+            </NavLink>
+          ))}
+        </nav>
+      </div>
 
       {/* Tab content */}
       <Suspense fallback={<TabLoader />}>

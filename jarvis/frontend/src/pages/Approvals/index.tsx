@@ -320,7 +320,8 @@ export default function Approvals() {
 
       {/* Tab nav */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
-        <TabsList>
+        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
+        <TabsList className="w-max md:w-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon
             return (
@@ -336,11 +337,12 @@ export default function Approvals() {
             )
           })}
         </TabsList>
+        </div>
       </Tabs>
 
       {/* Status filter for All tab */}
       {activeTab === 'all' && (
-        <div className="flex gap-1.5">
+        <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 md:mx-0 md:px-0">
           {['', 'pending', 'approved', 'rejected', 'returned', 'cancelled'].map((s) => (
             <Button
               key={s}

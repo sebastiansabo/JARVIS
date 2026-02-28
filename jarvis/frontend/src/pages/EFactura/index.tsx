@@ -77,23 +77,25 @@ export default function EFactura() {
 
       {/* Tab nav */}
       <Tabs value={location.pathname.split('/').pop() || 'unallocated'} onValueChange={(v) => navigate(`/app/efactura/${v}`)}>
-        <div className="flex items-center gap-2">
-          <TabsList>
-            <TabsTrigger value="unallocated">
-              <FileStack className="h-4 w-4" />
-              Unallocated
-              {(unallocatedCount ?? 0) > 0 && (
-                <span className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                  {unallocatedCount}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="mappings">
-              <Tags className="h-4 w-4" />
-              Mappings
-            </TabsTrigger>
-          </TabsList>
-          <div className="ml-auto flex items-center gap-2">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center">
+          <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
+            <TabsList className="w-max md:w-auto">
+              <TabsTrigger value="unallocated">
+                <FileStack className="h-4 w-4" />
+                Unallocated
+                {(unallocatedCount ?? 0) > 0 && (
+                  <span className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                    {unallocatedCount}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="mappings">
+                <Tags className="h-4 w-4" />
+                Mappings
+              </TabsTrigger>
+            </TabsList>
+          </div>
+          <div className="flex items-center gap-2 md:ml-auto">
             <Switch id="show-hidden" checked={showHidden} onCheckedChange={setShowHidden} />
             <Label htmlFor="show-hidden" className="text-xs cursor-pointer text-muted-foreground">
               Show Hidden ({hiddenCount ?? 0})

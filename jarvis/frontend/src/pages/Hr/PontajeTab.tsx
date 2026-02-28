@@ -358,19 +358,21 @@ export default function PontajeTab() {
       )}
 
       {/* Quick filters + date pickers */}
-      <div className="flex flex-wrap items-center gap-2">
-        {QUICK_FILTERS.map((f) => (
-          <Button
-            key={f.value}
-            size="sm"
-            variant={quickFilter === f.value ? 'default' : 'outline'}
-            className="h-8 text-xs"
-            onClick={() => handleQuickFilter(f.value)}
-          >
-            {f.label}
-          </Button>
-        ))}
-        <div className="flex items-center gap-1.5 ml-auto">
+      <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+        <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:px-0">
+          {QUICK_FILTERS.map((f) => (
+            <Button
+              key={f.value}
+              size="sm"
+              variant={quickFilter === f.value ? 'default' : 'outline'}
+              className="h-8 shrink-0 text-xs"
+              onClick={() => handleQuickFilter(f.value)}
+            >
+              {f.label}
+            </Button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 md:ml-auto">
           <Calendar className="h-4 w-4 text-muted-foreground" />
           <Input
             type="date"
