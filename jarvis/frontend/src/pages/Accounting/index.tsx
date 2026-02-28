@@ -366,7 +366,10 @@ export default function Accounting() {
     <div className="space-y-4">
       <PageHeader
         title="Accounting"
-        description="Invoice management, allocations & financial reports."
+        breadcrumbs={[
+          { label: 'Accounting' },
+          { label: tabs.find(t => t.key === activeTab)?.label ?? 'Invoices' },
+        ]}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>

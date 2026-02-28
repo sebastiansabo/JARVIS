@@ -81,7 +81,13 @@ export default function Settings() {
   const basePath = splat ? pathname.replace(new RegExp(`/${splat}$`), '') : pathname
   return (
     <div>
-      <PageHeader title="Settings" description="Manage users, roles, themes, and system configuration." />
+      <PageHeader
+        title="Settings"
+        breadcrumbs={[
+          { label: 'Settings' },
+          { label: tabs.find(t => t.path === (splat || 'users'))?.label ?? 'Settings' },
+        ]}
+      />
 
       <div className="mt-6 flex flex-col gap-6 lg:flex-row">
         {/* Tab Navigation */}

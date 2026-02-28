@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ChevronRight,
   Clock,
   Fingerprint,
   LogIn,
@@ -18,6 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { StatCard } from '@/components/shared/StatCard'
+import { PageHeader } from '@/components/shared/PageHeader'
 import { biostarApi } from '@/api/biostar'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -178,17 +178,15 @@ export default function EmployeeProfile() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <nav className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
-            <button onClick={() => navigate('/app/hr/pontaje')} className="hover:text-foreground">HR</button>
-            <ChevronRight className="h-3 w-3" />
-            <button onClick={() => navigate('/app/hr/pontaje')} className="hover:text-foreground">Pontaje</button>
-            <ChevronRight className="h-3 w-3" />
-            <span>{employee.name}</span>
-          </nav>
-          <h1 className="text-xl font-semibold">{employee.name}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      <PageHeader
+        title={employee.name}
+        breadcrumbs={[
+          { label: 'HR', href: '/app/hr/pontaje' },
+          { label: 'Pontaje', href: '/app/hr/pontaje' },
+          { label: employee.name },
+        ]}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
             {employee.email && (
               <span className="inline-flex items-center gap-1">
                 <Mail className="h-3.5 w-3.5" />
@@ -207,17 +205,15 @@ export default function EmployeeProfile() {
                 {employee.user_group_name}
               </span>
             )}
-          </div>
-          {employee.mapped_jarvis_user_name && (
-            <div className="mt-1">
+            {employee.mapped_jarvis_user_name && (
               <Badge variant="outline" className="text-xs">
                 <UserCheck className="mr-1 h-3 w-3" />
                 Mapped: {employee.mapped_jarvis_user_name}
               </Badge>
-            </div>
-          )}
-        </div>
-      </div>
+            )}
+          </span>
+        }
+      />
 
       {/* Work Schedule */}
       <div className="rounded-lg border p-4">

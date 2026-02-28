@@ -52,7 +52,7 @@ export default function Statements() {
     <div className="space-y-4">
       <PageHeader
         title="Bank Statements"
-        description="Transaction reconciliation, vendor mappings & invoice matching"
+        breadcrumbs={[{ label: 'Bank Statements' }]}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>

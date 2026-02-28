@@ -276,7 +276,7 @@ export default function Dms() {
     <div className="space-y-6">
       <PageHeader
         title="Documents"
-        description="Document Management System"
+        breadcrumbs={[{ label: 'Documents' }]}
         actions={
           <div className="flex items-center gap-2">
             <Button onClick={() => setUploadOpen(true)}>

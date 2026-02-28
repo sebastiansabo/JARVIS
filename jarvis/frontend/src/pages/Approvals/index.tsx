@@ -278,7 +278,10 @@ export default function Approvals() {
     <div className="space-y-4">
       <PageHeader
         title="Approvals"
-        description="Review and manage approval requests"
+        breadcrumbs={[
+          { label: 'Approvals' },
+          { label: tabs.find(t => t.key === activeTab)?.label ?? 'My Queue' },
+        ]}
         actions={
           <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
             <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />

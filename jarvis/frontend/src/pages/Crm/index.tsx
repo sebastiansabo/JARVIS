@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Users, Car, Upload, BarChart3, PieChart, UserCheck, Ban } from 'lucide-react'
+import { PageHeader } from '@/components/shared/PageHeader'
 import { crmApi, type CrmStats } from '@/api/crm'
 import DealsTab from './DealsTab'
 import StatisticsTab from './StatisticsTab'
@@ -33,12 +34,13 @@ export default function Crm() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Samsaru</h1>
-          <p className="text-sm text-muted-foreground">Car sales data & client management</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Samsaru"
+        breadcrumbs={[
+          { label: 'Samsaru' },
+          { label: tab === 'dashboard' ? 'Dashboard' : tab === 'deals' ? 'Sales' : tab === 'clients' ? 'Clients' : tab === 'statistics' ? 'Statistics' : tab === 'import' ? 'Import' : 'Blacklist' },
+        ]}
+      />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>

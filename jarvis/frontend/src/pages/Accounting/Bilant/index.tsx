@@ -206,6 +206,7 @@ export default function Bilant() {
         breadcrumbs={[
           { label: 'Accounting', href: '/app/accounting' },
           { label: 'Bilant' },
+          { label: tabs.find(t => t.key === tab)?.label ?? 'Generations' },
         ]}
         actions={
           <div className="flex items-center gap-2">

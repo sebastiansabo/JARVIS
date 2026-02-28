@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react'
-import { Routes, Route, Navigate, NavLink } from 'react-router-dom'
+import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   FileStack,
@@ -39,6 +39,8 @@ export default function EFactura() {
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('efactura_status')
   const [syncOpen, setSyncOpen] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
+  const location = useLocation()
+  const activeEfTab = tabs.find(t => location.pathname.startsWith(t.to))
 
   const { data: unallocatedCount } = useQuery({
     queryKey: ['efactura-unallocated-count'],
@@ -52,22 +54,25 @@ export default function EFactura() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between">
-        <PageHeader
-          title="e-Factura"
-          description="ANAF electronic invoicing — sync, allocate & manage"
-        />
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
-            <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
-            {isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}
-          </Button>
-          <Button onClick={() => setSyncOpen(true)}>
-            <RefreshCw className="mr-1.5 h-4 w-4" />
-            Sync
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="e-Factura"
+        breadcrumbs={[
+          { label: 'e-Factura' },
+          { label: activeEfTab?.label ?? 'Unallocated' },
+        ]}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
+              <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
+              {isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}
+            </Button>
+            <Button onClick={() => setSyncOpen(true)}>
+              <RefreshCw className="mr-1.5 h-4 w-4" />
+              Sync
+            </Button>
+          </div>
+        }
+      />
 
       {/* Tab nav */}
       <nav className="flex items-center gap-1 overflow-x-auto border-b">

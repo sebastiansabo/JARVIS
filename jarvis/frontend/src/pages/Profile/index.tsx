@@ -51,7 +51,7 @@ export default function Profile() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="My Profile" description="Your account overview and activity." />
+      <PageHeader title="My Profile" breadcrumbs={[{ label: 'My Profile' }]} />
 
       {/* User Info Card */}
       <Card>

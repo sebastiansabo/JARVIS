@@ -58,7 +58,7 @@ export default function Marketing() {
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('marketing_summary')
   const { filters, updateFilter, clearFilters, viewMode, setViewMode } = useMarketingStore()
   const [showCreateDialog, setShowCreateDialog] = useState(false)
-  const [mainTab, setMainTab] = useTabParam<MainTab>('projects')
+  const [mainTab, setMainTab] = useTabParam<MainTab>('dashboard')
 
   // Data queries
   const { data: summaryData, isLoading: summaryLoading } = useQuery({
@@ -95,7 +95,11 @@ export default function Marketing() {
     <div className="space-y-6">
       <PageHeader
         title="Marketing"
-        description={mainTab === 'projects' ? `${total} project${total !== 1 ? 's' : ''}` : 'Dashboard & Reports'}
+        breadcrumbs={[
+          { label: 'Marketing' },
+          { label: mainTab === 'projects' ? 'Campaigns' : mainTab === 'dashboard' ? 'Dashboard' : mainTab === 'simulator' ? 'Simulator' : mainTab === 'archived' ? 'Archived' : 'Trash' },
+        ]}
+        description={mainTab === 'projects' ? `${total} project${total !== 1 ? 's' : ''}` : undefined}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={toggleDashboardWidget}>
@@ -111,61 +115,26 @@ export default function Marketing() {
 
       {/* Main Tabs */}
       <div className="flex items-center gap-1 border-b">
-        <button
-          onClick={() => setMainTab('projects')}
-          className={cn(
-            'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-            mainTab === 'projects'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <FolderOpen className="h-3.5 w-3.5" /> Projects
-        </button>
-        <button
-          onClick={() => setMainTab('dashboard')}
-          className={cn(
-            'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-            mainTab === 'dashboard'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <BarChart3 className="h-3.5 w-3.5" /> Dashboard
-        </button>
-        <button
-          onClick={() => setMainTab('simulator')}
-          className={cn(
-            'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-            mainTab === 'simulator'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <Calculator className="h-3.5 w-3.5" /> Simulator
-        </button>
-        <button
-          onClick={() => setMainTab('archived')}
-          className={cn(
-            'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-            mainTab === 'archived'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <Archive className="h-3.5 w-3.5" /> Archived
-        </button>
-        <button
-          onClick={() => setMainTab('trash')}
-          className={cn(
-            'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-            mainTab === 'trash'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <Trash2 className="h-3.5 w-3.5" /> Trash
-        </button>
+        {([
+          { key: 'dashboard' as MainTab, label: 'Dashboard', Icon: BarChart3 },
+          { key: 'projects' as MainTab, label: 'Campaigns', Icon: FolderOpen },
+          { key: 'simulator' as MainTab, label: 'Simulator', Icon: Calculator },
+          { key: 'archived' as MainTab, label: 'Archived', Icon: Archive },
+          { key: 'trash' as MainTab, label: 'Trash', Icon: Trash2 },
+        ]).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setMainTab(tab.key)}
+            className={cn(
+              'flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+              mainTab === tab.key
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <tab.Icon className="h-3.5 w-3.5" /> {tab.label}
+          </button>
+        ))}
       </div>
 
       {mainTab === 'projects' && (

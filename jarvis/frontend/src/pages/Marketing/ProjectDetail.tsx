@@ -5,10 +5,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { PageHeader } from '@/components/shared/PageHeader'
 import { cn } from '@/lib/utils'
 import {
   Pencil, BarChart3, DollarSign, Target, Users,
-  CalendarDays, Clock, FileText, MessageSquare, Download, ChevronRight,
+  CalendarDays, Clock, FileText, MessageSquare, Download,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { exportProjectPdf } from './exportProjectPdf'
@@ -68,38 +69,36 @@ export default function ProjectDetail() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <nav className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
-            <button onClick={() => navigate('/app/marketing')} className="hover:text-foreground">Marketing</button>
-            <ChevronRight className="h-3 w-3" />
-            <button onClick={() => navigate('/app/marketing')} className="hover:text-foreground">Campaigns</button>
-            <ChevronRight className="h-3 w-3" />
-            <span>{project.name}</span>
-          </nav>
-          <div className="flex items-center gap-2 mb-1">
-            <h1 className="text-2xl font-bold truncate">{project.name}</h1>
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[project.status] ?? ''}`}>
+      <PageHeader
+        title={project.name}
+        breadcrumbs={[
+          { label: 'Marketing', href: '/app/marketing' },
+          { label: 'Campaigns', href: '/app/marketing?tab=projects' },
+          { label: project.name },
+        ]}
+        description={
+          <span>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mr-2 ${statusColors[project.status] ?? ''}`}>
               {(project.status ?? '').replace('_', ' ')}
             </span>
-          </div>
-          <p className="text-sm text-muted-foreground">
             {project.company_name}{project.brand_name ? ` / ${project.brand_name}` : ''}
             {' · '}
             {(project.project_type ?? '').replace('_', ' ')}
             {project.owner_name ? ` · Owner: ${project.owner_name}` : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={() => exportProjectPdf(project)}>
-            <Download className="h-3.5 w-3.5 mr-1.5" /> PDF
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setShowEditDialog(true)}>
-            <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
-          </Button>
-          <StatusActions project={project} onDone={() => queryClient.invalidateQueries({ queryKey: ['mkt-project', id] })} />
-        </div>
-      </div>
+          </span>
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => exportProjectPdf(project)}>
+              <Download className="h-3.5 w-3.5 mr-1.5" /> PDF
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowEditDialog(true)}>
+              <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+            </Button>
+            <StatusActions project={project} onDone={() => queryClient.invalidateQueries({ queryKey: ['mkt-project', id] })} />
+          </div>
+        }
+      />
 
       {/* Tabs */}
       <div className="flex items-center gap-1 overflow-x-auto border-b">
