@@ -243,36 +243,50 @@ class BioStarRepository(BaseRepository):
         return row['last_dt'] if row else None
 
     def get_daily_summary(self, date_str, jarvis_user_ids=None):
-        """Get per-employee daily punch summary with group, duration, mapped user, schedule."""
+        """Get per-employee daily punch summary with group, duration, mapped user, schedule.
+
+        Also returns adjusted punch times from biostar_daily_adjustments if they exist.
+        """
         params = [date_str]
         extra_where = ''
         if jarvis_user_ids:
             extra_where = ' AND be.mapped_jarvis_user_id = ANY(%s)'
             params.append(jarvis_user_ids)
+        # date_str used a second time for the adjustment JOIN
+        params.append(date_str)
         return self.query_all(f'''
-            SELECT
-                pl.biostar_user_id,
-                be.name,
-                be.email,
-                be.user_group_name,
-                be.mapped_jarvis_user_id,
-                u.name AS mapped_jarvis_user_name,
-                be.lunch_break_minutes,
-                be.working_hours,
-                be.schedule_start,
-                be.schedule_end,
-                MIN(pl.event_datetime) AS first_punch,
-                MAX(pl.event_datetime) AS last_punch,
-                COUNT(*) AS total_punches,
-                EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds
-            FROM biostar_punch_logs pl
-            LEFT JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
-            LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
-            WHERE pl.event_datetime::date = %s::date{extra_where}
-            GROUP BY pl.biostar_user_id, be.name, be.email, be.user_group_name,
-                     be.mapped_jarvis_user_id, u.name, be.lunch_break_minutes, be.working_hours,
-                     be.schedule_start, be.schedule_end
-            ORDER BY be.name
+            WITH punches AS (
+                SELECT
+                    pl.biostar_user_id,
+                    be.name,
+                    be.email,
+                    be.user_group_name,
+                    be.mapped_jarvis_user_id,
+                    u.name AS mapped_jarvis_user_name,
+                    be.lunch_break_minutes,
+                    be.working_hours,
+                    be.schedule_start,
+                    be.schedule_end,
+                    MIN(pl.event_datetime) AS first_punch,
+                    MAX(pl.event_datetime) AS last_punch,
+                    COUNT(*) AS total_punches,
+                    EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds
+                FROM biostar_punch_logs pl
+                LEFT JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
+                LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+                WHERE pl.event_datetime::date = %s::date{extra_where}
+                GROUP BY pl.biostar_user_id, be.name, be.email, be.user_group_name,
+                         be.mapped_jarvis_user_id, u.name, be.lunch_break_minutes, be.working_hours,
+                         be.schedule_start, be.schedule_end
+            )
+            SELECT p.*,
+                   adj.adjusted_first_punch,
+                   adj.adjusted_last_punch,
+                   adj.adjustment_type
+            FROM punches p
+            LEFT JOIN biostar_daily_adjustments adj
+                ON adj.biostar_user_id = p.biostar_user_id AND adj.date = %s::date
+            ORDER BY p.name
         ''', params)
 
     def get_range_summary(self, start_date, end_date, jarvis_user_ids=None):
@@ -333,26 +347,38 @@ class BioStarRepository(BaseRepository):
         ''', (biostar_user_id, date_str))
 
     def get_employee_daily_history(self, biostar_user_id, start_date, end_date):
-        """Get per-day punch summary for one employee over a date range."""
+        """Get per-day punch summary for one employee over a date range.
+
+        Also returns adjusted punch times from biostar_daily_adjustments if they exist.
+        """
         return self.query_all('''
-            SELECT
-                pl.event_datetime::date AS date,
-                MIN(pl.event_datetime) AS first_punch,
-                MAX(pl.event_datetime) AS last_punch,
-                COUNT(*) AS total_punches,
-                EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds,
-                be.lunch_break_minutes,
-                be.working_hours,
-                be.schedule_start,
-                be.schedule_end
-            FROM biostar_punch_logs pl
-            LEFT JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
-            WHERE pl.biostar_user_id = %s
-              AND pl.event_datetime::date BETWEEN %s::date AND %s::date
-            GROUP BY pl.event_datetime::date, be.lunch_break_minutes, be.working_hours,
-                     be.schedule_start, be.schedule_end
-            ORDER BY pl.event_datetime::date DESC
-        ''', (biostar_user_id, start_date, end_date))
+            WITH daily AS (
+                SELECT
+                    pl.event_datetime::date AS date,
+                    MIN(pl.event_datetime) AS first_punch,
+                    MAX(pl.event_datetime) AS last_punch,
+                    COUNT(*) AS total_punches,
+                    EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds,
+                    be.lunch_break_minutes,
+                    be.working_hours,
+                    be.schedule_start,
+                    be.schedule_end
+                FROM biostar_punch_logs pl
+                LEFT JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
+                WHERE pl.biostar_user_id = %s
+                  AND pl.event_datetime::date BETWEEN %s::date AND %s::date
+                GROUP BY pl.event_datetime::date, be.lunch_break_minutes, be.working_hours,
+                         be.schedule_start, be.schedule_end
+            )
+            SELECT d.*,
+                   adj.adjusted_first_punch,
+                   adj.adjusted_last_punch,
+                   adj.adjustment_type
+            FROM daily d
+            LEFT JOIN biostar_daily_adjustments adj
+                ON adj.biostar_user_id = %s AND adj.date = d.date
+            ORDER BY d.date DESC
+        ''', (biostar_user_id, start_date, end_date, biostar_user_id))
 
     def get_employee_with_mapping(self, biostar_user_id):
         """Get employee details with JARVIS mapping info."""

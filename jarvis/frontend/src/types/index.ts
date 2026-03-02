@@ -26,6 +26,8 @@ export interface User {
   can_edit_crm: boolean
   can_delete_crm: boolean
   can_export_crm: boolean
+  can_view_original_punches: boolean
+  can_view_adjusted_punches: boolean
 }
 
 export interface ApiResponse<T = unknown> {

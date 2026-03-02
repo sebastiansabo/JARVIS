@@ -190,6 +190,8 @@ def api_current_user():
                 'can_edit_crm': current_user.can_edit_crm,
                 'can_delete_crm': current_user.can_delete_crm,
                 'can_export_crm': current_user.can_export_crm,
+                'can_view_original_punches': current_user.can_view_original_punches,
+                'can_view_adjusted_punches': current_user.can_view_adjusted_punches,
             }
         })
     return jsonify({'authenticated': False})

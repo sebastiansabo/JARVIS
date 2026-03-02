@@ -118,6 +118,9 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
 
   const years = Array.from({ length: 7 }, (_, i) => new Date().getFullYear() - 3 + i)
 
+  // Editable only when not locked, or when user has admin override
+  const isEditable = !lockStatus?.locked || !!lockStatus?.can_override
+
   return (
     <div className="space-y-4">
       {/* Lock warning */}
@@ -170,13 +173,13 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
         )}
 
         <div className="ml-auto flex items-center gap-2">
-          {selectedBonusIds.length > 0 && (
+          {selectedBonusIds.length > 0 && isEditable && (
             <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selectedBonusIds)}>
               <Trash2 className="mr-1 h-3.5 w-3.5" />
               Delete ({selectedBonusIds.length})
             </Button>
           )}
-          {isMobile && (
+          {isMobile && isEditable && (
             selectMode ? (
               <Button variant="ghost" size="sm" onClick={() => { clearSelected(); setSelectMode(false) }}>Cancel</Button>
             ) : (
@@ -185,10 +188,12 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
               </Button>
             )
           )}
-          <Button size="sm" onClick={() => { setEditBonus(null); setAddOpen(true) }}>
-            <Plus className="mr-1 h-3.5 w-3.5" />
-            Add Bonus
-          </Button>
+          {isEditable && (
+            <Button size="sm" onClick={() => { setEditBonus(null); setAddOpen(true) }}>
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Add Bonus
+            </Button>
+          )}
         </div>
       </div>
 
@@ -233,6 +238,7 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
           canViewAmounts={canViewAmounts}
           isMobile={isMobile}
           selectMode={selectMode}
+          isEditable={isEditable}
         />
       )}
 
@@ -271,7 +277,7 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
 
 function BonusListTable({
   bonuses, isLoading, selectedIds, allSelected, someSelected,
-  onToggleSelect, onSelectAll, onEdit, onDuplicate, onDelete, canViewAmounts, isMobile, selectMode,
+  onToggleSelect, onSelectAll, onEdit, onDuplicate, onDelete, canViewAmounts, isMobile, selectMode, isEditable,
 }: {
   bonuses: EventBonus[]
   isLoading: boolean
@@ -286,6 +292,7 @@ function BonusListTable({
   canViewAmounts: boolean
   isMobile: boolean
   selectMode?: boolean
+  isEditable: boolean
 }) {
   const mobileFields: MobileCardField<EventBonus>[] = useMemo(() => [
     {
@@ -379,7 +386,7 @@ function BonusListTable({
           selectable={selectMode}
           selectedIds={selectedIds}
           onToggleSelect={onToggleSelect}
-          actions={(b) => (
+          actions={isEditable ? (b) => (
             <>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(b)} title="Edit">
                 <Pencil className="h-3.5 w-3.5" />
@@ -391,7 +398,7 @@ function BonusListTable({
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </>
-          )}
+          ) : undefined}
         />
         <div className="text-xs text-muted-foreground px-1">
           {bonuses.length} bonus(es)
@@ -406,9 +413,11 @@ function BonusListTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10">
-                <Checkbox checked={allSelected ? true : someSelected ? 'indeterminate' : false} onCheckedChange={onSelectAll} />
-              </TableHead>
+              {isEditable && (
+                <TableHead className="w-10">
+                  <Checkbox checked={allSelected ? true : someSelected ? 'indeterminate' : false} onCheckedChange={onSelectAll} />
+                </TableHead>
+              )}
               <TableHead>Year</TableHead>
               <TableHead>Month</TableHead>
               <TableHead>Employee</TableHead>
@@ -420,15 +429,17 @@ function BonusListTable({
               <TableHead className="text-right">Hours</TableHead>
               {canViewAmounts && <TableHead className="text-right">Bonus (Net)</TableHead>}
               <TableHead>Details</TableHead>
-              <TableHead className="w-28">Actions</TableHead>
+              {isEditable && <TableHead className="w-28">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {bonuses.map((b) => (
               <TableRow key={b.id} className={cn(selectedIds.includes(b.id) && 'bg-muted/50')}>
-                <TableCell>
-                  <Checkbox checked={selectedIds.includes(b.id)} onCheckedChange={() => onToggleSelect(b.id)} />
-                </TableCell>
+                {isEditable && (
+                  <TableCell>
+                    <Checkbox checked={selectedIds.includes(b.id)} onCheckedChange={() => onToggleSelect(b.id)} />
+                  </TableCell>
+                )}
                 <TableCell className="text-sm">{b.year}</TableCell>
                 <TableCell>
                   <Badge variant="outline" className="text-xs">{MONTH_SHORT[b.month] || b.month}</Badge>
@@ -446,19 +457,21 @@ function BonusListTable({
                   </TableCell>
                 )}
                 <TableCell className="text-xs text-muted-foreground max-w-[120px] truncate">{b.details ?? ''}</TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(b)} title="Edit">
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDuplicate(b)} title="Duplicate">
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(b.id)} title="Delete">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </TableCell>
+                {isEditable && (
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(b)} title="Edit">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDuplicate(b)} title="Duplicate">
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(b.id)} title="Delete">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
@@ -843,6 +856,7 @@ function BonusDialog({
   const [bonusTypeId, setBonusTypeId] = useState('')
   const [bonusDays, setBonusDays] = useState('')
   const [hoursFree, setHoursFree] = useState('')
+  const [bonusNet, setBonusNet] = useState('')
   const [details, setDetails] = useState('')
 
   const selectedEvent = events.find((e) => String(e.id) === eventId)
@@ -863,6 +877,7 @@ function BonusDialog({
       setBonusTypeId((bonus as any).bonus_type_id != null ? String((bonus as any).bonus_type_id) : '')
       setBonusDays(bonus.bonus_days != null ? String(bonus.bonus_days) : '')
       setHoursFree(bonus.hours_free != null ? String(bonus.hours_free) : '')
+      setBonusNet(bonus.bonus_net != null ? String(bonus.bonus_net) : '')
       setDetails(bonus.details ?? '')
     } else {
       setEmployeeId('')
@@ -874,6 +889,7 @@ function BonusDialog({
       setBonusTypeId('')
       setBonusDays('')
       setHoursFree('')
+      setBonusNet('')
       setDetails('')
     }
   }, [open, bonus])
@@ -904,10 +920,12 @@ function BonusDialog({
     if (!employeeId || !eventId) return toast.error('Employee and event are required')
     if ((parseFloat(bonusDays) || 0) > maxBonusDays) return toast.error(`Bonus days cannot exceed ${maxBonusDays}`)
     if ((parseFloat(hoursFree) || 0) > maxBonusDays * 8) return toast.error(`Hours free cannot exceed ${maxBonusDays * 8}`)
-    // Auto-compute bonus_net from type + days
+    // Auto-compute bonus_net from type + days, or use manual input
     const type = bonusTypes.find((t) => String(t.id) === bonusTypeId)
     const d = parseFloat(bonusDays) || 0
-    const computedNet = type && d > 0 ? Math.round((type.amount / (type.days_per_amount ?? 1)) * d) : null
+    const computedNet = type && d > 0
+      ? Math.round((type.amount / (type.days_per_amount ?? 1)) * d)
+      : (bonusNet ? Number(bonusNet) : null)
     const data: Record<string, any> = {
       employee_id: Number(employeeId),
       event_id: Number(eventId),
@@ -1028,6 +1046,20 @@ function BonusDialog({
                 className={cn((parseFloat(hoursFree) || 0) > maxBonusDays * 8 && 'border-destructive ring-destructive')}
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Bonus Net (RON){bonusTypeId ? ' — auto-computed from type' : ''}</Label>
+            <Input
+              type="number"
+              min={0}
+              value={bonusTypeId
+                ? ((() => { const t = bonusTypes.find((t) => String(t.id) === bonusTypeId); const d = parseFloat(bonusDays) || 0; return t && d > 0 ? String(Math.round((t.amount / (t.days_per_amount ?? 1)) * d)) : '' })())
+                : bonusNet}
+              onChange={(e) => { if (!bonusTypeId) setBonusNet(e.target.value) }}
+              disabled={!!bonusTypeId}
+              placeholder={bonusTypeId ? 'Computed from type' : 'Enter amount...'}
+            />
           </div>
 
           <div className="space-y-1.5">

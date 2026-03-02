@@ -3,6 +3,7 @@ import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/hooks/useAuth'
 import {
   Search,
   ChevronDown,
@@ -103,6 +104,8 @@ const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
 export default function PontajeTab({ showStats = false }: { showStats?: boolean }) {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
+  const { user } = useAuth()
+  const showAdjusted = user?.can_view_adjusted_punches ?? false
   const [search, setSearch] = useState('')
   const [groupFilter, setGroupFilter] = useState<string>('all')
   const [sortField, setSortField] = useState<SortField>('name')
@@ -236,68 +239,91 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
     ? dailySummary.filter((e) => e.first_punch && new Date(e.first_punch).getHours() < 8).length
     : 0
 
-  const dailyMobileFields: MobileCardField<BioStarDailySummary>[] = useMemo(() => [
-    {
-      key: 'name',
-      label: 'Employee',
-      isPrimary: true,
-      render: (e) => e.name || '—',
-    },
-    {
-      key: 'group',
-      label: 'Group',
-      isSecondary: true,
-      render: (e) => e.user_group_name || '—',
-    },
-    {
-      key: 'checkin',
-      label: 'Check In',
-      render: (e) => (
-        <span className="inline-flex items-center gap-1 text-sm">
-          <LogIn className="h-3 w-3 text-green-600" />
-          {formatTime(e.first_punch)}
-        </span>
-      ),
-    },
-    {
-      key: 'checkout',
-      label: 'Check Out',
-      render: (e) =>
-        e.total_punches === 1
-          ? <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
-          : (
-            <span className="inline-flex items-center gap-1 text-sm">
-              <LogOut className="h-3 w-3 text-red-500" />
-              {formatTime(e.last_punch)}
-            </span>
-          ),
-    },
-    {
-      key: 'duration',
-      label: 'Duration',
-      render: (e) => {
-        const net = netSeconds(e.duration_seconds, e.lunch_break_minutes ?? 60)
-        const isShort = net / 3600 > 0 && net / 3600 < (e.working_hours ?? 8)
-        return (
-          <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
-            {e.total_punches === 1 ? '—' : formatDuration(net)}
-          </span>
-        )
+  const dailyMobileFields: MobileCardField<BioStarDailySummary>[] = useMemo(() => {
+    const fields: MobileCardField<BioStarDailySummary>[] = [
+      {
+        key: 'name',
+        label: 'Employee',
+        isPrimary: true,
+        render: (e) => e.name || '—',
       },
-    },
-    {
-      key: 'punches',
-      label: 'Punches',
-      expandOnly: true,
-      render: (e) => <Badge variant="secondary" className="text-xs">{e.total_punches}</Badge>,
-    },
-    {
-      key: 'email',
-      label: 'Email',
-      expandOnly: true,
-      render: (e) => <span className="text-xs text-muted-foreground">{e.email || '—'}</span>,
-    },
-  ], [])
+      {
+        key: 'group',
+        label: 'Group',
+        isSecondary: true,
+        render: (e) => e.user_group_name || '—',
+      },
+      {
+        key: 'checkin',
+        label: 'Check In',
+        render: (e) => (
+          <span className="inline-flex items-center gap-1 text-sm">
+            <LogIn className="h-3 w-3 text-green-600" />
+            {formatTime(e.first_punch)}
+          </span>
+        ),
+      },
+      {
+        key: 'checkout',
+        label: 'Check Out',
+        render: (e) =>
+          e.total_punches === 1
+            ? <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
+            : (
+              <span className="inline-flex items-center gap-1 text-sm">
+                <LogOut className="h-3 w-3 text-red-500" />
+                {formatTime(e.last_punch)}
+              </span>
+            ),
+      },
+    ]
+    if (showAdjusted) {
+      fields.push(
+        {
+          key: 'adj_in',
+          label: 'Adj. In',
+          render: (e) => e.adjusted_first_punch
+            ? <span className="text-sm font-medium text-green-600">{formatTime(e.adjusted_first_punch)}</span>
+            : <span className="text-muted-foreground">—</span>,
+        },
+        {
+          key: 'adj_out',
+          label: 'Adj. Out',
+          render: (e) => e.adjusted_last_punch
+            ? <span className="text-sm font-medium text-green-600">{formatTime(e.adjusted_last_punch)}</span>
+            : <span className="text-muted-foreground">—</span>,
+        },
+      )
+    }
+    fields.push(
+      {
+        key: 'duration',
+        label: 'Duration',
+        render: (e) => {
+          const net = netSeconds(e.duration_seconds, e.lunch_break_minutes ?? 60)
+          const isShort = net / 3600 > 0 && net / 3600 < (e.working_hours ?? 8)
+          return (
+            <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
+              {e.total_punches === 1 ? '—' : formatDuration(net)}
+            </span>
+          )
+        },
+      },
+      {
+        key: 'punches',
+        label: 'Punches',
+        expandOnly: true,
+        render: (e) => <Badge variant="secondary" className="text-xs">{e.total_punches}</Badge>,
+      },
+      {
+        key: 'email',
+        label: 'Email',
+        expandOnly: true,
+        render: (e) => <span className="text-xs text-muted-foreground">{e.email || '—'}</span>,
+      },
+    )
+    return fields
+  }, [showAdjusted])
 
   const rangeMobileFields: MobileCardField<BioStarRangeSummary>[] = useMemo(() => [
     {
@@ -537,6 +563,12 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
                   <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_out')}>
                     Check Out <SortIcon field="check_out" />
                   </TableHead>
+                  {showAdjusted && (
+                    <>
+                      <TableHead className="text-center hidden lg:table-cell">Adj. In</TableHead>
+                      <TableHead className="text-center hidden lg:table-cell">Adj. Out</TableHead>
+                    </>
+                  )}
                   <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('duration')}>
                     Duration <SortIcon field="duration" />
                   </TableHead>
@@ -554,6 +586,7 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
                     isExpanded={expandedId === emp.biostar_user_id}
                     onToggle={() => setExpandedId(expandedId === emp.biostar_user_id ? null : emp.biostar_user_id)}
                     onProfile={() => navigate(`/app/hr/pontaje/${emp.biostar_user_id}`)}
+                    showAdjusted={showAdjusted}
                   />
                 ))}
               </TableBody>
@@ -676,12 +709,14 @@ function EmployeeRow({
   isExpanded,
   onToggle,
   onProfile,
+  showAdjusted,
 }: {
   employee: BioStarDailySummary
   date: string
   isExpanded: boolean
   onToggle: () => void
   onProfile: () => void
+  showAdjusted: boolean
 }) {
   const lunch = employee.lunch_break_minutes ?? 60
   const expectedH = employee.working_hours ?? 8
@@ -738,6 +773,20 @@ function EmployeeRow({
             </span>
           )}
         </TableCell>
+        {showAdjusted && (
+          <>
+            <TableCell className="text-center hidden lg:table-cell">
+              {employee.adjusted_first_punch
+                ? <span className="text-sm font-medium text-green-600">{formatTime(employee.adjusted_first_punch)}</span>
+                : <span className="text-muted-foreground">—</span>}
+            </TableCell>
+            <TableCell className="text-center hidden lg:table-cell">
+              {employee.adjusted_last_punch
+                ? <span className="text-sm font-medium text-green-600">{formatTime(employee.adjusted_last_punch)}</span>
+                : <span className="text-muted-foreground">—</span>}
+            </TableCell>
+          </>
+        )}
         <TableCell className="text-center">
           {employee.total_punches === 1 ? (
             <span className="text-sm text-muted-foreground">—</span>
@@ -761,7 +810,7 @@ function EmployeeRow({
       </TableRow>
       {isExpanded && (
         <TableRow>
-          <TableCell colSpan={7} className="bg-muted/30 p-0">
+          <TableCell colSpan={showAdjusted ? 9 : 7} className="bg-muted/30 p-0">
             <DayPunches biostarUserId={employee.biostar_user_id} date={date} onProfile={onProfile} />
           </TableCell>
         </TableRow>

@@ -98,9 +98,9 @@ export const hrApi = {
   // Structure - Companies
   getStructureCompanies: () => api.get<string[]>(`${BASE}/structure/companies`),
   getCompaniesFull: () => api.get<StructureCompany[]>(`${BASE}/structure/companies-full`),
-  createCompany: (data: { company: string; vat?: string }) =>
+  createCompany: (data: { company: string; vat?: string; parent_company_id?: number | null }) =>
     api.post<{ success: boolean; id: number }>(`${BASE}/structure/companies`, data),
-  updateCompany: (id: number, data: { company: string; vat?: string }) =>
+  updateCompany: (id: number, data: { company: string; vat?: string; parent_company_id?: number | null }) =>
     api.put<{ success: boolean }>(`${BASE}/structure/companies/${id}`, data),
   deleteCompany: (id: number) => api.delete<{ success: boolean }>(`${BASE}/structure/companies/${id}`),
 

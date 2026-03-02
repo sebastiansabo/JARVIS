@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@/hooks/useAuth'
 import {
   Clock,
   Fingerprint,
@@ -62,6 +63,8 @@ export default function EmployeeProfile() {
   const { biostarUserId } = useParams<{ biostarUserId: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { user: authUser } = useAuth()
+  const showAdjusted = authUser?.can_view_adjusted_punches ?? false
   const [showStats, setShowStats] = useState(false)
   const today = todayStr()
 
@@ -377,6 +380,12 @@ export default function EmployeeProfile() {
                 <TableHead>Day</TableHead>
                 <TableHead className="text-center">Check In</TableHead>
                 <TableHead className="text-center">Check Out</TableHead>
+                {showAdjusted && (
+                  <>
+                    <TableHead className="text-center">Adj. In</TableHead>
+                    <TableHead className="text-center">Adj. Out</TableHead>
+                  </>
+                )}
                 <TableHead className="text-center">Duration</TableHead>
                 <TableHead className="text-center">Punches</TableHead>
               </TableRow>
@@ -418,6 +427,20 @@ export default function EmployeeProfile() {
                         </span>
                       )}
                     </TableCell>
+                    {showAdjusted && (
+                      <>
+                        <TableCell className="text-center">
+                          {day.adjusted_first_punch
+                            ? <span className="text-sm font-medium text-green-600">{formatTime(day.adjusted_first_punch)}</span>
+                            : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {day.adjusted_last_punch
+                            ? <span className="text-sm font-medium text-green-600">{formatTime(day.adjusted_last_punch)}</span>
+                            : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                      </>
+                    )}
                     <TableCell className="text-center">
                       {isAbsent ? (
                         <Badge variant="outline" className="text-xs text-muted-foreground">Absent</Badge>

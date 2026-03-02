@@ -17,9 +17,9 @@ class StructureRepository(BaseRepository):
         """Get all companies with full details including brands."""
         def _work(cursor):
             cursor.execute("""
-                SELECT id, company, vat, created_at
+                SELECT id, company, vat, created_at, parent_company_id, display_order
                 FROM companies
-                ORDER BY company
+                ORDER BY display_order, company
             """)
             companies = []
             for r in cursor.fetchall():
@@ -27,7 +27,9 @@ class StructureRepository(BaseRepository):
                     'id': r['id'],
                     'company': r['company'],
                     'vat': r['vat'],
-                    'created_at': r['created_at'].isoformat() if r['created_at'] else None
+                    'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+                    'parent_company_id': r['parent_company_id'],
+                    'display_order': r['display_order'] or 0,
                 })
 
             cursor.execute("""
@@ -55,26 +57,27 @@ class StructureRepository(BaseRepository):
             return companies
         return self.execute_many(_work)
 
-    def create_company(self, company: str, vat: str = None) -> int:
+    def create_company(self, company: str, vat: str = None, parent_company_id: int = None) -> int:
         """Create a new company. Returns the new company ID."""
         result = self.execute("""
-            INSERT INTO companies (company, vat)
-            VALUES (%s, %s)
+            INSERT INTO companies (company, vat, parent_company_id)
+            VALUES (%s, %s, %s)
             RETURNING id
-        """, (company, vat), returning=True)
+        """, (company, vat, parent_company_id), returning=True)
         return result['id']
 
-    def update_company(self, company_id: int, company: str, vat: str = None) -> bool:
+    def update_company(self, company_id: int, company: str, vat: str = None, parent_company_id: int = None) -> bool:
         """Update a company."""
         self.execute("""
             UPDATE companies
-            SET company = %s, vat = %s
+            SET company = %s, vat = %s, parent_company_id = %s
             WHERE id = %s
-        """, (company, vat, company_id))
+        """, (company, vat, parent_company_id, company_id))
         return True
 
     def delete_company(self, company_id: int) -> bool:
-        """Delete a company."""
+        """Delete a company. Detaches children to root level."""
+        self.execute("UPDATE companies SET parent_company_id = NULL WHERE parent_company_id = %s", (company_id,))
         self.execute("DELETE FROM companies WHERE id = %s", (company_id,))
         return True
 

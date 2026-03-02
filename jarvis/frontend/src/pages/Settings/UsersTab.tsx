@@ -12,13 +12,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Checkbox } from '@/components/ui/checkbox'
 import { SearchInput } from '@/components/shared/SearchInput'
-import { SearchSelect } from '@/components/shared/SearchSelect'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { usersApi } from '@/api/users'
 import { rolesApi } from '@/api/roles'
-import { hrApi } from '@/api/hr'
 import { toast } from 'sonner'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
@@ -113,10 +111,7 @@ export default function UsersTab() {
     { key: 'name', label: 'Name', isPrimary: true, render: (u) => u.name },
     { key: 'email', label: 'Email', isSecondary: true, render: (u) => u.email },
     { key: 'role', label: 'Role', isSecondary: true, render: (u) => u.role_name },
-    { key: 'company', label: 'Company', render: (u) => u.company || '-' },
     { key: 'status', label: 'Status', render: (u) => <StatusBadge status={u.is_active ? 'active' : 'archived'} /> },
-    { key: 'brand', label: 'Brand', expandOnly: true, render: (u) => u.brand || '-' },
-    { key: 'department', label: 'Department', expandOnly: true, render: (u) => u.department || '-' },
     { key: 'phone', label: 'Phone', expandOnly: true, render: (u) => u.phone || '-' },
   ]
 
@@ -209,9 +204,6 @@ export default function UsersTab() {
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Brand</TableHead>
-                  <TableHead>Department</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-20">Actions</TableHead>
                 </TableRow>
@@ -228,9 +220,6 @@ export default function UsersTab() {
                     <TableCell className="font-medium">{user.name}</TableCell>
                     <TableCell className="text-muted-foreground">{user.email}</TableCell>
                     <TableCell>{user.role_name}</TableCell>
-                    <TableCell className="text-muted-foreground">{user.company || '-'}</TableCell>
-                    <TableCell className="text-muted-foreground">{user.brand || '-'}</TableCell>
-                    <TableCell className="text-muted-foreground">{user.department || '-'}</TableCell>
                     <TableCell>
                       <StatusBadge status={user.is_active ? 'active' : 'archived'} />
                     </TableCell>
@@ -313,30 +302,8 @@ function UserFormDialog({
     email: '',
     phone: '',
     role_id: '',
-    company: '',
-    brand: '',
-    department: '',
     is_active: true,
     password: '',
-  })
-
-  // Structure queries
-  const { data: companies = [] } = useQuery({
-    queryKey: ['hr-structure-companies'],
-    queryFn: () => hrApi.getStructureCompanies(),
-    enabled: open,
-  })
-
-  const { data: brands = [] } = useQuery({
-    queryKey: ['hr-structure-brands', form.company],
-    queryFn: () => hrApi.getStructureBrands(form.company),
-    enabled: open && !!form.company,
-  })
-
-  const { data: departments = [] } = useQuery({
-    queryKey: ['hr-structure-departments', form.company],
-    queryFn: () => hrApi.getStructureDepartments(form.company),
-    enabled: open && !!form.company,
   })
 
   const resetForm = () =>
@@ -347,13 +314,10 @@ function UserFormDialog({
             email: user.email,
             phone: user.phone || '',
             role_id: String(user.role_id),
-            company: user.company || '',
-            brand: user.brand || '',
-            department: user.department || '',
             is_active: user.is_active,
             password: '',
           }
-        : { name: '', email: '', phone: '', role_id: '', company: '', brand: '', department: '', is_active: true, password: '' },
+        : { name: '', email: '', phone: '', role_id: '', is_active: true, password: '' },
     )
 
   return (
@@ -395,40 +359,6 @@ function UserFormDialog({
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="grid gap-2">
-            <Label>Company</Label>
-            <SearchSelect
-              value={form.company}
-              onValueChange={(v) => setForm({ ...form, company: v, brand: '', department: '' })}
-              options={companies.map((c) => ({ value: c, label: c }))}
-              placeholder="Select company..."
-              searchPlaceholder="Search company..."
-            />
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label>Brand</Label>
-              <SearchSelect
-                value={form.brand}
-                onValueChange={(v) => setForm({ ...form, brand: v })}
-                options={brands.map((b) => ({ value: b, label: b }))}
-                placeholder={form.company ? 'Select brand...' : 'Select company first'}
-                searchPlaceholder="Search brand..."
-                emptyMessage={form.company ? 'No brands found.' : 'Select a company first.'}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Department</Label>
-              <SearchSelect
-                value={form.department}
-                onValueChange={(v) => setForm({ ...form, department: v })}
-                options={departments.map((d) => ({ value: d, label: d }))}
-                placeholder={form.company ? 'Select department...' : 'Select company first'}
-                searchPlaceholder="Search department..."
-                emptyMessage={form.company ? 'No departments found.' : 'Select a company first.'}
-              />
-            </div>
           </div>
           {!user && (
             <div className="grid gap-2">

@@ -5,175 +5,204 @@ import {
   ChevronDown,
   ChevronRight,
   Building2,
-  FolderTree,
   Crown,
-  User,
   Users,
-  UserPlus,
-  Mail,
-  Phone,
-  Pencil,
+  Layers,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { hrApi } from '@/api/hr'
+import { MultiSelectPills } from '@/components/shared/MultiSelectPills'
+import { organizationApi } from '@/api/organization'
+import { usersApi } from '@/api/users'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { HrEmployee, DepartmentStructure } from '@/types/hr'
+import type { CompanyWithBrands, StructureNode, StructureNodeMember } from '@/types/organization'
 
-interface OrgNode {
-  company: string
-  departments: DeptNode[]
-  employeeCount: number
+/* ──── Tree helpers ──── */
+
+interface TreeNode extends StructureNode {
+  children: TreeNode[]
 }
 
-interface DeptNode {
-  department: string
-  subdepartment: string | null
-  managers: HrEmployee[]
-  employees: HrEmployee[]
-  structureId: number | null
+interface CompanyTreeNode extends CompanyWithBrands {
+  children: CompanyTreeNode[]
+  depth: number
 }
 
-function parseManagerIds(raw: string | number[] | null): number[] {
-  if (!raw) return []
-  if (Array.isArray(raw)) return raw
-  return raw.replace(/[{}]/g, '').split(',').map(Number).filter(Boolean)
-}
-
-function buildTree(employees: HrEmployee[], structures: DepartmentStructure[]): OrgNode[] {
-  const structureMap = new Map<string, DepartmentStructure>()
-
-  for (const s of structures) {
-    const key = `${s.company}|||${s.department}|||${s.subdepartment || ''}`
-    structureMap.set(key, s)
-  }
-
-  const companyMap = new Map<string, Map<string, HrEmployee[]>>()
-  for (const emp of employees) {
-    const company = emp.company || 'Unassigned'
-    const dept = emp.departments || 'Unassigned'
-    if (!companyMap.has(company)) companyMap.set(company, new Map())
-    const deptMap = companyMap.get(company)!
-    const deptKey = `${dept}|||${emp.subdepartment || ''}`
-    if (!deptMap.has(deptKey)) deptMap.set(deptKey, [])
-    deptMap.get(deptKey)!.push(emp)
-  }
-
-  const tree: OrgNode[] = []
-
-  for (const [company, deptMap] of [...companyMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-    const departments: DeptNode[] = []
-    let companyTotal = 0
-
-    for (const [deptKey, emps] of [...deptMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-      const [department, subdepartment] = deptKey.split('|||')
-      const structKey = `${company}|||${department}|||${subdepartment}`
-      const structure = structureMap.get(structKey)
-
-      const mgrSet = new Set(parseManagerIds(structure?.manager_ids ?? null))
-
-      const managers = emps.filter((e) => mgrSet.has(e.id))
-      const nonManagers = emps.filter((e) => !mgrSet.has(e.id))
-
-      departments.push({
-        department,
-        subdepartment: subdepartment || null,
-        managers,
-        employees: nonManagers,
-        structureId: structure?.id ?? null,
-      })
-      companyTotal += emps.length
+function buildCompanyTree(companies: CompanyWithBrands[]): CompanyTreeNode[] {
+  const map = new Map<number, CompanyTreeNode>()
+  const roots: CompanyTreeNode[] = []
+  for (const c of companies) map.set(c.id, { ...c, children: [], depth: 0 })
+  for (const node of map.values()) {
+    if (node.parent_company_id && map.has(node.parent_company_id)) {
+      map.get(node.parent_company_id)!.children.push(node)
+    } else {
+      roots.push(node)
     }
+  }
+  function setDepth(nodes: CompanyTreeNode[], depth: number) {
+    for (const n of nodes) { n.depth = depth; setDepth(n.children, depth + 1) }
+  }
+  setDepth(roots, 0)
+  return roots
+}
 
-    tree.push({ company, departments, employeeCount: companyTotal })
+function flattenCompanyTree(nodes: CompanyTreeNode[]): CompanyTreeNode[] {
+  const result: CompanyTreeNode[] = []
+  function walk(list: CompanyTreeNode[]) {
+    for (const n of list) { result.push(n); walk(n.children) }
+  }
+  walk(nodes)
+  return result
+}
+
+function buildNodeTree(nodes: StructureNode[]): Map<number, TreeNode[]> {
+  const byCompany = new Map<number, StructureNode[]>()
+  for (const n of nodes) {
+    const list = byCompany.get(n.company_id) || []
+    list.push(n)
+    byCompany.set(n.company_id, list)
   }
 
-  return tree
+  const result = new Map<number, TreeNode[]>()
+  for (const [companyId, companyNodes] of byCompany) {
+    const nodeMap = new Map<number, TreeNode>()
+    for (const n of companyNodes) nodeMap.set(n.id, { ...n, children: [] })
+    const roots: TreeNode[] = []
+    for (const node of nodeMap.values()) {
+      if (node.parent_id && nodeMap.has(node.parent_id)) {
+        nodeMap.get(node.parent_id)!.children.push(node)
+      } else {
+        roots.push(node)
+      }
+    }
+    const sortNodes = (list: TreeNode[]) => {
+      list.sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name))
+      for (const n of list) sortNodes(n.children)
+    }
+    sortNodes(roots)
+    result.set(companyId, roots)
+  }
+  return result
 }
+
+/* ──── Level colors ──── */
+
+const levelColors = [
+  'text-amber-600 dark:text-amber-400',
+  'text-green-600 dark:text-green-400',
+  'text-blue-600 dark:text-blue-400',
+  'text-purple-600 dark:text-purple-400',
+  'text-pink-600 dark:text-pink-400',
+]
+
+const levelBg = [
+  'bg-amber-50/40 dark:bg-amber-950/15',
+  'bg-green-50/30 dark:bg-green-950/10',
+  'bg-blue-50/25 dark:bg-blue-950/10',
+  'bg-purple-50/20 dark:bg-purple-950/10',
+  'bg-pink-50/15 dark:bg-pink-950/10',
+]
+
+/* ──── Main component ──── */
 
 export default function OrganigramTab() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set())
-  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set())
-  const [assignDialog, setAssignDialog] = useState<{ company: string; department: string; subdepartment: string | null } | null>(null)
-  const [editDialog, setEditDialog] = useState<HrEmployee | null>(null)
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['hr-organigram'],
-    queryFn: () => hrApi.getOrganigram(),
-    staleTime: 2 * 60 * 1000,
+  const { data: companies = [], isLoading: loadingCompanies } = useQuery({
+    queryKey: ['settings', 'companiesConfig'],
+    queryFn: organizationApi.getCompaniesConfig,
   })
 
-  const tree = useMemo(() => {
-    if (!data) return []
-    return buildTree(data.employees, data.structures)
-  }, [data])
+  const { data: structureNodes = [], isLoading: loadingNodes } = useQuery({
+    queryKey: ['settings', 'structureNodes'],
+    queryFn: organizationApi.getStructureNodes,
+  })
 
-  // Auto-expand all on first load
-  useMemo(() => {
-    if (tree.length > 0 && expandedCompanies.size === 0) {
-      setExpandedCompanies(new Set(tree.map((n) => n.company)))
-      const allDepts = new Set<string>()
-      tree.forEach((c) => c.departments.forEach((d) => allDepts.add(`${c.company}|||${d.department}|||${d.subdepartment || ''}`)))
-      setExpandedDepts(allDepts)
+  const { data: allMembers = [], isLoading: loadingMembers } = useQuery({
+    queryKey: ['settings', 'nodeMembers'],
+    queryFn: organizationApi.getNodeMembers,
+  })
+
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: usersApi.getUsers,
+  })
+
+  const isLoading = loadingCompanies || loadingNodes || loadingMembers
+
+  // Build lookup maps
+  const companyTree = useMemo(() => buildCompanyTree(companies), [companies])
+  const flatCompanies = useMemo(() => flattenCompanyTree(companyTree), [companyTree])
+  const nodeTreeByCompany = useMemo(() => buildNodeTree(structureNodes), [structureNodes])
+
+  const membersByNode = useMemo(() => {
+    const map = new Map<number, { responsables: StructureNodeMember[]; team: StructureNodeMember[] }>()
+    for (const m of allMembers) {
+      if (!map.has(m.node_id)) map.set(m.node_id, { responsables: [], team: [] })
+      const entry = map.get(m.node_id)!
+      if (m.role === 'responsable') entry.responsables.push(m)
+      else entry.team.push(m)
     }
-  }, [tree])
+    return map
+  }, [allMembers])
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return tree
-    const q = search.toLowerCase()
+  const userOptions = useMemo(
+    () => users.filter(u => u.is_active).map(u => ({ value: u.id, label: u.name })),
+    [users],
+  )
 
-    return tree
-      .map((company) => {
-        const filteredDepts = company.departments
-          .map((dept) => {
-            const matchedManagers = dept.managers.filter(
-              (e) => e.name.toLowerCase().includes(q) || (e.email?.toLowerCase().includes(q))
-            )
-            const matchedEmployees = dept.employees.filter(
-              (e) => e.name.toLowerCase().includes(q) || (e.email?.toLowerCase().includes(q))
-            )
-            const deptMatch = dept.department.toLowerCase().includes(q)
+  // Mutations
+  const setMembersMut = useMutation({
+    mutationFn: ({ nodeId, role, userIds }: { nodeId: number; role: 'responsable' | 'team'; userIds: number[] }) =>
+      organizationApi.setNodeMembers(nodeId, role, userIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'nodeMembers'] })
+    },
+    onError: () => toast.error('Failed to update members'),
+  })
 
-            if (deptMatch || matchedManagers.length || matchedEmployees.length) {
-              return {
-                ...dept,
-                managers: deptMatch ? dept.managers : matchedManagers,
-                employees: deptMatch ? dept.employees : matchedEmployees,
-              }
-            }
-            return null
-          })
-          .filter(Boolean) as DeptNode[]
+  const toggleTeamMut = useMutation({
+    mutationFn: ({ nodeId, hasTeam }: { nodeId: number; hasTeam: boolean }) =>
+      organizationApi.updateStructureNode(nodeId, { has_team: hasTeam }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'structureNodes'] })
+    },
+    onError: () => toast.error('Failed to toggle team'),
+  })
 
-        if (filteredDepts.length > 0 || company.company.toLowerCase().includes(q)) {
-          return { ...company, departments: filteredDepts.length > 0 ? filteredDepts : company.departments }
-        }
-        return null
-      })
-      .filter(Boolean) as OrgNode[]
-  }, [tree, search])
-
-  const toggleCompany = (company: string) => {
-    setExpandedCompanies((prev) => {
-      const next = new Set(prev)
-      if (next.has(company)) next.delete(company)
-      else next.add(company)
-      return next
-    })
+  const handleSetMembers = (nodeId: number, role: 'responsable' | 'team', userIds: number[]) => {
+    setMembersMut.mutate({ nodeId, role, userIds })
   }
 
-  const toggleDept = (key: string) => {
-    setExpandedDepts((prev) => {
+  const handleToggleTeam = (nodeId: number, hasTeam: boolean) => {
+    toggleTeamMut.mutate({ nodeId, hasTeam })
+  }
+
+  // Auto-expand on first load
+  useMemo(() => {
+    if (flatCompanies.length > 0 && expandedNodes.size === 0) {
+      const keys = new Set<string>()
+      for (const c of flatCompanies) keys.add(`c-${c.id}`)
+      function collectNodeKeys(nodes: TreeNode[]) {
+        for (const n of nodes) {
+          keys.add(`n-${n.id}`)
+          collectNodeKeys(n.children)
+        }
+      }
+      for (const [, nodes] of nodeTreeByCompany) collectNodeKeys(nodes)
+      setExpandedNodes(keys)
+    }
+  }, [flatCompanies, nodeTreeByCompany])
+
+  const toggleExpand = (key: string) => {
+    setExpandedNodes(prev => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
       else next.add(key)
@@ -181,10 +210,49 @@ export default function OrganigramTab() {
     })
   }
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['hr-organigram'] })
-    queryClient.invalidateQueries({ queryKey: ['hr-employees'] })
+  // Count all members (recursively) for a node tree
+  function countNodeMembers(nodes: TreeNode[]): number {
+    let count = 0
+    for (const n of nodes) {
+      const m = membersByNode.get(n.id)
+      if (m) count += m.responsables.length + m.team.length
+      count += countNodeMembers(n.children)
+    }
+    return count
   }
+
+  // Search filter
+  const filteredCompanies = useMemo(() => {
+    if (!search.trim()) return flatCompanies
+    const q = search.toLowerCase()
+
+    // Find matching node IDs + their ancestor companies
+    const matchingCompanyIds = new Set<number>()
+
+    for (const c of flatCompanies) {
+      if (c.company.toLowerCase().includes(q)) {
+        matchingCompanyIds.add(c.id)
+        continue
+      }
+      // Check nodes under this company
+      const nodes = nodeTreeByCompany.get(c.id) || []
+      function checkNodes(list: TreeNode[]): boolean {
+        for (const n of list) {
+          if (n.name.toLowerCase().includes(q)) return true
+          const m = membersByNode.get(n.id)
+          if (m) {
+            const allM = [...m.responsables, ...m.team]
+            if (allM.some(mem => mem.user_name.toLowerCase().includes(q))) return true
+          }
+          if (checkNodes(n.children)) return true
+        }
+        return false
+      }
+      if (checkNodes(nodes)) matchingCompanyIds.add(c.id)
+    }
+
+    return flatCompanies.filter(c => matchingCompanyIds.has(c.id))
+  }, [flatCompanies, search, nodeTreeByCompany, membersByNode])
 
   if (isLoading) {
     return (
@@ -202,93 +270,74 @@ export default function OrganigramTab() {
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          placeholder="Search by name, email, department..."
+          placeholder="Search by name, node, company..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9"
         />
       </div>
 
-      {filtered.length === 0 ? (
+      {filteredCompanies.length === 0 ? (
         <EmptyState
           icon={<Users className="h-10 w-10" />}
           title="No results"
-          description={search ? 'Try a different search term' : 'No organizational data found. Set up departments and assign employees first.'}
+          description={search ? 'Try a different search term' : 'No organizational structure found. Set up the structure in Settings first.'}
         />
       ) : (
         <div className="space-y-3">
-          {filtered.map((company) => {
-            const isExpanded = expandedCompanies.has(company.company)
+          {filteredCompanies.map((company) => {
+            const companyKey = `c-${company.id}`
+            const isExpanded = expandedNodes.has(companyKey)
+            const companyNodes = nodeTreeByCompany.get(company.id) || []
+            const totalMembers = countNodeMembers(companyNodes)
+
             return (
-              <Card key={company.company} className="overflow-hidden">
+              <Card key={company.id} className="overflow-hidden">
                 {/* Company header */}
                 <button
-                  onClick={() => toggleCompany(company.company)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/50 transition-colors"
+                  onClick={() => toggleExpand(companyKey)}
+                  className={cn(
+                    'flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/50 transition-colors',
+                    company.depth > 0 && 'pl-8',
+                  )}
                 >
-                  {isExpanded ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                  {isExpanded
+                    ? <ChevronDown className="h-4 w-4 shrink-0" />
+                    : <ChevronRight className="h-4 w-4 shrink-0" />
+                  }
                   <Building2 className="h-5 w-5 shrink-0 text-primary" />
                   <span className="font-semibold text-sm">{company.company}</span>
+                  <span className="text-[10px] text-muted-foreground">L0</span>
+                  {company.children?.length > 0 && (
+                    <Badge className="text-[10px] px-1.5 py-0">Holding</Badge>
+                  )}
                   <Badge variant="secondary" className="ml-auto text-xs">
-                    {company.employeeCount} {company.employeeCount === 1 ? 'employee' : 'employees'}
+                    {totalMembers} {totalMembers === 1 ? 'person' : 'people'}
                   </Badge>
                 </button>
 
+                {/* Structure nodes */}
                 {isExpanded && (
                   <div className="border-t">
-                    {company.departments.map((dept) => {
-                      const deptKey = `${company.company}|||${dept.department}|||${dept.subdepartment || ''}`
-                      const isDeptExpanded = expandedDepts.has(deptKey)
-                      const totalInDept = dept.managers.length + dept.employees.length
-
-                      return (
-                        <div key={deptKey} className="border-b last:border-b-0">
-                          {/* Department header */}
-                          <div className="flex items-center">
-                            <button
-                              onClick={() => toggleDept(deptKey)}
-                              className="flex flex-1 items-center gap-3 py-2.5 pl-10 pr-2 text-left hover:bg-muted/30 transition-colors"
-                            >
-                              {isDeptExpanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
-                              <FolderTree className="h-4 w-4 shrink-0 text-orange-500" />
-                              <span className="text-sm font-medium">{dept.department}</span>
-                              {dept.subdepartment && (
-                                <span className="text-xs text-muted-foreground">/ {dept.subdepartment}</span>
-                              )}
-                              <Badge variant="outline" className="ml-auto text-xs">
-                                {totalInDept}
-                              </Badge>
-                            </button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="mr-2 h-7 w-7 shrink-0"
-                              title="Add employee to this department"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setAssignDialog({ company: company.company, department: dept.department, subdepartment: dept.subdepartment })
-                              }}
-                            >
-                              <UserPlus className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-
-                          {isDeptExpanded && (
-                            <div className="pb-2 pl-16 pr-4 space-y-0.5">
-                              {dept.managers.map((mgr) => (
-                                <EmployeeRow key={mgr.id} employee={mgr} isManager onEdit={() => setEditDialog(mgr)} />
-                              ))}
-                              {dept.employees.map((emp) => (
-                                <EmployeeRow key={emp.id} employee={emp} onEdit={() => setEditDialog(emp)} />
-                              ))}
-                              {totalInDept === 0 && (
-                                <p className="py-2 text-xs text-muted-foreground italic">No employees assigned</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                    {companyNodes.length === 0 ? (
+                      <p className="px-6 py-4 text-sm text-muted-foreground italic">
+                        No structure defined. Add levels in Settings &rarr; Structure.
+                      </p>
+                    ) : (
+                      companyNodes.map(node => (
+                        <NodeRow
+                          key={node.id}
+                          node={node}
+                          depth={0}
+                          expandedNodes={expandedNodes}
+                          toggleExpand={toggleExpand}
+                          membersByNode={membersByNode}
+                          userOptions={userOptions}
+                          onSetMembers={handleSetMembers}
+                          onToggleTeam={handleToggleTeam}
+                        />
+                      ))
+                    )}
                   </div>
                 )}
               </Card>
@@ -297,268 +346,145 @@ export default function OrganigramTab() {
         </div>
       )}
 
-      {/* Summary stats */}
-      {data && (
-        <div className="flex gap-4 text-xs text-muted-foreground pt-2">
-          <span>{data.employees.length} total employees</span>
-          <span>{tree.length} companies</span>
-          <span>{tree.reduce((sum, c) => sum + c.departments.length, 0)} departments</span>
-        </div>
-      )}
-
-      {/* Assign Employee Dialog */}
-      {assignDialog && data && (
-        <AssignEmployeeDialog
-          open
-          onClose={() => setAssignDialog(null)}
-          target={assignDialog}
-          allEmployees={data.employees}
-          onSuccess={invalidate}
-        />
-      )}
-
-      {/* Edit Employee Assignment Dialog */}
-      {editDialog && data && (
-        <EditAssignmentDialog
-          open
-          onClose={() => setEditDialog(null)}
-          employee={editDialog}
-          structures={data.structures}
-          onSuccess={invalidate}
-        />
-      )}
+      {/* Summary */}
+      <div className="flex gap-4 text-xs text-muted-foreground pt-2">
+        <span>{companies.length} companies</span>
+        <span>{structureNodes.length} nodes</span>
+        <span>{allMembers.length} assignments</span>
+      </div>
     </div>
   )
 }
 
-function EmployeeRow({ employee, isManager = false, onEdit }: { employee: HrEmployee; isManager?: boolean; onEdit: () => void }) {
-  return (
-    <div
-      className={cn(
-        'group flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-muted/40',
-        isManager && 'bg-amber-50 dark:bg-amber-950/20'
-      )}
-    >
-      {isManager ? (
-        <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-      ) : (
-        <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      )}
-      <span className={cn('font-medium', isManager && 'text-amber-700 dark:text-amber-400')}>
-        {employee.name}
-      </span>
-      {isManager && (
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-300 text-amber-600 dark:border-amber-700 dark:text-amber-400">
-          Manager
-        </Badge>
-      )}
-      <button
-        onClick={onEdit}
-        className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Edit assignment"
-      >
-        <Pencil className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-      </button>
-      {employee.email && (
-        <span className="ml-auto hidden md:flex items-center gap-1 text-xs text-muted-foreground">
-          <Mail className="h-3 w-3" />
-          {employee.email}
-        </span>
-      )}
-      {employee.phone && (
-        <span className="hidden lg:flex items-center gap-1 text-xs text-muted-foreground">
-          <Phone className="h-3 w-3" />
-          {employee.phone}
-        </span>
-      )}
-    </div>
-  )
-}
+/* ──── Recursive node row ──── */
 
-/* ──── Assign Employee to Department Dialog ──── */
-
-function AssignEmployeeDialog({
-  open,
-  onClose,
-  target,
-  allEmployees,
-  onSuccess,
+function NodeRow({
+  node,
+  depth,
+  expandedNodes,
+  toggleExpand,
+  membersByNode,
+  userOptions,
+  onSetMembers,
+  onToggleTeam,
 }: {
-  open: boolean
-  onClose: () => void
-  target: { company: string; department: string; subdepartment: string | null }
-  allEmployees: HrEmployee[]
-  onSuccess: () => void
+  node: TreeNode
+  depth: number
+  expandedNodes: Set<string>
+  toggleExpand: (key: string) => void
+  membersByNode: Map<number, { responsables: StructureNodeMember[]; team: StructureNodeMember[] }>
+  userOptions: { value: number; label: string }[]
+  onSetMembers: (nodeId: number, role: 'responsable' | 'team', userIds: number[]) => void
+  onToggleTeam: (nodeId: number, hasTeam: boolean) => void
 }) {
-  const [selectedId, setSelectedId] = useState<string>('')
-  const [empSearch, setEmpSearch] = useState('')
-
-  const updateMutation = useMutation({
-    mutationFn: (emp: HrEmployee) =>
-      hrApi.updateEmployee(emp.id, {
-        ...emp,
-        company: target.company,
-        departments: target.department,
-        subdepartment: target.subdepartment,
-      }),
-    onSuccess: () => {
-      toast.success('Employee assigned')
-      onSuccess()
-      onClose()
-    },
-    onError: () => toast.error('Failed to assign employee'),
-  })
-
-  const filteredEmployees = useMemo(() => {
-    if (!empSearch.trim()) return allEmployees
-    const q = empSearch.toLowerCase()
-    return allEmployees.filter(
-      (e) => e.name.toLowerCase().includes(q) || (e.email?.toLowerCase().includes(q))
-    )
-  }, [allEmployees, empSearch])
-
-  const handleAssign = () => {
-    const emp = allEmployees.find((e) => String(e.id) === selectedId)
-    if (emp) updateMutation.mutate(emp)
-  }
+  const nodeKey = `n-${node.id}`
+  const isExpanded = expandedNodes.has(nodeKey)
+  const levelIdx = Math.min(node.level - 1, 4)
+  const indent = 24 + depth * 20
+  const members = membersByNode.get(node.id) || { responsables: [], team: [] }
+  const memberCount = members.responsables.length + members.team.length
 
   return (
-    <Dialog open={open} onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add Employee to {target.department}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3 pt-2">
-          <p className="text-xs text-muted-foreground">
-            Assign to: <strong>{target.company}</strong> / <strong>{target.department}</strong>
-            {target.subdepartment && <> / {target.subdepartment}</>}
-          </p>
-          <div>
-            <Label className="text-xs">Search employee</Label>
-            <Input
-              placeholder="Type name or email..."
-              value={empSearch}
-              onChange={(e) => setEmpSearch(e.target.value)}
-              className="mt-1"
+    <>
+      {/* Node header row */}
+      <button
+        onClick={() => toggleExpand(nodeKey)}
+        className={cn(
+          'flex w-full items-center gap-2 py-2.5 pr-4 text-left hover:bg-muted/30 transition-colors border-t border-muted/30',
+          levelBg[levelIdx],
+        )}
+        style={{ paddingLeft: `${indent}px` }}
+      >
+        {isExpanded
+          ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        }
+        <Layers className={cn('h-3.5 w-3.5 shrink-0', levelColors[levelIdx])} />
+        <span className={cn('text-sm font-medium', levelColors[levelIdx])}>{node.name}</span>
+        <span className="text-[10px] text-muted-foreground">L{node.level}</span>
+
+        {/* Collapsed member counts */}
+        {!isExpanded && members.responsables.length > 0 && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+            <Crown className="h-3 w-3" />
+            {members.responsables.length}
+          </span>
+        )}
+        {!isExpanded && members.team.length > 0 && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-600 dark:text-blue-400">
+            <Users className="h-3 w-3" />
+            {members.team.length}
+          </span>
+        )}
+
+        <Badge variant="outline" className="ml-auto text-[10px]">{memberCount}</Badge>
+      </button>
+
+      {/* Expanded: member management */}
+      {isExpanded && (
+        <div
+          className={cn('border-t border-muted/20 py-3 pr-4 space-y-3', levelBg[levelIdx])}
+          style={{ paddingLeft: `${indent + 24}px` }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Responsables */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5">
+              <Crown className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-xs font-medium text-muted-foreground">Responsables</span>
+            </div>
+            <MultiSelectPills
+              options={userOptions}
+              selected={members.responsables.map(m => m.user_id)}
+              onChange={(ids) => onSetMembers(node.id, 'responsable', ids as number[])}
+              placeholder="Add responsables..."
+              className="max-w-md"
             />
           </div>
-          <div>
-            <Label className="text-xs">Select employee</Label>
-            <Select value={selectedId} onValueChange={setSelectedId}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Choose employee..." />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                {filteredEmployees.map((e) => (
-                  <SelectItem key={e.id} value={String(e.id)}>
-                    {e.name} {e.company && e.departments ? `(${e.company} / ${e.departments})` : e.company ? `(${e.company})` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+
+          {/* Has team toggle */}
+          <div className="flex items-center gap-2">
+            <Switch
+              size="sm"
+              checked={node.has_team}
+              onCheckedChange={(checked) => onToggleTeam(node.id, checked)}
+            />
+            <span className="text-xs text-muted-foreground">Has team</span>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-            <Button size="sm" disabled={!selectedId || updateMutation.isPending} onClick={handleAssign}>
-              {updateMutation.isPending ? 'Assigning...' : 'Assign'}
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
-/* ──── Edit Employee Assignment Dialog ──── */
-
-function EditAssignmentDialog({
-  open,
-  onClose,
-  employee,
-  structures,
-  onSuccess,
-}: {
-  open: boolean
-  onClose: () => void
-  employee: HrEmployee
-  structures: DepartmentStructure[]
-  onSuccess: () => void
-}) {
-  const [company, setCompany] = useState(employee.company || '')
-  const [department, setDepartment] = useState(employee.departments || '')
-  const [subdepartment, setSubdepartment] = useState(employee.subdepartment || '')
-
-  const companies = useMemo(() => [...new Set(structures.map((s) => s.company))].sort(), [structures])
-  const departments = useMemo(() =>
-    [...new Set(structures.filter((s) => s.company === company).map((s) => s.department))].sort(),
-    [structures, company]
-  )
-  const subdepartments = useMemo(() =>
-    [...new Set(structures.filter((s) => s.company === company && s.department === department && s.subdepartment).map((s) => s.subdepartment))].sort(),
-    [structures, company, department]
-  )
-
-  const updateMutation = useMutation({
-    mutationFn: () =>
-      hrApi.updateEmployee(employee.id, {
-        ...employee,
-        company: company || null,
-        departments: department || null,
-        subdepartment: subdepartment || null,
-      }),
-    onSuccess: () => {
-      toast.success('Assignment updated')
-      onSuccess()
-      onClose()
-    },
-    onError: () => toast.error('Failed to update'),
-  })
-
-  return (
-    <Dialog open={open} onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Edit Assignment — {employee.name}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3 pt-2">
-          <div>
-            <Label className="text-xs">Company</Label>
-            <Select value={company} onValueChange={(v) => { setCompany(v); setDepartment(''); setSubdepartment('') }}>
-              <SelectTrigger className="mt-1"><SelectValue placeholder="Select company" /></SelectTrigger>
-              <SelectContent>
-                {companies.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Department</Label>
-            <Select value={department} onValueChange={(v) => { setDepartment(v); setSubdepartment('') }}>
-              <SelectTrigger className="mt-1"><SelectValue placeholder="Select department" /></SelectTrigger>
-              <SelectContent>
-                {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          {subdepartments.length > 0 && (
-            <div>
-              <Label className="text-xs">Subdepartment</Label>
-              <Select value={subdepartment} onValueChange={setSubdepartment}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="None" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">None</SelectItem>
-                  {subdepartments.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
+          {/* Team members (only if has_team) */}
+          {node.has_team && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5 text-blue-500" />
+                <span className="text-xs font-medium text-muted-foreground">Team</span>
+              </div>
+              <MultiSelectPills
+                options={userOptions}
+                selected={members.team.map(m => m.user_id)}
+                onChange={(ids) => onSetMembers(node.id, 'team', ids as number[])}
+                placeholder="Add team members..."
+                className="max-w-md"
+              />
             </div>
           )}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-            <Button size="sm" disabled={updateMutation.isPending} onClick={() => updateMutation.mutate()}>
-              {updateMutation.isPending ? 'Saving...' : 'Save'}
-            </Button>
-          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      )}
+
+      {/* Recursive children */}
+      {isExpanded && node.children.map(child => (
+        <NodeRow
+          key={child.id}
+          node={child}
+          depth={depth + 1}
+          expandedNodes={expandedNodes}
+          toggleExpand={toggleExpand}
+          membersByNode={membersByNode}
+          userOptions={userOptions}
+          onSetMembers={onSetMembers}
+          onToggleTeam={onToggleTeam}
+        />
+      ))}
+    </>
   )
 }

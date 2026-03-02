@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Company, CompanyWithBrands, Department, DepartmentStructure } from '@/types/organization'
+import type { Company, CompanyWithBrands, Brand, Department, DepartmentStructure, StructureNode, StructureNodeMember } from '@/types/organization'
 
 export const organizationApi = {
   // Company lookups
@@ -30,12 +30,20 @@ export const organizationApi = {
 
   // Company Configuration
   getCompaniesConfig: () => api.get<CompanyWithBrands[]>('/api/companies-config'),
-  createCompanyConfig: (data: { company: string; vat?: string }) =>
+  createCompanyConfig: (data: { company: string; vat?: string; parent_company_id?: number | null }) =>
     api.post<{ success: boolean; id: number }>('/api/companies-config', data),
   getCompanyConfig: (id: number) => api.get<CompanyWithBrands>(`/api/companies-config/${id}`),
-  updateCompanyConfig: (id: number, data: Partial<Company>) =>
+  updateCompanyConfig: (id: number, data: Partial<Company> & { parent_company_id?: number | null }) =>
     api.put<{ success: boolean }>(`/api/companies-config/${id}`, data),
   deleteCompanyConfig: (id: number) => api.delete<{ success: boolean }>(`/api/companies-config/${id}`),
+
+  // Brands
+  getAllBrands: () => api.get<Brand[]>('/api/brands-all'),
+  createBrand: (name: string) => api.post<{ success: boolean; id: number }>('/api/brands-all', { name }),
+  linkBrand: (companyId: number, brandId: number) =>
+    api.post<{ success: boolean; id: number }>(`/api/companies-config/${companyId}/brands`, { brand_id: brandId }),
+  unlinkBrand: (companyId: number, brandId: number) =>
+    api.delete<{ success: boolean }>(`/api/companies-config/${companyId}/brands/${brandId}`),
 
   // Department Structures
   getDepartmentStructures: () => api.get<DepartmentStructure[]>('/api/department-structures'),
@@ -48,4 +56,24 @@ export const organizationApi = {
 
   // Structure data
   getStructure: () => api.get<DepartmentStructure[]>('/api/structure'),
+
+  // Structure Nodes (generic tree)
+  getStructureNodes: () => api.get<StructureNode[]>('/api/structure-nodes'),
+  createStructureNode: (data: { company_id: number; parent_id?: number | null; name: string }) =>
+    api.post<{ success: boolean; id: number }>('/api/structure-nodes', data),
+  updateStructureNode: (id: number, data: { name?: string; has_team?: boolean }) =>
+    api.put<{ success: boolean }>(`/api/structure-nodes/${id}`, data),
+  deleteStructureNode: (id: number) =>
+    api.delete<{ success: boolean }>(`/api/structure-nodes/${id}`),
+
+  // Structure Node Members
+  getNodeMembers: () => api.get<StructureNodeMember[]>('/api/structure-nodes/members'),
+  addNodeMember: (nodeId: number, userId: number, role: 'responsable' | 'team') =>
+    api.post<{ success: boolean; id: number }>(`/api/structure-nodes/${nodeId}/members`, { user_id: userId, role }),
+  removeNodeMember: (nodeId: number, userId: number) =>
+    api.delete<{ success: boolean }>(`/api/structure-nodes/${nodeId}/members/${userId}`),
+  setNodeMembers: (nodeId: number, role: 'responsable' | 'team', userIds: number[]) =>
+    api.post<{ success: boolean }>(`/api/structure-nodes/${nodeId}/members/set`, { role, user_ids: userIds }),
+  getCascadeResponsables: (nodeId: number) =>
+    api.get<number[]>(`/api/structure-nodes/${nodeId}/cascade-responsables`),
 }

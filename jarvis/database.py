@@ -1633,6 +1633,29 @@ def init_db():
                 UPDATE bilant_template_rows SET row_type = 'data', is_bold = FALSE, indent_level = 1
                 WHERE nr_rd IN ('19', '21', '95') AND row_type = 'total'
             """)
+            # Add has_team flag to structure_nodes
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'structure_nodes' AND column_name = 'has_team') THEN
+                        ALTER TABLE structure_nodes ADD COLUMN has_team BOOLEAN NOT NULL DEFAULT FALSE;
+                    END IF;
+                END $$;
+            ''')
+            # Structure node members (responsables + team per organigram node)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS structure_node_members (
+                    id SERIAL PRIMARY KEY,
+                    node_id INTEGER NOT NULL REFERENCES structure_nodes(id) ON DELETE CASCADE,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL DEFAULT 'team' CHECK (role IN ('responsable', 'team')),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT structure_node_members_unique UNIQUE (node_id, user_id)
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_snm_node ON structure_node_members(node_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_snm_user ON structure_node_members(user_id)')
             conn.commit()
             logger.info('Incremental migration complete')
             return

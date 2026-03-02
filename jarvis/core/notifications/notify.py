@@ -44,3 +44,21 @@ def notify_users(user_ids, title, message=None, link=None,
     except Exception as e:
         logger.error(f'Failed to create notifications for {len(user_ids)} users: {e}')
         return []
+
+
+def notify_node_cascade(node_id, title, message=None, link=None,
+                        entity_type=None, entity_id=None, type='info'):
+    """Notify all responsables at a node AND all parent nodes up the chain.
+
+    Walks the structure_nodes parent hierarchy collecting responsable user IDs,
+    then sends a single bulk notification to all of them.
+    """
+    try:
+        from core.organization.repositories import StructureNodeRepository
+        user_ids = StructureNodeRepository().get_cascade_responsable_ids(node_id)
+        if user_ids:
+            return notify_users(user_ids, title, message, link,
+                                entity_type, entity_id, type)
+    except Exception as e:
+        logger.error(f'Failed cascade notification for node {node_id}: {e}')
+    return []

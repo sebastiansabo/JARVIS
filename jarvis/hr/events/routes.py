@@ -932,7 +932,7 @@ def api_get_companies_full():
 def api_create_company():
     """API: Create a new company."""
     data = request.get_json()
-    company_id = create_company(data['company'], data.get('vat'))
+    company_id = create_company(data['company'], data.get('vat'), data.get('parent_company_id'))
     return jsonify({'success': True, 'id': company_id})
 
 
@@ -942,7 +942,10 @@ def api_create_company():
 def api_update_company(company_id):
     """API: Update a company."""
     data = request.get_json()
-    update_company(company_id, data['company'], data.get('vat'))
+    try:
+        update_company(company_id, data['company'], data.get('vat'), data.get('parent_company_id'))
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
     return jsonify({'success': True})
 
 
@@ -1415,11 +1418,21 @@ def api_get_organigram():
     """API: Get organigram data — employees + department structures with manager mappings."""
     employees = get_all_hr_employees(active_only=True)
     structures = get_all_department_structures()
+    companies = get_all_companies_with_brands()
     user_is_manager = is_manager(current_user.id)
+
+    # Serialize companies for JSON
+    for company in companies:
+        if company.get('created_at'):
+            company['created_at'] = company['created_at'].isoformat() if hasattr(company['created_at'], 'isoformat') else company['created_at']
+        brand_list = company.get('brands', [])
+        company['brands'] = ', '.join(brand_list) if isinstance(brand_list, list) else brand_list
+        company['brands_list'] = [{'brand': b} for b in (brand_list if isinstance(brand_list, list) else [])]
 
     return jsonify({
         'employees': employees,
         'structures': structures,
+        'companies': companies,
         'current_user_id': current_user.id,
         'is_manager': user_is_manager,
     })

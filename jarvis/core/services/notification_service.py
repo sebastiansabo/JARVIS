@@ -9,18 +9,30 @@ from core.utils.logging_config import get_logger
 
 from core.notifications.repositories import NotificationRepository
 from core.auth.repositories import UserRepository
-from core.organization.repositories import StructureRepository
+from core.organization.repositories import StructureRepository, StructureNodeRepository
 
 _notif = NotificationRepository()
 _user = UserRepository()
 _struct = StructureRepository()
+_node_repo = StructureNodeRepository()
 
 # Function aliases (preserve call sites)
 get_notification_settings = _notif.get_settings
 log_notification = _notif.log_notification
 update_notification_status = _notif.update_status
-get_managers_for_department = _user.get_managers_for_department
 get_department_cc_email = _struct.get_cc_email
+
+
+def get_managers_for_department(department: str, company: str = None) -> list[dict]:
+    """Get responsables for a department, trying structure_nodes first, then legacy."""
+    if not company or not department:
+        return []
+    # Try new structure_nodes
+    results = _node_repo.get_responsable_users_by_department(company, department)
+    if results:
+        return results
+    # Fallback to legacy department_structure
+    return _user.get_managers_for_department(department, company)
 
 logger = get_logger('jarvis.notification')
 

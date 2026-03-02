@@ -47,6 +47,10 @@ class User(UserMixin):
         self.can_delete_crm = user_data.get('can_delete_crm', False)
         self.can_export_crm = user_data.get('can_export_crm', False)
 
+        # Pontaje visibility permissions
+        self.can_view_original_punches = user_data.get('can_view_original_punches', False)
+        self.can_view_adjusted_punches = user_data.get('can_view_adjusted_punches', False)
+
         # Permission mapping for has_permission method
         self._permission_map = {
             'system.settings': self.can_access_settings,

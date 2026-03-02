@@ -95,6 +95,10 @@ export interface BioStarDailySummary {
   last_punch: string
   total_punches: number
   duration_seconds: number | null
+  // Adjustment data (null if not adjusted)
+  adjusted_first_punch: string | null
+  adjusted_last_punch: string | null
+  adjustment_type: string | null
 }
 
 export interface BioStarDayHistory {
@@ -107,6 +111,10 @@ export interface BioStarDayHistory {
   working_hours?: number
   schedule_start?: string | null
   schedule_end?: string | null
+  // Adjustment data (null if not adjusted)
+  adjusted_first_punch?: string | null
+  adjusted_last_punch?: string | null
+  adjustment_type?: string | null
 }
 
 export interface BioStarEmployeeProfile {

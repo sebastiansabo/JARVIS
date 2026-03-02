@@ -149,6 +149,50 @@ def create_schema(conn, cursor):
         )
     ''')
 
+    # Add parent_company_id and display_order for hierarchical holding structure
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'companies' AND column_name = 'parent_company_id') THEN
+                ALTER TABLE companies ADD COLUMN parent_company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL;
+                ALTER TABLE companies ADD COLUMN display_order INTEGER DEFAULT 0;
+                CREATE INDEX IF NOT EXISTS idx_companies_parent_id ON companies(parent_company_id);
+                ALTER TABLE companies ADD CONSTRAINT chk_no_self_parent CHECK (parent_company_id != id);
+            END IF;
+        END $$;
+    ''')
+
+    # Structure nodes (generic 5-level organigram tree under each company)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS structure_nodes (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            parent_id INTEGER REFERENCES structure_nodes(id) ON DELETE CASCADE,
+            name VARCHAR(255) NOT NULL,
+            level INTEGER NOT NULL DEFAULT 1 CHECK (level BETWEEN 1 AND 5),
+            has_team BOOLEAN NOT NULL DEFAULT FALSE,
+            display_order INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_sn_company ON structure_nodes(company_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_sn_parent ON structure_nodes(parent_id)')
+
+    # Structure node members (responsables + team per organigram node)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS structure_node_members (
+            id SERIAL PRIMARY KEY,
+            node_id INTEGER NOT NULL REFERENCES structure_nodes(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role TEXT NOT NULL DEFAULT 'team' CHECK (role IN ('responsable', 'team')),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT structure_node_members_unique UNIQUE (node_id, user_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_snm_node ON structure_node_members(node_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_snm_user ON structure_node_members(user_id)')
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS connectors (
             id SERIAL PRIMARY KEY,
@@ -928,6 +972,34 @@ def create_schema(conn, cursor):
           AND p.action_key IN ('crm_client', 'car_dossier')
         ON CONFLICT (role_id, permission_id) DO NOTHING
     ''')
+
+    # Migration: Add hr.pontaje.view_original and hr.pontaje.view_adjusted permissions
+    cursor.execute("ALTER TABLE roles ADD COLUMN IF NOT EXISTS can_view_original_punches BOOLEAN DEFAULT FALSE")
+    cursor.execute("ALTER TABLE roles ADD COLUMN IF NOT EXISTS can_view_adjusted_punches BOOLEAN DEFAULT FALSE")
+    pontaje_view_perms = [
+        ('hr', 'HR', 'bi-people-fill', 'pontaje', 'Pontaje', 'view_original', 'View Original Punches', 'See actual/raw punch in/out times', False, 22),
+        ('hr', 'HR', 'bi-people-fill', 'pontaje', 'Pontaje', 'view_adjusted', 'View Adjusted Punches', 'See corrected punch in/out times', False, 23),
+    ]
+    for p in pontaje_view_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+    # Grant to Admin and Manager by default
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'all', TRUE
+        FROM roles r
+        CROSS JOIN permissions_v2 p
+        WHERE r.name IN ('Admin', 'Manager')
+          AND p.module_key = 'hr' AND p.entity_key = 'pontaje'
+          AND p.action_key IN ('view_original', 'view_adjusted')
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+    ''')
+    # Sync booleans for existing roles
+    cursor.execute("UPDATE roles SET can_view_original_punches = TRUE, can_view_adjusted_punches = TRUE WHERE name IN ('Admin', 'Manager')")
+
     conn.commit()
 
     # Seed default permissions if table is empty

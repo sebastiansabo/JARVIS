@@ -374,6 +374,8 @@ class PermissionRepository(BaseRepository):
             'can_edit_crm': perms.get('sales.clients.edit', False) or perms.get('sales.deals.edit', False),
             'can_delete_crm': perms.get('sales.clients.delete', False) or perms.get('sales.deals.delete', False),
             'can_export_crm': perms.get('sales.clients.export', False) or perms.get('sales.deals.export', False),
+            'can_view_original_punches': perms.get('hr.pontaje.view_original', False),
+            'can_view_adjusted_punches': perms.get('hr.pontaje.view_adjusted', False),
         }
         updates = ', '.join([f"{col} = %s" for col in bool_updates.keys()])
         values = list(bool_updates.values()) + [role_id]

@@ -127,6 +127,8 @@ export interface StructureCompany {
   created_at: string
   brands: string
   brands_list: { brand: string }[]
+  parent_company_id: number | null
+  display_order: number
 }
 
 export interface CompanyBrand {
@@ -159,6 +161,7 @@ export interface MasterItem {
 export interface OrganigramData {
   employees: HrEmployee[]
   structures: DepartmentStructure[]
+  companies: StructureCompany[]
   current_user_id: number
   is_manager: boolean
 }

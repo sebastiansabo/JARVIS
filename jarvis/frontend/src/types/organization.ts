@@ -8,6 +8,8 @@ export interface Company {
 export interface CompanyWithBrands extends Company {
   brands: string
   brands_list: { id: number; brand_id: number; brand: string }[]
+  parent_company_id: number | null
+  display_order: number
 }
 
 export interface Brand {
@@ -50,6 +52,10 @@ export interface DepartmentStructure {
   marketing: boolean
   display_name: string
   unique_key: string
+  responsable_id: number | null
+  responsable_name: string | null
+  responsable_email: string | null
+  manager_ids: number[] | null
 }
 
 export interface StructureUnit {
@@ -63,4 +69,24 @@ export interface StructureUnit {
   marketing: boolean
   display_name: string
   unique_key: string
+}
+
+export interface StructureNode {
+  id: number
+  company_id: number
+  parent_id: number | null
+  name: string
+  level: number
+  has_team: boolean
+  display_order: number
+  created_at: string
+}
+
+export interface StructureNodeMember {
+  id: number
+  node_id: number
+  user_id: number
+  role: 'responsable' | 'team'
+  user_name: string
+  user_email: string
 }

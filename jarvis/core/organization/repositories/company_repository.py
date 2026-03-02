@@ -70,14 +70,14 @@ class CompanyRepository(BaseRepository):
         """Get a specific company by ID."""
         return self.query_one('SELECT * FROM companies WHERE id = %s', (company_id,))
 
-    def save(self, company: str, vat: str = None) -> int:
+    def save(self, company: str, vat: str = None, parent_company_id: int = None) -> int:
         """Create a new company. Returns company ID."""
         try:
             result = self.execute('''
-                INSERT INTO companies (company, vat)
-                VALUES (%s, %s)
+                INSERT INTO companies (company, vat, parent_company_id)
+                VALUES (%s, %s, %s)
                 RETURNING id
-            ''', (company, vat), returning=True)
+            ''', (company, vat, parent_company_id), returning=True)
             clear_companies_vat_cache()
             return result['id']
         except Exception as e:
@@ -85,45 +85,76 @@ class CompanyRepository(BaseRepository):
                 raise ValueError(f"Company '{company}' already exists")
             raise
 
-    def update(self, company_id: int, company: str = None, vat: str = None) -> bool:
-        """Update a company. Returns True if updated."""
-        updates = []
-        params = []
-        if company is not None:
-            updates.append('company = %s')
-            params.append(company)
-        if vat is not None:
-            updates.append('vat = %s')
-            params.append(vat)
-        if not updates:
-            return False
+    def _would_create_cycle(self, cursor, company_id: int, proposed_parent_id: int) -> bool:
+        """Check if setting proposed_parent_id would create a circular reference."""
+        if not proposed_parent_id or proposed_parent_id == company_id:
+            return proposed_parent_id == company_id
+        visited = set()
+        current = proposed_parent_id
+        while current is not None:
+            if current == company_id:
+                return True
+            if current in visited:
+                return True
+            visited.add(current)
+            cursor.execute('SELECT parent_company_id FROM companies WHERE id = %s', (current,))
+            row = cursor.fetchone()
+            current = row['parent_company_id'] if row else None
+        return False
 
-        params.append(company_id)
+    def update(self, company_id: int, company: str = None, vat: str = None, parent_company_id: object = 'UNSET') -> bool:
+        """Update a company. Returns True if updated."""
+        def _work(cursor):
+            # Check for circular references if parent is being changed
+            if parent_company_id != 'UNSET' and parent_company_id is not None:
+                if self._would_create_cycle(cursor, company_id, parent_company_id):
+                    raise ValueError('Cannot set parent: would create a circular reference')
+
+            updates = []
+            params = []
+            if company is not None:
+                updates.append('company = %s')
+                params.append(company)
+            if vat is not None:
+                updates.append('vat = %s')
+                params.append(vat)
+            if parent_company_id != 'UNSET':
+                updates.append('parent_company_id = %s')
+                params.append(parent_company_id)
+            if not updates:
+                return False
+
+            params.append(company_id)
+            cursor.execute(f'UPDATE companies SET {", ".join(updates)} WHERE id = %s', params)
+            return cursor.rowcount > 0
+
         try:
-            rowcount = self.execute(
-                f'UPDATE companies SET {", ".join(updates)} WHERE id = %s', params
-            )
-            if rowcount > 0:
+            result = self.execute_many(_work)
+            if result:
                 clear_companies_vat_cache()
-            return rowcount > 0
+            return result
         except Exception as e:
             if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
                 raise ValueError(f"Company name '{company}' already exists")
             raise
 
     def delete(self, company_id: int) -> bool:
-        """Delete a company by ID."""
-        rowcount = self.execute('DELETE FROM companies WHERE id = %s', (company_id,))
-        if rowcount > 0:
+        """Delete a company by ID. Detaches any children first."""
+        def _work(cursor):
+            cursor.execute('UPDATE companies SET parent_company_id = NULL WHERE parent_company_id = %s', (company_id,))
+            cursor.execute('DELETE FROM companies WHERE id = %s', (company_id,))
+            return cursor.rowcount > 0
+        result = self.execute_many(_work)
+        if result:
             clear_companies_vat_cache()
-        return rowcount > 0
+        return result
 
     # --- Company VAT operations (by name) ---
 
     def get_all_with_vat_and_brands(self) -> list[dict]:
-        """Get all companies with VAT numbers and brand associations."""
+        """Get all companies with VAT numbers, brand associations, and hierarchy."""
         def _work(cursor):
-            cursor.execute('SELECT id, company, vat FROM companies ORDER BY company')
+            cursor.execute('SELECT id, company, vat, parent_company_id, display_order FROM companies ORDER BY display_order, company')
             companies = [dict(row) for row in cursor.fetchall()]
 
             cursor.execute('''
@@ -183,6 +214,41 @@ class CompanyRepository(BaseRepository):
         if rowcount > 0:
             clear_companies_vat_cache()
         return rowcount > 0
+
+    # --- Brand management ---
+
+    def get_all_brands(self) -> list[dict]:
+        """Get all brands."""
+        return self.query_all('SELECT id, name, is_active FROM brands ORDER BY name')
+
+    def link_brand(self, company_id: int, brand_id: int) -> int:
+        """Link a brand to a company. Returns link ID."""
+        result = self.execute('''
+            INSERT INTO company_brands (company_id, brand_id, is_active)
+            VALUES (%s, %s, TRUE)
+            ON CONFLICT DO NOTHING
+            RETURNING id
+        ''', (company_id, brand_id), returning=True)
+        clear_companies_vat_cache()
+        return result['id'] if result else 0
+
+    def unlink_brand(self, company_id: int, brand_id: int) -> bool:
+        """Unlink a brand from a company."""
+        rowcount = self.execute(
+            'DELETE FROM company_brands WHERE company_id = %s AND brand_id = %s',
+            (company_id, brand_id)
+        )
+        if rowcount > 0:
+            clear_companies_vat_cache()
+        return rowcount > 0
+
+    def create_brand(self, name: str) -> int:
+        """Create a new brand. Returns brand ID."""
+        result = self.execute(
+            'INSERT INTO brands (name, is_active) VALUES (%s, TRUE) RETURNING id',
+            (name,), returning=True
+        )
+        return result['id']
 
     def match_by_vat(self, invoice_vat: str) -> Optional[dict]:
         """Find company matching the given VAT number.

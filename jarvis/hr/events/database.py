@@ -686,9 +686,9 @@ def get_all_companies_with_brands():
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute("""
-        SELECT id, company, vat, created_at
+        SELECT id, company, vat, created_at, parent_company_id, display_order
         FROM companies
-        ORDER BY company
+        ORDER BY display_order, company
     """)
     companies = [dict_from_row(row) for row in cursor.fetchall()]
 
@@ -715,38 +715,62 @@ def get_all_companies_with_brands():
     return companies
 
 
-def create_company(company_name, vat=None):
+def _would_create_cycle(cursor, company_id, proposed_parent_id):
+    """Walk up the parent chain from proposed_parent_id. If we reach company_id, it's a cycle."""
+    if proposed_parent_id is None:
+        return False
+    if proposed_parent_id == company_id:
+        return True
+    visited = set()
+    current = proposed_parent_id
+    while current is not None:
+        if current in visited:
+            return True
+        if current == company_id:
+            return True
+        visited.add(current)
+        cursor.execute("SELECT parent_company_id FROM companies WHERE id = %s", (current,))
+        row = cursor.fetchone()
+        current = row['parent_company_id'] if row else None
+    return False
+
+
+def create_company(company_name, vat=None, parent_company_id=None):
     """Create a new company."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute("""
-        INSERT INTO companies (company, vat)
-        VALUES (%s, %s)
+        INSERT INTO companies (company, vat, parent_company_id)
+        VALUES (%s, %s, %s)
         RETURNING id
-    """, (company_name, vat))
+    """, (company_name, vat, parent_company_id))
     company_id = cursor.fetchone()['id']
     conn.commit()
     release_db(conn)
     return company_id
 
 
-def update_company(company_id, company_name, vat=None):
+def update_company(company_id, company_name, vat=None, parent_company_id=None):
     """Update a company."""
     conn = get_db()
     cursor = get_cursor(conn)
+    if _would_create_cycle(cursor, company_id, parent_company_id):
+        release_db(conn)
+        raise ValueError("Cannot set parent: would create a circular reference")
     cursor.execute("""
         UPDATE companies
-        SET company = %s, vat = %s
+        SET company = %s, vat = %s, parent_company_id = %s
         WHERE id = %s
-    """, (company_name, vat, company_id))
+    """, (company_name, vat, parent_company_id, company_id))
     conn.commit()
     release_db(conn)
 
 
 def delete_company(company_id):
-    """Delete a company."""
+    """Delete a company. Detaches children to root level."""
     conn = get_db()
     cursor = get_cursor(conn)
+    cursor.execute("UPDATE companies SET parent_company_id = NULL WHERE parent_company_id = %s", (company_id,))
     cursor.execute("DELETE FROM companies WHERE id = %s", (company_id,))
     conn.commit()
     release_db(conn)
