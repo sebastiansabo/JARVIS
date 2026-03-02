@@ -9,9 +9,10 @@ class AdjustmentRepository(BaseRepository):
     def get_off_schedule(self, date_str, threshold_minutes=15):
         """Get employees whose punches deviate from schedule by >= threshold.
 
-        Returns rows where:
-        - check-in is >=15m before schedule_start OR >=15m after schedule_start
-        - check-out is >=15m before schedule_end OR >=15m after schedule_end
+        Logic:
+        - Only 1 punch + today  → only flag if check-in deviates (still at work)
+        - Only 1 punch + past   → always flag (forgot to check out)
+        - Multiple punches       → flag if check-in OR check-out deviates
         - Excludes employees already adjusted for that date
         """
         return self.query_all('''
@@ -42,7 +43,10 @@ class AdjustmentRepository(BaseRepository):
             )
             SELECT d.*,
                    EXTRACT(EPOCH FROM (d.first_punch::time - d.schedule_start)) / 60 AS deviation_in,
-                   EXTRACT(EPOCH FROM (d.last_punch::time - d.schedule_end)) / 60 AS deviation_out,
+                   CASE WHEN d.total_punches > 1
+                        THEN EXTRACT(EPOCH FROM (d.last_punch::time - d.schedule_end)) / 60
+                        ELSE NULL END AS deviation_out,
+                   d.total_punches = 1 AND %s::date < CURRENT_DATE AS missing_checkout,
                    adj.id AS adjustment_id,
                    adj.adjusted_first_punch,
                    adj.adjusted_last_punch,
@@ -54,11 +58,18 @@ class AdjustmentRepository(BaseRepository):
                 ON adj.biostar_user_id = d.biostar_user_id AND adj.date = %s::date
             WHERE adj.id IS NULL
               AND (
-                  ABS(EXTRACT(EPOCH FROM (d.first_punch::time - d.schedule_start)) / 60) >= %s
-                  OR ABS(EXTRACT(EPOCH FROM (d.last_punch::time - d.schedule_end)) / 60) >= %s
+                  -- Case 1: only 1 punch + past day = forgot to check out → always show
+                  (d.total_punches = 1 AND %s::date < CURRENT_DATE)
+                  -- Case 2: only 1 punch + today = still at work → only show if check-in off
+                  OR (d.total_punches = 1 AND %s::date = CURRENT_DATE
+                      AND ABS(EXTRACT(EPOCH FROM (d.first_punch::time - d.schedule_start)) / 60) >= %s)
+                  -- Case 3: multiple punches → check both deviations
+                  OR (d.total_punches > 1
+                      AND (ABS(EXTRACT(EPOCH FROM (d.first_punch::time - d.schedule_start)) / 60) >= %s
+                           OR ABS(EXTRACT(EPOCH FROM (d.last_punch::time - d.schedule_end)) / 60) >= %s))
               )
             ORDER BY d.name
-        ''', (date_str, date_str, threshold_minutes, threshold_minutes))
+        ''', (date_str, date_str, date_str, date_str, date_str, threshold_minutes, threshold_minutes, threshold_minutes))
 
     def get_adjustments(self, date_str):
         """Get all adjustments for a given date."""

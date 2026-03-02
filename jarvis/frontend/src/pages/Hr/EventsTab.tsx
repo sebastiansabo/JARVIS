@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { Routes, Route, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useIsMobile } from '@/hooks/useMediaQuery'
@@ -327,9 +327,8 @@ function EventsList() {
               </TableHeader>
               <TableBody>
                 {displayedEvents.map((ev) => (
-                  <>
+                  <Fragment key={ev.id}>
                     <TableRow
-                      key={ev.id}
                       className={cn('cursor-pointer', selected.includes(ev.id) && 'bg-muted/50')}
                       onClick={() => setExpandedRow(expandedRow === ev.id ? null : ev.id)}
                     >
@@ -369,7 +368,7 @@ function EventsList() {
                         </TableCell>
                       </TableRow>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </TableBody>
             </Table>

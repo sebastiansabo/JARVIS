@@ -3,6 +3,34 @@
 import json
 from datetime import datetime, timedelta
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
+
+# BioStar API returns datetimes in UTC; convert to Romania local time
+_ROMANIA_TZ = ZoneInfo('Europe/Bucharest')
+_UTC = ZoneInfo('UTC')
+
+
+def _utc_to_local(dt_str):
+    """Convert a BioStar UTC datetime string to Romania local time string.
+
+    BioStar API returns '2026-03-02T05:11:23.00Z' (UTC).
+    Returns '2026-03-02T07:11:23' (Europe/Bucharest, handles DST).
+    """
+    if not dt_str:
+        return dt_str
+    # Strip .00Z suffix and parse
+    clean = dt_str.replace('.00Z', '').replace('Z', '')
+    try:
+        dt = datetime.fromisoformat(clean).replace(tzinfo=_UTC)
+        local_dt = dt.astimezone(_ROMANIA_TZ)
+        return local_dt.strftime('%Y-%m-%dT%H:%M:%S')
+    except (ValueError, TypeError):
+        return dt_str  # Return as-is if unparseable
+
+
 from core.connectors.repositories.connector_repository import ConnectorRepository
 from ..client.biostar_client import BioStarClient
 from ..repositories.biostar_repository import BioStarRepository
@@ -259,23 +287,32 @@ class BioStarSyncService:
         try:
             client = self._get_client()
 
-            # Determine start date — BioStar API requires .00Z suffix
+            # Determine start date — BioStar API expects UTC with .00Z suffix
+            # Stored datetimes are in Romania local time, convert back to UTC for query
             if not start_date:
                 last_dt = self.repo.get_last_event_datetime()
                 if last_dt:
                     if isinstance(last_dt, datetime):
-                        start_date = last_dt.strftime('%Y-%m-%dT%H:%M:%S.00Z')
+                        # DB stores local time — convert to UTC for API query
+                        local_dt = last_dt.replace(tzinfo=_ROMANIA_TZ)
+                        utc_dt = local_dt.astimezone(_UTC)
+                        start_date = utc_dt.strftime('%Y-%m-%dT%H:%M:%S.00Z')
                     else:
-                        # DB might return string — ensure .00Z suffix
                         s = str(last_dt)
-                        if not s.endswith('Z'):
-                            s = s.split('.')[0] + '.00Z'
-                        start_date = s
+                        # Convert local time string to UTC for API
+                        try:
+                            local_dt = datetime.fromisoformat(s.split('.')[0]).replace(tzinfo=_ROMANIA_TZ)
+                            utc_dt = local_dt.astimezone(_UTC)
+                            start_date = utc_dt.strftime('%Y-%m-%dT%H:%M:%S.00Z')
+                        except (ValueError, TypeError):
+                            if not s.endswith('Z'):
+                                s = s.split('.')[0] + '.00Z'
+                            start_date = s
                 else:
-                    start_date = (datetime.now() - timedelta(days=SYNC_EVENTS_DEFAULT_DAYS)).strftime('%Y-%m-%dT00:00:00.00Z')
+                    start_date = (datetime.now(_UTC) - timedelta(days=SYNC_EVENTS_DEFAULT_DAYS)).strftime('%Y-%m-%dT00:00:00.00Z')
 
             if not end_date:
-                end_date = datetime.now().strftime('%Y-%m-%dT%H:%M:%S.00Z')
+                end_date = datetime.now(_UTC).strftime('%Y-%m-%dT%H:%M:%S.00Z')
 
             # Fetch events with pagination
             all_events = []
@@ -383,7 +420,7 @@ class BioStarSyncService:
         return {
             'biostar_event_id': str(raw.get('id', '')),
             'biostar_user_id': user_id,
-            'event_datetime': raw.get('datetime', ''),
+            'event_datetime': _utc_to_local(raw.get('datetime', '')),
             'event_type': event_type,
             'direction': self._infer_direction(raw),
             'device_id': device_id,

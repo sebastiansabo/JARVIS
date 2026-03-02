@@ -77,7 +77,7 @@ function formatWorked(durationSeconds: number | null, lunchMinutes: number) {
 export default function AdjustmentsTab() {
   const qc = useQueryClient()
   const isMobile = useIsMobile()
-  const [date, setDate] = useState(shiftDate(todayStr(), -1)) // yesterday by default
+  const [date, setDate] = useState(todayStr())
   const [search, setSearch] = useState('')
   const [showStats, setShowStats] = useState(false)
   const [tab, setTab] = useState<'pending' | 'adjusted'>('pending')
@@ -118,7 +118,7 @@ export default function AdjustmentsTab() {
         working_hours: row.working_hours,
         original_duration_seconds: row.duration_seconds ?? undefined,
         deviation_minutes_in: Math.round(row.deviation_in),
-        deviation_minutes_out: Math.round(row.deviation_out),
+        deviation_minutes_out: row.deviation_out != null ? Math.round(row.deviation_out) : 0,
       })
     },
     onSuccess: () => {
@@ -281,10 +281,10 @@ const pendingMobileFields: MobileCardField<BioStarOffScheduleRow>[] = [
   { key: 'name', label: 'Employee', isPrimary: true, render: (r) => r.name },
   { key: 'schedule', label: 'Schedule', isSecondary: true, render: (r) => `${fmtScheduleTime(r.schedule_start)} — ${fmtScheduleTime(r.schedule_end)}` },
   { key: 'actual_in', label: 'Actual In', render: (r) => <span className="text-xs font-medium">{formatTime(r.first_punch)}</span> },
-  { key: 'actual_out', label: 'Actual Out', render: (r) => <span className="text-xs font-medium">{formatTime(r.last_punch)}</span> },
-  { key: 'worked', label: 'Worked', render: (r) => <span className="text-xs">{formatWorked(r.duration_seconds, r.lunch_break_minutes)}</span> },
+  { key: 'actual_out', label: 'Actual Out', render: (r) => <span className="text-xs font-medium">{r.missing_checkout ? <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-600">Missing</Badge> : r.total_punches === 1 ? '—' : formatTime(r.last_punch)}</span> },
+  { key: 'worked', label: 'Worked', render: (r) => <span className="text-xs">{r.total_punches > 1 ? formatWorked(r.duration_seconds, r.lunch_break_minutes) : '—'}</span> },
   { key: 'dev_in', label: 'Dev. In', render: (r) => <span className={cn('text-xs font-medium', deviationColor(r.deviation_in))}>{deviationLabel(r.deviation_in)}</span> },
-  { key: 'dev_out', label: 'Dev. Out', expandOnly: true, render: (r) => <span className={cn('text-xs font-medium', deviationColor(r.deviation_out))}>{deviationLabel(r.deviation_out)}</span> },
+  { key: 'dev_out', label: 'Dev. Out', expandOnly: true, render: (r) => <span className={cn('text-xs font-medium', r.deviation_out != null ? deviationColor(r.deviation_out) : '')}>{r.missing_checkout ? 'Missing checkout' : r.deviation_out != null ? deviationLabel(r.deviation_out) : '—'}</span> },
   { key: 'group', label: 'Group', expandOnly: true, render: (r) => <span className="text-xs">{r.user_group_name || '—'}</span> },
 ]
 
@@ -360,9 +360,17 @@ function PendingTable({
                 </span>
               </TableCell>
               <TableCell className="text-center text-sm font-medium">{formatTime(row.first_punch)}</TableCell>
-              <TableCell className="text-center text-sm font-medium">{formatTime(row.last_punch)}</TableCell>
               <TableCell className="text-center text-sm font-medium">
-                {formatWorked(row.duration_seconds, row.lunch_break_minutes)}
+                {row.missing_checkout
+                  ? <Badge variant="outline" className="text-xs text-orange-600 border-orange-600">Missing</Badge>
+                  : row.total_punches === 1
+                    ? <span className="text-muted-foreground">—</span>
+                    : formatTime(row.last_punch)}
+              </TableCell>
+              <TableCell className="text-center text-sm font-medium">
+                {row.total_punches > 1
+                  ? formatWorked(row.duration_seconds, row.lunch_break_minutes)
+                  : <span className="text-muted-foreground">—</span>}
               </TableCell>
               <TableCell className="text-center">
                 <span className={cn('text-sm font-medium', deviationColor(row.deviation_in))}>
@@ -370,9 +378,11 @@ function PendingTable({
                 </span>
               </TableCell>
               <TableCell className="text-center">
-                <span className={cn('text-sm font-medium', deviationColor(row.deviation_out))}>
-                  {deviationLabel(row.deviation_out)}
-                </span>
+                {row.missing_checkout
+                  ? <Badge variant="outline" className="text-xs text-orange-600 border-orange-600">Missing</Badge>
+                  : row.deviation_out != null
+                    ? <span className={cn('text-sm font-medium', deviationColor(row.deviation_out))}>{deviationLabel(row.deviation_out)}</span>
+                    : <span className="text-muted-foreground">—</span>}
               </TableCell>
               <TableCell>
                 <Button

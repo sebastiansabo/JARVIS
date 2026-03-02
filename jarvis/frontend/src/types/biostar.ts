@@ -143,7 +143,8 @@ export interface BioStarOffScheduleRow {
   total_punches: number
   duration_seconds: number | null
   deviation_in: number
-  deviation_out: number
+  deviation_out: number | null
+  missing_checkout: boolean
   // null if not yet adjusted
   adjustment_id: number | null
   adjusted_first_punch: string | null
