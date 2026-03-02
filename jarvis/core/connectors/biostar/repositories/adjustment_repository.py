@@ -10,9 +10,9 @@ class AdjustmentRepository(BaseRepository):
         """Get employees with overtime exceeding threshold or missing checkout.
 
         Logic:
-        - Only 1 punch + today  → only flag if check-in deviates from schedule
-        - Only 1 punch + past   → always flag (forgot to check out)
-        - Multiple punches       → flag only if net worked > working_hours + threshold
+        - Only 1 punch + past day → always flag (forgot to check out)
+        - Multiple punches         → flag only if net worked > working_hours + threshold
+        - Single punch on today    → NEVER show (no checkout yet, wait for next sync)
         - Excludes employees already adjusted for that date
         """
         return self.query_all('''
@@ -63,15 +63,12 @@ class AdjustmentRepository(BaseRepository):
               AND (
                   -- Case 1: only 1 punch + past day = forgot to check out → always show
                   (d.total_punches = 1 AND %s::date < CURRENT_DATE)
-                  -- Case 2: only 1 punch + today = still at work → only show if check-in off
-                  OR (d.total_punches = 1 AND %s::date = CURRENT_DATE
-                      AND ABS(EXTRACT(EPOCH FROM (d.first_punch::time - d.schedule_start)) / 60) >= %s)
-                  -- Case 3: multiple punches + net worked exceeds working_hours + threshold
+                  -- Case 2: multiple punches + net worked exceeds working_hours + threshold
                   OR (d.total_punches > 1
                       AND (d.duration_seconds / 60.0 - d.lunch_break_minutes) > (d.working_hours * 60 + %s))
               )
             ORDER BY d.name
-        ''', (date_str, date_str, date_str, date_str, date_str, threshold_minutes, threshold_minutes))
+        ''', (date_str, date_str, date_str, date_str, threshold_minutes))
 
     def get_adjustments(self, date_str):
         """Get all adjustments for a given date."""

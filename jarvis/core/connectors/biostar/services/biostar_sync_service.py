@@ -479,13 +479,13 @@ class BioStarSyncService:
         total = self.repo.get_punch_log_count(biostar_user_id, start_date, end_date)
         return {'logs': logs, 'total': total}
 
-    def get_daily_summary(self, date_str):
+    def get_daily_summary(self, date_str, jarvis_user_ids=None):
         """Get per-employee daily punch summary."""
-        return self.repo.get_daily_summary(date_str)
+        return self.repo.get_daily_summary(date_str, jarvis_user_ids=jarvis_user_ids)
 
-    def get_range_summary(self, start_date, end_date):
+    def get_range_summary(self, start_date, end_date, jarvis_user_ids=None):
         """Get per-employee aggregated summary over a date range."""
-        return self.repo.get_range_summary(start_date, end_date)
+        return self.repo.get_range_summary(start_date, end_date, jarvis_user_ids=jarvis_user_ids)
 
     def get_employee_punches(self, biostar_user_id, date_str):
         """Get all punch events for one employee on a specific date."""
@@ -629,23 +629,14 @@ class BioStarSyncService:
             last = row['last_punch']
             sched_start = row['schedule_start']
             sched_end = row['schedule_end']
-            total_punches = row.get('total_punches', 1)
             lunch = row.get('lunch_break_minutes', 60)
             wh = row.get('working_hours', 8)
 
             if not first or not last or not sched_start or not sched_end:
                 continue
 
-            if total_punches > 1:
-                # Overtime case — randomize both check-in and check-out
-                adj_first, adj_last = self._randomize_times(first, sched_start, lunch, wh)
-            else:
-                # Single punch (missing checkout or bad check-in today)
-                # Only adjust check-in, randomized around schedule_start
-                date_part = first.date()
-                start_offset = random.randint(-5, 5)
-                adj_first = datetime.combine(date_part, sched_start) + timedelta(minutes=start_offset)
-                adj_last = last  # Keep original
+            # All cases (overtime or missing checkout on past day) get full randomization
+            adj_first, adj_last = self._randomize_times(first, sched_start, lunch, wh)
 
             self.adjust_employee(
                 biostar_user_id=row['biostar_user_id'],

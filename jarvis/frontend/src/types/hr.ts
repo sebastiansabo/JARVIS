@@ -155,3 +155,10 @@ export interface MasterItem {
   name: string
   is_active: boolean
 }
+
+export interface OrganigramData {
+  employees: HrEmployee[]
+  structures: DepartmentStructure[]
+  current_user_id: number
+  is_manager: boolean
+}

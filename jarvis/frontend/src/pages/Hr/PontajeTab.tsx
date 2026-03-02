@@ -12,6 +12,7 @@ import {
   LogIn,
   LogOut,
   UserCheck,
+  Users,
   Fingerprint,
   ExternalLink,
   Calendar,
@@ -24,6 +25,7 @@ import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { StatCard } from '@/components/shared/StatCard'
 import { biostarApi } from '@/api/biostar'
+import { hrApi } from '@/api/hr'
 import { cn } from '@/lib/utils'
 import type { BioStarDailySummary, BioStarRangeSummary, BioStarPunchLog } from '@/types/biostar'
 
@@ -111,6 +113,19 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
   const [customEnd, setCustomEnd] = useState('')
   const [showDatePickers, setShowDatePickers] = useState(false)
 
+  // Manager filtering — check if current user is a manager via organigram data
+  const { data: orgData } = useQuery({
+    queryKey: ['hr-organigram'],
+    queryFn: () => hrApi.getOrganigram(),
+    staleTime: 5 * 60 * 1000,
+  })
+  const isUserManager = orgData?.is_manager ?? false
+
+  // Managers default to "My Team", HR admins see toggle too
+  const [teamFilter, setTeamFilter] = useState<'team' | 'all'>('team')
+  const showTeamToggle = isUserManager
+  const managerFilter = showTeamToggle && teamFilter === 'team'
+
   const { start, end, isSingleDay } = getDateRange(quickFilter, customStart, customEnd)
 
   const { data: status } = useQuery({
@@ -122,16 +137,16 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
 
   // Single day query
   const { data: dailySummary = [], isLoading: loadingDaily } = useQuery({
-    queryKey: ['biostar', 'daily-summary', start],
-    queryFn: () => biostarApi.getDailySummary(start),
+    queryKey: ['biostar', 'daily-summary', start, managerFilter],
+    queryFn: () => biostarApi.getDailySummary(start, managerFilter),
     enabled: isSingleDay,
     refetchInterval: isSingleDay && connected ? 60_000 : false,
   })
 
   // Range query
   const { data: rangeSummary = [], isLoading: loadingRange } = useQuery({
-    queryKey: ['biostar', 'range-summary', start, end],
-    queryFn: () => biostarApi.getRangeSummary(start, end),
+    queryKey: ['biostar', 'range-summary', start, end, managerFilter],
+    queryFn: () => biostarApi.getRangeSummary(start, end, managerFilter),
     enabled: !isSingleDay && !!start && !!end,
   })
 
@@ -428,6 +443,33 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
 
       {/* Filters */}
       <div className="flex items-center gap-2">
+        {showTeamToggle && (
+          <div className="flex rounded-md border shrink-0">
+            <button
+              onClick={() => setTeamFilter('team')}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors',
+                teamFilter === 'team'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Users className="h-3.5 w-3.5" />
+              My Team
+            </button>
+            <button
+              onClick={() => setTeamFilter('all')}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors',
+                teamFilter === 'all'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              All
+            </button>
+          </div>
+        )}
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input

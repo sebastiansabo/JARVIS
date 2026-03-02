@@ -242,9 +242,14 @@ class BioStarRepository(BaseRepository):
         row = self.query_one('SELECT MAX(event_datetime) AS last_dt FROM biostar_punch_logs')
         return row['last_dt'] if row else None
 
-    def get_daily_summary(self, date_str):
+    def get_daily_summary(self, date_str, jarvis_user_ids=None):
         """Get per-employee daily punch summary with group, duration, mapped user, schedule."""
-        return self.query_all('''
+        params = [date_str]
+        extra_where = ''
+        if jarvis_user_ids:
+            extra_where = ' AND be.mapped_jarvis_user_id = ANY(%s)'
+            params.append(jarvis_user_ids)
+        return self.query_all(f'''
             SELECT
                 pl.biostar_user_id,
                 be.name,
@@ -263,16 +268,21 @@ class BioStarRepository(BaseRepository):
             FROM biostar_punch_logs pl
             LEFT JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
-            WHERE pl.event_datetime::date = %s::date
+            WHERE pl.event_datetime::date = %s::date{extra_where}
             GROUP BY pl.biostar_user_id, be.name, be.email, be.user_group_name,
                      be.mapped_jarvis_user_id, u.name, be.lunch_break_minutes, be.working_hours,
                      be.schedule_start, be.schedule_end
             ORDER BY be.name
-        ''', (date_str,))
+        ''', params)
 
-    def get_range_summary(self, start_date, end_date):
+    def get_range_summary(self, start_date, end_date, jarvis_user_ids=None):
         """Get per-employee aggregated punch summary over a date range."""
-        return self.query_all('''
+        params = [start_date, end_date]
+        extra_where = ''
+        if jarvis_user_ids:
+            extra_where = ' AND be.mapped_jarvis_user_id = ANY(%s)'
+            params.append(jarvis_user_ids)
+        return self.query_all(f'''
             WITH daily AS (
                 SELECT
                     pl.biostar_user_id,
@@ -305,11 +315,12 @@ class BioStarRepository(BaseRepository):
             FROM daily d
             LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+            WHERE 1=1{extra_where}
             GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
                      be.mapped_jarvis_user_id, u.name, be.lunch_break_minutes, be.working_hours,
                      be.schedule_start, be.schedule_end
             ORDER BY be.name
-        ''', (start_date, end_date))
+        ''', params)
 
     def get_employee_punches(self, biostar_user_id, date_str):
         """Get all punch events for one employee on a specific date."""

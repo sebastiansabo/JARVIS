@@ -121,18 +121,18 @@ export const biostarApi = {
     return { logs: res.data, total: res.total }
   },
 
-  getDailySummary: async (date: string) => {
+  getDailySummary: async (date: string, managerFilter = false) => {
     const res = await api.get<{ success: boolean; data: BioStarDailySummary[] }>(
       `${BASE}/punch-logs/summary`,
-      { date },
+      { date, ...(managerFilter ? { manager_filter: 'true' } : {}) },
     )
     return res.data
   },
 
-  getRangeSummary: async (start: string, end: string) => {
+  getRangeSummary: async (start: string, end: string, managerFilter = false) => {
     const res = await api.get<{ success: boolean; data: BioStarRangeSummary[] }>(
       `${BASE}/punch-logs/range-summary`,
-      { start, end },
+      { start, end, ...(managerFilter ? { manager_filter: 'true' } : {}) },
     )
     return res.data
   },

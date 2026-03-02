@@ -924,6 +924,57 @@ def delete_department_structure(struct_id):
     release_db(conn)
 
 
+def get_managed_employee_ids(manager_user_id):
+    """Get all user IDs that belong to departments managed by this user.
+
+    Looks up department_structure rows where manager_user_id is in manager_ids,
+    then finds all active users in those (company, department) combos.
+    """
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    # Find departments where this user is a manager
+    cursor.execute("""
+        SELECT company, department FROM department_structure
+        WHERE %s = ANY(manager_ids)
+    """, (manager_user_id,))
+    managed_depts = cursor.fetchall()
+
+    if not managed_depts:
+        release_db(conn)
+        return []
+
+    # Build conditions for all managed (company, department) pairs
+    conditions = []
+    params = []
+    for dept in managed_depts:
+        conditions.append('(company = %s AND department = %s)')
+        params.append(dept['company'])
+        params.append(dept['department'])
+
+    where = ' OR '.join(conditions)
+    cursor.execute(f"""
+        SELECT id FROM users
+        WHERE is_active = TRUE AND ({where})
+    """, params)
+    rows = cursor.fetchall()
+    release_db(conn)
+    return [r['id'] for r in rows]
+
+
+def is_manager(user_id):
+    """Check if a user is a manager of any department."""
+    conn = get_db()
+    cursor = get_cursor(conn)
+    cursor.execute("""
+        SELECT COUNT(*) AS cnt FROM department_structure
+        WHERE %s = ANY(manager_ids)
+    """, (user_id,))
+    row = cursor.fetchone()
+    release_db(conn)
+    return row['cnt'] > 0 if row else False
+
+
 _ALLOWED_LOOKUP_TABLES = frozenset({
     'companies', 'brands', 'departments', 'subdepartments',
     'positions', 'locations', 'cost_centers',

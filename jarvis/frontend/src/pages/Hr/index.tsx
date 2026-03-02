@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { ClipboardCheck, Download, Fingerprint, LayoutDashboard, BarChart3 } from 'lucide-react'
+import { ClipboardCheck, Download, Fingerprint, LayoutDashboard, BarChart3, Network } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -16,6 +16,7 @@ const BonusesTab = lazy(() => import('./BonusesTab'))
 const PontajeTab = lazy(() => import('./PontajeTab'))
 const AdjustmentsTab = lazy(() => import('./AdjustmentsTab'))
 const EmployeeProfile = lazy(() => import('./EmployeeProfile'))
+const OrganigramTab = lazy(() => import('./OrganigramTab'))
 
 function TabLoader() {
   return (
@@ -33,6 +34,7 @@ export default function Hr() {
   const isProfilePage = useMatch('/app/hr/pontaje/:biostarUserId')
   const isBonusesPage = useMatch('/app/hr/bonuses')
   const isAdjustmentsPage = useMatch('/app/hr/adjustments')
+  const isOrganigramPage = useMatch('/app/hr/organigram')
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('hr_summary')
   const filters = useHrStore((s) => s.filters)
 
@@ -54,6 +56,7 @@ export default function Hr() {
     if (canViewAdjustments) {
       t.push({ to: '/app/hr/adjustments', label: 'Adjustments', icon: ClipboardCheck })
     }
+    t.push({ to: '/app/hr/organigram', label: 'Organigram', icon: Network })
     return t
   }, [canViewAdjustments])
 
@@ -71,14 +74,14 @@ export default function Hr() {
   return (
     <div className="space-y-4 md:space-y-6">
       <PageHeader
-        title={isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : 'Pontaje'}
+        title={isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : isOrganigramPage ? 'Organigram' : 'Pontaje'}
         breadcrumbs={[
           { label: 'HR', href: '/app/hr/pontaje' },
-          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : [{ label: 'Pontaje' }]),
+          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : isOrganigramPage ? [{ label: 'Organigram' }] : [{ label: 'Pontaje' }]),
         ]}
         actions={
           <div className="flex items-center gap-2">
-            {!isBonusesPage && !isAdjustmentsPage && isMobile && (
+            {!isBonusesPage && !isAdjustmentsPage && !isOrganigramPage && isMobile && (
               <Button variant="ghost" size="icon" onClick={() => setShowStats(s => !s)}>
                 <BarChart3 className="h-4 w-4" />
               </Button>
@@ -101,7 +104,7 @@ export default function Hr() {
 
       {/* Tab nav — hidden on Bonuses page */}
       {!isBonusesPage && (
-        <Tabs value={isAdjustmentsPage ? 'adjustments' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+        <Tabs value={isOrganigramPage ? 'organigram' : isAdjustmentsPage ? 'adjustments' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
           {isMobile ? (
             <MobileBottomTabs>
               <TabsList className="w-full">
@@ -139,6 +142,7 @@ export default function Hr() {
           <Route path="pontaje" element={<PontajeTab showStats={showStats} />} />
           <Route path="bonuses" element={<BonusesTab canViewAmounts={canViewAmounts} />} />
           {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab />} />}
+          <Route path="organigram" element={<OrganigramTab />} />
         </Routes>
       </Suspense>
     </div>

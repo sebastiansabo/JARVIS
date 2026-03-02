@@ -105,26 +105,9 @@ export default function AdjustmentsTab() {
     mutationFn: (row: BioStarOffScheduleRow) => {
       const dateStr = date
       const datePart = row.first_punch.slice(0, 10)
-      const hasCheckout = row.total_punches > 1
 
-      let adjFirst: string
-      let adjLast: string
-      if (hasCheckout) {
-        // Overtime case — randomize both to natural-looking times
-        const r = randomizeAdjustedTimes(datePart, row.schedule_start, row.lunch_break_minutes, row.working_hours)
-        adjFirst = r.adjFirst
-        adjLast = r.adjLast
-      } else {
-        // Single punch — randomize check-in only, keep original check-out
-        const startOffset = Math.floor(Math.random() * 11) - 5
-        const base = row.schedule_start ? fmtScheduleTime(row.schedule_start) : '08:00'
-        const [sh, sm] = base.split(':').map(Number)
-        const startMin = sh * 60 + sm + startOffset
-        const hh = Math.floor(startMin / 60).toString().padStart(2, '0')
-        const mm = (startMin % 60).toString().padStart(2, '0')
-        adjFirst = `${datePart}T${hh}:${mm}:00`
-        adjLast = row.last_punch
-      }
+      // All cases (overtime or missing checkout on past day) get full randomization
+      const { adjFirst, adjLast } = randomizeAdjustedTimes(datePart, row.schedule_start, row.lunch_break_minutes, row.working_hours)
 
       return biostarApi.adjustEmployee({
         biostar_user_id: row.biostar_user_id,

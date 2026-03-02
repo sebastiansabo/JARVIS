@@ -31,7 +31,9 @@ from .database import (
     # Master tables CRUD
     get_all_master_brands, create_master_brand, update_master_brand, delete_master_brand,
     get_all_master_departments, create_master_department, update_master_department, delete_master_department,
-    get_all_master_subdepartments, create_master_subdepartment, update_master_subdepartment, delete_master_subdepartment
+    get_all_master_subdepartments, create_master_subdepartment, update_master_subdepartment, delete_master_subdepartment,
+    # Organigram helpers
+    get_managed_employee_ids, is_manager
 )
 
 # Import from app root for structure data
@@ -1402,3 +1404,22 @@ def api_export_bonuses():
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers={'Content-Disposition': f'attachment; filename={filename}'}
     )
+
+
+# ============== Organigram API ==============
+
+@events_bp.route('/api/organigram', methods=['GET'])
+@login_required
+@hr_required
+def api_get_organigram():
+    """API: Get organigram data — employees + department structures with manager mappings."""
+    employees = get_all_hr_employees(active_only=True)
+    structures = get_all_department_structures()
+    user_is_manager = is_manager(current_user.id)
+
+    return jsonify({
+        'employees': employees,
+        'structures': structures,
+        'current_user_id': current_user.id,
+        'is_manager': user_is_manager,
+    })

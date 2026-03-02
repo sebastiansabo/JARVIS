@@ -11,6 +11,16 @@ from .services import BioStarSyncService
 service = BioStarSyncService()
 
 
+def _resolve_manager_filter():
+    """If manager_filter=true is passed, resolve current user's managed employee IDs."""
+    if request.args.get('manager_filter', '').lower() != 'true':
+        return None
+    from hr.events.database import get_managed_employee_ids
+    user_ids = get_managed_employee_ids(current_user.id)
+    # Return the list (possibly empty) so the query filters accordingly
+    return user_ids if user_ids else [-1]  # -1 ensures empty result if no managed employees
+
+
 def api_login_required(f):
     """Require authentication for API endpoints."""
     @wraps(f)
@@ -263,7 +273,8 @@ def get_daily_summary():
     date_str = request.args.get('date')
     if not date_str:
         return jsonify({'success': False, 'error': 'date parameter required'}), 400
-    summary = service.get_daily_summary(date_str)
+    jarvis_user_ids = _resolve_manager_filter()
+    summary = service.get_daily_summary(date_str, jarvis_user_ids=jarvis_user_ids)
     return jsonify({'success': True, 'data': summary})
 
 
@@ -275,7 +286,8 @@ def get_range_summary():
     end = request.args.get('end')
     if not start or not end:
         return jsonify({'success': False, 'error': 'start and end parameters required'}), 400
-    summary = service.get_range_summary(start, end)
+    jarvis_user_ids = _resolve_manager_filter()
+    summary = service.get_range_summary(start, end, jarvis_user_ids=jarvis_user_ids)
     return jsonify({'success': True, 'data': summary})
 
 

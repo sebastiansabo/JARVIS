@@ -14,6 +14,7 @@ import type {
   CompanyBrand,
   DepartmentStructure,
   MasterItem,
+  OrganigramData,
 } from '@/types/hr'
 
 const BASE = '/hr/events/api'
@@ -146,4 +147,7 @@ export const hrApi = {
   updateMasterSubdepartment: (id: number, data: { name: string; is_active: boolean }) =>
     api.put<{ success: boolean }>(`${BASE}/master/subdepartments/${id}`, data),
   deleteMasterSubdepartment: (id: number) => api.delete<{ success: boolean }>(`${BASE}/master/subdepartments/${id}`),
+
+  // Organigram
+  getOrganigram: () => api.get<OrganigramData>(`${BASE}/organigram`),
 }
