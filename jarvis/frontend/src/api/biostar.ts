@@ -212,6 +212,13 @@ export const biostarApi = {
       biostar_user_id: biostarUserId, date,
     }),
 
+  getAdjustmentHistory: async (biostarUserId: string, start?: string, end?: string) => {
+    const res = await api.get<{ success: boolean; data: BioStarAdjustment[] }>(
+      `${BASE}/employees/${biostarUserId}/adjustment-history${qs({ start, end })}`,
+    )
+    return res.data
+  },
+
   // ── Cron Jobs ──
 
   getCronJobs: async () => {

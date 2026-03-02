@@ -394,6 +394,16 @@ def revert_adjustment():
     return jsonify({'success': True, 'message': 'Adjustment reverted'})
 
 
+@biostar_bp.route('/api/employees/<biostar_user_id>/adjustment-history', methods=['GET'])
+@api_login_required
+def get_adjustment_history(biostar_user_id):
+    """Get adjustment history for one employee (audit trail)."""
+    start = request.args.get('start')
+    end = request.args.get('end')
+    history = service.get_employee_adjustment_history(biostar_user_id, start, end)
+    return jsonify({'success': True, 'data': history})
+
+
 # ── Cron Job Settings ──
 
 BIOSTAR_CRON_JOBS = [

@@ -1,6 +1,7 @@
 """BioStar 2 sync service — orchestrates user and event synchronization."""
 
 import json
+import random
 from datetime import datetime, timedelta
 
 try:
@@ -565,6 +566,10 @@ class BioStarSyncService:
         """Get all adjustments for a date."""
         return self.adj_repo.get_adjustments(date_str)
 
+    def get_employee_adjustment_history(self, biostar_user_id, start_date=None, end_date=None):
+        """Get adjustment history for one employee (audit trail)."""
+        return self.adj_repo.get_employee_history(biostar_user_id, start_date, end_date)
+
     def adjust_employee(self, biostar_user_id, date_str, adjusted_first, adjusted_last,
                         original_first, original_last, schedule_start, schedule_end,
                         lunch_break_minutes, working_hours, original_duration,
@@ -598,8 +603,25 @@ class BioStarSyncService:
             'notes': notes,
         })
 
+    @staticmethod
+    def _randomize_times(first_punch, schedule_start, lunch_break_minutes, working_hours):
+        """Generate natural-looking adjusted check-in/out times.
+
+        Randomizes so net worked = working_hours + 0..10 min,
+        with check-in scattered ±5 min around schedule_start.
+        """
+        wh_min = int(working_hours * 60)
+        target_worked = random.randint(wh_min, wh_min + 10)
+        target_span = target_worked + int(lunch_break_minutes)
+
+        start_offset = random.randint(-5, 5)
+        date_part = first_punch.date()
+        adj_start = datetime.combine(date_part, schedule_start) + timedelta(minutes=start_offset)
+        adj_end = adj_start + timedelta(minutes=target_span)
+        return adj_start, adj_end
+
     def auto_adjust_all(self, date_str, threshold=15, user_id=None):
-        """Auto-adjust all off-schedule employees: snap punches to schedule times."""
+        """Auto-adjust overtime employees with randomized natural-looking times."""
         off = self.adj_repo.get_off_schedule(date_str, threshold)
         adjusted_count = 0
         for row in off:
@@ -607,17 +629,23 @@ class BioStarSyncService:
             last = row['last_punch']
             sched_start = row['schedule_start']
             sched_end = row['schedule_end']
+            total_punches = row.get('total_punches', 1)
+            lunch = row.get('lunch_break_minutes', 60)
+            wh = row.get('working_hours', 8)
 
             if not first or not last or not sched_start or not sched_end:
                 continue
 
-            # Build adjusted timestamps: use original date + schedule time
-            date_part = first.date()
-            total_punches = row.get('total_punches', 1)
-            adj_first = datetime.combine(date_part, sched_start)
-            # Only adjust check-out if the person actually checked out (>1 punch)
-            # Single punch today = still at work, keep original time
-            adj_last = datetime.combine(date_part, sched_end) if total_punches > 1 else last
+            if total_punches > 1:
+                # Overtime case — randomize both check-in and check-out
+                adj_first, adj_last = self._randomize_times(first, sched_start, lunch, wh)
+            else:
+                # Single punch (missing checkout or bad check-in today)
+                # Only adjust check-in, randomized around schedule_start
+                date_part = first.date()
+                start_offset = random.randint(-5, 5)
+                adj_first = datetime.combine(date_part, sched_start) + timedelta(minutes=start_offset)
+                adj_last = last  # Keep original
 
             self.adjust_employee(
                 biostar_user_id=row['biostar_user_id'],
@@ -628,8 +656,8 @@ class BioStarSyncService:
                 original_last=last,
                 schedule_start=sched_start,
                 schedule_end=sched_end,
-                lunch_break_minutes=row.get('lunch_break_minutes', 60),
-                working_hours=row.get('working_hours', 8),
+                lunch_break_minutes=lunch,
+                working_hours=wh,
                 original_duration=row.get('duration_seconds'),
                 deviation_in=round(row.get('deviation_in') or 0),
                 deviation_out=round(row.get('deviation_out') or 0),

@@ -7,12 +7,12 @@ class AdjustmentRepository(BaseRepository):
     """Data access for biostar_daily_adjustments."""
 
     def get_off_schedule(self, date_str, threshold_minutes=15):
-        """Get employees whose punches deviate from schedule by >= threshold.
+        """Get employees with overtime exceeding threshold or missing checkout.
 
         Logic:
-        - Only 1 punch + today  → only flag if check-in deviates (still at work)
+        - Only 1 punch + today  → only flag if check-in deviates from schedule
         - Only 1 punch + past   → always flag (forgot to check out)
-        - Multiple punches       → flag if check-in OR check-out deviates
+        - Multiple punches       → flag only if net worked > working_hours + threshold
         - Excludes employees already adjusted for that date
         """
         return self.query_all('''
@@ -46,6 +46,9 @@ class AdjustmentRepository(BaseRepository):
                    CASE WHEN d.total_punches > 1
                         THEN EXTRACT(EPOCH FROM (d.last_punch::time - d.schedule_end)) / 60
                         ELSE NULL END AS deviation_out,
+                   CASE WHEN d.total_punches > 1
+                        THEN ROUND((d.duration_seconds / 60.0 - d.lunch_break_minutes) - d.working_hours * 60)
+                        ELSE NULL END AS overtime_minutes,
                    d.total_punches = 1 AND %s::date < CURRENT_DATE AS missing_checkout,
                    adj.id AS adjustment_id,
                    adj.adjusted_first_punch,
@@ -63,13 +66,12 @@ class AdjustmentRepository(BaseRepository):
                   -- Case 2: only 1 punch + today = still at work → only show if check-in off
                   OR (d.total_punches = 1 AND %s::date = CURRENT_DATE
                       AND ABS(EXTRACT(EPOCH FROM (d.first_punch::time - d.schedule_start)) / 60) >= %s)
-                  -- Case 3: multiple punches → check both deviations
+                  -- Case 3: multiple punches + net worked exceeds working_hours + threshold
                   OR (d.total_punches > 1
-                      AND (ABS(EXTRACT(EPOCH FROM (d.first_punch::time - d.schedule_start)) / 60) >= %s
-                           OR ABS(EXTRACT(EPOCH FROM (d.last_punch::time - d.schedule_end)) / 60) >= %s))
+                      AND (d.duration_seconds / 60.0 - d.lunch_break_minutes) > (d.working_hours * 60 + %s))
               )
             ORDER BY d.name
-        ''', (date_str, date_str, date_str, date_str, date_str, threshold_minutes, threshold_minutes, threshold_minutes))
+        ''', (date_str, date_str, date_str, date_str, date_str, threshold_minutes, threshold_minutes))
 
     def get_adjustments(self, date_str):
         """Get all adjustments for a given date."""
@@ -126,6 +128,29 @@ class AdjustmentRepository(BaseRepository):
             DELETE FROM biostar_daily_adjustments
             WHERE biostar_user_id = %s AND date = %s::date
         ''', (biostar_user_id, date_str))
+
+    def get_employee_history(self, biostar_user_id, start_date=None, end_date=None):
+        """Get adjustment history for one employee (audit trail)."""
+        conditions = ['adj.biostar_user_id = %s']
+        params = [biostar_user_id]
+        if start_date:
+            conditions.append('adj.date >= %s::date')
+            params.append(start_date)
+        if end_date:
+            conditions.append('adj.date <= %s::date')
+            params.append(end_date)
+        where = ' AND '.join(conditions)
+        return self.query_all(f'''
+            SELECT adj.*,
+                   be.name,
+                   be.user_group_name,
+                   u.name AS adjusted_by_name
+            FROM biostar_daily_adjustments adj
+            LEFT JOIN biostar_employees be ON be.biostar_user_id = adj.biostar_user_id
+            LEFT JOIN users u ON u.id = adj.adjusted_by
+            WHERE {where}
+            ORDER BY adj.date DESC
+        ''', params)
 
     def get_adjustment_count(self, date_str):
         """Count adjustments for a date."""

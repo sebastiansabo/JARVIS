@@ -20,7 +20,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { EmptyState } from '@/components/shared/EmptyState'
 import { StatCard } from '@/components/shared/StatCard'
 import { biostarApi } from '@/api/biostar'
-import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { BioStarOffScheduleRow, BioStarAdjustment } from '@/types/biostar'
 
@@ -49,20 +48,23 @@ function formatDate(dateStr: string) {
   return d.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-function deviationLabel(minutes: number | null) {
-  if (minutes === null || minutes === undefined) return '-'
-  const abs = Math.abs(Math.round(minutes))
-  if (abs < 1) return 'on time'
-  const sign = minutes > 0 ? '+' : '-'
-  return `${sign}${abs}m`
-}
-
-function deviationColor(minutes: number | null) {
-  if (minutes === null || minutes === undefined) return ''
-  const abs = Math.abs(minutes)
-  if (abs < 15) return 'text-muted-foreground'
-  if (abs < 30) return 'text-orange-600'
-  return 'text-red-600'
+function randomizeAdjustedTimes(
+  datePart: string, scheduleStart: string | null, lunchMin: number, workingHours: number,
+): { adjFirst: string; adjLast: string } {
+  const whMin = Math.round(workingHours * 60)
+  const targetWorked = whMin + Math.floor(Math.random() * 11) // 480–490
+  const targetSpan = targetWorked + lunchMin
+  const startOffset = Math.floor(Math.random() * 11) - 5 // -5..+5
+  const baseStart = scheduleStart ? fmtScheduleTime(scheduleStart) : '08:00'
+  const [sh, sm] = baseStart.split(':').map(Number)
+  const startMin = sh * 60 + sm + startOffset
+  const endMin = startMin + targetSpan
+  const fmtMins = (m: number) => {
+    const hh = Math.floor(m / 60).toString().padStart(2, '0')
+    const mm = (m % 60).toString().padStart(2, '0')
+    return `${datePart}T${hh}:${mm}:00`
+  }
+  return { adjFirst: fmtMins(startMin), adjLast: fmtMins(endMin) }
 }
 
 function formatWorked(durationSeconds: number | null, lunchMinutes: number) {
@@ -103,13 +105,27 @@ export default function AdjustmentsTab() {
     mutationFn: (row: BioStarOffScheduleRow) => {
       const dateStr = date
       const datePart = row.first_punch.slice(0, 10)
-      const adjFirst = `${datePart}T${fmtScheduleTime(row.schedule_start)}:00`
-      // Only adjust check-out if the person actually has one (total_punches > 1)
-      // Today with single punch = still at work, keep original (same as first_punch)
       const hasCheckout = row.total_punches > 1
-      const adjLast = hasCheckout
-        ? `${datePart}T${fmtScheduleTime(row.schedule_end)}:00`
-        : row.last_punch
+
+      let adjFirst: string
+      let adjLast: string
+      if (hasCheckout) {
+        // Overtime case — randomize both to natural-looking times
+        const r = randomizeAdjustedTimes(datePart, row.schedule_start, row.lunch_break_minutes, row.working_hours)
+        adjFirst = r.adjFirst
+        adjLast = r.adjLast
+      } else {
+        // Single punch — randomize check-in only, keep original check-out
+        const startOffset = Math.floor(Math.random() * 11) - 5
+        const base = row.schedule_start ? fmtScheduleTime(row.schedule_start) : '08:00'
+        const [sh, sm] = base.split(':').map(Number)
+        const startMin = sh * 60 + sm + startOffset
+        const hh = Math.floor(startMin / 60).toString().padStart(2, '0')
+        const mm = (startMin % 60).toString().padStart(2, '0')
+        adjFirst = `${datePart}T${hh}:${mm}:00`
+        adjLast = row.last_punch
+      }
+
       return biostarApi.adjustEmployee({
         biostar_user_id: row.biostar_user_id,
         date: dateStr,
@@ -288,8 +304,7 @@ const pendingMobileFields: MobileCardField<BioStarOffScheduleRow>[] = [
   { key: 'actual_in', label: 'Actual In', render: (r) => <span className="text-xs font-medium">{formatTime(r.first_punch)}</span> },
   { key: 'actual_out', label: 'Actual Out', render: (r) => <span className="text-xs font-medium">{r.missing_checkout ? <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-600">Missing</Badge> : r.total_punches === 1 ? '—' : formatTime(r.last_punch)}</span> },
   { key: 'worked', label: 'Worked', render: (r) => <span className="text-xs">{r.total_punches > 1 ? formatWorked(r.duration_seconds, r.lunch_break_minutes) : '—'}</span> },
-  { key: 'dev_in', label: 'Dev. In', render: (r) => <span className={cn('text-xs font-medium', deviationColor(r.deviation_in))}>{deviationLabel(r.deviation_in)}</span> },
-  { key: 'dev_out', label: 'Dev. Out', expandOnly: true, render: (r) => <span className={cn('text-xs font-medium', r.deviation_out != null ? deviationColor(r.deviation_out) : '')}>{r.missing_checkout ? 'Missing checkout' : r.deviation_out != null ? deviationLabel(r.deviation_out) : '—'}</span> },
+  { key: 'overtime', label: 'Overtime', render: (r) => <span className={`text-xs font-medium ${r.overtime_minutes != null && r.overtime_minutes > 0 ? 'text-red-600' : ''}`}>{r.missing_checkout ? 'Missing checkout' : r.overtime_minutes != null && r.overtime_minutes > 0 ? `+${Math.round(r.overtime_minutes)}m` : '—'}</span> },
   { key: 'group', label: 'Group', expandOnly: true, render: (r) => <span className="text-xs">{r.user_group_name || '—'}</span> },
 ]
 
@@ -344,8 +359,7 @@ function PendingTable({
             <TableHead className="text-center">Actual In</TableHead>
             <TableHead className="text-center">Actual Out</TableHead>
             <TableHead className="text-center">Worked</TableHead>
-            <TableHead className="text-center">Dev. In</TableHead>
-            <TableHead className="text-center">Dev. Out</TableHead>
+            <TableHead className="text-center">Overtime</TableHead>
             <TableHead className="w-24" />
           </TableRow>
         </TableHeader>
@@ -378,15 +392,10 @@ function PendingTable({
                   : <span className="text-muted-foreground">—</span>}
               </TableCell>
               <TableCell className="text-center">
-                <span className={cn('text-sm font-medium', deviationColor(row.deviation_in))}>
-                  {deviationLabel(row.deviation_in)}
-                </span>
-              </TableCell>
-              <TableCell className="text-center">
                 {row.missing_checkout
-                  ? <Badge variant="outline" className="text-xs text-orange-600 border-orange-600">Missing</Badge>
-                  : row.deviation_out != null
-                    ? <span className={cn('text-sm font-medium', deviationColor(row.deviation_out))}>{deviationLabel(row.deviation_out)}</span>
+                  ? <Badge variant="outline" className="text-xs text-orange-600 border-orange-600">Missing checkout</Badge>
+                  : row.overtime_minutes != null && row.overtime_minutes > 0
+                    ? <span className="text-sm font-medium text-red-600">+{Math.round(row.overtime_minutes)}m</span>
                     : <span className="text-muted-foreground">—</span>}
               </TableCell>
               <TableCell>
