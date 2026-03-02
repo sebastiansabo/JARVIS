@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { ClipboardCheck, Download, Fingerprint, LayoutDashboard, BarChart3, Network } from 'lucide-react'
+import { ClipboardCheck, Download, Fingerprint, LayoutDashboard, BarChart3 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -56,11 +56,10 @@ export default function Hr() {
     if (canViewAdjustments) {
       t.push({ to: '/app/hr/adjustments', label: 'Adjustments', icon: ClipboardCheck })
     }
-    t.push({ to: '/app/hr/organigram', label: 'Organigram', icon: Network })
     return t
   }, [canViewAdjustments])
 
-  // Profile page — standalone, no tabs/stats
+  // Standalone pages — no tabs/stats
   if (isProfilePage) {
     return (
       <Suspense fallback={<TabLoader />}>
@@ -71,17 +70,34 @@ export default function Hr() {
     )
   }
 
+  if (isOrganigramPage) {
+    return (
+      <div className="space-y-4 md:space-y-6">
+        <PageHeader
+          title="Organigram"
+          breadcrumbs={[
+            { label: 'HR', href: '/app/hr/pontaje' },
+            { label: 'Organigram' },
+          ]}
+        />
+        <Suspense fallback={<TabLoader />}>
+          <OrganigramTab />
+        </Suspense>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4 md:space-y-6">
       <PageHeader
-        title={isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : isOrganigramPage ? 'Organigram' : 'Pontaje'}
+        title={isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : 'Pontaje'}
         breadcrumbs={[
           { label: 'HR', href: '/app/hr/pontaje' },
-          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : isOrganigramPage ? [{ label: 'Organigram' }] : [{ label: 'Pontaje' }]),
+          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : [{ label: 'Pontaje' }]),
         ]}
         actions={
           <div className="flex items-center gap-2">
-            {!isBonusesPage && !isAdjustmentsPage && !isOrganigramPage && isMobile && (
+            {!isBonusesPage && !isAdjustmentsPage && isMobile && (
               <Button variant="ghost" size="icon" onClick={() => setShowStats(s => !s)}>
                 <BarChart3 className="h-4 w-4" />
               </Button>
@@ -104,7 +120,7 @@ export default function Hr() {
 
       {/* Tab nav — hidden on Bonuses page */}
       {!isBonusesPage && (
-        <Tabs value={isOrganigramPage ? 'organigram' : isAdjustmentsPage ? 'adjustments' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+        <Tabs value={isAdjustmentsPage ? 'adjustments' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
           {isMobile ? (
             <MobileBottomTabs>
               <TabsList className="w-full">

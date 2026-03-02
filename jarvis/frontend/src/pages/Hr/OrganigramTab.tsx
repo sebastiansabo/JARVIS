@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search,
   ChevronDown,
@@ -9,16 +9,23 @@ import {
   Crown,
   User,
   Users,
+  UserPlus,
   Mail,
   Phone,
+  Pencil,
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { hrApi } from '@/api/hr'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 import type { HrEmployee, DepartmentStructure } from '@/types/hr'
 
 interface OrgNode {
@@ -35,23 +42,20 @@ interface DeptNode {
   structureId: number | null
 }
 
+function parseManagerIds(raw: string | number[] | null): number[] {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw
+  return raw.replace(/[{}]/g, '').split(',').map(Number).filter(Boolean)
+}
+
 function buildTree(employees: HrEmployee[], structures: DepartmentStructure[]): OrgNode[] {
-  // Build a set of manager IDs from all structures
-  const managerIdSet = new Set<number>()
   const structureMap = new Map<string, DepartmentStructure>()
 
   for (const s of structures) {
     const key = `${s.company}|||${s.department}|||${s.subdepartment || ''}`
     structureMap.set(key, s)
-    if (s.manager_ids) {
-      const ids = typeof s.manager_ids === 'string'
-        ? s.manager_ids.replace(/[{}]/g, '').split(',').map(Number).filter(Boolean)
-        : Array.isArray(s.manager_ids) ? s.manager_ids : []
-      ids.forEach((id) => managerIdSet.add(id))
-    }
   }
 
-  // Group employees by company → department
   const companyMap = new Map<string, Map<string, HrEmployee[]>>()
   for (const emp of employees) {
     const company = emp.company || 'Unassigned'
@@ -63,7 +67,6 @@ function buildTree(employees: HrEmployee[], structures: DepartmentStructure[]): 
     deptMap.get(deptKey)!.push(emp)
   }
 
-  // Build tree nodes
   const tree: OrgNode[] = []
 
   for (const [company, deptMap] of [...companyMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
@@ -75,14 +78,7 @@ function buildTree(employees: HrEmployee[], structures: DepartmentStructure[]): 
       const structKey = `${company}|||${department}|||${subdepartment}`
       const structure = structureMap.get(structKey)
 
-      // Parse manager IDs from structure
-      let mgrIds: number[] = []
-      if (structure?.manager_ids) {
-        mgrIds = typeof structure.manager_ids === 'string'
-          ? structure.manager_ids.replace(/[{}]/g, '').split(',').map(Number).filter(Boolean)
-          : Array.isArray(structure.manager_ids) ? structure.manager_ids : []
-      }
-      const mgrSet = new Set(mgrIds)
+      const mgrSet = new Set(parseManagerIds(structure?.manager_ids ?? null))
 
       const managers = emps.filter((e) => mgrSet.has(e.id))
       const nonManagers = emps.filter((e) => !mgrSet.has(e.id))
@@ -104,9 +100,12 @@ function buildTree(employees: HrEmployee[], structures: DepartmentStructure[]): 
 }
 
 export default function OrganigramTab() {
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set())
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set())
+  const [assignDialog, setAssignDialog] = useState<{ company: string; department: string; subdepartment: string | null } | null>(null)
+  const [editDialog, setEditDialog] = useState<HrEmployee | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['hr-organigram'],
@@ -182,6 +181,11 @@ export default function OrganigramTab() {
     })
   }
 
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['hr-organigram'] })
+    queryClient.invalidateQueries({ queryKey: ['hr-employees'] })
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -240,30 +244,42 @@ export default function OrganigramTab() {
                       return (
                         <div key={deptKey} className="border-b last:border-b-0">
                           {/* Department header */}
-                          <button
-                            onClick={() => toggleDept(deptKey)}
-                            className="flex w-full items-center gap-3 py-2.5 pl-10 pr-4 text-left hover:bg-muted/30 transition-colors"
-                          >
-                            {isDeptExpanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
-                            <FolderTree className="h-4 w-4 shrink-0 text-orange-500" />
-                            <span className="text-sm font-medium">{dept.department}</span>
-                            {dept.subdepartment && (
-                              <span className="text-xs text-muted-foreground">/ {dept.subdepartment}</span>
-                            )}
-                            <Badge variant="outline" className="ml-auto text-xs">
-                              {totalInDept}
-                            </Badge>
-                          </button>
+                          <div className="flex items-center">
+                            <button
+                              onClick={() => toggleDept(deptKey)}
+                              className="flex flex-1 items-center gap-3 py-2.5 pl-10 pr-2 text-left hover:bg-muted/30 transition-colors"
+                            >
+                              {isDeptExpanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+                              <FolderTree className="h-4 w-4 shrink-0 text-orange-500" />
+                              <span className="text-sm font-medium">{dept.department}</span>
+                              {dept.subdepartment && (
+                                <span className="text-xs text-muted-foreground">/ {dept.subdepartment}</span>
+                              )}
+                              <Badge variant="outline" className="ml-auto text-xs">
+                                {totalInDept}
+                              </Badge>
+                            </button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="mr-2 h-7 w-7 shrink-0"
+                              title="Add employee to this department"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setAssignDialog({ company: company.company, department: dept.department, subdepartment: dept.subdepartment })
+                              }}
+                            >
+                              <UserPlus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
 
                           {isDeptExpanded && (
                             <div className="pb-2 pl-16 pr-4 space-y-0.5">
-                              {/* Managers first */}
                               {dept.managers.map((mgr) => (
-                                <EmployeeRow key={mgr.id} employee={mgr} isManager />
+                                <EmployeeRow key={mgr.id} employee={mgr} isManager onEdit={() => setEditDialog(mgr)} />
                               ))}
-                              {/* Regular employees */}
                               {dept.employees.map((emp) => (
-                                <EmployeeRow key={emp.id} employee={emp} />
+                                <EmployeeRow key={emp.id} employee={emp} onEdit={() => setEditDialog(emp)} />
                               ))}
                               {totalInDept === 0 && (
                                 <p className="py-2 text-xs text-muted-foreground italic">No employees assigned</p>
@@ -289,15 +305,37 @@ export default function OrganigramTab() {
           <span>{tree.reduce((sum, c) => sum + c.departments.length, 0)} departments</span>
         </div>
       )}
+
+      {/* Assign Employee Dialog */}
+      {assignDialog && data && (
+        <AssignEmployeeDialog
+          open
+          onClose={() => setAssignDialog(null)}
+          target={assignDialog}
+          allEmployees={data.employees}
+          onSuccess={invalidate}
+        />
+      )}
+
+      {/* Edit Employee Assignment Dialog */}
+      {editDialog && data && (
+        <EditAssignmentDialog
+          open
+          onClose={() => setEditDialog(null)}
+          employee={editDialog}
+          structures={data.structures}
+          onSuccess={invalidate}
+        />
+      )}
     </div>
   )
 }
 
-function EmployeeRow({ employee, isManager = false }: { employee: HrEmployee; isManager?: boolean }) {
+function EmployeeRow({ employee, isManager = false, onEdit }: { employee: HrEmployee; isManager?: boolean; onEdit: () => void }) {
   return (
     <div
       className={cn(
-        'flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-muted/40',
+        'group flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-muted/40',
         isManager && 'bg-amber-50 dark:bg-amber-950/20'
       )}
     >
@@ -314,6 +352,13 @@ function EmployeeRow({ employee, isManager = false }: { employee: HrEmployee; is
           Manager
         </Badge>
       )}
+      <button
+        onClick={onEdit}
+        className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Edit assignment"
+      >
+        <Pencil className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+      </button>
       {employee.email && (
         <span className="ml-auto hidden md:flex items-center gap-1 text-xs text-muted-foreground">
           <Mail className="h-3 w-3" />
@@ -327,5 +372,193 @@ function EmployeeRow({ employee, isManager = false }: { employee: HrEmployee; is
         </span>
       )}
     </div>
+  )
+}
+
+/* ──── Assign Employee to Department Dialog ──── */
+
+function AssignEmployeeDialog({
+  open,
+  onClose,
+  target,
+  allEmployees,
+  onSuccess,
+}: {
+  open: boolean
+  onClose: () => void
+  target: { company: string; department: string; subdepartment: string | null }
+  allEmployees: HrEmployee[]
+  onSuccess: () => void
+}) {
+  const [selectedId, setSelectedId] = useState<string>('')
+  const [empSearch, setEmpSearch] = useState('')
+
+  const updateMutation = useMutation({
+    mutationFn: (emp: HrEmployee) =>
+      hrApi.updateEmployee(emp.id, {
+        ...emp,
+        company: target.company,
+        departments: target.department,
+        subdepartment: target.subdepartment,
+      }),
+    onSuccess: () => {
+      toast.success('Employee assigned')
+      onSuccess()
+      onClose()
+    },
+    onError: () => toast.error('Failed to assign employee'),
+  })
+
+  const filteredEmployees = useMemo(() => {
+    if (!empSearch.trim()) return allEmployees
+    const q = empSearch.toLowerCase()
+    return allEmployees.filter(
+      (e) => e.name.toLowerCase().includes(q) || (e.email?.toLowerCase().includes(q))
+    )
+  }, [allEmployees, empSearch])
+
+  const handleAssign = () => {
+    const emp = allEmployees.find((e) => String(e.id) === selectedId)
+    if (emp) updateMutation.mutate(emp)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={() => onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add Employee to {target.department}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 pt-2">
+          <p className="text-xs text-muted-foreground">
+            Assign to: <strong>{target.company}</strong> / <strong>{target.department}</strong>
+            {target.subdepartment && <> / {target.subdepartment}</>}
+          </p>
+          <div>
+            <Label className="text-xs">Search employee</Label>
+            <Input
+              placeholder="Type name or email..."
+              value={empSearch}
+              onChange={(e) => setEmpSearch(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Select employee</Label>
+            <Select value={selectedId} onValueChange={setSelectedId}>
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Choose employee..." />
+              </SelectTrigger>
+              <SelectContent className="max-h-60">
+                {filteredEmployees.map((e) => (
+                  <SelectItem key={e.id} value={String(e.id)}>
+                    {e.name} {e.company && e.departments ? `(${e.company} / ${e.departments})` : e.company ? `(${e.company})` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button size="sm" disabled={!selectedId || updateMutation.isPending} onClick={handleAssign}>
+              {updateMutation.isPending ? 'Assigning...' : 'Assign'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ──── Edit Employee Assignment Dialog ──── */
+
+function EditAssignmentDialog({
+  open,
+  onClose,
+  employee,
+  structures,
+  onSuccess,
+}: {
+  open: boolean
+  onClose: () => void
+  employee: HrEmployee
+  structures: DepartmentStructure[]
+  onSuccess: () => void
+}) {
+  const [company, setCompany] = useState(employee.company || '')
+  const [department, setDepartment] = useState(employee.departments || '')
+  const [subdepartment, setSubdepartment] = useState(employee.subdepartment || '')
+
+  const companies = useMemo(() => [...new Set(structures.map((s) => s.company))].sort(), [structures])
+  const departments = useMemo(() =>
+    [...new Set(structures.filter((s) => s.company === company).map((s) => s.department))].sort(),
+    [structures, company]
+  )
+  const subdepartments = useMemo(() =>
+    [...new Set(structures.filter((s) => s.company === company && s.department === department && s.subdepartment).map((s) => s.subdepartment))].sort(),
+    [structures, company, department]
+  )
+
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      hrApi.updateEmployee(employee.id, {
+        ...employee,
+        company: company || null,
+        departments: department || null,
+        subdepartment: subdepartment || null,
+      }),
+    onSuccess: () => {
+      toast.success('Assignment updated')
+      onSuccess()
+      onClose()
+    },
+    onError: () => toast.error('Failed to update'),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={() => onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Assignment — {employee.name}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 pt-2">
+          <div>
+            <Label className="text-xs">Company</Label>
+            <Select value={company} onValueChange={(v) => { setCompany(v); setDepartment(''); setSubdepartment('') }}>
+              <SelectTrigger className="mt-1"><SelectValue placeholder="Select company" /></SelectTrigger>
+              <SelectContent>
+                {companies.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Department</Label>
+            <Select value={department} onValueChange={(v) => { setDepartment(v); setSubdepartment('') }}>
+              <SelectTrigger className="mt-1"><SelectValue placeholder="Select department" /></SelectTrigger>
+              <SelectContent>
+                {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {subdepartments.length > 0 && (
+            <div>
+              <Label className="text-xs">Subdepartment</Label>
+              <Select value={subdepartment} onValueChange={setSubdepartment}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="None" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {subdepartments.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button size="sm" disabled={updateMutation.isPending} onClick={() => updateMutation.mutate()}>
+              {updateMutation.isPending ? 'Saving...' : 'Save'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
