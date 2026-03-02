@@ -613,8 +613,11 @@ class BioStarSyncService:
 
             # Build adjusted timestamps: use original date + schedule time
             date_part = first.date()
+            total_punches = row.get('total_punches', 1)
             adj_first = datetime.combine(date_part, sched_start)
-            adj_last = datetime.combine(date_part, sched_end)
+            # Only adjust check-out if the person actually checked out (>1 punch)
+            # Single punch today = still at work, keep original time
+            adj_last = datetime.combine(date_part, sched_end) if total_punches > 1 else last
 
             self.adjust_employee(
                 biostar_user_id=row['biostar_user_id'],

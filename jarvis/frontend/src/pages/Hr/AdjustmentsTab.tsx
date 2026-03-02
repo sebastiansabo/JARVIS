@@ -104,7 +104,12 @@ export default function AdjustmentsTab() {
       const dateStr = date
       const datePart = row.first_punch.slice(0, 10)
       const adjFirst = `${datePart}T${fmtScheduleTime(row.schedule_start)}:00`
-      const adjLast = `${datePart}T${fmtScheduleTime(row.schedule_end)}:00`
+      // Only adjust check-out if the person actually has one (total_punches > 1)
+      // Today with single punch = still at work, keep original (same as first_punch)
+      const hasCheckout = row.total_punches > 1
+      const adjLast = hasCheckout
+        ? `${datePart}T${fmtScheduleTime(row.schedule_end)}:00`
+        : row.last_punch
       return biostarApi.adjustEmployee({
         biostar_user_id: row.biostar_user_id,
         date: dateStr,
