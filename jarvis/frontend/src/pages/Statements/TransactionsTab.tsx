@@ -477,31 +477,27 @@ export default function TransactionsTab({ showFilters = false }: { showFilters?:
           )
         }
 
+        if (!showFilters) return null
+
         return (
-          <div className="space-y-2">
-            {showFilters && (
-              <div className="flex flex-wrap items-center gap-2">
-                {filterControls}
-              </div>
-            )}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex-1 max-w-xs">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input className="pl-8" placeholder="Search..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} />
-              </div>
-              <Button
-                variant={hideIgnored ? 'default' : 'outline'}
-                size="icon"
-                onClick={() => setHideIgnored(!hideIgnored)}
-                title={hideIgnored ? 'Showing non-ignored' : 'Hide ignored'}
-              >
-                {hideIgnored ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
-              <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
-              {activeFilterCount > 0 && (
-                <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
-              )}
+          <div className="flex flex-wrap items-center gap-2">
+            {filterControls}
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input className="pl-8" placeholder="Search..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} />
             </div>
+            <Button
+              variant={hideIgnored ? 'default' : 'outline'}
+              size="icon"
+              onClick={() => setHideIgnored(!hideIgnored)}
+              title={hideIgnored ? 'Showing non-ignored' : 'Hide ignored'}
+            >
+              {hideIgnored ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+            <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
+            {activeFilterCount > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
+            )}
           </div>
         )
       })()}

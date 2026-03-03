@@ -696,26 +696,24 @@ export default function UnallocatedTab({ showHidden, showFilters = false }: { sh
         }
 
         return (
-          <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
             {showFilters && (
-              <div className="flex flex-wrap items-end gap-2">
+              <>
                 {filterControls}
-              </div>
+                <SearchInput
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Search supplier, invoice#..."
+                  className="w-[200px]"
+                />
+                <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
+                {activeFilterCount > 0 && (
+                  <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
+                )}
+              </>
             )}
-            <div className="flex flex-wrap items-center gap-2">
-              <SearchInput
-                value={search}
-                onChange={setSearch}
-                placeholder="Search supplier, invoice#..."
-                className="w-[200px]"
-              />
-              <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
-              {activeFilterCount > 0 && (
-                <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
-              )}
-              <div className="ml-auto">
-                <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
-              </div>
+            <div className="ml-auto">
+              <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
             </div>
           </div>
         )
