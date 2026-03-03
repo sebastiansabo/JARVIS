@@ -94,6 +94,15 @@ export default function UsersTab() {
     onError: () => toast.error('Failed to update roles'),
   })
 
+  const inlineRoleMutation = useMutation({
+    mutationFn: ({ id, roleId }: { id: number; roleId: number }) =>
+      usersApi.updateUser(id, { role_id: roleId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'users'] })
+    },
+    onError: () => toast.error('Failed to update role'),
+  })
+
   const filtered = users.filter(
     (u) =>
       !search ||
@@ -219,7 +228,23 @@ export default function UsersTab() {
                     </TableCell>
                     <TableCell className="font-medium">{user.name}</TableCell>
                     <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                    <TableCell>{user.role_name}</TableCell>
+                    <TableCell>
+                      <Select
+                        value={String(user.role_id ?? '')}
+                        onValueChange={(v) => inlineRoleMutation.mutate({ id: user.id, roleId: Number(v) })}
+                      >
+                        <SelectTrigger className="h-7 w-32 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {roles.map((r) => (
+                            <SelectItem key={r.id} value={String(r.id)}>
+                              {r.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
                     <TableCell>
                       <StatusBadge status={user.is_active ? 'active' : 'archived'} />
                     </TableCell>

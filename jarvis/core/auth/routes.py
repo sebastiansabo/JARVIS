@@ -15,6 +15,14 @@ _user_repo = UserRepository()
 _event_repo = EventRepository()
 _auth_limiter = RateLimiter()
 
+SUPERADMIN_EMAIL = 'sebastian.sabo@autoworld.ro'
+
+
+def _is_superadmin(user_id: int) -> bool:
+    """Return True if user_id belongs to the protected superadmin account."""
+    user = _user_repo.get_by_id(user_id)
+    return bool(user and user.get('email', '').lower() == SUPERADMIN_EMAIL)
+
 # Lazy-initialized password reset service
 _auth_service = None
 
@@ -296,6 +304,9 @@ def api_create_user():
 def api_update_user(user_id):
     """Update a user."""
     data = request.get_json()
+    if _is_superadmin(user_id):
+        data.pop('role_id', None)
+        data['is_active'] = True
     try:
         updated = _user_repo.update(
             user_id=user_id,
@@ -326,6 +337,8 @@ def api_update_user(user_id):
 @admin_required
 def api_delete_user(user_id):
     """Delete a user."""
+    if _is_superadmin(user_id):
+        return jsonify({'success': False, 'error': 'This account cannot be deleted'}), 403
     if _user_repo.delete(user_id):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'User not found'}), 404
@@ -343,6 +356,7 @@ def api_bulk_delete_users():
         user_ids = [int(id) for id in user_ids]
     except (ValueError, TypeError):
         return jsonify({'success': False, 'error': 'Invalid ID format'}), 400
+    user_ids = [uid for uid in user_ids if not _is_superadmin(uid)]
     deleted_count = _user_repo.delete_bulk(user_ids)
     return jsonify({'success': True, 'deleted': deleted_count})
 
@@ -361,6 +375,9 @@ def api_bulk_update_role():
         role_id = int(role_id)
     except (ValueError, TypeError):
         return jsonify({'success': False, 'error': 'Invalid format'}), 400
+    user_ids = [uid for uid in user_ids if not _is_superadmin(uid)]
+    if not user_ids:
+        return jsonify({'success': True, 'updated': 0})
     updated = _user_repo.bulk_update_role(user_ids, role_id)
     return jsonify({'success': True, 'updated': updated})
 

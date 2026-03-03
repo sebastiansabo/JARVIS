@@ -238,10 +238,14 @@ export default function PontajeTab() {
   const processed = useMemo(() => {
     let list = [...employees]
 
-    // Mapping status filter
-    if (filter === 'mapped') list = list.filter((e) => e.mapped_jarvis_user_id)
-    if (filter === 'unmapped') list = list.filter((e) => !e.mapped_jarvis_user_id)
-    if (filter === 'blacklisted') list = list.filter((e) => e.is_blacklisted)
+    // Mapping status filter — blacklisted are hidden unless explicitly viewing them
+    if (filter === 'blacklisted') {
+      list = list.filter((e) => e.is_blacklisted)
+    } else {
+      list = list.filter((e) => !e.is_blacklisted)
+      if (filter === 'mapped') list = list.filter((e) => e.mapped_jarvis_user_id)
+      if (filter === 'unmapped') list = list.filter((e) => !e.mapped_jarvis_user_id)
+    }
 
     // Column filters
     if (filterGroup !== 'all') list = list.filter((e) => e.user_group_name === filterGroup)
@@ -297,8 +301,9 @@ export default function PontajeTab() {
     )
   }
 
-  const mappedCount = employees.filter((e) => e.mapped_jarvis_user_id).length
-  const unmappedCount = employees.filter((e) => !e.mapped_jarvis_user_id).length
+  const activeEmployees = employees.filter((e) => !e.is_blacklisted)
+  const mappedCount = activeEmployees.filter((e) => e.mapped_jarvis_user_id).length
+  const unmappedCount = activeEmployees.filter((e) => !e.mapped_jarvis_user_id).length
   const blacklistedCount = employees.filter((e) => e.is_blacklisted).length
 
   const SortIcon = ({ field }: { field: SortField }) => (

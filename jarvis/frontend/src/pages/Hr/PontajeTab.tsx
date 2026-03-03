@@ -43,8 +43,8 @@ const DAILY_COL_DEFS: { key: DailyColKey; label: string }[] = [
   { key: 'group', label: 'Group' },
   { key: 'check_in', label: 'Check In' },
   { key: 'check_out', label: 'Check Out' },
-  { key: 'adj_in', label: 'Adj. In' },
-  { key: 'adj_out', label: 'Adj. Out' },
+  { key: 'adj_in', label: 'In' },
+  { key: 'adj_out', label: 'Out' },
   { key: 'duration', label: 'Duration' },
   { key: 'punches', label: 'Punches' },
 ]
@@ -57,7 +57,7 @@ const RANGE_COL_DEFS: { key: RangeColKey; label: string }[] = [
   { key: 'punches', label: 'Punches' },
 ]
 
-const DEFAULT_DAILY_COLS: DailyColKey[] = ['group', 'check_in', 'check_out', 'duration', 'punches']
+const DEFAULT_DAILY_COLS: DailyColKey[] = ['group', 'duration', 'punches']
 const DEFAULT_RANGE_COLS: RangeColKey[] = ['group', 'days', 'total_hours', 'avg_day', 'punches']
 
 function formatTime(dt: string | null) {
@@ -142,6 +142,7 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const { user } = useAuth()
+  const showOriginal = user?.can_view_original_punches ?? false
   const showAdjusted = user?.can_view_adjusted_punches ?? false
   const [search, setSearch] = useState('')
   const [groupFilter, setGroupFilter] = useState<string>('all')
@@ -158,24 +159,48 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
   const [visibleRangeCols, setVisibleRangeCols] = useState<Set<RangeColKey>>(new Set(DEFAULT_RANGE_COLS))
   const adjInitRef = useRef(false)
 
-  // Add adj columns to default once user data loads (if permitted)
+  // Add columns to default once user data loads based on permissions
   useEffect(() => {
     if (!adjInitRef.current && user !== null) {
       adjInitRef.current = true
-      if (showAdjusted) {
-        setVisibleDailyCols(prev => new Set([...prev, 'adj_in' as DailyColKey, 'adj_out' as DailyColKey]))
-      }
+      setVisibleDailyCols(prev => {
+        const n = new Set(prev)
+        if (showOriginal) { n.add('check_in'); n.add('check_out') }
+        if (showAdjusted) { n.add('adj_in'); n.add('adj_out') }
+        return n
+      })
     }
-  }, [user, showAdjusted])
+  }, [user, showOriginal, showAdjusted])
 
   const toggleDailyCol = (key: DailyColKey, checked: boolean) => {
     setVisibleDailyCols(prev => { const n = new Set(prev); checked ? n.add(key) : n.delete(key); return n })
+  }
+
+  const toggleCheckInOut = () => {
+    const bothVisible = visibleDailyCols.has('check_in') && visibleDailyCols.has('check_out')
+    setVisibleDailyCols(prev => {
+      const n = new Set(prev)
+      if (bothVisible) { n.delete('check_in'); n.delete('check_out') }
+      else { n.add('check_in'); n.add('check_out') }
+      return n
+    })
+  }
+
+  const toggleAdjInOut = () => {
+    const bothVisible = visibleDailyCols.has('adj_in') && visibleDailyCols.has('adj_out')
+    setVisibleDailyCols(prev => {
+      const n = new Set(prev)
+      if (bothVisible) { n.delete('adj_in'); n.delete('adj_out') }
+      else { n.add('adj_in'); n.add('adj_out') }
+      return n
+    })
   }
   const toggleRangeCol = (key: RangeColKey, checked: boolean) => {
     setVisibleRangeCols(prev => { const n = new Set(prev); checked ? n.add(key) : n.delete(key); return n })
   }
   const resetDailyCols = () => {
     const s = new Set<DailyColKey>(DEFAULT_DAILY_COLS)
+    if (showOriginal) { s.add('check_in'); s.add('check_out') }
     if (showAdjusted) { s.add('adj_in'); s.add('adj_out') }
     setVisibleDailyCols(s)
   }
@@ -237,6 +262,14 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
       setSortDir('asc')
     }
   }
+
+  // Effective visible cols — strips permission-gated keys regardless of toggle state
+  const effectiveDailyCols = useMemo(() => {
+    const s = new Set(visibleDailyCols)
+    if (!showOriginal) { s.delete('check_in'); s.delete('check_out') }
+    if (!showAdjusted) { s.delete('adj_in'); s.delete('adj_out') }
+    return s
+  }, [visibleDailyCols, showOriginal, showAdjusted])
 
   // Process single-day data
   const processedDaily = useMemo(() => {
@@ -347,14 +380,14 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
       fields.push(
         {
           key: 'adj_in',
-          label: 'Adj. In',
+          label: 'In',
           render: (e) => e.adjusted_first_punch
             ? <span className="text-sm font-medium text-green-600">{formatTime(e.adjusted_first_punch)}</span>
             : <span className="text-muted-foreground">—</span>,
         },
         {
           key: 'adj_out',
-          label: 'Adj. Out',
+          label: 'Out',
           render: (e) => e.adjusted_last_punch
             ? <span className="text-sm font-medium text-green-600">{formatTime(e.adjusted_last_punch)}</span>
             : <span className="text-muted-foreground">—</span>,
@@ -458,7 +491,7 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
   // Determine which col defs to show in the popover
   const isDaily = isSingleDay || is3Day
   const activeColDefs = isDaily ? DAILY_COL_DEFS : RANGE_COL_DEFS
-  const visibleCols = isDaily ? visibleDailyCols : visibleRangeCols
+  const visibleCols: Set<string> = isDaily ? effectiveDailyCols : visibleRangeCols
 
   return (
     <div className="space-y-4">
@@ -590,6 +623,34 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
           </SelectContent>
         </Select>
 
+        {/* Quick column group toggles (daily view only) */}
+        {!isMobile && isDaily && (showOriginal || showAdjusted) && (
+          <div className="flex items-center gap-1">
+            {showOriginal && (
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn('h-9 text-xs px-2.5', (visibleDailyCols.has('check_in') || visibleDailyCols.has('check_out')) && 'border-primary text-primary')}
+                onClick={toggleCheckInOut}
+                title="Toggle Check In / Check Out columns"
+              >
+                Check In/Out
+              </Button>
+            )}
+            {showAdjusted && (
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn('h-9 text-xs px-2.5', (visibleDailyCols.has('adj_in') || visibleDailyCols.has('adj_out')) && 'border-primary text-primary')}
+                onClick={toggleAdjInOut}
+                title="Toggle In / Out (adjusted) columns"
+              >
+                In/Out
+              </Button>
+            )}
+          </div>
+        )}
+
         {/* Column toggle */}
         {!isMobile && (
           <Popover>
@@ -614,6 +675,7 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
               </div>
               <div className="space-y-0.5">
                 {activeColDefs
+                  .filter(c => !(['check_in', 'check_out'] as string[]).includes(c.key) || showOriginal)
                   .filter(c => !(['adj_in', 'adj_out'] as string[]).includes(c.key) || showAdjusted)
                   .map(c => {
                     const checked = isDaily
@@ -684,21 +746,21 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
                           Group <SortIcon field="group" />
                         </TableHead>
                       )}
-                      {visibleDailyCols.has('check_in') && (
+                      {visibleCols.has('check_in') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_in')}>
                           Check In <SortIcon field="check_in" />
                         </TableHead>
                       )}
-                      {visibleDailyCols.has('check_out') && (
+                      {visibleCols.has('check_out') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_out')}>
                           Check Out <SortIcon field="check_out" />
                         </TableHead>
                       )}
                       {showAdjusted && visibleDailyCols.has('adj_in') && (
-                        <TableHead className="text-center hidden lg:table-cell">Adj. In</TableHead>
+                        <TableHead className="text-center hidden lg:table-cell">In</TableHead>
                       )}
                       {showAdjusted && visibleDailyCols.has('adj_out') && (
-                        <TableHead className="text-center hidden lg:table-cell">Adj. Out</TableHead>
+                        <TableHead className="text-center hidden lg:table-cell">Out</TableHead>
                       )}
                       {visibleDailyCols.has('duration') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('duration')}>
@@ -721,7 +783,7 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
                         isExpanded={expandedId === emp.biostar_user_id}
                         onToggle={() => setExpandedId(expandedId === emp.biostar_user_id ? null : emp.biostar_user_id)}
                         onProfile={() => navigate(`/app/hr/pontaje/${emp.biostar_user_id}`)}
-                        visibleCols={visibleDailyCols}
+                        visibleCols={effectiveDailyCols}
                       />
                     ))}
                   </TableBody>
@@ -1127,10 +1189,10 @@ function DaySection({
                   <TableHead className="text-center">Check Out</TableHead>
                 )}
                 {visibleCols.has('adj_in') && (
-                  <TableHead className="text-center hidden lg:table-cell">Adj. In</TableHead>
+                  <TableHead className="text-center hidden lg:table-cell">In</TableHead>
                 )}
                 {visibleCols.has('adj_out') && (
-                  <TableHead className="text-center hidden lg:table-cell">Adj. Out</TableHead>
+                  <TableHead className="text-center hidden lg:table-cell">Out</TableHead>
                 )}
                 {visibleCols.has('duration') && (
                   <TableHead className="text-center">Duration</TableHead>
