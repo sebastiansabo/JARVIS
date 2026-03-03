@@ -11,8 +11,21 @@ import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { statementsApi } from '@/api/statements'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
+import { ColumnToggle, useColumnState } from '@/components/shared/ColumnToggle'
+import type { ColumnDef } from '@/components/shared/ColumnToggle'
 import type { TransactionFilters } from '@/types/statements'
 import { useState } from 'react'
+
+const FILES_COL_DEFS: ColumnDef<never>[] = [
+  { key: 'company', label: 'Company', render: () => null },
+  { key: 'account', label: 'Account', render: () => null },
+  { key: 'period', label: 'Period', render: () => null },
+  { key: 'total_txns', label: 'Total Txns', render: () => null },
+  { key: 'new_txns', label: 'New', render: () => null },
+  { key: 'duplicates', label: 'Duplicates', render: () => null },
+  { key: 'uploaded', label: 'Uploaded', render: () => null },
+]
+const FILES_DEFAULT_COLS = ['company', 'period', 'total_txns', 'new_txns', 'uploaded']
 
 const TransactionsTab = lazy(() => import('./TransactionsTab'))
 const FilesTab = lazy(() => import('./FilesTab'))
@@ -44,6 +57,7 @@ export default function Statements() {
   const [showFilters, setShowFilters] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const isOnFilesTab = location.pathname.includes('/files')
+  const { visibleColumns: filesVisibleCols, setVisibleColumns: setFilesVisibleCols, defaultColumns: filesDefaultCols } = useColumnState('statements-files-columns', FILES_DEFAULT_COLS, FILES_COL_DEFS.map(c => c.key))
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ['statements-summary', filters],
@@ -94,6 +108,11 @@ export default function Statements() {
               <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${uploadOpen ? 'bg-muted' : ''}`} onClick={() => setUploadOpen(true)} title="Upload Statement">
                 <Plus className="h-4 w-4" />
               </Button>
+            )}
+            {isOnFilesTab && (
+              <span className="hidden md:inline-flex">
+                <ColumnToggle visibleColumns={filesVisibleCols} defaultColumns={filesDefaultCols} columnDefs={FILES_COL_DEFS} onChange={setFilesVisibleCols} />
+              </span>
             )}
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
@@ -159,7 +178,7 @@ export default function Statements() {
         <Routes>
           <Route index element={<Navigate to="transactions" replace />} />
           <Route path="transactions" element={<TransactionsTab showFilters={showFilters} />} />
-          <Route path="files" element={<FilesTab showFilters={showFilters} uploadOpen={uploadOpen} onUploadOpenChange={setUploadOpen} />} />
+          <Route path="files" element={<FilesTab showFilters={showFilters} uploadOpen={uploadOpen} onUploadOpenChange={setUploadOpen} visibleColumns={filesVisibleCols} />} />
           <Route path="mappings" element={<MappingsTab />} />
         </Routes>
       </Suspense>

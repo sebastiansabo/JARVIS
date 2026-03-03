@@ -16,7 +16,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { statementsApi } from '@/api/statements'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -24,19 +23,6 @@ import type { UploadResult } from '@/types/statements'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const MAX_TOTAL_SIZE = 50 * 1024 * 1024 // 50MB
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const COLUMN_DEFS: ColumnDef<any>[] = [
-  { key: 'company', label: 'Company', render: (s) => s.company_name ?? '—' },
-  { key: 'account', label: 'Account', render: (s) => s.account_number ?? '—' },
-  { key: 'period', label: 'Period', render: (s) => s.period_from && s.period_to ? `${new Date(s.period_from).toLocaleDateString('ro-RO')} — ${new Date(s.period_to).toLocaleDateString('ro-RO')}` : '—' },
-  { key: 'total_txns', label: 'Total Txns', render: (s) => s.total_transactions },
-  { key: 'new_txns', label: 'New', render: (s) => s.new_transactions },
-  { key: 'duplicates', label: 'Duplicates', render: (s) => s.duplicate_transactions },
-  { key: 'uploaded', label: 'Uploaded', render: (s) => s.uploaded_at },
-]
-const ALL_COL_KEYS = COLUMN_DEFS.map((c) => c.key)
-const DEFAULT_COLS = ['company', 'period', 'total_txns', 'new_txns', 'uploaded']
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const filesMobileFields: MobileCardField<any>[] = [
@@ -68,17 +54,18 @@ export default function FilesTab({
   showFilters = false,
   uploadOpen = false,
   onUploadOpenChange,
+  visibleColumns = ['company', 'period', 'total_txns', 'new_txns', 'uploaded'],
 }: {
   showFilters?: boolean
   uploadOpen?: boolean
   onUploadOpenChange?: (v: boolean) => void
+  visibleColumns?: string[]
 }) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const openUpload = () => onUploadOpenChange?.(true)
-  const { visibleColumns, setVisibleColumns, defaultColumns } = useColumnState('statements-files-columns', DEFAULT_COLS, ALL_COL_KEYS)
   const vis = (key: string) => visibleColumns.includes(key)
 
   const { data, isLoading } = useQuery({
@@ -110,20 +97,15 @@ export default function FilesTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        {showFilters && (
-          <>
-            <div className="relative flex-1 min-w-0 max-w-xs">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-8" placeholder="Search statements..." value={search} onChange={(e) => setSearch(e.target.value)} />
-            </div>
-            <span className="text-xs text-muted-foreground">{filtered.length} statements</span>
-          </>
-        )}
-        <div className="ml-auto">
-          <ColumnToggle visibleColumns={visibleColumns} defaultColumns={defaultColumns} columnDefs={COLUMN_DEFS} onChange={setVisibleColumns} />
+      {showFilters && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-0 max-w-xs">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input className="pl-8" placeholder="Search statements..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <span className="text-xs text-muted-foreground">{filtered.length} statements</span>
         </div>
-      </div>
+      )}
 
       {isLoading ? (
         <Card className="p-6">
