@@ -2901,24 +2901,28 @@
 
                 const result = await res.json();
                 if (result.success) {
-                    // Upload file to Drive if available
+                    // Upload file to Drive if available (isolated — Drive failure must not mask invoice save success)
                     let driveLink = '';
                     const fileName = inv.filename || '';
                     if (fileName && uploadedFiles.length > 0) {
                         const matchingFile = uploadedFiles.find(f => f.name === fileName);
                         if (matchingFile) {
-                            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Uploading to Drive...';
-                            loadingOverlay.querySelector('.progress-text').textContent = 'Uploading to Google Drive...';
+                            try {
+                                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Uploading to Drive...';
+                                loadingOverlay.querySelector('.progress-text').textContent = 'Uploading to Google Drive...';
 
-                            const uploadResult = await uploadToDrive(matchingFile, invoiceDate, selectedMasterCompany, inv.invoice_number);
-                            if (uploadResult.success) {
-                                driveLink = uploadResult.drive_link;
-                                // Update the invoice with the drive link (with retry for cold start)
-                                await fetchWithRetry(`/api/invoices/${result.invoice_id}/drive-link`, {
-                                    method: 'PUT',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ drive_link: driveLink })
-                                });
+                                const uploadResult = await uploadToDrive(matchingFile, invoiceDate, selectedMasterCompany, inv.invoice_number);
+                                if (uploadResult.success) {
+                                    driveLink = uploadResult.drive_link;
+                                    // Update the invoice with the drive link (with retry for cold start)
+                                    await fetchWithRetry(`/api/invoices/${result.invoice_id}/drive-link`, {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ drive_link: driveLink })
+                                    });
+                                }
+                            } catch (driveError) {
+                                console.warn('Drive upload failed (invoice already saved):', driveError.message);
                             }
                         }
                     }
