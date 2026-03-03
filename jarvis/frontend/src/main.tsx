@@ -51,6 +51,30 @@ const queryClient = new QueryClient({
 // Keep-alive ping every 10 minutes to prevent DO App Platform cold starts
 setInterval(() => { fetch('/health').catch(() => {}) }, 10 * 60 * 1000)
 
+// Chunk-load failure handler — after a deploy, lazy-loaded route chunks get new
+// content-hash filenames. If the user had the app open, React Router navigates
+// without a full reload and tries to fetch the old hash → 404. Detect that and
+// force one reload so the browser picks up the fresh index.html + new chunks.
+window.addEventListener('unhandledrejection', (event) => {
+  const err = event.reason
+  if (
+    err instanceof TypeError && (
+      err.message.includes('Importing a module script failed') ||
+      err.message.includes('Failed to fetch') ||
+      err.message.includes('dynamically imported module') ||
+      err.message.includes('Unable to preload CSS')
+    )
+  ) {
+    const key = 'chunk_reload_at'
+    const last = sessionStorage.getItem(key)
+    const now = Date.now()
+    if (!last || now - parseInt(last) > 15_000) {
+      sessionStorage.setItem(key, String(now))
+      window.location.reload()
+    }
+  }
+})
+
 // Console easter egg
 console.log(
   '%c' +
