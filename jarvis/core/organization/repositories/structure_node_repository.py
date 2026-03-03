@@ -206,7 +206,7 @@ class StructureNodeRepository(BaseRepository):
         return matched_node
 
     def get_node_responsable_names(self, node_id: int) -> str:
-        """Get comma-separated responsable names for a node."""
+        """Get comma-separated responsable names for a node (no fallback)."""
         rows = self.query_all('''
             SELECT u.name
             FROM structure_node_members snm
@@ -216,50 +216,147 @@ class StructureNodeRepository(BaseRepository):
         ''', (node_id,))
         return ', '.join(r['name'] for r in rows)
 
+    def get_node_responsable_names_with_fallback(self, node_id: int, company_id: int) -> str:
+        """Get responsable names, walking up ancestors if none at current level,
+        then falling back to company_responsables (L0)."""
+        rows = self.query_all('''
+            WITH RECURSIVE ancestors AS (
+                SELECT id, parent_id, 0 AS depth
+                FROM structure_nodes WHERE id = %s
+                UNION ALL
+                SELECT sn.id, sn.parent_id, a.depth + 1
+                FROM structure_nodes sn
+                JOIN ancestors a ON sn.id = a.parent_id
+            ),
+            ranked AS (
+                SELECT u.name, a.depth,
+                       MIN(a.depth) OVER () AS min_depth
+                FROM ancestors a
+                JOIN structure_node_members snm ON snm.node_id = a.id
+                JOIN users u ON u.id = snm.user_id
+                WHERE snm.role = 'responsable'
+            )
+            SELECT name FROM ranked WHERE depth = min_depth ORDER BY name
+        ''', (node_id,))
+        if rows:
+            return ', '.join(r['name'] for r in rows)
+        # Fall back to company-level responsables
+        comp_rows = self.query_all('''
+            SELECT u.name FROM company_responsables cr
+            JOIN users u ON u.id = cr.user_id
+            WHERE cr.company_id = %s ORDER BY u.name
+        ''', (company_id,))
+        return ', '.join(r['name'] for r in comp_rows)
+
+    def get_node_responsable_users_with_fallback(self, node_id: int, company_id: int) -> list[dict]:
+        """Get responsable user dicts, walking up ancestors if none at current level,
+        then falling back to company_responsables (L0)."""
+        rows = self.query_all('''
+            WITH RECURSIVE ancestors AS (
+                SELECT id, parent_id, 0 AS depth
+                FROM structure_nodes WHERE id = %s
+                UNION ALL
+                SELECT sn.id, sn.parent_id, a.depth + 1
+                FROM structure_nodes sn
+                JOIN ancestors a ON sn.id = a.parent_id
+            ),
+            ranked AS (
+                SELECT u.id, u.name, u.email, u.phone,
+                       u.department, u.subdepartment, u.company, u.brand,
+                       u.notify_on_allocation, u.is_active,
+                       a.depth,
+                       MIN(a.depth) OVER () AS min_depth
+                FROM ancestors a
+                JOIN structure_node_members snm ON snm.node_id = a.id
+                JOIN users u ON u.id = snm.user_id
+                WHERE snm.role = 'responsable' AND u.is_active = TRUE
+            )
+            SELECT DISTINCT id, name, email, phone, department, subdepartment,
+                   company, brand, notify_on_allocation, is_active
+            FROM ranked WHERE depth = min_depth
+        ''', (node_id,))
+        if rows:
+            return [dict(r) for r in rows]
+        # Fall back to company-level responsables
+        return self.query_all('''
+            SELECT DISTINCT u.id, u.name, u.email, u.phone,
+                   u.department, u.subdepartment, u.company, u.brand,
+                   u.notify_on_allocation, u.is_active
+            FROM company_responsables cr
+            JOIN users u ON u.id = cr.user_id
+            WHERE cr.company_id = %s AND u.is_active = TRUE
+            ORDER BY u.name
+        ''', (company_id,))
+
     def find_responsable_by_path(self, company_name: str, brand: str = None,
                                   department: str = None, subdepartment: str = None) -> str:
         """Find the responsable for a given company/brand/department/subdepartment path.
 
-        Resolves company name → company_id, builds a name path, walks the tree,
-        and returns comma-separated responsable names for the deepest matched node.
+        Walks the tree to the deepest matched node, then applies fallback:
+        if no responsable at that level, walks up ancestors, then company (L0).
         """
-        # Resolve company name → id
         row = self.query_one(
             'SELECT id FROM companies WHERE company = %s', (company_name,)
         )
         if not row:
             return ''
+        company_id = row['id']
 
-        # Build path from the provided levels
         path = [n for n in [brand, department, subdepartment] if n]
         if not path:
-            return ''
+            # No path — return company-level responsables
+            comp_rows = self.query_all('''
+                SELECT u.name FROM company_responsables cr
+                JOIN users u ON u.id = cr.user_id
+                WHERE cr.company_id = %s ORDER BY u.name
+            ''', (company_id,))
+            return ', '.join(r['name'] for r in comp_rows)
 
-        node = self.find_node_by_path(row['id'], path)
+        node = self.find_node_by_path(company_id, path)
         if not node:
             return ''
 
-        return self.get_node_responsable_names(node['id'])
+        return self.get_node_responsable_names_with_fallback(node['id'], company_id)
 
     def get_responsable_users_by_department(self, company_name: str, department: str) -> list[dict]:
-        """Find all responsable users for nodes named `department` under a company.
-
-        Used by notification system. Returns user dicts (id, name, email, etc.)
-        for all responsable members of matching nodes.
+        """Find responsable users for nodes named `department` under a company,
+        with fallback: if no responsable at that node, walk up ancestors, then company (L0).
         """
-        return self.query_all('''
-            SELECT DISTINCT u.id, u.name, u.email, u.phone,
-                   u.department, u.subdepartment, u.company, u.brand,
-                   u.notify_on_allocation, u.is_active
-            FROM structure_nodes sn
+        # Find company_id
+        comp_row = self.query_one('SELECT id FROM companies WHERE company = %s', (company_name,))
+        if not comp_row:
+            return []
+        company_id = comp_row['id']
+
+        # Find all nodes matching the department name under this company
+        nodes = self.query_all('''
+            SELECT sn.id FROM structure_nodes sn
             JOIN companies c ON sn.company_id = c.id
-            JOIN structure_node_members snm ON snm.node_id = sn.id
-            JOIN users u ON snm.user_id = u.id
-            WHERE c.company = %s
-              AND lower(sn.name) = lower(%s)
-              AND snm.role = 'responsable'
-              AND u.is_active = TRUE
+            WHERE c.company = %s AND lower(sn.name) = lower(%s)
         ''', (company_name, department))
+
+        if not nodes:
+            # Fall back to company-level responsables
+            return self.query_all('''
+                SELECT DISTINCT u.id, u.name, u.email, u.phone,
+                       u.department, u.subdepartment, u.company, u.brand,
+                       u.notify_on_allocation, u.is_active
+                FROM company_responsables cr
+                JOIN users u ON u.id = cr.user_id
+                WHERE cr.company_id = %s AND u.is_active = TRUE
+                ORDER BY u.name
+            ''', (company_id,))
+
+        # For each matching node, apply fallback up the ancestor chain
+        seen_ids: set = set()
+        results = []
+        for node in nodes:
+            users = self.get_node_responsable_users_with_fallback(node['id'], company_id)
+            for u in users:
+                if u['id'] not in seen_ids:
+                    seen_ids.add(u['id'])
+                    results.append(u)
+        return results
 
     def get_cascade_responsable_ids(self, node_id: int) -> list[int]:
         """Walk UP the parent chain collecting all responsable user_ids."""
