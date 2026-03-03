@@ -243,9 +243,9 @@ export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditor
         <div className="space-y-2">
           {/* Header */}
           <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-muted-foreground px-1">
-            {brands.length > 0 && <div className="col-span-2">Brand</div>}
-            <div className={brands.length > 0 ? 'col-span-3' : 'col-span-4'}>Department</div>
-            <div className="col-span-2">Subdepartment</div>
+            {brands.length > 0 && <div className="col-span-2">Level 1</div>}
+            <div className={brands.length > 0 ? 'col-span-3' : 'col-span-4'}>Level 2</div>
+            <div className="col-span-2">Level 3</div>
             <div className="col-span-1 text-right">%</div>
             <div className="col-span-2 text-right">Value ({currency})</div>
             <div className={brands.length > 0 ? 'col-span-2' : 'col-span-3'}></div>
@@ -418,7 +418,7 @@ export function AllocationRowComponent({
               onValueChange={(v) => onUpdate({ brand: v === '__none__' ? '' : v })}
             >
               <SelectTrigger className="h-8 w-full text-xs">
-                <SelectValue placeholder="Brand" />
+                <SelectValue placeholder="Level 1" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">N/A</SelectItem>
