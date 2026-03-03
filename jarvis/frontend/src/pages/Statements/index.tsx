@@ -110,9 +110,7 @@ export default function Statements() {
               </Button>
             )}
             {isOnFilesTab && (
-              <span className="hidden md:inline-flex">
-                <ColumnToggle visibleColumns={filesVisibleCols} defaultColumns={filesDefaultCols} columnDefs={FILES_COL_DEFS} onChange={setFilesVisibleCols} />
-              </span>
+              <ColumnToggle visibleColumns={filesVisibleCols} defaultColumns={filesDefaultCols} columnDefs={FILES_COL_DEFS} onChange={setFilesVisibleCols} />
             )}
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
