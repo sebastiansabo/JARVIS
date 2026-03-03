@@ -241,6 +241,7 @@ function CompaniesSection({ companies, structureNodes }: { companies: CompanyWit
                 const isExpanded = expanded.has(companyKey)
                 const companyNodes = nodeTreeByCompany.get(c.id) || []
                 const totalNodes = countAllDescendants(companyNodes)
+                const hasCompanyContent = companyNodes.length > 0 || c.children.length > 0
 
                 return (
                   <>
@@ -252,9 +253,11 @@ function CompaniesSection({ companies, structureNodes }: { companies: CompanyWit
                     >
                       <TableCell>
                         <div className="flex items-center gap-1.5" style={{ paddingLeft: `${c.depth * 24}px` }}>
-                          {isExpanded
-                            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          {hasCompanyContent
+                            ? isExpanded
+                              ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            : <span className="h-3.5 w-3.5 shrink-0" />
                           }
                           {c.children.length > 0 && <Crown className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
                           <span className="font-medium">{c.company}</span>
@@ -405,14 +408,16 @@ function NodeRows({ node, basePad, expanded, toggleExpand, onAdd, onEdit, onDele
   return (
     <>
       <TableRow
-        className={cn(levelBg[levelIdx], 'cursor-pointer')}
-        onClick={() => toggleExpand(nodeKey)}
+        className={cn(levelBg[levelIdx], hasChildren && 'cursor-pointer')}
+        onClick={() => hasChildren && toggleExpand(nodeKey)}
       >
         <TableCell>
           <div className="flex items-center gap-1.5 text-xs" style={{ paddingLeft: `${indent}px` }}>
-            {isExpanded
-              ? <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
-              : <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+            {hasChildren
+              ? isExpanded
+                ? <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
+                : <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+              : <span className="h-3 w-3 shrink-0" />
             }
             <span className={cn('font-medium', levelColors[levelIdx])}>{node.name}</span>
             <span className="text-[10px] text-muted-foreground">L{node.level}</span>
