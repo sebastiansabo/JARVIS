@@ -71,21 +71,6 @@ export default function Statements() {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            {!isMobile && (
-              <Tabs value={location.pathname.split('/').pop() || 'transactions'} onValueChange={(v) => navigate(`/app/statements/${v}`)}>
-                <TabsList className="w-auto">
-                  {tabs.map((tab) => {
-                    const val = tab.to.split('/').pop()!
-                    return (
-                      <TabsTrigger key={val} value={val}>
-                        <tab.icon className="h-4 w-4" />
-                        {tab.label}
-                      </TabsTrigger>
-                    )
-                  })}
-                </TabsList>
-              </Tabs>
-            )}
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
               <BarChart3 className="h-4 w-4" />
             </Button>
@@ -109,6 +94,21 @@ export default function Statements() {
               <Button size="icon" className="hidden md:inline-flex" onClick={() => setMappingAddOpen(true)} title="Add Mapping">
                 <Plus className="h-4 w-4" />
               </Button>
+            )}
+            {!isMobile && (
+              <Tabs value={location.pathname.split('/').pop() || 'transactions'} onValueChange={(v) => navigate(`/app/statements/${v}`)}>
+                <TabsList className="w-auto">
+                  {tabs.map((tab) => {
+                    const val = tab.to.split('/').pop()!
+                    return (
+                      <TabsTrigger key={val} value={val}>
+                        <tab.icon className="h-4 w-4" />
+                        {tab.label}
+                      </TabsTrigger>
+                    )
+                  })}
+                </TabsList>
+              </Tabs>
             )}
           </div>
         }

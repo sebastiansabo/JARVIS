@@ -328,6 +328,17 @@ export default function Approvals() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
+              <BarChart3 className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
+              <LayoutDashboard className="h-4 w-4" />
+            </Button>
+            {activeTab === 'delegations' && (
+              <Button size="icon" onClick={() => setShowDelegationDialog(true)} title="New Delegation">
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
             {!isMobile && (
               <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
                 <TabsList className="w-auto">
@@ -347,17 +358,6 @@ export default function Approvals() {
                   })}
                 </TabsList>
               </Tabs>
-            )}
-            <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
-              <BarChart3 className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
-              <LayoutDashboard className="h-4 w-4" />
-            </Button>
-            {activeTab === 'delegations' && (
-              <Button size="icon" onClick={() => setShowDelegationDialog(true)} title="New Delegation">
-                <Plus className="h-4 w-4" />
-              </Button>
             )}
           </div>
         }

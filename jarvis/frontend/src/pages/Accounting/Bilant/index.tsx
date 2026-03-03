@@ -216,18 +216,6 @@ export default function Bilant() {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            {!isMobile && (
-              <Tabs value={tab} onValueChange={(v) => setTab(v as MainTab)}>
-                <TabsList className="w-auto">
-                  {tabs.map(t => (
-                    <TabsTrigger key={t.key} value={t.key}>
-                      <t.icon className="h-4 w-4" />
-                      {t.label}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-            )}
             {tab === 'generations' && (
               <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
                 <BarChart3 className="h-4 w-4" />
@@ -255,6 +243,18 @@ export default function Bilant() {
               <Button size="icon" onClick={() => setShowAddAccount(true)} title="Add Account">
                 <Plus className="h-4 w-4" />
               </Button>
+            )}
+            {!isMobile && (
+              <Tabs value={tab} onValueChange={(v) => setTab(v as MainTab)}>
+                <TabsList className="w-auto">
+                  {tabs.map(t => (
+                    <TabsTrigger key={t.key} value={t.key}>
+                      <t.icon className="h-4 w-4" />
+                      {t.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
             )}
           </div>
         }

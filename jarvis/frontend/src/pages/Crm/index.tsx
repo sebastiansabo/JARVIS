@@ -35,16 +35,6 @@ export default function Crm() {
           ]}
           actions={
             <div className="flex items-center gap-2">
-              {!isMobile && (
-                <TabsList className="w-auto">
-                  <TabsTrigger value="dashboard"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
-                  <TabsTrigger value="deals"><Car className="h-4 w-4" />Sales</TabsTrigger>
-                  <TabsTrigger value="clients"><UserCheck className="h-4 w-4" />Clients</TabsTrigger>
-                  <TabsTrigger value="statistics"><PieChart className="h-4 w-4" />Statistics</TabsTrigger>
-                  <TabsTrigger value="import"><Upload className="h-4 w-4" />Import</TabsTrigger>
-                  <TabsTrigger value="blacklist"><Ban className="h-4 w-4" />Blacklist</TabsTrigger>
-                </TabsList>
-              )}
               {(tab === 'dashboard' || tab === 'deals') && (
                 <Button variant="ghost" size="icon" className={((tab === 'dashboard' && showStats) || (tab === 'deals' && dealsShowStats)) ? 'bg-muted' : ''} onClick={() => {
                   if (tab === 'dashboard') setShowStats(s => !s)
@@ -62,6 +52,16 @@ export default function Crm() {
                     <Filter className="h-4 w-4" />
                   </Button>
                 </>
+              )}
+              {!isMobile && (
+                <TabsList className="w-auto">
+                  <TabsTrigger value="dashboard"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
+                  <TabsTrigger value="deals"><Car className="h-4 w-4" />Sales</TabsTrigger>
+                  <TabsTrigger value="clients"><UserCheck className="h-4 w-4" />Clients</TabsTrigger>
+                  <TabsTrigger value="statistics"><PieChart className="h-4 w-4" />Statistics</TabsTrigger>
+                  <TabsTrigger value="import"><Upload className="h-4 w-4" />Import</TabsTrigger>
+                  <TabsTrigger value="blacklist"><Ban className="h-4 w-4" />Blacklist</TabsTrigger>
+                </TabsList>
               )}
             </div>
           }

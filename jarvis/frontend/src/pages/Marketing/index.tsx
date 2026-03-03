@@ -109,6 +109,15 @@ export default function Marketing() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
+              <BarChart3 className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
+              <LayoutDashboard className="h-4 w-4" />
+            </Button>
+            <Button size="icon" onClick={() => setShowCreateDialog(true)} title="New Campaign">
+              <Plus className="h-4 w-4" />
+            </Button>
             {!isMobile && (
               <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
                 <TabsList className="w-auto">
@@ -119,15 +128,6 @@ export default function Marketing() {
                 </TabsList>
               </Tabs>
             )}
-            <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
-              <BarChart3 className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
-              <LayoutDashboard className="h-4 w-4" />
-            </Button>
-            <Button size="icon" onClick={() => setShowCreateDialog(true)} title="New Campaign">
-              <Plus className="h-4 w-4" />
-            </Button>
           </div>
         }
       />

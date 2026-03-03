@@ -73,25 +73,6 @@ export default function EFactura() {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            {!isMobile && (
-              <Tabs value={location.pathname.split('/').pop() || 'unallocated'} onValueChange={(v) => navigate(`/app/efactura/${v}`)}>
-                <TabsList className="w-auto">
-                  <TabsTrigger value="unallocated">
-                    <FileStack className="h-4 w-4" />
-                    Unallocated
-                    {(unallocatedCount ?? 0) > 0 && (
-                      <span className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                        {unallocatedCount}
-                      </span>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger value="mappings">
-                    <Tags className="h-4 w-4" />
-                    Mappings
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            )}
             <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${showFilters ? 'bg-muted' : ''}`} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
@@ -111,6 +92,25 @@ export default function EFactura() {
             <Button size="icon" onClick={() => setSyncOpen(true)} title="Sync">
               <RefreshCw className="h-4 w-4" />
             </Button>
+            {!isMobile && (
+              <Tabs value={location.pathname.split('/').pop() || 'unallocated'} onValueChange={(v) => navigate(`/app/efactura/${v}`)}>
+                <TabsList className="w-auto">
+                  <TabsTrigger value="unallocated">
+                    <FileStack className="h-4 w-4" />
+                    Unallocated
+                    {(unallocatedCount ?? 0) > 0 && (
+                      <span className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                        {unallocatedCount}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="mappings">
+                    <Tags className="h-4 w-4" />
+                    Mappings
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
           </div>
         }
       />

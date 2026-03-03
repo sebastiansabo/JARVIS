@@ -99,21 +99,6 @@ export default function Hr() {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            {!isMobile && !isBonusesPage && tabs.length > 1 && (
-              <Tabs value={isAdjustmentsPage ? 'adjustments' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
-                <TabsList className="w-auto">
-                  {tabs.map((t) => {
-                    const val = t.to.split('/').pop()!
-                    return (
-                      <TabsTrigger key={val} value={val}>
-                        <t.icon className="h-4 w-4" />
-                        {t.label}
-                      </TabsTrigger>
-                    )
-                  })}
-                </TabsList>
-              </Tabs>
-            )}
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
               <BarChart3 className="h-4 w-4" />
             </Button>
@@ -134,6 +119,21 @@ export default function Hr() {
               <Button size="icon" onClick={() => setBonusAddTrigger(n => n + 1)} title="Add Bonus">
                 <Plus className="h-4 w-4" />
               </Button>
+            )}
+            {!isMobile && !isBonusesPage && tabs.length > 1 && (
+              <Tabs value={isAdjustmentsPage ? 'adjustments' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+                <TabsList className="w-auto">
+                  {tabs.map((t) => {
+                    const val = t.to.split('/').pop()!
+                    return (
+                      <TabsTrigger key={val} value={val}>
+                        <t.icon className="h-4 w-4" />
+                        {t.label}
+                      </TabsTrigger>
+                    )
+                  })}
+                </TabsList>
+              </Tabs>
             )}
           </div>
         }
