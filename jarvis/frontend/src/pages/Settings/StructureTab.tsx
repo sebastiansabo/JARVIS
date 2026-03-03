@@ -128,13 +128,13 @@ export default function StructureTab() {
 
   return (
     <div className="space-y-6">
-      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-3 ${showStats ? '' : 'hidden md:grid'}`}>
+      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-3 ${showStats ? '' : 'hidden'}`}>
         <StatCard title="Companies" value={companies.length} icon={<Building2 className="h-4 w-4" />} />
         <StatCard title="Structure Nodes" value={structureNodes.length} icon={<Layers className="h-4 w-4" />} />
         <StatCard title="Max Depth" value={Math.max(0, ...structureNodes.map(n => n.level))} icon={<GitBranch className="h-4 w-4" />} />
       </div>
-      <div className="flex items-center gap-2 md:hidden">
-        <Button variant="ghost" size="icon" onClick={() => setShowStats(s => !s)}>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
           <BarChart3 className="h-4 w-4" />
         </Button>
       </div>

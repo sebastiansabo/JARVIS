@@ -94,7 +94,7 @@ export default function Crm() {
 function DashboardContent({ stats, showStats }: { stats: CrmStats; showStats: boolean }) {
   return (
     <div className="space-y-4">
-      <div className={`grid grid-cols-2 gap-3 ${showStats ? '' : 'hidden md:grid'}`}>
+      <div className={`grid grid-cols-2 gap-3 ${showStats ? '' : 'hidden'}`}>
         <StatCard title="Total Clients" value={stats.clients.total.toLocaleString()} description={`${stats.clients.persons} persons, ${stats.clients.companies} companies`} icon={<Users className="h-4 w-4" />} />
         <StatCard title="Car Deals" value={stats.deals.total.toLocaleString()} description={`${stats.deals.new_cars} NW, ${stats.deals.used_cars} GW`} icon={<Car className="h-4 w-4" />} />
       </div>

@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { statementsApi } from '@/api/statements'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -23,6 +24,19 @@ import type { UploadResult } from '@/types/statements'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const MAX_TOTAL_SIZE = 50 * 1024 * 1024 // 50MB
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const COLUMN_DEFS: ColumnDef<any>[] = [
+  { key: 'company', label: 'Company', render: (s) => s.company_name ?? '—' },
+  { key: 'account', label: 'Account', render: (s) => s.account_number ?? '—' },
+  { key: 'period', label: 'Period', render: (s) => s.period_from && s.period_to ? `${new Date(s.period_from).toLocaleDateString('ro-RO')} — ${new Date(s.period_to).toLocaleDateString('ro-RO')}` : '—' },
+  { key: 'total_txns', label: 'Total Txns', render: (s) => s.total_transactions },
+  { key: 'new_txns', label: 'New', render: (s) => s.new_transactions },
+  { key: 'duplicates', label: 'Duplicates', render: (s) => s.duplicate_transactions },
+  { key: 'uploaded', label: 'Uploaded', render: (s) => s.uploaded_at },
+]
+const ALL_COL_KEYS = COLUMN_DEFS.map((c) => c.key)
+const DEFAULT_COLS = ['company', 'period', 'total_txns', 'new_txns', 'uploaded']
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const filesMobileFields: MobileCardField<any>[] = [
@@ -50,12 +64,22 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export default function FilesTab() {
+export default function FilesTab({
+  showFilters = false,
+  uploadOpen = false,
+  onUploadOpenChange,
+}: {
+  showFilters?: boolean
+  uploadOpen?: boolean
+  onUploadOpenChange?: (v: boolean) => void
+}) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
-  const [uploadOpen, setUploadOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  const openUpload = () => onUploadOpenChange?.(true)
+  const { visibleColumns, setVisibleColumns, defaultColumns } = useColumnState('statements-files-columns', DEFAULT_COLS, ALL_COL_KEYS)
+  const vis = (key: string) => visibleColumns.includes(key)
 
   const { data, isLoading } = useQuery({
     queryKey: ['statements-files'],
@@ -87,15 +111,18 @@ export default function FilesTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-0 max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-8" placeholder="Search statements..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        {showFilters && (
+          <>
+            <div className="relative flex-1 min-w-0 max-w-xs">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input className="pl-8" placeholder="Search statements..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <span className="text-xs text-muted-foreground">{filtered.length} statements</span>
+          </>
+        )}
+        <div className="ml-auto">
+          <ColumnToggle visibleColumns={visibleColumns} defaultColumns={defaultColumns} columnDefs={COLUMN_DEFS} onChange={setVisibleColumns} />
         </div>
-        <span className="hidden sm:inline text-xs text-muted-foreground">{filtered.length} statements</span>
-        <Button size="icon" className="ml-auto md:size-auto md:px-3" onClick={() => setUploadOpen(true)}>
-          <Upload className="h-4 w-4 md:mr-1" />
-          <span className="hidden md:inline">Upload Statement</span>
-        </Button>
       </div>
 
       {isLoading ? (
@@ -110,7 +137,7 @@ export default function FilesTab() {
           title="No statements uploaded"
           description="Upload PDF bank statements to start processing transactions."
           action={
-            <Button onClick={() => setUploadOpen(true)}>
+            <Button onClick={openUpload}>
               <Upload className="mr-1.5 h-4 w-4" />
               Upload Statement
             </Button>
@@ -134,13 +161,13 @@ export default function FilesTab() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Filename</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Account</TableHead>
-                  <TableHead>Period</TableHead>
-                  <TableHead className="text-right">Total Txns</TableHead>
-                  <TableHead className="text-right">New</TableHead>
-                  <TableHead className="text-right">Duplicates</TableHead>
-                  <TableHead>Uploaded</TableHead>
+                  {vis('company') && <TableHead>Company</TableHead>}
+                  {vis('account') && <TableHead>Account</TableHead>}
+                  {vis('period') && <TableHead>Period</TableHead>}
+                  {vis('total_txns') && <TableHead className="text-right">Total Txns</TableHead>}
+                  {vis('new_txns') && <TableHead className="text-right">New</TableHead>}
+                  {vis('duplicates') && <TableHead className="text-right">Duplicates</TableHead>}
+                  {vis('uploaded') && <TableHead>Uploaded</TableHead>}
                   <TableHead className="w-16">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -148,19 +175,19 @@ export default function FilesTab() {
                 {filtered.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="text-sm font-medium">{s.filename}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{s.company_name ?? '—'}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{s.account_number ?? '—'}</TableCell>
-                    <TableCell className="text-xs whitespace-nowrap">
-                      {s.period_from && s.period_to
-                        ? `${formatDate(s.period_from)} — ${formatDate(s.period_to)}`
-                        : '—'}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">{s.total_transactions}</TableCell>
-                    <TableCell className="text-right text-sm text-green-500">{s.new_transactions}</TableCell>
-                    <TableCell className="text-right text-sm text-muted-foreground">{s.duplicate_transactions}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                      {formatDateTime(s.uploaded_at)}
-                    </TableCell>
+                    {vis('company') && <TableCell className="text-sm text-muted-foreground">{s.company_name ?? '—'}</TableCell>}
+                    {vis('account') && <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{s.account_number ?? '—'}</TableCell>}
+                    {vis('period') && (
+                      <TableCell className="text-xs whitespace-nowrap">
+                        {s.period_from && s.period_to
+                          ? `${formatDate(s.period_from)} — ${formatDate(s.period_to)}`
+                          : '—'}
+                      </TableCell>
+                    )}
+                    {vis('total_txns') && <TableCell className="text-right text-sm">{s.total_transactions}</TableCell>}
+                    {vis('new_txns') && <TableCell className="text-right text-sm text-green-500">{s.new_transactions}</TableCell>}
+                    {vis('duplicates') && <TableCell className="text-right text-sm text-muted-foreground">{s.duplicate_transactions}</TableCell>}
+                    {vis('uploaded') && <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(s.uploaded_at)}</TableCell>}
                     <TableCell>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(s.id)}>
                         <Trash2 className="h-3.5 w-3.5" />
@@ -177,9 +204,9 @@ export default function FilesTab() {
       {/* Upload dialog */}
       <UploadDialog
         open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
+        onClose={() => onUploadOpenChange?.(false)}
         onSuccess={() => {
-          setUploadOpen(false)
+          onUploadOpenChange?.(false)
           queryClient.invalidateQueries({ queryKey: ['statements-files'] })
           queryClient.invalidateQueries({ queryKey: ['statements-transactions'] })
           queryClient.invalidateQueries({ queryKey: ['statements-summary'] })

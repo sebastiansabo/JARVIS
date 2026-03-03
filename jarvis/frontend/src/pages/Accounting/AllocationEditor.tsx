@@ -235,15 +235,6 @@ export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditor
       {/* Rows */}
       {company && (
         <div className="space-y-2">
-          {/* Header */}
-          <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-muted-foreground px-1">
-            {brands.length > 0 && <div className="col-span-2">Level 1</div>}
-            <div className={brands.length > 0 ? 'col-span-3' : 'col-span-4'}>Level 2</div>
-            <div className="col-span-2">Level 3</div>
-            <div className="col-span-1 text-right">%</div>
-            <div className="col-span-2 text-right">Value ({currency})</div>
-            <div className={brands.length > 0 ? 'col-span-2' : 'col-span-3'}></div>
-          </div>
 
           {rows.map((row) => (
             <AllocationRowComponent

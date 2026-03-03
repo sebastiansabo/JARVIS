@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard, BarChart3, Clock, CheckCircle, DollarSign, SlidersHorizontal } from 'lucide-react'
+import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard, BarChart3, Clock, CheckCircle, DollarSign, SlidersHorizontal, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -42,6 +42,8 @@ export default function Statements() {
   const [filters] = useState<TransactionFilters>({})
   const [showStats, setShowStats] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const isOnFilesTab = location.pathname.includes('/files')
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ['statements-summary', filters],
@@ -67,12 +69,32 @@ export default function Statements() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            {!isMobile && (
+              <Tabs value={location.pathname.split('/').pop() || 'transactions'} onValueChange={(v) => navigate(`/app/statements/${v}`)}>
+                <TabsList className="w-auto">
+                  {tabs.map((tab) => {
+                    const val = tab.to.split('/').pop()!
+                    return (
+                      <TabsTrigger key={val} value={val}>
+                        <tab.icon className="h-4 w-4" />
+                        {tab.label}
+                      </TabsTrigger>
+                    )
+                  })}
+                </TabsList>
+              </Tabs>
+            )}
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
               <BarChart3 className="h-4 w-4" />
             </Button>
             <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${showFilters ? 'bg-muted' : ''}`} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
+            {isOnFilesTab && (
+              <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${uploadOpen ? 'bg-muted' : ''}`} onClick={() => setUploadOpen(true)} title="Upload Statement">
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
             </Button>
@@ -113,9 +135,9 @@ export default function Statements() {
         />
       </div>
 
-      {/* Tab nav */}
-      <Tabs value={location.pathname.split('/').pop() || 'transactions'} onValueChange={(v) => navigate(`/app/statements/${v}`)}>
-        {isMobile ? (
+      {/* Mobile tab nav */}
+      {isMobile && (
+        <Tabs value={location.pathname.split('/').pop() || 'transactions'} onValueChange={(v) => navigate(`/app/statements/${v}`)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
               {tabs.map((tab) => {
@@ -129,29 +151,15 @@ export default function Statements() {
               })}
             </TabsList>
           </MobileBottomTabs>
-        ) : (
-          <div className="flex items-center">
-            <TabsList className="w-auto">
-              {tabs.map((tab) => {
-                const val = tab.to.split('/').pop()!
-                return (
-                  <TabsTrigger key={val} value={val}>
-                    <tab.icon className="h-4 w-4" />
-                    {tab.label}
-                  </TabsTrigger>
-                )
-              })}
-            </TabsList>
-          </div>
-        )}
-      </Tabs>
+        </Tabs>
+      )}
 
       {/* Tab content */}
       <Suspense fallback={<TabLoader />}>
         <Routes>
           <Route index element={<Navigate to="transactions" replace />} />
           <Route path="transactions" element={<TransactionsTab showFilters={showFilters} />} />
-          <Route path="files" element={<FilesTab />} />
+          <Route path="files" element={<FilesTab showFilters={showFilters} uploadOpen={uploadOpen} onUploadOpenChange={setUploadOpen} />} />
           <Route path="mappings" element={<MappingsTab />} />
         </Routes>
       </Suspense>

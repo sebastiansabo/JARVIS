@@ -182,7 +182,7 @@ export default function AdjustmentsTab() {
       )}
 
       {/* Stats */}
-      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
         <StatCard title="Off-Schedule" value={offSchedule.length} icon={<AlertTriangle className="h-4 w-4" />} />
         <StatCard title="Adjusted" value={adjustments.length} icon={<CheckCircle2 className="h-4 w-4" />} />
         <StatCard title="Total Flagged" value={offSchedule.length + adjustments.length} icon={<Clock className="h-4 w-4" />} />
@@ -191,7 +191,7 @@ export default function AdjustmentsTab() {
 
       {/* Date nav + Filters */}
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="ghost" size="icon" className="md:hidden h-8 w-8" onClick={() => setShowStats(s => !s)}>
+        <Button variant="ghost" size="icon" className={`h-8 w-8 ${showStats ? 'bg-muted' : ''}`} onClick={() => setShowStats(s => !s)} title="Toggle stats">
           <BarChart3 className="h-4 w-4" />
         </Button>
         <div className="flex items-center gap-1">

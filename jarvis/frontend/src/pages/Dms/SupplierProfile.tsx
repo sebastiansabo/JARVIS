@@ -218,7 +218,7 @@ export default function SupplierProfile() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+          <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
             <BarChart3 className="h-4 w-4" />
           </Button>
           <TagBadgeList tags={tags} />
@@ -257,7 +257,7 @@ export default function SupplierProfile() {
       </div>
 
       {/* Stat cards */}
-      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
         <StatCard title="Documents" value={docs.length} icon={<FileText className="h-4 w-4" />} />
         <StatCard title="Invoices" value={invoices.length} icon={<Receipt className="h-4 w-4" />} />
         <StatCard title="Total RON" value={formatNum(totalRon)} icon={<Landmark className="h-4 w-4" />} />

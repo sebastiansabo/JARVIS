@@ -191,7 +191,7 @@ export default function EmployeeProfile() {
           { label: employee.name },
         ]}
         actions={
-          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+          <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
             <BarChart3 className="h-4 w-4" />
           </Button>
         }
@@ -320,7 +320,7 @@ export default function EmployeeProfile() {
       </div>
 
       {/* Stats */}
-      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
         <StatCard
           title="Days Present (90d)"
           value={stats.daysPresent}

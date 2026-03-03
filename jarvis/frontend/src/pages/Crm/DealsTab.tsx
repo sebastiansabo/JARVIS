@@ -252,7 +252,7 @@ export default function DealsTab({ showStats = false }: { showStats?: boolean })
 
         {/* Info cards */}
         {stats && (
-          <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 mt-2 ${showStats ? '' : 'hidden md:grid'}`}>
+          <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 mt-2 ${showStats ? '' : 'hidden'}`}>
             <div className="rounded-lg border bg-card p-3 flex items-center gap-2.5">
               <div className="rounded-md bg-primary/10 p-1.5"><Car className="h-4 w-4 text-primary" /></div>
               <div>

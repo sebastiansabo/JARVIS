@@ -27,6 +27,15 @@ class StructureNodeRepository(BaseRepository):
 
     # ── Dropdown helpers (for invoice allocation editor) ──
 
+    def has_nodes_for_company(self, company_name: str) -> bool:
+        """Check if a company has any structure nodes defined."""
+        row = self.query_one('''
+            SELECT 1 FROM structure_nodes sn
+            JOIN companies c ON sn.company_id = c.id
+            WHERE c.company = %s LIMIT 1
+        ''', (company_name,))
+        return row is not None
+
     def get_company_names(self) -> list[str]:
         """Get all company names that have structure nodes defined."""
         rows = self.query_all('''

@@ -31,9 +31,8 @@ def api_companies():
 @login_required
 def api_brands(company):
     """Get brands (L1 nodes) for a company."""
-    result = _node_repo.get_l1_names(company)
-    if result:
-        return jsonify(result)
+    if _node_repo.has_nodes_for_company(company):
+        return jsonify(_node_repo.get_l1_names(company))
     from models import get_brands_for_company
     return jsonify(get_brands_for_company(company))
 
@@ -44,9 +43,8 @@ def api_departments(company):
     """Get departments (L2 nodes) for a company, optionally filtered by ?level1=."""
     from flask import request as _req
     level1 = _req.args.get('level1') or _req.args.get('brand')
-    result = _node_repo.get_l2_names(company, level1_name=level1)
-    if result:
-        return jsonify(result)
+    if _node_repo.has_nodes_for_company(company):
+        return jsonify(_node_repo.get_l2_names(company, level1_name=level1))
     from models import get_departments_for_company
     return jsonify(get_departments_for_company(company))
 
@@ -55,9 +53,8 @@ def api_departments(company):
 @login_required
 def api_subdepartments(company, department):
     """Get subdepartments (L3 nodes) under a department."""
-    result = _node_repo.get_l3_names(company, department)
-    if result:
-        return jsonify(result)
+    if _node_repo.has_nodes_for_company(company):
+        return jsonify(_node_repo.get_l3_names(company, department))
     from models import get_subdepartments
     return jsonify(get_subdepartments(company, department))
 
@@ -84,17 +81,22 @@ def api_manager():
     subdepartment = request.args.get('subdepartment')
     brand = request.args.get('brand')
 
-    # Try new structure_nodes first
-    if company:
-        result = _node_repo.find_responsable_by_path(
-            company, brand=brand, department=department, subdepartment=subdepartment
-        )
-        if result:
-            return jsonify({'manager': result})
+    try:
+        # Try new structure_nodes first
+        if company:
+            result = _node_repo.find_responsable_by_path(
+                company, brand=brand, department=department, subdepartment=subdepartment
+            )
+            if result:
+                return jsonify({'manager': result})
 
-    # Fallback to legacy department_structure
-    from models import get_manager
-    return jsonify({'manager': get_manager(company, department, subdepartment, brand)})
+        # Fallback to legacy department_structure
+        from models import get_manager
+        return jsonify({'manager': get_manager(company, department, subdepartment, brand)})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'manager': '', 'error': str(e)})
 
 
 # ============== COMPANY VAT MANAGEMENT ==============
