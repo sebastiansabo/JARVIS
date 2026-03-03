@@ -97,20 +97,18 @@ export default function Hr() {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            {!isBonusesPage && !isAdjustmentsPage && isMobile && (
-              <Button variant="ghost" size="icon" onClick={() => setShowStats(s => !s)}>
+            {!isBonusesPage && !isAdjustmentsPage && (
+              <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
                 <BarChart3 className="h-4 w-4" />
               </Button>
             )}
-            <Button variant="ghost" size="icon" className="hidden md:inline-flex md:size-auto md:px-3" onClick={toggleDashboardWidget}>
-              <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
-              <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
+            <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
+              <LayoutDashboard className="h-4 w-4" />
             </Button>
             {canExport && (
-              <Button variant="outline" size="icon" className="hidden md:inline-flex md:size-auto md:px-4" asChild>
+              <Button variant="outline" size="icon" className="hidden md:inline-flex" asChild title="Export">
                 <a href={hrApi.exportUrl({ year: filters.year, month: filters.month })} download>
-                  <Download className="h-4 w-4 md:mr-1.5" />
-                  <span className="hidden md:inline">Export</span>
+                  <Download className="h-4 w-4" />
                 </a>
               </Button>
             )}

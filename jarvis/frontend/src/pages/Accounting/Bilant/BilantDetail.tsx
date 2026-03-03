@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Download, Trash2, FileSpreadsheet, Calendar, User, StickyNote, ChevronDown, FileText, Table2, FileCheck, Code2, FileType, BarChart3 } from 'lucide-react'
+import { ArrowLeft, Download, Trash2, FileSpreadsheet, Calendar, User, StickyNote, FileText, Table2, FileCheck, Code2, FileType, BarChart3 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { bilantApi } from '@/api/bilant'
@@ -138,18 +138,14 @@ export default function BilantDetail() {
         actions={
           <div className="flex items-center gap-1.5">
             <Badge variant="secondary" className={statusColors[gen.status] || ''}>{gen.status}</Badge>
-            {isMobile && (
-              <Button variant="ghost" size="icon" onClick={() => setShowStats(s => !s)}>
-                <BarChart3 className="h-4 w-4" />
-              </Button>
-            )}
+            <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
+              <BarChart3 className="h-4 w-4" />
+            </Button>
             {gen.status === 'completed' && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="outline" className="md:size-auto md:px-3">
-                    <Download className="h-4 w-4 md:mr-1.5" />
-                    <span className="hidden md:inline">Download</span>
-                    <ChevronDown className="hidden md:block ml-1 h-3 w-3" />
+                  <Button size="icon" variant="outline" title="Download">
+                    <Download className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -180,9 +176,8 @@ export default function BilantDetail() {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            <Button size="icon" variant="outline" className="md:size-auto md:px-3 text-destructive" onClick={() => setShowDelete(true)}>
-              <Trash2 className="h-4 w-4 md:mr-1.5" />
-              <span className="hidden md:inline">Delete</span>
+            <Button size="icon" variant="outline" className="text-destructive" onClick={() => setShowDelete(true)} title="Delete">
+              <Trash2 className="h-4 w-4" />
             </Button>
           </div>
         }
@@ -198,7 +193,7 @@ export default function BilantDetail() {
               key, label: FALLBACK_SUMMARY_LABELS[key] || key, value: metrics.summary[key],
             }))
         return (
-          <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6 ${showStats ? '' : 'hidden md:grid'}`}>
+          <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6 ${showStats ? '' : 'hidden'}`}>
             {items.map(item => (
               <div key={item.key} className="rounded-md border px-3 py-1.5">
                 <p className="text-[11px] text-muted-foreground truncate">{item.label}</p>

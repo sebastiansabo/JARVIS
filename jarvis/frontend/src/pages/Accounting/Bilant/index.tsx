@@ -216,25 +216,22 @@ export default function Bilant() {
         actions={
           <div className="flex items-center gap-2">
             {tab === 'generations' && (
-              <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+              <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
                 <BarChart3 className="h-4 w-4" />
               </Button>
             )}
             {tab === 'generations' && (
-              <Button size="icon" className="md:size-auto md:px-3" onClick={() => setShowUpload(true)}>
-                <Upload className="h-4 w-4 md:mr-1.5" />
-                <span className="hidden md:inline">New Generation</span>
+              <Button size="icon" onClick={() => setShowUpload(true)} title="New Generation">
+                <Upload className="h-4 w-4" />
               </Button>
             )}
             {tab === 'templates' && (
               <>
-                <Button size="icon" variant="outline" className="md:size-auto md:px-3" onClick={() => setShowAnafImport(true)}>
-                  <FileUp className="h-4 w-4 md:mr-1.5" />
-                  <span className="hidden md:inline">Import ANAF PDF</span>
+                <Button size="icon" variant="outline" onClick={() => setShowAnafImport(true)} title="Import ANAF PDF">
+                  <FileUp className="h-4 w-4" />
                 </Button>
-                <Button size="icon" className="md:size-auto md:px-3" onClick={() => setShowNewTemplate(true)}>
-                  <Plus className="h-4 w-4 md:mr-1.5" />
-                  <span className="hidden md:inline">New Template</span>
+                <Button size="icon" onClick={() => setShowNewTemplate(true)} title="New Template">
+                  <Plus className="h-4 w-4" />
                 </Button>
               </>
             )}
@@ -298,7 +295,7 @@ export default function Bilant() {
       {/* Generations Tab */}
       {tab === 'generations' && (
         <div className="space-y-4">
-          <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
+          <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
             <StatCard title="Total Generations" value={fmt(genTotal)} icon={<Scale className="h-4 w-4" />} isLoading={genLoading} />
             <StatCard title="Completed" value={fmt(completedCount)} icon={<FileSpreadsheet className="h-4 w-4" />} isLoading={genLoading} />
             <StatCard title="Companies" value={fmt(uniqueCompanies)} icon={<LayoutList className="h-4 w-4" />} isLoading={genLoading} />

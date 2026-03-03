@@ -342,14 +342,11 @@ export default function Dms() {
         breadcrumbs={[{ label: 'Documents', shortLabel: 'Docs.' }]}
         actions={
           <div className="flex items-center gap-2">
-            {isMobile && (
-              <Button variant="ghost" size="icon" onClick={() => setShowStats(s => !s)}>
-                <BarChart3 className="h-4 w-4" />
-              </Button>
-            )}
-            <Button size="icon" className="md:size-auto md:px-4" onClick={() => setUploadOpen(true)}>
-              <Plus className="h-4 w-4 md:mr-2" />
-              <span className="hidden md:inline">Upload Document</span>
+            <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
+              <BarChart3 className="h-4 w-4" />
+            </Button>
+            <Button size="icon" onClick={() => setUploadOpen(true)} title="Upload Document">
+              <Plus className="h-4 w-4" />
             </Button>
           </div>
         }
@@ -468,7 +465,7 @@ export default function Dms() {
           })()}
 
       {/* Stats — toggle on mobile, always on desktop */}
-      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden md:grid'}`}>
+      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
         <StatCard title="Total" value={stats?.total ?? 0} icon={<FolderOpen className="h-4 w-4" />} isLoading={statsLoading} />
         <StatCard title="Draft" value={stats?.draft ?? 0} icon={<Edit2 className="h-4 w-4" />} isLoading={statsLoading} />
         <StatCard title="Active" value={stats?.active ?? 0} icon={<FileText className="h-4 w-4" />} isLoading={statsLoading} />

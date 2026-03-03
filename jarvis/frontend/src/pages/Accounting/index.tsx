@@ -1,14 +1,12 @@
 import React, { useState, useMemo, useCallback, memo } from 'react'
 import { Link } from 'react-router-dom'
-import { useTabParam } from '@/hooks/useTabParam'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
   Building2,
   FolderTree,
-  Tag,
-  Truck,
+
   Trash2,
   Plus,
   Pencil,
@@ -18,7 +16,6 @@ import {
   ChevronUp,
   Columns3,
   GripVertical,
-  LayoutDashboard,
   Eye,
   EyeOff,
   ArrowUp,
@@ -26,12 +23,14 @@ import {
   ArrowUpDown,
   BarChart3,
   CheckSquare,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,
@@ -39,8 +38,6 @@ import {
   SelectTrigger,
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { StatCard } from '@/components/shared/StatCard'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -65,20 +62,24 @@ import { cn, usePersistedState } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { Invoice, InvoiceFilters } from '@/types/invoices'
 import { EditInvoiceDialog } from './EditInvoiceDialog'
-import { SummaryTable } from './SummaryTable'
+// import { SummaryTable } from './SummaryTable'
 import { AllocationEditor, allocationsToRows, rowsToApiPayload } from './AllocationEditor'
 import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
 
-type TabKey = 'invoices' | 'company' | 'department' | 'brand' | 'supplier' | 'bin'
 
-const tabs: { key: TabKey; label: string; icon: React.ElementType }[] = [
-  { key: 'invoices', label: 'Invoices', icon: FileText },
-  { key: 'company', label: 'By Company', icon: Building2 },
-  { key: 'department', label: 'By Department', icon: FolderTree },
-  { key: 'brand', label: 'By Brand', icon: Tag },
-  { key: 'supplier', label: 'By Supplier', icon: Truck },
-  { key: 'bin', label: 'Bin', icon: Trash2 },
-]
+// Subtle row tint based on invoice status
+const statusRowBg: Record<string, string> = {
+  processed: 'bg-green-500/5 border-l-green-500/50',
+  new: 'bg-blue-500/5 border-l-blue-500/50',
+  incomplete: 'bg-orange-500/5 border-l-orange-500/50',
+  eronata: 'bg-red-500/5 border-l-red-500/50',
+  nebugetata: 'bg-yellow-500/5 border-l-yellow-500/50',
+  bugetata: 'bg-teal-500/5 border-l-teal-500/50',
+  approved: 'bg-emerald-500/5 border-l-emerald-500/50',
+  paid: 'bg-green-500/5 border-l-green-500/50',
+  unpaid: 'bg-red-500/5 border-l-red-500/50',
+  pending: 'bg-yellow-500/5 border-l-yellow-500/50',
+}
 
 function formatDate(dateStr: string) {
   const d = new Date(dateStr)
@@ -88,8 +89,8 @@ function formatDate(dateStr: string) {
 export default function Accounting() {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
-  const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('accounting_invoices')
-  const [activeTab, setActiveTab] = useTabParam<TabKey>('invoices')
+  useDashboardWidgetToggle('accounting_invoices')
+  const [showBin, setShowBin] = useState(false)
   const [search, setSearch] = useState('')
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
@@ -98,6 +99,7 @@ export default function Accounting() {
   const [sort, setSort] = usePersistedState<SortState | null>('accounting-sort', null)
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
   const [showStats, setShowStats] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
 
   const filters = useAccountingStore((s) => s.filters)
@@ -118,37 +120,12 @@ export default function Accounting() {
   const { data: invoices = [], isLoading, isError: invoicesError, refetch: refetchInvoices } = useQuery({
     queryKey: ['invoices', filters],
     queryFn: () => invoicesApi.getInvoices(apiFilters),
-    enabled: activeTab === 'invoices',
   })
 
   const { data: binInvoices = [], isLoading: binLoading, isError: binError, refetch: refetchBin } = useQuery({
     queryKey: ['invoices', 'bin'],
     queryFn: () => invoicesApi.getDeletedInvoices(),
-    enabled: activeTab === 'bin',
-  })
-
-  const { data: companySummary = [] } = useQuery({
-    queryKey: ['invoices', 'summary', 'company', filters],
-    queryFn: () => invoicesApi.getCompanySummary(filters),
-    enabled: activeTab === 'invoices' || activeTab === 'company',
-  })
-
-  const { data: departmentSummary = [] } = useQuery({
-    queryKey: ['invoices', 'summary', 'department', filters],
-    queryFn: () => invoicesApi.getDepartmentSummary(filters),
-    enabled: activeTab === 'department',
-  })
-
-  const { data: brandSummary = [] } = useQuery({
-    queryKey: ['invoices', 'summary', 'brand', filters],
-    queryFn: () => invoicesApi.getBrandSummary(filters),
-    enabled: activeTab === 'brand',
-  })
-
-  const { data: supplierSummary = [] } = useQuery({
-    queryKey: ['invoices', 'summary', 'supplier', filters],
-    queryFn: () => invoicesApi.getSupplierSummary(filters),
-    enabled: activeTab === 'supplier',
+    enabled: showBin,
   })
 
   // Entity tags for invoices
@@ -156,7 +133,7 @@ export default function Accounting() {
   const { data: entityTagsMap = {} } = useQuery({
     queryKey: ['entity-tags', 'invoice', invoiceIds],
     queryFn: () => tagsApi.getEntityTagsBulk('invoice', invoiceIds),
-    enabled: invoiceIds.length > 0 && activeTab === 'invoices',
+    enabled: invoiceIds.length > 0,
   })
 
   // Filter options
@@ -294,8 +271,7 @@ export default function Accounting() {
   }, [visibleColumns, statusOptions, paymentOptions, entityTagsMap])
 
   // Derived data
-  const displayedInvoices = useMemo(() => {
-    let list = activeTab === 'bin' ? binInvoices : invoices
+  const applySearchAndSort = useCallback((list: typeof invoices) => {
     if (search) {
       const q = search.toLowerCase()
       list = list.filter(
@@ -326,16 +302,19 @@ export default function Accounting() {
       }
     }
     return list
-  }, [invoices, binInvoices, activeTab, search, sort, filterTagIds, entityTagsMap])
+  }, [search, sort, filterTagIds, entityTagsMap, columnDefMap])
+
+  const displayedInvoices = useMemo(() => applySearchAndSort(invoices), [invoices, applySearchAndSort])
+  const displayedBinInvoices = useMemo(() => applySearchAndSort(binInvoices), [binInvoices, applySearchAndSort])
 
   const totalRon = useMemo(
-    () => companySummary.reduce((sum, c) => sum + Number(c.total_value_ron ?? 0), 0),
-    [companySummary],
+    () => invoices.filter(i => i.currency === 'RON').reduce((sum, i) => sum + Number(i.net_value ?? 0), 0),
+    [invoices],
   )
 
   const totalEur = useMemo(
-    () => companySummary.reduce((sum, c) => sum + Number(c.total_value_eur ?? 0), 0),
-    [companySummary],
+    () => invoices.filter(i => i.currency === 'EUR').reduce((sum, i) => sum + Number(i.net_value ?? 0), 0),
+    [invoices],
   )
 
   const allSelected = displayedInvoices.length > 0 && selectedInvoiceIds.length === displayedInvoices.length
@@ -377,21 +356,23 @@ export default function Accounting() {
         title="Accounting"
         breadcrumbs={[
           { label: 'Accounting', shortLabel: 'Acc.' },
-          { label: tabs.find(t => t.key === activeTab)?.label ?? 'Invoices' },
+          { label: 'Invoices' },
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowStats(s => !s)}>
+            <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
               <BarChart3 className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="hidden md:inline-flex md:size-auto md:px-3" onClick={toggleDashboardWidget}>
-              <LayoutDashboard className="h-3.5 w-3.5 md:mr-1.5" />
-              <span className="hidden md:inline">{isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}</span>
+            <Button variant="ghost" size="icon" className={showFilters ? 'bg-muted' : ''} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
+              <SlidersHorizontal className="h-4 w-4" />
             </Button>
-            <Button size="icon" className="md:size-auto md:px-4" asChild>
+            <Button variant="ghost" size="icon" className={cn('hidden md:inline-flex relative', showBin ? 'bg-destructive/15 text-destructive' : '')} onClick={() => { setShowBin(s => !s); clearSelected(); setSelectMode(false) }} title="Bin">
+              <Trash2 className="h-4 w-4" />
+              {binInvoices.length > 0 && <span className="absolute -top-1 -right-1 rounded-full bg-destructive px-1 py-0 text-[9px] text-destructive-foreground">{binInvoices.length}</span>}
+            </Button>
+            <Button size="icon" asChild>
               <Link to="/app/accounting/add">
-                <Plus className="h-4 w-4 md:mr-1.5" />
-                <span className="hidden md:inline">New Invoice</span>
+                <Plus className="h-4 w-4" />
               </Link>
             </Button>
           </div>
@@ -399,7 +380,7 @@ export default function Accounting() {
       />
 
       {/* Stats row */}
-      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-5 ${showStats ? '' : 'hidden md:grid'}`}>
+      {showStats && <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard
           title="Invoices"
           value={invoices.length}
@@ -408,7 +389,7 @@ export default function Accounting() {
         />
         <StatCard
           title="Companies"
-          value={companySummary.length}
+          value={companyOptions.length}
           icon={<Building2 className="h-4 w-4" />}
         />
         <StatCard
@@ -427,51 +408,11 @@ export default function Accounting() {
           value={new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalEur)}
           icon={<span className="text-xs font-bold">EUR</span>}
         />
-      </div>
+      </div>}
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as TabKey); clearSelected(); setSelectMode(false); setSearch('') }}>
-        {isMobile ? (
-          <MobileBottomTabs>
-            <TabsList className="w-full">
-              {tabs.map((tab) => {
-                const Icon = tab.icon
-                return (
-                  <TabsTrigger key={tab.key} value={tab.key}>
-                    <Icon className="h-3.5 w-3.5" />
-                    {tab.label}
-                    {tab.key === 'bin' && binInvoices.length > 0 && (
-                      <span className="ml-1 rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground">
-                        {binInvoices.length}
-                      </span>
-                    )}
-                  </TabsTrigger>
-                )
-              })}
-            </TabsList>
-          </MobileBottomTabs>
-        ) : (
-          <TabsList className="w-auto">
-            {tabs.map((tab) => {
-              const Icon = tab.icon
-              return (
-                <TabsTrigger key={tab.key} value={tab.key}>
-                  <Icon className="h-3.5 w-3.5" />
-                  {tab.label}
-                  {tab.key === 'bin' && binInvoices.length > 0 && (
-                    <span className="ml-1 rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground">
-                      {binInvoices.length}
-                    </span>
-                  )}
-                </TabsTrigger>
-              )
-            })}
-          </TabsList>
-        )}
-      </Tabs>
 
       {/* Filter + Search bar */}
-      {(activeTab === 'invoices' || activeTab === 'bin') && (
+      {(
         isMobile ? (
           <div className="flex items-center gap-2">
             <SearchInput
@@ -490,7 +431,7 @@ export default function Accounting() {
               </Button>
             )}
           </div>
-        ) : (
+        ) : showFilters ? (
           <div className="flex flex-wrap items-center gap-2">
             <SearchInput
               value={search}
@@ -509,7 +450,7 @@ export default function Accounting() {
               <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
             </div>
           </div>
-        )
+        ) : null
       )}
 
       {/* Bulk action bar */}
@@ -517,47 +458,72 @@ export default function Accounting() {
         <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-4 py-2">
           <span className="text-sm font-medium">{selectedInvoiceIds.length} selected</span>
           <div className="flex-1" />
-          {activeTab === 'invoices' && (
-            <>
-              <TagPickerButton
-                entityType="invoice"
-                entityIds={selectedInvoiceIds}
-                onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
-              />
-              <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selectedInvoiceIds)}>
-                <Trash2 className="mr-1 h-3.5 w-3.5" />
-                Delete
-              </Button>
-            </>
-          )}
-          {activeTab === 'bin' && (
-            <>
-              <Button variant="outline" size="sm" onClick={() => restoreMutation.mutate(selectedInvoiceIds)}>
-                <RotateCcw className="mr-1 h-3.5 w-3.5" />
-                Restore
-              </Button>
-              <Button variant="destructive" size="sm" onClick={() => setPermanentDeleteIds(selectedInvoiceIds)}>
-                <Trash2 className="mr-1 h-3.5 w-3.5" />
-                Permanent Delete
-              </Button>
-            </>
-          )}
+          <TagPickerButton
+            entityType="invoice"
+            entityIds={selectedInvoiceIds}
+            onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
+          />
+          <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selectedInvoiceIds)}>
+            <Trash2 className="mr-1 h-3.5 w-3.5" />
+            Delete
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => { clearSelected(); setSelectMode(false) }}>
             Cancel
           </Button>
         </div>
       )}
 
-      {/* Tab content */}
-      {(activeTab === 'invoices' && invoicesError) || (activeTab === 'bin' && binError) ? (
-        <QueryError
-          message={activeTab === 'bin' ? 'Failed to load recycle bin' : 'Failed to load invoices'}
-          onRetry={() => (activeTab === 'bin' ? refetchBin() : refetchInvoices())}
-        />
-      ) : activeTab === 'invoices' || activeTab === 'bin' ? (
+      {/* Bin section — shown at top when toggled */}
+      {showBin && (
+        <>
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-destructive/30" />
+            <span className="text-xs font-medium text-destructive flex items-center gap-1.5">
+              <Trash2 className="h-3.5 w-3.5" /> Recycle Bin
+              {binInvoices.length > 0 && <span className="ml-1 text-muted-foreground">({binInvoices.length})</span>}
+            </span>
+            <div className="h-px flex-1 bg-destructive/30" />
+          </div>
+          {binError ? (
+            <QueryError message="Failed to load recycle bin" onRetry={refetchBin} />
+          ) : (
+            <InvoiceTable
+              invoices={displayedBinInvoices}
+              isLoading={binLoading}
+              selectedIds={[]}
+              allSelected={false}
+              someSelected={false}
+              onSelectAll={() => {}}
+              onToggleSelect={() => {}}
+              onEdit={setEditInvoice}
+              onDelete={() => {}}
+              onRestore={(id) => restoreMutation.mutate([id])}
+              onPermanentDelete={(id) => setPermanentDeleteIds([id])}
+              expandedRow={expandedRow}
+              onToggleExpand={(id) => setExpandedRow(expandedRow === id ? null : id)}
+              isBin={true}
+              activeCols={activeCols}
+              sort={sort}
+              onSort={setSort}
+              isMobile={isMobile}
+              selectMode={false}
+            />
+          )}
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">Invoices</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+        </>
+      )}
+
+      {/* Invoices table */}
+      {invoicesError ? (
+        <QueryError message="Failed to load invoices" onRetry={refetchInvoices} />
+      ) : (
         <InvoiceTable
           invoices={displayedInvoices}
-          isLoading={activeTab === 'bin' ? binLoading : isLoading}
+          isLoading={isLoading}
           selectedIds={selectedInvoiceIds}
           allSelected={allSelected}
           someSelected={someSelected}
@@ -569,22 +535,14 @@ export default function Accounting() {
           onPermanentDelete={(id) => setPermanentDeleteIds([id])}
           expandedRow={expandedRow}
           onToggleExpand={(id) => setExpandedRow(expandedRow === id ? null : id)}
-          isBin={activeTab === 'bin'}
+          isBin={false}
           activeCols={activeCols}
           sort={sort}
           onSort={setSort}
           isMobile={isMobile}
           selectMode={selectMode}
         />
-      ) : activeTab === 'company' ? (
-        <SummaryTable data={companySummary} nameKey="company" label="Company" />
-      ) : activeTab === 'department' ? (
-        <SummaryTable data={departmentSummary} nameKey="department" label="Department" />
-      ) : activeTab === 'brand' ? (
-        <SummaryTable data={brandSummary} nameKey="brand" label="Brand" />
-      ) : activeTab === 'supplier' ? (
-        <SummaryTable data={supplierSummary} nameKey="supplier" label="Supplier" />
-      ) : null}
+      )}
 
       {/* Edit dialog */}
       {editInvoice && (
@@ -1158,9 +1116,9 @@ const InvoiceRow = memo(function InvoiceRow({
         </TableCell>
       </TableRow>
       {isExpanded && (hasAllocations || editingAllocations) && (
-        <TableRow className="bg-muted/30">
+        <TableRow>
           <TableCell colSpan={colCount} className="p-0">
-            <div className="px-8 py-3">
+            <div className={cn('px-8 py-3 border-l-2 shadow-[inset_0_1px_0_0_hsl(var(--border)),inset_0_-1px_0_0_hsl(var(--border))]', statusRowBg[inv.status?.toLowerCase()] || 'bg-muted/50 border-l-primary/50')}>
               {editingAllocations ? (
                 <AllocationEditor
                   initialCompany={inv.allocations?.[0]?.company}
@@ -1174,31 +1132,13 @@ const InvoiceRow = memo(function InvoiceRow({
                 />
               ) : (
                 <>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-xs font-medium text-muted-foreground">Allocations</span>
-                    {!isBin && (
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingAllocations(true)}>
-                        <Pencil className="mr-1 h-3 w-3" />
-                        Edit
-                      </Button>
-                    )}
-                  </div>
-                  <table className="w-full text-xs border-separate border-spacing-x-3 border-spacing-y-0">
-                    <thead>
-                      <tr className="text-muted-foreground">
-                        <th className="pb-1 text-left font-medium">Company</th>
-                        <th className="pb-1 text-left font-medium">Brand</th>
-                        <th className="pb-1 text-left font-medium">Department</th>
-                        <th className="pb-1 text-left font-medium">Subdepartment</th>
-                        <th className="pb-1 text-right font-medium">%</th>
-                        <th className="pb-1 text-right font-medium">Value</th>
-                        <th className="pb-1 text-left font-medium">Responsible</th>
-                        <th className="pb-1 text-left font-medium">Comment</th>
-                      </tr>
-                    </thead>
+                  <table className="text-xs w-full border-separate border-spacing-x-3 border-spacing-y-0">
                     <tbody>
-                      {inv.allocations!.map((alloc) => {
+                      {inv.allocations!.map((alloc, idx) => {
                         const hasReinvoice = alloc.reinvoice_destinations?.length > 0
+                        const totalTableRows = inv.allocations!.reduce(
+                          (sum, a) => sum + 1 + (a.reinvoice_destinations?.length ?? 0), 0
+                        )
                         return (
                         <React.Fragment key={alloc.id}>
                           <tr className={cn('border-t border-border/50', hasReinvoice && 'text-muted-foreground/50')}>
@@ -1206,12 +1146,31 @@ const InvoiceRow = memo(function InvoiceRow({
                             <td className="py-1">{alloc.brand || '-'}</td>
                             <td className="py-1">{alloc.department}</td>
                             <td className="py-1">{alloc.subdepartment || '-'}</td>
-                            <td className="py-1 text-right">{alloc.allocation_percent}%</td>
                             <td className={cn('py-1 text-right', hasReinvoice && 'opacity-40')}>
                               <CurrencyDisplay value={alloc.allocation_value} currency={inv.currency} />
                             </td>
-                            <td className="py-1">{alloc.responsible || '-'}</td>
-                            <td className="py-1 text-muted-foreground max-w-[150px] truncate">{alloc.comment || ''}</td>
+                            <td className="py-1 text-right">{alloc.allocation_percent}%</td>
+                            <td className="py-1 text-muted-foreground max-w-[150px] truncate">
+                              {alloc.comment ? (
+                                <TooltipProvider delayDuration={200}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="cursor-default">{alloc.comment}</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="max-w-[400px] whitespace-pre-wrap">
+                                      {alloc.comment}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : ''}
+                            </td>
+                            {idx === 0 && !isBin && (
+                              <td rowSpan={totalTableRows} className="py-1 pl-1 align-middle w-7">
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditingAllocations(true)}>
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                              </td>
+                            )}
                           </tr>
                           {hasReinvoice && alloc.reinvoice_destinations.map((rd) => (
                             <tr key={rd.id} className="text-[11px]">
@@ -1219,18 +1178,18 @@ const InvoiceRow = memo(function InvoiceRow({
                               <td className="py-0.5 text-foreground">{rd.brand || '-'}</td>
                               <td className="py-0.5 text-foreground">{rd.department}</td>
                               <td className="py-0.5 text-foreground">{rd.subdepartment || '-'}</td>
-                              <td className="py-0.5 text-right text-foreground">{rd.percentage}%</td>
                               <td className="py-0.5 text-right text-foreground">
                                 <CurrencyDisplay value={rd.value} currency={inv.currency} />
                               </td>
-                              <td colSpan={2} className="py-0.5 text-muted-foreground italic">reinvoiced</td>
+                              <td className="py-0.5 text-right text-foreground">{rd.percentage}%</td>
+                              <td className="py-0.5 text-muted-foreground italic">reinvoiced</td>
                             </tr>
                           ))}
                         </React.Fragment>
                       )})}
                     </tbody>
                   </table>
-                  <div className="mt-3 border-t pt-3">
+                  <div className="mt-2 flex justify-end">
                     <ApprovalWidget entityType="invoice" entityId={inv.id} compact />
                   </div>
                 </>
