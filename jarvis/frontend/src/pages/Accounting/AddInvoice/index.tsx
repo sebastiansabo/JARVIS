@@ -98,12 +98,6 @@ export default function AddInvoice() {
     enabled: !!company,
   })
 
-  const { data: departments = [] } = useQuery({
-    queryKey: ['departments', company],
-    queryFn: () => organizationApi.getDepartments(company),
-    enabled: !!company,
-  })
-
   const { data: companiesVat = [] } = useQuery({
     queryKey: ['companies-vat'],
     queryFn: () => organizationApi.getCompaniesVat(),
@@ -858,7 +852,6 @@ export default function AddInvoice() {
                       company={company}
                       allCompanies={companies as string[]}
                       brands={brands}
-                      departments={departments}
                       effectiveValue={effectiveValue}
                       currency={currency}
                       onUpdate={(updates) => updateRow(row.id, updates)}

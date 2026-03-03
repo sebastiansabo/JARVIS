@@ -5,7 +5,10 @@ export const organizationApi = {
   // Company lookups
   getCompanies: () => api.get<string[]>('/api/companies'),
   getBrands: (company: string) => api.get<string[]>(`/api/brands/${encodeURIComponent(company)}`),
-  getDepartments: (company: string) => api.get<string[]>(`/api/departments/${encodeURIComponent(company)}`),
+  getDepartments: (company: string, level1?: string) => {
+    const url = `/api/departments/${encodeURIComponent(company)}`
+    return api.get<string[]>(level1 ? `${url}?level1=${encodeURIComponent(level1)}` : url)
+  },
   getSubdepartments: (company: string, department: string) =>
     api.get<string[]>(`/api/subdepartments/${encodeURIComponent(company)}/${encodeURIComponent(department)}`),
   getCompanyForDepartment: (department: string) =>

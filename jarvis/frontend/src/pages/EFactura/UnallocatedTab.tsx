@@ -1165,9 +1165,9 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                 <p className="text-[11px] text-muted-foreground">Leave empty to use the supplier mapping default</p>
               </div>
 
-              {/* Department 1 */}
+              {/* Level 2 Override */}
               <div className="space-y-1">
-                <Label className="text-xs">Department Override</Label>
+                <Label className="text-xs">Level 2 Override</Label>
                 {departments.length > 0 ? (
                   <Select
                     value={overrides.department_override || '__default__'}
@@ -1197,15 +1197,16 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                 <p className="text-[11px] text-muted-foreground">Leave empty to use the supplier mapping default</p>
               </div>
 
+              {subdepartments1.length > 0 && (
               <div className="space-y-1">
-                <Label className="text-xs">Subdepartment Override</Label>
+                <Label className="text-xs">Level 3 Override</Label>
                 <Select
                   value={overrides.subdepartment_override || '__default__'}
                   onValueChange={(v) => setOverrides((o) => ({
                     ...o,
                     subdepartment_override: v === '__default__' ? '' : v,
                   }))}
-                  disabled={!overrides.department_override || subdepartments1.length === 0}
+                  disabled={!overrides.department_override}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -1218,6 +1219,7 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                   </SelectContent>
                 </Select>
               </div>
+              )}
 
               {/* Split between two departments */}
               <div className="flex items-center gap-2">
@@ -1246,11 +1248,11 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                 </div>
               </div>
 
-              {/* Department 2 (conditional) */}
+              {/* Level 2 (split — conditional) */}
               {splitDept && (
                 <>
                   <div className="space-y-1">
-                    <Label className="text-xs">Department 2</Label>
+                    <Label className="text-xs">Level 2 (split)</Label>
                     {departments.length > 0 ? (
                       <Select
                         value={overrides.department_override_2 || '__default__'}
@@ -1274,19 +1276,20 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                       <Input
                         value={overrides.department_override_2}
                         onChange={(e) => setOverrides((o) => ({ ...o, department_override_2: e.target.value }))}
-                        placeholder="Department 2"
+                        placeholder="Level 2..."
                       />
                     )}
                   </div>
+                  {subdepartments2.length > 0 && (
                   <div className="space-y-1">
-                    <Label className="text-xs">Subdepartment 2</Label>
+                    <Label className="text-xs">Level 3 (split)</Label>
                     <Select
                       value={overrides.subdepartment_override_2 || '__default__'}
                       onValueChange={(v) => setOverrides((o) => ({
                         ...o,
                         subdepartment_override_2: v === '__default__' ? '' : v,
                       }))}
-                      disabled={!overrides.department_override_2 || subdepartments2.length === 0}
+                      disabled={!overrides.department_override_2}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -1299,6 +1302,7 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
                       </SelectContent>
                     </Select>
                   </div>
+                  )}
                 </>
               )}
             </div>

@@ -41,8 +41,10 @@ def api_brands(company):
 @org_bp.route('/api/departments/<company>')
 @login_required
 def api_departments(company):
-    """Get departments (L2 nodes) for a company."""
-    result = _node_repo.get_l2_names(company)
+    """Get departments (L2 nodes) for a company, optionally filtered by ?level1=."""
+    from flask import request as _req
+    level1 = _req.args.get('level1') or _req.args.get('brand')
+    result = _node_repo.get_l2_names(company, level1_name=level1)
     if result:
         return jsonify(result)
     from models import get_departments_for_company

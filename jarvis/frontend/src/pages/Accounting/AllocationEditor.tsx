@@ -145,12 +145,6 @@ export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditor
     enabled: !!company,
   })
 
-  const { data: departments = [] } = useQuery({
-    queryKey: ['departments', company],
-    queryFn: () => organizationApi.getDepartments(company),
-    enabled: !!company,
-  })
-
   const totalPercent = useMemo(() => rows.reduce((s, r) => s + r.percent, 0), [rows])
 
   const updateRow = (id: string, updates: Partial<AllocationRow>) => {
@@ -258,7 +252,6 @@ export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditor
               company={company}
               allCompanies={companies as string[]}
               brands={brands}
-              departments={departments}
               effectiveValue={effectiveValue}
               currency={currency}
               onUpdate={(updates) => updateRow(row.id, updates)}
@@ -318,7 +311,6 @@ export function AllocationRowComponent({
   company,
   allCompanies,
   brands,
-  departments,
   effectiveValue,
   currency,
   onUpdate,
@@ -329,7 +321,6 @@ export function AllocationRowComponent({
   company: string
   allCompanies: string[]
   brands: string[]
-  departments: string[]
   effectiveValue: number
   currency: string
   onUpdate: (updates: Partial<AllocationRow>) => void
@@ -338,6 +329,12 @@ export function AllocationRowComponent({
 }) {
   const [showComment, setShowComment] = useState(!!row.comment)
   const hasReinvoice = row.reinvoiceDestinations.length > 0
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments', company, row.brand || null],
+    queryFn: () => organizationApi.getDepartments(company, row.brand || undefined),
+    enabled: !!company,
+  })
 
   const { data: subdepartments = [] } = useQuery({
     queryKey: ['subdepartments', company, row.department],
@@ -401,6 +398,22 @@ export function AllocationRowComponent({
   }
 
   const hasBrands = brands.length > 0
+  // Cascade visibility: L2 appears only when L1 selected (if brands exist) and has children
+  // L3 appears only when L2 selected and has children
+  const showL2 = hasBrands ? (!!row.brand && departments.length > 0) : departments.length > 0
+  const showL3 = showL2 && !!row.department && subdepartments.length > 0
+
+  // Dynamic col spans so the grid always sums to 12
+  // Fixed: %(1) + value(2) + actions(2 or 3) = 5 or 6
+  const actionsSpan = hasBrands ? 2 : 3
+  const levelCols = 12 - 1 - 2 - actionsSpan   // 7 (brands) or 6 (no brands)
+  const l1Cols = hasBrands ? 2 : 0
+  const rem = levelCols - l1Cols                 // 5 or 6
+  const l2Cols = showL2 ? (showL3 ? (hasBrands ? 3 : 4) : rem) : 0
+  const l3Cols = showL3 ? rem - l2Cols : 0
+  const spacerCols = rem - l2Cols - l3Cols       // fills gap when L2/L3 hidden
+
+  const cs = (n: number) => ({ gridColumn: `span ${n} / span ${n}` })
 
   // Net values: gross minus reinvoiced portion
   const reinvoiceTotal = row.reinvoiceDestinations.reduce((s, d) => s + d.percentage, 0)
@@ -412,10 +425,10 @@ export function AllocationRowComponent({
     <div className="rounded-lg border p-2 space-y-2">
       <div className="grid grid-cols-12 gap-2 items-center">
         {hasBrands && (
-          <div className="col-span-2 min-w-0">
+          <div style={cs(l1Cols)} className="min-w-0">
             <Select
               value={row.brand || '__none__'}
-              onValueChange={(v) => onUpdate({ brand: v === '__none__' ? '' : v })}
+              onValueChange={(v) => onUpdate({ brand: v === '__none__' ? '' : v, department: '', subdepartment: '' })}
             >
               <SelectTrigger className="h-8 w-full text-xs">
                 <SelectValue placeholder="Level 1" />
@@ -429,44 +442,44 @@ export function AllocationRowComponent({
             </Select>
           </div>
         )}
-        <div className={cn(hasBrands ? 'col-span-3' : 'col-span-4', 'min-w-0')}>
-          <Select
-            value={row.department || '__none__'}
-            onValueChange={(v) =>
-              onUpdate({
-                department: v === '__none__' ? '' : v,
-                subdepartment: '',
-              })
-            }
-          >
-            <SelectTrigger className="h-8 w-full text-xs">
-              <SelectValue placeholder="Select..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">Select...</SelectItem>
-              {departments.map((d) => (
-                <SelectItem key={d} value={d}>{d}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="col-span-2 min-w-0">
-          <Select
-            value={row.subdepartment || '__none__'}
-            onValueChange={(v) => onUpdate({ subdepartment: v === '__none__' ? '' : v })}
-            disabled={subdepartments.length === 0}
-          >
-            <SelectTrigger className="h-8 w-full text-xs">
-              <SelectValue placeholder="N/A" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">N/A</SelectItem>
-              {subdepartments.map((sd) => (
-                <SelectItem key={sd} value={sd}>{sd}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {showL2 ? (
+          <div style={cs(l2Cols)} className="min-w-0">
+            <Select
+              value={row.department || '__none__'}
+              onValueChange={(v) => onUpdate({ department: v === '__none__' ? '' : v, subdepartment: '' })}
+            >
+              <SelectTrigger className="h-8 w-full text-xs">
+                <SelectValue placeholder="Select..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Select...</SelectItem>
+                {departments.map((d) => (
+                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : spacerCols > 0 ? (
+          <div style={cs(spacerCols)} />
+        ) : null}
+        {showL3 && (
+          <div style={cs(l3Cols)} className="min-w-0">
+            <Select
+              value={row.subdepartment || '__none__'}
+              onValueChange={(v) => onUpdate({ subdepartment: v === '__none__' ? '' : v })}
+            >
+              <SelectTrigger className="h-8 w-full text-xs">
+                <SelectValue placeholder="Level 3" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">N/A</SelectItem>
+                {subdepartments.map((sd) => (
+                  <SelectItem key={sd} value={sd}>{sd}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="col-span-1 min-w-0">
           <Input
             type="number"

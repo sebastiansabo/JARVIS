@@ -48,15 +48,25 @@ class StructureNodeRepository(BaseRepository):
         ''', (company_name,))
         return [r['name'] for r in rows]
 
-    def get_l2_names(self, company_name: str) -> list[str]:
-        """Get L2 (department-level) node names for a company."""
-        rows = self.query_all('''
-            SELECT DISTINCT sn.name
-            FROM structure_nodes sn
-            JOIN companies c ON sn.company_id = c.id
-            WHERE c.company = %s AND sn.level = 2
-            ORDER BY sn.name
-        ''', (company_name,))
+    def get_l2_names(self, company_name: str, level1_name: str = None) -> list[str]:
+        """Get L2 node names for a company, optionally filtered by parent L1."""
+        if level1_name:
+            rows = self.query_all('''
+                SELECT DISTINCT l2.name
+                FROM structure_nodes l2
+                JOIN structure_nodes l1 ON l2.parent_id = l1.id
+                JOIN companies c ON l2.company_id = c.id
+                WHERE c.company = %s AND l1.level = 1 AND lower(l1.name) = lower(%s) AND l2.level = 2
+                ORDER BY l2.name
+            ''', (company_name, level1_name))
+        else:
+            rows = self.query_all('''
+                SELECT DISTINCT sn.name
+                FROM structure_nodes sn
+                JOIN companies c ON sn.company_id = c.id
+                WHERE c.company = %s AND sn.level = 2
+                ORDER BY sn.name
+            ''', (company_name,))
         return [r['name'] for r in rows]
 
     def get_l3_names(self, company_name: str, department: str) -> list[str]:

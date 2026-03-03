@@ -88,9 +88,9 @@ function MappingFormDialog({
   })
 
   const { data: departments = [] } = useQuery({
-    queryKey: ['departments', company],
-    queryFn: () => organizationApi.getDepartments(company),
-    enabled: !!company,
+    queryKey: ['departments', company, form.brand || null],
+    queryFn: () => organizationApi.getDepartments(company, form.brand || undefined),
+    enabled: !!company && (brands.length === 0 || !!form.brand),
   })
 
   const { data: subdepartments = [] } = useQuery({
@@ -198,16 +198,16 @@ function MappingFormDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">Select a company to populate Brand, Department, Subdepartment dropdowns</p>
+            <p className="text-[11px] text-muted-foreground">Select a company to populate Level 1/2/3 dropdowns</p>
           </div>
 
-          {/* Brand */}
+          {/* Level 1 */}
           <div className="space-y-1">
-            <Label className="text-xs">Brand</Label>
+            <Label className="text-xs">Level 1</Label>
             {company && brands.length > 0 ? (
               <Select
                 value={form.brand || '__none__'}
-                onValueChange={(v) => set('brand', v === '__none__' ? '' : v)}
+                onValueChange={(v) => { set('brand', v === '__none__' ? '' : v); set('department', ''); set('subdepartment', '') }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -224,9 +224,10 @@ function MappingFormDialog({
             )}
           </div>
 
-          {/* Department */}
+          {/* Level 2 — only show if no brands OR brand selected */}
+          {(!company || brands.length === 0 || !!form.brand) && (
           <div className="space-y-1">
-            <Label className="text-xs">Department</Label>
+            <Label className="text-xs">Level 2</Label>
             {company && departments.length > 0 ? (
               <Select
                 value={form.department || '__none__'}
@@ -249,15 +250,16 @@ function MappingFormDialog({
               <Input value={form.department} onChange={(e) => set('department', e.target.value)} placeholder={company ? 'No departments found' : 'Select company first'} />
             )}
           </div>
+          )}
 
-          {/* Subdepartment */}
+          {/* Level 3 — only show when department selected and subdepartments exist */}
+          {company && !!form.department && (subdepartments.length > 0 || form.subdepartment) && (
           <div className="space-y-1">
-            <Label className="text-xs">Subdepartment</Label>
-            {company && form.department ? (
+            <Label className="text-xs">Level 3</Label>
+            {subdepartments.length > 0 ? (
               <Select
                 value={form.subdepartment || '__none__'}
                 onValueChange={(v) => set('subdepartment', v === '__none__' ? '' : v)}
-                disabled={subdepartments.length === 0}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -270,9 +272,10 @@ function MappingFormDialog({
                 </SelectContent>
               </Select>
             ) : (
-              <Input value={form.subdepartment} onChange={(e) => set('subdepartment', e.target.value)} placeholder={!form.department ? 'Select department first' : 'Select company first'} disabled={!company || !form.department} />
+              <Input value={form.subdepartment} onChange={(e) => set('subdepartment', e.target.value)} placeholder="Level 3..." />
             )}
           </div>
+          )}
 
           <div className="space-y-1">
             <Label className="text-xs">Note</Label>
