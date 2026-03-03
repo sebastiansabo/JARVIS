@@ -398,8 +398,7 @@ export function AllocationRowComponent({
   }
 
   const hasBrands = brands.length > 0
-  // Cascade visibility: L2 appears only when L1 selected (if brands exist) and has children
-  // L3 appears only when L2 selected and has children
+  // Cascade: L2 requires L1 selected; L3 requires L2 selected
   const showL2 = hasBrands ? (!!row.brand && departments.length > 0) : departments.length > 0
   const showL3 = showL2 && !!row.department && subdepartments.length > 0
 
@@ -411,7 +410,8 @@ export function AllocationRowComponent({
   const rem = levelCols - l1Cols                 // 5 or 6
   const l2Cols = showL2 ? (showL3 ? (hasBrands ? 3 : 4) : rem) : 0
   const l3Cols = showL3 ? rem - l2Cols : 0
-  const spacerCols = rem - l2Cols - l3Cols       // fills gap when L2/L3 hidden
+  // When L2 is hidden, expand L1 to fill its space so there's no dead gap
+  const effectiveL1Cols = hasBrands ? (showL2 ? l1Cols : levelCols) : 0
 
   const cs = (n: number) => ({ gridColumn: `span ${n} / span ${n}` })
 
@@ -425,16 +425,15 @@ export function AllocationRowComponent({
     <div className="rounded-lg border p-2 space-y-2">
       <div className="grid grid-cols-12 gap-2 items-center">
         {hasBrands && (
-          <div style={cs(l1Cols)} className="min-w-0">
+          <div style={cs(effectiveL1Cols)} className="min-w-0">
             <Select
-              value={row.brand || '__none__'}
-              onValueChange={(v) => onUpdate({ brand: v === '__none__' ? '' : v, department: '', subdepartment: '' })}
+              value={row.brand}
+              onValueChange={(v) => onUpdate({ brand: v, department: '', subdepartment: '' })}
             >
               <SelectTrigger className="h-8 w-full text-xs">
-                <SelectValue placeholder="Level 1" />
+                <SelectValue placeholder="Select brand..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none__">N/A</SelectItem>
                 {brands.map((b) => (
                   <SelectItem key={b} value={b}>{b}</SelectItem>
                 ))}
@@ -442,7 +441,7 @@ export function AllocationRowComponent({
             </Select>
           </div>
         )}
-        {showL2 ? (
+        {showL2 && (
           <div style={cs(l2Cols)} className="min-w-0">
             <Select
               value={row.department || '__none__'}
@@ -459,9 +458,7 @@ export function AllocationRowComponent({
               </SelectContent>
             </Select>
           </div>
-        ) : spacerCols > 0 ? (
-          <div style={cs(spacerCols)} />
-        ) : null}
+        )}
         {showL3 && (
           <div style={cs(l3Cols)} className="min-w-0">
             <Select
@@ -469,10 +466,10 @@ export function AllocationRowComponent({
               onValueChange={(v) => onUpdate({ subdepartment: v === '__none__' ? '' : v })}
             >
               <SelectTrigger className="h-8 w-full text-xs">
-                <SelectValue placeholder="Level 3" />
+                <SelectValue placeholder="Select..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none__">N/A</SelectItem>
+                <SelectItem value="__none__">Select...</SelectItem>
                 {subdepartments.map((sd) => (
                   <SelectItem key={sd} value={sd}>{sd}</SelectItem>
                 ))}
@@ -642,7 +639,7 @@ function ReinvoiceDestRow({
           ))}
         </SelectContent>
       </Select>
-      {targetBrands.length > 0 && (
+      {!!dest.company && targetBrands.length > 0 && (
         <Select
           value={dest.brand || '__none__'}
           onValueChange={(v) => onUpdate({ brand: v === '__none__' ? '' : v })}
@@ -651,29 +648,30 @@ function ReinvoiceDestRow({
             <SelectValue placeholder="Brand" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__none__">N/A</SelectItem>
+            <SelectItem value="__none__">Select...</SelectItem>
             {targetBrands.map((b) => (
               <SelectItem key={b} value={b}>{b}</SelectItem>
             ))}
           </SelectContent>
         </Select>
       )}
-      <Select
-        value={dest.department || '__none__'}
-        onValueChange={(v) => onUpdate({ department: v === '__none__' ? '' : v, subdepartment: '' })}
-        disabled={!dest.company}
-      >
-        <SelectTrigger className="h-7 text-xs flex-1 min-w-[100px]">
-          <SelectValue placeholder="Department" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__none__">Department...</SelectItem>
-          {targetDepts.map((d) => (
-            <SelectItem key={d} value={d}>{d}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {targetSubdepts.length > 0 && (
+      {!!dest.company && (
+        <Select
+          value={dest.department || '__none__'}
+          onValueChange={(v) => onUpdate({ department: v === '__none__' ? '' : v, subdepartment: '' })}
+        >
+          <SelectTrigger className="h-7 text-xs flex-1 min-w-[100px]">
+            <SelectValue placeholder="Department" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">Department...</SelectItem>
+            {targetDepts.map((d) => (
+              <SelectItem key={d} value={d}>{d}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {!!dest.department && targetSubdepts.length > 0 && (
         <Select
           value={dest.subdepartment || '__none__'}
           onValueChange={(v) => onUpdate({ subdepartment: v === '__none__' ? '' : v })}
@@ -682,7 +680,7 @@ function ReinvoiceDestRow({
             <SelectValue placeholder="Subdept" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__none__">N/A</SelectItem>
+            <SelectItem value="__none__">Select...</SelectItem>
             {targetSubdepts.map((sd) => (
               <SelectItem key={sd} value={sd}>{sd}</SelectItem>
             ))}
