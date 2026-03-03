@@ -1570,6 +1570,16 @@ def init_db():
             from core.settings.menus.registry import sync_menu_items
             sync_menu_items(cursor)
 
+            # ── BioStar employee blacklist ──
+            cursor.execute('''
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'biostar_employees' AND column_name = 'is_blacklisted') THEN
+                        ALTER TABLE biostar_employees ADD COLUMN is_blacklisted BOOLEAN NOT NULL DEFAULT FALSE;
+                    END IF;
+                END $$;
+            ''')
+
             conn.commit()
             logger.info('Database schema already initialized — skipping init_db()')
             return
