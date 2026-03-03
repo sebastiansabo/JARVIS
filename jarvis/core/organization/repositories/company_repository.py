@@ -149,6 +149,29 @@ class CompanyRepository(BaseRepository):
             clear_companies_vat_cache()
         return result
 
+    # --- Company responsables ---
+
+    def get_responsables(self, company_id: int) -> list[dict]:
+        """Get responsable users for a company."""
+        return self.query_all('''
+            SELECT cr.user_id, u.name as user_name
+            FROM company_responsables cr
+            JOIN users u ON u.id = cr.user_id
+            WHERE cr.company_id = %s
+            ORDER BY u.name
+        ''', (company_id,))
+
+    def set_responsables(self, company_id: int, user_ids: list) -> None:
+        """Atomically replace all responsables for a company."""
+        def _work(cursor):
+            cursor.execute('DELETE FROM company_responsables WHERE company_id = %s', (company_id,))
+            for uid in user_ids:
+                cursor.execute(
+                    'INSERT INTO company_responsables (company_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING',
+                    (company_id, uid)
+                )
+        self.execute_many(_work)
+
     # --- Company VAT operations (by name) ---
 
     def get_all_with_vat_and_brands(self) -> list[dict]:

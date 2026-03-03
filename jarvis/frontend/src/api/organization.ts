@@ -37,6 +37,12 @@ export const organizationApi = {
     api.put<{ success: boolean }>(`/api/companies-config/${id}`, data),
   deleteCompanyConfig: (id: number) => api.delete<{ success: boolean }>(`/api/companies-config/${id}`),
 
+  // Company responsables
+  getCompanyResponsables: (companyId: number) =>
+    api.get<{ user_id: number; user_name: string }[]>(`/api/companies-config/${companyId}/responsables`),
+  setCompanyResponsables: (companyId: number, userIds: number[]) =>
+    api.put<{ success: boolean }>(`/api/companies-config/${companyId}/responsables`, { user_ids: userIds }),
+
   // Brands
   getAllBrands: () => api.get<Brand[]>('/api/brands-all'),
   createBrand: (name: string) => api.post<{ success: boolean; id: number }>('/api/brands-all', { name }),

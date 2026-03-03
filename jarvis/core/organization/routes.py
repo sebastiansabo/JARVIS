@@ -271,6 +271,23 @@ def api_unlink_brand(company_id, brand_id):
     return jsonify({'success': False, 'error': 'Link not found'}), 404
 
 
+@org_bp.route('/api/companies-config/<int:company_id>/responsables', methods=['GET'])
+@login_required
+def api_get_company_responsables(company_id):
+    """Get responsable users for a company."""
+    return jsonify(_company_repo.get_responsables(company_id))
+
+
+@org_bp.route('/api/companies-config/<int:company_id>/responsables', methods=['PUT'])
+@login_required
+def api_set_company_responsables(company_id):
+    """Set (replace) responsable users for a company."""
+    data = request.get_json() or {}
+    user_ids = data.get('user_ids', [])
+    _company_repo.set_responsables(company_id, user_ids)
+    return jsonify({'success': True})
+
+
 # ============== DEPARTMENT STRUCTURE ==============
 
 @org_bp.route('/api/department-structures', methods=['GET'])

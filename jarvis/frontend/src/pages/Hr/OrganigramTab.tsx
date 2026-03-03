@@ -130,6 +130,18 @@ export default function OrganigramTab() {
     queryFn: organizationApi.getNodeMembers,
   })
 
+  const { data: allCompanyResponsables = [] } = useQuery({
+    queryKey: ['settings', 'companyResponsables'],
+    queryFn: async () => {
+      if (companies.length === 0) return []
+      const results = await Promise.all(
+        companies.map(c => organizationApi.getCompanyResponsables(c.id).then(r => r.map(m => ({ ...m, company_id: c.id }))))
+      )
+      return results.flat()
+    },
+    enabled: companies.length > 0,
+  })
+
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
     queryFn: usersApi.getUsers,
@@ -141,6 +153,15 @@ export default function OrganigramTab() {
   const companyTree = useMemo(() => buildCompanyTree(companies), [companies])
   const flatCompanies = useMemo(() => flattenCompanyTree(companyTree), [companyTree])
   const nodeTreeByCompany = useMemo(() => buildNodeTree(structureNodes), [structureNodes])
+
+  const companyResponsablesMap = useMemo(() => {
+    const map = new Map<number, number[]>()
+    for (const m of allCompanyResponsables) {
+      if (!map.has(m.company_id)) map.set(m.company_id, [])
+      map.get(m.company_id)!.push(m.user_id)
+    }
+    return map
+  }, [allCompanyResponsables])
 
   const membersByNode = useMemo(() => {
     const map = new Map<number, { responsables: StructureNodeMember[]; team: StructureNodeMember[] }>()
@@ -177,12 +198,25 @@ export default function OrganigramTab() {
     onError: () => toast.error('Failed to toggle team'),
   })
 
+  const setCompanyResponsablesMut = useMutation({
+    mutationFn: ({ companyId, userIds }: { companyId: number; userIds: number[] }) =>
+      organizationApi.setCompanyResponsables(companyId, userIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'companyResponsables'] })
+    },
+    onError: () => toast.error('Failed to update company responsables'),
+  })
+
   const handleSetMembers = (nodeId: number, role: 'responsable' | 'team', userIds: number[]) => {
     setMembersMut.mutate({ nodeId, role, userIds })
   }
 
   const handleToggleTeam = (nodeId: number, hasTeam: boolean) => {
     toggleTeamMut.mutate({ nodeId, hasTeam })
+  }
+
+  const handleSetCompanyResponsables = (companyId: number, userIds: number[]) => {
+    setCompanyResponsablesMut.mutate({ companyId, userIds })
   }
 
   // Auto-expand on first load
@@ -291,6 +325,8 @@ export default function OrganigramTab() {
             const companyNodes = nodeTreeByCompany.get(company.id) || []
             const totalMembers = countNodeMembers(companyNodes)
 
+            const companyRespIds = companyResponsablesMap.get(company.id) ?? []
+
             return (
               <Card key={company.id} className="overflow-hidden">
                 {/* Company header */}
@@ -311,14 +347,38 @@ export default function OrganigramTab() {
                   {company.children?.length > 0 && (
                     <Badge className="text-[10px] px-1.5 py-0">Holding</Badge>
                   )}
-                  <Badge variant="secondary" className="ml-auto text-xs">
-                    {totalMembers} {totalMembers === 1 ? 'person' : 'people'}
-                  </Badge>
+                  <div className="ml-auto flex items-center gap-2">
+                    {companyRespIds.length > 0 && (
+                      <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                        <Crown className="h-3 w-3" />
+                        {companyRespIds.length}
+                      </span>
+                    )}
+                    <Badge variant="secondary" className="text-xs">
+                      {totalMembers} {totalMembers === 1 ? 'person' : 'people'}
+                    </Badge>
+                  </div>
                 </button>
 
-                {/* Structure nodes */}
+                {/* Expanded content */}
                 {isExpanded && (
                   <div className="border-t">
+                    {/* Company-level responsables */}
+                    <div className="px-4 py-3 border-b bg-amber-50/30 dark:bg-amber-950/10">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Crown className="h-3.5 w-3.5 text-amber-500" />
+                        <span className="text-xs font-medium text-muted-foreground">Company Responsables</span>
+                      </div>
+                      <MultiSelectPills
+                        options={userOptions}
+                        selected={companyRespIds}
+                        onChange={(ids) => handleSetCompanyResponsables(company.id, ids as number[])}
+                        placeholder="Add company responsables..."
+                        className="max-w-md"
+                      />
+                    </div>
+
+                    {/* Structure nodes */}
                     {companyNodes.length === 0 ? (
                       <p className="px-6 py-4 text-sm text-muted-foreground italic">
                         No structure defined. Add levels in Settings &rarr; Structure.
