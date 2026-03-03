@@ -10,6 +10,7 @@ import { StatCard } from '@/components/shared/StatCard'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
+import { SearchSelect } from '@/components/shared/SearchSelect'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
@@ -327,12 +328,37 @@ export default function Approvals() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            {!isMobile && (
+              <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
+                <TabsList className="w-auto">
+                  {tabs.map((tab) => {
+                    const Icon = tab.icon
+                    return (
+                      <TabsTrigger key={tab.key} value={tab.key}>
+                        <Icon className="h-4 w-4" />
+                        {tab.label}
+                        {tab.count !== undefined && tab.count > 0 && (
+                          <Badge variant="default" className="ml-1 h-5 min-w-5 px-1.5 text-xs">
+                            {tab.count}
+                          </Badge>
+                        )}
+                      </TabsTrigger>
+                    )
+                  })}
+                </TabsList>
+              </Tabs>
+            )}
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
               <BarChart3 className="h-4 w-4" />
             </Button>
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
             </Button>
+            {activeTab === 'delegations' && (
+              <Button size="icon" onClick={() => setShowDelegationDialog(true)} title="New Delegation">
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         }
       />
@@ -365,9 +391,9 @@ export default function Approvals() {
         />
       </div>
 
-      {/* Tab nav */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
-        {isMobile ? (
+      {/* Mobile tab nav */}
+      {isMobile && (
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
               {tabs.map((tab) => {
@@ -386,25 +412,8 @@ export default function Approvals() {
               })}
             </TabsList>
           </MobileBottomTabs>
-        ) : (
-          <TabsList className="w-auto">
-            {tabs.map((tab) => {
-              const Icon = tab.icon
-              return (
-                <TabsTrigger key={tab.key} value={tab.key}>
-                  <Icon className="h-4 w-4" />
-                  {tab.label}
-                  {tab.count !== undefined && tab.count > 0 && (
-                    <Badge variant="default" className="ml-1 h-5 min-w-5 px-1.5 text-xs">
-                      {tab.count}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-              )
-            })}
-          </TabsList>
-        )}
-      </Tabs>
+        </Tabs>
+      )}
 
       {/* Status filter for All tab */}
       {activeTab === 'all' && (
@@ -420,16 +429,6 @@ export default function Approvals() {
               {s || 'All'}
             </Button>
           ))}
-        </div>
-      )}
-
-      {/* Add delegation button */}
-      {activeTab === 'delegations' && (
-        <div className="flex justify-end">
-          <Button size="sm" onClick={() => setShowDelegationDialog(true)}>
-            <Plus className="mr-1.5 h-4 w-4" />
-            New Delegation
-          </Button>
         </div>
       )}
 
@@ -598,16 +597,13 @@ export default function Approvals() {
           <div className="space-y-3 py-2">
             <div>
               <label className="mb-1 block text-sm font-medium">Delegate to</label>
-              <select
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              <SearchSelect
                 value={newDelegation.delegate_id}
-                onChange={(e) => setNewDelegation(prev => ({ ...prev, delegate_id: e.target.value }))}
-              >
-                <option value="">Select a user...</option>
-                {users.filter(u => u.is_active).map(u => (
-                  <option key={u.id} value={u.id}>{u.name} ({u.role_name})</option>
-                ))}
-              </select>
+                onValueChange={(v) => setNewDelegation(prev => ({ ...prev, delegate_id: v }))}
+                options={users.filter(u => u.is_active).map(u => ({ value: String(u.id), label: u.name, sublabel: u.role_name ?? undefined }))}
+                placeholder="Select a user..."
+                searchPlaceholder="Search users..."
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

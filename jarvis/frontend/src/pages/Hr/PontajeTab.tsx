@@ -17,7 +17,7 @@ import {
   Fingerprint,
   ExternalLink,
   Calendar,
-  SlidersHorizontal,
+  Columns3,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -138,7 +138,7 @@ const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
   { value: 'ytd', label: 'YTD' },
 ]
 
-export default function PontajeTab({ showStats = false }: { showStats?: boolean }) {
+export default function PontajeTab({ showStats = false, showFilters = false }: { showStats?: boolean; showFilters?: boolean }) {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const { user } = useAuth()
@@ -152,7 +152,7 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('today')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
-  const [showDatePickers, setShowDatePickers] = useState(false)
+
 
   // Column visibility
   const [visibleDailyCols, setVisibleDailyCols] = useState<Set<DailyColKey>>(new Set(DEFAULT_DAILY_COLS))
@@ -503,62 +503,6 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
         </div>
       )}
 
-      {/* Quick filters + date pickers */}
-      <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
-        <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:px-0">
-          {QUICK_FILTERS.map((f) => (
-            <Button
-              key={f.value}
-              size="sm"
-              variant={quickFilter === f.value ? 'default' : 'outline'}
-              className="h-8 flex-1 md:flex-none shrink-0 text-xs"
-              onClick={() => handleQuickFilter(f.value)}
-            >
-              {f.label}
-            </Button>
-          ))}
-          {isMobile && (
-            <Button
-              size="icon"
-              variant={quickFilter === 'custom' ? 'default' : 'outline'}
-              className="h-8 shrink-0"
-              onClick={() => { setShowDatePickers((p) => !p); if (quickFilter !== 'custom') { setQuickFilter('custom'); setCustomStart(start); setCustomEnd(end) } }}
-            >
-              <Calendar className="h-3.5 w-3.5" />
-            </Button>
-          )}
-        </div>
-        {(!isMobile || showDatePickers) && (
-          <div className="flex items-center gap-1.5 md:ml-auto">
-            <Calendar className="hidden md:block h-4 w-4 text-muted-foreground" />
-            <Input
-              type="date"
-              className="h-8 w-36 text-xs"
-              value={quickFilter === 'custom' ? customStart : start}
-              onChange={(e) => {
-                setQuickFilter('custom')
-                setCustomStart(e.target.value)
-                if (!customEnd || e.target.value > customEnd) setCustomEnd(e.target.value)
-              }}
-            />
-            <span className="text-xs text-muted-foreground">—</span>
-            <Input
-              type="date"
-              className="h-8 w-36 text-xs"
-              value={quickFilter === 'custom' ? customEnd : end}
-              onChange={(e) => {
-                setQuickFilter('custom')
-                setCustomEnd(e.target.value)
-                if (!customStart || e.target.value < customStart) setCustomStart(e.target.value)
-              }}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Date label — desktop only */}
-      <p className="hidden md:block text-xs text-muted-foreground">{rangeLabel}</p>
-
       {/* Stats */}
       <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
         <StatCard title={isSingleDay ? 'Present Today' : 'Employees'} value={totalPresent} icon={<UserCheck className="h-4 w-4" />} />
@@ -572,7 +516,35 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-2">
+      {showFilters && <div className="flex flex-wrap items-center gap-2">
+        {/* Quick filter dropdown */}
+        <Select value={quickFilter === 'custom' ? 'custom' : quickFilter} onValueChange={(v) => handleQuickFilter(v as QuickFilter)}>
+          <SelectTrigger className="h-8 w-36 shrink-0 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {QUICK_FILTERS.map((f) => (
+              <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+            ))}
+            {quickFilter === 'custom' && <SelectItem value="custom">Custom</SelectItem>}
+          </SelectContent>
+        </Select>
+        {/* Date pickers */}
+        <Input
+          type="date"
+          className="h-8 w-32 text-xs shrink-0"
+          value={quickFilter === 'custom' ? customStart : start}
+          onChange={(e) => { setQuickFilter('custom'); setCustomStart(e.target.value); if (!customEnd || e.target.value > customEnd) setCustomEnd(e.target.value) }}
+        />
+        <span className="text-xs text-muted-foreground">—</span>
+        <Input
+          type="date"
+          className="h-8 w-32 text-xs shrink-0"
+          value={quickFilter === 'custom' ? customEnd : end}
+          onChange={(e) => { setQuickFilter('custom'); setCustomEnd(e.target.value); if (!customStart || e.target.value < customStart) setCustomStart(e.target.value) }}
+        />
+        <span className="text-xs text-muted-foreground hidden md:inline">{rangeLabel}</span>
+        <div className="h-5 w-px bg-border hidden md:block mx-1" />
         {showTeamToggle && (
           <div className="flex rounded-md border shrink-0">
             <button
@@ -660,7 +632,7 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
                 size="icon"
                 className={cn('h-9 w-9 shrink-0', visibleCols.size < (isDaily ? DAILY_COL_DEFS.filter(c => showAdjusted || !['adj_in', 'adj_out'].includes(c.key)).length : RANGE_COL_DEFS.length) && 'text-primary border-primary')}
               >
-                <SlidersHorizontal className="h-4 w-4" />
+                <Columns3 className="h-4 w-4" />
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-52 p-3">
@@ -702,7 +674,7 @@ export default function PontajeTab({ showStats = false }: { showStats?: boolean 
             </PopoverContent>
           </Popover>
         )}
-      </div>
+      </div>}
 
       {/* Last 3 Days: stacked per-day sections */}
       {is3Day && (

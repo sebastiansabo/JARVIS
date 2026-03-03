@@ -25,37 +25,49 @@ export default function Crm() {
   const { data: stats } = useQuery({ queryKey: ['crm-stats'], queryFn: crmApi.getStats })
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      <PageHeader
-        title="Samsaru"
-        breadcrumbs={[
-          { label: 'Samsaru' },
-          { label: tab === 'dashboard' ? 'Dashboard' : tab === 'deals' ? 'Sales' : tab === 'clients' ? 'Clients' : tab === 'statistics' ? 'Statistics' : tab === 'import' ? 'Import' : 'Blacklist' },
-        ]}
-        actions={isMobile ? (
-          tab === 'dashboard' ? (
-            <Button variant="ghost" size="icon" onClick={() => setShowStats(s => !s)}>
-              <BarChart3 className="h-4 w-4" />
-            </Button>
-          ) : tab === 'deals' ? (
-            <Button variant="ghost" size="icon" onClick={() => setDealsShowStats(s => !s)}>
-              <BarChart3 className="h-4 w-4" />
-            </Button>
-          ) : tab === 'statistics' ? (
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setStatsShowCards(s => !s)}>
-                <BarChart3 className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setStatsShowFilters(s => !s)}>
-                <Filter className="h-4 w-4" />
-              </Button>
+    <Tabs value={tab} onValueChange={setTab}>
+      <div className="space-y-4 md:space-y-6">
+        <PageHeader
+          title="Samsaru"
+          breadcrumbs={[
+            { label: 'Samsaru' },
+            { label: tab === 'dashboard' ? 'Dashboard' : tab === 'deals' ? 'Sales' : tab === 'clients' ? 'Clients' : tab === 'statistics' ? 'Statistics' : tab === 'import' ? 'Import' : 'Blacklist' },
+          ]}
+          actions={
+            <div className="flex items-center gap-2">
+              {!isMobile && (
+                <TabsList className="w-auto">
+                  <TabsTrigger value="dashboard"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
+                  <TabsTrigger value="deals"><Car className="h-4 w-4" />Sales</TabsTrigger>
+                  <TabsTrigger value="clients"><UserCheck className="h-4 w-4" />Clients</TabsTrigger>
+                  <TabsTrigger value="statistics"><PieChart className="h-4 w-4" />Statistics</TabsTrigger>
+                  <TabsTrigger value="import"><Upload className="h-4 w-4" />Import</TabsTrigger>
+                  <TabsTrigger value="blacklist"><Ban className="h-4 w-4" />Blacklist</TabsTrigger>
+                </TabsList>
+              )}
+              {(tab === 'dashboard' || tab === 'deals') && (
+                <Button variant="ghost" size="icon" className={((tab === 'dashboard' && showStats) || (tab === 'deals' && dealsShowStats)) ? 'bg-muted' : ''} onClick={() => {
+                  if (tab === 'dashboard') setShowStats(s => !s)
+                  else setDealsShowStats(s => !s)
+                }} title="Toggle stats">
+                  <BarChart3 className="h-4 w-4" />
+                </Button>
+              )}
+              {tab === 'statistics' && (
+                <>
+                  <Button variant="ghost" size="icon" className={statsShowCards ? 'bg-muted' : ''} onClick={() => setStatsShowCards(s => !s)} title="Toggle stats">
+                    <BarChart3 className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className={statsShowFilters ? 'bg-muted' : ''} onClick={() => setStatsShowFilters(s => !s)} title="Toggle filters">
+                    <Filter className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
             </div>
-          ) : undefined
-        ) : undefined}
-      />
+          }
+        />
 
-      <Tabs value={tab} onValueChange={setTab}>
-        {isMobile ? (
+        {isMobile && (
           <MobileBottomTabs>
             <TabsList className="w-full">
               <TabsTrigger value="dashboard"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
@@ -66,15 +78,6 @@ export default function Crm() {
               <TabsTrigger value="blacklist"><Ban className="h-4 w-4" />Blacklist</TabsTrigger>
             </TabsList>
           </MobileBottomTabs>
-        ) : (
-          <TabsList className="w-auto">
-            <TabsTrigger value="dashboard"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
-            <TabsTrigger value="deals"><Car className="h-4 w-4" />Sales</TabsTrigger>
-            <TabsTrigger value="clients"><UserCheck className="h-4 w-4" />Clients</TabsTrigger>
-            <TabsTrigger value="statistics"><PieChart className="h-4 w-4" />Statistics</TabsTrigger>
-            <TabsTrigger value="import"><Upload className="h-4 w-4" />Import</TabsTrigger>
-            <TabsTrigger value="blacklist"><Ban className="h-4 w-4" />Blacklist</TabsTrigger>
-          </TabsList>
         )}
 
         <TabsContent value="dashboard" className="space-y-4">
@@ -86,8 +89,8 @@ export default function Crm() {
         <TabsContent value="statistics"><StatisticsTab showFilters={statsShowFilters} setShowFilters={setStatsShowFilters} showStats={statsShowCards} /></TabsContent>
         <TabsContent value="import"><ImportTab /></TabsContent>
         <TabsContent value="blacklist"><ClientStatsTab blacklistOnly /></TabsContent>
-      </Tabs>
-    </div>
+      </div>
+    </Tabs>
   )
 }
 

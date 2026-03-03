@@ -11,7 +11,6 @@ import {
   RotateCcw,
   ChevronLeft,
   ChevronRight,
-  BarChart3,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -76,12 +75,11 @@ function formatWorked(durationSeconds: number | null, lunchMinutes: number) {
   return `${h}h ${m.toString().padStart(2, '0')}m`
 }
 
-export default function AdjustmentsTab() {
+export default function AdjustmentsTab({ showStats = false, showFilters = false }: { showStats?: boolean; showFilters?: boolean }) {
   const qc = useQueryClient()
   const isMobile = useIsMobile()
   const [date, setDate] = useState(todayStr())
   const [search, setSearch] = useState('')
-  const [showStats, setShowStats] = useState(false)
   const [tab, setTab] = useState<'pending' | 'adjusted'>('pending')
 
   const { data: status } = useQuery({
@@ -189,79 +187,75 @@ export default function AdjustmentsTab() {
         <StatCard title="Date" value={formatDate(date)} icon={<Clock className="h-4 w-4" />} />
       </div>
 
-      {/* Date nav + Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="ghost" size="icon" className={`h-8 w-8 ${showStats ? 'bg-muted' : ''}`} onClick={() => setShowStats(s => !s)} title="Toggle stats">
-          <BarChart3 className="h-4 w-4" />
-        </Button>
-        <div className="flex items-center gap-1">
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setDate(shiftDate(date, -1))}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Input
-            type="date"
-            className="h-8 w-40 text-sm"
-            value={date}
-            max={todayStr()}
-            onChange={(e) => setDate(e.target.value)}
-          />
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
-            disabled={date >= todayStr()}
-            onClick={() => setDate(shiftDate(date, 1))}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+      {/* Filters */}
+      {showFilters && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 shrink-0">
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setDate(shiftDate(date, -1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Input
+              type="date"
+              className="h-8 w-40 text-sm"
+              value={date}
+              max={todayStr()}
+              onChange={(e) => setDate(e.target.value)}
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              disabled={date >= todayStr()}
+              onClick={() => setDate(shiftDate(date, 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-9 h-8"
+              placeholder="Search by name..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-1 ml-auto">
+            <Button
+              variant={tab === 'pending' ? 'default' : 'outline'}
+              size="sm"
+              className="h-8"
+              onClick={() => setTab('pending')}
+            >
+              <AlertTriangle className="h-3.5 w-3.5 md:mr-1.5" />
+              <span className="hidden md:inline">Pending ({offSchedule.length})</span>
+              <span className="md:hidden">{offSchedule.length}</span>
+            </Button>
+            <Button
+              variant={tab === 'adjusted' ? 'default' : 'outline'}
+              size="sm"
+              className="h-8"
+              onClick={() => setTab('adjusted')}
+            >
+              <CheckCircle2 className="h-3.5 w-3.5 md:mr-1.5" />
+              <span className="hidden md:inline">Adjusted ({adjustments.length})</span>
+              <span className="md:hidden">{adjustments.length}</span>
+            </Button>
+            {tab === 'pending' && offSchedule.length > 0 && (
+              <Button
+                size="icon"
+                className="h-8 w-8 md:size-auto md:px-3"
+                onClick={() => autoAdjustMut.mutate()}
+                disabled={autoAdjustMut.isPending}
+                title="Auto-Adjust All"
+              >
+                <Wand2 className="h-3.5 w-3.5 md:mr-1.5" />
+                <span className="hidden md:inline">{autoAdjustMut.isPending ? 'Adjusting...' : 'Auto-Adjust All'}</span>
+              </Button>
+            )}
+          </div>
         </div>
-
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-          <Input
-            className="pl-9 h-8"
-            placeholder="Search by name..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-
-        <div className="flex gap-1">
-          <Button
-            variant={tab === 'pending' ? 'default' : 'outline'}
-            size="sm"
-            className="h-8"
-            onClick={() => setTab('pending')}
-          >
-            <AlertTriangle className="h-3.5 w-3.5 md:mr-1.5" />
-            <span className="hidden md:inline">Pending ({offSchedule.length})</span>
-            <span className="md:hidden">{offSchedule.length}</span>
-          </Button>
-          <Button
-            variant={tab === 'adjusted' ? 'default' : 'outline'}
-            size="sm"
-            className="h-8"
-            onClick={() => setTab('adjusted')}
-          >
-            <CheckCircle2 className="h-3.5 w-3.5 md:mr-1.5" />
-            <span className="hidden md:inline">Adjusted ({adjustments.length})</span>
-            <span className="md:hidden">{adjustments.length}</span>
-          </Button>
-        </div>
-
-        {tab === 'pending' && offSchedule.length > 0 && (
-          <Button
-            size="icon"
-            className="h-8 w-8 md:size-auto md:px-3"
-            onClick={() => autoAdjustMut.mutate()}
-            disabled={autoAdjustMut.isPending}
-            title="Auto-Adjust All"
-          >
-            <Wand2 className="h-3.5 w-3.5 md:mr-1.5" />
-            <span className="hidden md:inline">{autoAdjustMut.isPending ? 'Adjusting...' : 'Auto-Adjust All'}</span>
-          </Button>
-        )}
-      </div>
+      )}
 
       {/* Tables */}
       {isLoading ? (

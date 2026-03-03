@@ -3,7 +3,9 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { useQuery } from '@tanstack/react-query'
 import {
   FileStack,
+  Import,
   LayoutDashboard,
+  Plus,
   RefreshCw,
   SlidersHorizontal,
   Tags,
@@ -45,8 +47,11 @@ export default function EFactura() {
   const [syncOpen, setSyncOpen] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const [mappingAddTrigger, setMappingAddTrigger] = useState(0)
+  const [mappingImportTrigger, setMappingImportTrigger] = useState(0)
   const location = useLocation()
   const activeEfTab = tabs.find(t => location.pathname.startsWith(t.to))
+  const isOnMappingsTab = location.pathname.includes('/mappings')
 
   const { data: unallocatedCount } = useQuery({
     queryKey: ['efactura-unallocated-count'],
@@ -68,23 +73,51 @@ export default function EFactura() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            {!isMobile && (
+              <Tabs value={location.pathname.split('/').pop() || 'unallocated'} onValueChange={(v) => navigate(`/app/efactura/${v}`)}>
+                <TabsList className="w-auto">
+                  <TabsTrigger value="unallocated">
+                    <FileStack className="h-4 w-4" />
+                    Unallocated
+                    {(unallocatedCount ?? 0) > 0 && (
+                      <span className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                        {unallocatedCount}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="mappings">
+                    <Tags className="h-4 w-4" />
+                    Mappings
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
             <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${showFilters ? 'bg-muted' : ''}`} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
             </Button>
-            <Button size="icon" className="md:size-auto md:px-4" onClick={() => setSyncOpen(true)}>
-              <RefreshCw className="h-4 w-4 md:mr-1.5" />
-              <span className="hidden md:inline">Sync</span>
+            {isOnMappingsTab && (
+              <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={() => setMappingImportTrigger(n => n + 1)} title="Import from Invoices">
+                <Import className="h-4 w-4" />
+              </Button>
+            )}
+            {isOnMappingsTab && (
+              <Button size="icon" className="hidden md:inline-flex" onClick={() => setMappingAddTrigger(n => n + 1)} title="Add Mapping / Type">
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
+            <Button size="icon" onClick={() => setSyncOpen(true)} title="Sync">
+              <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
         }
       />
 
-      {/* Tab nav */}
-      <Tabs value={location.pathname.split('/').pop() || 'unallocated'} onValueChange={(v) => navigate(`/app/efactura/${v}`)}>
-        {isMobile ? (
+      {/* Mobile tab nav */}
+      {isMobile && (
+        <Tabs value={location.pathname.split('/').pop() || 'unallocated'} onValueChange={(v) => navigate(`/app/efactura/${v}`)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
               <TabsTrigger value="unallocated">
@@ -102,47 +135,25 @@ export default function EFactura() {
               </TabsTrigger>
             </TabsList>
           </MobileBottomTabs>
-        ) : (
-          <div className="flex items-center">
-            <TabsList className="w-auto">
-              <TabsTrigger value="unallocated">
-                <FileStack className="h-4 w-4" />
-                Unallocated
-                {(unallocatedCount ?? 0) > 0 && (
-                  <span className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                    {unallocatedCount}
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="mappings">
-                <Tags className="h-4 w-4" />
-                Mappings
-              </TabsTrigger>
-            </TabsList>
-            <div className="flex items-center gap-2 ml-auto">
-              <Switch id="show-hidden" checked={showHidden} onCheckedChange={setShowHidden} />
-              <Label htmlFor="show-hidden" className="text-xs cursor-pointer text-muted-foreground">
-                Show Hidden ({hiddenCount ?? 0})
-              </Label>
-            </div>
-          </div>
-        )}
-        {isMobile && (
-          <div className="flex items-center gap-2">
-            <Switch id="show-hidden" checked={showHidden} onCheckedChange={setShowHidden} />
-            <Label htmlFor="show-hidden" className="text-xs cursor-pointer text-muted-foreground">
-              Show Hidden ({hiddenCount ?? 0})
-            </Label>
-          </div>
-        )}
-      </Tabs>
+        </Tabs>
+      )}
+
+      {/* Show Hidden filter (unallocated only, behind filter toggle) */}
+      {showFilters && !isOnMappingsTab && (
+        <div className="flex items-center gap-2">
+          <Switch id="show-hidden" checked={showHidden} onCheckedChange={setShowHidden} />
+          <Label htmlFor="show-hidden" className="text-xs cursor-pointer text-muted-foreground">
+            Show Hidden ({hiddenCount ?? 0})
+          </Label>
+        </div>
+      )}
 
       {/* Tab content */}
       <Suspense fallback={<TabLoader />}>
         <Routes>
           <Route index element={<Navigate to="unallocated" replace />} />
           <Route path="unallocated" element={<UnallocatedTab showHidden={showHidden} showFilters={showFilters} />} />
-          <Route path="mappings" element={<MappingsTab />} />
+          <Route path="mappings" element={<MappingsTab showFilters={showFilters} addTrigger={mappingAddTrigger} importTrigger={mappingImportTrigger} />} />
           {/* Redirect removed/old routes */}
           <Route path="fetch" element={<Navigate to="/app/efactura/unallocated" replace />} />
           <Route path="invoices" element={<Navigate to="/app/efactura/unallocated" replace />} />

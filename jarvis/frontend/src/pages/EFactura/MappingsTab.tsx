@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
@@ -7,7 +7,6 @@ import {
   Tags,
   ToggleLeft,
   ToggleRight,
-  Import,
   Check,
   Loader2,
 } from 'lucide-react'
@@ -547,7 +546,15 @@ function ImportSuppliersDialog({
 }
 
 // ── Main Component ─────────────────────────────────────────
-export default function MappingsTab() {
+export default function MappingsTab({
+  showFilters = false,
+  addTrigger = 0,
+  importTrigger = 0,
+}: {
+  showFilters?: boolean
+  addTrigger?: number
+  importTrigger?: number
+}) {
   const qc = useQueryClient()
   const [viewMode, setViewMode] = useState<ViewMode>('mappings')
   const [search, setSearch] = useState('')
@@ -556,6 +563,17 @@ export default function MappingsTab() {
   const [editType, setEditType] = useState<SupplierType | null | undefined>(undefined)
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'mapping' | 'type'; id: number } | null>(null)
   const [showImport, setShowImport] = useState(false)
+
+  useEffect(() => {
+    if (addTrigger > 0) {
+      if (viewMode === 'mappings') setEditMapping(null)
+      else setEditType(null)
+    }
+  }, [addTrigger])
+
+  useEffect(() => {
+    if (importTrigger > 0) setShowImport(true)
+  }, [importTrigger])
 
   const { data: mappings = [], isLoading: mappingsLoading } = useQuery({
     queryKey: ['efactura-mappings', showInactive],
@@ -595,49 +613,33 @@ export default function MappingsTab() {
 
   return (
     <div className="space-y-4">
-      {/* View mode toggle */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          <Button
-            variant={viewMode === 'mappings' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => { setViewMode('mappings'); setSearch('') }}
-          >
-            <Tags className="mr-1.5 h-3.5 w-3.5" />
-            Supplier Mappings ({mappings.length})
-          </Button>
-          <Button
-            variant={viewMode === 'types' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => { setViewMode('types'); setSearch('') }}
-          >
-            Supplier Types ({supplierTypes.length})
-          </Button>
-        </div>
+      {/* View mode toggle + filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant={viewMode === 'mappings' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => { setViewMode('mappings'); setSearch('') }}
+        >
+          <Tags className="mr-1.5 h-3.5 w-3.5" />
+          Supplier Mappings ({mappings.length})
+        </Button>
+        <Button
+          variant={viewMode === 'types' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => { setViewMode('types'); setSearch('') }}
+        >
+          Supplier Types ({supplierTypes.length})
+        </Button>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Switch checked={showInactive} onCheckedChange={setShowInactive} />
-            <span className="text-xs text-muted-foreground">Show inactive</span>
-          </div>
-
-          <SearchInput value={search} onChange={setSearch} placeholder="Search..." className="w-[180px]" />
-
-          {viewMode === 'mappings' && (
-            <Button size="sm" variant="outline" onClick={() => setShowImport(true)}>
-              <Import className="mr-1 h-3.5 w-3.5" />
-              Import from Invoices
-            </Button>
-          )}
-
-          <Button
-            size="sm"
-            onClick={() => viewMode === 'mappings' ? setEditMapping(null) : setEditType(null)}
-          >
-            <Plus className="mr-1 h-3.5 w-3.5" />
-            Add {viewMode === 'mappings' ? 'Mapping' : 'Type'}
-          </Button>
-        </div>
+        {showFilters && (
+          <>
+            <div className="flex items-center gap-2 ml-2">
+              <Switch checked={showInactive} onCheckedChange={setShowInactive} />
+              <span className="text-xs text-muted-foreground">Show inactive</span>
+            </div>
+            <SearchInput value={search} onChange={setSearch} placeholder="Search..." className="w-[180px]" />
+          </>
+        )}
       </div>
 
       {/* Mappings view */}

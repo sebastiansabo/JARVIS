@@ -46,13 +46,20 @@ const mappingsMobileFields: MobileCardField<VendorMapping>[] = [
   { key: 'created', label: 'Created', expandOnly: true, render: (m) => <span className="text-xs">{formatDate(m.created_at)}</span> },
 ]
 
-export default function MappingsTab() {
+export default function MappingsTab({
+  showFilters = false,
+  addOpen = false,
+  onAddOpenChange,
+}: {
+  showFilters?: boolean
+  addOpen?: boolean
+  onAddOpenChange?: (v: boolean) => void
+}) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [showInactive, setShowInactive] = useState(false)
   const [editMapping, setEditMapping] = useState<VendorMapping | null>(null)
-  const [addOpen, setAddOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [testOpen, setTestOpen] = useState<VendorMapping | null>(null)
 
@@ -93,21 +100,19 @@ export default function MappingsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-0 max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-8" placeholder="Search mappings..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      {showFilters && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-0 max-w-xs">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input className="pl-8" placeholder="Search mappings..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Switch checked={showInactive} onCheckedChange={setShowInactive} id="show-inactive" />
+            <Label htmlFor="show-inactive" className="cursor-pointer text-xs">Show inactive</Label>
+          </div>
+          <span className="text-xs text-muted-foreground">{mappings.length} mappings</span>
         </div>
-        <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground">
-          <Switch checked={showInactive} onCheckedChange={setShowInactive} id="show-inactive" />
-          <Label htmlFor="show-inactive" className="cursor-pointer text-xs">Show inactive</Label>
-        </div>
-        <span className="hidden sm:inline text-xs text-muted-foreground">{mappings.length} mappings</span>
-        <Button size="icon" className="ml-auto md:size-auto md:px-3" onClick={() => setAddOpen(true)}>
-          <Plus className="h-4 w-4 md:mr-1" />
-          <span className="hidden md:inline">Add Mapping</span>
-        </Button>
-      </div>
+      )}
 
       {isLoading ? (
         <Card className="p-6">
@@ -121,7 +126,7 @@ export default function MappingsTab() {
           title="No vendor mappings"
           description="Create mappings to automatically match transaction descriptions to suppliers."
           action={
-            <Button onClick={() => setAddOpen(true)}>
+            <Button onClick={() => onAddOpenChange?.(true)}>
               <Plus className="mr-1.5 h-4 w-4" />
               Add Mapping
             </Button>
@@ -201,7 +206,7 @@ export default function MappingsTab() {
       <MappingFormDialog
         open={addOpen || editMapping !== null}
         mapping={editMapping}
-        onClose={() => { setAddOpen(false); setEditMapping(null) }}
+        onClose={() => { onAddOpenChange?.(false); setEditMapping(null) }}
       />
 
       {/* Test pattern dialog */}

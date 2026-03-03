@@ -1,9 +1,8 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import {
-  Plus,
   Trash2,
   Pencil,
   Copy,
@@ -36,7 +35,7 @@ import type { EventBonus, BonusSummaryByEmployee, BonusSummaryByEvent } from '@/
 const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const MONTH_SHORT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean }) {
+export default function BonusesTab({ canViewAmounts, showFilters = false, showStats: _showStats = false, addTrigger = 0 }: { canViewAmounts: boolean; showFilters?: boolean; showStats?: boolean; addTrigger?: number }) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const filters = useHrStore((s) => s.filters)
@@ -121,6 +120,16 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
   // Editable only when not locked, or when user has admin override
   const isEditable = !lockStatus?.locked || !!lockStatus?.can_override
 
+  // Open add dialog when parent triggers it
+  const prevTrigger = useRef(0)
+  useEffect(() => {
+    if (addTrigger > 0 && addTrigger !== prevTrigger.current && isEditable) {
+      prevTrigger.current = addTrigger
+      setEditBonus(null)
+      setAddOpen(true)
+    }
+  }, [addTrigger, isEditable])
+
   return (
     <div className="space-y-4">
       {/* Lock warning */}
@@ -134,87 +143,85 @@ export default function BonusesTab({ canViewAmounts }: { canViewAmounts: boolean
         </div>
       )}
 
-      {/* Filters + actions */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={String(filters.year ?? '__all__')} onValueChange={(v) => updateFilter('year', v === '__all__' ? undefined : Number(v))}>
-          <SelectTrigger className="w-24">
-            <SelectValue placeholder="Year" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All years</SelectItem>
-            {years.map((y) => (
-              <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select value={String(filters.month ?? '__all__')} onValueChange={(v) => updateFilter('month', v === '__all__' ? undefined : Number(v))}>
-          <SelectTrigger className="w-32">
-            <SelectValue placeholder="Month" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All months</SelectItem>
-            {MONTHS.slice(1).map((m, i) => (
-              <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {subTab === 'list' && (
-          <div className="relative flex-1 max-w-xs">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-8"
-              placeholder="Search employee, event..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
+      {/* Always-visible actions */}
+      <div className="flex items-center justify-end gap-2">
+        {selectedBonusIds.length > 0 && isEditable && (
+          <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selectedBonusIds)}>
+            <Trash2 className="mr-1 h-3.5 w-3.5" />
+            Delete ({selectedBonusIds.length})
+          </Button>
         )}
-
-        <div className="ml-auto flex items-center gap-2">
-          {selectedBonusIds.length > 0 && isEditable && (
-            <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selectedBonusIds)}>
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
-              Delete ({selectedBonusIds.length})
+        {isMobile && isEditable && (
+          selectMode ? (
+            <Button variant="ghost" size="sm" onClick={() => { clearSelected(); setSelectMode(false) }}>Cancel</Button>
+          ) : (
+            <Button variant="outline" size="icon" onClick={() => setSelectMode(true)} title="Select">
+              <CheckSquare className="h-4 w-4" />
             </Button>
-          )}
-          {isMobile && isEditable && (
-            selectMode ? (
-              <Button variant="ghost" size="sm" onClick={() => { clearSelected(); setSelectMode(false) }}>Cancel</Button>
-            ) : (
-              <Button variant="outline" size="icon" onClick={() => setSelectMode(true)} title="Select">
-                <CheckSquare className="h-4 w-4" />
-              </Button>
-            )
-          )}
-          {isEditable && (
-            <Button size="sm" onClick={() => { setEditBonus(null); setAddOpen(true) }}>
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              Add Bonus
-            </Button>
-          )}
-        </div>
+          )
+        )}
       </div>
 
-      {/* Sub-tabs */}
-      <div className="flex gap-1">
-        {(['list', 'by-employee', 'by-event'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => { setSubTab(t); clearSelected() }}
-            className={cn(
-              'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-              subTab === t ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground',
+      {/* Filters + sub-tabs (behind toggle) */}
+      {showFilters && (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={String(filters.year ?? '__all__')} onValueChange={(v) => updateFilter('year', v === '__all__' ? undefined : Number(v))}>
+              <SelectTrigger className="w-24">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All years</SelectItem>
+                {years.map((y) => (
+                  <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={String(filters.month ?? '__all__')} onValueChange={(v) => updateFilter('month', v === '__all__' ? undefined : Number(v))}>
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All months</SelectItem>
+                {MONTHS.slice(1).map((m, i) => (
+                  <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {subTab === 'list' && (
+              <div className="relative flex-1 max-w-xs">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  className="pl-8"
+                  placeholder="Search employee, event..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
             )}
-          >
-            {t === 'list' ? 'Bonuses' : t === 'by-employee' ? 'By Employee' : 'By Event'}
-          </button>
-        ))}
-        <span className="ml-2 self-center text-xs text-muted-foreground">
-          {subTab === 'list' ? filtered.length : subTab === 'by-employee' ? byEmployee.length : byEvent.length} rows
-        </span>
-      </div>
+          </div>
+
+          <div className="flex gap-1">
+            {(['list', 'by-employee', 'by-event'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => { setSubTab(t); clearSelected() }}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  subTab === t ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {t === 'list' ? 'Bonuses' : t === 'by-employee' ? 'By Employee' : 'By Event'}
+              </button>
+            ))}
+            <span className="ml-2 self-center text-xs text-muted-foreground">
+              {subTab === 'list' ? filtered.length : subTab === 'by-employee' ? byEmployee.length : byEvent.length} rows
+            </span>
+          </div>
+        </>
+      )}
 
       {/* Tables */}
       {isError && (

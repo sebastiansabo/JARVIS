@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -54,19 +55,17 @@ export default function FilesTab({
   showFilters = false,
   uploadOpen = false,
   onUploadOpenChange,
-  visibleColumns = ['company', 'period', 'total_txns', 'new_txns', 'uploaded'],
 }: {
   showFilters?: boolean
   uploadOpen?: boolean
   onUploadOpenChange?: (v: boolean) => void
-  visibleColumns?: string[]
 }) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
+  const [company, setCompany] = useState('all')
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const openUpload = () => onUploadOpenChange?.(true)
-  const vis = (key: string) => visibleColumns.includes(key)
 
   const { data, isLoading } = useQuery({
     queryKey: ['statements-files'],
@@ -75,7 +74,10 @@ export default function FilesTab({
 
   const statements = data?.statements ?? []
 
+  const companies = Array.from(new Set(statements.map((s) => s.company_name).filter(Boolean))) as string[]
+
   const filtered = statements.filter((s) => {
+    if (company !== 'all' && s.company_name !== company) return false
     if (!search) return true
     const q = search.toLowerCase()
     return (
@@ -103,6 +105,17 @@ export default function FilesTab({
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input className="pl-8" placeholder="Search statements..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
+          <Select value={company} onValueChange={setCompany}>
+            <SelectTrigger className="w-44 h-9">
+              <SelectValue placeholder="All companies" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All companies</SelectItem>
+              {companies.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <span className="text-xs text-muted-foreground">{filtered.length} statements</span>
         </div>
       )}
@@ -143,13 +156,13 @@ export default function FilesTab({
               <TableHeader>
                 <TableRow>
                   <TableHead>Filename</TableHead>
-                  {vis('company') && <TableHead>Company</TableHead>}
-                  {vis('account') && <TableHead>Account</TableHead>}
-                  {vis('period') && <TableHead>Period</TableHead>}
-                  {vis('total_txns') && <TableHead className="text-right">Total Txns</TableHead>}
-                  {vis('new_txns') && <TableHead className="text-right">New</TableHead>}
-                  {vis('duplicates') && <TableHead className="text-right">Duplicates</TableHead>}
-                  {vis('uploaded') && <TableHead>Uploaded</TableHead>}
+                  <TableHead>Company</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead>Period</TableHead>
+                  <TableHead className="text-right">Total Txns</TableHead>
+                  <TableHead className="text-right">New</TableHead>
+                  <TableHead className="text-right">Duplicates</TableHead>
+                  <TableHead>Uploaded</TableHead>
                   <TableHead className="w-16">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -157,19 +170,17 @@ export default function FilesTab({
                 {filtered.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="text-sm font-medium">{s.filename}</TableCell>
-                    {vis('company') && <TableCell className="text-sm text-muted-foreground">{s.company_name ?? '—'}</TableCell>}
-                    {vis('account') && <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{s.account_number ?? '—'}</TableCell>}
-                    {vis('period') && (
-                      <TableCell className="text-xs whitespace-nowrap">
-                        {s.period_from && s.period_to
-                          ? `${formatDate(s.period_from)} — ${formatDate(s.period_to)}`
-                          : '—'}
-                      </TableCell>
-                    )}
-                    {vis('total_txns') && <TableCell className="text-right text-sm">{s.total_transactions}</TableCell>}
-                    {vis('new_txns') && <TableCell className="text-right text-sm text-green-500">{s.new_transactions}</TableCell>}
-                    {vis('duplicates') && <TableCell className="text-right text-sm text-muted-foreground">{s.duplicate_transactions}</TableCell>}
-                    {vis('uploaded') && <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(s.uploaded_at)}</TableCell>}
+                    <TableCell className="text-sm text-muted-foreground">{s.company_name ?? '—'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{s.account_number ?? '—'}</TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">
+                      {s.period_from && s.period_to
+                        ? `${formatDate(s.period_from)} — ${formatDate(s.period_to)}`
+                        : '—'}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">{s.total_transactions}</TableCell>
+                    <TableCell className="text-right text-sm text-green-500">{s.new_transactions}</TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground">{s.duplicate_transactions}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(s.uploaded_at)}</TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(s.id)}>
                         <Trash2 className="h-3.5 w-3.5" />

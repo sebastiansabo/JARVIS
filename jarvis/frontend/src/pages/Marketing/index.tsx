@@ -109,22 +109,32 @@ export default function Marketing() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            {!isMobile && (
+              <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
+                <TabsList className="w-auto">
+                  <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
+                  <TabsTrigger value="projects"><FolderOpen className="h-3.5 w-3.5" />Campaigns</TabsTrigger>
+                  <TabsTrigger value="archived"><Archive className="h-3.5 w-3.5" />Archived</TabsTrigger>
+                  <TabsTrigger value="trash"><Trash2 className="h-3.5 w-3.5" />Trash</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
               <BarChart3 className="h-4 w-4" />
             </Button>
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
             </Button>
-            <Button size="icon" onClick={() => setShowCreateDialog(true)} title="New Project">
+            <Button size="icon" onClick={() => setShowCreateDialog(true)} title="New Campaign">
               <Plus className="h-4 w-4" />
             </Button>
           </div>
         }
       />
 
-      {/* Main Tabs */}
-      <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
-        {isMobile ? (
+      {/* Mobile tabs */}
+      {isMobile && (
+        <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
               <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
@@ -133,15 +143,8 @@ export default function Marketing() {
               <TabsTrigger value="trash"><Trash2 className="h-3.5 w-3.5" />Trash</TabsTrigger>
             </TabsList>
           </MobileBottomTabs>
-        ) : (
-          <TabsList className="w-auto">
-            <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
-            <TabsTrigger value="projects"><FolderOpen className="h-3.5 w-3.5" />Campaigns</TabsTrigger>
-            <TabsTrigger value="archived"><Archive className="h-3.5 w-3.5" />Archived</TabsTrigger>
-            <TabsTrigger value="trash"><Trash2 className="h-3.5 w-3.5" />Trash</TabsTrigger>
-          </TabsList>
-        )}
-      </Tabs>
+        </Tabs>
+      )}
 
       {mainTab === 'projects' && (
         <>

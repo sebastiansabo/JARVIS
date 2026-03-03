@@ -14,6 +14,7 @@ import {
   Calendar,
   Banknote,
   CheckSquare,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -27,6 +28,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { QueryError } from '@/components/QueryError'
+import { PageHeader } from '@/components/shared/PageHeader'
 import { hrApi } from '@/api/hr'
 import { marketingApi } from '@/api/marketing'
 import { Badge } from '@/components/ui/badge'
@@ -129,6 +131,7 @@ function EventsList() {
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
   const [selected, setSelected] = useState<number[]>([])
   const [selectMode, setSelectMode] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
   const [editEvent, setEditEvent] = useState<HrEvent | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteIds, setDeleteIds] = useState<number[] | null>(null)
@@ -227,47 +230,59 @@ function EventsList() {
   ], [eventTagsMap])
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-0 max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-8" placeholder="Search events..." value={search} onChange={(e) => setSearch(e.target.value)} />
+    <div className="space-y-4 md:space-y-6">
+      <PageHeader
+        title="Events"
+        breadcrumbs={[
+          { label: 'Marketing', shortLabel: 'Mkt.', href: '/app/marketing' },
+          { label: 'Events' },
+        ]}
+        actions={
+          <div className="flex items-center gap-2">
+            {selected.length > 0 && (
+              <>
+                <TagPickerButton
+                  entityType="event"
+                  entityIds={selected}
+                  onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
+                />
+                <Button variant="destructive" size="icon" onClick={() => setDeleteIds(selected)} title={`Delete (${selected.length})`}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+            {isMobile && (
+              selectMode ? (
+                <Button variant="ghost" size="sm" onClick={() => { setSelected([]); setSelectMode(false) }}>Cancel</Button>
+              ) : (
+                <Button variant="ghost" size="icon" onClick={() => setSelectMode(true)} title="Select">
+                  <CheckSquare className="h-4 w-4" />
+                </Button>
+              )
+            )}
+            <Button variant="ghost" size="icon" className={showFilters ? 'bg-muted' : ''} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => { setEditEvent(null); setDialogOpen(true) }} title="Quick Add">
+              <Plus className="h-4 w-4" />
+            </Button>
+            <Button size="icon" onClick={() => navigate('new')} title="Add Event + Employees">
+              <Users className="h-4 w-4" />
+            </Button>
+          </div>
+        }
+      />
+
+      {showFilters && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-0 max-w-xs">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input className="pl-8" placeholder="Search events..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <span className="hidden sm:inline text-xs text-muted-foreground">{displayedEvents.length} events</span>
+          <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly={isMobile} />
         </div>
-        <span className="hidden sm:inline text-xs text-muted-foreground">{displayedEvents.length} events</span>
-        <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly={isMobile} />
-        <div className="ml-auto flex items-center gap-1.5">
-          {selected.length > 0 && (
-            <>
-              <TagPickerButton
-                entityType="event"
-                entityIds={selected}
-                onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
-              />
-              <Button variant="destructive" size="icon" className="md:size-auto md:px-3" onClick={() => setDeleteIds(selected)}>
-                <Trash2 className="h-3.5 w-3.5 md:mr-1" />
-                <span className="hidden md:inline">Delete ({selected.length})</span>
-              </Button>
-            </>
-          )}
-          {isMobile && (
-            selectMode ? (
-              <Button variant="ghost" size="sm" onClick={() => { setSelected([]); setSelectMode(false) }}>Cancel</Button>
-            ) : (
-              <Button variant="outline" size="icon" onClick={() => setSelectMode(true)} title="Select">
-                <CheckSquare className="h-4 w-4" />
-              </Button>
-            )
-          )}
-          <Button size="icon" variant="outline" className="md:size-auto md:px-3" onClick={() => { setEditEvent(null); setDialogOpen(true) }}>
-            <Plus className="h-4 w-4 md:mr-1" />
-            <span className="hidden md:inline">Quick Add</span>
-          </Button>
-          <Button size="icon" className="md:size-auto md:px-3" onClick={() => navigate('new')}>
-            <Users className="h-4 w-4 md:mr-1" />
-            <span className="hidden md:inline">Add Event + Employees</span>
-          </Button>
-        </div>
-      </div>
+      )}
 
       {isError ? (
         <QueryError message="Failed to load events" onRetry={() => refetch()} />

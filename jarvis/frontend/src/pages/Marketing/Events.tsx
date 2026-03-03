@@ -1,5 +1,4 @@
 import { lazy, Suspense } from 'react'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const EventsTab = lazy(() => import('../Hr/EventsTab'))
@@ -16,17 +15,8 @@ function Loader() {
 
 export default function MarketingEvents() {
   return (
-    <div className="space-y-4 md:space-y-6">
-      <PageHeader
-        title="Events"
-        breadcrumbs={[
-          { label: 'Marketing', shortLabel: 'Mkt.', href: '/app/marketing' },
-          { label: 'Events' },
-        ]}
-      />
-      <Suspense fallback={<Loader />}>
-        <EventsTab />
-      </Suspense>
-    </div>
+    <Suspense fallback={<Loader />}>
+      <EventsTab />
+    </Suspense>
   )
 }

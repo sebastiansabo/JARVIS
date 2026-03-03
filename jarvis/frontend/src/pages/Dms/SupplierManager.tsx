@@ -5,7 +5,7 @@ import { useDebounce } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import {
   Plus, Edit2, Trash2, Check, X, Search, Building2, User, FileText, CheckSquare,
-  ChevronRight, ChevronDown, Tags, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, RefreshCw,
+  ChevronRight, ChevronDown, Tags, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, RefreshCw, SlidersHorizontal,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -381,6 +381,7 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
   const [editSup, setEditSup] = useState<DmsSupplier | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteSupId, setDeleteSupId] = useState<number | null>(null)
@@ -540,7 +541,7 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
           <div className="flex items-center gap-1.5">
             {isMobile && (
               <Button
-                variant={selectMode ? 'secondary' : 'outline'}
+                variant={selectMode ? 'secondary' : 'ghost'}
                 size="icon"
                 onClick={() => { setSelectMode((p) => !p); if (selectMode) setSelected(new Set()) }}
               >
@@ -548,55 +549,66 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
               </Button>
             )}
             <Button
-              variant="outline"
+              variant="ghost"
               size="icon"
-              className="md:size-auto md:px-3"
+              className={showFilters ? 'bg-muted' : ''}
+              onClick={() => setShowFilters(s => !s)}
+              title="Toggle filters"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => anafBatchMutation.mutate()}
               disabled={anafBatchMutation.isPending}
-              title="Sync all suppliers with CUI from ANAF"
+              title="Sync ANAF"
             >
-              <RefreshCw className={`h-4 w-4 md:mr-1 ${anafBatchMutation.isPending ? 'animate-spin' : ''}`} />
-              <span className="hidden md:inline">Sync ANAF</span>
+              <RefreshCw className={`h-4 w-4 ${anafBatchMutation.isPending ? 'animate-spin' : ''}`} />
             </Button>
-            <Button size="icon" className="md:size-auto md:px-3" onClick={() => { resetForm(); setCreateOpen(true) }}>
-              <Plus className="h-4 w-4 md:mr-1" />
-              <span className="hidden md:inline">New Supplier</span>
+            <Button size="icon" onClick={() => { resetForm(); setCreateOpen(true) }} title="New Supplier">
+              <Plus className="h-4 w-4" />
             </Button>
           </div>
         }
       />
 
-      {/* Search + Batch actions */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {selected.size > 0 && (
-          <>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm"><Tags className="h-3.5 w-3.5 mr-1" />Tag ({selected.size})</Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[180px] p-1" align="end">
-                {(allTags as Tag[]).map((t) => (
-                  <button
-                    key={t.id}
-                    className="w-full text-left text-sm px-2 py-1 rounded hover:bg-accent flex items-center gap-1.5"
-                    onClick={() => handleBatchTag(t.id, 'add')}
-                  >
-                    <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#6c757d' }} />
-                    {t.name}
-                  </button>
-                ))}
-              </PopoverContent>
-            </Popover>
-            <Button variant="destructive" size="sm" onClick={() => setBatchDeleteOpen(true)}>
-              <Trash2 className="h-4 w-4 mr-1" />Deactivate ({selected.size})
-            </Button>
-          </>
-        )}
-        <div className="relative flex-1 md:flex-none">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search suppliers..." className="pl-8 md:w-[220px] h-9" />
+      {/* Batch actions (contextual) */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm"><Tags className="h-3.5 w-3.5 mr-1" />Tag ({selected.size})</Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[180px] p-1" align="end">
+              {(allTags as Tag[]).map((t) => (
+                <button
+                  key={t.id}
+                  className="w-full text-left text-sm px-2 py-1 rounded hover:bg-accent flex items-center gap-1.5"
+                  onClick={() => handleBatchTag(t.id, 'add')}
+                >
+                  <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#6c757d' }} />
+                  {t.name}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+          <Button variant="destructive" size="sm" onClick={() => setBatchDeleteOpen(true)}>
+            <Trash2 className="h-4 w-4 mr-1" />Deactivate ({selected.size})
+          </Button>
         </div>
-      </div>
+      )}
+
+      {/* Filters */}
+      {showFilters && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-0 max-w-xs">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search suppliers..." className="pl-8 h-9" />
+          </div>
+          <span className="text-xs text-muted-foreground">{suppliers.length} suppliers</span>
+        </div>
+      )}
 
       {/* List */}
       {isLoading ? (

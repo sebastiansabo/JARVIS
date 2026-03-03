@@ -11,21 +11,8 @@ import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { statementsApi } from '@/api/statements'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
-import { ColumnToggle, useColumnState } from '@/components/shared/ColumnToggle'
-import type { ColumnDef } from '@/components/shared/ColumnToggle'
 import type { TransactionFilters } from '@/types/statements'
 import { useState } from 'react'
-
-const FILES_COL_DEFS: ColumnDef<never>[] = [
-  { key: 'company', label: 'Company', render: () => null },
-  { key: 'account', label: 'Account', render: () => null },
-  { key: 'period', label: 'Period', render: () => null },
-  { key: 'total_txns', label: 'Total Txns', render: () => null },
-  { key: 'new_txns', label: 'New', render: () => null },
-  { key: 'duplicates', label: 'Duplicates', render: () => null },
-  { key: 'uploaded', label: 'Uploaded', render: () => null },
-]
-const FILES_DEFAULT_COLS = ['company', 'period', 'total_txns', 'new_txns', 'uploaded']
 
 const TransactionsTab = lazy(() => import('./TransactionsTab'))
 const FilesTab = lazy(() => import('./FilesTab'))
@@ -56,8 +43,9 @@ export default function Statements() {
   const [showStats, setShowStats] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [mappingAddOpen, setMappingAddOpen] = useState(false)
   const isOnFilesTab = location.pathname.includes('/files')
-  const { visibleColumns: filesVisibleCols, setVisibleColumns: setFilesVisibleCols, defaultColumns: filesDefaultCols } = useColumnState('statements-files-columns', FILES_DEFAULT_COLS, FILES_COL_DEFS.map(c => c.key))
+  const isOnMappingsTab = location.pathname.includes('/mappings')
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ['statements-summary', filters],
@@ -104,22 +92,24 @@ export default function Statements() {
             <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${showFilters ? 'bg-muted' : ''}`} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
-            {isOnFilesTab && (
-              <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${uploadOpen ? 'bg-muted' : ''}`} onClick={() => setUploadOpen(true)} title="Upload Statement">
-                <Plus className="h-4 w-4" />
-              </Button>
-            )}
-            {isOnFilesTab && (
-              <ColumnToggle visibleColumns={filesVisibleCols} defaultColumns={filesDefaultCols} columnDefs={FILES_COL_DEFS} onChange={setFilesVisibleCols} />
-            )}
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="icon" className="hidden md:inline-flex" asChild title="Export CSV">
+            <Button variant="ghost" size="icon" className="hidden md:inline-flex" asChild title="Export CSV">
               <a href={statementsApi.exportUrl(filters)} download>
                 <Download className="h-4 w-4" />
               </a>
             </Button>
+            {isOnFilesTab && (
+              <Button size="icon" className="hidden md:inline-flex" onClick={() => setUploadOpen(true)} title="Upload Statement">
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
+            {isOnMappingsTab && (
+              <Button size="icon" className="hidden md:inline-flex" onClick={() => setMappingAddOpen(true)} title="Add Mapping">
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         }
       />
@@ -176,8 +166,8 @@ export default function Statements() {
         <Routes>
           <Route index element={<Navigate to="transactions" replace />} />
           <Route path="transactions" element={<TransactionsTab showFilters={showFilters} />} />
-          <Route path="files" element={<FilesTab showFilters={showFilters} uploadOpen={uploadOpen} onUploadOpenChange={setUploadOpen} visibleColumns={filesVisibleCols} />} />
-          <Route path="mappings" element={<MappingsTab />} />
+          <Route path="files" element={<FilesTab showFilters={showFilters} uploadOpen={uploadOpen} onUploadOpenChange={setUploadOpen} />} />
+          <Route path="mappings" element={<MappingsTab showFilters={showFilters} addOpen={mappingAddOpen} onAddOpenChange={setMappingAddOpen} />} />
         </Routes>
       </Suspense>
     </div>

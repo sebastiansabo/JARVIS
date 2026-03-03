@@ -79,7 +79,7 @@ export function ColumnToggle({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" title="Configure columns">
+        <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" title="Configure columns">
           <Columns3 className="h-4 w-4" />
         </Button>
       </PopoverTrigger>

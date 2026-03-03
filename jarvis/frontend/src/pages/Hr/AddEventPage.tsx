@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Plus,
@@ -37,6 +37,9 @@ const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'Jul
 
 export default function AddEventPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const isMarketing = location.pathname.startsWith('/app/marketing')
+  const eventsPath = isMarketing ? '/app/marketing/events' : '/app/hr/events'
 
   // Event fields
   const [name, setName] = useState('')
@@ -196,7 +199,7 @@ export default function AddEventPage() {
     },
     onSuccess: () => {
       toast.success('Event and bonuses created')
-      navigate('/app/hr/events')
+      navigate(eventsPath)
     },
     onError: () => toast.error('Failed to create event'),
   })
@@ -220,8 +223,10 @@ export default function AddEventPage() {
         title="Add Event + Employees"
         description=""
         breadcrumbs={[
-          { label: 'HR', href: '/app/hr/pontaje' },
-          { label: 'Events', href: '/app/hr/events' },
+          isMarketing
+            ? { label: 'Marketing', shortLabel: 'Mkt.', href: '/app/marketing' }
+            : { label: 'HR', href: '/app/hr/pontaje' },
+          { label: 'Events', href: eventsPath },
           { label: 'Add Event' },
         ]}
       />
@@ -446,7 +451,7 @@ export default function AddEventPage() {
       {/* Sticky bottom */}
       <div className="sticky bottom-0 -mx-6 -mb-6 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="flex items-center justify-end gap-3 px-6 py-3">
-          <Button variant="outline" onClick={() => navigate('/app/hr/events')}>
+          <Button variant="outline" onClick={() => navigate(eventsPath)}>
             Cancel
           </Button>
           <Button type="submit" disabled={createEventMutation.isPending} className="min-w-[160px]">
