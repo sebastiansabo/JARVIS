@@ -121,6 +121,34 @@ class BioStarRepository(BaseRepository):
         self.execute(sql, params)
         return len(biostar_user_ids)
 
+    def toggle_blacklist(self, biostar_user_id):
+        """Toggle blacklist status for a single employee. Returns new status."""
+        return self.execute('''
+            UPDATE biostar_employees
+            SET is_blacklisted = NOT is_blacklisted, updated_at = NOW()
+            WHERE biostar_user_id = %s
+            RETURNING is_blacklisted
+        ''', (biostar_user_id,), returning=True)
+
+    def blacklist_group(self, group_name, blacklisted=True):
+        """Set blacklist status for all employees in a group."""
+        return self.execute('''
+            UPDATE biostar_employees
+            SET is_blacklisted = %s, updated_at = NOW()
+            WHERE user_group_name = %s
+        ''', (blacklisted, group_name))
+
+    def bulk_blacklist(self, biostar_user_ids, blacklisted=True):
+        """Set blacklist status for multiple employees."""
+        if not biostar_user_ids:
+            return 0
+        placeholders = ','.join(['%s'] * len(biostar_user_ids))
+        self.execute(
+            f"UPDATE biostar_employees SET is_blacklisted = %s, updated_at = NOW() WHERE biostar_user_id IN ({placeholders})",
+            [blacklisted] + list(biostar_user_ids)
+        )
+        return len(biostar_user_ids)
+
     def bulk_deactivate(self, biostar_user_ids):
         """Soft-delete employees by setting status to inactive."""
         if not biostar_user_ids:
@@ -274,7 +302,8 @@ class BioStarRepository(BaseRepository):
                 FROM biostar_punch_logs pl
                 LEFT JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
                 LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
-                WHERE pl.event_datetime::date = %s::date{extra_where}
+                WHERE pl.event_datetime::date = %s::date
+                  AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE){extra_where}
                 GROUP BY pl.biostar_user_id, be.name, be.email, be.user_group_name,
                          be.mapped_jarvis_user_id, u.name, be.lunch_break_minutes, be.working_hours,
                          be.schedule_start, be.schedule_end
@@ -306,7 +335,9 @@ class BioStarRepository(BaseRepository):
                     COUNT(*) AS punches,
                     EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds
                 FROM biostar_punch_logs pl
+                LEFT JOIN biostar_employees be2 ON be2.biostar_user_id = pl.biostar_user_id
                 WHERE pl.event_datetime::date BETWEEN %s::date AND %s::date
+                  AND (be2.is_blacklisted IS NULL OR be2.is_blacklisted = FALSE)
                 GROUP BY pl.biostar_user_id, pl.event_datetime::date
             )
             SELECT

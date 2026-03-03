@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS biostar_employees (
 
     -- Status
     status VARCHAR(20) NOT NULL DEFAULT 'active',
+    is_blacklisted BOOLEAN NOT NULL DEFAULT FALSE,
 
     -- Timestamps
     last_synced_at TIMESTAMP NOT NULL DEFAULT NOW(),

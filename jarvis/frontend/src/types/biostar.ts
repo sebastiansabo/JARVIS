@@ -29,6 +29,7 @@ export interface BioStarEmployee {
   schedule_start: string | null
   schedule_end: string | null
   status: string
+  is_blacklisted: boolean
   last_synced_at: string
   created_at: string
   updated_at: string

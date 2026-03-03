@@ -99,6 +99,21 @@ export const biostarApi = {
       biostar_user_ids: biostarUserIds,
     }),
 
+  toggleBlacklist: (biostarUserId: string) =>
+    api.post<{ success: boolean; is_blacklisted: boolean }>(`${BASE}/employees/${biostarUserId}/blacklist`, {}),
+
+  bulkBlacklist: (biostarUserIds: string[], blacklisted = true) =>
+    api.post<{ success: boolean; data: { updated: number } }>(`${BASE}/employees/bulk-blacklist`, {
+      biostar_user_ids: biostarUserIds,
+      blacklisted,
+    }),
+
+  blacklistGroup: (groupName: string, blacklisted = true) =>
+    api.post<{ success: boolean; data: { updated: number } }>(`${BASE}/employees/blacklist-group`, {
+      group_name: groupName,
+      blacklisted,
+    }),
+
   // ── Event Sync ──
 
   syncEvents: (params?: { start_date?: string; end_date?: string }) =>

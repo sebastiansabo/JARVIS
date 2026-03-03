@@ -1672,13 +1672,13 @@ def dict_from_row(row):
     """Convert a database row to a dictionary with proper date serialization."""
     if row is None:
         return None
+    from decimal import Decimal
     result = dict(row)
     for key, value in result.items():
         if hasattr(value, 'isoformat'):
-            if hasattr(value, 'hour'):
-                result[key] = value.isoformat()
-            else:
-                result[key] = value.isoformat()
+            result[key] = value.isoformat()
+        elif isinstance(value, Decimal):
+            result[key] = float(value)
     return result
 
 

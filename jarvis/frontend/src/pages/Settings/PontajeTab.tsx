@@ -12,6 +12,8 @@ import {
   Wand2,
   X,
   Trash2,
+  Ban,
+  ShieldOff,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,6 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { biostarApi } from '@/api/biostar'
 import { toast } from 'sonner'
@@ -28,14 +31,46 @@ import type { BioStarEmployee, JarvisUser } from '@/types/biostar'
 
 type SortField = 'name' | 'group' | 'status'
 type SortDir = 'asc' | 'desc'
+type MappingFilter = 'all' | 'mapped' | 'unmapped' | 'blacklisted'
+
+const LUNCH_OPTIONS = [
+  { value: '0', label: 'None' },
+  { value: '15', label: '15 min' },
+  { value: '30', label: '30 min' },
+  { value: '45', label: '45 min' },
+  { value: '60', label: '60 min' },
+  { value: '90', label: '90 min' },
+]
+
+const HOURS_OPTIONS = [
+  { value: '4', label: '4h' },
+  { value: '6', label: '6h' },
+  { value: '7', label: '7h' },
+  { value: '7.5', label: '7.5h' },
+  { value: '8', label: '8h' },
+  { value: '8.5', label: '8.5h' },
+  { value: '9', label: '9h' },
+  { value: '10', label: '10h' },
+  { value: '12', label: '12h' },
+]
+
+const FROM_OPTIONS = ['05:00','05:30','06:00','06:30','07:00','07:30','08:00','08:30','09:00','09:30','10:00']
+const TO_OPTIONS = ['14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00','20:00','22:00']
 
 export default function PontajeTab() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [showAll, setShowAll] = useState(false)
-  const [filter, setFilter] = useState<'all' | 'mapped' | 'unmapped'>('all')
+  const [filter, setFilter] = useState<MappingFilter>('all')
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+
+  // Column filters
+  const [filterGroup, setFilterGroup] = useState('all')
+  const [filterLunch, setFilterLunch] = useState('all')
+  const [filterHours, setFilterHours] = useState('all')
+  const [filterFrom, setFilterFrom] = useState('all')
+  const [filterTo, setFilterTo] = useState('all')
 
   const { data: status } = useQuery({
     queryKey: ['biostar', 'status'],
@@ -85,6 +120,15 @@ export default function PontajeTab() {
     onError: () => toast.error('Failed to update schedule'),
   })
 
+  const blacklistMut = useMutation({
+    mutationFn: (biostarUserId: string) => biostarApi.toggleBlacklist(biostarUserId),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['biostar', 'employees'] })
+      toast.success(res.is_blacklisted ? 'Employee blacklisted — hidden from Pontaje' : 'Employee removed from blacklist')
+    },
+    onError: () => toast.error('Failed to update blacklist'),
+  })
+
   // ── Selection + Bulk Edit ──
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkLunch, setBulkLunch] = useState<string>('')
@@ -128,6 +172,26 @@ export default function PontajeTab() {
     onError: () => toast.error('Bulk update failed'),
   })
 
+  const bulkBlacklistMut = useMutation({
+    mutationFn: ({ ids, blacklisted }: { ids: string[]; blacklisted: boolean }) =>
+      biostarApi.bulkBlacklist(ids, blacklisted),
+    onSuccess: (res, vars) => {
+      qc.invalidateQueries({ queryKey: ['biostar', 'employees'] })
+      toast.success(`${vars.blacklisted ? 'Blacklisted' : 'Un-blacklisted'} ${res.data?.updated ?? 0} employees`)
+      clearSelection()
+    },
+    onError: () => toast.error('Bulk blacklist failed'),
+  })
+
+  const blacklistGroupMut = useMutation({
+    mutationFn: (groupName: string) => biostarApi.blacklistGroup(groupName, true),
+    onSuccess: (res, groupName) => {
+      qc.invalidateQueries({ queryKey: ['biostar', 'employees'] })
+      toast.success(`Blacklisted ${res.data?.updated ?? 0} employees from "${groupName}"`)
+    },
+    onError: () => toast.error('Failed to blacklist group'),
+  })
+
   const applyBulk = () => {
     if (selected.size === 0) return
     const payload: Parameters<typeof biostarApi.bulkUpdateSchedule>[0] = {
@@ -164,12 +228,28 @@ export default function PontajeTab() {
     }
   }
 
+  // Derived group list for filter
+  const groups = useMemo(() => {
+    const set = new Set<string>()
+    employees.forEach((e) => { if (e.user_group_name) set.add(e.user_group_name) })
+    return Array.from(set).sort()
+  }, [employees])
+
   const processed = useMemo(() => {
     let list = [...employees]
 
-    // Filter
+    // Mapping status filter
     if (filter === 'mapped') list = list.filter((e) => e.mapped_jarvis_user_id)
     if (filter === 'unmapped') list = list.filter((e) => !e.mapped_jarvis_user_id)
+    if (filter === 'blacklisted') list = list.filter((e) => e.is_blacklisted)
+
+    // Column filters
+    if (filterGroup !== 'all') list = list.filter((e) => e.user_group_name === filterGroup)
+    if (filterLunch !== 'all') list = list.filter((e) => String(e.lunch_break_minutes ?? 60) === filterLunch)
+    if (filterHours !== 'all') list = list.filter((e) => String(Number(e.working_hours ?? 8)) === filterHours)
+    const fmtT = (t: string | null) => (t ? t.slice(0, 5) : '08:00')
+    if (filterFrom !== 'all') list = list.filter((e) => fmtT(e.schedule_start) === filterFrom)
+    if (filterTo !== 'all') list = list.filter((e) => fmtT(e.schedule_end) === filterTo)
 
     // Search
     if (search) {
@@ -197,9 +277,12 @@ export default function PontajeTab() {
     })
 
     return list
-  }, [employees, filter, search, sortField, sortDir])
+  }, [employees, filter, filterGroup, filterLunch, filterHours, filterFrom, filterTo, search, sortField, sortDir])
 
   const displayed = showAll ? processed : processed.slice(0, 50)
+
+  const hasColumnFilters = filterGroup !== 'all' || filterLunch !== 'all' || filterHours !== 'all' || filterFrom !== 'all' || filterTo !== 'all'
+  const resetColumnFilters = () => { setFilterGroup('all'); setFilterLunch('all'); setFilterHours('all'); setFilterFrom('all'); setFilterTo('all') }
 
   if (!status?.connected) {
     return (
@@ -216,6 +299,7 @@ export default function PontajeTab() {
 
   const mappedCount = employees.filter((e) => e.mapped_jarvis_user_id).length
   const unmappedCount = employees.filter((e) => !e.mapped_jarvis_user_id).length
+  const blacklistedCount = employees.filter((e) => e.is_blacklisted).length
 
   const SortIcon = ({ field }: { field: SortField }) => (
     <ArrowUpDown className={cn('ml-1 h-3 w-3 inline', sortField === field ? 'opacity-100' : 'opacity-40')} />
@@ -232,13 +316,15 @@ export default function PontajeTab() {
             </CardTitle>
             <CardDescription>
               Map BioStar employees to JARVIS users.
-              {' '}<span className="text-green-600">{mappedCount} mapped</span>, <span className="text-orange-600">{unmappedCount} unmapped</span> of {employees.length} active.
+              {' '}<span className="text-green-600">{mappedCount} mapped</span>, <span className="text-orange-600">{unmappedCount} unmapped</span>
+              {blacklistedCount > 0 && <>, <span className="text-red-600">{blacklistedCount} blacklisted</span></>} of {employees.length} active.
             </CardDescription>
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="mb-4 flex flex-wrap items-center gap-3">
+        {/* Search + status filter row */}
+        <div className="mb-3 flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -248,16 +334,93 @@ export default function PontajeTab() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <Select value={filter} onValueChange={(v) => setFilter(v as typeof filter)}>
-            <SelectTrigger className="w-40">
+          <Select value={filter} onValueChange={(v) => setFilter(v as MappingFilter)}>
+            <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All ({employees.length})</SelectItem>
               <SelectItem value="mapped">Mapped ({mappedCount})</SelectItem>
               <SelectItem value="unmapped">Unmapped ({unmappedCount})</SelectItem>
+              <SelectItem value="blacklisted">Blacklisted ({blacklistedCount})</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        {/* Column filters row */}
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground font-medium shrink-0">Filter:</span>
+          <Select value={filterGroup} onValueChange={setFilterGroup}>
+            <SelectTrigger className="h-7 w-44 text-xs">
+              <SelectValue placeholder="Group" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Groups</SelectItem>
+              {groups.map((g) => (
+                <SelectItem key={g} value={g}>{g}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterLunch} onValueChange={setFilterLunch}>
+            <SelectTrigger className="h-7 w-28 text-xs">
+              <SelectValue placeholder="Lunch" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any Lunch</SelectItem>
+              {LUNCH_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterHours} onValueChange={setFilterHours}>
+            <SelectTrigger className="h-7 w-28 text-xs">
+              <SelectValue placeholder="Hours/Day" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any Hours</SelectItem>
+              {HOURS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterFrom} onValueChange={setFilterFrom}>
+            <SelectTrigger className="h-7 w-24 text-xs">
+              <SelectValue placeholder="From" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any From</SelectItem>
+              {FROM_OPTIONS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterTo} onValueChange={setFilterTo}>
+            <SelectTrigger className="h-7 w-24 text-xs">
+              <SelectValue placeholder="To" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any To</SelectItem>
+              {TO_OPTIONS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {hasColumnFilters && (
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={resetColumnFilters}>
+              <X className="mr-1 h-3 w-3" />
+              Clear
+            </Button>
+          )}
+
+          {/* Auto-blacklist group shortcut */}
+          {filterGroup !== 'all' && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs ml-auto text-red-600 border-red-300 hover:bg-red-50 dark:hover:bg-red-950/30"
+              onClick={() => {
+                if (confirm(`Blacklist all employees in group "${filterGroup}"? They will be hidden from Pontaje views.`)) {
+                  blacklistGroupMut.mutate(filterGroup)
+                }
+              }}
+              disabled={blacklistGroupMut.isPending}
+            >
+              <Ban className="mr-1 h-3 w-3" />
+              Blacklist "{filterGroup}"
+            </Button>
+          )}
         </div>
 
         {isLoading ? (
@@ -279,12 +442,7 @@ export default function PontajeTab() {
                     <SelectValue placeholder="Lunch" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0">None</SelectItem>
-                    <SelectItem value="15">15 min</SelectItem>
-                    <SelectItem value="30">30 min</SelectItem>
-                    <SelectItem value="45">45 min</SelectItem>
-                    <SelectItem value="60">60 min</SelectItem>
-                    <SelectItem value="90">90 min</SelectItem>
+                    {LUNCH_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Select value={bulkHours} onValueChange={setBulkHours}>
@@ -292,15 +450,7 @@ export default function PontajeTab() {
                     <SelectValue placeholder="Hours/Day" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="4">4h</SelectItem>
-                    <SelectItem value="6">6h</SelectItem>
-                    <SelectItem value="7">7h</SelectItem>
-                    <SelectItem value="7.5">7.5h</SelectItem>
-                    <SelectItem value="8">8h</SelectItem>
-                    <SelectItem value="8.5">8.5h</SelectItem>
-                    <SelectItem value="9">9h</SelectItem>
-                    <SelectItem value="10">10h</SelectItem>
-                    <SelectItem value="12">12h</SelectItem>
+                    {HOURS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Select value={bulkFrom} onValueChange={setBulkFrom}>
@@ -308,9 +458,7 @@ export default function PontajeTab() {
                     <SelectValue placeholder="From" />
                   </SelectTrigger>
                   <SelectContent>
-                    {['05:00','05:30','06:00','06:30','07:00','07:30','08:00','08:30','09:00','09:30','10:00'].map((t) => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
+                    {FROM_OPTIONS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Select value={bulkTo} onValueChange={setBulkTo}>
@@ -318,14 +466,32 @@ export default function PontajeTab() {
                     <SelectValue placeholder="To" />
                   </SelectTrigger>
                   <SelectContent>
-                    {['14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00','20:00','22:00'].map((t) => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
+                    {TO_OPTIONS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Button size="sm" className="h-7 text-xs" onClick={applyBulk} disabled={bulkMut.isPending}>
                   <Wand2 className="mr-1 h-3 w-3" />
                   {bulkMut.isPending ? 'Applying...' : 'Apply'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs text-red-600 border-red-300"
+                  onClick={() => bulkBlacklistMut.mutate({ ids: Array.from(selected), blacklisted: true })}
+                  disabled={bulkBlacklistMut.isPending}
+                >
+                  <Ban className="mr-1 h-3 w-3" />
+                  Blacklist
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => bulkBlacklistMut.mutate({ ids: Array.from(selected), blacklisted: false })}
+                  disabled={bulkBlacklistMut.isPending}
+                >
+                  <ShieldOff className="mr-1 h-3 w-3" />
+                  Un-blacklist
                 </Button>
                 <Button
                   size="sm"
@@ -377,7 +543,7 @@ export default function PontajeTab() {
                     <TableHead className="hidden lg:table-cell text-center w-28">Hours/Day</TableHead>
                     <TableHead className="hidden xl:table-cell text-center w-24">From</TableHead>
                     <TableHead className="hidden xl:table-cell text-center w-24">To</TableHead>
-                    <TableHead className="w-12" />
+                    <TableHead className="w-16" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -395,6 +561,7 @@ export default function PontajeTab() {
                       onSchedule={(data) =>
                         scheduleMut.mutate({ biostarUserId: emp.biostar_user_id, data })
                       }
+                      onToggleBlacklist={() => blacklistMut.mutate(emp.biostar_user_id)}
                     />
                   ))}
                 </TableBody>
@@ -552,6 +719,7 @@ function EmployeeRow({
   onMap,
   onUnmap,
   onSchedule,
+  onToggleBlacklist,
 }: {
   employee: BioStarEmployee
   jarvisUsers: JarvisUser[]
@@ -560,6 +728,7 @@ function EmployeeRow({
   onMap: (jarvisUserId: number) => void
   onUnmap: () => void
   onSchedule: (data: { lunch_break_minutes: number; working_hours: number; schedule_start?: string; schedule_end?: string }) => void
+  onToggleBlacklist: () => void
 }) {
   const fmtTime = (t: string | null) => {
     if (!t) return '08:00'
@@ -567,13 +736,18 @@ function EmployeeRow({
     return t.slice(0, 5)
   }
   return (
-    <TableRow className={selected ? 'bg-muted/40' : undefined}>
+    <TableRow className={cn(selected ? 'bg-muted/40' : undefined, employee.is_blacklisted ? 'opacity-50' : undefined)}>
       <TableCell>
         <Checkbox checked={selected} onCheckedChange={onToggleSelect} />
       </TableCell>
       <TableCell>
         <div>
-          <span className="font-medium">{employee.name}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-medium">{employee.name}</span>
+            {employee.is_blacklisted && (
+              <Badge variant="destructive" className="text-[10px] px-1 py-0 h-4">blacklisted</Badge>
+            )}
+          </div>
           {employee.email && <p className="text-xs text-muted-foreground">{employee.email}</p>}
         </div>
       </TableCell>
@@ -609,12 +783,7 @@ function EmployeeRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="0">None</SelectItem>
-            <SelectItem value="15">15 min</SelectItem>
-            <SelectItem value="30">30 min</SelectItem>
-            <SelectItem value="45">45 min</SelectItem>
-            <SelectItem value="60">60 min</SelectItem>
-            <SelectItem value="90">90 min</SelectItem>
+            {LUNCH_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
           </SelectContent>
         </Select>
       </TableCell>
@@ -627,15 +796,7 @@ function EmployeeRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="4">4h</SelectItem>
-            <SelectItem value="6">6h</SelectItem>
-            <SelectItem value="7">7h</SelectItem>
-            <SelectItem value="7.5">7.5h</SelectItem>
-            <SelectItem value="8">8h</SelectItem>
-            <SelectItem value="8.5">8.5h</SelectItem>
-            <SelectItem value="9">9h</SelectItem>
-            <SelectItem value="10">10h</SelectItem>
-            <SelectItem value="12">12h</SelectItem>
+            {HOURS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
           </SelectContent>
         </Select>
       </TableCell>
@@ -648,9 +809,7 @@ function EmployeeRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {['05:00','05:30','06:00','06:30','07:00','07:30','08:00','08:30','09:00','09:30','10:00'].map((t) => (
-              <SelectItem key={t} value={t}>{t}</SelectItem>
-            ))}
+            {FROM_OPTIONS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
           </SelectContent>
         </Select>
       </TableCell>
@@ -663,18 +822,27 @@ function EmployeeRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {['14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00','20:00','22:00'].map((t) => (
-              <SelectItem key={t} value={t}>{t}</SelectItem>
-            ))}
+            {TO_OPTIONS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
           </SelectContent>
         </Select>
       </TableCell>
       <TableCell>
-        {employee.mapped_jarvis_user_id && (
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onUnmap} title="Remove mapping">
-            <Unlink className="h-3.5 w-3.5 text-muted-foreground" />
+        <div className="flex items-center gap-1">
+          {employee.mapped_jarvis_user_id && (
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onUnmap} title="Remove mapping">
+              <Unlink className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn('h-7 w-7 p-0', employee.is_blacklisted ? 'text-red-500 hover:text-red-600' : 'text-muted-foreground hover:text-red-500')}
+            onClick={onToggleBlacklist}
+            title={employee.is_blacklisted ? 'Remove from blacklist' : 'Blacklist — hide from Pontaje'}
+          >
+            <Ban className="h-3.5 w-3.5" />
           </Button>
-        )}
+        </div>
       </TableCell>
     </TableRow>
   )

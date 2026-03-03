@@ -185,6 +185,41 @@ def bulk_deactivate():
     return jsonify({'success': True, 'message': f'Deactivated {count} employees', 'data': {'deactivated': count}})
 
 
+@biostar_bp.route('/api/employees/<biostar_user_id>/blacklist', methods=['POST'])
+@api_login_required
+def toggle_blacklist(biostar_user_id):
+    """Toggle blacklist status for an employee."""
+    result = service.repo.toggle_blacklist(biostar_user_id)
+    new_status = result['is_blacklisted'] if result else False
+    return jsonify({'success': True, 'is_blacklisted': new_status})
+
+
+@biostar_bp.route('/api/employees/bulk-blacklist', methods=['POST'])
+@api_login_required
+def bulk_blacklist():
+    """Set blacklist status for multiple employees."""
+    data = request.get_json()
+    if not data or 'biostar_user_ids' not in data:
+        return jsonify({'success': False, 'error': 'biostar_user_ids required'}), 400
+    ids = data['biostar_user_ids']
+    blacklisted = data.get('blacklisted', True)
+    count = service.repo.bulk_blacklist(ids, blacklisted)
+    return jsonify({'success': True, 'data': {'updated': count}})
+
+
+@biostar_bp.route('/api/employees/blacklist-group', methods=['POST'])
+@api_login_required
+def blacklist_group():
+    """Blacklist all employees in a group."""
+    data = request.get_json()
+    group = (data or {}).get('group_name', '').strip()
+    if not group:
+        return jsonify({'success': False, 'error': 'group_name required'}), 400
+    blacklisted = (data or {}).get('blacklisted', True)
+    count = service.repo.blacklist_group(group, blacklisted)
+    return jsonify({'success': True, 'data': {'updated': count}})
+
+
 @biostar_bp.route('/api/employees/<biostar_user_id>/schedule', methods=['PUT'])
 @api_login_required
 def update_schedule(biostar_user_id):
