@@ -3854,9 +3854,10 @@
             const lineCount = container.children.length;
             let newPercentage = existingData ? existingData.percentage : 100;
 
-            // Get allocation value for calculating reinvoice value
+            // Get GROSS allocation value for calculating reinvoice value
+            // Must use data-gross-value (not .value which shows NET after reinvoice deduction)
             const allocValueInput = document.querySelector(`.alloc-value[data-idx="${allocIdx}"]`);
-            const allocationValue = parseFloat(allocValueInput?.value) || 0;
+            const allocationValue = parseFloat(allocValueInput?.dataset?.grossValue) || parseFloat(allocValueInput?.value) || 0;
             const currency = document.getElementById('editCurrency')?.value || 'RON';
 
             // If redistributing, update only unlocked lines
@@ -3883,9 +3884,8 @@
                 newPercentage = perUnlockedLine;
             }
 
-            const initialValue = existingData?.value != null
-                ? parseFloat(existingData.value).toFixed(2)
-                : ((allocationValue * newPercentage) / 100).toFixed(2);
+            // Always recalculate from gross × percentage (avoids stale stored values of 0)
+            const initialValue = ((allocationValue * newPercentage) / 100).toFixed(2);
             const isLocked = existingData?.locked || false;
             const commentVal = existingData?.comment || '';
 
@@ -4079,10 +4079,11 @@
             const valueInput = line.querySelector('.reinvoice-value');
             const percentInput = line.querySelector('.reinvoice-percent');
             const allocValueInput = document.querySelector(`.alloc-value[data-idx="${allocIdx}"]`);
-            const allocationValue = parseFloat(allocValueInput?.value) || 0;
+            // Use GROSS allocation value (not NET) for percent calculation
+            const grossAllocationValue = parseFloat(allocValueInput?.dataset?.grossValue) || parseFloat(allocValueInput?.value) || 0;
             const reinvoiceValue = parseFloat(valueInput.value) || 0;
-            if (allocationValue > 0) {
-                percentInput.value = ((reinvoiceValue / allocationValue) * 100).toFixed(2);
+            if (grossAllocationValue > 0) {
+                percentInput.value = ((reinvoiceValue / grossAllocationValue) * 100).toFixed(2);
             }
             updateEditReinvoiceTotalBadge(allocIdx);
         }
