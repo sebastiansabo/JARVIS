@@ -1656,6 +1656,15 @@ def init_db():
             ''')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_snm_node ON structure_node_members(node_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_snm_user ON structure_node_members(user_id)')
+            # BioStar employee blacklist column
+            cursor.execute('''
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'biostar_employees' AND column_name = 'is_blacklisted') THEN
+                        ALTER TABLE biostar_employees ADD COLUMN is_blacklisted BOOLEAN NOT NULL DEFAULT FALSE;
+                    END IF;
+                END $$;
+            ''')
             conn.commit()
             logger.info('Incremental migration complete')
             return
