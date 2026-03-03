@@ -302,7 +302,7 @@ function ColumnToggle({
 }
 
 // ── Main Component ──────────────────────────────────────────
-export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) {
+export default function UnallocatedTab({ showHidden, showFilters = false }: { showHidden: boolean; showFilters?: boolean }) {
   const qc = useQueryClient()
   const isMobile = useIsMobile()
   const [savedLimit, setSavedLimit] = usePersistedState('efactura-page-size', 50)
@@ -696,17 +696,26 @@ export default function UnallocatedTab({ showHidden }: { showHidden: boolean }) 
         }
 
         return (
-          <div className="flex flex-wrap items-end gap-2">
-            {filterControls}
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder="Search supplier, invoice#..."
-              className="w-[200px]"
-            />
-            <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
-            <div className="ml-auto">
-              <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
+          <div className="space-y-2">
+            {showFilters && (
+              <div className="flex flex-wrap items-end gap-2">
+                {filterControls}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder="Search supplier, invoice#..."
+                className="w-[200px]"
+              />
+              <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
+              {activeFilterCount > 0 && (
+                <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
+              )}
+              <div className="ml-auto">
+                <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
+              </div>
             </div>
           </div>
         )

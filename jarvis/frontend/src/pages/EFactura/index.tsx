@@ -5,6 +5,7 @@ import {
   FileStack,
   LayoutDashboard,
   RefreshCw,
+  SlidersHorizontal,
   Tags,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -43,6 +44,7 @@ export default function EFactura() {
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('efactura_status')
   const [syncOpen, setSyncOpen] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
   const location = useLocation()
   const activeEfTab = tabs.find(t => location.pathname.startsWith(t.to))
 
@@ -66,6 +68,9 @@ export default function EFactura() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${showFilters ? 'bg-muted' : ''}`} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
             </Button>
@@ -136,7 +141,7 @@ export default function EFactura() {
       <Suspense fallback={<TabLoader />}>
         <Routes>
           <Route index element={<Navigate to="unallocated" replace />} />
-          <Route path="unallocated" element={<UnallocatedTab showHidden={showHidden} />} />
+          <Route path="unallocated" element={<UnallocatedTab showHidden={showHidden} showFilters={showFilters} />} />
           <Route path="mappings" element={<MappingsTab />} />
           {/* Redirect removed/old routes */}
           <Route path="fetch" element={<Navigate to="/app/efactura/unallocated" replace />} />
