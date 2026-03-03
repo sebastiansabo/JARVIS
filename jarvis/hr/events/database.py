@@ -949,50 +949,33 @@ def delete_department_structure(struct_id):
 
 
 def get_managed_employee_ids(manager_user_id):
-    """Get all user IDs that belong to departments managed by this user.
+    """Get all user IDs that are team members under this user in the organigram.
 
-    Looks up department_structure rows where manager_user_id is in manager_ids,
-    then finds all active users in those (company, department) combos.
+    Finds all structure_nodes where the user is a 'responsable', then returns
+    the user_ids of all 'team' members on those same nodes.
     """
     conn = get_db()
     cursor = get_cursor(conn)
 
-    # Find departments where this user is a manager
     cursor.execute("""
-        SELECT company, department FROM department_structure
-        WHERE %s = ANY(manager_ids)
+        SELECT DISTINCT snm_team.user_id
+        FROM structure_node_members snm_resp
+        JOIN structure_node_members snm_team
+            ON snm_team.node_id = snm_resp.node_id AND snm_team.role = 'team'
+        WHERE snm_resp.user_id = %s AND snm_resp.role = 'responsable'
     """, (manager_user_id,))
-    managed_depts = cursor.fetchall()
-
-    if not managed_depts:
-        release_db(conn)
-        return []
-
-    # Build conditions for all managed (company, department) pairs
-    conditions = []
-    params = []
-    for dept in managed_depts:
-        conditions.append('(company = %s AND department = %s)')
-        params.append(dept['company'])
-        params.append(dept['department'])
-
-    where = ' OR '.join(conditions)
-    cursor.execute(f"""
-        SELECT id FROM users
-        WHERE is_active = TRUE AND ({where})
-    """, params)
     rows = cursor.fetchall()
     release_db(conn)
-    return [r['id'] for r in rows]
+    return [r['user_id'] for r in rows]
 
 
 def is_manager(user_id):
-    """Check if a user is a manager of any department."""
+    """Check if a user is a responsable on any organigram node."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute("""
-        SELECT COUNT(*) AS cnt FROM department_structure
-        WHERE %s = ANY(manager_ids)
+        SELECT COUNT(*) AS cnt FROM structure_node_members
+        WHERE user_id = %s AND role = 'responsable'
     """, (user_id,))
     row = cursor.fetchone()
     release_db(conn)
