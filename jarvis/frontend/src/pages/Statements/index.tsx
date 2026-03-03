@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard, BarChart3, Clock, CheckCircle, DollarSign } from 'lucide-react'
+import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard, BarChart3, Clock, CheckCircle, DollarSign, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -41,6 +41,7 @@ export default function Statements() {
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('statements_summary')
   const [filters] = useState<TransactionFilters>({})
   const [showStats, setShowStats] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ['statements-summary', filters],
@@ -68,6 +69,9 @@ export default function Statements() {
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
               <BarChart3 className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${showFilters ? 'bg-muted' : ''}`} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
+              <SlidersHorizontal className="h-4 w-4" />
             </Button>
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
@@ -126,17 +130,19 @@ export default function Statements() {
             </TabsList>
           </MobileBottomTabs>
         ) : (
-          <TabsList className="w-auto">
-            {tabs.map((tab) => {
-              const val = tab.to.split('/').pop()!
-              return (
-                <TabsTrigger key={val} value={val}>
-                  <tab.icon className="h-4 w-4" />
-                  {tab.label}
-                </TabsTrigger>
-              )
-            })}
-          </TabsList>
+          <div className="flex items-center">
+            <TabsList className="w-auto">
+              {tabs.map((tab) => {
+                const val = tab.to.split('/').pop()!
+                return (
+                  <TabsTrigger key={val} value={val}>
+                    <tab.icon className="h-4 w-4" />
+                    {tab.label}
+                  </TabsTrigger>
+                )
+              })}
+            </TabsList>
+          </div>
         )}
       </Tabs>
 
@@ -144,7 +150,7 @@ export default function Statements() {
       <Suspense fallback={<TabLoader />}>
         <Routes>
           <Route index element={<Navigate to="transactions" replace />} />
-          <Route path="transactions" element={<TransactionsTab />} />
+          <Route path="transactions" element={<TransactionsTab showFilters={showFilters} />} />
           <Route path="files" element={<FilesTab />} />
           <Route path="mappings" element={<MappingsTab />} />
         </Routes>
