@@ -123,11 +123,19 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
     return brands
   }, [companies, form.company_ids])
 
-  // Derived: departments from selected companies
+  // Derived: departments from selected companies, filtered by selected brands when brands exist
   const availableDepts = useMemo(() => {
     if (!structures) return []
-    return (structures as DepartmentStructure[]).filter((s) => form.company_ids.includes(s.company_id))
-  }, [structures, form.company_ids])
+    const byCompany = (structures as DepartmentStructure[]).filter((s) => form.company_ids.includes(s.company_id))
+    // If this company has brands and user selected some, only show depts for those brands
+    if (availableBrands.length > 0 && form.brand_ids.length > 0) {
+      const selectedBrandNames = new Set(
+        availableBrands.filter((b) => form.brand_ids.includes(b.brand_id)).map((b) => b.brand)
+      )
+      return byCompany.filter((s) => s.brand && selectedBrandNames.has(s.brand))
+    }
+    return byCompany
+  }, [structures, form.company_ids, form.brand_ids, availableBrands])
 
   async function addMembersToProject(projectId: number, sIds: number[], oIds: number[]) {
     const adds = [
@@ -317,10 +325,10 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
         <FieldError message={v.error('company_ids')} />
       </div>
 
-      {/* Brands (dropdown + checkboxes, from selected companies) */}
+      {/* Level 1 — Brands (dropdown + checkboxes, from selected companies) */}
       {availableBrands.length > 0 && (
         <div className="space-y-1.5">
-          <Label>Brands</Label>
+          <Label>Level 1</Label>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-full justify-between font-normal">
@@ -338,7 +346,7 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
                   <label key={b.brand_id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
                     <Checkbox
                       checked={form.brand_ids.includes(b.brand_id)}
-                      onCheckedChange={() => setForm((f) => ({ ...f, brand_ids: toggleArrayItem(f.brand_ids, b.brand_id) }))}
+                      onCheckedChange={() => setForm((f) => ({ ...f, brand_ids: toggleArrayItem(f.brand_ids, b.brand_id), department_ids: [] }))}
                     />
                     {form.company_ids.length > 1 ? `${b.company} — ${b.brand}` : b.brand}
                   </label>
@@ -353,7 +361,7 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
                 return b ? (
                   <Badge key={id} variant="secondary" className="text-xs gap-1">
                     {b.brand}
-                    <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => setForm((f) => ({ ...f, brand_ids: f.brand_ids.filter((x) => x !== id) }))}>&times;</button>
+                    <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => setForm((f) => ({ ...f, brand_ids: f.brand_ids.filter((x) => x !== id), department_ids: [] }))}>&times;</button>
                   </Badge>
                 ) : null
               })}
@@ -362,17 +370,17 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
         </div>
       )}
 
-      {/* Departments (dropdown + checkboxes, from selected companies) */}
-      {availableDepts.length > 0 && (
+      {/* Level 2 — show only when no brands OR brand(s) selected */}
+      {availableDepts.length > 0 && (availableBrands.length === 0 || form.brand_ids.length > 0) && (
         <div className="space-y-1.5">
-          <Label>Departments</Label>
+          <Label>Level 2</Label>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-full justify-between font-normal">
                 <span className="truncate">
                   {form.department_ids.length === 0
-                    ? 'Select departments...'
-                    : `${form.department_ids.length} dept${form.department_ids.length === 1 ? '' : 's'} selected`}
+                    ? 'Select level 2...'
+                    : `${form.department_ids.length} selected`}
                 </span>
                 <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
