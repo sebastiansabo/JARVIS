@@ -301,6 +301,29 @@ def api_profile_team_pontaje():
         return safe_error_response(e)
 
 
+@profile_bp.route('/api/team-pontaje/punches')
+@login_required
+def api_profile_team_pontaje_punches():
+    """Get individual punch logs for a team member on a specific date."""
+    try:
+        from hr.events.database import get_managed_employee_ids, is_manager
+        from core.connectors.biostar.services import BioStarSyncService
+
+        biostar_user_id = request.args.get('biostar_user_id', '')
+        date_str = request.args.get('date', '')
+        if not biostar_user_id or not date_str:
+            return jsonify({'error': 'Missing biostar_user_id or date'}), 400
+
+        if not is_manager(current_user.id):
+            return jsonify({'error': 'Not a manager'}), 403
+
+        service = BioStarSyncService()
+        punches = service.repo.get_employee_punches(biostar_user_id, date_str)
+        return jsonify({'success': True, 'punches': punches})
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @profile_bp.route('/api/notifications')
 @login_required
 def api_profile_notifications():

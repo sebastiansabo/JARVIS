@@ -435,12 +435,18 @@ function UserFormDialog({
               </SelectContent>
             </Select>
           </div>
-          {!user && (
-            <div className="grid gap-2">
-              <Label>Password</Label>
-              <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-            </div>
-          )}
+          <div className="grid gap-2">
+            <Label>{user ? 'Set New Password' : 'Password'}</Label>
+            <Input
+              type="password"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              placeholder={user ? 'Leave empty to keep current' : 'Min. 10 characters'}
+            />
+            {form.password && form.password.length < 10 && (
+              <p className="text-xs text-destructive">Must be at least 10 characters</p>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <Switch checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
             <Label>Active</Label>

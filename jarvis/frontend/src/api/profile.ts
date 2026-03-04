@@ -73,4 +73,15 @@ export const profileApi = {
       `/profile/api/team-pontaje${qs ? `?${qs}` : ''}`,
     )
   },
+
+  getTeamPontajePunches: (biostarUserId: string, date: string) =>
+    api.get<{ success: boolean; punches: import('@/types/biostar').BioStarPunchLog[] }>(
+      `/profile/api/team-pontaje/punches?biostar_user_id=${biostarUserId}&date=${date}`,
+    ),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.post<{ success: boolean; message?: string; error?: string }>('/api/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
 }

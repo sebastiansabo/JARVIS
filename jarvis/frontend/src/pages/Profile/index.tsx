@@ -15,6 +15,7 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   BarChart3,
   Fingerprint,
   Clock,
@@ -27,6 +28,10 @@ import {
   Hash,
   Cake,
   PartyPopper,
+  Key,
+  Eye,
+  EyeOff,
+  CheckCircle2,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -67,6 +72,7 @@ export default function Profile() {
   const [activeTab, setActiveTab] = useTabParam<Tab>('invoices')
   const [showStats, setShowStats] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [passwordOpen, setPasswordOpen] = useState(false)
 
   const queryClient = useQueryClient()
 
@@ -122,10 +128,16 @@ export default function Profile() {
                     {user?.position && <Badge variant="outline">{user.position}</Badge>}
                   </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-                  <Pencil className="h-3.5 w-3.5 mr-1.5" />
-                  Edit
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
+                    <Key className="h-3.5 w-3.5 mr-1.5" />
+                    Password
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                    <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                    Edit
+                  </Button>
+                </div>
               </div>
 
               {/* Info grid */}
@@ -156,6 +168,9 @@ export default function Profile() {
           onSaved={() => queryClient.invalidateQueries({ queryKey: ['profile', 'summary'] })}
         />
       )}
+
+      {/* Change Password Dialog */}
+      <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
 
       {/* Stats Row */}
       <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
@@ -428,6 +443,114 @@ function EditProfileDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={mutation.isPending}>
             {mutation.isPending ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── Change Password Dialog ───────────────────────────────────────
+
+function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const [currentPw, setCurrentPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
+  const [showCurrent, setShowCurrent] = useState(false)
+  const [showNew, setShowNew] = useState(false)
+
+  useEffect(() => {
+    if (open) { setCurrentPw(''); setNewPw(''); setConfirmPw(''); setShowCurrent(false); setShowNew(false) }
+  }, [open])
+
+  const mutation = useMutation({
+    mutationFn: () => profileApi.changePassword(currentPw, newPw),
+    onSuccess: (data) => {
+      if (data.success) {
+        onOpenChange(false)
+      }
+    },
+  })
+
+  const pwMatch = newPw === confirmPw
+  const pwLong = newPw.length >= 10
+  const canSave = currentPw.length > 0 && pwLong && pwMatch
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Change Password</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-2">
+          <div className="grid gap-1.5">
+            <Label>Current Password</Label>
+            <div className="relative">
+              <Input
+                type={showCurrent ? 'text' : 'password'}
+                value={currentPw}
+                onChange={(e) => setCurrentPw(e.target.value)}
+                placeholder="Enter current password"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                onClick={() => setShowCurrent(!showCurrent)}
+              >
+                {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>New Password</Label>
+            <div className="relative">
+              <Input
+                type={showNew ? 'text' : 'password'}
+                value={newPw}
+                onChange={(e) => setNewPw(e.target.value)}
+                placeholder="Min. 10 characters"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                onClick={() => setShowNew(!showNew)}
+              >
+                {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+            {newPw.length > 0 && !pwLong && (
+              <p className="text-xs text-destructive">Must be at least 10 characters</p>
+            )}
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Confirm New Password</Label>
+            <Input
+              type={showNew ? 'text' : 'password'}
+              value={confirmPw}
+              onChange={(e) => setConfirmPw(e.target.value)}
+              placeholder="Re-enter new password"
+            />
+            {confirmPw.length > 0 && !pwMatch && (
+              <p className="text-xs text-destructive">Passwords do not match</p>
+            )}
+            {confirmPw.length > 0 && pwMatch && pwLong && (
+              <p className="text-xs text-green-600 flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Passwords match
+              </p>
+            )}
+          </div>
+          {mutation.isError && (
+            <p className="text-sm text-destructive">Current password is incorrect</p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => mutation.mutate()} disabled={!canSave || mutation.isPending}>
+            {mutation.isPending ? 'Changing...' : 'Change Password'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -837,7 +960,7 @@ function TeamPontajePanel() {
         {filtered.length === 0 ? (
           <EmptyState title="No team data" description={mode === 'daily' ? 'No attendance data for your team members on this day.' : 'No attendance data for your team members in this period.'} />
         ) : mode === 'daily' ? (
-          <TeamDailyTable data={filtered as BioStarDailySummary[]} isMobile={isMobile} />
+          <TeamDailyTable data={filtered as BioStarDailySummary[]} isMobile={isMobile} date={date} />
         ) : (
           <TeamRangeTable data={filtered as BioStarRangeSummary[]} isMobile={isMobile} />
         )}
@@ -848,19 +971,24 @@ function TeamPontajePanel() {
 
 // ── Team Daily Table ──
 
-function TeamDailyTable({ data, isMobile }: { data: BioStarDailySummary[]; isMobile: boolean }) {
+function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[]; isMobile: boolean; date: string }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  const toggle = (id: string) => setExpandedId((prev) => (prev === id ? null : id))
+
   if (isMobile) {
     return (
       <MobileCardList
         data={data}
         fields={[
           { key: 'name', label: 'Name', isPrimary: true, render: (r) => r.mapped_jarvis_user_name || r.name },
-          { key: 'checkin', label: 'Check In', isSecondary: true, render: (r) => r.total_punches > 0 ? fmtTime(r.first_punch) : 'Absent' },
-          { key: 'checkout', label: 'Check Out', render: (r) => r.total_punches > 1 ? fmtTime(r.last_punch) : '-' },
+          { key: 'checkin', label: 'Check In', isSecondary: true, render: (r) => r.total_punches > 0 ? fmtTime(r.adjusted_first_punch || r.first_punch) : 'Absent' },
+          { key: 'checkout', label: 'Check Out', render: (r) => r.total_punches > 1 ? fmtTime(r.adjusted_last_punch || r.last_punch) : '-' },
           { key: 'duration', label: 'Duration', render: (r) => {
             const net = netSec(r.duration_seconds, r.lunch_break_minutes ?? 60)
             return net > 0 ? fmtDuration(net) : '-'
           }},
+          { key: 'corrected', label: 'Corrected', expandOnly: true, render: (r) => r.adjustment_type ? `${r.adjustment_type}` : 'No' },
           { key: 'punches', label: 'Punches', expandOnly: true, render: (r) => String(r.total_punches) },
           { key: 'schedule', label: 'Schedule', expandOnly: true, render: (r) => `${r.schedule_start || '08:00'} - ${r.schedule_end || '17:00'}` },
         ] satisfies MobileCardField<BioStarDailySummary>[]}
@@ -874,6 +1002,7 @@ function TeamDailyTable({ data, isMobile }: { data: BioStarDailySummary[]; isMob
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-8"></TableHead>
             <TableHead>Employee</TableHead>
             <TableHead>Group</TableHead>
             <TableHead className="text-center">Check In</TableHead>
@@ -891,59 +1020,169 @@ function TeamDailyTable({ data, isMobile }: { data: BioStarDailySummary[]; isMob
             const expectedH = Number(r.working_hours ?? 8)
             const isShort = netH > 0 && netH < expectedH
             const isAbsent = r.total_punches === 0
+            const isExpanded = expandedId === r.biostar_user_id
+            const hasAdjustment = !!r.adjustment_type
 
             return (
-              <TableRow key={r.biostar_user_id}>
-                <TableCell className="font-medium">{r.mapped_jarvis_user_name || r.name}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{r.user_group_name || '-'}</TableCell>
-                <TableCell className="text-center">
-                  {isAbsent ? (
-                    <span className="text-sm text-muted-foreground">—</span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-sm">
-                      <LogIn className="h-3 w-3 text-green-600" />
-                      {fmtTime(r.first_punch)}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell className="text-center">
-                  {isAbsent ? (
-                    <span className="text-sm text-muted-foreground">—</span>
-                  ) : r.total_punches === 1 ? (
-                    <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-sm">
-                      <LogOut className="h-3 w-3 text-red-500" />
-                      {fmtTime(r.last_punch)}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell className="text-center">
-                  {isAbsent ? (
-                    <Badge variant="outline" className="text-xs text-muted-foreground">Absent</Badge>
-                  ) : r.total_punches === 1 ? (
-                    <span className="text-sm text-muted-foreground">—</span>
-                  ) : (
-                    <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
-                      {fmtDuration(net)}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell className="text-center">
-                  {isAbsent ? (
-                    <span className="text-sm text-muted-foreground">—</span>
-                  ) : (
-                    <Badge variant="secondary" className="text-xs">{r.total_punches}</Badge>
-                  )}
-                </TableCell>
-                <TableCell className="text-center text-sm text-muted-foreground">
-                  {r.schedule_start || '08:00'} - {r.schedule_end || '17:00'}
-                </TableCell>
-              </TableRow>
+              <>
+                <TableRow
+                  key={r.biostar_user_id}
+                  className={cn('cursor-pointer hover:bg-muted/50', isExpanded && 'bg-muted/30')}
+                  onClick={() => !isAbsent && toggle(r.biostar_user_id)}
+                >
+                  <TableCell className="px-2">
+                    {!isAbsent && (
+                      <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', isExpanded && 'rotate-180')} />
+                    )}
+                  </TableCell>
+                  <TableCell className="font-medium">{r.mapped_jarvis_user_name || r.name}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{r.user_group_name || '-'}</TableCell>
+                  <TableCell className="text-center">
+                    {isAbsent ? (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-sm">
+                        <LogIn className="h-3 w-3 text-green-600" />
+                        {fmtTime(hasAdjustment ? r.adjusted_first_punch : r.first_punch)}
+                        {hasAdjustment && (
+                          <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300 ml-0.5">C</Badge>
+                        )}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {isAbsent ? (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    ) : r.total_punches === 1 ? (
+                      <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-sm">
+                        <LogOut className="h-3 w-3 text-red-500" />
+                        {fmtTime(hasAdjustment ? r.adjusted_last_punch : r.last_punch)}
+                        {hasAdjustment && (
+                          <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300 ml-0.5">C</Badge>
+                        )}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {isAbsent ? (
+                      <Badge variant="outline" className="text-xs text-muted-foreground">Absent</Badge>
+                    ) : r.total_punches === 1 ? (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    ) : (
+                      <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
+                        {fmtDuration(net)}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {isAbsent ? (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    ) : (
+                      <Badge variant="secondary" className="text-xs">{r.total_punches}</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center text-sm text-muted-foreground">
+                    {r.schedule_start || '08:00'} - {r.schedule_end || '17:00'}
+                  </TableCell>
+                </TableRow>
+                {isExpanded && (
+                  <TableRow key={`${r.biostar_user_id}-detail`}>
+                    <TableCell colSpan={8} className="p-0">
+                      <PunchDetailRow biostarUserId={r.biostar_user_id} date={date} row={r} />
+                    </TableCell>
+                  </TableRow>
+                )}
+              </>
             )
           })}
         </TableBody>
       </Table>
+    </div>
+  )
+}
+
+// ── Punch Detail (expanded row) ──
+
+function PunchDetailRow({ biostarUserId, date, row }: { biostarUserId: string; date: string; row: BioStarDailySummary }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['team-pontaje-punches', biostarUserId, date],
+    queryFn: () => profileApi.getTeamPontajePunches(biostarUserId, date),
+  })
+
+  const punches = data?.punches ?? []
+  const hasAdj = !!row.adjustment_type
+
+  return (
+    <div className="bg-muted/20 border-t px-6 py-3">
+      <div className="flex flex-wrap gap-6">
+        {/* Punch log */}
+        <div className="flex-1 min-w-[200px]">
+          <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">All Punches</p>
+          {isLoading ? (
+            <div className="space-y-1.5">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-5 w-32" />)}
+            </div>
+          ) : punches.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No punch data</p>
+          ) : (
+            <div className="space-y-1">
+              {punches.map((p, i) => (
+                <div key={p.id || i} className="flex items-center gap-2 text-sm">
+                  <span className="w-5 text-center text-xs text-muted-foreground">{i + 1}.</span>
+                  <Clock className="h-3 w-3 text-muted-foreground" />
+                  <span className="font-medium">{fmtTime(p.event_datetime)}</span>
+                  {p.device_name && <span className="text-xs text-muted-foreground">({p.device_name})</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Corrected punch info */}
+        {hasAdj && (
+          <div className="min-w-[200px]">
+            <p className="text-xs font-semibold text-blue-600 mb-2 uppercase tracking-wider">Corrected Punch</p>
+            <div className="space-y-1 text-sm">
+              <div className="flex items-center gap-2">
+                <LogIn className="h-3 w-3 text-blue-600" />
+                <span className="text-muted-foreground">In:</span>
+                <span className="font-medium">{fmtTime(row.adjusted_first_punch)}</span>
+                <span className="text-xs text-muted-foreground">(was {fmtTime(row.first_punch)})</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <LogOut className="h-3 w-3 text-blue-600" />
+                <span className="text-muted-foreground">Out:</span>
+                <span className="font-medium">{fmtTime(row.adjusted_last_punch)}</span>
+                <span className="text-xs text-muted-foreground">(was {fmtTime(row.last_punch)})</span>
+              </div>
+              <div className="flex items-center gap-1 text-xs text-blue-600">
+                <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600">{row.adjustment_type}</Badge>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Original times (when corrected) */}
+        {!hasAdj && (
+          <div className="min-w-[160px]">
+            <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Summary</p>
+            <div className="space-y-1 text-sm">
+              <div className="flex items-center gap-2">
+                <LogIn className="h-3 w-3 text-green-600" />
+                <span className="text-muted-foreground">First:</span>
+                <span className="font-medium">{fmtTime(row.first_punch)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <LogOut className="h-3 w-3 text-red-500" />
+                <span className="text-muted-foreground">Last:</span>
+                <span className="font-medium">{fmtTime(row.last_punch)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
