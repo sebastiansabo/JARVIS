@@ -212,6 +212,10 @@ export interface BioStarRangeSummary {
   total_punches: number
   earliest_punch: string | null
   latest_punch: string | null
+  avg_check_in_epoch: number | null
+  avg_check_out_epoch: number | null
+  adjusted_total_duration_seconds: number | null
+  adjustment_count: number
 }
 
 export interface BioStarCronJob {

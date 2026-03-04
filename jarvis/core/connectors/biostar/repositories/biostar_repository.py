@@ -361,10 +361,16 @@ class BioStarRepository(BaseRepository):
                 AVG(d.duration_seconds) AS avg_duration_seconds,
                 SUM(d.punches) AS total_punches,
                 MIN(d.first_punch) AS earliest_punch,
-                MAX(d.last_punch) AS latest_punch
+                MAX(d.last_punch) AS latest_punch,
+                AVG(EXTRACT(EPOCH FROM d.first_punch::time)) AS avg_check_in_epoch,
+                AVG(CASE WHEN d.punches > 1 THEN EXTRACT(EPOCH FROM d.last_punch::time) END) AS avg_check_out_epoch,
+                SUM(COALESCE(adj.adjusted_duration_seconds, d.duration_seconds)) AS adjusted_total_duration_seconds,
+                COUNT(adj.id) AS adjustment_count
             FROM daily d
             LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+            LEFT JOIN biostar_daily_adjustments adj
+                ON adj.biostar_user_id = d.biostar_user_id AND adj.date = d.day
             WHERE 1=1{extra_where}
             GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
                      be.mapped_jarvis_user_id, u.name, u.company, u.department,

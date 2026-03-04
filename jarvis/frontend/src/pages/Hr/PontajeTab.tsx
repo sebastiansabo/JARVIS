@@ -8,6 +8,7 @@ import {
   Search,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   ArrowUpDown,
   Clock,
   LogIn,
@@ -37,7 +38,7 @@ type SortField = 'name' | 'group' | 'check_in' | 'check_out' | 'duration' | 'pun
 type SortDir = 'asc' | 'desc'
 type QuickFilter = 'today' | '3d' | '7d' | 'month' | 'last_month' | 'ytd' | 'custom'
 type DailyColKey = 'group' | 'check_in' | 'check_out' | 'adj_in' | 'adj_out' | 'duration' | 'punches'
-type RangeColKey = 'group' | 'days' | 'total_hours' | 'avg_day' | 'punches'
+type RangeColKey = 'group' | 'avg_check_in' | 'avg_check_out' | 'days' | 'total_hours' | 'adj_hours' | 'avg_day' | 'punches'
 
 const DAILY_COL_DEFS: { key: DailyColKey; label: string }[] = [
   { key: 'group', label: 'Group' },
@@ -51,14 +52,17 @@ const DAILY_COL_DEFS: { key: DailyColKey; label: string }[] = [
 
 const RANGE_COL_DEFS: { key: RangeColKey; label: string }[] = [
   { key: 'group', label: 'Group' },
+  { key: 'avg_check_in', label: 'Avg Check In' },
+  { key: 'avg_check_out', label: 'Avg Check Out' },
   { key: 'days', label: 'Days Present' },
   { key: 'total_hours', label: 'Total Hours' },
+  { key: 'adj_hours', label: 'Adj. Hours' },
   { key: 'avg_day', label: 'Avg/Day' },
   { key: 'punches', label: 'Punches' },
 ]
 
-const DEFAULT_DAILY_COLS: DailyColKey[] = ['group', 'duration', 'punches']
-const DEFAULT_RANGE_COLS: RangeColKey[] = ['group', 'days', 'total_hours', 'avg_day', 'punches']
+const DEFAULT_DAILY_COLS: DailyColKey[] = ['group', 'check_in', 'check_out', 'adj_in', 'adj_out', 'duration', 'punches']
+const DEFAULT_RANGE_COLS: RangeColKey[] = ['group', 'avg_check_in', 'avg_check_out', 'days', 'total_hours', 'adj_hours', 'avg_day', 'punches']
 
 function formatTime(dt: string | null) {
   if (!dt) return '-'
@@ -71,6 +75,13 @@ function formatDuration(seconds: number | null) {
   const m = Math.floor((seconds % 3600) / 60)
   if (h === 0) return `${m}m`
   return `${h}h ${m}m`
+}
+
+function formatEpochTime(epoch: number | null) {
+  if (!epoch || epoch <= 0) return '-'
+  const h = Math.floor(epoch / 3600)
+  const m = Math.floor((epoch % 3600) / 60)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
 function netSeconds(durationSec: number | null | undefined, lunchMin: number) {
@@ -152,7 +163,7 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('today')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
-
+  const [statFilter, setStatFilter] = useState<'all' | 'late'>('all')
 
   // Column visibility
   const [visibleDailyCols, setVisibleDailyCols] = useState<Set<DailyColKey>>(new Set(DEFAULT_DAILY_COLS))
@@ -276,6 +287,16 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
     if (!isSingleDay) return []
     let list = [...dailySummary]
     if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
+    if (statFilter === 'late') {
+      list = list.filter((e) => {
+        if (!e.first_punch || !e.schedule_start) return false
+        const punchTime = new Date(e.first_punch)
+        const [sh, sm] = (e.schedule_start as string).split(':').map(Number)
+        const schedDate = new Date(punchTime)
+        schedDate.setHours(sh, sm + 15, 0, 0)
+        return punchTime > schedDate
+      })
+    }
     if (search) {
       const s = search.toLowerCase()
       list = list.filter((e) =>
@@ -298,7 +319,7 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
       return sortDir === 'asc' ? cmp : -cmp
     })
     return list
-  }, [dailySummary, groupFilter, search, sortField, sortDir, isSingleDay])
+  }, [dailySummary, groupFilter, search, sortField, sortDir, isSingleDay, statFilter])
 
   // Process range data
   const processedRange = useMemo(() => {
@@ -337,6 +358,28 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
   const earlyBirds = isSingleDay
     ? dailySummary.filter((e) => e.first_punch && new Date(e.first_punch).getHours() < 8).length
     : 0
+  const lateArrivals = isSingleDay
+    ? dailySummary.filter((e) => {
+        if (!e.first_punch || !e.schedule_start) return false
+        const punchTime = new Date(e.first_punch)
+        const [sh, sm] = (e.schedule_start as string).split(':').map(Number)
+        const schedDate = new Date(punchTime)
+        schedDate.setHours(sh, sm + 15, 0, 0) // 15min grace
+        return punchTime > schedDate
+      }).length
+    : 0
+  const avgCheckIn = useMemo(() => {
+    const punches = (isSingleDay ? dailySummary : []).filter(e => e.first_punch)
+    if (!punches.length) return '-'
+    const avg = punches.reduce((acc, e) => acc + new Date(e.first_punch).getHours() * 3600 + new Date(e.first_punch).getMinutes() * 60, 0) / punches.length
+    return formatEpochTime(avg)
+  }, [dailySummary, isSingleDay])
+  const avgCheckOut = useMemo(() => {
+    const punches = (isSingleDay ? dailySummary : []).filter(e => e.total_punches > 1 && e.last_punch)
+    if (!punches.length) return '-'
+    const avg = punches.reduce((acc, e) => acc + new Date(e.last_punch).getHours() * 3600 + new Date(e.last_punch).getMinutes() * 60, 0) / punches.length
+    return formatEpochTime(avg)
+  }, [dailySummary, isSingleDay])
 
   const dailyMobileFields: MobileCardField<BioStarDailySummary>[] = useMemo(() => {
     const fields: MobileCardField<BioStarDailySummary>[] = [
@@ -438,6 +481,26 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
       render: (e) => e.user_group_name || '—',
     },
     {
+      key: 'avg_check_in',
+      label: 'Avg Check In',
+      render: (e) => (
+        <span className="inline-flex items-center gap-1 text-sm">
+          <LogIn className="h-3 w-3 text-green-600" />
+          {formatEpochTime(e.avg_check_in_epoch)}
+        </span>
+      ),
+    },
+    {
+      key: 'avg_check_out',
+      label: 'Avg Check Out',
+      render: (e) => (
+        <span className="inline-flex items-center gap-1 text-sm">
+          <LogOut className="h-3 w-3 text-red-500" />
+          {formatEpochTime(e.avg_check_out_epoch)}
+        </span>
+      ),
+    },
+    {
       key: 'days',
       label: 'Days Present',
       render: (e) => <Badge variant="secondary" className="text-xs">{e.days_present}</Badge>,
@@ -458,6 +521,16 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
       },
     },
     {
+      key: 'adj_hours',
+      label: 'Adj. Hours',
+      render: (e) => {
+        if (!e.adjustment_count) return <span className="text-muted-foreground">—</span>
+        const lunch = e.lunch_break_minutes ?? 60
+        const adjNet = netSeconds(e.adjusted_total_duration_seconds, lunch * e.days_present)
+        return <span className="text-sm font-medium text-green-600">{formatDuration(adjNet)}</span>
+      },
+    },
+    {
       key: 'avg_day',
       label: 'Avg/Day',
       render: (e) => {
@@ -475,9 +548,22 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
     },
   ], [])
 
+  const stepDay = (delta: number) => {
+    const s = new Date(start)
+    const e = new Date(end)
+    s.setDate(s.getDate() + delta)
+    e.setDate(e.getDate() + delta)
+    const fmt = (d: Date) => d.toISOString().slice(0, 10)
+    setQuickFilter('custom')
+    setCustomStart(fmt(s))
+    setCustomEnd(fmt(e))
+    setExpandedId(null)
+  }
+
   const handleQuickFilter = (f: QuickFilter) => {
     setQuickFilter(f)
     setExpandedId(null)
+    setStatFilter('all')
   }
 
   const SortIcon = ({ field }: { field: SortField }) => (
@@ -504,14 +590,25 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
       )}
 
       {/* Stats */}
-      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
+      <div className={`grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6 ${showStats ? '' : 'hidden'}`}>
         <StatCard title={isSingleDay ? 'Present Today' : 'Employees'} value={totalPresent} icon={<UserCheck className="h-4 w-4" />} />
         <StatCard title="Total Hours" value={totalHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
         <StatCard title={isSingleDay ? 'Avg Hours' : 'Avg Hours / Employee'} value={avgHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
         {isSingleDay ? (
-          <StatCard title="Early (<8:00)" value={earlyBirds} icon={<LogIn className="h-4 w-4" />} />
+          <>
+            <StatCard title="Early (<8:00)" value={earlyBirds} icon={<LogIn className="h-4 w-4" />} />
+            <div
+              className={cn('cursor-pointer rounded-lg transition-colors', statFilter === 'late' && 'ring-2 ring-orange-500')}
+              onClick={() => setStatFilter(statFilter === 'late' ? 'all' : 'late')}
+            >
+              <StatCard title="Late (>15m)" value={lateArrivals} icon={<Clock className="h-4 w-4 text-orange-500" />} />
+            </div>
+            <StatCard title="Avg In / Out" value={`${avgCheckIn} / ${avgCheckOut}`} icon={<LogOut className="h-4 w-4" />} />
+          </>
         ) : (
-          <StatCard title="Avg Days Present" value={totalPresent > 0 ? (rangeSummary.reduce((a, e) => a + e.days_present, 0) / totalPresent).toFixed(1) : '0'} icon={<Calendar className="h-4 w-4" />} />
+          <>
+            <StatCard title="Avg Days Present" value={totalPresent > 0 ? (rangeSummary.reduce((a, e) => a + e.days_present, 0) / totalPresent).toFixed(1) : '0'} icon={<Calendar className="h-4 w-4" />} />
+          </>
         )}
       </div>
 
@@ -529,7 +626,10 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
             {quickFilter === 'custom' && <SelectItem value="custom">Custom</SelectItem>}
           </SelectContent>
         </Select>
-        {/* Date pickers */}
+        {/* Day navigation + Date pickers */}
+        <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => stepDay(-1)} title="Previous day">
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
         <Input
           type="date"
           className="h-8 w-32 text-xs shrink-0"
@@ -543,6 +643,9 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
           value={quickFilter === 'custom' ? customEnd : end}
           onChange={(e) => { setQuickFilter('custom'); setCustomEnd(e.target.value); if (!customStart || e.target.value < customStart) setCustomStart(e.target.value) }}
         />
+        <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => stepDay(1)} title="Next day">
+          <ChevronRight className="h-4 w-4" />
+        </Button>
         <span className="text-xs text-muted-foreground hidden md:inline">{rangeLabel}</span>
         <div className="h-5 w-px bg-border hidden md:block mx-1" />
         {showTeamToggle && (
@@ -783,12 +886,15 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
                           Group <SortIcon field="group" />
                         </TableHead>
                       )}
+                      {visibleRangeCols.has('avg_check_in') && <TableHead className="text-center">Avg Check In</TableHead>}
+                      {visibleRangeCols.has('avg_check_out') && <TableHead className="text-center">Avg Check Out</TableHead>}
                       {visibleRangeCols.has('days') && <TableHead className="text-center">Days</TableHead>}
                       {visibleRangeCols.has('total_hours') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('duration')}>
                           Total Hours <SortIcon field="duration" />
                         </TableHead>
                       )}
+                      {visibleRangeCols.has('adj_hours') && <TableHead className="text-center">Adj. Hours</TableHead>}
                       {visibleRangeCols.has('avg_day') && <TableHead className="text-center">Avg/Day</TableHead>}
                       {visibleRangeCols.has('punches') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('punches')}>
@@ -857,6 +963,22 @@ function RangeEmployeeRow({
           {employee.user_group_name || '-'}
         </TableCell>
       )}
+      {visibleCols.has('avg_check_in') && (
+        <TableCell className="text-center">
+          <span className="inline-flex items-center gap-1 text-sm">
+            <LogIn className="h-3 w-3 text-green-600" />
+            {formatEpochTime(employee.avg_check_in_epoch)}
+          </span>
+        </TableCell>
+      )}
+      {visibleCols.has('avg_check_out') && (
+        <TableCell className="text-center">
+          <span className="inline-flex items-center gap-1 text-sm">
+            <LogOut className="h-3 w-3 text-red-500" />
+            {formatEpochTime(employee.avg_check_out_epoch)}
+          </span>
+        </TableCell>
+      )}
       {visibleCols.has('days') && (
         <TableCell className="text-center">
           <Badge variant="secondary" className="text-xs">{employee.days_present}</Badge>
@@ -867,6 +989,17 @@ function RangeEmployeeRow({
           <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
             {formatDuration(totalNet)}
           </span>
+        </TableCell>
+      )}
+      {visibleCols.has('adj_hours') && (
+        <TableCell className="text-center">
+          {employee.adjustment_count > 0 ? (
+            <span className="text-sm font-medium text-green-600">
+              {formatDuration(netSeconds(employee.adjusted_total_duration_seconds, lunch * employee.days_present))}
+            </span>
+          ) : (
+            <span className="text-sm text-muted-foreground">—</span>
+          )}
         </TableCell>
       )}
       {visibleCols.has('avg_day') && (
