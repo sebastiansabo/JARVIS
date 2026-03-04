@@ -659,6 +659,19 @@ class BioStarSyncService:
 
         return {'adjusted': adjusted_count, 'total_flagged': len(off)}
 
+    def backfill_adjustments(self, threshold=15, user_id=None):
+        """Auto-adjust all past dates with unadjusted off-schedule employees."""
+        dates = self.adj_repo.get_unadjusted_dates()
+        total_adjusted = 0
+        dates_processed = 0
+        for row in dates:
+            date_str = str(row['punch_date'])
+            result = self.auto_adjust_all(date_str, threshold, user_id=user_id)
+            total_adjusted += result['adjusted']
+            if result['adjusted'] > 0:
+                dates_processed += 1
+        return {'dates_processed': dates_processed, 'total_adjusted': total_adjusted}
+
     def revert_adjustment(self, biostar_user_id, date_str):
         """Revert an adjustment (delete it, back to original punches)."""
         return self.adj_repo.delete_adjustment(biostar_user_id, date_str)

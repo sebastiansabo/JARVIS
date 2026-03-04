@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useAuth } from '@/hooks/useAuth'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import {
   Search,
@@ -11,6 +12,7 @@ import {
   RotateCcw,
   ChevronLeft,
   ChevronRight,
+  DatabaseZap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -66,6 +68,31 @@ function randomizeAdjustedTimes(
   return { adjFirst: fmtMins(startMin), adjLast: fmtMins(endMin) }
 }
 
+const VIOLATION_LABELS: Record<string, { label: string; color: string }> = {
+  missing_checkout: { label: 'Missing checkout', color: 'text-orange-600 border-orange-600' },
+  late_arrival: { label: 'Late', color: 'text-yellow-600 border-yellow-600' },
+  early_departure: { label: 'Left early', color: 'text-blue-600 border-blue-600' },
+  overtime: { label: 'Overtime', color: 'text-red-600 border-red-600' },
+  under_hours: { label: 'Under-hours', color: 'text-purple-600 border-purple-600' },
+}
+
+function ViolationBadges({ types }: { types: string }) {
+  if (!types) return <span className="text-muted-foreground">—</span>
+  const parts = types.split(',').filter(Boolean)
+  return (
+    <div className="flex flex-wrap gap-1 justify-center">
+      {parts.map((t) => {
+        const cfg = VIOLATION_LABELS[t] || { label: t, color: '' }
+        return (
+          <Badge key={t} variant="outline" className={`text-[10px] ${cfg.color}`}>
+            {cfg.label}
+          </Badge>
+        )
+      })}
+    </div>
+  )
+}
+
 function formatWorked(durationSeconds: number | null, lunchMinutes: number) {
   if (durationSeconds === null || durationSeconds === undefined) return '-'
   let net = durationSeconds
@@ -78,6 +105,8 @@ function formatWorked(durationSeconds: number | null, lunchMinutes: number) {
 export default function AdjustmentsTab({ showStats = false, showFilters = false }: { showStats?: boolean; showFilters?: boolean }) {
   const qc = useQueryClient()
   const isMobile = useIsMobile()
+  const { user: authUser } = useAuth()
+  const canAdjust = authUser?.can_adjust_punches ?? false
   const [date, setDate] = useState(todayStr())
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<'pending' | 'adjusted'>('pending')
@@ -149,6 +178,15 @@ export default function AdjustmentsTab({ showStats = false, showFilters = false 
       toast.success('Adjustment reverted')
     },
     onError: () => toast.error('Failed to revert'),
+  })
+
+  const backfillMut = useMutation({
+    mutationFn: () => biostarApi.backfillAdjustments(),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['biostar'] })
+      toast.success(`Backfill complete: ${res.data.total_adjusted} adjustments across ${res.data.dates_processed} dates`)
+    },
+    onError: () => toast.error('Backfill failed'),
   })
 
   const filteredOff = useMemo(() => {
@@ -241,7 +279,7 @@ export default function AdjustmentsTab({ showStats = false, showFilters = false 
               <span className="hidden md:inline">Adjusted ({adjustments.length})</span>
               <span className="md:hidden">{adjustments.length}</span>
             </Button>
-            {tab === 'pending' && offSchedule.length > 0 && (
+            {canAdjust && tab === 'pending' && offSchedule.length > 0 && (
               <Button
                 size="icon"
                 className="h-8 w-8 md:size-auto md:px-3"
@@ -251,6 +289,19 @@ export default function AdjustmentsTab({ showStats = false, showFilters = false 
               >
                 <Wand2 className="h-3.5 w-3.5 md:mr-1.5" />
                 <span className="hidden md:inline">{autoAdjustMut.isPending ? 'Adjusting...' : 'Auto-Adjust All'}</span>
+              </Button>
+            )}
+            {canAdjust && tab === 'pending' && (
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 md:size-auto md:px-3"
+                onClick={() => backfillMut.mutate()}
+                disabled={backfillMut.isPending}
+                title="Backfill all past dates"
+              >
+                <DatabaseZap className="h-3.5 w-3.5 md:mr-1.5" />
+                <span className="hidden md:inline">{backfillMut.isPending ? 'Backfilling...' : 'Backfill All'}</span>
               </Button>
             )}
           </div>
@@ -265,9 +316,9 @@ export default function AdjustmentsTab({ showStats = false, showFilters = false 
           ))}
         </div>
       ) : tab === 'pending' ? (
-        <PendingTable rows={filteredOff} onAdjust={(row) => adjustMut.mutate(row)} adjusting={adjustMut.isPending} isMobile={isMobile} />
+        <PendingTable rows={filteredOff} onAdjust={(row) => adjustMut.mutate(row)} adjusting={adjustMut.isPending} isMobile={isMobile} canAdjust={canAdjust} />
       ) : (
-        <AdjustedTable rows={filteredAdj} onRevert={(row) => revertMut.mutate(row)} reverting={revertMut.isPending} isMobile={isMobile} />
+        <AdjustedTable rows={filteredAdj} onRevert={(row) => revertMut.mutate(row)} reverting={revertMut.isPending} isMobile={isMobile} canAdjust={canAdjust} />
       )}
     </div>
   )
@@ -281,7 +332,7 @@ const pendingMobileFields: MobileCardField<BioStarOffScheduleRow>[] = [
   { key: 'actual_in', label: 'Actual In', render: (r) => <span className="text-xs font-medium">{formatTime(r.first_punch)}</span> },
   { key: 'actual_out', label: 'Actual Out', render: (r) => <span className="text-xs font-medium">{r.missing_checkout ? <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-600">Missing</Badge> : r.total_punches === 1 ? '—' : formatTime(r.last_punch)}</span> },
   { key: 'worked', label: 'Worked', render: (r) => <span className="text-xs">{r.total_punches > 1 ? formatWorked(r.duration_seconds, r.lunch_break_minutes) : '—'}</span> },
-  { key: 'overtime', label: 'Overtime', render: (r) => <span className={`text-xs font-medium ${r.overtime_minutes != null && r.overtime_minutes > 0 ? 'text-red-600' : ''}`}>{r.missing_checkout ? 'Missing checkout' : r.overtime_minutes != null && r.overtime_minutes > 0 ? `+${Math.round(r.overtime_minutes)}m` : '—'}</span> },
+  { key: 'violation', label: 'Violation', render: (r) => <ViolationBadges types={r.violation_types} /> },
   { key: 'group', label: 'Group', expandOnly: true, render: (r) => <span className="text-xs">{r.user_group_name || '—'}</span> },
 ]
 
@@ -300,11 +351,13 @@ function PendingTable({
   onAdjust,
   adjusting,
   isMobile,
+  canAdjust,
 }: {
   rows: BioStarOffScheduleRow[]
   onAdjust: (row: BioStarOffScheduleRow) => void
   adjusting: boolean
   isMobile: boolean
+  canAdjust: boolean
 }) {
   if (rows.length === 0) {
     return <EmptyState title="All compliant" description="No off-schedule employees for this date." />
@@ -316,11 +369,11 @@ function PendingTable({
         data={rows}
         fields={pendingMobileFields}
         getRowId={(r) => Number(r.biostar_user_id)}
-        actions={(row) => (
+        actions={canAdjust ? (row) => (
           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onAdjust(row)} disabled={adjusting}>
             <CheckCircle2 className="mr-1 h-3 w-3" /> Adjust
           </Button>
-        )}
+        ) : undefined}
       />
     )
   }
@@ -336,8 +389,8 @@ function PendingTable({
             <TableHead className="text-center">Actual In</TableHead>
             <TableHead className="text-center">Actual Out</TableHead>
             <TableHead className="text-center">Worked</TableHead>
-            <TableHead className="text-center">Overtime</TableHead>
-            <TableHead className="w-24" />
+            <TableHead className="text-center">Violation</TableHead>
+            {canAdjust && <TableHead className="w-24" />}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -369,24 +422,22 @@ function PendingTable({
                   : <span className="text-muted-foreground">—</span>}
               </TableCell>
               <TableCell className="text-center">
-                {row.missing_checkout
-                  ? <Badge variant="outline" className="text-xs text-orange-600 border-orange-600">Missing checkout</Badge>
-                  : row.overtime_minutes != null && row.overtime_minutes > 0
-                    ? <span className="text-sm font-medium text-red-600">+{Math.round(row.overtime_minutes)}m</span>
-                    : <span className="text-muted-foreground">—</span>}
+                <ViolationBadges types={row.violation_types} />
               </TableCell>
-              <TableCell>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  onClick={() => onAdjust(row)}
-                  disabled={adjusting}
-                >
-                  <CheckCircle2 className="mr-1 h-3 w-3" />
-                  Adjust
-                </Button>
-              </TableCell>
+              {canAdjust && (
+                <TableCell>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => onAdjust(row)}
+                    disabled={adjusting}
+                  >
+                    <CheckCircle2 className="mr-1 h-3 w-3" />
+                    Adjust
+                  </Button>
+                </TableCell>
+              )}
             </TableRow>
           ))}
         </TableBody>
@@ -402,11 +453,13 @@ function AdjustedTable({
   onRevert,
   reverting,
   isMobile,
+  canAdjust,
 }: {
   rows: BioStarAdjustment[]
   onRevert: (row: BioStarAdjustment) => void
   reverting: boolean
   isMobile: boolean
+  canAdjust: boolean
 }) {
   if (rows.length === 0) {
     return <EmptyState title="No adjustments" description="No adjustments have been made for this date." />
@@ -418,11 +471,11 @@ function AdjustedTable({
         data={rows}
         fields={adjustedMobileFields}
         getRowId={(r) => Number(r.biostar_user_id)}
-        actions={(row) => (
+        actions={canAdjust ? (row) => (
           <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" onClick={() => onRevert(row)} disabled={reverting}>
             <RotateCcw className="mr-1 h-3 w-3" /> Revert
           </Button>
-        )}
+        ) : undefined}
       />
     )
   }
@@ -439,7 +492,7 @@ function AdjustedTable({
             <TableHead className="text-center">Adjusted In</TableHead>
             <TableHead className="text-center">Adjusted Out</TableHead>
             <TableHead className="text-center hidden lg:table-cell">Type</TableHead>
-            <TableHead className="w-24" />
+            {canAdjust && <TableHead className="w-24" />}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -469,18 +522,20 @@ function AdjustedTable({
                   {row.adjustment_type}
                 </Badge>
               </TableCell>
-              <TableCell>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-xs text-muted-foreground"
-                  onClick={() => onRevert(row)}
-                  disabled={reverting}
-                >
-                  <RotateCcw className="mr-1 h-3 w-3" />
-                  Revert
-                </Button>
-              </TableCell>
+              {canAdjust && (
+                <TableCell>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-muted-foreground"
+                    onClick={() => onRevert(row)}
+                    disabled={reverting}
+                  >
+                    <RotateCcw className="mr-1 h-3 w-3" />
+                    Revert
+                  </Button>
+                </TableCell>
+              )}
             </TableRow>
           ))}
         </TableBody>

@@ -32,6 +32,18 @@ def api_login_required(f):
     return decorated
 
 
+def adjust_permission_required(f):
+    """Require can_adjust_punches permission."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        if not getattr(current_user, 'can_adjust_punches', False):
+            return jsonify({'success': False, 'error': 'Permission denied: adjust punches required'}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
 # ── Connection Config ──
 
 @biostar_bp.route('/api/config', methods=['GET'])
@@ -375,7 +387,7 @@ def get_adjustments():
 
 
 @biostar_bp.route('/api/adjustments/adjust', methods=['POST'])
-@api_login_required
+@adjust_permission_required
 def adjust_employee():
     """Manually adjust one employee's punches for a date."""
     data = request.get_json()
@@ -418,7 +430,7 @@ def adjust_employee():
 
 
 @biostar_bp.route('/api/adjustments/auto-adjust', methods=['POST'])
-@api_login_required
+@adjust_permission_required
 def auto_adjust_all():
     """Auto-adjust all off-schedule employees for a date."""
     data = request.get_json() or {}
@@ -432,7 +444,7 @@ def auto_adjust_all():
 
 
 @biostar_bp.route('/api/adjustments/revert', methods=['POST'])
-@api_login_required
+@adjust_permission_required
 def revert_adjustment():
     """Revert an adjustment (delete it)."""
     data = request.get_json() or {}
@@ -442,6 +454,16 @@ def revert_adjustment():
         return jsonify({'success': False, 'error': 'biostar_user_id and date required'}), 400
     service.revert_adjustment(biostar_user_id, date_str)
     return jsonify({'success': True, 'message': 'Adjustment reverted'})
+
+
+@biostar_bp.route('/api/adjustments/backfill', methods=['POST'])
+@adjust_permission_required
+def backfill_adjustments():
+    """Auto-adjust all past dates with unadjusted off-schedule employees."""
+    data = request.get_json() or {}
+    threshold = int(data.get('threshold', 15))
+    result = service.backfill_adjustments(threshold, user_id=current_user.id)
+    return jsonify({'success': True, 'data': result})
 
 
 @biostar_bp.route('/api/employees/<biostar_user_id>/adjustment-history', methods=['GET'])

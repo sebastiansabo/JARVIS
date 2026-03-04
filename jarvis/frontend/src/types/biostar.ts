@@ -157,6 +157,7 @@ export interface BioStarOffScheduleRow {
   deviation_out: number | null
   overtime_minutes: number | null
   missing_checkout: boolean
+  violation_types: string // comma-separated: missing_checkout,late_arrival,early_departure,overtime,under_hours
   // null if not yet adjusted
   adjustment_id: number | null
   adjusted_first_punch: string | null

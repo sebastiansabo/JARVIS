@@ -24,6 +24,7 @@ class UserRepository(BaseRepository):
                    r.can_access_crm,
                    r.can_edit_crm, r.can_delete_crm, r.can_export_crm,
                    r.can_view_original_punches, r.can_view_adjusted_punches,
+                   r.can_adjust_punches,
                    c.id as company_id
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.id
@@ -41,6 +42,7 @@ class UserRepository(BaseRepository):
                    r.can_access_crm,
                    r.can_edit_crm, r.can_delete_crm, r.can_export_crm,
                    r.can_view_original_punches, r.can_view_adjusted_punches,
+                   r.can_adjust_punches,
                    c.id as company_id
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.id

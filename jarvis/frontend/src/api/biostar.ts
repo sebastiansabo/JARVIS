@@ -227,6 +227,12 @@ export const biostarApi = {
       biostar_user_id: biostarUserId, date,
     }),
 
+  backfillAdjustments: (threshold = 15) =>
+    api.post<{ success: boolean; data: { dates_processed: number; total_adjusted: number } }>(
+      `${BASE}/adjustments/backfill`,
+      { threshold },
+    ),
+
   getAdjustmentHistory: async (biostarUserId: string, start?: string, end?: string) => {
     const res = await api.get<{ success: boolean; data: BioStarAdjustment[] }>(
       `${BASE}/employees/${biostarUserId}/adjustment-history${qs({ start, end })}`,

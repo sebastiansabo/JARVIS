@@ -7,12 +7,15 @@ class AdjustmentRepository(BaseRepository):
     """Data access for biostar_daily_adjustments."""
 
     def get_off_schedule(self, date_str, threshold_minutes=15):
-        """Get employees with overtime exceeding threshold or missing checkout.
+        """Get employees with any schedule deviation exceeding threshold.
 
-        Logic:
-        - Only 1 punch + past day → always flag (forgot to check out)
-        - Multiple punches         → flag only if net worked > working_hours + threshold
-        - Single punch on today    → NEVER show (no checkout yet, wait for next sync)
+        Compliance criteria:
+        - Missing checkout : only 1 punch + past day (forgot to check out)
+        - Overtime          : net worked > working_hours + threshold
+        - Late arrival      : first punch > schedule_start + threshold
+        - Early departure   : last punch < schedule_end − threshold
+        - Under-hours       : net worked < working_hours − threshold (multi-punch)
+        - Single punch on today → NEVER show (no checkout yet, wait for next sync)
         - Excludes employees already adjusted for that date
         """
         return self.query_all('''
@@ -40,35 +43,64 @@ class AdjustmentRepository(BaseRepository):
                 GROUP BY pl.biostar_user_id, be.name, be.email, be.user_group_name,
                          be.schedule_start, be.schedule_end, be.lunch_break_minutes,
                          be.working_hours, be.mapped_jarvis_user_id, u.name
+            ),
+            flagged AS (
+                SELECT d.*,
+                       EXTRACT(EPOCH FROM (d.first_punch::time - d.schedule_start)) / 60 AS deviation_in,
+                       CASE WHEN d.total_punches > 1
+                            THEN EXTRACT(EPOCH FROM (d.last_punch::time - d.schedule_end)) / 60
+                            ELSE NULL END AS deviation_out,
+                       CASE WHEN d.total_punches > 1
+                            THEN ROUND((d.duration_seconds / 60.0 - d.lunch_break_minutes) - d.working_hours * 60)
+                            ELSE NULL END AS overtime_minutes,
+                       d.total_punches = 1 AND %s::date < CURRENT_DATE AS missing_checkout
+                FROM daily d
             )
-            SELECT d.*,
-                   EXTRACT(EPOCH FROM (d.first_punch::time - d.schedule_start)) / 60 AS deviation_in,
-                   CASE WHEN d.total_punches > 1
-                        THEN EXTRACT(EPOCH FROM (d.last_punch::time - d.schedule_end)) / 60
-                        ELSE NULL END AS deviation_out,
-                   CASE WHEN d.total_punches > 1
-                        THEN ROUND((d.duration_seconds / 60.0 - d.lunch_break_minutes) - d.working_hours * 60)
-                        ELSE NULL END AS overtime_minutes,
-                   d.total_punches = 1 AND %s::date < CURRENT_DATE AS missing_checkout,
+            SELECT f.*,
+                   -- Compute violation type(s) as a comma-separated string
+                   ARRAY_TO_STRING(ARRAY_REMOVE(ARRAY[
+                       CASE WHEN f.missing_checkout THEN 'missing_checkout' END,
+                       CASE WHEN NOT f.missing_checkout AND f.total_punches > 1
+                            AND f.deviation_in > %s THEN 'late_arrival' END,
+                       CASE WHEN NOT f.missing_checkout AND f.total_punches > 1
+                            AND f.deviation_out < -%s THEN 'early_departure' END,
+                       CASE WHEN NOT f.missing_checkout AND f.total_punches > 1
+                            AND f.overtime_minutes > %s THEN 'overtime' END,
+                       CASE WHEN NOT f.missing_checkout AND f.total_punches > 1
+                            AND (f.duration_seconds / 60.0 - f.lunch_break_minutes) < (f.working_hours * 60 - %s)
+                            THEN 'under_hours' END
+                   ], NULL), ',') AS violation_types,
                    adj.id AS adjustment_id,
                    adj.adjusted_first_punch,
                    adj.adjusted_last_punch,
                    adj.adjustment_type,
                    adj.adjusted_by,
                    adj.notes
-            FROM daily d
+            FROM flagged f
             LEFT JOIN biostar_daily_adjustments adj
-                ON adj.biostar_user_id = d.biostar_user_id AND adj.date = %s::date
+                ON adj.biostar_user_id = f.biostar_user_id AND adj.date = %s::date
             WHERE adj.id IS NULL
               AND (
-                  -- Case 1: only 1 punch + past day = forgot to check out → always show
-                  (d.total_punches = 1 AND %s::date < CURRENT_DATE)
-                  -- Case 2: multiple punches + net worked exceeds working_hours + threshold
-                  OR (d.total_punches > 1
-                      AND (d.duration_seconds / 60.0 - d.lunch_break_minutes) > (d.working_hours * 60 + %s))
+                  -- Case 1: only 1 punch + past day = forgot to check out
+                  f.missing_checkout
+                  -- Case 2: overtime
+                  OR (f.total_punches > 1
+                      AND f.overtime_minutes > %s)
+                  -- Case 3: late arrival
+                  OR (f.total_punches > 1
+                      AND f.deviation_in > %s)
+                  -- Case 4: early departure
+                  OR (f.total_punches > 1
+                      AND f.deviation_out < -%s)
+                  -- Case 5: under-hours
+                  OR (f.total_punches > 1
+                      AND (f.duration_seconds / 60.0 - f.lunch_break_minutes) < (f.working_hours * 60 - %s))
               )
-            ORDER BY d.name
-        ''', (date_str, date_str, date_str, date_str, threshold_minutes))
+            ORDER BY f.name
+        ''', (date_str, date_str,
+              threshold_minutes, threshold_minutes, threshold_minutes, threshold_minutes,
+              date_str,
+              threshold_minutes, threshold_minutes, threshold_minutes, threshold_minutes))
 
     def get_adjustments(self, date_str):
         """Get all adjustments for a given date."""
@@ -148,6 +180,17 @@ class AdjustmentRepository(BaseRepository):
             WHERE {where}
             ORDER BY adj.date DESC
         ''', params)
+
+    def get_unadjusted_dates(self):
+        """Get all distinct past dates with punch logs that have unadjusted employees."""
+        return self.query_all('''
+            SELECT DISTINCT pl.event_datetime::date AS punch_date
+            FROM biostar_punch_logs pl
+            LEFT JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
+            WHERE pl.event_datetime::date < CURRENT_DATE
+              AND be.status = 'active'
+            ORDER BY punch_date DESC
+        ''')
 
     def get_adjustment_count(self, date_str):
         """Count adjustments for a date."""

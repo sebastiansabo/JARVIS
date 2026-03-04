@@ -56,6 +56,7 @@ class User(UserMixin):
         # Pontaje visibility permissions
         self.can_view_original_punches = user_data.get('can_view_original_punches', False)
         self.can_view_adjusted_punches = user_data.get('can_view_adjusted_punches', False)
+        self.can_adjust_punches = user_data.get('can_adjust_punches', False)
 
         # Permission mapping for has_permission method
         self._permission_map = {

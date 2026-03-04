@@ -1000,6 +1000,29 @@ def create_schema(conn, cursor):
     # Sync booleans for existing roles
     cursor.execute("UPDATE roles SET can_view_original_punches = TRUE, can_view_adjusted_punches = TRUE WHERE name IN ('Admin', 'Manager')")
 
+    # Migration: Add hr.pontaje.adjust_punches permission (correct/adjust employee punches)
+    cursor.execute("ALTER TABLE roles ADD COLUMN IF NOT EXISTS can_adjust_punches BOOLEAN DEFAULT FALSE")
+    pontaje_adjust_perms = [
+        ('hr', 'HR', 'bi-people-fill', 'pontaje', 'Pontaje', 'adjust_punches', 'Adjust Punches', 'Correct/adjust employee punch records (individual and bulk)', False, 24),
+    ]
+    for p in pontaje_adjust_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'all', TRUE
+        FROM roles r
+        CROSS JOIN permissions_v2 p
+        WHERE r.name IN ('Admin', 'Manager')
+          AND p.module_key = 'hr' AND p.entity_key = 'pontaje'
+          AND p.action_key = 'adjust_punches'
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+    ''')
+    cursor.execute("UPDATE roles SET can_adjust_punches = TRUE WHERE name IN ('Admin', 'Manager')")
+
     conn.commit()
 
     # Seed default permissions if table is empty

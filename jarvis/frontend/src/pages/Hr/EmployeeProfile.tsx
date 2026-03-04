@@ -3,12 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/useAuth'
 import {
+  CheckCircle2,
   Clock,
   Fingerprint,
   LogIn,
   LogOut,
   Mail,
   Phone,
+  RotateCcw,
   Users,
   UserCheck,
   BarChart3,
@@ -65,6 +67,7 @@ export default function EmployeeProfile() {
   const qc = useQueryClient()
   const { user: authUser } = useAuth()
   const showAdjusted = authUser?.can_view_adjusted_punches ?? false
+  const canAdjust = authUser?.can_adjust_punches ?? false
   const [showStats, setShowStats] = useState(false)
   const today = todayStr()
 
@@ -99,6 +102,57 @@ export default function EmployeeProfile() {
       toast.success('Schedule updated')
     },
     onError: () => toast.error('Failed to update schedule'),
+  })
+
+  // Per-day adjustment mutation
+  const adjustDayMut = useMutation({
+    mutationFn: (day: BioStarDayHistory) => {
+      if (!employee || !day.first_punch) throw new Error('No data')
+      const datePart = day.date
+      const wh = employee.working_hours ?? 8
+      const lunch = employee.lunch_break_minutes ?? 60
+      const schedStart = employee.schedule_start ? employee.schedule_start.slice(0, 5) : '08:00'
+      const whMin = Math.round(wh * 60)
+      const targetWorked = whMin + Math.floor(Math.random() * 11)
+      const targetSpan = targetWorked + lunch
+      const startOffset = Math.floor(Math.random() * 11) - 5
+      const [sh, sm] = schedStart.split(':').map(Number)
+      const startMin = sh * 60 + sm + startOffset
+      const endMin = startMin + targetSpan
+      const fmtMins = (m: number) => {
+        const hh = Math.floor(m / 60).toString().padStart(2, '0')
+        const mm = (m % 60).toString().padStart(2, '0')
+        return `${datePart}T${hh}:${mm}:00`
+      }
+      return biostarApi.adjustEmployee({
+        biostar_user_id: biostarUserId!,
+        date: datePart,
+        adjusted_first_punch: fmtMins(startMin),
+        adjusted_last_punch: fmtMins(endMin),
+        original_first_punch: day.first_punch,
+        original_last_punch: day.last_punch || day.first_punch,
+        schedule_start: schedStart,
+        schedule_end: employee.schedule_end?.slice(0, 5),
+        lunch_break_minutes: lunch,
+        working_hours: wh,
+        original_duration_seconds: day.duration_seconds ?? undefined,
+      })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['biostar', 'employee-history'] })
+      toast.success('Day adjusted')
+    },
+    onError: () => toast.error('Failed to adjust day'),
+  })
+
+  const revertDayMut = useMutation({
+    mutationFn: (day: BioStarDayHistory) =>
+      biostarApi.revertAdjustment(biostarUserId!, day.date),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['biostar', 'employee-history'] })
+      toast.success('Adjustment reverted')
+    },
+    onError: () => toast.error('Failed to revert'),
   })
 
   const fmtTime = (t: string | null) => (t ? t.slice(0, 5) : '08:00')
@@ -388,6 +442,7 @@ export default function EmployeeProfile() {
                 )}
                 <TableHead className="text-center">Duration</TableHead>
                 <TableHead className="text-center">Punches</TableHead>
+                {canAdjust && <TableHead className="w-20" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -459,6 +514,35 @@ export default function EmployeeProfile() {
                         <Badge variant="secondary" className="text-xs">{day.total_punches}</Badge>
                       )}
                     </TableCell>
+                    {canAdjust && (
+                      <TableCell className="text-center">
+                        {!isAbsent && !isToday && (
+                          day.adjusted_first_punch ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-[10px] text-muted-foreground"
+                              onClick={() => revertDayMut.mutate(day)}
+                              disabled={revertDayMut.isPending}
+                            >
+                              <RotateCcw className="mr-1 h-3 w-3" />
+                              Revert
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-[10px]"
+                              onClick={() => adjustDayMut.mutate(day)}
+                              disabled={adjustDayMut.isPending}
+                            >
+                              <CheckCircle2 className="mr-1 h-3 w-3" />
+                              Adjust
+                            </Button>
+                          )
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 )
               })}
