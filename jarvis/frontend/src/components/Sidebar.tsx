@@ -214,7 +214,12 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">{item.label}</div>
                 {item.children.map((child) => {
                   const ChildIcon = child.icon
-                  const childActive = location.pathname.startsWith(child.path)
+                  const hasLongerSibling = item.children!.some(
+                    (s) => s.path !== child.path && s.path.startsWith(child.path)
+                  )
+                  const childActive = hasLongerSibling
+                    ? location.pathname === child.path
+                    : location.pathname.startsWith(child.path)
                   return (
                     <Link
                       key={child.path}

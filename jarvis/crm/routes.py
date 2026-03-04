@@ -63,7 +63,7 @@ def api_import():
 
     try:
         handler = IMPORT_HANDLERS[source_type]
-        stats = handler(tmp_path, current_user.id)
+        stats = handler(tmp_path, current_user.id, original_filename=file.filename)
         return jsonify({'success': True, 'stats': stats})
     except Exception as e:
         logger.exception(f'Import failed: {e}')

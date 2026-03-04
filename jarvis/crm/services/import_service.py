@@ -109,13 +109,13 @@ def _read_sheet(file_path, sheet_name):
 # Direct importers — template columns = DB columns
 # ════════════════════════════════════════════════════════════════
 
-def import_deals(file_path, user_id):
+def import_deals(file_path, user_id, original_filename=None):
     """Import deals. Columns = DB field names. source + dossier_number required."""
     df = _read_sheet(file_path, 'Deals')
     if df is None or df.empty:
         return {'total': 0, 'errors': ['No data found in file']}
 
-    batch = _import_repo.create('deals', file_path.split('/')[-1], user_id)
+    batch = _import_repo.create('deals', original_filename or file_path.split('/')[-1], user_id)
     batch_id = batch['id']
     stats = {'total': 0, 'new': 0, 'updated': 0, 'skipped': 0,
              'new_clients': 0, 'matched_clients': 0, 'errors': []}
@@ -162,13 +162,13 @@ def import_deals(file_path, user_id):
     return stats
 
 
-def import_clients(file_path, user_id):
+def import_clients(file_path, user_id, original_filename=None):
     """Import clients. Columns = DB field names. display_name required."""
     df = _read_sheet(file_path, 'Clients')
     if df is None or df.empty:
         return {'total': 0, 'errors': ['No data found in file']}
 
-    batch = _import_repo.create('crm_clients', file_path.split('/')[-1], user_id)
+    batch = _import_repo.create('crm_clients', original_filename or file_path.split('/')[-1], user_id)
     batch_id = batch['id']
     stats = {'total': 0, 'new': 0, 'updated': 0, 'skipped': 0,
              'new_clients': 0, 'matched_clients': 0, 'errors': []}
@@ -216,9 +216,9 @@ def import_clients(file_path, user_id):
 
 # ── Legacy importers (Romanian DMS column headers) ──
 
-def import_nw(file_path, user_id):
+def import_nw(file_path, user_id, original_filename=None):
     from ..parsers import parse_nw
-    batch = _import_repo.create('nw', file_path.split('/')[-1], user_id)
+    batch = _import_repo.create('nw', original_filename or file_path.split('/')[-1], user_id)
     batch_id = batch['id']
     stats = {'total': 0, 'new': 0, 'updated': 0, 'skipped': 0,
              'new_clients': 0, 'matched_clients': 0, 'errors': []}
@@ -246,9 +246,9 @@ def import_nw(file_path, user_id):
     return stats
 
 
-def import_gw(file_path, user_id):
+def import_gw(file_path, user_id, original_filename=None):
     from ..parsers import parse_gw
-    batch = _import_repo.create('gw', file_path.split('/')[-1], user_id)
+    batch = _import_repo.create('gw', original_filename or file_path.split('/')[-1], user_id)
     batch_id = batch['id']
     stats = {'total': 0, 'new': 0, 'updated': 0, 'skipped': 0,
              'new_clients': 0, 'matched_clients': 0, 'errors': []}
@@ -276,9 +276,9 @@ def import_gw(file_path, user_id):
     return stats
 
 
-def import_crm_clients(file_path, user_id):
+def import_crm_clients(file_path, user_id, original_filename=None):
     from ..parsers import parse_crm_clients
-    batch = _import_repo.create('crm_clients', file_path.split('/')[-1], user_id)
+    batch = _import_repo.create('crm_clients', original_filename or file_path.split('/')[-1], user_id)
     batch_id = batch['id']
     stats = {'total': 0, 'new': 0, 'updated': 0, 'skipped': 0,
              'new_clients': 0, 'matched_clients': 0, 'errors': []}
