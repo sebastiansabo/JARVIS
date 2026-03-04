@@ -31,21 +31,22 @@ def profile_page():
 def api_profile_summary():
     """Get summary stats for current user's profile."""
     try:
-        # Build user info from current_user (includes org fields from users table)
+        # Read fresh from DB (bypass Flask-Login cache so edits show immediately)
+        fresh = _user_repo.get_by_id(current_user.id) or {}
         user_info = {
             'id': current_user.id,
-            'name': current_user.name,
-            'email': current_user.email,
-            'phone': getattr(current_user, 'phone', None),
-            'role': getattr(current_user, 'role_name', None),
-            'company': getattr(current_user, 'company', None),
-            'brand': getattr(current_user, 'brand', None),
-            'department': getattr(current_user, 'department', None),
-            'subdepartment': getattr(current_user, 'subdepartment', None),
-            'cnp': getattr(current_user, 'cnp', None),
-            'birthdate': str(current_user.birthdate) if getattr(current_user, 'birthdate', None) else None,
-            'position': getattr(current_user, 'position', None),
-            'contract_work_date': str(current_user.contract_work_date) if getattr(current_user, 'contract_work_date', None) else None,
+            'name': fresh.get('name', current_user.name),
+            'email': fresh.get('email', current_user.email),
+            'phone': fresh.get('phone'),
+            'role': fresh.get('role_name') or getattr(current_user, 'role_name', None),
+            'company': fresh.get('company'),
+            'brand': fresh.get('brand'),
+            'department': fresh.get('department'),
+            'subdepartment': fresh.get('subdepartment'),
+            'cnp': fresh.get('cnp'),
+            'birthdate': str(fresh['birthdate']) if fresh.get('birthdate') else None,
+            'position': fresh.get('position'),
+            'contract_work_date': str(fresh['contract_work_date']) if fresh.get('contract_work_date') else None,
         }
 
         # Get invoice summary using user's email
