@@ -88,6 +88,8 @@ export interface BioStarDailySummary {
   user_group_name: string | null
   mapped_jarvis_user_id: number | null
   mapped_jarvis_user_name: string | null
+  jarvis_company: string | null
+  jarvis_department: string | null
   lunch_break_minutes: number
   working_hours: number
   schedule_start: string | null
@@ -197,6 +199,8 @@ export interface BioStarRangeSummary {
   user_group_name: string | null
   mapped_jarvis_user_id: number | null
   mapped_jarvis_user_name: string | null
+  jarvis_company: string | null
+  jarvis_department: string | null
   lunch_break_minutes: number
   working_hours: number
   schedule_start: string | null

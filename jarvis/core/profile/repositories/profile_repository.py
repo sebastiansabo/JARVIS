@@ -13,7 +13,67 @@ class ProfileRepository(BaseRepository):
     """Read-only aggregation queries for the user profile page."""
 
     # ------------------------------------------------------------------
-    # User invoices (by responsible)
+    # Organigram department filter helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_org_filter(cursor, user_id: int) -> tuple[str, list]:
+        """Build SQL clause restricting invoices to departments the user
+        is responsible for in the organigram.
+
+        Returns (sql_fragment, params) to AND into a WHERE clause.
+        For C-Level (L0 company responsable): all departments for that company.
+        For node-level: only the specific department name.
+        If user has NO organigram assignments, returns empty (no filter).
+        """
+        # Get structure_node assignments with ancestor paths
+        cursor.execute('''
+            WITH user_nodes AS (
+                SELECT sn.id, sn.name, sn.level, sn.company_id, c.company
+                FROM structure_node_members snm
+                JOIN structure_nodes sn ON snm.node_id = sn.id
+                JOIN companies c ON sn.company_id = c.id
+                WHERE snm.user_id = %s
+            )
+            SELECT name, level, company FROM user_nodes
+        ''', (user_id,))
+        node_rows = cursor.fetchall()
+
+        # Get L0 company responsable assignments
+        cursor.execute('''
+            SELECT c.company FROM company_responsables cr
+            JOIN companies c ON cr.company_id = c.id
+            WHERE cr.user_id = %s
+        ''', (user_id,))
+        l0_rows = cursor.fetchall()
+
+        if not node_rows and not l0_rows:
+            return '', []  # No organigram assignments — no filter
+
+        conditions = []
+        params = []
+
+        # L0 companies: all departments for that company
+        l0_companies = {r['company'] for r in l0_rows}
+        for comp in l0_companies:
+            conditions.append('a.company = %s')
+            params.append(comp)
+
+        # Node-level: specific departments (L2 nodes = department name)
+        for nr in node_rows:
+            if nr['company'] in l0_companies:
+                continue  # Already covered by L0
+            # Match by company + department name
+            conditions.append('(a.company = %s AND LOWER(a.department) = LOWER(%s))')
+            params.extend([nr['company'], nr['name']])
+
+        if not conditions:
+            return '', []
+
+        return ' AND (' + ' OR '.join(conditions) + ')', params
+
+    # ------------------------------------------------------------------
+    # User invoices (by responsible + organigram departments)
     # ------------------------------------------------------------------
 
     def get_user_invoices_by_responsible_name(
@@ -23,10 +83,11 @@ class ProfileRepository(BaseRepository):
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         search: Optional[str] = None,
+        department: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
-        """Get invoices where the user (by email) is listed as responsible in allocations."""
+        """Get invoices where the user is responsible AND department matches organigram."""
         def _work(cursor):
             cursor.execute('SELECT id FROM users WHERE LOWER(email) = LOWER(%s)', [user_email])
             user_row = cursor.fetchone()
@@ -34,6 +95,7 @@ class ProfileRepository(BaseRepository):
                 return []
 
             user_id = user_row['id']
+            org_sql, org_params = self._build_org_filter(cursor, user_id)
 
             query = '''
                 SELECT
@@ -49,6 +111,11 @@ class ProfileRepository(BaseRepository):
             '''
             params = [user_id, user_id]
 
+            # Apply organigram department filter
+            if org_sql:
+                query += org_sql
+                params.extend(org_params)
+
             if status:
                 query += ' AND i.status = %s'
                 params.append(status)
@@ -62,6 +129,9 @@ class ProfileRepository(BaseRepository):
                 query += ' AND (i.invoice_number ILIKE %s OR i.supplier ILIKE %s)'
                 search_pattern = f'%{search}%'
                 params.extend([search_pattern, search_pattern])
+            if department:
+                query += ' AND LOWER(a.department) = LOWER(%s)'
+                params.append(department)
 
             query += ' ORDER BY i.invoice_date DESC LIMIT %s OFFSET %s'
             params.extend([limit, offset])
@@ -77,8 +147,9 @@ class ProfileRepository(BaseRepository):
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         search: Optional[str] = None,
+        department: Optional[str] = None,
     ) -> int:
-        """Count invoices where the user (by email) is listed as responsible."""
+        """Count invoices where the user is responsible AND department matches organigram."""
         def _work(cursor):
             cursor.execute('SELECT id FROM users WHERE LOWER(email) = LOWER(%s)', [user_email])
             user_row = cursor.fetchone()
@@ -86,6 +157,7 @@ class ProfileRepository(BaseRepository):
                 return 0
 
             user_id = user_row['id']
+            org_sql, org_params = self._build_org_filter(cursor, user_id)
 
             query = '''
                 SELECT COUNT(DISTINCT i.id) as count
@@ -95,6 +167,10 @@ class ProfileRepository(BaseRepository):
                 AND i.deleted_at IS NULL
             '''
             params = [user_id, user_id]
+
+            if org_sql:
+                query += org_sql
+                params.extend(org_params)
 
             if status:
                 query += ' AND i.status = %s'
@@ -109,6 +185,9 @@ class ProfileRepository(BaseRepository):
                 query += ' AND (i.invoice_number ILIKE %s OR i.supplier ILIKE %s)'
                 search_pattern = f'%{search}%'
                 params.extend([search_pattern, search_pattern])
+            if department:
+                query += ' AND LOWER(a.department) = LOWER(%s)'
+                params.append(department)
 
             cursor.execute(query, params)
             row = cursor.fetchone()
@@ -116,7 +195,7 @@ class ProfileRepository(BaseRepository):
         return self.execute_many(_work)
 
     def get_user_invoices_summary(self, user_email: str) -> dict:
-        """Get invoice summary stats for a user (by email)."""
+        """Get invoice summary stats filtered by organigram departments."""
         def _work(cursor):
             cursor.execute('SELECT id FROM users WHERE LOWER(email) = LOWER(%s)', [user_email])
             user_row = cursor.fetchone()
@@ -124,25 +203,34 @@ class ProfileRepository(BaseRepository):
                 return {'total': 0, 'total_value': 0, 'by_status': {}}
 
             user_id = user_row['id']
+            org_sql, org_params = self._build_org_filter(cursor, user_id)
 
-            cursor.execute('''
+            base_where = '''
+                (a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))
+            '''
+            base_params = [user_id, user_id]
+            if org_sql:
+                base_where += org_sql
+                base_params.extend(org_params)
+
+            cursor.execute(f'''
                 SELECT i.status, COUNT(DISTINCT i.id) as count
                 FROM invoices i
                 INNER JOIN allocations a ON i.id = a.invoice_id
-                WHERE (a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))
+                WHERE {base_where}
                 GROUP BY i.status
-            ''', (user_id, user_id))
+            ''', base_params)
 
             by_status = {}
             for row in cursor.fetchall():
                 by_status[row['status'] or 'unknown'] = row['count']
 
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT COUNT(DISTINCT i.id) as total, COALESCE(SUM(DISTINCT i.invoice_value), 0) as total_value
                 FROM invoices i
                 INNER JOIN allocations a ON i.id = a.invoice_id
-                WHERE (a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))
-            ''', (user_id, user_id))
+                WHERE {base_where}
+            ''', base_params)
 
             totals = cursor.fetchone()
 

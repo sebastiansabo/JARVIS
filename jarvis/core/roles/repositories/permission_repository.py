@@ -294,25 +294,24 @@ class PermissionRepository(BaseRepository):
 
     def set_role_permission_v2(self, role_id: int, permission_id: int,
                                scope: str = None, granted: bool = None) -> bool:
-        """Set a single v2 permission for a role."""
+        """Set a single v2 permission for a role.
+
+        All permissions use scope: deny/own/department/all.
+        granted is derived from scope (scope != 'deny').
+        """
         def _work(cursor):
-            cursor.execute('SELECT is_scope_based FROM permissions_v2 WHERE id = %s', (permission_id,))
-            perm = cursor.fetchone()
-            if not perm:
+            cursor.execute('SELECT id FROM permissions_v2 WHERE id = %s', (permission_id,))
+            if not cursor.fetchone():
                 return False
-            is_scope_based = perm['is_scope_based']
-            if is_scope_based:
-                actual_scope = scope if scope else 'deny'
-                actual_granted = actual_scope != 'deny'
-            else:
-                actual_granted = granted if granted is not None else False
-                actual_scope = 'all' if actual_granted else 'deny'
+            actual_scope = scope if scope else ('all' if granted else 'deny')
+            actual_granted = actual_scope != 'deny'
             cursor.execute('''
                 INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted, updated_at)
                 VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
                 ON CONFLICT (role_id, permission_id)
                 DO UPDATE SET scope = %s, granted = %s, updated_at = CURRENT_TIMESTAMP
             ''', (role_id, permission_id, actual_scope, actual_granted, actual_scope, actual_granted))
+            self._sync_v2_permissions_to_booleans(cursor, role_id)
             return True
 
         result = self.execute_many(_work)

@@ -392,3 +392,71 @@ class StructureNodeRepository(BaseRepository):
             JOIN structure_node_members snm ON snm.node_id = a.id
             WHERE snm.role = 'responsable'
         ''', (node_id,))]
+
+    def get_user_org_path(self, user_id: int) -> list[dict]:
+        """Get org paths for a user from their structure_node_members assignments.
+
+        Returns a list of dicts, one per assignment, each containing:
+        company, brand (L1), department (L2), subdepartment (L3), role.
+        """
+        # Get deepest node per company for this user
+        assignments = self.query_all('''
+            SELECT snm.role, sn.id AS node_id, sn.name, sn.level, sn.company_id, c.company
+            FROM structure_node_members snm
+            JOIN structure_nodes sn ON snm.node_id = sn.id
+            JOIN companies c ON sn.company_id = c.id
+            WHERE snm.user_id = %s
+            ORDER BY sn.level DESC
+        ''', (user_id,))
+        if not assignments:
+            return []
+
+        results = []
+        for a in assignments:
+            # Walk up ancestors to get full path
+            ancestors = self.query_all('''
+                WITH RECURSIVE anc AS (
+                    SELECT id, parent_id, name, level FROM structure_nodes WHERE id = %s
+                    UNION ALL
+                    SELECT sn.id, sn.parent_id, sn.name, sn.level
+                    FROM structure_nodes sn JOIN anc ON sn.id = anc.parent_id
+                )
+                SELECT name, level FROM anc ORDER BY level
+            ''', (a['node_id'],))
+            path = {r['level']: r['name'] for r in ancestors}
+            results.append({
+                'company': a['company'],
+                'brand': path.get(1, ''),
+                'department': path.get(2, ''),
+                'subdepartment': path.get(3, ''),
+                'role': a['role'],
+                'level': a['level'],
+            })
+
+        # Also include L0 company responsable assignments
+        l0 = self.query_all('''
+            SELECT c.company
+            FROM company_responsables cr
+            JOIN companies c ON cr.company_id = c.id
+            WHERE cr.user_id = %s
+            ORDER BY c.company
+        ''', (user_id,))
+        for row in l0:
+            # Avoid duplicate if already present via structure nodes for same company
+            if not any(r['company'] == row['company'] for r in results):
+                results.append({
+                    'company': row['company'],
+                    'brand': '',
+                    'department': '',
+                    'subdepartment': '',
+                    'role': 'C-Level',
+                    'level': 0,
+                })
+            else:
+                # Mark existing entry as also L0
+                for r in results:
+                    if r['company'] == row['company']:
+                        r['role'] = 'C-Level'
+                        break
+
+        return results

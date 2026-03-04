@@ -291,6 +291,8 @@ class BioStarRepository(BaseRepository):
                     be.user_group_name,
                     be.mapped_jarvis_user_id,
                     u.name AS mapped_jarvis_user_name,
+                    u.company AS jarvis_company,
+                    u.department AS jarvis_department,
                     be.lunch_break_minutes,
                     be.working_hours,
                     be.schedule_start,
@@ -305,7 +307,8 @@ class BioStarRepository(BaseRepository):
                 WHERE pl.event_datetime::date = %s::date
                   AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE){extra_where}
                 GROUP BY pl.biostar_user_id, be.name, be.email, be.user_group_name,
-                         be.mapped_jarvis_user_id, u.name, be.lunch_break_minutes, be.working_hours,
+                         be.mapped_jarvis_user_id, u.name, u.company, u.department,
+                         be.lunch_break_minutes, be.working_hours,
                          be.schedule_start, be.schedule_end
             )
             SELECT p.*,
@@ -315,7 +318,7 @@ class BioStarRepository(BaseRepository):
             FROM punches p
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = p.biostar_user_id AND adj.date = %s::date
-            ORDER BY p.name
+            ORDER BY p.jarvis_company NULLS LAST, p.name
         ''', params)
 
     def get_range_summary(self, start_date, end_date, jarvis_user_ids=None):
@@ -347,6 +350,8 @@ class BioStarRepository(BaseRepository):
                 be.user_group_name,
                 be.mapped_jarvis_user_id,
                 u.name AS mapped_jarvis_user_name,
+                u.company AS jarvis_company,
+                u.department AS jarvis_department,
                 be.lunch_break_minutes,
                 be.working_hours,
                 be.schedule_start,
@@ -362,9 +367,10 @@ class BioStarRepository(BaseRepository):
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
             WHERE 1=1{extra_where}
             GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
-                     be.mapped_jarvis_user_id, u.name, be.lunch_break_minutes, be.working_hours,
+                     be.mapped_jarvis_user_id, u.name, u.company, u.department,
+                     be.lunch_break_minutes, be.working_hours,
                      be.schedule_start, be.schedule_end
-            ORDER BY be.name
+            ORDER BY u.company NULLS LAST, be.name
         ''', params)
 
     def get_employee_punches(self, biostar_user_id, date_str):

@@ -53,6 +53,7 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { profileApi, type ProfileUpdatePayload } from '@/api/profile'
+import { usersApi } from '@/api/users'
 import { cn, usePersistedState } from '@/lib/utils'
 import type { ProfileInvoice, ProfileActivity, ProfileBonus, OrgTreeNode } from '@/types/profile'
 import type { BioStarDayHistory, BioStarPunchLog, BioStarDailySummary, BioStarRangeSummary } from '@/types/biostar'
@@ -82,6 +83,13 @@ export default function Profile() {
   })
 
   const user = summary?.user
+
+  // Fetch org path from organigram
+  const { data: orgPaths = [] } = useQuery({
+    queryKey: ['user-org-path', user?.id],
+    queryFn: () => usersApi.getUserOrgPath(user!.id),
+    enabled: !!user?.id,
+  })
 
   return (
     <div className="space-y-6">
@@ -144,8 +152,8 @@ export default function Profile() {
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm border-t pt-4">
                 <InfoField icon={Mail} label="Email" value={user?.email} />
                 <InfoField icon={Phone} label="Phone" value={user?.phone} />
-                <InfoField icon={Building2} label="Department" value={user?.department} />
-                <InfoField icon={Shield} label="Company" value={user?.company} />
+                <InfoField icon={Building2} label="Department" value={orgPaths.length > 0 ? orgPaths.map(o => o.department).filter(Boolean) : user?.department} />
+                <InfoField icon={Shield} label="Company" value={orgPaths.length > 0 ? [...new Set(orgPaths.map(o => o.company).filter(Boolean))] : user?.company} />
                 <InfoField icon={Hash} label="CNP" value={user?.cnp} />
                 <InfoField icon={Calendar} label="Birthdate" value={user?.birthdate ? new Date(user.birthdate).toLocaleDateString('ro-RO') : null} />
                 <InfoField icon={Briefcase} label="Position" value={user?.position} />
@@ -238,7 +246,7 @@ export default function Profile() {
       </Tabs>
 
       {/* Tab Content */}
-      {activeTab === 'invoices' && <InvoicesPanel />}
+      {activeTab === 'invoices' && <InvoicesPanel orgDepartments={orgPaths.map(o => o.department).filter(Boolean)} />}
       {activeTab === 'hr-events' && <HrEventsPanel />}
       {activeTab === 'pontaje' && <PontajePanel />}
       {activeTab === 'team-pontaje' && <TeamPontajePanel />}
@@ -294,13 +302,24 @@ function AnniversaryBanners({ birthdate, contractDate, name }: { birthdate: stri
 
 // ─── Info Field ───────────────────────────────────────────────────
 
-function InfoField({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string | null | undefined }) {
+function InfoField({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string | string[] | null | undefined }) {
+  const items = Array.isArray(value) ? value.filter(Boolean) : value ? [value] : []
   return (
     <div className="flex items-start gap-2">
       <Icon className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
       <div className="min-w-0">
         <div className="text-xs text-muted-foreground">{label}</div>
-        <div className={cn('truncate', value ? 'text-foreground' : 'text-muted-foreground/50')}>{value || '—'}</div>
+        {items.length === 0 ? (
+          <div className="text-muted-foreground/50">—</div>
+        ) : items.length === 1 ? (
+          <div className="text-foreground">{items[0]}</div>
+        ) : (
+          <div className="space-y-0.5">
+            {items.map((v, i) => (
+              <div key={i} className="text-foreground leading-tight">{v}</div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1029,8 +1048,20 @@ function TeamPontajePanel() {
 
 // ── Team Daily Table ──
 
+function groupByCompany<T extends { jarvis_company?: string | null }>(data: T[]): { company: string; rows: T[] }[] {
+  const map = new Map<string, T[]>()
+  for (const r of data) {
+    const key = r.jarvis_company || 'Unmapped'
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(r)
+  }
+  return Array.from(map.entries()).map(([company, rows]) => ({ company, rows }))
+}
+
 function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[]; isMobile: boolean; date: string }) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const groups = useMemo(() => groupByCompany(data), [data])
+  const hasMultipleCompanies = groups.length > 1
 
   const toggle = (id: string) => setExpandedId((prev) => (prev === id ? null : id))
 
@@ -1055,6 +1086,91 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
     )
   }
 
+  const renderRow = (r: BioStarDailySummary) => {
+    const lunch = r.lunch_break_minutes ?? 60
+    const net = netSec(r.duration_seconds, lunch)
+    const netH = net / 3600
+    const expectedH = Number(r.working_hours ?? 8)
+    const isShort = netH > 0 && netH < expectedH
+    const isAbsent = r.total_punches === 0
+    const isExpanded = expandedId === r.biostar_user_id
+    const hasAdjustment = !!r.adjustment_type
+
+    return (
+      <>
+        <TableRow
+          key={r.biostar_user_id}
+          className={cn('cursor-pointer hover:bg-muted/50', isExpanded && 'bg-muted/30')}
+          onClick={() => !isAbsent && toggle(r.biostar_user_id)}
+        >
+          <TableCell className="px-2">
+            {!isAbsent && (
+              <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', isExpanded && 'rotate-180')} />
+            )}
+          </TableCell>
+          <TableCell className="font-medium">{r.mapped_jarvis_user_name || r.name}</TableCell>
+          <TableCell className="text-sm text-muted-foreground">{r.user_group_name || '-'}</TableCell>
+          <TableCell className="text-center">
+            {isAbsent ? (
+              <span className="text-sm text-muted-foreground">—</span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-sm">
+                <LogIn className="h-3 w-3 text-green-600" />
+                {fmtTime(hasAdjustment ? r.adjusted_first_punch : r.first_punch)}
+                {hasAdjustment && (
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300 ml-0.5">C</Badge>
+                )}
+              </span>
+            )}
+          </TableCell>
+          <TableCell className="text-center">
+            {isAbsent ? (
+              <span className="text-sm text-muted-foreground">—</span>
+            ) : r.total_punches === 1 ? (
+              <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-sm">
+                <LogOut className="h-3 w-3 text-red-500" />
+                {fmtTime(hasAdjustment ? r.adjusted_last_punch : r.last_punch)}
+                {hasAdjustment && (
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300 ml-0.5">C</Badge>
+                )}
+              </span>
+            )}
+          </TableCell>
+          <TableCell className="text-center">
+            {isAbsent ? (
+              <Badge variant="outline" className="text-xs text-muted-foreground">Absent</Badge>
+            ) : r.total_punches === 1 ? (
+              <span className="text-sm text-muted-foreground">—</span>
+            ) : (
+              <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
+                {fmtDuration(net)}
+              </span>
+            )}
+          </TableCell>
+          <TableCell className="text-center">
+            {isAbsent ? (
+              <span className="text-sm text-muted-foreground">—</span>
+            ) : (
+              <Badge variant="secondary" className="text-xs">{r.total_punches}</Badge>
+            )}
+          </TableCell>
+          <TableCell className="text-center text-sm text-muted-foreground">
+            {r.schedule_start || '08:00'} - {r.schedule_end || '17:00'}
+          </TableCell>
+        </TableRow>
+        {isExpanded && (
+          <TableRow key={`${r.biostar_user_id}-detail`}>
+            <TableCell colSpan={8} className="p-0">
+              <PunchDetailRow biostarUserId={r.biostar_user_id} date={date} row={r} />
+            </TableCell>
+          </TableRow>
+        )}
+      </>
+    )
+  }
+
   return (
     <div className="overflow-x-auto">
       <Table>
@@ -1071,90 +1187,22 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
           </TableRow>
         </TableHeader>
         <TableBody>
-          {data.map((r) => {
-            const lunch = r.lunch_break_minutes ?? 60
-            const net = netSec(r.duration_seconds, lunch)
-            const netH = net / 3600
-            const expectedH = Number(r.working_hours ?? 8)
-            const isShort = netH > 0 && netH < expectedH
-            const isAbsent = r.total_punches === 0
-            const isExpanded = expandedId === r.biostar_user_id
-            const hasAdjustment = !!r.adjustment_type
-
-            return (
-              <>
-                <TableRow
-                  key={r.biostar_user_id}
-                  className={cn('cursor-pointer hover:bg-muted/50', isExpanded && 'bg-muted/30')}
-                  onClick={() => !isAbsent && toggle(r.biostar_user_id)}
-                >
-                  <TableCell className="px-2">
-                    {!isAbsent && (
-                      <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', isExpanded && 'rotate-180')} />
-                    )}
-                  </TableCell>
-                  <TableCell className="font-medium">{r.mapped_jarvis_user_name || r.name}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{r.user_group_name || '-'}</TableCell>
-                  <TableCell className="text-center">
-                    {isAbsent ? (
-                      <span className="text-sm text-muted-foreground">—</span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-sm">
-                        <LogIn className="h-3 w-3 text-green-600" />
-                        {fmtTime(hasAdjustment ? r.adjusted_first_punch : r.first_punch)}
-                        {hasAdjustment && (
-                          <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300 ml-0.5">C</Badge>
-                        )}
+          {hasMultipleCompanies
+            ? groups.map((g) => (
+                <>
+                  <TableRow key={`company-${g.company}`} className="bg-muted/40 hover:bg-muted/40">
+                    <TableCell colSpan={8} className="py-1.5 px-4">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        <Building2 className="h-3 w-3" />
+                        {g.company} <span className="font-normal">({g.rows.length})</span>
                       </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {isAbsent ? (
-                      <span className="text-sm text-muted-foreground">—</span>
-                    ) : r.total_punches === 1 ? (
-                      <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-sm">
-                        <LogOut className="h-3 w-3 text-red-500" />
-                        {fmtTime(hasAdjustment ? r.adjusted_last_punch : r.last_punch)}
-                        {hasAdjustment && (
-                          <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300 ml-0.5">C</Badge>
-                        )}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {isAbsent ? (
-                      <Badge variant="outline" className="text-xs text-muted-foreground">Absent</Badge>
-                    ) : r.total_punches === 1 ? (
-                      <span className="text-sm text-muted-foreground">—</span>
-                    ) : (
-                      <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
-                        {fmtDuration(net)}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {isAbsent ? (
-                      <span className="text-sm text-muted-foreground">—</span>
-                    ) : (
-                      <Badge variant="secondary" className="text-xs">{r.total_punches}</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-center text-sm text-muted-foreground">
-                    {r.schedule_start || '08:00'} - {r.schedule_end || '17:00'}
-                  </TableCell>
-                </TableRow>
-                {isExpanded && (
-                  <TableRow key={`${r.biostar_user_id}-detail`}>
-                    <TableCell colSpan={8} className="p-0">
-                      <PunchDetailRow biostarUserId={r.biostar_user_id} date={date} row={r} />
                     </TableCell>
                   </TableRow>
-                )}
-              </>
-            )
-          })}
+                  {g.rows.map(renderRow)}
+                </>
+              ))
+            : data.map(renderRow)
+          }
         </TableBody>
       </Table>
     </div>
@@ -1248,6 +1296,9 @@ function PunchDetailRow({ biostarUserId, date, row }: { biostarUserId: string; d
 // ── Team Range Table ──
 
 function TeamRangeTable({ data, isMobile }: { data: BioStarRangeSummary[]; isMobile: boolean }) {
+  const groups = useMemo(() => groupByCompany(data), [data])
+  const hasMultipleCompanies = groups.length > 1
+
   if (isMobile) {
     return (
       <MobileCardList
@@ -1275,6 +1326,37 @@ function TeamRangeTable({ data, isMobile }: { data: BioStarRangeSummary[]; isMob
     )
   }
 
+  const renderRow = (r: BioStarRangeSummary) => {
+    const lunch = r.lunch_break_minutes ?? 60
+    const avgNet = r.avg_duration_seconds
+      ? netSec(r.avg_duration_seconds, lunch * 60) / 3600
+      : 0
+    const totalNet = r.total_duration_seconds
+      ? (r.total_duration_seconds - r.days_present * lunch * 60) / 3600
+      : 0
+    const expectedH = Number(r.working_hours ?? 8)
+    const isShort = avgNet > 0 && avgNet < expectedH
+
+    return (
+      <TableRow key={r.biostar_user_id}>
+        <TableCell className="font-medium">{r.mapped_jarvis_user_name || r.name}</TableCell>
+        <TableCell className="text-sm text-muted-foreground">{r.user_group_name || '-'}</TableCell>
+        <TableCell className="text-center">
+          <Badge variant="secondary" className="text-xs">{r.days_present}</Badge>
+        </TableCell>
+        <TableCell className="text-center">
+          <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
+            {avgNet > 0 ? `${avgNet.toFixed(1)}h` : '-'}
+          </span>
+        </TableCell>
+        <TableCell className="text-center text-sm">{totalNet > 0 ? `${totalNet.toFixed(0)}h` : '-'}</TableCell>
+        <TableCell className="text-center text-sm text-muted-foreground">
+          {r.schedule_start || '08:00'} - {r.schedule_end || '17:00'}
+        </TableCell>
+      </TableRow>
+    )
+  }
+
   return (
     <div className="overflow-x-auto">
       <Table>
@@ -1289,36 +1371,22 @@ function TeamRangeTable({ data, isMobile }: { data: BioStarRangeSummary[]; isMob
           </TableRow>
         </TableHeader>
         <TableBody>
-          {data.map((r) => {
-            const lunch = r.lunch_break_minutes ?? 60
-            const avgNet = r.avg_duration_seconds
-              ? netSec(r.avg_duration_seconds, lunch * 60) / 3600
-              : 0
-            const totalNet = r.total_duration_seconds
-              ? (r.total_duration_seconds - r.days_present * lunch * 60) / 3600
-              : 0
-            const expectedH = Number(r.working_hours ?? 8)
-            const isShort = avgNet > 0 && avgNet < expectedH
-
-            return (
-              <TableRow key={r.biostar_user_id}>
-                <TableCell className="font-medium">{r.mapped_jarvis_user_name || r.name}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{r.user_group_name || '-'}</TableCell>
-                <TableCell className="text-center">
-                  <Badge variant="secondary" className="text-xs">{r.days_present}</Badge>
-                </TableCell>
-                <TableCell className="text-center">
-                  <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
-                    {avgNet > 0 ? `${avgNet.toFixed(1)}h` : '-'}
-                  </span>
-                </TableCell>
-                <TableCell className="text-center text-sm">{totalNet > 0 ? `${totalNet.toFixed(0)}h` : '-'}</TableCell>
-                <TableCell className="text-center text-sm text-muted-foreground">
-                  {r.schedule_start || '08:00'} - {r.schedule_end || '17:00'}
-                </TableCell>
-              </TableRow>
-            )
-          })}
+          {hasMultipleCompanies
+            ? groups.map((g) => (
+                <>
+                  <TableRow key={`company-${g.company}`} className="bg-muted/40 hover:bg-muted/40">
+                    <TableCell colSpan={6} className="py-1.5 px-4">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        <Building2 className="h-3 w-3" />
+                        {g.company} <span className="font-normal">({g.rows.length})</span>
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                  {g.rows.map(renderRow)}
+                </>
+              ))
+            : data.map(renderRow)
+          }
         </TableBody>
       </Table>
     </div>
@@ -1458,15 +1526,18 @@ function PunchLine({ punch, isFirst, isLast }: { punch: BioStarPunchLog; isFirst
 
 // ─── Invoices Panel ─────────────────────────────────────────────────
 
-function InvoicesPanel() {
+function InvoicesPanel({ orgDepartments }: { orgDepartments: string[] }) {
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
+  const [department, setDepartment] = useState('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = usePersistedState('profile-invoices-page-size', 25)
 
+  const uniqueDepts = useMemo(() => [...new Set(orgDepartments)], [orgDepartments])
+
   const { data, isLoading } = useQuery({
-    queryKey: ['profile', 'invoices', { search, page, perPage }],
-    queryFn: () => profileApi.getInvoices({ search: search || undefined, page, per_page: perPage }),
+    queryKey: ['profile', 'invoices', { search, department, page, perPage }],
+    queryFn: () => profileApi.getInvoices({ search: search || undefined, department: department || undefined, page, per_page: perPage }),
   })
 
   const invoices = data?.invoices ?? []
@@ -1481,12 +1552,27 @@ function InvoicesPanel() {
             My Invoices
             <span className="ml-2 text-sm font-normal text-muted-foreground">({total})</span>
           </CardTitle>
-          <SearchInput
-            placeholder="Search invoices..."
-            value={search}
-            onChange={(v) => { setSearch(v); setPage(1) }}
-            className="w-full sm:w-64"
-          />
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {uniqueDepts.length > 1 && (
+              <Select value={department} onValueChange={(v) => { setDepartment(v === 'all' ? '' : v); setPage(1) }}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="All departments" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All departments</SelectItem>
+                  {uniqueDepts.map((d) => (
+                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <SearchInput
+              placeholder="Search invoices..."
+              value={search}
+              onChange={(v) => { setSearch(v); setPage(1) }}
+              className="w-full sm:w-64"
+            />
+          </div>
         </div>
       </CardHeader>
       <CardContent>

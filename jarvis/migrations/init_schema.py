@@ -2794,6 +2794,9 @@ def create_schema(conn, cursor):
                     ''', (role['id'], p['id'], scope))
         conn.commit()
 
+    # ── Migration: Add missing permissions_v2 for uncovered modules ──
+    _seed_missing_permissions_v2(cursor, conn)
+
     # Seed marketing dropdown_options if not present
     cursor.execute("SELECT COUNT(*) as cnt FROM dropdown_options WHERE dropdown_type = 'mkt_project_type'")
     if cursor.fetchone()['cnt'] == 0:
@@ -3282,6 +3285,147 @@ def create_schema(conn, cursor):
     if result['count'] == 0:
         _seed_companies(cursor)
 
+
+
+def _seed_missing_permissions_v2(cursor, conn):
+    """Add permissions_v2 entries for modules that were missing coverage.
+
+    Uses ON CONFLICT DO NOTHING so it's safe to run repeatedly.
+    After inserting permissions, seeds default role_permissions_v2 for all roles.
+    """
+    new_perms = [
+        # ── DMS Module ──
+        ('dms', 'Documents', 'bi-folder2-open', 'categories', 'Categories', 'view', 'View', 'View document categories', False, 1),
+        ('dms', 'Documents', 'bi-folder2-open', 'categories', 'Categories', 'manage', 'Manage', 'Create, edit, delete categories', False, 2),
+        ('dms', 'Documents', 'bi-folder2-open', 'documents', 'Documents', 'view', 'View', 'View documents', True, 3),
+        ('dms', 'Documents', 'bi-folder2-open', 'documents', 'Documents', 'create', 'Create', 'Create new documents', True, 4),
+        ('dms', 'Documents', 'bi-folder2-open', 'documents', 'Documents', 'edit', 'Edit', 'Edit documents', True, 5),
+        ('dms', 'Documents', 'bi-folder2-open', 'documents', 'Documents', 'delete', 'Delete', 'Delete documents', True, 6),
+        ('dms', 'Documents', 'bi-folder2-open', 'documents', 'Documents', 'export', 'Export', 'Export documents', False, 7),
+        ('dms', 'Documents', 'bi-folder2-open', 'files', 'Files', 'upload', 'Upload', 'Upload file attachments', False, 8),
+        ('dms', 'Documents', 'bi-folder2-open', 'files', 'Files', 'download', 'Download', 'Download file attachments', False, 9),
+        ('dms', 'Documents', 'bi-folder2-open', 'files', 'Files', 'delete', 'Delete', 'Delete file attachments', False, 10),
+        ('dms', 'Documents', 'bi-folder2-open', 'parties', 'Parties', 'view', 'View', 'View document parties', False, 11),
+        ('dms', 'Documents', 'bi-folder2-open', 'parties', 'Parties', 'manage', 'Manage', 'Create, edit, delete parties', False, 12),
+        ('dms', 'Documents', 'bi-folder2-open', 'suppliers', 'Suppliers', 'view', 'View', 'View suppliers', True, 13),
+        ('dms', 'Documents', 'bi-folder2-open', 'suppliers', 'Suppliers', 'edit', 'Edit', 'Edit suppliers', True, 14),
+        ('dms', 'Documents', 'bi-folder2-open', 'suppliers', 'Suppliers', 'delete', 'Delete', 'Delete suppliers', False, 15),
+        ('dms', 'Documents', 'bi-folder2-open', 'suppliers', 'Suppliers', 'sync', 'Sync ANAF', 'Sync supplier data from ANAF', False, 16),
+        ('dms', 'Documents', 'bi-folder2-open', 'extraction', 'AI Extraction', 'execute', 'Execute', 'Run AI document extraction', False, 17),
+        ('dms', 'Documents', 'bi-folder2-open', 'signatures', 'Signatures', 'view', 'View', 'View signature status', False, 18),
+        ('dms', 'Documents', 'bi-folder2-open', 'signatures', 'Signatures', 'manage', 'Manage', 'Update signature status', False, 19),
+        ('dms', 'Documents', 'bi-folder2-open', 'drive_sync', 'Drive Sync', 'manage', 'Manage', 'Sync documents with Google Drive', False, 20),
+
+        # ── HR Module (missing entities) ──
+        ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'view', 'View', 'View employee list', True, 30),
+        ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'edit', 'Edit', 'Edit employee data', True, 31),
+        ('hr', 'HR', 'bi-people-fill', 'employees', 'Employees', 'delete', 'Delete', 'Delete employees', False, 32),
+        ('hr', 'HR', 'bi-people-fill', 'structure', 'Structure', 'view', 'View', 'View company/department structure', False, 33),
+        ('hr', 'HR', 'bi-people-fill', 'structure', 'Structure', 'edit', 'Edit', 'Edit company/department structure', False, 34),
+        ('hr', 'HR', 'bi-people-fill', 'bonus_types', 'Bonus Types', 'view', 'View', 'View bonus types', False, 35),
+        ('hr', 'HR', 'bi-people-fill', 'bonus_types', 'Bonus Types', 'manage', 'Manage', 'Create, edit, delete bonus types', False, 36),
+        ('hr', 'HR', 'bi-people-fill', 'team_pontaje', 'Team Pontaje', 'view', 'View', 'View team attendance overview', True, 37),
+        ('hr', 'HR', 'bi-people-fill', 'team_pontaje', 'Team Pontaje', 'edit', 'Edit', 'Edit team punch records', True, 38),
+
+        # ── Marketing Module (missing entities) ──
+        ('marketing', 'Marketing', 'bi-megaphone', 'objectives', 'OKR / Objectives', 'view', 'View', 'View objectives and key results', True, 20),
+        ('marketing', 'Marketing', 'bi-megaphone', 'objectives', 'OKR / Objectives', 'manage', 'Manage', 'Create, edit, delete objectives', True, 21),
+        ('marketing', 'Marketing', 'bi-megaphone', 'simulator', 'Budget Simulator', 'view', 'View', 'View campaign simulator', False, 22),
+        ('marketing', 'Marketing', 'bi-megaphone', 'simulator', 'Budget Simulator', 'edit', 'Edit', 'Configure simulator benchmarks', False, 23),
+        ('marketing', 'Marketing', 'bi-megaphone', 'social', 'Collaboration', 'view', 'View', 'View members, comments, files', True, 24),
+        ('marketing', 'Marketing', 'bi-megaphone', 'social', 'Collaboration', 'manage', 'Manage', 'Add members, post comments, upload files', True, 25),
+        ('marketing', 'Marketing', 'bi-megaphone', 'events', 'Event Links', 'manage', 'Manage', 'Link/unlink HR events to projects', False, 26),
+        ('marketing', 'Marketing', 'bi-megaphone', 'dms_links', 'DMS Links', 'manage', 'Manage', 'Link/unlink DMS documents to projects', False, 27),
+
+        # ── System/Core (missing entities) ──
+        ('system', 'System', 'bi-gear-fill', 'tags', 'Tags', 'view', 'View', 'View tags and tag groups', False, 20),
+        ('system', 'System', 'bi-gear-fill', 'tags', 'Tags', 'manage', 'Manage', 'Create, edit, delete tags and auto-tag rules', False, 21),
+        ('system', 'System', 'bi-gear-fill', 'presets', 'Presets', 'view', 'View', 'View saved presets', False, 22),
+        ('system', 'System', 'bi-gear-fill', 'presets', 'Presets', 'manage', 'Manage', 'Create, edit, delete presets', False, 23),
+        ('system', 'System', 'bi-gear-fill', 'organization', 'Organization', 'view', 'View', 'View companies, brands, departments', False, 24),
+        ('system', 'System', 'bi-gear-fill', 'organization', 'Organization', 'edit', 'Edit', 'Manage companies, brands, departments, VAT', False, 25),
+        ('system', 'System', 'bi-gear-fill', 'notifications', 'Notifications', 'view', 'View', 'View notifications', False, 26),
+        ('system', 'System', 'bi-gear-fill', 'notifications', 'Notifications', 'manage', 'Manage', 'Configure notification settings', False, 27),
+        ('system', 'System', 'bi-gear-fill', 'signatures', 'Signature Requests', 'view', 'View', 'View signature requests', False, 28),
+        ('system', 'System', 'bi-gear-fill', 'signatures', 'Signature Requests', 'manage', 'Manage', 'Create and manage signature requests', False, 29),
+        ('system', 'System', 'bi-gear-fill', 'drive', 'Drive / Files', 'upload', 'Upload', 'Upload files and attachments', False, 30),
+        ('system', 'System', 'bi-gear-fill', 'drive', 'Drive / Files', 'download', 'Download', 'Download files and attachments', False, 31),
+
+        # ── Connectors (Biostar) ──
+        ('connectors', 'Connectors', 'bi-plug', 'biostar', 'Biostar', 'view', 'View', 'View Biostar config and employees', False, 1),
+        ('connectors', 'Connectors', 'bi-plug', 'biostar', 'Biostar', 'edit', 'Edit', 'Edit Biostar configuration', False, 2),
+        ('connectors', 'Connectors', 'bi-plug', 'biostar', 'Biostar', 'sync', 'Sync', 'Sync users from Biostar', False, 3),
+        ('connectors', 'Connectors', 'bi-plug', 'biostar', 'Biostar', 'manage', 'Manage', 'Map schedules, manage blacklist', False, 4),
+    ]
+
+    for p in new_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label,
+                                        action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+
+    # Now seed role_permissions_v2 for all new permissions that don't have entries yet
+    cursor.execute('SELECT id, name FROM roles')
+    roles_list = cursor.fetchall()
+
+    # Collect IDs of newly inserted permissions (those without role_permissions_v2 entries)
+    cursor.execute('''
+        SELECT p.id, p.module_key, p.entity_key, p.action_key, p.is_scope_based
+        FROM permissions_v2 p
+        WHERE NOT EXISTS (
+            SELECT 1 FROM role_permissions_v2 rp WHERE rp.permission_id = p.id
+        )
+    ''')
+    new_perm_rows = cursor.fetchall()
+
+    for role in roles_list:
+        role_id = role['id']
+        role_name = role['name']
+
+        for perm in new_perm_rows:
+            perm_id = perm['id']
+            action = perm['action_key']
+            module = perm['module_key']
+            entity = perm['entity_key']
+
+            if role_name == 'Admin':
+                scope = 'all'
+            elif role_name == 'Manager':
+                if module == 'system' and entity in ('tags', 'presets', 'organization', 'notifications', 'signatures', 'drive'):
+                    scope = 'all'
+                elif module == 'connectors':
+                    scope = 'deny'
+                elif action == 'delete':
+                    scope = 'department'
+                else:
+                    scope = 'all'
+            elif role_name == 'User':
+                if module in ('system', 'connectors'):
+                    scope = 'deny'
+                elif action in ('delete', 'export', 'manage', 'sync'):
+                    scope = 'deny'
+                elif action in ('view', 'create', 'upload', 'download'):
+                    scope = 'own'
+                elif action == 'edit':
+                    scope = 'own'
+                else:
+                    scope = 'deny'
+            else:  # Viewer
+                if action in ('view', 'download'):
+                    scope = 'own'
+                else:
+                    scope = 'deny'
+
+            granted = scope != 'deny'
+            cursor.execute('''
+                INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (role_id, permission_id) DO NOTHING
+            ''', (role_id, perm_id, scope, granted))
+
+    conn.commit()
 
 
 def _seed_department_structure(cursor):

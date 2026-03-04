@@ -497,3 +497,10 @@ def api_set_node_members(node_id):
 def api_get_cascade_responsables(node_id):
     """Get all responsable user IDs up the parent chain from this node."""
     return jsonify(_node_repo.get_cascade_responsable_ids(node_id))
+
+
+@org_bp.route('/api/users/<int:user_id>/org-path', methods=['GET'])
+@login_required
+def api_get_user_org_path(user_id):
+    """Get a user's organization path(s) from their organigram assignments."""
+    return jsonify(_node_repo.get_user_org_path(user_id))

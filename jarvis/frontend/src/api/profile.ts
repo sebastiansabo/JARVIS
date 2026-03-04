@@ -14,12 +14,13 @@ export const profileApi = {
 
   updateProfile: (data: ProfileUpdatePayload) => api.put<{ success: boolean }>('/profile/api/update', data),
 
-  getInvoices: (params?: { status?: string; start_date?: string; end_date?: string; search?: string; page?: number; per_page?: number }) => {
+  getInvoices: (params?: { status?: string; start_date?: string; end_date?: string; search?: string; department?: string; page?: number; per_page?: number }) => {
     const sp = new URLSearchParams()
     if (params?.status) sp.set('status', params.status)
     if (params?.start_date) sp.set('start_date', params.start_date)
     if (params?.end_date) sp.set('end_date', params.end_date)
     if (params?.search) sp.set('search', params.search)
+    if (params?.department) sp.set('department', params.department)
     if (params?.page) sp.set('page', String(params.page))
     if (params?.per_page) sp.set('per_page', String(params.per_page))
     const qs = sp.toString()

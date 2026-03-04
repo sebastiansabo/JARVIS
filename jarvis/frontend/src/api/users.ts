@@ -27,6 +27,10 @@ export const usersApi = {
   updateProfile: (data: { name?: string; phone?: string }) =>
     api.post<{ success: boolean }>('/api/auth/update-profile', data),
 
+  // Org path (from organigram assignments)
+  getUserOrgPath: (userId: number) =>
+    api.get<{ company: string; brand: string; department: string; subdepartment: string; role: string }[]>(`/api/users/${userId}/org-path`),
+
   // Events / Audit Log
   getEvents: (params?: { limit?: number; offset?: number; event_type?: string; entity_type?: string }) => {
     const searchParams = new URLSearchParams()

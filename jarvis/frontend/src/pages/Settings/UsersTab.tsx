@@ -346,6 +346,7 @@ function UserFormDialog({
     phone: '',
     role_id: '',
     is_active: true,
+    notify_on_allocation: false,
     password: '',
     cnp: '',
     birthdate: '',
@@ -362,14 +363,22 @@ function UserFormDialog({
             phone: user.phone || '',
             role_id: String(user.role_id),
             is_active: user.is_active,
+            notify_on_allocation: user.notify_on_allocation ?? false,
             password: '',
             cnp: user.cnp || '',
             birthdate: user.birthdate || '',
             position: user.position || '',
             contract_work_date: user.contract_work_date || '',
           }
-        : { name: '', email: '', phone: '', role_id: '', is_active: true, password: '', cnp: '', birthdate: '', position: '', contract_work_date: '' },
+        : { name: '', email: '', phone: '', role_id: '', is_active: true, notify_on_allocation: false, password: '', cnp: '', birthdate: '', position: '', contract_work_date: '' },
     )
+
+  // Fetch org path from organigram assignments (read-only)
+  const { data: orgPaths = [] } = useQuery({
+    queryKey: ['user-org-path', user?.id],
+    queryFn: () => usersApi.getUserOrgPath(user!.id),
+    enabled: !!user,
+  })
 
   return (
     <Dialog
@@ -379,7 +388,7 @@ function UserFormDialog({
         else resetForm()
       }}
     >
-      <DialogContent className="sm:max-w-md" onOpenAutoFocus={resetForm}>
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" onOpenAutoFocus={resetForm}>
         <DialogHeader>
           <DialogTitle>{user ? 'Edit User' : 'Add User'}</DialogTitle>
         </DialogHeader>
@@ -413,13 +422,52 @@ function UserFormDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
               <Label>Birthdate</Label>
-              <Input type="date" value={form.birthdate} onChange={(e) => setForm({ ...form, birthdate: e.target.value })} />
+              <Input type="date" value={form.birthdate} readOnly disabled className="bg-muted" />
             </div>
             <div className="grid gap-2">
               <Label>Contract Start</Label>
               <Input type="date" value={form.contract_work_date} onChange={(e) => setForm({ ...form, contract_work_date: e.target.value })} />
             </div>
           </div>
+          {/* Organization (read-only, fetched from Organigram) */}
+          {orgPaths.length > 0 && (
+            <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Organization</Label>
+              {orgPaths.map((op, i) => (
+                <div key={i} className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                  {op.company && (
+                    <div>
+                      <span className="text-muted-foreground text-xs">Company:</span>{' '}
+                      <span className="font-medium">{op.company}</span>
+                    </div>
+                  )}
+                  {op.brand && (
+                    <div>
+                      <span className="text-muted-foreground text-xs">Brand:</span>{' '}
+                      <span className="font-medium">{op.brand}</span>
+                    </div>
+                  )}
+                  {op.department && (
+                    <div>
+                      <span className="text-muted-foreground text-xs">Department:</span>{' '}
+                      <span className="font-medium">{op.department}</span>
+                    </div>
+                  )}
+                  {op.subdepartment && (
+                    <div>
+                      <span className="text-muted-foreground text-xs">Subdepartment:</span>{' '}
+                      <span className="font-medium">{op.subdepartment}</span>
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-muted-foreground text-xs">Role:</span>{' '}
+                    <span className="font-medium capitalize">{op.role}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="grid gap-2">
             <Label>Role</Label>
             <Select value={form.role_id} onValueChange={(v) => setForm({ ...form, role_id: v })}>
@@ -451,6 +499,10 @@ function UserFormDialog({
             <Switch checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
             <Label>Active</Label>
           </div>
+          <div className="flex items-center gap-2">
+            <Switch checked={form.notify_on_allocation} onCheckedChange={(v) => setForm({ ...form, notify_on_allocation: v })} />
+            <Label>Notify on Allocation</Label>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -467,6 +519,7 @@ function UserFormDialog({
                 birthdate: form.birthdate || undefined,
                 position: form.position || undefined,
                 contract_work_date: form.contract_work_date || undefined,
+                notify_on_allocation: form.notify_on_allocation,
               })
             }
           >
