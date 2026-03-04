@@ -26,6 +26,12 @@ class User(UserMixin):
         self.org_unit_id = user_data.get('org_unit_id')
         self.notify_on_allocation = user_data.get('notify_on_allocation', True)
 
+        # Personal details
+        self.cnp = user_data.get('cnp')
+        self.birthdate = user_data.get('birthdate')
+        self.position = user_data.get('position')
+        self.contract_work_date = user_data.get('contract_work_date')
+
         # Role permissions (backward compatible boolean properties)
         self.can_add_invoices = user_data.get('can_add_invoices', False)
         self.can_edit_invoices = user_data.get('can_edit_invoices', False)

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useMemo, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTabParam } from '@/hooks/useTabParam'
 import {
   FileText,
@@ -16,11 +16,26 @@ import {
   ChevronLeft,
   ChevronRight,
   BarChart3,
+  Fingerprint,
+  Clock,
+  LogIn,
+  LogOut,
+  Users,
+  Pencil,
+  Calendar,
+  Briefcase,
+  Hash,
+  Cake,
+  PartyPopper,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -32,15 +47,18 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
-import { profileApi } from '@/api/profile'
+import { profileApi, type ProfileUpdatePayload } from '@/api/profile'
 import { cn, usePersistedState } from '@/lib/utils'
 import type { ProfileInvoice, ProfileActivity, ProfileBonus } from '@/types/profile'
+import type { BioStarDayHistory, BioStarPunchLog, BioStarDailySummary, BioStarRangeSummary } from '@/types/biostar'
 
-type Tab = 'invoices' | 'hr-events' | 'activity'
+type Tab = 'invoices' | 'hr-events' | 'pontaje' | 'team-pontaje' | 'activity'
 
 const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'invoices', label: 'My Invoices', icon: FileText },
   { key: 'hr-events', label: 'HR Events', icon: Gift },
+  { key: 'pontaje', label: 'Pontaje', icon: Fingerprint },
+  { key: 'team-pontaje', label: 'Team Pontaje', icon: Users },
   { key: 'activity', label: 'Activity Log', icon: Activity },
 ]
 
@@ -48,6 +66,9 @@ export default function Profile() {
   const isMobile = useIsMobile()
   const [activeTab, setActiveTab] = useTabParam<Tab>('invoices')
   const [showStats, setShowStats] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+
+  const queryClient = useQueryClient()
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ['profile', 'summary'],
@@ -71,64 +92,70 @@ export default function Profile() {
       {/* User Info Card */}
       <Card>
         <CardContent className="p-6">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-            {/* Avatar */}
-            {isLoading ? (
-              <Skeleton className="h-16 w-16 rounded-full shrink-0" />
-            ) : (
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xl font-bold">
-                {user?.name
-                  ?.split(' ')
-                  .map((n) => n[0])
-                  .join('')
-                  .slice(0, 2)
-                  .toUpperCase() || '?'}
-              </div>
-            )}
-
-            {/* User Details */}
-            <div className="flex-1 min-w-0">
-              {isLoading ? (
+          {isLoading ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-4">
+                <Skeleton className="h-16 w-16 rounded-full shrink-0" />
                 <div className="space-y-2">
                   <Skeleton className="h-6 w-48" />
                   <Skeleton className="h-4 w-64" />
                 </div>
-              ) : (
-                <>
+              </div>
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : (
+            <>
+              {/* Top row: avatar + name + edit */}
+              <div className="flex items-center gap-4 mb-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-lg font-bold">
+                  {user?.name
+                    ?.split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase() || '?'}
+                </div>
+                <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-xl font-semibold">{user?.name}</h2>
                     {user?.role && <StatusBadge status={user.role} />}
+                    {user?.position && <Badge variant="outline">{user.position}</Badge>}
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1.5">
-                      <Mail className="h-3.5 w-3.5" />
-                      {user?.email}
-                    </span>
-                    {user?.phone && (
-                      <span className="flex items-center gap-1.5">
-                        <Phone className="h-3.5 w-3.5" />
-                        {user.phone}
-                      </span>
-                    )}
-                    {user?.department && (
-                      <span className="flex items-center gap-1.5">
-                        <Building2 className="h-3.5 w-3.5" />
-                        {user.department}
-                      </span>
-                    )}
-                    {user?.company && (
-                      <span className="flex items-center gap-1.5">
-                        <Shield className="h-3.5 w-3.5" />
-                        {user.company}
-                      </span>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                  <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                  Edit
+                </Button>
+              </div>
+
+              {/* Info grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm border-t pt-4">
+                <InfoField icon={Mail} label="Email" value={user?.email} />
+                <InfoField icon={Phone} label="Phone" value={user?.phone} />
+                <InfoField icon={Building2} label="Department" value={user?.department} />
+                <InfoField icon={Shield} label="Company" value={user?.company} />
+                <InfoField icon={Hash} label="CNP" value={user?.cnp} />
+                <InfoField icon={Calendar} label="Birthdate" value={user?.birthdate ? new Date(user.birthdate).toLocaleDateString('ro-RO') : null} />
+                <InfoField icon={Briefcase} label="Position" value={user?.position} />
+                <InfoField icon={Calendar} label="Contract Start" value={user?.contract_work_date ? new Date(user.contract_work_date).toLocaleDateString('ro-RO') : null} />
+              </div>
+
+              {/* Anniversary banners */}
+              <AnniversaryBanners birthdate={user?.birthdate} contractDate={user?.contract_work_date} name={user?.name ?? ''} />
+            </>
+          )}
         </CardContent>
       </Card>
+
+      {/* Edit Profile Dialog */}
+      {user && (
+        <EditProfileDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          user={user}
+          onSaved={() => queryClient.invalidateQueries({ queryKey: ['profile', 'summary'] })}
+        />
+      )}
 
       {/* Stats Row */}
       <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
@@ -198,7 +225,940 @@ export default function Profile() {
       {/* Tab Content */}
       {activeTab === 'invoices' && <InvoicesPanel />}
       {activeTab === 'hr-events' && <HrEventsPanel />}
+      {activeTab === 'pontaje' && <PontajePanel />}
+      {activeTab === 'team-pontaje' && <TeamPontajePanel />}
       {activeTab === 'activity' && <ActivityPanel />}
+    </div>
+  )
+}
+
+// ─── Anniversary Banners ──────────────────────────────────────────
+
+function isTodayAnniversary(dateStr: string | null | undefined): { match: boolean; years: number } {
+  if (!dateStr) return { match: false, years: 0 }
+  const d = new Date(dateStr)
+  const now = new Date()
+  if (d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+    return { match: true, years: now.getFullYear() - d.getFullYear() }
+  }
+  return { match: false, years: 0 }
+}
+
+function AnniversaryBanners({ birthdate, contractDate, name }: { birthdate: string | null | undefined; contractDate: string | null | undefined; name: string }) {
+  const bday = isTodayAnniversary(birthdate)
+  const workAnniv = isTodayAnniversary(contractDate)
+  const firstName = name.split(' ')[0] || name
+
+  if (!bday.match && !workAnniv.match) return null
+
+  return (
+    <div className="mt-4 space-y-2">
+      {bday.match && (
+        <div className="flex items-center gap-3 rounded-lg border border-pink-200 bg-pink-50 dark:border-pink-900 dark:bg-pink-950/30 px-4 py-3">
+          <Cake className="h-5 w-5 text-pink-500 shrink-0" />
+          <span className="text-sm">
+            <span className="font-semibold">Happy Birthday, {firstName}!</span>
+            {' '}{bday.years > 0 ? `Wishing you an amazing ${bday.years}th celebration!` : 'Have a wonderful day!'}
+          </span>
+          <PartyPopper className="h-5 w-5 text-pink-500 shrink-0" />
+        </div>
+      )}
+      {workAnniv.match && workAnniv.years > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30 px-4 py-3">
+          <Briefcase className="h-5 w-5 text-blue-500 shrink-0" />
+          <span className="text-sm">
+            <span className="font-semibold">Happy {workAnniv.years}-year Work Anniversary, {firstName}!</span>
+            {' '}Thank you for your dedication and hard work!
+          </span>
+          <PartyPopper className="h-5 w-5 text-blue-500 shrink-0" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Info Field ───────────────────────────────────────────────────
+
+function InfoField({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string | null | undefined }) {
+  return (
+    <div className="flex items-start gap-2">
+      <Icon className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
+      <div className="min-w-0">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className={cn('truncate', value ? 'text-foreground' : 'text-muted-foreground/50')}>{value || '—'}</div>
+      </div>
+    </div>
+  )
+}
+
+// ─── CNP → Birthdate extraction ───────────────────────────────────
+
+function birthdateFromCnp(cnp: string): string | null {
+  if (cnp.length !== 13 || !/^\d{13}$/.test(cnp)) return null
+  const s = parseInt(cnp[0], 10)
+  const yy = parseInt(cnp.substring(1, 3), 10)
+  const mm = cnp.substring(3, 5)
+  const dd = cnp.substring(5, 7)
+
+  let century: number
+  if (s === 1 || s === 2) century = 1900
+  else if (s === 3 || s === 4) century = 1800
+  else if (s === 5 || s === 6) century = 2000
+  else return null // 7/8 = foreign residents, 9 = special — skip auto-fill
+
+  const year = century + yy
+  const dateStr = `${year}-${mm}-${dd}`
+  // Validate it's a real date
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime()) || d.getMonth() + 1 !== parseInt(mm, 10)) return null
+  return dateStr
+}
+
+// ─── Edit Profile Dialog ──────────────────────────────────────────
+
+function EditProfileDialog({
+  open,
+  onOpenChange,
+  user,
+  onSaved,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  user: NonNullable<ReturnType<typeof profileApi.getSummary> extends Promise<infer T> ? T : never>['user']
+  onSaved: () => void
+}) {
+  const [form, setForm] = useState<ProfileUpdatePayload>({
+    phone: user.phone || '',
+    cnp: user.cnp || '',
+    birthdate: user.birthdate || '',
+    position: user.position || '',
+    contract_work_date: user.contract_work_date || '',
+  })
+
+  // Reset form when dialog opens with latest user data
+  useEffect(() => {
+    if (open) {
+      setForm({
+        phone: user.phone || '',
+        cnp: user.cnp || '',
+        birthdate: user.birthdate || '',
+        position: user.position || '',
+        contract_work_date: user.contract_work_date || '',
+      })
+    }
+  }, [open, user])
+
+  const mutation = useMutation({
+    mutationFn: (data: ProfileUpdatePayload) => profileApi.updateProfile(data),
+    onSuccess: () => {
+      onSaved()
+      onOpenChange(false)
+    },
+  })
+
+  const handleSave = () => {
+    mutation.mutate(form)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Profile</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-2">
+          <div className="grid gap-1.5">
+            <Label htmlFor="edit-phone">Phone</Label>
+            <Input
+              id="edit-phone"
+              value={form.phone}
+              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+              placeholder="+40..."
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="edit-cnp">CNP</Label>
+            <Input
+              id="edit-cnp"
+              value={form.cnp}
+              onChange={(e) => {
+                const cnp = e.target.value
+                setForm((f) => {
+                  const next = { ...f, cnp }
+                  const extracted = birthdateFromCnp(cnp)
+                  if (extracted) next.birthdate = extracted
+                  return next
+                })
+              }}
+              placeholder="1234567890123"
+              maxLength={13}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="edit-position">Position</Label>
+            <Input
+              id="edit-position"
+              value={form.position}
+              onChange={(e) => setForm((f) => ({ ...f, position: e.target.value }))}
+              placeholder="e.g. Software Engineer"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="edit-birthdate">Birthdate</Label>
+              <Input
+                id="edit-birthdate"
+                type="date"
+                value={form.birthdate}
+                onChange={(e) => setForm((f) => ({ ...f, birthdate: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="edit-contract">Contract Start Date</Label>
+              <Input
+                id="edit-contract"
+                type="date"
+                value={form.contract_work_date}
+                onChange={(e) => setForm((f) => ({ ...f, contract_work_date: e.target.value }))}
+              />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSave} disabled={mutation.isPending}>
+            {mutation.isPending ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── Pontaje Helpers ───────────────────────────────────────────────
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function daysAgo(n: number) {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return d.toISOString().slice(0, 10)
+}
+
+function fmtTime(dt: string | null) {
+  if (!dt) return '-'
+  return new Date(dt).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
+}
+
+function fmtDuration(seconds: number | null) {
+  if (!seconds || seconds <= 0) return '-'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h === 0) return `${m}m`
+  return `${h}h ${m}m`
+}
+
+function fmtDate(dateStr: string) {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+function netSec(durationSec: number | null, lunchMin: number) {
+  if (!durationSec || durationSec <= 0) return 0
+  const lunchSec = lunchMin * 60
+  return durationSec > lunchSec ? durationSec - lunchSec : durationSec
+}
+
+// ─── Pontaje Panel (My Attendance) ─────────────────────────────────
+
+function PontajePanel() {
+  const today = todayStr()
+  const [chartView, setChartView] = useState<'week' | 'month' | '3m'>('month')
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['profile', 'pontaje'],
+    queryFn: () => profileApi.getPontaje(),
+  })
+
+  const mapped = data?.mapped ?? false
+  const employee = data?.employee
+  const history: BioStarDayHistory[] = data?.history ?? []
+  const todayPunches: BioStarPunchLog[] = data?.today_punches ?? []
+
+  const stats = useMemo(() => {
+    if (!history.length) return { daysPresent: 0, avgHours: 0, totalHours: 0, maxHours: 0 }
+    const nets = history.map((d) => netSec(d.duration_seconds, d.lunch_break_minutes ?? 60))
+    const totalSec = nets.reduce((acc, s) => acc + s, 0)
+    const maxSec = Math.max(...nets)
+    return {
+      daysPresent: history.length,
+      avgHours: totalSec / history.length / 3600,
+      totalHours: totalSec / 3600,
+      maxHours: maxSec / 3600,
+    }
+  }, [history])
+
+  const chartDays = chartView === 'week' ? 7 : chartView === 'month' ? 30 : 90
+  const dailyChartData = useMemo(() => {
+    const result: { date: string; label: string; hours: number; expected: number }[] = []
+    for (let i = chartDays - 1; i >= 0; i--) {
+      const dateStr = daysAgo(i)
+      const d = new Date(dateStr + 'T00:00:00')
+      const dow = d.getDay()
+      if (dow === 0 || dow === 6) continue
+      const found = history.find((h) => h.date === dateStr)
+      const net = found ? netSec(found.duration_seconds, found.lunch_break_minutes ?? 60) : 0
+      const expected = found?.working_hours ?? employee?.working_hours ?? 8
+      result.push({
+        date: dateStr,
+        label: chartView === 'week'
+          ? d.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric' })
+          : d.toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' }),
+        hours: net / 3600,
+        expected: Number(expected),
+      })
+    }
+    return result
+  }, [history, chartDays, chartView, employee?.working_hours])
+
+  const last7 = useMemo(() => {
+    const days: BioStarDayHistory[] = []
+    for (let i = 0; i < 7; i++) {
+      const dateStr = daysAgo(i)
+      const found = history.find((h) => h.date === dateStr)
+      if (found) {
+        days.push(found)
+      } else {
+        days.push({ date: dateStr, first_punch: '', last_punch: '', total_punches: 0, duration_seconds: null })
+      }
+    }
+    return days
+  }, [history])
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <div className="space-y-3">
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-40 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (!mapped) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <EmptyState
+            title="No Biostar mapping"
+            description="Your account is not linked to a Biostar employee. Contact your administrator to set up the mapping."
+          />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard title="Days Present (90d)" value={stats.daysPresent} icon={<Fingerprint className="h-4 w-4" />} />
+        <StatCard title="Avg Hours/Day" value={stats.avgHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
+        <StatCard title="Total Hours (90d)" value={stats.totalHours.toFixed(0)} icon={<Clock className="h-4 w-4" />} />
+        <StatCard title="Max Hours" value={stats.maxHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
+      </div>
+
+      {/* Daily chart */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Hours per Day</CardTitle>
+            <div className="flex gap-1">
+              {([['week', 'Week'], ['month', 'Month'], ['3m', '3 Months']] as const).map(([key, label]) => (
+                <Button
+                  key={key}
+                  variant={chartView === key ? 'default' : 'outline'}
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setChartView(key)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {dailyChartData.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No attendance data in this period.</p>
+          ) : (
+            <DailyChart data={dailyChartData} compact={chartView !== 'week'} />
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Last 7 days */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Last 7 Days</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Day</TableHead>
+                  <TableHead className="text-center">Check In</TableHead>
+                  <TableHead className="text-center">Check Out</TableHead>
+                  <TableHead className="text-center">Duration</TableHead>
+                  <TableHead className="text-center">Punches</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {last7.map((day) => {
+                  const isToday = day.date === today
+                  const lunch = day.lunch_break_minutes ?? 60
+                  const net = netSec(day.duration_seconds, lunch)
+                  const netH = net / 3600
+                  const expectedH = day.working_hours ?? 8
+                  const isShort = netH > 0 && netH < expectedH
+                  const isAbsent = day.total_punches === 0
+                  return (
+                    <TableRow key={day.date} className={cn(isToday && 'bg-muted/30')}>
+                      <TableCell className="font-medium">
+                        {fmtDate(day.date)}
+                        {isToday && <Badge variant="secondary" className="ml-2 text-[10px]">Today</Badge>}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {isAbsent ? (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-sm">
+                            <LogIn className="h-3 w-3 text-green-600" />
+                            {fmtTime(day.first_punch)}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {isAbsent ? (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        ) : day.total_punches === 1 ? (
+                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-sm">
+                            <LogOut className="h-3 w-3 text-red-500" />
+                            {fmtTime(day.last_punch)}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {isAbsent ? (
+                          <Badge variant="outline" className="text-xs text-muted-foreground">Absent</Badge>
+                        ) : day.total_punches === 1 ? (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        ) : (
+                          <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
+                            {fmtDuration(net)}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {isAbsent ? (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">{day.total_punches}</Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Today's punch timeline */}
+      {todayPunches.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Today's Punches ({todayPunches.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="relative ml-4 border-l-2 border-muted-foreground/20 pl-4 space-y-2">
+              {todayPunches.map((p, i) => (
+                <PunchLine key={p.id} punch={p} isFirst={i === 0} isLast={i === todayPunches.length - 1} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+// ─── Team Pontaje Panel ────────────────────────────────────────────
+
+function TeamPontajePanel() {
+  const isMobile = useIsMobile()
+  const [search, setSearch] = useState('')
+  const [mode, setMode] = useState<'daily' | 'range'>('daily')
+  const [date, setDate] = useState(todayStr())
+  const [range, setRange] = useState<'week' | 'month' | '3m'>('month')
+
+  const rangeStart = range === 'week' ? daysAgo(7) : range === 'month' ? daysAgo(30) : daysAgo(90)
+  const rangeEnd = todayStr()
+
+  const queryParams = mode === 'daily'
+    ? { mode: 'daily' as const, date }
+    : { mode: 'range' as const, start: rangeStart, end: rangeEnd }
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['profile', 'team-pontaje', queryParams],
+    queryFn: () => profileApi.getTeamPontaje(queryParams),
+  })
+
+  const isManager = data?.is_manager ?? false
+  const summary = data?.summary ?? []
+
+  const filtered = useMemo(() => {
+    if (!search) return summary
+    const q = search.toLowerCase()
+    return summary.filter((r) => {
+      const row = r as BioStarDailySummary & BioStarRangeSummary
+      return (
+        row.name?.toLowerCase().includes(q) ||
+        row.email?.toLowerCase().includes(q) ||
+        row.mapped_jarvis_user_name?.toLowerCase().includes(q)
+      )
+    })
+  }, [summary, search])
+
+  const prevDay = () => {
+    const d = new Date(date + 'T00:00:00')
+    d.setDate(d.getDate() - 1)
+    setDate(d.toISOString().slice(0, 10))
+  }
+  const nextDay = () => {
+    const d = new Date(date + 'T00:00:00')
+    d.setDate(d.getDate() + 1)
+    if (d <= new Date()) setDate(d.toISOString().slice(0, 10))
+  }
+  const isToday = date === todayStr()
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <div className="space-y-3">
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (!isManager) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <EmptyState
+            title="Not a manager"
+            description="You don't have team members assigned to you in the organigram."
+          />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle className="text-base">
+            Team Attendance
+            <span className="ml-2 text-sm font-normal text-muted-foreground">({filtered.length})</span>
+          </CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Mode toggle */}
+            <div className="flex gap-1">
+              <Button variant={mode === 'daily' ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setMode('daily')}>
+                Today
+              </Button>
+              <Button variant={mode === 'range' ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setMode('range')}>
+                Period
+              </Button>
+            </div>
+            {/* Date nav for daily mode */}
+            {mode === 'daily' && (
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={prevDay}>
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <span className="text-xs font-medium min-w-[90px] text-center">
+                  {new Date(date + 'T00:00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' })}
+                </span>
+                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={nextDay} disabled={isToday}>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+            {/* Range selector for range mode */}
+            {mode === 'range' && (
+              <div className="flex gap-1">
+                {([['week', 'Week'], ['month', 'Month'], ['3m', '3 Months']] as const).map(([key, label]) => (
+                  <Button
+                    key={key}
+                    variant={range === key ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setRange(key)}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            )}
+            <SearchInput
+              placeholder="Search team..."
+              value={search}
+              onChange={setSearch}
+              className="w-full sm:w-48"
+            />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {filtered.length === 0 ? (
+          <EmptyState title="No team data" description={mode === 'daily' ? 'No attendance data for your team members on this day.' : 'No attendance data for your team members in this period.'} />
+        ) : mode === 'daily' ? (
+          <TeamDailyTable data={filtered as BioStarDailySummary[]} isMobile={isMobile} />
+        ) : (
+          <TeamRangeTable data={filtered as BioStarRangeSummary[]} isMobile={isMobile} />
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── Team Daily Table ──
+
+function TeamDailyTable({ data, isMobile }: { data: BioStarDailySummary[]; isMobile: boolean }) {
+  if (isMobile) {
+    return (
+      <MobileCardList
+        data={data}
+        fields={[
+          { key: 'name', label: 'Name', isPrimary: true, render: (r) => r.mapped_jarvis_user_name || r.name },
+          { key: 'checkin', label: 'Check In', isSecondary: true, render: (r) => r.total_punches > 0 ? fmtTime(r.first_punch) : 'Absent' },
+          { key: 'checkout', label: 'Check Out', render: (r) => r.total_punches > 1 ? fmtTime(r.last_punch) : '-' },
+          { key: 'duration', label: 'Duration', render: (r) => {
+            const net = netSec(r.duration_seconds, r.lunch_break_minutes ?? 60)
+            return net > 0 ? fmtDuration(net) : '-'
+          }},
+          { key: 'punches', label: 'Punches', expandOnly: true, render: (r) => String(r.total_punches) },
+          { key: 'schedule', label: 'Schedule', expandOnly: true, render: (r) => `${r.schedule_start || '08:00'} - ${r.schedule_end || '17:00'}` },
+        ] satisfies MobileCardField<BioStarDailySummary>[]}
+        getRowId={(r) => Number(r.biostar_user_id) || 0}
+      />
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Employee</TableHead>
+            <TableHead>Group</TableHead>
+            <TableHead className="text-center">Check In</TableHead>
+            <TableHead className="text-center">Check Out</TableHead>
+            <TableHead className="text-center">Duration</TableHead>
+            <TableHead className="text-center">Punches</TableHead>
+            <TableHead className="text-center">Schedule</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data.map((r) => {
+            const lunch = r.lunch_break_minutes ?? 60
+            const net = netSec(r.duration_seconds, lunch)
+            const netH = net / 3600
+            const expectedH = Number(r.working_hours ?? 8)
+            const isShort = netH > 0 && netH < expectedH
+            const isAbsent = r.total_punches === 0
+
+            return (
+              <TableRow key={r.biostar_user_id}>
+                <TableCell className="font-medium">{r.mapped_jarvis_user_name || r.name}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.user_group_name || '-'}</TableCell>
+                <TableCell className="text-center">
+                  {isAbsent ? (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-sm">
+                      <LogIn className="h-3 w-3 text-green-600" />
+                      {fmtTime(r.first_punch)}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="text-center">
+                  {isAbsent ? (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  ) : r.total_punches === 1 ? (
+                    <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-sm">
+                      <LogOut className="h-3 w-3 text-red-500" />
+                      {fmtTime(r.last_punch)}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="text-center">
+                  {isAbsent ? (
+                    <Badge variant="outline" className="text-xs text-muted-foreground">Absent</Badge>
+                  ) : r.total_punches === 1 ? (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  ) : (
+                    <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
+                      {fmtDuration(net)}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="text-center">
+                  {isAbsent ? (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  ) : (
+                    <Badge variant="secondary" className="text-xs">{r.total_punches}</Badge>
+                  )}
+                </TableCell>
+                <TableCell className="text-center text-sm text-muted-foreground">
+                  {r.schedule_start || '08:00'} - {r.schedule_end || '17:00'}
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+// ── Team Range Table ──
+
+function TeamRangeTable({ data, isMobile }: { data: BioStarRangeSummary[]; isMobile: boolean }) {
+  if (isMobile) {
+    return (
+      <MobileCardList
+        data={data}
+        fields={[
+          { key: 'name', label: 'Name', isPrimary: true, render: (r) => r.mapped_jarvis_user_name || r.name },
+          { key: 'days', label: 'Days Present', isSecondary: true, render: (r) => `${r.days_present} days` },
+          { key: 'avg', label: 'Avg Hours/Day', render: (r) => {
+            const lunch = r.lunch_break_minutes ?? 60
+            const avgNet = r.avg_duration_seconds ? netSec(r.avg_duration_seconds, lunch * 60) / 3600 : 0
+            return avgNet > 0 ? `${avgNet.toFixed(1)}h` : '-'
+          }},
+          { key: 'total', label: 'Total Hours', render: (r) => {
+            const lunch = r.lunch_break_minutes ?? 60
+            const totalNet = r.total_duration_seconds
+              ? (r.total_duration_seconds - r.days_present * lunch * 60) / 3600
+              : 0
+            return totalNet > 0 ? `${totalNet.toFixed(0)}h` : '-'
+          }},
+          { key: 'group', label: 'Group', expandOnly: true, render: (r) => r.user_group_name || '-' },
+          { key: 'schedule', label: 'Schedule', expandOnly: true, render: (r) => `${r.schedule_start || '08:00'} - ${r.schedule_end || '17:00'}` },
+        ] satisfies MobileCardField<BioStarRangeSummary>[]}
+        getRowId={(r) => Number(r.biostar_user_id) || 0}
+      />
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Employee</TableHead>
+            <TableHead>Group</TableHead>
+            <TableHead className="text-center">Days Present</TableHead>
+            <TableHead className="text-center">Avg Hours/Day</TableHead>
+            <TableHead className="text-center">Total Hours</TableHead>
+            <TableHead className="text-center">Schedule</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data.map((r) => {
+            const lunch = r.lunch_break_minutes ?? 60
+            const avgNet = r.avg_duration_seconds
+              ? netSec(r.avg_duration_seconds, lunch * 60) / 3600
+              : 0
+            const totalNet = r.total_duration_seconds
+              ? (r.total_duration_seconds - r.days_present * lunch * 60) / 3600
+              : 0
+            const expectedH = Number(r.working_hours ?? 8)
+            const isShort = avgNet > 0 && avgNet < expectedH
+
+            return (
+              <TableRow key={r.biostar_user_id}>
+                <TableCell className="font-medium">{r.mapped_jarvis_user_name || r.name}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.user_group_name || '-'}</TableCell>
+                <TableCell className="text-center">
+                  <Badge variant="secondary" className="text-xs">{r.days_present}</Badge>
+                </TableCell>
+                <TableCell className="text-center">
+                  <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
+                    {avgNet > 0 ? `${avgNet.toFixed(1)}h` : '-'}
+                  </span>
+                </TableCell>
+                <TableCell className="text-center text-sm">{totalNet > 0 ? `${totalNet.toFixed(0)}h` : '-'}</TableCell>
+                <TableCell className="text-center text-sm text-muted-foreground">
+                  {r.schedule_start || '08:00'} - {r.schedule_end || '17:00'}
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+// ─── Daily Bar Chart (SVG) ─────────────────────────────────────────
+
+function DailyChart({ data, compact }: { data: { date: string; label: string; hours: number; expected: number }[]; compact: boolean }) {
+  const maxHours = Math.max(...data.map((d) => d.hours), ...data.map((d) => d.expected), 1)
+  const w = Math.max(700, data.length * (compact ? 14 : 50))
+  const h = 180
+  const pad = { t: 16, b: compact ? 30 : 28, l: 32, r: 10 }
+  const iw = w - pad.l - pad.r
+  const ih = h - pad.t - pad.b
+
+  const barWidth = Math.min(iw / data.length - (compact ? 2 : 4), compact ? 10 : 32)
+  const gap = (iw - barWidth * data.length) / (data.length + 1)
+
+  const yMax = Math.ceil(maxHours + 1)
+  const ySteps = [0, Math.floor(yMax / 2), yMax]
+  const expectedLine = data[0]?.expected ?? 8
+
+  return (
+    <div className="overflow-x-auto">
+      <svg width={w} viewBox={`0 0 ${w} ${h}`} className="text-foreground" style={{ minWidth: w }}>
+        {ySteps.map((v, i) => {
+          const y = pad.t + ih - (v / yMax) * ih
+          return (
+            <g key={i}>
+              <line x1={pad.l} x2={w - pad.r} y1={y} y2={y} stroke="currentColor" strokeOpacity={0.08} />
+              <text x={pad.l - 4} y={y + 3} textAnchor="end" className="fill-muted-foreground" fontSize={9}>
+                {v}h
+              </text>
+            </g>
+          )
+        })}
+        {expectedLine > 0 && (
+          <line
+            x1={pad.l}
+            x2={w - pad.r}
+            y1={pad.t + ih - (expectedLine / yMax) * ih}
+            y2={pad.t + ih - (expectedLine / yMax) * ih}
+            stroke="hsl(142, 76%, 36%)"
+            strokeOpacity={0.3}
+            strokeDasharray="4 3"
+          />
+        )}
+        {data.map((d, i) => {
+          const x = pad.l + gap + i * (barWidth + gap)
+          const barH = (d.hours / yMax) * ih
+          const y = pad.t + ih - barH
+          const color = d.hours === 0
+            ? 'hsl(0, 0%, 80%)'
+            : d.hours >= d.expected
+              ? 'hsl(142, 76%, 36%)'
+              : d.hours >= d.expected * 0.75
+                ? 'hsl(38, 92%, 50%)'
+                : 'hsl(0, 72%, 51%)'
+
+          return (
+            <g key={i}>
+              {d.hours === 0 && (
+                <rect x={x} y={pad.t + ih - 2} width={barWidth} height={2} rx={1} fill="currentColor" fillOpacity={0.1} />
+              )}
+              {d.hours > 0 && (
+                <rect x={x} y={y} width={barWidth} height={Math.max(barH, 1)} rx={2} fill={color} fillOpacity={0.8} />
+              )}
+              {(!compact || d.hours > 0) && (
+                <text
+                  x={x + barWidth / 2}
+                  y={d.hours > 0 ? y - 3 : pad.t + ih - 6}
+                  textAnchor="middle"
+                  className="fill-muted-foreground"
+                  fontSize={compact ? 7 : 9}
+                >
+                  {d.hours > 0 ? d.hours.toFixed(1) : ''}
+                </text>
+              )}
+              <text
+                x={x + barWidth / 2}
+                y={h - (compact ? 4 : 4)}
+                textAnchor="middle"
+                className="fill-muted-foreground"
+                fontSize={compact ? 6.5 : 8}
+                transform={compact ? `rotate(-45, ${x + barWidth / 2}, ${h - 4})` : undefined}
+              >
+                {d.label}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
+// ─── Punch Timeline Line ───────────────────────────────────────────
+
+function PunchLine({ punch, isFirst, isLast }: { punch: BioStarPunchLog; isFirst: boolean; isLast: boolean }) {
+  const time = new Date(punch.event_datetime).toLocaleTimeString('ro-RO', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+
+  const dirIcon = punch.direction === 'IN'
+    ? <LogIn className="h-3.5 w-3.5 text-green-600" />
+    : punch.direction === 'OUT'
+      ? <LogOut className="h-3.5 w-3.5 text-red-500" />
+      : <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+
+  return (
+    <div className="relative flex items-center gap-3">
+      <div className={cn(
+        'absolute -left-[22px] top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full border-2 border-background',
+        isFirst ? 'bg-green-500' : isLast ? 'bg-red-500' : 'bg-muted-foreground/40',
+      )} />
+      <span className="font-mono font-medium text-sm w-16">{time}</span>
+      <span className="flex items-center gap-1">
+        {dirIcon}
+        <span className={cn(
+          'text-xs font-medium',
+          punch.direction === 'IN' ? 'text-green-600' : punch.direction === 'OUT' ? 'text-red-500' : 'text-muted-foreground',
+        )}>
+          {punch.direction || 'ACCESS'}
+        </span>
+      </span>
+      {punch.device_name && (
+        <span className="text-xs text-muted-foreground truncate max-w-[200px]" title={punch.device_name}>
+          {punch.device_name}
+        </span>
+      )}
     </div>
   )
 }

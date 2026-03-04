@@ -8,6 +8,10 @@ export interface ProfileUser {
   brand: string | null
   department: string | null
   subdepartment: string | null
+  cnp: string | null
+  birthdate: string | null
+  position: string | null
+  contract_work_date: string | null
 }
 
 export interface ProfileSummary {
@@ -80,4 +84,32 @@ export interface ProfileBonus {
   brand: string | null
   created_at: string
   updated_at: string | null
+}
+
+export interface ProfilePontajeEmployee {
+  biostar_user_id: string
+  name: string
+  lunch_break_minutes: number
+  working_hours: number
+  schedule_start: string | null
+  schedule_end: string | null
+  user_group_name: string | null
+}
+
+export interface ProfilePontajeResponse {
+  success: boolean
+  mapped: boolean
+  employee: ProfilePontajeEmployee | null
+  history: import('@/types/biostar').BioStarDayHistory[]
+  today_punches: import('@/types/biostar').BioStarPunchLog[]
+}
+
+export interface ProfileTeamPontajeResponse {
+  success: boolean
+  is_manager: boolean
+  mode: 'daily' | 'range'
+  summary: import('@/types/biostar').BioStarDailySummary[] | import('@/types/biostar').BioStarRangeSummary[]
+  date?: string
+  start?: string
+  end?: string
 }

@@ -179,7 +179,9 @@ class UserRepository(BaseRepository):
     def update(self, user_id: int, name: str = None, email: str = None,
                phone: str = None, role_id: int = None, is_active: bool = None,
                company: str = None, brand: str = None, department: str = None,
-               subdepartment: str = None, notify_on_allocation: bool = None) -> bool:
+               subdepartment: str = None, notify_on_allocation: bool = None,
+               cnp: str = None, birthdate=None, position: str = None,
+               contract_work_date=None) -> bool:
         """Update a user. Returns True if updated."""
         updates = []
         params = []
@@ -213,6 +215,18 @@ class UserRepository(BaseRepository):
         if notify_on_allocation is not None:
             updates.append('notify_on_allocation = %s')
             params.append(notify_on_allocation)
+        if cnp is not None:
+            updates.append('cnp = %s')
+            params.append(cnp)
+        if birthdate is not None:
+            updates.append('birthdate = %s')
+            params.append(birthdate)
+        if position is not None:
+            updates.append('position = %s')
+            params.append(position)
+        if contract_work_date is not None:
+            updates.append('contract_work_date = %s')
+            params.append(contract_work_date)
         if not updates:
             return False
         updates.append('updated_at = CURRENT_TIMESTAMP')

@@ -1,8 +1,18 @@
 import { api } from './client'
-import type { ProfileSummary, ProfileInvoice, ProfileActivity, ProfileBonus } from '@/types/profile'
+import type { ProfileSummary, ProfileInvoice, ProfileActivity, ProfileBonus, ProfilePontajeResponse, ProfileTeamPontajeResponse } from '@/types/profile'
+
+export interface ProfileUpdatePayload {
+  phone?: string
+  cnp?: string
+  birthdate?: string
+  position?: string
+  contract_work_date?: string
+}
 
 export const profileApi = {
   getSummary: () => api.get<ProfileSummary>('/profile/api/summary'),
+
+  updateProfile: (data: ProfileUpdatePayload) => api.put<{ success: boolean }>('/profile/api/update', data),
 
   getInvoices: (params?: { status?: string; start_date?: string; end_date?: string; search?: string; page?: number; per_page?: number }) => {
     const sp = new URLSearchParams()
@@ -39,6 +49,28 @@ export const profileApi = {
     const qs = sp.toString()
     return api.get<{ events: ProfileActivity[]; total: number; page: number; per_page: number }>(
       `/profile/api/activity${qs ? `?${qs}` : ''}`,
+    )
+  },
+
+  getPontaje: (params?: { start?: string; end?: string }) => {
+    const sp = new URLSearchParams()
+    if (params?.start) sp.set('start', params.start)
+    if (params?.end) sp.set('end', params.end)
+    const qs = sp.toString()
+    return api.get<ProfilePontajeResponse>(
+      `/profile/api/pontaje${qs ? `?${qs}` : ''}`,
+    )
+  },
+
+  getTeamPontaje: (params?: { mode?: 'daily' | 'range'; date?: string; start?: string; end?: string }) => {
+    const sp = new URLSearchParams()
+    if (params?.mode) sp.set('mode', params.mode)
+    if (params?.date) sp.set('date', params.date)
+    if (params?.start) sp.set('start', params.start)
+    if (params?.end) sp.set('end', params.end)
+    const qs = sp.toString()
+    return api.get<ProfileTeamPontajeResponse>(
+      `/profile/api/team-pontaje${qs ? `?${qs}` : ''}`,
     )
   },
 }
