@@ -95,11 +95,6 @@ export default function Dms() {
   const companyId = filters.company_id || user?.company_id || undefined
 
   // Queries
-  const { data: statsData, isLoading: statsLoading } = useQuery({
-    queryKey: ['dms-stats', companyId],
-    queryFn: () => dmsApi.getStats(companyId),
-  })
-
   const { data: categoriesData } = useQuery({
     queryKey: ['dms-categories', companyId],
     queryFn: () => dmsApi.listCategories(companyId),
@@ -174,7 +169,7 @@ export default function Dms() {
   const categories: DmsCategory[] = categoriesData?.categories || []
   const documents: DmsDocument[] = docsData?.documents || []
   const total = docsData?.total || 0
-  const stats = statsData?.by_status
+
 
   // Bulk entity tags for visible documents
   const docIds = useMemo(() => documents.map((d) => d.id), [documents])
@@ -484,10 +479,10 @@ export default function Dms() {
 
       {/* Stats — toggle on mobile, always on desktop */}
       <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
-        <StatCard title="Total" value={stats?.total ?? 0} icon={<FolderOpen className="h-4 w-4" />} isLoading={statsLoading} />
-        <StatCard title="Draft" value={stats?.draft ?? 0} icon={<Edit2 className="h-4 w-4" />} isLoading={statsLoading} />
-        <StatCard title="Active" value={stats?.active ?? 0} icon={<FileText className="h-4 w-4" />} isLoading={statsLoading} />
-        <StatCard title="Archived" value={stats?.archived ?? 0} icon={<Trash2 className="h-4 w-4" />} isLoading={statsLoading} />
+        <StatCard title="Total" value={total} icon={<FolderOpen className="h-4 w-4" />} isLoading={docsLoading} />
+        <StatCard title="Draft" value={documents.filter(d => d.status === 'draft').length} icon={<Edit2 className="h-4 w-4" />} isLoading={docsLoading} />
+        <StatCard title="Active" value={documents.filter(d => d.status === 'active').length} icon={<FileText className="h-4 w-4" />} isLoading={docsLoading} />
+        <StatCard title="Archived" value={documents.filter(d => d.status === 'archived').length} icon={<Trash2 className="h-4 w-4" />} isLoading={docsLoading} />
       </div>
 
           {/* Batch Action Bar */}

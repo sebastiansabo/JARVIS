@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Calculator, FolderOpen, Bot, MoreHorizontal } from 'lucide-react'
+import { LayoutDashboard, Calculator, Bot, MoreHorizontal, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { settingsApi } from '@/api/settings'
@@ -18,8 +18,8 @@ interface BottomNavItem {
 
 const bottomNavDef: BottomNavItem[] = [
   { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/app/mobile-checkin', label: 'Check In', icon: MapPin },
   { path: '/app/accounting', label: 'Accounting', icon: Calculator, moduleKey: 'accounting', permission: 'can_access_accounting' },
-  { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms' },
   { path: '/app/ai-agent', label: 'AI Agent', icon: Bot, moduleKey: 'ai_agent' },
   { path: '', label: 'More', icon: MoreHorizontal, isMore: true },
 ]

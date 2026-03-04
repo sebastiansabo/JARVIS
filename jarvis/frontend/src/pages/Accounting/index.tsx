@@ -308,13 +308,13 @@ export default function Accounting() {
   const displayedBinInvoices = useMemo(() => applySearchAndSort(binInvoices), [binInvoices, applySearchAndSort])
 
   const totalRon = useMemo(
-    () => invoices.filter(i => i.currency === 'RON').reduce((sum, i) => sum + Number(i.net_value ?? 0), 0),
-    [invoices],
+    () => displayedInvoices.filter(i => i.currency === 'RON').reduce((sum, i) => sum + Number(i.net_value ?? 0), 0),
+    [displayedInvoices],
   )
 
   const totalEur = useMemo(
-    () => invoices.filter(i => i.currency === 'EUR').reduce((sum, i) => sum + Number(i.net_value ?? 0), 0),
-    [invoices],
+    () => displayedInvoices.filter(i => i.currency === 'EUR').reduce((sum, i) => sum + Number(i.net_value ?? 0), 0),
+    [displayedInvoices],
   )
 
   const allSelected = displayedInvoices.length > 0 && selectedInvoiceIds.length === displayedInvoices.length
@@ -383,7 +383,7 @@ export default function Accounting() {
       {showStats && <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard
           title="Invoices"
-          value={invoices.length}
+          value={displayedInvoices.length}
           icon={<FileText className="h-4 w-4" />}
           isLoading={isLoading}
         />

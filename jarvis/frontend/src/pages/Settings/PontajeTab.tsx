@@ -28,6 +28,7 @@ import { biostarApi } from '@/api/biostar'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { BioStarEmployee, JarvisUser } from '@/types/biostar'
+import CheckinLocations from './CheckinTab'
 
 type SortField = 'name' | 'group' | 'status'
 type SortDir = 'asc' | 'desc'
@@ -283,21 +284,24 @@ export default function PontajeTab() {
     return list
   }, [employees, filter, filterGroup, filterLunch, filterHours, filterFrom, filterTo, search, sortField, sortDir])
 
-  const displayed = showAll ? processed : processed.slice(0, 50)
+  const displayed = showAll ? processed : processed.slice(0, 20)
 
   const hasColumnFilters = filterGroup !== 'all' || filterLunch !== 'all' || filterHours !== 'all' || filterFrom !== 'all' || filterTo !== 'all'
   const resetColumnFilters = () => { setFilterGroup('all'); setFilterLunch('all'); setFilterHours('all'); setFilterFrom('all'); setFilterTo('all') }
 
   if (!status?.connected) {
     return (
-      <Card>
-        <CardContent className="py-8">
-          <EmptyState
-            title="BioStar not connected"
-            description="Configure the BioStar 2 connection in Settings → Connectors first."
-          />
-        </CardContent>
-      </Card>
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="py-8">
+            <EmptyState
+              title="BioStar not connected"
+              description="Configure the BioStar 2 connection in Settings → Connectors first."
+            />
+          </CardContent>
+        </Card>
+        <CheckinLocations />
+      </div>
     )
   }
 
@@ -311,6 +315,7 @@ export default function PontajeTab() {
   )
 
   return (
+    <div className="space-y-6">
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
@@ -574,7 +579,7 @@ export default function PontajeTab() {
             </div>
             <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
               <span>Showing {displayed.length} of {processed.length}</span>
-              {processed.length > 50 && (
+              {processed.length > 20 && (
                 <Button variant="ghost" size="sm" onClick={() => setShowAll(!showAll)}>
                   {showAll ? (
                     <><ChevronUp className="mr-1 h-4 w-4" /> Show Less</>
@@ -588,6 +593,8 @@ export default function PontajeTab() {
         )}
       </CardContent>
     </Card>
+    <CheckinLocations />
+    </div>
   )
 }
 

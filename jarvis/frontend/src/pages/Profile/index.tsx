@@ -32,6 +32,7 @@ import {
   Eye,
   EyeOff,
   CheckCircle2,
+  MapPin,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -53,6 +54,7 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { profileApi, type ProfileUpdatePayload } from '@/api/profile'
+import { checkinApi } from '@/api/checkin'
 import { usersApi } from '@/api/users'
 import { cn, usePersistedState } from '@/lib/utils'
 import type { ProfileInvoice, ProfileActivity, ProfileBonus, OrgTreeNode } from '@/types/profile'
@@ -613,6 +615,99 @@ function netSec(durationSec: number | null, lunchMin: number) {
   return durationSec > lunchSec ? durationSec - lunchSec : durationSec
 }
 
+// ─── Quick Check-in Card ───────────────────────────────────────────
+
+function QuickCheckinCard() {
+  const qc = useQueryClient()
+
+  const { data: status } = useQuery({
+    queryKey: ['checkin', 'status'],
+    queryFn: async () => {
+      const res = await checkinApi.getStatus()
+      return (res as any).data ?? res
+    },
+    refetchInterval: 60_000,
+  })
+
+  const punchMut = useMutation({
+    mutationFn: async () => {
+      // Try GPS first
+      const pos = await new Promise<GeolocationPosition | null>((resolve) => {
+        if (!navigator.geolocation) return resolve(null)
+        navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), {
+          enableHighAccuracy: true, timeout: 5000, maximumAge: 0,
+        })
+      })
+      const payload: { lat?: number; lng?: number; direction?: string } = {}
+      if (pos) { payload.lat = pos.coords.latitude; payload.lng = pos.coords.longitude }
+      payload.direction = status?.next_direction ?? 'IN'
+      const res = await checkinApi.punch(payload)
+      return (res as any).data ?? res
+    },
+    onSuccess: (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['checkin', 'status'] })
+        qc.invalidateQueries({ queryKey: ['profile', 'pontaje'] })
+      }
+    },
+  })
+
+  if (!status?.mapped) return null
+
+  const dir = status.next_direction ?? 'IN'
+  const isIn = dir === 'IN'
+  const todayPunchCount = status.punches?.length ?? 0
+  const lastPunch = todayPunchCount > 0 ? status.punches[todayPunchCount - 1] : null
+
+  return (
+    <Card className={cn(
+      'border-2 transition-colors',
+      isIn ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5',
+    )}>
+      <CardContent className="flex items-center gap-4 p-4">
+        <MapPin className={cn('h-8 w-8 shrink-0', isIn ? 'text-green-500' : 'text-red-500')} />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium">
+            {todayPunchCount === 0
+              ? 'No punches today'
+              : `${todayPunchCount} punch${todayPunchCount !== 1 ? 'es' : ''} today`}
+          </p>
+          {lastPunch && (
+            <p className="text-xs text-muted-foreground">
+              Last: {lastPunch.direction} at{' '}
+              {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          )}
+          {punchMut.isSuccess && punchMut.data?.success && (
+            <p className="text-xs text-green-600 font-medium mt-0.5">
+              {punchMut.data.direction} at {punchMut.data.time} — {punchMut.data.location}
+            </p>
+          )}
+          {punchMut.isError && (
+            <p className="text-xs text-red-500 mt-0.5">Punch failed — try the Check In page</p>
+          )}
+          {punchMut.isSuccess && !punchMut.data?.success && (
+            <p className="text-xs text-red-500 mt-0.5">{punchMut.data?.error}</p>
+          )}
+        </div>
+        <Button
+          size="sm"
+          className={cn(
+            'shrink-0 font-semibold',
+            isIn
+              ? 'bg-green-600 hover:bg-green-700 text-white'
+              : 'bg-red-600 hover:bg-red-700 text-white',
+          )}
+          onClick={() => punchMut.mutate()}
+          disabled={punchMut.isPending}
+        >
+          {punchMut.isPending ? '...' : isIn ? 'Check In' : 'Check Out'}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Pontaje Panel (My Attendance) ─────────────────────────────────
 
 function PontajePanel() {
@@ -708,6 +803,9 @@ function PontajePanel() {
 
   return (
     <div className="space-y-4">
+      {/* Quick Check-in */}
+      <QuickCheckinCard />
+
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard title="Days Present (90d)" value={stats.daysPresent} icon={<Fingerprint className="h-4 w-4" />} />

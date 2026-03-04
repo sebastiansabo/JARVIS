@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2, Network } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2, Network, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ApprovalBadge } from './ApprovalBadge'
 import { NotificationBell } from './NotificationBell'
 import { settingsApi } from '@/api/settings'
+import { checkinApi } from '@/api/checkin'
 
 interface NavItem {
   path: string
@@ -94,6 +95,18 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
     queryFn: settingsApi.getModuleMenu,
     staleTime: 5 * 60 * 1000, // 5 min — matches backend cache TTL
   })
+
+  // Check-in direction for sidebar footer label
+  const { data: checkinStatus } = useQuery({
+    queryKey: ['checkin', 'status'],
+    queryFn: async () => {
+      const res = await checkinApi.getStatus()
+      return (res as any).data ?? res
+    },
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  })
+  const checkinLabel = checkinStatus?.next_direction === 'OUT' ? 'Check Out' : 'Check In'
 
   // Easter egg: 7-click logo reveal
   const clickCount = useRef(0)
@@ -392,6 +405,23 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link
+                    to="/app/mobile-checkin"
+                    className={cn(
+                      'flex items-center justify-center rounded-md p-2 transition-colors',
+                      location.pathname === '/app/mobile-checkin'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-accent',
+                    )}
+                  >
+                    <MapPin className="h-5 w-5 shrink-0" />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="right">{checkinLabel}</TooltipContent>
+              </Tooltip>
+              <Separator className="my-2" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
                     to="/app/profile"
                     className={cn(
                       'flex items-center justify-center rounded-md p-2 transition-colors',
@@ -423,6 +453,19 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
             </>
           ) : (
             <>
+              <Link
+                to="/app/mobile-checkin"
+                className={cn(
+                  'flex items-center gap-3 rounded-md px-3 py-2 transition-colors',
+                  location.pathname === '/app/mobile-checkin'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-accent',
+                )}
+              >
+                <MapPin className="h-5 w-5 shrink-0" />
+                <span className="text-sm font-medium">{checkinLabel}</span>
+              </Link>
+              <Separator className="my-2" />
               <Link
                 to="/app/profile"
                 className={cn(

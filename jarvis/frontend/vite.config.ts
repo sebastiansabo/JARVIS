@@ -77,6 +77,10 @@ export default defineConfig({
         target: 'http://localhost:5001',
         changeOrigin: true,
       },
+      '/mobile-checkin': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
       '/efactura': {
         target: 'http://localhost:5001',
         changeOrigin: true,

@@ -74,6 +74,9 @@ app.register_blueprint(efactura_bp)
 from core.connectors.biostar import biostar_bp
 app.register_blueprint(biostar_bp)
 
+from core.checkin import checkin_bp
+app.register_blueprint(checkin_bp)
+
 from core.settings import settings_bp
 app.register_blueprint(settings_bp)
 
@@ -197,7 +200,7 @@ def add_security_headers(response):
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+    response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=(self)'
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline'; "

@@ -69,12 +69,6 @@ export default function Marketing() {
   const [mainTab, setMainTab] = useTabParam<MainTab>('dashboard')
 
   // Data queries
-  const { data: summaryData, isLoading: summaryLoading } = useQuery({
-    queryKey: ['mkt-dashboard-summary'],
-    queryFn: () => marketingApi.getDashboardSummary(),
-  })
-  const summary = summaryData?.summary
-
   const { data: projectsData, isLoading: projectsLoading, isError: projectsError, refetch: refetchProjects } = useQuery({
     queryKey: ['mkt-projects', filters],
     queryFn: () => marketingApi.listProjects(filters),
@@ -148,31 +142,31 @@ export default function Marketing() {
 
       {mainTab === 'projects' && (
         <>
-          {/* Stat Cards */}
+          {/* Stat Cards — computed from filtered projects */}
           <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
             <StatCard
-              title="Active"
-              value={summary?.active_count ?? 0}
+              title="Campaigns"
+              value={projects.length}
               icon={<FolderOpen className="h-4 w-4" />}
-              isLoading={summaryLoading}
+              isLoading={projectsLoading}
             />
             <StatCard
               title="Total Budget"
-              value={formatCurrency(summary?.total_budget)}
+              value={formatCurrency(projects.reduce((s, p) => s + Number(p.total_budget ?? 0), 0))}
               icon={<DollarSign className="h-4 w-4" />}
-              isLoading={summaryLoading}
+              isLoading={projectsLoading}
             />
             <StatCard
               title="Total Spent"
-              value={formatCurrency(summary?.total_spent)}
+              value={formatCurrency(projects.reduce((s, p) => s + Number(p.total_spent ?? 0), 0))}
               icon={<Target className="h-4 w-4" />}
-              isLoading={summaryLoading}
+              isLoading={projectsLoading}
             />
             <StatCard
-              title="KPI Alerts"
-              value={summary?.kpi_alerts ?? 0}
+              title="Active"
+              value={projects.filter(p => p.status === 'active').length}
               icon={<AlertTriangle className="h-4 w-4" />}
-              isLoading={summaryLoading}
+              isLoading={projectsLoading}
             />
           </div>
 

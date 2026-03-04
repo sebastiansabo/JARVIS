@@ -25,6 +25,7 @@ const Dms = lazy(() => import('./pages/Dms'))
 const DmsDocumentDetail = lazy(() => import('./pages/Dms/DocumentDetail'))
 const SuppliersPage = lazy(() => import('./pages/Dms/SuppliersPage'))
 const SupplierProfile = lazy(() => import('./pages/Dms/SupplierProfile'))
+const MobileCheckin = lazy(() => import('./pages/MobileCheckin'))
 
 function PageLoader() {
   return (
@@ -71,6 +72,7 @@ export default function App() {
         <Route path="dms/documents/:documentId" element={<SuspensePage><DmsDocumentDetail /></SuspensePage>} />
         <Route path="dms/suppliers" element={<SuspensePage><SuppliersPage /></SuspensePage>} />
         <Route path="dms/suppliers/:supplierId" element={<SuspensePage><SupplierProfile /></SuspensePage>} />
+        <Route path="mobile-checkin" element={<SuspensePage><MobileCheckin /></SuspensePage>} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Route>
     </Routes>

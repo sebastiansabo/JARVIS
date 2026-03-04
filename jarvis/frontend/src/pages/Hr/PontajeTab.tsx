@@ -282,11 +282,32 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
     return s
   }, [visibleDailyCols, showOriginal, showAdjusted])
 
-  // Process single-day data
-  const processedDaily = useMemo(() => {
+  // Base filtered data (group + search, before statFilter / sort) — used for stats
+  const filteredDaily = useMemo(() => {
     if (!isSingleDay) return []
     let list = [...dailySummary]
     if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
+    if (search) {
+      const s = search.toLowerCase()
+      list = list.filter((e) => (e.name || '').toLowerCase().includes(s) || (e.email || '').toLowerCase().includes(s) || (e.user_group_name || '').toLowerCase().includes(s) || (e.mapped_jarvis_user_name || '').toLowerCase().includes(s))
+    }
+    return list
+  }, [dailySummary, groupFilter, search, isSingleDay])
+
+  const filteredRange = useMemo(() => {
+    if (isSingleDay) return []
+    let list = [...rangeSummary]
+    if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
+    if (search) {
+      const s = search.toLowerCase()
+      list = list.filter((e) => (e.name || '').toLowerCase().includes(s) || (e.email || '').toLowerCase().includes(s) || (e.user_group_name || '').toLowerCase().includes(s) || (e.mapped_jarvis_user_name || '').toLowerCase().includes(s))
+    }
+    return list
+  }, [rangeSummary, groupFilter, search, isSingleDay])
+
+  // Process single-day data (adds statFilter + sort on top of filteredDaily)
+  const processedDaily = useMemo(() => {
+    let list = [...filteredDaily]
     if (statFilter === 'late') {
       list = list.filter((e) => {
         if (!e.first_punch || !e.schedule_start) return false
@@ -296,15 +317,6 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
         schedDate.setHours(sh, sm + 15, 0, 0)
         return punchTime > schedDate
       })
-    }
-    if (search) {
-      const s = search.toLowerCase()
-      list = list.filter((e) =>
-        (e.name || '').toLowerCase().includes(s) ||
-        (e.email || '').toLowerCase().includes(s) ||
-        (e.user_group_name || '').toLowerCase().includes(s) ||
-        (e.mapped_jarvis_user_name || '').toLowerCase().includes(s),
-      )
     }
     list.sort((a, b) => {
       let cmp = 0
@@ -319,22 +331,11 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
       return sortDir === 'asc' ? cmp : -cmp
     })
     return list
-  }, [dailySummary, groupFilter, search, sortField, sortDir, isSingleDay, statFilter])
+  }, [filteredDaily, sortField, sortDir, statFilter])
 
-  // Process range data
+  // Process range data (sort on top of filteredRange)
   const processedRange = useMemo(() => {
-    if (isSingleDay) return []
-    let list = [...rangeSummary]
-    if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
-    if (search) {
-      const s = search.toLowerCase()
-      list = list.filter((e) =>
-        (e.name || '').toLowerCase().includes(s) ||
-        (e.email || '').toLowerCase().includes(s) ||
-        (e.user_group_name || '').toLowerCase().includes(s) ||
-        (e.mapped_jarvis_user_name || '').toLowerCase().includes(s),
-      )
-    }
+    let list = [...filteredRange]
     list.sort((a, b) => {
       let cmp = 0
       switch (sortField) {
@@ -347,19 +348,19 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
       return sortDir === 'asc' ? cmp : -cmp
     })
     return list
-  }, [rangeSummary, groupFilter, search, sortField, sortDir, isSingleDay])
+  }, [filteredRange, sortField, sortDir])
 
-  // Stats
-  const totalPresent = isSingleDay ? dailySummary.length : rangeSummary.length
+  // Stats — computed from filtered data (respects group + search filters)
+  const totalPresent = isSingleDay ? filteredDaily.length : filteredRange.length
   const totalHours = isSingleDay
-    ? dailySummary.reduce((acc, e) => acc + netSeconds(e.duration_seconds, e.lunch_break_minutes ?? 60), 0) / 3600
-    : rangeSummary.reduce((acc, e) => acc + netSeconds(e.total_duration_seconds, (e.lunch_break_minutes ?? 60) * e.days_present), 0) / 3600
+    ? filteredDaily.reduce((acc, e) => acc + netSeconds(e.duration_seconds, e.lunch_break_minutes ?? 60), 0) / 3600
+    : filteredRange.reduce((acc, e) => acc + netSeconds(e.total_duration_seconds, (e.lunch_break_minutes ?? 60) * e.days_present), 0) / 3600
   const avgHours = totalPresent > 0 ? totalHours / totalPresent : 0
   const earlyBirds = isSingleDay
-    ? dailySummary.filter((e) => e.first_punch && new Date(e.first_punch).getHours() < 8).length
+    ? filteredDaily.filter((e) => e.first_punch && new Date(e.first_punch).getHours() < 8).length
     : 0
   const lateArrivals = isSingleDay
-    ? dailySummary.filter((e) => {
+    ? filteredDaily.filter((e) => {
         if (!e.first_punch || !e.schedule_start) return false
         const punchTime = new Date(e.first_punch)
         const [sh, sm] = (e.schedule_start as string).split(':').map(Number)
@@ -369,17 +370,17 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
       }).length
     : 0
   const avgCheckIn = useMemo(() => {
-    const punches = (isSingleDay ? dailySummary : []).filter(e => e.first_punch)
+    const punches = filteredDaily.filter(e => e.first_punch)
     if (!punches.length) return '-'
     const avg = punches.reduce((acc, e) => acc + new Date(e.first_punch).getHours() * 3600 + new Date(e.first_punch).getMinutes() * 60, 0) / punches.length
     return formatEpochTime(avg)
-  }, [dailySummary, isSingleDay])
+  }, [filteredDaily])
   const avgCheckOut = useMemo(() => {
-    const punches = (isSingleDay ? dailySummary : []).filter(e => e.total_punches > 1 && e.last_punch)
+    const punches = filteredDaily.filter(e => e.total_punches > 1 && e.last_punch)
     if (!punches.length) return '-'
     const avg = punches.reduce((acc, e) => acc + new Date(e.last_punch).getHours() * 3600 + new Date(e.last_punch).getMinutes() * 60, 0) / punches.length
     return formatEpochTime(avg)
-  }, [dailySummary, isSingleDay])
+  }, [filteredDaily])
 
   const dailyMobileFields: MobileCardField<BioStarDailySummary>[] = useMemo(() => {
     const fields: MobileCardField<BioStarDailySummary>[] = [
