@@ -19,11 +19,11 @@ export default function Layout() {
     try { return localStorage.getItem('sidebar-collapsed') === 'true' } catch { return false }
   })
 
-  // Heartbeat: update last_seen every 60s so online-users widget works
+  // Heartbeat: update last_seen + keep server warm every 30s
   useEffect(() => {
     if (!user) return
     api.post('/api/heartbeat').catch(() => {})
-    const id = setInterval(() => { api.post('/api/heartbeat').catch(() => {}) }, 60_000)
+    const id = setInterval(() => { api.post('/api/heartbeat').catch(() => {}) }, 30_000)
     return () => clearInterval(id)
   }, [user])
 
