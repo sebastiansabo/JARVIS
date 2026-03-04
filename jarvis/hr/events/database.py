@@ -988,7 +988,7 @@ def get_managed_employee_ids(manager_user_id, node_id=None):
     l0_ids = []
     try:
         cursor.execute("""
-            SELECT DISTINCT u.id
+            SELECT DISTINCT u.id AS user_id
             FROM company_responsables cr
             JOIN companies c ON c.id = cr.company_id
             JOIN users u ON u.company = c.company AND u.is_active = TRUE
