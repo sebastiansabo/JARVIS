@@ -1,5 +1,6 @@
 """BioStar 2 API routes."""
 
+import threading
 from datetime import datetime
 from functools import wraps
 from flask import request, jsonify
@@ -240,18 +241,20 @@ def update_schedule(biostar_user_id):
 @biostar_bp.route('/api/sync/events', methods=['POST'])
 @api_login_required
 def sync_events():
-    """Trigger BioStar event sync."""
+    """Trigger BioStar event sync (runs in background to avoid HTTP timeout)."""
     data = request.get_json() or {}
-    try:
-        result = service.sync_events(
-            start_date=data.get('start_date'),
-            end_date=data.get('end_date'),
-        )
-        if result['success']:
-            return jsonify(result)
-        return jsonify(result), 500
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+
+    def _run():
+        try:
+            service.sync_events(start_date=start_date, end_date=end_date)
+        except Exception:
+            pass
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return jsonify({'success': True, 'message': 'Sync started'})
 
 
 @biostar_bp.route('/api/punch-logs', methods=['GET'])

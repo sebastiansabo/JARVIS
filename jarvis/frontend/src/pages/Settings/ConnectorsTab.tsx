@@ -443,10 +443,13 @@ function BioStarConnectionSection() {
     mutationFn: () => biostarApi.syncEvents(),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['biostar'] })
-      if (res.success) toast.success(`Events synced — ${res.data?.fetched} fetched, ${res.data?.inserted} new`)
+      if (res.success) toast.success(res.data ? `Events synced — ${res.data.fetched} fetched, ${res.data.inserted} new` : 'Event sync started')
       else toast.error(res.error || 'Sync failed')
     },
-    onError: () => toast.error('Event sync failed'),
+    onError: (err: unknown) => {
+      const msg = (err as { data?: { error?: string } })?.data?.error || 'Event sync failed'
+      toast.error(msg)
+    },
   })
 
   const handleEditClick = () => {
