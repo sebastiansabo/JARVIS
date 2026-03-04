@@ -232,8 +232,11 @@ def api_change_password():
 @auth_bp.route('/api/heartbeat', methods=['POST'])
 @login_required
 def api_heartbeat():
-    """Update user's last_seen timestamp (called periodically by frontend)."""
-    _user_repo.update_last_seen(current_user.id)
+    """Keep-alive + update last_seen (best-effort, never fails the response)."""
+    try:
+        _user_repo.update_last_seen(current_user.id)
+    except Exception:
+        pass
     return jsonify({'success': True})
 
 
