@@ -740,15 +740,11 @@ function TeamPontajePanel() {
     })
   }, [summary, search])
 
-  const prevDay = () => {
-    const d = new Date(date + 'T00:00:00')
-    d.setDate(d.getDate() - 1)
-    setDate(d.toISOString().slice(0, 10))
-  }
-  const nextDay = () => {
-    const d = new Date(date + 'T00:00:00')
-    d.setDate(d.getDate() + 1)
-    if (d <= new Date()) setDate(d.toISOString().slice(0, 10))
+  const shiftDay = (offset: number) => {
+    const [y, m, d] = date.split('-').map(Number)
+    const dt = new Date(y, m - 1, d + offset)
+    const str = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+    if (str <= todayStr()) setDate(str)
   }
   const isToday = date === todayStr()
 
@@ -801,13 +797,13 @@ function TeamPontajePanel() {
             {/* Date nav for daily mode */}
             {mode === 'daily' && (
               <div className="flex items-center gap-1">
-                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={prevDay}>
+                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => shiftDay(-1)}>
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </Button>
                 <span className="text-xs font-medium min-w-[90px] text-center">
-                  {new Date(date + 'T00:00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  {new Date(date + 'T12:00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' })}
                 </span>
-                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={nextDay} disabled={isToday}>
+                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => shiftDay(1)} disabled={isToday}>
                   <ChevronRight className="h-3.5 w-3.5" />
                 </Button>
               </div>
