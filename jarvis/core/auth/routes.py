@@ -3,6 +3,7 @@
 All authentication, user management, employee management, password management,
 and event log routes.
 """
+import threading
 from flask import jsonify, request, render_template, redirect, url_for, flash
 from flask_login import login_required, login_user, logout_user, current_user
 
@@ -232,11 +233,12 @@ def api_change_password():
 @auth_bp.route('/api/heartbeat', methods=['POST'])
 @login_required
 def api_heartbeat():
-    """Keep-alive + update last_seen (best-effort, never fails the response)."""
-    try:
-        _user_repo.update_last_seen(current_user.id)
-    except Exception:
-        pass
+    """Keep-alive — returns instantly, updates last_seen in background."""
+    user_id = current_user.id
+    threading.Thread(
+        target=lambda: _user_repo.update_last_seen(user_id),
+        daemon=True
+    ).start()
     return jsonify({'success': True})
 
 
