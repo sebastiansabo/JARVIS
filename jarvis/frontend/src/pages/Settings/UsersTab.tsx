@@ -22,6 +22,24 @@ import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import type { UserDetail, CreateUserInput, UpdateUserInput } from '@/types/users'
 
+function birthdateFromCnp(cnp: string): string | null {
+  if (cnp.length !== 13 || !/^\d{13}$/.test(cnp)) return null
+  const s = parseInt(cnp[0], 10)
+  const yy = parseInt(cnp.substring(1, 3), 10)
+  const mm = cnp.substring(3, 5)
+  const dd = cnp.substring(5, 7)
+  let century: number
+  if (s === 1 || s === 2) century = 1900
+  else if (s === 3 || s === 4) century = 1800
+  else if (s === 5 || s === 6) century = 2000
+  else return null
+  const year = century + yy
+  const dateStr = `${year}-${mm}-${dd}`
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime()) || d.getMonth() + 1 !== parseInt(mm, 10)) return null
+  return dateStr
+}
+
 export default function UsersTab() {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
@@ -380,7 +398,13 @@ function UserFormDialog({
           </div>
           <div className="grid gap-2">
             <Label>CNP</Label>
-            <Input value={form.cnp} onChange={(e) => setForm({ ...form, cnp: e.target.value })} placeholder="1234567890123" maxLength={13} />
+            <Input value={form.cnp} onChange={(e) => {
+              const cnp = e.target.value
+              const next = { ...form, cnp }
+              const bd = birthdateFromCnp(cnp)
+              if (bd) next.birthdate = bd
+              setForm(next)
+            }} placeholder="1234567890123" maxLength={13} />
           </div>
           <div className="grid gap-2">
             <Label>Position</Label>
