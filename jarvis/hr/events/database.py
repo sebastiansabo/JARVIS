@@ -948,38 +948,160 @@ def delete_department_structure(struct_id):
     release_db(conn)
 
 
-def get_managed_employee_ids(manager_user_id):
+def get_managed_employee_ids(manager_user_id, node_id=None):
     """Get all user IDs that are team members under this user in the organigram.
 
-    Finds all structure_nodes where the user is a 'responsable', then returns
-    the user_ids of all 'team' members on those same nodes.
+    Hierarchical cascading visibility:
+      - L0 (company_responsables): sees ALL users in that company
+      - L1 responsable: sees team members on L1 and all descendant nodes (L2-L5)
+      - L2 responsable: sees team on L2 and descendants (L3-L5)
+      - ...and so on
+
+    If node_id is given, only returns team members under that specific node
+    (must be within the user's visibility scope).
+
+    Uses recursive CTE to walk DOWN the tree from the responsable's node(s).
     """
     conn = get_db()
     cursor = get_cursor(conn)
 
+    if node_id:
+        # Filter to a specific node and its descendants
+        cursor.execute("""
+            WITH RECURSIVE descendants AS (
+                SELECT id FROM structure_nodes WHERE id = %s
+                UNION ALL
+                SELECT sn.id FROM structure_nodes sn JOIN descendants d ON sn.parent_id = d.id
+            )
+            SELECT DISTINCT snm.user_id
+            FROM descendants d
+            JOIN structure_node_members snm ON snm.node_id = d.id AND snm.role = 'team'
+            WHERE snm.user_id != %s
+        """, (node_id, manager_user_id))
+        ids = [r['user_id'] for r in cursor.fetchall()]
+        release_db(conn)
+        return ids
+
+    # No filter — return all visible employees
+
+    # 1) Check L0: company_responsables → all users in that company
+    l0_ids = []
+    try:
+        cursor.execute("""
+            SELECT DISTINCT u.id
+            FROM company_responsables cr
+            JOIN companies c ON c.id = cr.company_id
+            JOIN users u ON u.company = c.company AND u.is_active = TRUE
+            WHERE cr.user_id = %s AND u.id != %s
+        """, (manager_user_id, manager_user_id))
+        l0_ids = [r['user_id'] for r in cursor.fetchall()]
+    except Exception:
+        # Table may not exist yet — skip L0
+        conn.rollback()
+
+    # 2) Recursive descent from responsable nodes → all descendant team members
     cursor.execute("""
-        SELECT DISTINCT snm_team.user_id
-        FROM structure_node_members snm_resp
-        JOIN structure_node_members snm_team
-            ON snm_team.node_id = snm_resp.node_id AND snm_team.role = 'team'
-        WHERE snm_resp.user_id = %s AND snm_resp.role = 'responsable'
-    """, (manager_user_id,))
-    rows = cursor.fetchall()
+        WITH RECURSIVE resp_nodes AS (
+            SELECT sn.id
+            FROM structure_node_members snm
+            JOIN structure_nodes sn ON sn.id = snm.node_id
+            WHERE snm.user_id = %s AND snm.role = 'responsable'
+        ),
+        descendants AS (
+            SELECT id FROM resp_nodes
+            UNION ALL
+            SELECT sn.id FROM structure_nodes sn JOIN descendants d ON sn.parent_id = d.id
+        )
+        SELECT DISTINCT snm.user_id
+        FROM descendants d
+        JOIN structure_node_members snm ON snm.node_id = d.id AND snm.role = 'team'
+        WHERE snm.user_id != %s
+    """, (manager_user_id, manager_user_id))
+    tree_ids = [r['user_id'] for r in cursor.fetchall()]
+
     release_db(conn)
-    return [r['user_id'] for r in rows]
+    return list(set(l0_ids + tree_ids))
+
+
+def get_visible_tree(manager_user_id):
+    """Get the organigram tree visible to this manager for filtering.
+
+    Returns a flat list of nodes (with parent_id for building the tree in the frontend).
+    Includes:
+      - L0: companies (if user is in company_responsables)
+      - All nodes where user is responsable + their descendants
+    """
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    # L0 companies
+    l0_companies = []
+    try:
+        cursor.execute("""
+            SELECT c.id, c.company as name, 0 as level
+            FROM company_responsables cr
+            JOIN companies c ON c.id = cr.company_id
+            WHERE cr.user_id = %s
+        """, (manager_user_id,))
+        l0_companies = [{'id': f'company-{r["id"]}', 'name': r['name'], 'level': 0,
+                         'parent_id': None, 'company_id': r['id']}
+                        for r in cursor.fetchall()]
+    except Exception:
+        conn.rollback()
+
+    # Get all visible nodes via recursive descent
+    cursor.execute("""
+        WITH RECURSIVE resp_nodes AS (
+            SELECT sn.id
+            FROM structure_node_members snm
+            JOIN structure_nodes sn ON sn.id = snm.node_id
+            WHERE snm.user_id = %s AND snm.role = 'responsable'
+        ),
+        descendants AS (
+            SELECT id FROM resp_nodes
+            UNION ALL
+            SELECT sn.id FROM structure_nodes sn JOIN descendants d ON sn.parent_id = d.id
+        )
+        SELECT DISTINCT sn.id, sn.name, sn.level, sn.parent_id, sn.company_id
+        FROM descendants d
+        JOIN structure_nodes sn ON sn.id = d.id
+        ORDER BY sn.level, sn.name
+    """, (manager_user_id,))
+    nodes = [{'id': r['id'], 'name': r['name'], 'level': r['level'],
+              'parent_id': r['parent_id'], 'company_id': r['company_id']}
+             for r in cursor.fetchall()]
+
+    release_db(conn)
+    return {'companies': l0_companies, 'nodes': nodes}
 
 
 def is_manager(user_id):
-    """Check if a user is a responsable on any organigram node."""
+    """Check if a user is a responsable on any organigram node or company."""
     conn = get_db()
     cursor = get_cursor(conn)
+
+    # Check structure_node_members
     cursor.execute("""
         SELECT COUNT(*) AS cnt FROM structure_node_members
         WHERE user_id = %s AND role = 'responsable'
     """, (user_id,))
     row = cursor.fetchone()
-    release_db(conn)
-    return row['cnt'] > 0 if row else False
+    if row and row['cnt'] > 0:
+        release_db(conn)
+        return True
+
+    # Check company_responsables (L0)
+    try:
+        cursor.execute("""
+            SELECT COUNT(*) AS cnt FROM company_responsables
+            WHERE user_id = %s
+        """, (user_id,))
+        row = cursor.fetchone()
+        release_db(conn)
+        return row['cnt'] > 0 if row else False
+    except Exception:
+        release_db(conn)
+        return False
 
 
 _ALLOWED_LOOKUP_TABLES = frozenset({

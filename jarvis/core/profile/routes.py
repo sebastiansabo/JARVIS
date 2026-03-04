@@ -254,20 +254,35 @@ def api_profile_team_pontaje():
 
     mode=daily (default): today's per-employee punch summary
     mode=range: aggregated summary over start..end
+    node_id: optional — filter to a specific organigram node and its descendants
     """
     try:
         from datetime import datetime, timedelta
-        from hr.events.database import get_managed_employee_ids, is_manager
+        from hr.events.database import get_managed_employee_ids, is_manager, get_visible_tree
         from core.connectors.biostar.services import BioStarSyncService
 
         if not is_manager(current_user.id):
             return jsonify({'success': True, 'is_manager': False, 'mode': 'daily',
-                            'summary': [], 'date': datetime.now().strftime('%Y-%m-%d')})
+                            'summary': [], 'tree': {'companies': [], 'nodes': []},
+                            'date': datetime.now().strftime('%Y-%m-%d')})
 
-        managed_ids = get_managed_employee_ids(current_user.id)
+        # Get visible tree for filtering UI
+        tree = get_visible_tree(current_user.id)
+
+        # Optional node filter
+        node_id = request.args.get('node_id', type=int)
+        managed_ids = get_managed_employee_ids(current_user.id, node_id=node_id)
         if not managed_ids:
-            return jsonify({'success': True, 'is_manager': True, 'mode': 'daily',
-                            'summary': [], 'date': datetime.now().strftime('%Y-%m-%d')})
+            base = {'success': True, 'is_manager': True, 'summary': [], 'tree': tree}
+            mode = request.args.get('mode', 'daily')
+            if mode == 'range':
+                base['mode'] = 'range'
+                base['start'] = request.args.get('start', datetime.now().strftime('%Y-%m-%d'))
+                base['end'] = request.args.get('end', datetime.now().strftime('%Y-%m-%d'))
+            else:
+                base['mode'] = 'daily'
+                base['date'] = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
+            return jsonify(base)
 
         service = BioStarSyncService()
         mode = request.args.get('mode', 'daily')
@@ -284,6 +299,7 @@ def api_profile_team_pontaje():
                 'is_manager': True,
                 'mode': 'range',
                 'summary': summary,
+                'tree': tree,
                 'start': start,
                 'end': end,
             })
@@ -295,6 +311,7 @@ def api_profile_team_pontaje():
                 'is_manager': True,
                 'mode': 'daily',
                 'summary': summary,
+                'tree': tree,
                 'date': date_str,
             })
     except Exception as e:

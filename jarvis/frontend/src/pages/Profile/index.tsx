@@ -54,7 +54,7 @@ import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { profileApi, type ProfileUpdatePayload } from '@/api/profile'
 import { cn, usePersistedState } from '@/lib/utils'
-import type { ProfileInvoice, ProfileActivity, ProfileBonus } from '@/types/profile'
+import type { ProfileInvoice, ProfileActivity, ProfileBonus, OrgTreeNode } from '@/types/profile'
 import type { BioStarDayHistory, BioStarPunchLog, BioStarDailySummary, BioStarRangeSummary } from '@/types/biostar'
 
 type Tab = 'invoices' | 'hr-events' | 'pontaje' | 'team-pontaje' | 'activity'
@@ -834,13 +834,14 @@ function TeamPontajePanel() {
   const [mode, setMode] = useState<'daily' | 'range'>('daily')
   const [date, setDate] = useState(todayStr())
   const [range, setRange] = useState<'week' | 'month' | '3m'>('month')
+  const [nodeId, setNodeId] = useState<number | undefined>(undefined)
 
   const rangeStart = range === 'week' ? daysAgo(7) : range === 'month' ? daysAgo(30) : daysAgo(90)
   const rangeEnd = todayStr()
 
   const queryParams = mode === 'daily'
-    ? { mode: 'daily' as const, date }
-    : { mode: 'range' as const, start: rangeStart, end: rangeEnd }
+    ? { mode: 'daily' as const, date, node_id: nodeId }
+    : { mode: 'range' as const, start: rangeStart, end: rangeEnd, node_id: nodeId }
 
   const { data, isLoading } = useQuery({
     queryKey: ['profile', 'team-pontaje', queryParams],
@@ -849,6 +850,40 @@ function TeamPontajePanel() {
 
   const isManager = data?.is_manager ?? false
   const summary = data?.summary ?? []
+  const tree = data?.tree
+
+  // Build filter options from the tree
+  const filterOptions = useMemo(() => {
+    if (!tree) return []
+    const opts: { value: string; label: string; level: number }[] = []
+    // L0 companies
+    for (const c of tree.companies) {
+      opts.push({ value: `company-${c.company_id}`, label: c.name, level: 0 })
+    }
+    // Organigram nodes — build indented list
+    const nodeMap = new Map<number | string, OrgTreeNode>()
+    for (const n of tree.nodes) nodeMap.set(n.id, n)
+
+    // Find root nodes (those whose parent_id is not in the visible set)
+    const visibleIds = new Set(tree.nodes.map((n) => n.id))
+    const roots = tree.nodes.filter((n) => !n.parent_id || !visibleIds.has(n.parent_id))
+
+    const addChildren = (parentId: number | string | null, depth: number) => {
+      for (const n of tree.nodes) {
+        if (n.parent_id === parentId || (!parentId && roots.includes(n) && depth === 0)) continue
+        if (n.parent_id && n.parent_id === parentId) {
+          opts.push({ value: String(n.id), label: '\u00A0'.repeat(depth * 2) + n.name, level: n.level })
+          addChildren(n.id, depth + 1)
+        }
+      }
+    }
+
+    for (const root of roots) {
+      opts.push({ value: String(root.id), label: root.name, level: root.level })
+      addChildren(root.id, 1)
+    }
+    return opts
+  }, [tree])
 
   const filtered = useMemo(() => {
     if (!search) return summary
@@ -902,50 +937,73 @@ function TeamPontajePanel() {
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-base">
-            Team Attendance
-            <span className="ml-2 text-sm font-normal text-muted-foreground">({filtered.length})</span>
-          </CardTitle>
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Mode toggle */}
-            <div className="flex gap-1">
-              <Button variant={mode === 'daily' ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setMode('daily')}>
-                Today
-              </Button>
-              <Button variant={mode === 'range' ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setMode('range')}>
-                Period
-              </Button>
-            </div>
-            {/* Date nav for daily mode */}
-            {mode === 'daily' && (
-              <div className="flex items-center gap-1">
-                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => shiftDay(-1)}>
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </Button>
-                <span className="text-xs font-medium min-w-[90px] text-center">
-                  {new Date(date + 'T12:00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' })}
-                </span>
-                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => shiftDay(1)} disabled={isToday}>
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            )}
-            {/* Range selector for range mode */}
-            {mode === 'range' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-base">
+              Team Attendance
+              <span className="ml-2 text-sm font-normal text-muted-foreground">({filtered.length})</span>
+            </CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Mode toggle */}
               <div className="flex gap-1">
-                {([['week', 'Week'], ['month', 'Month'], ['3m', '3 Months']] as const).map(([key, label]) => (
-                  <Button
-                    key={key}
-                    variant={range === key ? 'default' : 'outline'}
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => setRange(key)}
-                  >
-                    {label}
-                  </Button>
-                ))}
+                <Button variant={mode === 'daily' ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setMode('daily')}>
+                  Today
+                </Button>
+                <Button variant={mode === 'range' ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setMode('range')}>
+                  Period
+                </Button>
               </div>
+              {/* Date nav for daily mode */}
+              {mode === 'daily' && (
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => shiftDay(-1)}>
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <span className="text-xs font-medium min-w-[90px] text-center">
+                    {new Date(date + 'T12:00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  </span>
+                  <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => shiftDay(1)} disabled={isToday}>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+              {/* Range selector for range mode */}
+              {mode === 'range' && (
+                <div className="flex gap-1">
+                  {([['week', 'Week'], ['month', 'Month'], ['3m', '3 Months']] as const).map(([key, label]) => (
+                    <Button
+                      key={key}
+                      variant={range === key ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setRange(key)}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          {/* Filter row: node selector + search */}
+          <div className="flex flex-wrap items-center gap-2">
+            {filterOptions.length > 0 && (
+              <Select
+                value={nodeId ? String(nodeId) : 'all'}
+                onValueChange={(v) => setNodeId(v === 'all' ? undefined : Number(v))}
+              >
+                <SelectTrigger className="h-8 w-full sm:w-56 text-xs">
+                  <SelectValue placeholder="All teams" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All teams</SelectItem>
+                  {filterOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
             <SearchInput
               placeholder="Search team..."

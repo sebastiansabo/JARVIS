@@ -62,12 +62,13 @@ export const profileApi = {
     )
   },
 
-  getTeamPontaje: (params?: { mode?: 'daily' | 'range'; date?: string; start?: string; end?: string }) => {
+  getTeamPontaje: (params?: { mode?: 'daily' | 'range'; date?: string; start?: string; end?: string; node_id?: number }) => {
     const sp = new URLSearchParams()
     if (params?.mode) sp.set('mode', params.mode)
     if (params?.date) sp.set('date', params.date)
     if (params?.start) sp.set('start', params.start)
     if (params?.end) sp.set('end', params.end)
+    if (params?.node_id) sp.set('node_id', String(params.node_id))
     const qs = sp.toString()
     return api.get<ProfileTeamPontajeResponse>(
       `/profile/api/team-pontaje${qs ? `?${qs}` : ''}`,

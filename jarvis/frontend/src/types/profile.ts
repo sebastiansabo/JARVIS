@@ -104,11 +104,25 @@ export interface ProfilePontajeResponse {
   today_punches: import('@/types/biostar').BioStarPunchLog[]
 }
 
+export interface OrgTreeNode {
+  id: number | string
+  name: string
+  level: number
+  parent_id: number | null
+  company_id: number
+}
+
+export interface OrgTree {
+  companies: OrgTreeNode[]
+  nodes: OrgTreeNode[]
+}
+
 export interface ProfileTeamPontajeResponse {
   success: boolean
   is_manager: boolean
   mode: 'daily' | 'range'
   summary: import('@/types/biostar').BioStarDailySummary[] | import('@/types/biostar').BioStarRangeSummary[]
+  tree?: OrgTree
   date?: string
   start?: string
   end?: string
