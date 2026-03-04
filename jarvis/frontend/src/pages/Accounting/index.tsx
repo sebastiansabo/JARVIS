@@ -24,6 +24,7 @@ import {
   BarChart3,
   CheckSquare,
   SlidersHorizontal,
+  LayoutDashboard,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -89,7 +90,7 @@ function formatDate(dateStr: string) {
 export default function Accounting() {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
-  useDashboardWidgetToggle('accounting_invoices')
+  const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('accounting_invoices')
   const [showBin, setShowBin] = useState(false)
   const [search, setSearch] = useState('')
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
@@ -369,6 +370,9 @@ export default function Accounting() {
             <Button variant="ghost" size="icon" className={cn('hidden md:inline-flex relative', showBin ? 'bg-destructive/15 text-destructive' : '')} onClick={() => { setShowBin(s => !s); clearSelected(); setSelectMode(false) }} title="Bin">
               <Trash2 className="h-4 w-4" />
               {binInvoices.length > 0 && <span className="absolute -top-1 -right-1 rounded-full bg-destructive px-1 py-0 text-[9px] text-destructive-foreground">{binInvoices.length}</span>}
+            </Button>
+            <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
+              <LayoutDashboard className="h-4 w-4" />
             </Button>
             <Button size="icon" asChild>
               <Link to="/app/accounting/add">

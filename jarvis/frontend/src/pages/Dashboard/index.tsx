@@ -6,8 +6,10 @@ import {
   type Layout,
 } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
-import { Bot } from 'lucide-react'
+import { Bot, MapPin } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useAuth } from '@/hooks/useAuth'
@@ -85,6 +87,7 @@ export default function Dashboard() {
   const { permittedWidgets, visibleWidgets, toggleWidget, updateLayout, setWidgetWidth, resetDefaults } = useDashboardPrefs(user)
   const emptyWidgets = useWidgetEmptyState()
   const toggleAiWidget = useAiAgentStore(s => s.toggleWidget)
+  const navigate = useNavigate()
   const { width, containerRef } = useContainerWidth()
 
   // Easter egg: special greeting for Sebastian
@@ -118,18 +121,32 @@ export default function Dashboard() {
         title="Dashboard"
         description={greeting}
         actions={
-          <div className="flex items-center gap-2">
-            <CustomizeSheet
-              permittedWidgets={permittedWidgets}
-              toggleWidget={toggleWidget}
-              setWidgetWidth={setWidgetWidth}
-              resetDefaults={resetDefaults}
-            />
-            <Button variant="outline" size="icon" className="md:size-auto md:px-3" onClick={toggleAiWidget}>
-              <Bot className="h-4 w-4 md:mr-1.5" />
-              <span className="hidden md:inline">New Chat</span>
-            </Button>
-          </div>
+          <TooltipProvider>
+            <div className="flex items-center gap-1.5">
+              <CustomizeSheet
+                permittedWidgets={permittedWidgets}
+                toggleWidget={toggleWidget}
+                setWidgetWidth={setWidgetWidth}
+                resetDefaults={resetDefaults}
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon" onClick={toggleAiWidget}>
+                    <Bot className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>New Chat</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button size="icon" onClick={() => navigate('/app/mobile-checkin')}>
+                    <MapPin className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Check In</TooltipContent>
+              </Tooltip>
+            </div>
+          </TooltipProvider>
         }
       />
 
