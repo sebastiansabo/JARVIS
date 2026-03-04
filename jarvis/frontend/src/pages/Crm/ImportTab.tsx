@@ -30,14 +30,18 @@ export default function ImportTab() {
 
   const importMutation = useMutation({
     mutationFn: () => crmApi.importFile(file!, sourceType),
-    onSuccess: (data) => {
-      const s = data.stats
-      toast.success(`Import complete: ${s.total || 0} rows processed, ${s.new || 0} new, ${s.new_clients || 0} new clients`)
+    onSuccess: () => {
+      toast.success('Import started — check Import History for results')
       setFile(null)
-      qc.invalidateQueries({ queryKey: ['crm-import-batches'] })
-      qc.invalidateQueries({ queryKey: ['crm-stats'] })
-      qc.invalidateQueries({ queryKey: ['crm-deals'] })
-      qc.invalidateQueries({ queryKey: ['crm-clients'] })
+      // Poll batches a few times to pick up the result once it completes
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['crm-import-batches'] }), 5000)
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['crm-import-batches'] }), 15000)
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ['crm-import-batches'] })
+        qc.invalidateQueries({ queryKey: ['crm-stats'] })
+        qc.invalidateQueries({ queryKey: ['crm-deals'] })
+        qc.invalidateQueries({ queryKey: ['crm-clients'] })
+      }, 30000)
     },
     onError: (err: Error) => {
       toast.error(`Import failed: ${err.message}`)

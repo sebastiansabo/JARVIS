@@ -5,6 +5,7 @@ import csv
 import os
 import tempfile
 import logging
+import threading
 from functools import wraps
 from flask import jsonify, request, Response, send_file
 from flask_login import login_required, current_user
@@ -56,23 +57,27 @@ def api_import():
     if ext not in ('.xlsx', '.xls', '.csv'):
         return jsonify({'success': False, 'error': 'Only .xlsx, .xls, .csv files supported'}), 400
 
-    # Save to temp file
+    # Save to temp file (cleaned up by background thread)
     with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
         file.save(tmp)
         tmp_path = tmp.name
 
-    try:
-        handler = IMPORT_HANDLERS[source_type]
-        stats = handler(tmp_path, current_user.id, original_filename=file.filename)
-        return jsonify({'success': True, 'stats': stats})
-    except Exception as e:
-        logger.exception(f'Import failed: {e}')
-        return jsonify({'success': False, 'error': str(e)[:500]}), 500
-    finally:
+    original_filename = file.filename
+    user_id = current_user.id
+
+    def _run():
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+            IMPORT_HANDLERS[source_type](tmp_path, user_id, original_filename=original_filename)
+        except Exception:
+            logger.exception('Background CRM import failed')
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({'success': True, 'message': 'Import started'})
 
 
 @crm_bp.route('/api/crm/import/template', methods=['GET'])
