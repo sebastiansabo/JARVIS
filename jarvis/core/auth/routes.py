@@ -324,7 +324,11 @@ def api_update_user(user_id):
             company=data.get('company'),
             brand=data.get('brand'),
             department=data.get('department'),
-            subdepartment=data.get('subdepartment')
+            subdepartment=data.get('subdepartment'),
+            cnp=data.get('cnp'),
+            birthdate=data.get('birthdate'),
+            position=data.get('position'),
+            contract_work_date=data.get('contract_work_date'),
         )
         if updated:
             password = data.get('password', '').strip() if data.get('password') else ''

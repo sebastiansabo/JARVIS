@@ -13,6 +13,10 @@ export interface UserDetail {
   notify_on_allocation: boolean
   last_login: string | null
   created_at: string
+  cnp: string | null
+  birthdate: string | null
+  position: string | null
+  contract_work_date: string | null
 }
 
 export interface CreateUserInput {
@@ -35,6 +39,10 @@ export interface UpdateUserInput {
   brand?: string
   department?: string
   subdepartment?: string
+  cnp?: string
+  birthdate?: string
+  position?: string
+  contract_work_date?: string
 }
 
 export interface AuditEvent {

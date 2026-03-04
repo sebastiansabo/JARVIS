@@ -329,6 +329,10 @@ function UserFormDialog({
     role_id: '',
     is_active: true,
     password: '',
+    cnp: '',
+    birthdate: '',
+    position: '',
+    contract_work_date: '',
   })
 
   const resetForm = () =>
@@ -341,8 +345,12 @@ function UserFormDialog({
             role_id: String(user.role_id),
             is_active: user.is_active,
             password: '',
+            cnp: user.cnp || '',
+            birthdate: user.birthdate || '',
+            position: user.position || '',
+            contract_work_date: user.contract_work_date || '',
           }
-        : { name: '', email: '', phone: '', role_id: '', is_active: true, password: '' },
+        : { name: '', email: '', phone: '', role_id: '', is_active: true, password: '', cnp: '', birthdate: '', position: '', contract_work_date: '' },
     )
 
   return (
@@ -369,6 +377,24 @@ function UserFormDialog({
           <div className="grid gap-2">
             <Label>Phone</Label>
             <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          </div>
+          <div className="grid gap-2">
+            <Label>CNP</Label>
+            <Input value={form.cnp} onChange={(e) => setForm({ ...form, cnp: e.target.value })} placeholder="1234567890123" maxLength={13} />
+          </div>
+          <div className="grid gap-2">
+            <Label>Position</Label>
+            <Input value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} placeholder="e.g. Manager" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label>Birthdate</Label>
+              <Input type="date" value={form.birthdate} onChange={(e) => setForm({ ...form, birthdate: e.target.value })} />
+            </div>
+            <div className="grid gap-2">
+              <Label>Contract Start</Label>
+              <Input type="date" value={form.contract_work_date} onChange={(e) => setForm({ ...form, contract_work_date: e.target.value })} />
+            </div>
           </div>
           <div className="grid gap-2">
             <Label>Role</Label>
@@ -407,6 +433,10 @@ function UserFormDialog({
                 ...form,
                 role_id: form.role_id ? Number(form.role_id) : undefined,
                 password: form.password || undefined,
+                cnp: form.cnp || undefined,
+                birthdate: form.birthdate || undefined,
+                position: form.position || undefined,
+                contract_work_date: form.contract_work_date || undefined,
               })
             }
           >
