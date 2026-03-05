@@ -575,8 +575,8 @@ export default function EmployeeProfile() {
 function DailyChart({ data, compact }: { data: { date: string; label: string; hours: number; expected: number }[]; compact: boolean }) {
   const maxHours = Math.max(...data.map((d) => d.hours), ...data.map((d) => d.expected), 1)
   const w = Math.max(700, data.length * (compact ? 14 : 50))
-  const h = 180
-  const pad = { t: 16, b: compact ? 30 : 28, l: 32, r: 10 }
+  const h = compact ? 210 : 180
+  const pad = { t: 16, b: compact ? 60 : 28, l: 32, r: 10 }
   const iw = w - pad.l - pad.r
   const ih = h - pad.t - pad.b
 
@@ -662,11 +662,11 @@ function DailyChart({ data, compact }: { data: { date: string; label: string; ho
               {/* Day label */}
               <text
                 x={x + barWidth / 2}
-                y={h - (compact ? 4 : 4)}
-                textAnchor="middle"
+                y={pad.t + ih + (compact ? 14 : 16)}
+                textAnchor={compact ? 'end' : 'middle'}
                 className="fill-muted-foreground"
-                fontSize={compact ? 6.5 : 8}
-                transform={compact ? `rotate(-45, ${x + barWidth / 2}, ${h - 4})` : undefined}
+                fontSize={compact ? 7 : 8}
+                transform={compact ? `rotate(-45, ${x + barWidth / 2}, ${pad.t + ih + 14})` : undefined}
               >
                 {d.label}
               </text>
