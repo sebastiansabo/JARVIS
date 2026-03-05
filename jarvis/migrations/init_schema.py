@@ -3018,6 +3018,34 @@ def create_schema(conn, cursor):
 
     conn.commit()
 
+    # ============== Mobile App Tables ==============
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mobile_devices (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            push_token TEXT NOT NULL UNIQUE,
+            platform VARCHAR(20) NOT NULL DEFAULT 'unknown',
+            device_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mobile_devices_user ON mobile_devices(user_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS checkin_nfc_tags (
+            id SERIAL PRIMARY KEY,
+            tag_id TEXT NOT NULL UNIQUE,
+            location_id INTEGER NOT NULL REFERENCES checkin_locations(id) ON DELETE CASCADE,
+            label TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_nfc_tags_location ON checkin_nfc_tags(location_id)')
+
+    conn.commit()
+
     # ============== Bilant (Balance Sheet) Generator ==============
 
     cursor.execute('''

@@ -131,6 +131,9 @@ app.register_blueprint(crm_bp)
 from dms import dms_bp
 app.register_blueprint(dms_bp, url_prefix='/dms')
 
+from core.mobile import mobile_bp
+app.register_blueprint(mobile_bp)
+
 # Register approval notification hooks
 from core.approvals.handlers import register_approval_hooks
 register_approval_hooks()
