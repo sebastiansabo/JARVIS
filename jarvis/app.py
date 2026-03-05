@@ -185,6 +185,12 @@ def handle_500(e):
 @app.errorhandler(Exception)
 def handle_exception(e):
     """Catch-all for unhandled exceptions — never leak stack traces."""
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        # Preserve original HTTP status (400, 403, etc.) — don't swallow as 500
+        if '/api/' in request.path or request.content_type == 'application/json':
+            return jsonify({'success': False, 'error': e.description or str(e)}), e.code
+        return e.get_response()
     app_logger.exception(f'Unhandled exception: {type(e).__name__}')
     if '/api/' in request.path or request.content_type == 'application/json':
         return jsonify({'success': False, 'error': 'An internal error occurred'}), 500

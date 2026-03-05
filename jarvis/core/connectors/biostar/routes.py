@@ -1,5 +1,6 @@
 """BioStar 2 API routes."""
 
+import logging
 import threading
 from datetime import datetime
 from functools import wraps
@@ -9,6 +10,7 @@ from flask_login import current_user
 from . import biostar_bp
 from .services import BioStarSyncService
 
+logger = logging.getLogger('jarvis.biostar.routes')
 service = BioStarSyncService()
 
 
@@ -254,15 +256,20 @@ def update_schedule(biostar_user_id):
 @api_login_required
 def sync_events():
     """Trigger BioStar event sync (runs in background to avoid HTTP timeout)."""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     start_date = data.get('start_date')
     end_date = data.get('end_date')
 
     def _run():
         try:
-            service.sync_events(start_date=start_date, end_date=end_date)
+            result = service.sync_events(start_date=start_date, end_date=end_date)
+            if result.get('success'):
+                d = result.get('data', {})
+                logger.info(f"Manual event sync complete: {d.get('inserted', 0)} new, {d.get('skipped', 0)} skipped")
+            else:
+                logger.warning(f"Manual event sync failed: {result.get('error', 'unknown')}")
         except Exception:
-            pass
+            logger.exception("Manual event sync crashed")
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
