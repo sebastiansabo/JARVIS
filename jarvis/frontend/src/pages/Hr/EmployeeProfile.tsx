@@ -78,11 +78,12 @@ export default function EmployeeProfile() {
     enabled: !!biostarUserId,
   })
 
-  // Last 90 days history for chart
-  const start90 = daysAgo(90)
+  // History for chart — fetch max(365, YTD) to cover all periods
+  const ytdStart = `${new Date().getFullYear()}-01-01`
+  const maxStart = ytdStart < daysAgo(90) ? ytdStart : daysAgo(90)
   const { data: history = [], isLoading: loadingHistory } = useQuery({
-    queryKey: ['biostar', 'employee-history', biostarUserId, start90, today],
-    queryFn: () => biostarApi.getEmployeeDailyHistory(biostarUserId!, start90, today),
+    queryKey: ['biostar', 'employee-history', biostarUserId, maxStart, today],
+    queryFn: () => biostarApi.getEmployeeDailyHistory(biostarUserId!, maxStart, today),
     enabled: !!biostarUserId,
   })
 
@@ -157,24 +158,27 @@ export default function EmployeeProfile() {
 
   const fmtTime = (t: string | null) => (t ? t.slice(0, 5) : '08:00')
 
-  // Stats from history (net = minus lunch break)
+  // Daily chart data — build full range including absent days
+  const [chartView, setChartView] = useState<'week' | 'month' | '3m' | 'ytd'>('week')
+  const ytdDays = Math.ceil((Date.now() - new Date(`${new Date().getFullYear()}-01-01`).getTime()) / 86400000)
+  const chartDays = chartView === 'week' ? 7 : chartView === 'month' ? 30 : chartView === '3m' ? 90 : ytdDays
+  const periodLabel = chartView === 'week' ? '7d' : chartView === 'month' ? '30d' : chartView === '3m' ? '90d' : 'YTD'
+
+  // Stats filtered by selected period
   const stats = useMemo(() => {
-    if (!history.length) return { daysPresent: 0, avgHours: 0, totalHours: 0, maxHours: 0 }
-    const nets = history.map((d) => netSeconds(d.duration_seconds, d.lunch_break_minutes ?? 60))
+    const cutoff = daysAgo(chartDays)
+    const filtered = history.filter((d) => d.date >= cutoff)
+    if (!filtered.length) return { daysPresent: 0, avgHours: 0, totalHours: 0, maxHours: 0 }
+    const nets = filtered.map((d) => netSeconds(d.duration_seconds, d.lunch_break_minutes ?? 60))
     const totalSec = nets.reduce((acc, s) => acc + s, 0)
     const maxSec = Math.max(...nets)
-    const daysPresent = history.length
     return {
-      daysPresent,
-      avgHours: totalSec / daysPresent / 3600,
+      daysPresent: filtered.length,
+      avgHours: totalSec / filtered.length / 3600,
       totalHours: totalSec / 3600,
       maxHours: maxSec / 3600,
     }
-  }, [history])
-
-  // Daily chart data — build full range including absent days
-  const [chartView, setChartView] = useState<'week' | 'month' | '3m'>('week')
-  const chartDays = chartView === 'week' ? 7 : chartView === 'month' ? 30 : 90
+  }, [history, chartDays])
 
   const dailyChartData = useMemo(() => {
     const data: { date: string; label: string; hours: number; expected: number }[] = []
@@ -376,7 +380,7 @@ export default function EmployeeProfile() {
       {/* Stats */}
       <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
         <StatCard
-          title="Days Present (90d)"
+          title={`Days Present (${periodLabel})`}
           value={stats.daysPresent}
           icon={<Fingerprint className="h-4 w-4" />}
         />
@@ -386,12 +390,12 @@ export default function EmployeeProfile() {
           icon={<Clock className="h-4 w-4" />}
         />
         <StatCard
-          title="Total Hours (90d)"
+          title={`Total Hours (${periodLabel})`}
           value={stats.totalHours.toFixed(0)}
           icon={<Clock className="h-4 w-4" />}
         />
         <StatCard
-          title="Max Hours"
+          title={`Max Hours (${periodLabel})`}
           value={stats.maxHours.toFixed(1)}
           icon={<Clock className="h-4 w-4" />}
         />
@@ -402,7 +406,7 @@ export default function EmployeeProfile() {
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-medium text-muted-foreground">Hours per Day</h3>
           <div className="flex gap-1">
-            {([['week', 'Week'], ['month', 'Month'], ['3m', '3 Months']] as const).map(([key, label]) => (
+            {([['week', 'Week'], ['month', 'Month'], ['3m', '3 Months'], ['ytd', 'YTD']] as const).map(([key, label]) => (
               <Button
                 key={key}
                 variant={chartView === key ? 'default' : 'outline'}
