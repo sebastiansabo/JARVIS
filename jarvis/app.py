@@ -134,6 +134,29 @@ app.register_blueprint(dms_bp, url_prefix='/dms')
 from core.mobile import mobile_bp
 app.register_blueprint(mobile_bp)
 
+# JWT → Flask-Login bridge: auto-login when Bearer token is present
+from core.mobile.routes import _decode_token, _JWT_SECRET
+from flask_login import login_user as _fl_login
+
+@app.before_request
+def _jwt_session_bridge():
+    """If request has a valid JWT Bearer token and no active session, log the user in."""
+    if current_user.is_authenticated:
+        return  # already logged in via session
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return
+    token = auth_header[7:]
+    payload = _decode_token(token, _JWT_SECRET)
+    if not payload or payload.get('type') != 'access':
+        return
+    user_id = payload.get('sub')
+    if not user_id:
+        return
+    user = _user_repo.find_by_id(user_id)
+    if user:
+        _fl_login(user)
+
 # Register approval notification hooks
 from core.approvals.handlers import register_approval_hooks
 register_approval_hooks()
