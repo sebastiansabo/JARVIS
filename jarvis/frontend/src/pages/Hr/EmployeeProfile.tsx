@@ -168,12 +168,20 @@ export default function EmployeeProfile() {
   const stats = useMemo(() => {
     const cutoff = daysAgo(chartDays)
     const filtered = history.filter((d) => d.date >= cutoff)
-    if (!filtered.length) return { daysPresent: 0, avgHours: 0, totalHours: 0, maxHours: 0 }
+    // Count working days (Mon-Fri) in the period
+    let workingDays = 0
+    for (let i = chartDays - 1; i >= 0; i--) {
+      const d = new Date(daysAgo(i) + 'T00:00:00')
+      const dow = d.getDay()
+      if (dow !== 0 && dow !== 6) workingDays++
+    }
+    if (!filtered.length) return { daysPresent: 0, workingDays, avgHours: 0, totalHours: 0, maxHours: 0 }
     const nets = filtered.map((d) => netSeconds(d.duration_seconds, d.lunch_break_minutes ?? 60))
     const totalSec = nets.reduce((acc, s) => acc + s, 0)
     const maxSec = Math.max(...nets)
     return {
       daysPresent: filtered.length,
+      workingDays,
       avgHours: totalSec / filtered.length / 3600,
       totalHours: totalSec / 3600,
       maxHours: maxSec / 3600,
@@ -381,7 +389,7 @@ export default function EmployeeProfile() {
       <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
         <StatCard
           title={`Days Present (${periodLabel})`}
-          value={stats.daysPresent}
+          value={`${stats.daysPresent}/${stats.workingDays}`}
           icon={<Fingerprint className="h-4 w-4" />}
         />
         <StatCard
