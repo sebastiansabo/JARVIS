@@ -589,8 +589,8 @@ function DailyChart({ data, compact }: { data: { date: string; label: string; ho
   const expectedLine = data[0]?.expected ?? 8
 
   return (
-    <div className="overflow-x-auto">
-      <svg width={w} viewBox={`0 0 ${w} ${h}`} className="text-foreground" style={{ minWidth: w }}>
+    <div className="w-full overflow-x-auto">
+      <svg viewBox={`0 0 ${w} ${h}`} className="text-foreground w-full" style={{ minWidth: w }}>
         {/* Grid lines */}
         {ySteps.map((v, i) => {
           const y = pad.t + ih - (v / yMax) * ih
