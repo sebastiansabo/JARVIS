@@ -177,12 +177,13 @@ export default function EmployeeProfile() {
     }
     if (!filtered.length) return { daysPresent: 0, workingDays, avgHours: 0, totalHours: 0, maxHours: 0 }
     const nets = filtered.map((d) => netSeconds(d.duration_seconds, d.lunch_break_minutes ?? 60))
-    const totalSec = nets.reduce((acc, s) => acc + s, 0)
-    const maxSec = Math.max(...nets)
+    const presentNets = nets.filter((s) => s > 0)
+    const totalSec = presentNets.reduce((acc, s) => acc + s, 0)
+    const maxSec = presentNets.length ? Math.max(...presentNets) : 0
     return {
-      daysPresent: filtered.length,
+      daysPresent: presentNets.length,
       workingDays,
-      avgHours: totalSec / filtered.length / 3600,
+      avgHours: presentNets.length ? totalSec / presentNets.length / 3600 : 0,
       totalHours: totalSec / 3600,
       maxHours: maxSec / 3600,
     }
@@ -210,11 +211,14 @@ export default function EmployeeProfile() {
     return data
   }, [history, chartDays, chartView, employee?.working_hours])
 
-  // Last 7 days
-  const last7 = useMemo(() => {
+  // Days table filtered by selected period
+  const periodDays = useMemo(() => {
     const days: BioStarDayHistory[] = []
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < chartDays; i++) {
       const dateStr = daysAgo(i)
+      const d = new Date(dateStr + 'T00:00:00')
+      const dow = d.getDay()
+      if (dow === 0 || dow === 6) continue // skip weekends
       const found = history.find((h) => h.date === dateStr)
       if (found) {
         days.push(found)
@@ -223,7 +227,7 @@ export default function EmployeeProfile() {
       }
     }
     return days
-  }, [history])
+  }, [history, chartDays])
 
   if (loadingProfile) {
     return (
@@ -436,9 +440,9 @@ export default function EmployeeProfile() {
         )}
       </div>
 
-      {/* Last 7 days */}
+      {/* Days table */}
       <div>
-        <h3 className="mb-3 text-sm font-medium text-muted-foreground">Last 7 Days</h3>
+        <h3 className="mb-3 text-sm font-medium text-muted-foreground">Daily Attendance ({periodLabel})</h3>
         <div className="rounded-md border">
           <Table>
             <TableHeader>
@@ -458,7 +462,7 @@ export default function EmployeeProfile() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {last7.map((day) => {
+              {periodDays.map((day) => {
                 const isToday = day.date === today
                 const lunch = day.lunch_break_minutes ?? 60
                 const net = netSeconds(day.duration_seconds, lunch)
