@@ -7,6 +7,7 @@ from flask_login import login_required
 from marketing import marketing_bp
 from marketing.repositories import KpiRepository
 from core.utils.api_helpers import admin_required, get_json_or_error, safe_error_response
+from marketing.routes.projects import mkt_permission_required
 
 logger = logging.getLogger('jarvis.marketing.routes.admin')
 
@@ -75,7 +76,7 @@ def api_update_kpi_definition(def_id):
 
 
 @marketing_bp.route('/api/kpi-definitions/<int:def_id>/generate-benchmarks', methods=['POST'])
-@admin_required
+@mkt_permission_required('kpi', 'edit')
 def api_generate_benchmarks(def_id):
     """Generate AI-predicted industry benchmarks for a KPI definition."""
     from marketing.services.benchmark_service import generate_benchmarks
