@@ -45,6 +45,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { efacturaApi } from '@/api/efactura'
 import { biostarApi } from '@/api/biostar'
+import type { BioStarSyncRun } from '@/types/biostar'
 import type { CompanyConnection } from '@/types/efactura'
 import { FetchMessagesDialog } from './FetchMessagesDialog'
 import { toast } from 'sonner'
@@ -580,7 +581,10 @@ function BioStarSyncHistory() {
     queryKey: ['biostar', 'syncHistory'],
     queryFn: () => biostarApi.getSyncHistory({ limit: 10 }),
     enabled: !!status?.connected,
-    refetchInterval: 30_000,
+    refetchInterval: (query): number => {
+      const data = query.state.data as BioStarSyncRun[] | undefined
+      return data?.some((r: BioStarSyncRun) => !r.finished_at) ? 3_000 : 30_000
+    },
   })
 
   if (!status?.connected || runs.length === 0) return null
@@ -606,7 +610,9 @@ function BioStarSyncHistory() {
                 <TableCell className="capitalize text-sm">{run.sync_type}</TableCell>
                 <TableCell className="text-sm">{new Date(run.started_at).toLocaleString('ro-RO')}</TableCell>
                 <TableCell>
-                  {run.success ? (
+                  {!run.finished_at ? (
+                    <span className="flex items-center gap-1 text-sm text-yellow-600"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Running</span>
+                  ) : run.success ? (
                     <span className="flex items-center gap-1 text-sm text-green-600"><CheckCircle className="h-3.5 w-3.5" /> OK</span>
                   ) : (
                     <span className="flex items-center gap-1 text-sm text-red-600"><XCircle className="h-3.5 w-3.5" /> Failed</span>

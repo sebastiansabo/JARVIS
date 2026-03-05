@@ -1,8 +1,11 @@
 """BioStar 2 sync service — orchestrates user and event synchronization."""
 
 import json
+import logging
 import random
 from datetime import datetime, timedelta
+
+logger = logging.getLogger('jarvis.biostar.sync')
 
 try:
     from zoneinfo import ZoneInfo
@@ -315,6 +318,8 @@ class BioStarSyncService:
             if not end_date:
                 end_date = datetime.now(_UTC).strftime('%Y-%m-%dT%H:%M:%S.00Z')
 
+            logger.info(f"Event sync query: start={start_date}, end={end_date}")
+
             # Fetch events with pagination
             all_events = []
             offset = 0
@@ -322,6 +327,7 @@ class BioStarSyncService:
                 result = client.search_events(start_date, end_date, offset=offset, limit=EVENTS_PAGE_SIZE)
                 rows = result.get('EventCollection', {}).get('rows', [])
                 all_events.extend(rows)
+                logger.info(f"Event sync page offset={offset}: got {len(rows)} rows (total so far: {len(all_events)})")
                 if len(rows) < EVENTS_PAGE_SIZE:
                     break
                 offset += EVENTS_PAGE_SIZE
