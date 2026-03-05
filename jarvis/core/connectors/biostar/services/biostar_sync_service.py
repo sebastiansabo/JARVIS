@@ -292,26 +292,18 @@ class BioStarSyncService:
             client = self._get_client()
 
             # Determine start date — BioStar API expects UTC with .00Z suffix
-            # Stored datetimes are in Romania local time, convert back to UTC for query
+            # For scheduled (no start_date): use last successful sync's finished_at
             if not start_date:
-                last_dt = self.repo.get_last_event_datetime()
-                if last_dt:
-                    if isinstance(last_dt, datetime):
-                        # DB stores local time — convert to UTC for API query
-                        local_dt = last_dt.replace(tzinfo=_ROMANIA_TZ)
-                        utc_dt = local_dt.astimezone(_UTC)
-                        start_date = utc_dt.strftime('%Y-%m-%dT%H:%M:%S.00Z')
+                last_run = self.sync_repo.get_last_successful_run('events')
+                if last_run and last_run.get('finished_at'):
+                    # finished_at is server-local time (Romania) — convert to UTC
+                    finished = last_run['finished_at']
+                    if isinstance(finished, datetime):
+                        local_dt = finished.replace(tzinfo=_ROMANIA_TZ)
                     else:
-                        s = str(last_dt)
-                        # Convert local time string to UTC for API
-                        try:
-                            local_dt = datetime.fromisoformat(s.split('.')[0]).replace(tzinfo=_ROMANIA_TZ)
-                            utc_dt = local_dt.astimezone(_UTC)
-                            start_date = utc_dt.strftime('%Y-%m-%dT%H:%M:%S.00Z')
-                        except (ValueError, TypeError):
-                            if not s.endswith('Z'):
-                                s = s.split('.')[0] + '.00Z'
-                            start_date = s
+                        local_dt = datetime.fromisoformat(str(finished).split('.')[0]).replace(tzinfo=_ROMANIA_TZ)
+                    utc_dt = local_dt.astimezone(_UTC)
+                    start_date = utc_dt.strftime('%Y-%m-%dT%H:%M:%S.00Z')
                 else:
                     start_date = (datetime.now(_UTC) - timedelta(days=SYNC_EVENTS_DEFAULT_DAYS)).strftime('%Y-%m-%dT00:00:00.00Z')
 
@@ -346,13 +338,25 @@ class BioStarSyncService:
                     last_sync=datetime.now()
                 )
 
+            # Parse UTC strings to datetimes for cursor storage
+            cursor_before_dt = None
+            cursor_after_dt = None
+            try:
+                cursor_before_dt = datetime.strptime(start_date.replace('.00Z', 'Z'), '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=_UTC)
+            except (ValueError, AttributeError):
+                pass
+            try:
+                cursor_after_dt = datetime.strptime(end_date.replace('.00Z', 'Z'), '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=_UTC)
+            except (ValueError, AttributeError):
+                pass
+
             self.sync_repo.complete_run(
                 run_id, success=True,
                 records_fetched=records_fetched,
                 records_created=insert_result['inserted'],
                 records_skipped=insert_result['skipped'],
-                cursor_before=start_date if isinstance(start_date, datetime) else None,
-                cursor_after=end_date if isinstance(end_date, datetime) else None,
+                cursor_before=cursor_before_dt,
+                cursor_after=cursor_after_dt,
             )
 
             client.close()
