@@ -444,7 +444,6 @@ function BioStarConnectionSection() {
   const today = new Date().toISOString().split('T')[0]
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
   const [syncDateRange, setSyncDateRange] = useState({ start: yesterday, end: today })
-  const [showDateRange, setShowDateRange] = useState(false)
 
   const syncEventsMut = useMutation({
     mutationFn: (params?: { start_date?: string; end_date?: string }) => biostarApi.syncEvents(params),
@@ -514,7 +513,7 @@ function BioStarConnectionSection() {
                 Sync
               </Button>
             </div>
-            <div className="rounded border p-3 space-y-2">
+            <div className="rounded border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-1.5 text-sm font-medium"><Clock className="h-3.5 w-3.5" /> Events</div>
@@ -522,33 +521,26 @@ function BioStarConnectionSection() {
                     {status.last_sync_events ? `Last: ${new Date(status.last_sync_events).toLocaleString('ro-RO')}` : 'Never'}
                   </p>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Button size="sm" variant="ghost" className="text-xs h-7 px-2" onClick={() => setShowDateRange(!showDateRange)}>
-                    {showDateRange ? 'Hide' : 'Period'}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => {
-                    if (showDateRange && syncDateRange.start) {
-                      const params: { start_date: string; end_date?: string } = {
-                        start_date: syncDateRange.start + 'T00:00:00.00Z',
-                      }
-                      if (syncDateRange.end) params.end_date = syncDateRange.end + 'T23:59:59.00Z'
-                      syncEventsMut.mutate(params)
-                    } else {
-                      syncEventsMut.mutate(undefined)
-                    }
-                  }} disabled={syncEventsMut.isPending}>
-                    {syncEventsMut.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
-                    Sync
-                  </Button>
-                </div>
+                <Button size="sm" variant="outline" onClick={() => syncEventsMut.mutate(undefined)} disabled={syncEventsMut.isPending}>
+                  {syncEventsMut.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                  Incremental
+                </Button>
               </div>
-              {showDateRange && (
-                <div className="flex items-center gap-2">
-                  <Input type="date" className="h-8 text-xs" value={syncDateRange.start} onChange={(e) => setSyncDateRange({ ...syncDateRange, start: e.target.value })} />
-                  <span className="text-xs text-muted-foreground">to</span>
-                  <Input type="date" className="h-8 text-xs" value={syncDateRange.end} onChange={(e) => setSyncDateRange({ ...syncDateRange, end: e.target.value })} />
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                <Input type="date" className="h-8 text-xs w-[140px]" value={syncDateRange.start} onChange={(e) => setSyncDateRange({ ...syncDateRange, start: e.target.value })} />
+                <span className="text-xs text-muted-foreground">to</span>
+                <Input type="date" className="h-8 text-xs w-[140px]" value={syncDateRange.end} onChange={(e) => setSyncDateRange({ ...syncDateRange, end: e.target.value })} />
+                <Button size="sm" variant="outline" onClick={() => {
+                  const params: { start_date: string; end_date?: string } = {
+                    start_date: syncDateRange.start + 'T00:00:00.00Z',
+                  }
+                  if (syncDateRange.end) params.end_date = syncDateRange.end + 'T23:59:59.00Z'
+                  syncEventsMut.mutate(params)
+                }} disabled={syncEventsMut.isPending || !syncDateRange.start}>
+                  {syncEventsMut.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                  Sync Period
+                </Button>
+              </div>
             </div>
           </div>
 
