@@ -639,8 +639,8 @@ class BioStarSyncService:
             last = row['last_punch']
             sched_start = row['schedule_start']
             sched_end = row['schedule_end']
-            lunch = row.get('lunch_break_minutes', 60)
-            wh = row.get('working_hours', 8)
+            lunch = row.get('lunch_break_minutes') or 60
+            wh = row.get('working_hours') or 8
 
             if not first or not last or not sched_start or not sched_end:
                 continue
