@@ -1236,7 +1236,7 @@ export function KpisTab({ projectId }: { projectId: number }) {
 
       {/* Unified Link Sources Dialog */}
       <Dialog open={!!linkSourcesKpiId} onOpenChange={(open) => { if (!open) setLinkSourcesKpiId(null) }}>
-        <DialogContent className="max-w-2xl" aria-describedby={undefined}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" aria-describedby={undefined}>
           {(() => {
             const editKpi = kpis.find((k) => k.id === linkSourcesKpiId)
             const def = editKpi ? definitions.find((d) => d.id === editKpi.kpi_definition_id) : null
@@ -1314,7 +1314,6 @@ export function KpisTab({ projectId }: { projectId: number }) {
                       </div>
                     )
                   })}
-                </div>
                 {/* Individual Deals section */}
                 <div className="rounded-lg border p-3 space-y-2">
                   <div className="flex items-center justify-between">
@@ -1383,7 +1382,8 @@ export function KpisTab({ projectId }: { projectId: number }) {
                     </p>
                   )}
                 </div>
-                <div className="flex justify-end">
+                </div>
+                <div className="flex justify-end pt-2">
                   <Button variant="outline" onClick={() => {
                     // Sync the KPI to evaluate formula with newly linked sources
                     if (linkSourcesKpiId) syncMut.mutate(linkSourcesKpiId)
