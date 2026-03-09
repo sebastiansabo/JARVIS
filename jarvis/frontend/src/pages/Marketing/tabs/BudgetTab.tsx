@@ -11,11 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn } from '@/lib/utils'
 import {
   Plus, Trash2, DollarSign, Link2, Search, Pencil, Check,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, CalendarDays,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { settingsApi } from '@/api/settings'
-import type { MktBudgetLine, InvoiceSearchResult } from '@/types/marketing'
+import type { MktBudgetLine, InvoiceSearchResult, MktProjectEvent } from '@/types/marketing'
 import { fmt, fmtDate } from './utils'
 
 // ── Inline Editable Cell ──
@@ -81,6 +81,9 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
   const [isTxSearching, setIsTxSearching] = useState(false)
   const [editTxId, setEditTxId] = useState<number | null>(null)
   const [editTxForm, setEditTxForm] = useState({ amount: '', transaction_date: '', description: '' })
+  const [eventLineId, setEventLineId] = useState<number | null>(null)
+  const [projectEvents, setProjectEvents] = useState<MktProjectEvent[]>([])
+  const [linkedEventIds, setLinkedEventIds] = useState<Set<number>>(new Set())
 
   const { data } = useQuery({
     queryKey: ['mkt-budget-lines', projectId],
@@ -153,6 +156,43 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
       setLinkedInvoiceIds((prev) => new Set(prev).add(inv.id))
     },
   })
+
+  const linkEventMut = useMutation({
+    mutationFn: (ev: MktProjectEvent) => marketingApi.createTransaction(eventLineId!, {
+      amount: ev.event_cost,
+      transaction_date: ev.event_start_date,
+      direction: 'debit',
+      source: 'event',
+      reference_id: String(ev.event_id),
+      description: ev.event_name,
+    } as Record<string, unknown>),
+    onSuccess: (_data, ev) => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-budget-lines', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-transactions'] })
+      setLinkedEventIds((prev) => new Set(prev).add(ev.event_id))
+    },
+  })
+
+  async function openEventDialog(lineId: number) {
+    setEventLineId(lineId)
+    setLinkedEventIds(new Set())
+    try {
+      const [evRes, txRes] = await Promise.all([
+        marketingApi.getProjectEvents(projectId),
+        marketingApi.getTransactions(lineId),
+      ])
+      setProjectEvents(evRes?.events ?? [])
+      const ids = new Set<number>(
+        (txRes?.transactions ?? [])
+          .filter((t: { source?: string; reference_id?: string | null }) => t.source === 'event' && t.reference_id)
+          .map((t: { reference_id?: string | null }) => Number(t.reference_id))
+      )
+      setLinkedEventIds(ids)
+    } catch {
+      setProjectEvents([])
+    }
+  }
 
   const { data: txData } = useQuery({
     queryKey: ['mkt-transactions', expandedLineId],
@@ -324,6 +364,10 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                             onClick={() => { openLinkDialog(l.id) }}>
                             <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
                           </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Link Event"
+                            onClick={() => { openEventDialog(l.id) }}>
+                            <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete" onClick={() => deleteMut.mutate(l.id)}>
                             <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
                           </Button>
@@ -344,6 +388,10 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                                 <Button variant="outline" size="sm" className="h-7 text-xs"
                                   onClick={(e) => { e.stopPropagation(); openLinkDialog(l.id) }}>
                                   <Link2 className="h-3 w-3 mr-1" /> Link Invoice
+                                </Button>
+                                <Button variant="outline" size="sm" className="h-7 text-xs"
+                                  onClick={(e) => { e.stopPropagation(); openEventDialog(l.id) }}>
+                                  <CalendarDays className="h-3 w-3 mr-1" /> Link Event
                                 </Button>
                               </div>
                             </div>
@@ -406,7 +454,7 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                                         <TableCell className="text-xs text-muted-foreground">{tx.recorded_by_name || '—'}</TableCell>
                                         <TableCell>
                                           <div className="flex items-center gap-0.5">
-                                            {tx.source !== 'invoice' && (
+                                            {tx.source === 'manual' && (
                                               <Button variant="ghost" size="icon" className="h-6 w-6" title="Edit"
                                                 onClick={(e) => {
                                                   e.stopPropagation()
@@ -636,6 +684,76 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                 {spendMut.isPending ? 'Saving...' : 'Record'}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Link Event Dialog */}
+      <Dialog open={!!eventLineId} onOpenChange={(open) => { if (!open) setEventLineId(null) }}>
+        <DialogContent className="sm:max-w-2xl" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Link Event Cost to Budget Line</DialogTitle>
+            {linkedEventIds.size > 0 && (
+              <p className="text-sm text-muted-foreground">{linkedEventIds.size} event{linkedEventIds.size > 1 ? 's' : ''} linked</p>
+            )}
+          </DialogHeader>
+          <div className="space-y-3">
+            {projectEvents.length === 0 ? (
+              <div className="text-center text-sm text-muted-foreground py-6">
+                <CalendarDays className="mx-auto h-6 w-6 mb-2 opacity-40" />
+                <div>No events linked to this project.</div>
+                <div className="text-xs mt-1">Link events in the Events tab first.</div>
+              </div>
+            ) : (
+              <div className="rounded-md border max-h-72 overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      <TableHead className="text-xs">Event</TableHead>
+                      <TableHead className="text-xs w-28">Date</TableHead>
+                      <TableHead className="text-xs">Company</TableHead>
+                      <TableHead className="text-xs text-right w-28">Cost</TableHead>
+                      <TableHead className="w-16" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {projectEvents.map((ev) => {
+                      const alreadyLinked = linkedEventIds.has(ev.event_id)
+                      const cost = Number(ev.event_cost) || 0
+                      return (
+                        <TableRow key={ev.id} className={alreadyLinked ? 'opacity-50' : ''}>
+                          <TableCell>
+                            <div className="text-xs font-medium">{ev.event_name}</div>
+                            {ev.event_description && <div className="text-[10px] text-muted-foreground truncate max-w-[220px]">{ev.event_description}</div>}
+                          </TableCell>
+                          <TableCell className="text-xs">{fmtDate(ev.event_start_date)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{ev.event_company ?? '—'}</TableCell>
+                          <TableCell className="text-right text-xs tabular-nums font-medium">
+                            {cost > 0 ? fmt(cost, currency) : <span className="text-muted-foreground">0</span>}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {alreadyLinked ? (
+                              <Check className="h-4 w-4 text-green-500 ml-auto" />
+                            ) : cost > 0 ? (
+                              <Button size="sm" variant="outline" className="h-6 text-xs px-2"
+                                disabled={linkEventMut.isPending}
+                                onClick={() => linkEventMut.mutate(ev)}>
+                                Link
+                              </Button>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground">No cost</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => setEventLineId(null)}>Done</Button>
           </div>
         </DialogContent>
       </Dialog>

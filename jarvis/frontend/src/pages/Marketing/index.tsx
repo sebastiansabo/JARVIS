@@ -1130,8 +1130,531 @@ function rangeTitle(anchor: Date, range: CalendarRange): string {
   }
 }
 
+// ── Mobile calendar views ──
+
+type MobileCalProps = {
+  projects: MktProject[]
+  events: { id: number; name: string; start_date: string; end_date: string; company?: string | null }[]
+  barColors: Record<string, string>
+  onSelect: (p: MktProject) => void
+  onEventClick: () => void
+}
+
+function MobileDayView({ anchor, projects, events, barColors, onSelect, onEventClick }: MobileCalProps & { anchor: Date }) {
+  const dayStart = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate())
+  const now = new Date()
+  const isToday = dayStart.toDateString() === now.toDateString()
+  const currentHour = isToday ? now.getHours() + now.getMinutes() / 60 : -1
+
+  const hours = Array.from({ length: 24 }, (_, i) => i)
+
+  return (
+    <div className="space-y-3">
+      {/* All-day / spanning campaigns */}
+      {projects.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Campaigns ({projects.length})</div>
+          {projects.map((p) => (
+            <div
+              key={p.id}
+              className={cn('flex items-center gap-2 rounded-md px-2.5 py-2.5 cursor-pointer', barColors[p.status] ?? 'bg-gray-400')}
+              onClick={() => onSelect(p)}
+            >
+              <span className="text-xs font-medium text-white truncate">{p.name}</span>
+              <span className="ml-auto text-[10px] text-white/80 shrink-0">
+                {new Date(p.start_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })} – {new Date(p.end_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {events.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Events ({events.length})</div>
+          {events.map((e) => (
+            <div
+              key={`evt-${e.id}`}
+              className="flex items-center gap-2 rounded-md px-2.5 py-2.5 cursor-pointer bg-purple-500"
+              onClick={onEventClick}
+            >
+              <CalendarDays className="h-3.5 w-3.5 text-white shrink-0" />
+              <span className="text-xs font-medium text-white truncate">{e.name}</span>
+              {e.company && <span className="ml-auto text-[10px] text-white/80 shrink-0">{e.company}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Hour timeline */}
+      <div className="rounded-lg border overflow-hidden">
+        {hours.map((h) => (
+          <div
+            key={h}
+            className={cn(
+              'flex items-start border-b last:border-b-0 min-h-[36px]',
+              isToday && h === Math.floor(currentHour) && 'bg-red-500/5',
+            )}
+          >
+            <div className="w-12 shrink-0 py-1.5 text-right pr-2 text-[10px] text-muted-foreground font-medium border-r">
+              {String(h).padStart(2, '0')}:00
+            </div>
+            <div className="flex-1 min-h-[36px] relative">
+              {isToday && h === Math.floor(currentHour) && (
+                <div
+                  className="absolute left-0 right-0 h-px bg-red-500"
+                  style={{ top: `${((currentHour - h) * 100)}%` }}
+                />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {projects.length === 0 && events.length === 0 && (
+        <div className="text-center py-8 text-muted-foreground text-sm">No campaigns or events today.</div>
+      )}
+    </div>
+  )
+}
+
+function MobileWeekView({ anchor, projects, events, barColors, onSelect, onEventClick }: MobileCalProps & { anchor: Date }) {
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`
+  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+  // Calculate week start (Monday)
+  const { start: weekStart } = getRange(anchor, 'week')
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart)
+    d.setDate(d.getDate() + i)
+    return d
+  })
+
+  // Items for each day
+  function getItemsForDay(date: Date) {
+    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+    const dayEnd = dayStart + 86400000
+    return {
+      projects: projects.filter((p) => {
+        const s = new Date(p.start_date!).getTime(), e = new Date(p.end_date!).getTime()
+        return s < dayEnd && e > dayStart
+      }),
+      events: events.filter((e) => {
+        const s = new Date(e.start_date).getTime(), en = new Date(e.end_date).getTime()
+        return s < dayEnd && en > dayStart
+      }),
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Week day cards */}
+      <div className="rounded-lg border overflow-hidden divide-y">
+        {days.map((date, i) => {
+          const dayKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+          const isToday = dayKey === todayStr
+          const items = getItemsForDay(date)
+          const hasItems = items.projects.length > 0 || items.events.length > 0
+
+          return (
+            <div key={i} className={cn('', isToday && 'bg-red-500/5')}>
+              {/* Day header */}
+              <div className={cn(
+                'flex items-center gap-2 px-3 py-2',
+                isToday ? 'border-l-2 border-l-red-500' : '',
+              )}>
+                <span className={cn(
+                  'text-xs font-medium w-8',
+                  isToday ? 'text-red-500' : 'text-muted-foreground',
+                )}>
+                  {dayNames[i]}
+                </span>
+                <span className={cn(
+                  'flex items-center justify-center w-7 h-7 rounded-full text-sm font-semibold',
+                  isToday ? 'bg-red-500 text-white' : '',
+                )}>
+                  {date.getDate()}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {date.toLocaleDateString('ro-RO', { month: 'short' })}
+                </span>
+              </div>
+
+              {/* Items for the day */}
+              {hasItems && (
+                <div className="px-3 pb-2 space-y-1">
+                  {items.projects.map((p) => (
+                    <div
+                      key={p.id}
+                      className={cn('flex items-center gap-2 rounded px-2 py-1.5 cursor-pointer', barColors[p.status] ?? 'bg-gray-400')}
+                      onClick={() => onSelect(p)}
+                    >
+                      <span className="text-[11px] font-medium text-white truncate">{p.name}</span>
+                    </div>
+                  ))}
+                  {items.events.map((e) => (
+                    <div
+                      key={`evt-${e.id}`}
+                      className="flex items-center gap-1.5 rounded px-2 py-1.5 cursor-pointer bg-purple-500"
+                      onClick={onEventClick}
+                    >
+                      <CalendarDays className="h-3 w-3 text-white shrink-0" />
+                      <span className="text-[11px] font-medium text-white truncate">{e.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function MobileQuarterView({ anchor, projects, events, barColors, onSelect, onEventClick }: MobileCalProps & { anchor: Date }) {
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`
+  const dayNames = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+
+  const qMonth = Math.floor(anchor.getMonth() / 3) * 3
+  const year = anchor.getFullYear()
+  const months = [qMonth, qMonth + 1, qMonth + 2]
+
+  function buildWeeks(yr: number, mo: number) {
+    const first = new Date(yr, mo, 1)
+    const daysInMonth = new Date(yr, mo + 1, 0).getDate()
+    let startDay = first.getDay() - 1
+    if (startDay < 0) startDay = 6
+    const weeks: (number | null)[][] = []
+    let week: (number | null)[] = Array(startDay).fill(null)
+    for (let d = 1; d <= daysInMonth; d++) {
+      week.push(d)
+      if (week.length === 7) { weeks.push(week); week = [] }
+    }
+    if (week.length > 0) {
+      while (week.length < 7) week.push(null)
+      weeks.push(week)
+    }
+    return weeks
+  }
+
+  function getItemsForDay(yr: number, mo: number, day: number) {
+    const dayStart = new Date(yr, mo, day).getTime()
+    const dayEnd = dayStart + 86400000
+    return {
+      projects: projects.filter((p) => {
+        const s = new Date(p.start_date!).getTime(), e = new Date(p.end_date!).getTime()
+        return s < dayEnd && e > dayStart
+      }),
+      events: events.filter((e) => {
+        const s = new Date(e.start_date).getTime(), en = new Date(e.end_date).getTime()
+        return s < dayEnd && en > dayStart
+      }),
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* 3 month grids stacked */}
+      {months.map((mo) => {
+        const weeks = buildWeeks(year, mo)
+        const monthLabel = new Date(year, mo, 1).toLocaleDateString('ro-RO', { month: 'long' })
+
+        return (
+          <div key={mo} className="rounded-lg border overflow-hidden">
+            <div className="px-3 py-1.5 bg-muted/50 border-b">
+              <span className="text-xs font-semibold capitalize">{monthLabel}</span>
+            </div>
+            <div className="grid grid-cols-7">
+              {dayNames.map((d) => (
+                <div key={d} className="text-center text-[10px] font-medium text-muted-foreground py-1 bg-muted/30 border-b">{d}</div>
+              ))}
+            </div>
+            {weeks.map((week, wi) => (
+              <div key={wi} className="grid grid-cols-7">
+                {week.map((day, di) => {
+                  if (day === null) return <div key={di} className="h-10 border-b border-r last:border-r-0" />
+                  const items = getItemsForDay(year, mo, day)
+                  const hasItems = items.projects.length > 0 || items.events.length > 0
+                  const isToday = `${year}-${mo}-${day}` === todayStr
+                  return (
+                    <div
+                      key={di}
+                      className={cn(
+                        'relative h-10 border-b border-r last:border-r-0 p-0.5 overflow-hidden',
+                        isToday && 'bg-red-500/10',
+                      )}
+                      onClick={() => {
+                        if (items.projects.length === 1) onSelect(items.projects[0])
+                        else if (items.events.length > 0 && items.projects.length === 0) onEventClick()
+                      }}
+                    >
+                      <div className={cn(
+                        'text-[10px] leading-none',
+                        isToday ? 'font-bold text-red-500' : 'text-muted-foreground',
+                      )}>
+                        {day}
+                      </div>
+                      {hasItems && (
+                        <div className="flex flex-wrap gap-px mt-0.5">
+                          {items.projects.slice(0, 2).map((p) => (
+                            <div
+                              key={p.id}
+                              className={cn('h-1.5 rounded-full flex-1 min-w-[6px]', barColors[p.status] ?? 'bg-gray-400')}
+                            />
+                          ))}
+                          {items.events.slice(0, 1).map((e) => (
+                            <div key={`e-${e.id}`} className="h-1.5 rounded-full flex-1 min-w-[6px] bg-purple-500" />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        )
+      })}
+
+      {/* Campaign list */}
+      {projects.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Campaigns ({projects.length})</div>
+          {projects.map((p) => (
+            <div
+              key={p.id}
+              className={cn('flex items-center gap-2 rounded-md px-2.5 py-2 cursor-pointer', barColors[p.status] ?? 'bg-gray-400')}
+              onClick={() => onSelect(p)}
+            >
+              <span className="text-xs font-medium text-white truncate">{p.name}</span>
+              <span className="ml-auto text-[10px] text-white/80 shrink-0">
+                {new Date(p.start_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })} – {new Date(p.end_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {events.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Events ({events.length})</div>
+          {events.map((e) => (
+            <div
+              key={`evt-${e.id}`}
+              className="flex items-center gap-2 rounded-md px-2.5 py-2 cursor-pointer bg-purple-500"
+              onClick={onEventClick}
+            >
+              <CalendarDays className="h-3 w-3 text-white shrink-0" />
+              <span className="text-xs font-medium text-white truncate">{e.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MobileCalendarGrid({ range, anchor, projects, events, barColors, onSelect, onEventClick }: {
+  range: 'month' | 'year'
+  anchor: Date
+  projects: MktProject[]
+  events: { id: number; name: string; start_date: string; end_date: string; company?: string | null }[]
+  barColors: Record<string, string>
+  onSelect: (p: MktProject) => void
+  onEventClick: () => void
+}) {
+  const y = anchor.getFullYear(), m = anchor.getMonth()
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`
+
+  const dayNames = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+
+  // Build weeks for a given month
+  function buildWeeks(year: number, month: number) {
+    const first = new Date(year, month, 1)
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    // Monday=0 offset
+    let startDay = first.getDay() - 1
+    if (startDay < 0) startDay = 6
+    const weeks: (number | null)[][] = []
+    let week: (number | null)[] = Array(startDay).fill(null)
+    for (let d = 1; d <= daysInMonth; d++) {
+      week.push(d)
+      if (week.length === 7) { weeks.push(week); week = [] }
+    }
+    if (week.length > 0) {
+      while (week.length < 7) week.push(null)
+      weeks.push(week)
+    }
+    return weeks
+  }
+
+  // Check if a day has campaigns/events
+  function getItemsForDay(year: number, month: number, day: number) {
+    const dayStart = new Date(year, month, day).getTime()
+    const dayEnd = new Date(year, month, day + 1).getTime()
+    const matchedProjects = projects.filter((p) => {
+      const s = new Date(p.start_date!).getTime(), e = new Date(p.end_date!).getTime()
+      return s < dayEnd && e > dayStart
+    })
+    const matchedEvents = events.filter((e) => {
+      const s = new Date(e.start_date).getTime(), en = new Date(e.end_date).getTime()
+      return s < dayEnd && en > dayStart
+    })
+    return { projects: matchedProjects, events: matchedEvents }
+  }
+
+  function renderMonth(year: number, month: number, compact = false) {
+    const weeks = buildWeeks(year, month)
+    const isToday = (day: number | null) =>
+      day !== null && `${year}-${month}-${day}` === todayStr
+
+    return (
+      <div className={compact ? '' : 'rounded-lg border overflow-hidden'}>
+        {compact && (
+          <div className="text-xs font-semibold text-muted-foreground px-1 pb-1">
+            {new Date(year, month, 1).toLocaleDateString('ro-RO', { month: 'short' })}
+          </div>
+        )}
+        {/* Day name headers */}
+        <div className="grid grid-cols-7">
+          {dayNames.map((d) => (
+            <div key={d} className={cn(
+              'text-center font-medium text-muted-foreground',
+              compact ? 'text-[8px] py-0.5' : 'text-[10px] py-1.5 bg-muted/50 border-b',
+            )}>{d}</div>
+          ))}
+        </div>
+        {/* Week rows */}
+        {weeks.map((week, wi) => (
+          <div key={wi} className="grid grid-cols-7">
+            {week.map((day, di) => {
+              if (day === null) return <div key={di} className={compact ? 'h-5' : 'h-12 border-b border-r last:border-r-0'} />
+              const items = getItemsForDay(year, month, day)
+              const hasItems = items.projects.length > 0 || items.events.length > 0
+              return (
+                <div
+                  key={di}
+                  className={cn(
+                    'relative overflow-hidden',
+                    compact ? 'h-5 flex items-center justify-center' : 'h-12 border-b border-r last:border-r-0 p-0.5',
+                    isToday(day) && 'bg-red-500/10',
+                  )}
+                  onClick={() => {
+                    if (items.projects.length === 1) onSelect(items.projects[0])
+                    else if (items.events.length > 0 && items.projects.length === 0) onEventClick()
+                  }}
+                >
+                  <div className={cn(
+                    compact ? 'text-[8px]' : 'text-[10px] leading-none',
+                    isToday(day) ? 'font-bold text-red-500' : 'text-muted-foreground',
+                  )}>
+                    {day}
+                  </div>
+                  {!compact && hasItems && (
+                    <div className="flex flex-wrap gap-px mt-0.5">
+                      {items.projects.slice(0, 3).map((p) => (
+                        <div
+                          key={p.id}
+                          className={cn('h-1.5 rounded-full flex-1 min-w-[8px] max-w-full', barColors[p.status] ?? 'bg-gray-400')}
+                          title={p.name}
+                        />
+                      ))}
+                      {items.events.slice(0, 2).map((e) => (
+                        <div key={`e-${e.id}`} className="h-1.5 rounded-full flex-1 min-w-[8px] max-w-full bg-purple-500" title={e.name} />
+                      ))}
+                    </div>
+                  )}
+                  {compact && hasItems && (
+                    <div className={cn(
+                      'absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full',
+                      items.projects.length > 0 ? (barColors[items.projects[0].status] ?? 'bg-gray-400') : 'bg-purple-500',
+                    )} />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (range === 'month') {
+    return (
+      <div className="space-y-3">
+        {renderMonth(y, m)}
+        {/* Campaign list below the grid */}
+        {projects.length > 0 && (
+          <div className="space-y-1.5">
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Campaigns ({projects.length})</div>
+            {projects.map((p) => (
+              <div
+                key={p.id}
+                className={cn('flex items-center gap-2 rounded-md px-2.5 py-2 cursor-pointer', barColors[p.status] ?? 'bg-gray-400')}
+                onClick={() => onSelect(p)}
+              >
+                <span className="text-xs font-medium text-white truncate">{p.name}</span>
+                <span className="ml-auto text-[10px] text-white/80 shrink-0">
+                  {new Date(p.start_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })} – {new Date(p.end_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {events.length > 0 && (
+          <div className="space-y-1.5">
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Events ({events.length})</div>
+            {events.map((e) => (
+              <div
+                key={`evt-${e.id}`}
+                className="flex items-center gap-2 rounded-md px-2.5 py-2 cursor-pointer bg-purple-500"
+                onClick={onEventClick}
+              >
+                <span className="text-xs font-medium text-white truncate">{e.name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Year view: 3 months per row, mini calendars
+  const months = Array.from({ length: 12 }, (_, i) => i)
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-2">
+        {months.map((mo) => (
+          <div key={mo}>{renderMonth(y, mo, true)}</div>
+        ))}
+      </div>
+      {/* Campaign list */}
+      {projects.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Campaigns ({projects.length})</div>
+          {projects.map((p) => (
+            <div
+              key={p.id}
+              className={cn('flex items-center gap-2 rounded-md px-2.5 py-2 cursor-pointer', barColors[p.status] ?? 'bg-gray-400')}
+              onClick={() => onSelect(p)}
+            >
+              <span className="text-xs font-medium text-white truncate">{p.name}</span>
+              <span className="ml-auto text-[10px] text-white/80 shrink-0">
+                {new Date(p.start_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })} – {new Date(p.end_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }) {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const [range, setRange] = useState<CalendarRange>('quarter')
   const [anchor, setAnchor] = useState(() => new Date())
 
@@ -1257,6 +1780,43 @@ export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }
         <div className="text-center py-12 text-muted-foreground">
           No campaigns or events in this period.
         </div>
+      ) : isMobile && range === 'day' ? (
+        <MobileDayView
+          anchor={anchor}
+          projects={projects}
+          events={events}
+          barColors={barColors}
+          onSelect={onSelect}
+          onEventClick={() => navigate('/app/marketing/events')}
+        />
+      ) : isMobile && range === 'week' ? (
+        <MobileWeekView
+          anchor={anchor}
+          projects={projects}
+          events={events}
+          barColors={barColors}
+          onSelect={onSelect}
+          onEventClick={() => navigate('/app/marketing/events')}
+        />
+      ) : isMobile && range === 'quarter' ? (
+        <MobileQuarterView
+          anchor={anchor}
+          projects={projects}
+          events={events}
+          barColors={barColors}
+          onSelect={onSelect}
+          onEventClick={() => navigate('/app/marketing/events')}
+        />
+      ) : isMobile && (range === 'month' || range === 'year') ? (
+        <MobileCalendarGrid
+          range={range}
+          anchor={anchor}
+          projects={projects}
+          events={events}
+          barColors={barColors}
+          onSelect={onSelect}
+          onEventClick={() => navigate('/app/marketing/events')}
+        />
       ) : (
         <div className="rounded-lg border overflow-hidden">
           {/* Grid headers */}

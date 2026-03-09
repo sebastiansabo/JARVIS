@@ -225,7 +225,7 @@ export function ClientsTab({ projectId }: { projectId: number }) {
 
       {/* Link Client Dialog */}
       <Dialog open={showLink} onOpenChange={setShowLink}>
-        <DialogContent className="max-w-[1080px]" aria-describedby={undefined}>
+        <DialogContent className="sm:max-w-2xl" aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Link CRM Client</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="relative">
@@ -240,7 +240,7 @@ export function ClientsTab({ projectId }: { projectId: number }) {
             </div>
             {isSearching && <div className="text-center text-sm text-muted-foreground py-2">Searching...</div>}
             {clientResults.length > 0 && (
-              <div className="rounded-md border max-h-64 overflow-y-auto">
+              <div className="rounded-md border max-h-64 overflow-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>

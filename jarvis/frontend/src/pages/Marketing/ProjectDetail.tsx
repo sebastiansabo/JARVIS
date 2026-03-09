@@ -112,23 +112,25 @@ export default function ProjectDetail() {
           { label: project.name },
         ]}
         description={
-          <span>
-            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mr-2 ${statusColors[project.status] ?? ''}`}>
+          <div className="flex flex-col gap-1 md:flex-row md:flex-wrap md:items-center md:gap-x-2 md:gap-y-0">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium w-fit ${statusColors[project.status] ?? ''}`}>
               {(project.status ?? '').replace('_', ' ')}
             </span>
-            {project.company_name}{project.brand_name ? ` / ${project.brand_name}` : ''}
-            {' · '}
-            {(project.project_type ?? '').replace('_', ' ')}
-            {project.owner_name ? ` · Owner: ${project.owner_name}` : ''}
-          </span>
+            <span>
+              {project.company_name}{project.brand_name ? ` / ${project.brand_name}` : ''}
+              {' · '}
+              {(project.project_type ?? '').replace('_', ' ')}
+              {project.owner_name ? ` · Owner: ${project.owner_name}` : ''}
+            </span>
+          </div>
         }
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => exportProjectPdf(project)} title="Export PDF">
-              <Download className="h-3.5 w-3.5" />
+            <Button variant="outline" size="icon" className="h-10 w-10 md:h-8 md:w-8" onClick={() => exportProjectPdf(project)} title="Export PDF">
+              <Download className="h-4 w-4 md:h-3.5 md:w-3.5" />
             </Button>
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setShowEditDialog(true)} title="Edit">
-              <Pencil className="h-3.5 w-3.5" />
+            <Button variant="outline" size="icon" className="h-10 w-10 md:h-8 md:w-8" onClick={() => setShowEditDialog(true)} title="Edit">
+              <Pencil className="h-4 w-4 md:h-3.5 md:w-3.5" />
             </Button>
             <StatusActions project={project} onDone={() => queryClient.invalidateQueries({ queryKey: ['mkt-project', id] })} />
           </div>
@@ -138,13 +140,13 @@ export default function ProjectDetail() {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
         <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:overflow-visible md:px-0">
-          <TabsList className="w-max md:w-auto">
+          <TabsList className="w-full md:w-auto">
             {tabs.map((tab) => {
               const Icon = tab.icon
               return (
-                <TabsTrigger key={tab.key} value={tab.key}>
+                <TabsTrigger key={tab.key} value={tab.key} className="flex-1 md:flex-initial">
                   <Icon className="h-3.5 w-3.5" />
-                  {tab.label}
+                  <span className="hidden md:inline">{tab.label}</span>
                 </TabsTrigger>
               )
             })}

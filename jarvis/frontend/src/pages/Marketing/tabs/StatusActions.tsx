@@ -52,7 +52,7 @@ export function StatusActions({ project, onDone }: { project: MktProject; onDone
 
   const s = project.status
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-2 md:gap-1.5">
       {(s === 'draft' || s === 'cancelled') && hasStakeholders ? (
         <Button size="sm" onClick={() => submitMut.mutate()} disabled={submitMut.isPending}>
           <Send className="h-3.5 w-3.5 mr-1.5" />
@@ -109,17 +109,17 @@ export function StatusActions({ project, onDone }: { project: MktProject; onDone
         </>
       )}
       {s !== 'archived' && (
-        <Button size="sm" variant="ghost" onClick={() => archiveMut.mutate()} disabled={archiveMut.isPending} title="Archive">
-          <Archive className="h-3.5 w-3.5" />
+        <Button variant="outline" size="icon" className="h-10 w-10 md:h-8 md:w-8" onClick={() => archiveMut.mutate()} disabled={archiveMut.isPending} title="Archive">
+          <Archive className="h-4 w-4 md:h-3.5 md:w-3.5" />
         </Button>
       )}
-      <Button size="sm" variant="ghost" onClick={() => dupMut.mutate()} disabled={dupMut.isPending} title="Duplicate">
-        <Copy className="h-3.5 w-3.5" />
+      <Button variant="outline" size="icon" className="h-10 w-10 md:h-8 md:w-8" onClick={() => dupMut.mutate()} disabled={dupMut.isPending} title="Duplicate">
+        <Copy className="h-4 w-4 md:h-3.5 md:w-3.5" />
       </Button>
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive">
-            <Trash2 className="h-3.5 w-3.5" />
+          <Button variant="outline" size="icon" className="h-10 w-10 md:h-8 md:w-8 text-destructive hover:text-destructive">
+            <Trash2 className="h-4 w-4 md:h-3.5 md:w-3.5" />
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent>

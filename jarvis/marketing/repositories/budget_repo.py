@@ -117,6 +117,17 @@ class BudgetRepository(BaseRepository):
                 ''', (budget_line_id, invoice_id))
                 if cursor.fetchone():
                     raise ValueError('This invoice is already linked to this budget line')
+            # Prevent duplicate event links
+            source = kwargs.get('source')
+            reference_id = kwargs.get('reference_id')
+            if source == 'event' and reference_id:
+                cursor.execute('''
+                    SELECT 1 FROM mkt_budget_transactions
+                    WHERE budget_line_id = %s AND source = 'event' AND reference_id = %s
+                    LIMIT 1
+                ''', (budget_line_id, reference_id))
+                if cursor.fetchone():
+                    raise ValueError('This event is already linked to this budget line')
             cursor.execute('''
                 INSERT INTO mkt_budget_transactions
                     (budget_line_id, amount, direction, source, reference_id, invoice_id,

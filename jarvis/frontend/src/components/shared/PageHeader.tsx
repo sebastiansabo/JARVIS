@@ -17,13 +17,42 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, breadcrumbs, actions }: PageHeaderProps) {
   const isMobile = useIsMobile()
+
+  /* ── Mobile: stacked layout ── */
+  if (isMobile && breadcrumbs && breadcrumbs.length > 1) {
+    const parentCrumbs = breadcrumbs.slice(0, -1)
+    const current = breadcrumbs[breadcrumbs.length - 1]
+    return (
+      <div className="space-y-3">
+        <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          {parentCrumbs.map((crumb, i) => (
+            <span key={i} className="flex items-center gap-1.5">
+              {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground/50" />}
+              {crumb.href ? (
+                <Link to={crumb.href} className="hover:text-foreground transition-colors">
+                  {crumb.shortLabel || crumb.label}
+                </Link>
+              ) : (
+                <span>{crumb.shortLabel || crumb.label}</span>
+              )}
+            </span>
+          ))}
+        </nav>
+        <h1 className="text-xl font-semibold tracking-tight truncate">{current.label}</h1>
+        {description && <div className="text-sm text-muted-foreground">{description}</div>}
+        {actions && <div className="flex items-center gap-2">{actions}</div>}
+      </div>
+    )
+  }
+
+  /* ── Desktop: inline layout ── */
   return (
     <div className="flex items-center justify-between gap-2">
       <div className="min-w-0">
         {breadcrumbs && breadcrumbs.length > 0 ? (
           <h1 className="flex items-center gap-1.5 flex-wrap">
             {breadcrumbs.map((crumb, i) => {
-              const text = isMobile && crumb.shortLabel ? crumb.shortLabel : crumb.label
+              const text = crumb.label
               return (
               <span key={i} className="flex items-center gap-1.5">
                 {i > 0 && <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
