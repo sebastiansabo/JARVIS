@@ -61,7 +61,9 @@ class ProjectEventRepository(BaseRepository):
         """Search invoices for budget linking. Uses trigram similarity + ILIKE."""
         sql = '''
             SELECT i.id, i.supplier, i.invoice_number, i.invoice_date,
-                   i.invoice_value, i.currency, i.status, i.payment_status
+                   COALESCE(i.net_value, i.invoice_value) AS invoice_value,
+                   i.invoice_value AS total_value,
+                   i.currency, i.status, i.payment_status
             FROM invoices i
             WHERE i.deleted_at IS NULL
         '''

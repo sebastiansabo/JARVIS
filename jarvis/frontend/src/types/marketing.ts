@@ -403,6 +403,7 @@ export interface InvoiceSearchResult {
   invoice_number: string
   invoice_date: string
   invoice_value: number
+  total_value: number
   currency: string
   status: string
   payment_status: string

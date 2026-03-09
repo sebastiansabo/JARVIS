@@ -12,7 +12,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Pencil, BarChart3, DollarSign, Target, Users,
-  CalendarDays, Clock, FileText, MessageSquare, Download, Plus,
+  PartyPopper, Clock, FileText, MessageSquare, Download, Plus,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { exportProjectPdf } from './exportProjectPdf'
@@ -29,10 +29,10 @@ const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'budget', label: 'Budget', icon: DollarSign },
   { key: 'kpis', label: 'KPIs', icon: Target },
   { key: 'team', label: 'Team', icon: Users },
-  { key: 'events', label: 'Events', icon: CalendarDays },
-  { key: 'activity', label: 'Activity', icon: Clock },
+  { key: 'events', label: 'Events', icon: PartyPopper },
   { key: 'files', label: 'Files', icon: FileText },
   { key: 'comments', label: 'Comments', icon: MessageSquare },
+  { key: 'activity', label: 'Activity', icon: Clock },
 ]
 
 export default function ProjectDetail() {
@@ -123,13 +123,11 @@ export default function ProjectDetail() {
         }
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" className="h-8 w-8 md:size-auto md:px-3" onClick={() => exportProjectPdf(project)}>
-              <Download className="h-3.5 w-3.5 md:mr-1.5" />
-              <span className="hidden md:inline">PDF</span>
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => exportProjectPdf(project)} title="Export PDF">
+              <Download className="h-3.5 w-3.5" />
             </Button>
-            <Button variant="outline" size="icon" className="h-8 w-8 md:size-auto md:px-3" onClick={() => setShowEditDialog(true)}>
-              <Pencil className="h-3.5 w-3.5 md:mr-1.5" />
-              <span className="hidden md:inline">Edit</span>
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setShowEditDialog(true)} title="Edit">
+              <Pencil className="h-3.5 w-3.5" />
             </Button>
             <StatusActions project={project} onDone={() => queryClient.invalidateQueries({ queryKey: ['mkt-project', id] })} />
           </div>
@@ -165,7 +163,7 @@ export default function ProjectDetail() {
 
       {/* Edit Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
+        <DialogContent className="sm:max-w-[1024px] max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Edit Project</DialogTitle>
           </DialogHeader>

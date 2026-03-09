@@ -206,6 +206,17 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
     setIsTxSearching(false)
   }
 
+  async function openLinkDialog(lineId: number) {
+    setLinkLineId(lineId)
+    setInvoiceSearch('')
+    setInvoiceResults([])
+    try {
+      const res = await marketingApi.getTransactions(lineId)
+      const ids = new Set<number>((res?.transactions ?? []).filter((t: { invoice_id?: number | null }) => t.invoice_id).map((t: { invoice_id?: number | null }) => t.invoice_id as number))
+      setLinkedInvoiceIds(ids)
+    } catch { setLinkedInvoiceIds(new Set()) }
+  }
+
   async function searchInvoices(q: string) {
     setInvoiceSearch(q)
     if (q.length < 2) { setInvoiceResults([]); return }
@@ -310,7 +321,7 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                             <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
                           </Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7" title="Link Invoice"
-                            onClick={() => { setLinkLineId(l.id); setInvoiceSearch(''); setInvoiceResults([]); setLinkedInvoiceIds(new Set()) }}>
+                            onClick={() => { openLinkDialog(l.id) }}>
                             <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
                           </Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete" onClick={() => deleteMut.mutate(l.id)}>
@@ -331,7 +342,7 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                                   <DollarSign className="h-3 w-3 mr-1" /> Record Spend
                                 </Button>
                                 <Button variant="outline" size="sm" className="h-7 text-xs"
-                                  onClick={(e) => { e.stopPropagation(); setLinkLineId(l.id); setInvoiceSearch(''); setInvoiceResults([]); setLinkedInvoiceIds(new Set()) }}>
+                                  onClick={(e) => { e.stopPropagation(); openLinkDialog(l.id) }}>
                                   <Link2 className="h-3 w-3 mr-1" /> Link Invoice
                                 </Button>
                               </div>
@@ -370,14 +381,19 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                                             <div className="flex items-center gap-1">
                                               <Badge variant="secondary" className="text-[10px] gap-0.5 max-w-[160px]">
                                                 <span className="truncate">{tx.invoice_supplier || ''} #{tx.invoice_number_ref || tx.invoice_id}</span>
-                                                {tx.source !== 'invoice' && (
-                                                  <button
-                                                    className="ml-0.5 hover:text-destructive"
-                                                    onClick={(e) => { e.stopPropagation(); linkTxInvoiceMut.mutate({ txId: tx.id, invoiceId: null }) }}
-                                                  >
-                                                    <Trash2 className="h-2.5 w-2.5" />
-                                                  </button>
-                                                )}
+                                                <button
+                                                  className="ml-0.5 hover:text-destructive"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    if (tx.source === 'invoice') {
+                                                      deleteTxMut.mutate(tx.id)
+                                                    } else {
+                                                      linkTxInvoiceMut.mutate({ txId: tx.id, invoiceId: null })
+                                                    }
+                                                  }}
+                                                >
+                                                  <Trash2 className="h-2.5 w-2.5" />
+                                                </button>
                                               </Badge>
                                             </div>
                                           ) : (
@@ -432,7 +448,7 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
 
       {/* Link Invoice Dialog */}
       <Dialog open={!!linkLineId} onOpenChange={(open) => { if (!open) setLinkLineId(null) }}>
-        <DialogContent className="max-w-2xl" aria-describedby={undefined}>
+        <DialogContent className="sm:max-w-[1080px]" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Link Invoices to Budget Line</DialogTitle>
             {linkedInvoiceIds.size > 0 && (
@@ -452,14 +468,15 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
             </div>
             {isSearching && <div className="text-center text-xs text-muted-foreground py-2">Searching...</div>}
             {invoiceResults.length > 0 && (
-              <div className="rounded-md border max-h-72 overflow-y-auto">
+              <div className="rounded-md border max-h-72 overflow-auto">
                 <Table>
                   <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
                       <TableHead className="text-xs">Supplier</TableHead>
                       <TableHead className="text-xs">Invoice Number</TableHead>
                       <TableHead className="text-xs w-24">Date</TableHead>
-                      <TableHead className="text-xs text-right w-28">Value</TableHead>
+                      <TableHead className="text-xs text-right w-28">Net Value</TableHead>
+                      <TableHead className="text-xs text-right w-28">Total Value</TableHead>
                       <TableHead className="w-16" />
                     </TableRow>
                   </TableHeader>
@@ -472,6 +489,7 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                           <TableCell className="text-xs font-mono">{inv.invoice_number}</TableCell>
                           <TableCell className="text-xs">{fmtDate(inv.invoice_date)}</TableCell>
                           <TableCell className="text-right text-xs tabular-nums">{fmt(inv.invoice_value, inv.currency)}</TableCell>
+                          <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{fmt(inv.total_value, inv.currency)}</TableCell>
                           <TableCell className="text-right">
                             {alreadyLinked ? (
                               <Check className="h-4 w-4 text-green-500 ml-auto" />
@@ -502,7 +520,7 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
 
       {/* Link Invoice to Transaction Dialog */}
       <Dialog open={!!linkTxId} onOpenChange={(open) => { if (!open) { setLinkTxId(null); setTxInvoiceSearch(''); setTxInvoiceResults([]) } }}>
-        <DialogContent className="max-w-3xl" aria-describedby={undefined}>
+        <DialogContent className="sm:max-w-[1080px]" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Link Invoice to Transaction</DialogTitle>
           </DialogHeader>
@@ -519,14 +537,15 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
             </div>
             {isTxSearching && <div className="text-center text-xs text-muted-foreground py-2">Searching...</div>}
             {txInvoiceResults.length > 0 && (
-              <div className="rounded-md border max-h-72 overflow-y-auto">
+              <div className="rounded-md border max-h-72 overflow-auto">
                 <Table>
                   <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
                       <TableHead className="text-xs min-w-[180px]">Supplier</TableHead>
                       <TableHead className="text-xs min-w-[180px]">Invoice Number</TableHead>
                       <TableHead className="text-xs w-28">Date</TableHead>
-                      <TableHead className="text-xs text-right w-28">Value</TableHead>
+                      <TableHead className="text-xs text-right w-28">Net Value</TableHead>
+                      <TableHead className="text-xs text-right w-28">Total Value</TableHead>
                       <TableHead className="w-14" />
                     </TableRow>
                   </TableHeader>
@@ -537,6 +556,7 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                         <TableCell className="text-xs font-mono">{inv.invoice_number}</TableCell>
                         <TableCell className="text-xs">{fmtDate(inv.invoice_date)}</TableCell>
                         <TableCell className="text-right text-xs tabular-nums whitespace-nowrap">{fmt(inv.invoice_value, inv.currency)}</TableCell>
+                        <TableCell className="text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">{fmt(inv.total_value, inv.currency)}</TableCell>
                         <TableCell className="text-right">
                           <Button size="sm" variant="outline" className="h-6 text-xs px-2"
                             disabled={linkTxInvoiceMut.isPending}

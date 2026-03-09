@@ -4,8 +4,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { RichTextEditor } from '@/components/shared/RichTextEditor'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -313,58 +311,14 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
   const savedTemplates = getTemplates()
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
         <div className="rounded-md bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-300">
           {error}
         </div>
       )}
 
-      {/* Template Actions */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {!isEdit && savedTemplates.length > 0 && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button type="button" variant="outline" size="sm">
-                <FileDown className="h-3.5 w-3.5 mr-1.5" /> Load Template
-                <ChevronDown className="h-3 w-3 ml-1" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-56 p-1" align="start">
-              {savedTemplates.map((t) => (
-                <div key={t.name} className="flex items-center justify-between px-2 py-1.5 hover:bg-muted rounded-sm text-sm">
-                  <button type="button" className="flex-1 text-left truncate" onClick={() => loadTemplate(t)}>
-                    {t.name}
-                  </button>
-                  <button type="button" className="text-muted-foreground hover:text-destructive ml-1 shrink-0" onClick={() => deleteTemplate(t.name)}>
-                    &times;
-                  </button>
-                </div>
-              ))}
-            </PopoverContent>
-          </Popover>
-        )}
-        {showSaveTemplate ? (
-          <div className="flex items-center gap-1.5">
-            <Input
-              className="h-8 w-40 text-sm"
-              placeholder="Template name"
-              value={templateName}
-              onChange={(e) => setTemplateName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveTemplate() } }}
-              autoFocus
-            />
-            <Button type="button" variant="default" size="sm" onClick={saveTemplate} disabled={!templateName.trim()}>Save</Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setShowSaveTemplate(false)}>Cancel</Button>
-          </div>
-        ) : (
-          <Button type="button" variant="ghost" size="sm" onClick={() => setShowSaveTemplate(true)}>
-            <Save className="h-3.5 w-3.5 mr-1.5" /> Save as Template
-          </Button>
-        )}
-      </div>
-
-      {/* Name */}
+      {/* ===== PROJECT NAME — full width ===== */}
       <div className="space-y-1.5">
         <Label htmlFor="name">Project Name *</Label>
         <Input
@@ -378,409 +332,416 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
         <FieldError message={v.error('name')} />
       </div>
 
-      {/* Companies (dropdown + checkboxes) */}
-      <div className="space-y-1.5">
-        <Label>Companies *</Label>
-        <Popover onOpenChange={(open) => { if (!open) v.touch('company_ids') }}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className={cn('w-full justify-between font-normal', v.error('company_ids') && 'border-destructive')}>
-              <span className="truncate">
-                {form.company_ids.length === 0
-                  ? 'Select companies...'
-                  : `${form.company_ids.length} compan${form.company_ids.length === 1 ? 'y' : 'ies'} selected`}
-              </span>
-              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
-            <div className="max-h-48 overflow-y-auto space-y-1">
-              {(companies ?? []).map((c: CompanyWithBrands) => (
-                <label key={c.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
-                  <Checkbox
-                    checked={form.company_ids.includes(c.id)}
-                    onCheckedChange={() => toggleCompany(c.id)}
-                  />
-                  {c.company}
-                </label>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-        {form.company_ids.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {form.company_ids.map((id) => {
-              const name = (companies ?? []).find((c: CompanyWithBrands) => c.id === id)?.company
-              return name ? (
-                <Badge key={id} variant="secondary" className="text-xs gap-1">
-                  {name}
-                  <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => toggleCompany(id)}>&times;</button>
-                </Badge>
-              ) : null
-            })}
+      {/* ===== PROJECT SETUP — bordered card ===== */}
+      <div className="rounded-lg border border-border p-4 space-y-3">
+        {/* Type / Budget / Currency / Dates — single row */}
+        <div className="grid grid-cols-4 gap-3 items-start">
+          <div className="space-y-1.5">
+            <Label>Type</Label>
+            <Select value={form.project_type} onValueChange={(v) => setForm((f) => ({ ...f, project_type: v }))}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(typeOptions ?? []).map((opt: { value: string; label: string }) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        )}
-        <FieldError message={v.error('company_ids')} />
-      </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="mkt-total-budget">Budget</Label>
+            <div className="flex gap-1.5">
+              <Input
+                id="mkt-total-budget"
+                type="number"
+                value={form.total_budget}
+                onChange={(e) => setForm((f) => ({ ...f, total_budget: e.target.value }))}
+                placeholder="0"
+                className="flex-1"
+              />
+              <Select value={form.currency} onValueChange={(v) => setForm((f) => ({ ...f, currency: v }))}>
+                <SelectTrigger className="w-[85px] shrink-0"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="RON">RON</SelectItem>
+                  <SelectItem value="EUR">EUR</SelectItem>
+                  <SelectItem value="USD">USD</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Start Date</Label>
+            <DateField value={form.start_date} onChange={(v) => setForm((f) => ({ ...f, start_date: v }))} className="w-full" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>End Date</Label>
+            <DateField value={form.end_date} onChange={(v) => setForm((f) => ({ ...f, end_date: v }))} className="w-full" />
+          </div>
+        </div>
 
-      {/* Level 1 — Brands (dropdown + checkboxes, from selected companies) */}
-      {availableBrands.length > 0 && (
+        {/* Channel Mix — inside the card */}
         <div className="space-y-1.5">
-          <Label>Level 1</Label>
+          <Label>Channel Mix</Label>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-full justify-between font-normal">
                 <span className="truncate">
-                  {form.brand_ids.length === 0
-                    ? 'Select brands...'
-                    : `${form.brand_ids.length} brand${form.brand_ids.length === 1 ? '' : 's'} selected`}
+                  {form.channel_mix.length === 0
+                    ? 'Select channels...'
+                    : `${form.channel_mix.length} selected`}
                 </span>
                 <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
               <div className="max-h-48 overflow-y-auto space-y-1">
-                {availableBrands.map((b) => (
-                  <label key={b.brand_id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
+                {(channelOptions ?? []).map((opt: { value: string; label: string }) => (
+                  <label key={opt.value} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
                     <Checkbox
-                      checked={form.brand_ids.includes(b.brand_id)}
-                      onCheckedChange={() => setForm((f) => ({ ...f, brand_ids: toggleArrayItem(f.brand_ids, b.brand_id), department_ids: [] }))}
+                      checked={form.channel_mix.includes(opt.value)}
+                      onCheckedChange={() => setForm((f) => ({ ...f, channel_mix: toggleArrayItem(f.channel_mix, opt.value) }))}
                     />
-                    {form.company_ids.length > 1 ? `${b.company} — ${b.brand}` : b.brand}
+                    {opt.label}
                   </label>
                 ))}
               </div>
             </PopoverContent>
           </Popover>
-          {form.brand_ids.length > 0 && (
+          {form.channel_mix.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {form.brand_ids.map((id) => {
-                const b = availableBrands.find((x) => x.brand_id === id)
-                return b ? (
-                  <Badge key={id} variant="secondary" className="text-xs gap-1">
-                    {b.brand}
-                    <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => setForm((f) => ({ ...f, brand_ids: f.brand_ids.filter((x) => x !== id), department_ids: [] }))}>&times;</button>
-                  </Badge>
-                ) : null
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Level 2 — show only when no brands OR brand(s) selected */}
-      {availableDepts.length > 0 && (availableBrands.length === 0 || form.brand_ids.length > 0) && (
-        <div className="space-y-1.5">
-          <Label>Level 2</Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className="w-full justify-between font-normal">
-                <span className="truncate">
-                  {form.department_ids.length === 0
-                    ? 'Select level 2...'
-                    : `${form.department_ids.length} selected`}
-                </span>
-                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
-              <div className="max-h-48 overflow-y-auto space-y-1">
-                {availableDepts.map((d) => {
-                  const label = d.subdepartment ? `${d.department} / ${d.subdepartment}` : d.department
-                  return (
-                    <label key={d.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
-                      <Checkbox
-                        checked={form.department_ids.includes(d.id)}
-                        onCheckedChange={() => setForm((f) => ({ ...f, department_ids: toggleArrayItem(f.department_ids, d.id) }))}
-                      />
-                      {form.company_ids.length > 1 ? `${d.company} — ${label}` : label}
-                    </label>
-                  )
-                })}
-              </div>
-            </PopoverContent>
-          </Popover>
-          {form.department_ids.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {form.department_ids.map((id) => {
-                const d = availableDepts.find((x) => x.id === id)
-                if (!d) return null
-                const label = d.subdepartment ? `${d.department} / ${d.subdepartment}` : d.department
+              {form.channel_mix.map((ch) => {
+                const label = (channelOptions ?? []).find((o: { value: string; label: string }) => o.value === ch)?.label ?? ch
                 return (
-                  <Badge key={id} variant="secondary" className="text-xs gap-1">
-                    {form.company_ids.length > 1 ? `${d.company} — ${label}` : label}
-                    <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => setForm((f) => ({ ...f, department_ids: f.department_ids.filter((x) => x !== id) }))}>&times;</button>
+                  <Badge key={ch} variant="secondary" className="text-xs gap-1">
+                    {label}
+                    <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => setForm((f) => ({ ...f, channel_mix: f.channel_mix.filter((x) => x !== ch) }))}>&times;</button>
                   </Badge>
                 )
               })}
             </div>
           )}
         </div>
-      )}
-
-      {/* Type + Budget + Currency */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="space-y-1.5">
-          <Label>Project Type</Label>
-          <Select value={form.project_type} onValueChange={(v) => setForm((f) => ({ ...f, project_type: v }))}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {(typeOptions ?? []).map((opt: { value: string; label: string }) => (
-                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="mkt-total-budget">Total Budget</Label>
-          <Input
-            id="mkt-total-budget"
-            type="number"
-            value={form.total_budget}
-            onChange={(e) => setForm((f) => ({ ...f, total_budget: e.target.value }))}
-            placeholder="0"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Currency</Label>
-          <Select value={form.currency} onValueChange={(v) => setForm((f) => ({ ...f, currency: v }))}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="RON">RON</SelectItem>
-              <SelectItem value="EUR">EUR</SelectItem>
-              <SelectItem value="USD">USD</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
-      {/* Channels (dropdown + checkboxes) */}
-      <div className="space-y-1.5">
-        <Label>Channel Mix</Label>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="w-full justify-between font-normal">
-              <span className="truncate">
-                {form.channel_mix.length === 0
-                  ? 'Select channels...'
-                  : `${form.channel_mix.length} selected`}
-              </span>
-              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
-            <div className="max-h-48 overflow-y-auto space-y-1">
-              {(channelOptions ?? []).map((opt: { value: string; label: string }) => (
-                <label key={opt.value} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
-                  <Checkbox
-                    checked={form.channel_mix.includes(opt.value)}
-                    onCheckedChange={() => setForm((f) => ({ ...f, channel_mix: toggleArrayItem(f.channel_mix, opt.value) }))}
-                  />
-                  {opt.label}
-                </label>
-              ))}
+      {/* ===== Organization ===== */}
+      <div className="grid grid-cols-3 gap-3 items-start">
+          {/* Companies */}
+          <div className="space-y-1.5">
+            <Label>Companies *</Label>
+            <Popover onOpenChange={(open) => { if (!open) v.touch('company_ids') }}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className={cn('w-full justify-between font-normal', v.error('company_ids') && 'border-destructive')}>
+                  <span className="truncate">
+                    {form.company_ids.length === 0
+                      ? 'Select companies...'
+                      : `${form.company_ids.length} compan${form.company_ids.length === 1 ? 'y' : 'ies'} selected`}
+                  </span>
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
+                <div className="max-h-48 overflow-y-auto space-y-1">
+                  {(companies ?? []).map((c: CompanyWithBrands) => (
+                    <label key={c.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
+                      <Checkbox
+                        checked={form.company_ids.includes(c.id)}
+                        onCheckedChange={() => toggleCompany(c.id)}
+                      />
+                      {c.company}
+                    </label>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+            {form.company_ids.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {form.company_ids.map((id) => {
+                  const name = (companies ?? []).find((c: CompanyWithBrands) => c.id === id)?.company
+                  return name ? (
+                    <Badge key={id} variant="secondary" className="text-xs gap-1 max-w-full truncate">
+                      {name}
+                      <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => toggleCompany(id)}>&times;</button>
+                    </Badge>
+                  ) : null
+                })}
+              </div>
+            )}
+            <FieldError message={v.error('company_ids')} />
+          </div>
+
+          {/* Brands */}
+          {availableBrands.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Level 1</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between font-normal">
+                    <span className="truncate">
+                      {form.brand_ids.length === 0
+                        ? 'Select brands...'
+                        : `${form.brand_ids.length} brand${form.brand_ids.length === 1 ? '' : 's'} selected`}
+                    </span>
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {availableBrands.map((b) => (
+                      <label key={b.brand_id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
+                        <Checkbox
+                          checked={form.brand_ids.includes(b.brand_id)}
+                          onCheckedChange={() => setForm((f) => ({ ...f, brand_ids: toggleArrayItem(f.brand_ids, b.brand_id), department_ids: [] }))}
+                        />
+                        {form.company_ids.length > 1 ? `${b.company} — ${b.brand}` : b.brand}
+                      </label>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {form.brand_ids.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {form.brand_ids.map((id) => {
+                    const b = availableBrands.find((x) => x.brand_id === id)
+                    return b ? (
+                      <Badge key={id} variant="secondary" className="text-xs gap-1 max-w-full truncate">
+                        {b.brand}
+                        <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => setForm((f) => ({ ...f, brand_ids: f.brand_ids.filter((x) => x !== id), department_ids: [] }))}>&times;</button>
+                      </Badge>
+                    ) : null
+                  })}
+                </div>
+              )}
             </div>
-          </PopoverContent>
-        </Popover>
-        {form.channel_mix.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {form.channel_mix.map((ch) => {
-              const label = (channelOptions ?? []).find((o: { value: string; label: string }) => o.value === ch)?.label ?? ch
-              return (
-                <Badge key={ch} variant="secondary" className="text-xs gap-1">
-                  {label}
-                  <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => setForm((f) => ({ ...f, channel_mix: f.channel_mix.filter((x) => x !== ch) }))}>&times;</button>
-                </Badge>
-              )
-            })}
-          </div>
-        )}
+          )}
+
+          {/* Level 2 */}
+          {availableDepts.length > 0 && (availableBrands.length === 0 || form.brand_ids.length > 0) && (
+            <div className="space-y-1.5">
+              <Label>Level 2</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between font-normal">
+                    <span className="truncate">
+                      {form.department_ids.length === 0
+                        ? 'Select level 2...'
+                        : `${form.department_ids.length} selected`}
+                    </span>
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {availableDepts.map((d) => {
+                      const label = d.subdepartment ? `${d.department} / ${d.subdepartment}` : d.department
+                      return (
+                        <label key={d.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
+                          <Checkbox
+                            checked={form.department_ids.includes(d.id)}
+                            onCheckedChange={() => setForm((f) => ({ ...f, department_ids: toggleArrayItem(f.department_ids, d.id) }))}
+                          />
+                          {form.company_ids.length > 1 ? `${d.company} — ${label}` : label}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {form.department_ids.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {form.department_ids.map((id) => {
+                    const d = availableDepts.find((x) => x.id === id)
+                    if (!d) return null
+                    const label = d.subdepartment ? `${d.department} / ${d.subdepartment}` : d.department
+                    return (
+                      <Badge key={id} variant="secondary" className="text-xs gap-1 max-w-full truncate">
+                        {form.company_ids.length > 1 ? `${d.company} — ${label}` : label}
+                        <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => setForm((f) => ({ ...f, department_ids: f.department_ids.filter((x) => x !== id) }))}>&times;</button>
+                      </Badge>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
       </div>
 
-      {/* Dates */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="mkt-start-date">Start Date</Label>
-          <DateField value={form.start_date} onChange={(v) => setForm((f) => ({ ...f, start_date: v }))} className="w-full" />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="mkt-end-date">End Date</Label>
-          <DateField value={form.end_date} onChange={(v) => setForm((f) => ({ ...f, end_date: v }))} className="w-full" />
-        </div>
-      </div>
-
-      {/* Description, Objective, Target Audience, External Ref — edit only */}
-      {isEdit && (
-        <>
+      {/* ===== Approval & People — bordered card ===== */}
+      <div className="rounded-lg border border-border p-4">
+        <div className="grid grid-cols-3 gap-3 items-start">
+          {/* Approval Mode */}
           <div className="space-y-1.5">
-            <Label>Description</Label>
-            <RichTextEditor
-              content={form.description}
-              onChange={(html) => setForm((f) => ({ ...f, description: html }))}
-              placeholder="Brief project description..."
-            />
+            <Label>Approval Mode</Label>
+            <Select value={form.approval_mode} onValueChange={(v) => setForm((f) => ({ ...f, approval_mode: v as 'any' | 'all' }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="any">Any one stakeholder</SelectItem>
+                <SelectItem value="all">All stakeholders must approve</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
+          {/* Stakeholders */}
           <div className="space-y-1.5">
-            <Label htmlFor="mkt-objective">Objective</Label>
-            <Textarea
-              id="mkt-objective"
-              value={form.objective}
-              onChange={(e) => setForm((f) => ({ ...f, objective: e.target.value }))}
-              placeholder="What does success look like?"
-              rows={2}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="mkt-target-audience">Target Audience</Label>
-            <Input
-              id="mkt-target-audience"
-              value={form.target_audience}
-              onChange={(e) => setForm((f) => ({ ...f, target_audience: e.target.value }))}
-              placeholder="e.g., Males 25-45, urban, car enthusiasts"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="mkt-external-ref">External Reference</Label>
-            <Input
-              id="mkt-external-ref"
-              value={form.external_ref}
-              onChange={(e) => setForm((f) => ({ ...f, external_ref: e.target.value }))}
-              placeholder="PO number, agency ref, etc."
-            />
-          </div>
-        </>
-      )}
-
-      {/* Approval Settings */}
-      <div className="space-y-1.5">
-        <Label>Approval Mode</Label>
-        <Select value={form.approval_mode} onValueChange={(v) => setForm((f) => ({ ...f, approval_mode: v as 'any' | 'all' }))}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="any">Any one stakeholder</SelectItem>
-            <SelectItem value="all">All stakeholders must approve</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Stakeholders (approvers) */}
-      <div className="space-y-1.5">
-        <Label>Stakeholders (Approvers)</Label>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="w-full justify-between font-normal">
-              <span className="truncate">
-                {stakeholderIds.length === 0
-                  ? 'Select stakeholders...'
-                  : `${stakeholderIds.length} stakeholder${stakeholderIds.length === 1 ? '' : 's'} selected`}
-              </span>
-              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
-            <Input
-              placeholder="Search users..."
-              value={stakeholderSearch}
-              onChange={(e) => setStakeholderSearch(e.target.value)}
-              className="mb-2 h-8 text-sm"
-            />
-            <ScrollArea className="h-48">
-              <div className="space-y-1 pr-3">
-                {(allUsers ?? [])
-                  .filter((u: UserDetail) => !observerIds.includes(u.id))
-                  .filter((u: UserDetail) => u.name.toLowerCase().includes(stakeholderSearch.toLowerCase()))
-                  .map((u: UserDetail) => (
-                  <label key={u.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
-                    <Checkbox
-                      checked={stakeholderIds.includes(u.id)}
-                      onCheckedChange={() => setStakeholderIds((prev) => prev.includes(u.id) ? prev.filter((x) => x !== u.id) : [...prev, u.id])}
-                    />
-                    {u.name}
-                  </label>
-                ))}
+            <Label>Stakeholders (Approvers)</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full justify-between font-normal">
+                  <span className="truncate">
+                    {stakeholderIds.length === 0
+                      ? 'Select stakeholders...'
+                      : `${stakeholderIds.length} stakeholder${stakeholderIds.length === 1 ? '' : 's'} selected`}
+                  </span>
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
+                <Input
+                  placeholder="Search users..."
+                  value={stakeholderSearch}
+                  onChange={(e) => setStakeholderSearch(e.target.value)}
+                  className="mb-2 h-8 text-sm"
+                />
+                <ScrollArea className="h-48">
+                  <div className="space-y-1 pr-3">
+                    {(allUsers ?? [])
+                      .filter((u: UserDetail) => !observerIds.includes(u.id))
+                      .filter((u: UserDetail) => u.name.toLowerCase().includes(stakeholderSearch.toLowerCase()))
+                      .map((u: UserDetail) => (
+                      <label key={u.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
+                        <Checkbox
+                          checked={stakeholderIds.includes(u.id)}
+                          onCheckedChange={() => setStakeholderIds((prev) => prev.includes(u.id) ? prev.filter((x) => x !== u.id) : [...prev, u.id])}
+                        />
+                        {u.name}
+                      </label>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </PopoverContent>
+            </Popover>
+            {stakeholderIds.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {stakeholderIds.map((id) => {
+                  const name = (allUsers ?? []).find((u: UserDetail) => u.id === id)?.name
+                  return name ? (
+                    <Badge key={id} variant="secondary" className="text-xs gap-1 max-w-full truncate">
+                      {name}
+                      <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => setStakeholderIds((prev) => prev.filter((x) => x !== id))}>&times;</button>
+                    </Badge>
+                  ) : null
+                })}
               </div>
-            </ScrollArea>
-          </PopoverContent>
-        </Popover>
-        {stakeholderIds.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {stakeholderIds.map((id) => {
-              const name = (allUsers ?? []).find((u: UserDetail) => u.id === id)?.name
-              return name ? (
-                <Badge key={id} variant="secondary" className="text-xs gap-1">
-                  {name}
-                  <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => setStakeholderIds((prev) => prev.filter((x) => x !== id))}>&times;</button>
-                </Badge>
-              ) : null
-            })}
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Observers (view-only) */}
-      <div className="space-y-1.5">
-        <Label>Observers (View-only)</Label>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="w-full justify-between font-normal">
-              <span className="truncate">
-                {observerIds.length === 0
-                  ? 'Select observers...'
-                  : `${observerIds.length} observer${observerIds.length === 1 ? '' : 's'} selected`}
-              </span>
-              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
-            <Input
-              placeholder="Search users..."
-              value={observerSearch}
-              onChange={(e) => setObserverSearch(e.target.value)}
-              className="mb-2 h-8 text-sm"
-            />
-            <ScrollArea className="h-48">
-              <div className="space-y-1 pr-3">
-                {(allUsers ?? [])
-                  .filter((u: UserDetail) => !stakeholderIds.includes(u.id))
-                  .filter((u: UserDetail) => u.name.toLowerCase().includes(observerSearch.toLowerCase()))
-                  .map((u: UserDetail) => (
-                  <label key={u.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
-                    <Checkbox
-                      checked={observerIds.includes(u.id)}
-                      onCheckedChange={() => setObserverIds((prev) => prev.includes(u.id) ? prev.filter((x) => x !== u.id) : [...prev, u.id])}
-                    />
-                    {u.name}
-                  </label>
-                ))}
+          {/* Observers */}
+          <div className="space-y-1.5">
+            <Label>Observers (View-only)</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full justify-between font-normal">
+                  <span className="truncate">
+                    {observerIds.length === 0
+                      ? 'Select observers...'
+                      : `${observerIds.length} observer${observerIds.length === 1 ? '' : 's'} selected`}
+                  </span>
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
+                <Input
+                  placeholder="Search users..."
+                  value={observerSearch}
+                  onChange={(e) => setObserverSearch(e.target.value)}
+                  className="mb-2 h-8 text-sm"
+                />
+                <ScrollArea className="h-48">
+                  <div className="space-y-1 pr-3">
+                    {(allUsers ?? [])
+                      .filter((u: UserDetail) => !stakeholderIds.includes(u.id))
+                      .filter((u: UserDetail) => u.name.toLowerCase().includes(observerSearch.toLowerCase()))
+                      .map((u: UserDetail) => (
+                      <label key={u.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
+                        <Checkbox
+                          checked={observerIds.includes(u.id)}
+                          onCheckedChange={() => setObserverIds((prev) => prev.includes(u.id) ? prev.filter((x) => x !== u.id) : [...prev, u.id])}
+                        />
+                        {u.name}
+                      </label>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </PopoverContent>
+            </Popover>
+            {observerIds.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {observerIds.map((id) => {
+                  const name = (allUsers ?? []).find((u: UserDetail) => u.id === id)?.name
+                  return name ? (
+                    <Badge key={id} variant="secondary" className="text-xs gap-1 max-w-full truncate">
+                      {name}
+                      <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => setObserverIds((prev) => prev.filter((x) => x !== id))}>&times;</button>
+                    </Badge>
+                  ) : null
+                })}
               </div>
-            </ScrollArea>
-          </PopoverContent>
-        </Popover>
-        {observerIds.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {observerIds.map((id) => {
-              const name = (allUsers ?? []).find((u: UserDetail) => u.id === id)?.name
-              return name ? (
-                <Badge key={id} variant="secondary" className="text-xs gap-1">
-                  {name}
-                  <button type="button" className="ml-0.5 hover:text-destructive" onClick={() => setObserverIds((prev) => prev.filter((x) => x !== id))}>&times;</button>
-                </Badge>
-              ) : null
-            })}
+            )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Actions */}
-      <div className="flex justify-end gap-3 pt-2">
-        <Button type="button" variant="outline" onClick={onCancel} disabled={isSaving}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={isSaving}>
-          {isSaving ? 'Saving...' : isEdit ? 'Update Project' : 'Create Project'}
-        </Button>
+      {/* ===== Footer: Actions + Templates ===== */}
+      <div className="flex items-center justify-between pt-2 border-t border-border">
+        <div className="flex items-center gap-2">
+          {showSaveTemplate ? (
+            <div className="flex items-center gap-1.5">
+              <Input
+                className="h-8 w-36 text-sm"
+                placeholder="Template name"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveTemplate() } }}
+                autoFocus
+              />
+              <Button type="button" variant="default" size="sm" onClick={saveTemplate} disabled={!templateName.trim()}>Save</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setShowSaveTemplate(false)}>Cancel</Button>
+            </div>
+          ) : (
+            <>
+              <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setShowSaveTemplate(true)}>
+                <Save className="h-3.5 w-3.5 mr-1.5" /> Save as Template
+              </Button>
+              {!isEdit && savedTemplates.length > 0 && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="ghost" size="sm" className="text-muted-foreground">
+                      <FileDown className="h-3.5 w-3.5 mr-1.5" /> Load Template
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-1" align="start">
+                    {savedTemplates.map((t) => (
+                      <div key={t.name} className="flex items-center justify-between px-2 py-1.5 hover:bg-muted rounded-sm text-sm">
+                        <button type="button" className="flex-1 text-left truncate" onClick={() => loadTemplate(t)}>
+                          {t.name}
+                        </button>
+                        <button type="button" className="text-muted-foreground hover:text-destructive ml-1 shrink-0" onClick={() => deleteTemplate(t.name)}>
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              )}
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? 'Saving...' : isEdit ? 'Update Project' : 'Create Project'}
+          </Button>
+        </div>
       </div>
     </form>
   )

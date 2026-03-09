@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useTabParam } from '@/hooks/useTabParam'
@@ -19,12 +19,13 @@ import {
   Plus, Search, LayoutGrid, LayoutDashboard, List, Columns3,
   DollarSign, Target, AlertTriangle, FolderOpen, FileText,
   BarChart3, PieChart, Download, SlidersHorizontal,
-  Archive, Trash2, RotateCcw, AlertCircle, Heart, GitCompareArrows, X, Check,
+  Archive, Trash2, RotateCcw, AlertCircle, Heart, GitCompareArrows, X, Check, CalendarDays,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { marketingApi } from '@/api/marketing'
+import { hrApi } from '@/api/hr'
 import { settingsApi } from '@/api/settings'
 import { organizationApi } from '@/api/organization'
 import { QueryError } from '@/components/QueryError'
@@ -55,9 +56,8 @@ function burnRate(spent: number, budget: number) {
   return Math.round((spent / budget) * 100)
 }
 
-import { Calendar } from 'lucide-react'
 
-type MainTab = 'projects' | 'dashboard' | 'calendar' | 'archived' | 'trash'
+type MainTab = 'projects' | 'archived' | 'trash'
 
 export default function Marketing() {
   const queryClient = useQueryClient()
@@ -69,7 +69,9 @@ export default function Marketing() {
   const effectiveViewMode = isMobile ? 'cards' : viewMode
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showStats, setShowStats] = useState(false)
-  const [mainTab, setMainTab] = useTabParam<MainTab>('dashboard')
+  const [mainTabRaw, setMainTab] = useTabParam<MainTab>('projects')
+  // Migrate old tab=dashboard / tab=calendar URLs to projects view
+  const mainTab: MainTab = ((mainTabRaw as string) === 'dashboard' || (mainTabRaw as string) === 'calendar') ? 'projects' : mainTabRaw
   const [compareMode, setCompareMode] = useState(false)
   const [compareIds, setCompareIds] = useState<Set<number>>(new Set())
 
@@ -113,7 +115,7 @@ export default function Marketing() {
         title="Marketing"
         breadcrumbs={[
           { label: 'Marketing', shortLabel: 'Mkt.' },
-          { label: mainTab === 'projects' ? `Campaigns (${total})` : mainTab === 'dashboard' ? 'Dashboard' : mainTab === 'calendar' ? 'Calendar' : mainTab === 'archived' ? 'Archived' : 'Trash' },
+          { label: mainTab === 'projects' ? `Campaigns (${total})` : mainTab === 'archived' ? 'Archived' : 'Trash' },
         ]}
         actions={
           <div className="flex items-center gap-2">
@@ -129,11 +131,9 @@ export default function Marketing() {
             {!isMobile && (
               <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
                 <TabsList className="w-auto">
-                  <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
-                  <TabsTrigger value="projects"><FolderOpen className="h-3.5 w-3.5" />Campaigns</TabsTrigger>
-                  <TabsTrigger value="calendar"><Calendar className="h-3.5 w-3.5" />Calendar</TabsTrigger>
-                  <TabsTrigger value="archived"><Archive className="h-3.5 w-3.5" />Archived</TabsTrigger>
-                  <TabsTrigger value="trash"><Trash2 className="h-3.5 w-3.5" />Trash</TabsTrigger>
+                  <TabsTrigger value="projects" title="Campaigns"><FolderOpen className="h-3.5 w-3.5" /></TabsTrigger>
+                  <TabsTrigger value="archived" title="Archived"><Archive className="h-3.5 w-3.5" /></TabsTrigger>
+                  <TabsTrigger value="trash" title="Trash"><Trash2 className="h-3.5 w-3.5" /></TabsTrigger>
                 </TabsList>
               </Tabs>
             )}
@@ -146,11 +146,9 @@ export default function Marketing() {
         <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
-              <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
-              <TabsTrigger value="projects"><FolderOpen className="h-3.5 w-3.5" />Campaigns</TabsTrigger>
-              <TabsTrigger value="calendar"><Calendar className="h-3.5 w-3.5" />Calendar</TabsTrigger>
-              <TabsTrigger value="archived"><Archive className="h-3.5 w-3.5" />Archived</TabsTrigger>
-              <TabsTrigger value="trash"><Trash2 className="h-3.5 w-3.5" />Trash</TabsTrigger>
+              <TabsTrigger value="projects" title="Campaigns"><FolderOpen className="h-3.5 w-3.5" /></TabsTrigger>
+              <TabsTrigger value="archived" title="Archived"><Archive className="h-3.5 w-3.5" /></TabsTrigger>
+              <TabsTrigger value="trash" title="Trash"><Trash2 className="h-3.5 w-3.5" /></TabsTrigger>
             </TabsList>
           </MobileBottomTabs>
         </Tabs>
@@ -419,13 +417,7 @@ export default function Marketing() {
         </>
       )}
 
-      {mainTab === 'dashboard' && <DashboardView showStats={showStats} />}
-
-      {mainTab === 'calendar' && (
-        <CalendarView
-          onSelect={(p) => navigate(`/app/marketing/projects/${p.id}`)}
-        />
-      )}
+      {/* Dashboard and Calendar are now view modes within Campaigns tab */}
 
       {mainTab === 'archived' && (
         <ArchivedView
@@ -456,7 +448,7 @@ export default function Marketing() {
 
       {/* Create Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
+        <DialogContent className="sm:max-w-[1024px] max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>New Project</DialogTitle>
           </DialogHeader>
@@ -912,41 +904,131 @@ function ProjectCards({ projects, onSelect, onArchive, onDelete, compareMode, co
 
 // ---- Calendar/Timeline View ----
 
-function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }) {
+type CalendarRange = 'day' | 'week' | 'month' | 'quarter' | 'year'
+
+function getRange(anchor: Date, range: CalendarRange): { start: Date; end: Date } {
+  const y = anchor.getFullYear(), m = anchor.getMonth(), d = anchor.getDate()
+  switch (range) {
+    case 'day':
+      return { start: new Date(y, m, d), end: new Date(y, m, d + 1) }
+    case 'week': {
+      const dow = anchor.getDay() || 7 // Mon=1
+      const mon = new Date(y, m, d - dow + 1)
+      return { start: mon, end: new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 7) }
+    }
+    case 'month':
+      return { start: new Date(y, m, 1), end: new Date(y, m + 1, 1) }
+    case 'quarter': {
+      const q = Math.floor(m / 3) * 3
+      return { start: new Date(y, q, 1), end: new Date(y, q + 3, 1) }
+    }
+    case 'year':
+      return { start: new Date(y, 0, 1), end: new Date(y + 1, 0, 1) }
+  }
+}
+
+function shiftAnchor(anchor: Date, range: CalendarRange, dir: 1 | -1): Date {
+  const y = anchor.getFullYear(), m = anchor.getMonth(), d = anchor.getDate()
+  switch (range) {
+    case 'day': return new Date(y, m, d + dir)
+    case 'week': return new Date(y, m, d + 7 * dir)
+    case 'month': return new Date(y, m + dir, 1)
+    case 'quarter': return new Date(y, m + 3 * dir, 1)
+    case 'year': return new Date(y + dir, 0, 1)
+  }
+}
+
+function generateGridMarkers(start: Date, end: Date, range: CalendarRange): { label: string; left: number }[] {
+  const totalMs = end.getTime() - start.getTime()
+  const markers: { label: string; left: number }[] = []
+  const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) => d.toLocaleDateString('ro-RO', opts)
+
+  if (range === 'day') {
+    // Hourly markers
+    for (let h = 0; h < 24; h++) {
+      const t = new Date(start.getFullYear(), start.getMonth(), start.getDate(), h)
+      markers.push({ label: `${h}:00`, left: ((t.getTime() - start.getTime()) / totalMs) * 100 })
+    }
+  } else if (range === 'week') {
+    // Daily markers
+    const c = new Date(start)
+    while (c < end) {
+      markers.push({ label: fmt(c, { weekday: 'short', day: 'numeric' }), left: ((c.getTime() - start.getTime()) / totalMs) * 100 })
+      c.setDate(c.getDate() + 1)
+    }
+  } else if (range === 'month') {
+    // Daily markers (show every few days for readability)
+    const c = new Date(start)
+    while (c < end) {
+      markers.push({ label: String(c.getDate()), left: ((c.getTime() - start.getTime()) / totalMs) * 100 })
+      c.setDate(c.getDate() + 1)
+    }
+  } else if (range === 'quarter') {
+    // Weekly markers
+    const c = new Date(start)
+    while (c < end) {
+      markers.push({ label: fmt(c, { day: 'numeric', month: 'short' }), left: ((c.getTime() - start.getTime()) / totalMs) * 100 })
+      c.setDate(c.getDate() + 7)
+    }
+  } else {
+    // Monthly markers
+    const c = new Date(start.getFullYear(), start.getMonth(), 1)
+    while (c < end) {
+      markers.push({ label: fmt(c, { month: 'short' }), left: ((c.getTime() - start.getTime()) / totalMs) * 100 })
+      c.setMonth(c.getMonth() + 1)
+    }
+  }
+  return markers
+}
+
+function rangeTitle(anchor: Date, range: CalendarRange): string {
+  const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) => d.toLocaleDateString('ro-RO', opts)
+  const { start, end } = getRange(anchor, range)
+  switch (range) {
+    case 'day': return fmt(anchor, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    case 'week': {
+      const wEnd = new Date(end.getTime() - 86400000)
+      return `${fmt(start, { day: 'numeric', month: 'short' })} – ${fmt(wEnd, { day: 'numeric', month: 'short', year: 'numeric' })}`
+    }
+    case 'month': return fmt(anchor, { month: 'long', year: 'numeric' })
+    case 'quarter': {
+      const q = Math.floor(anchor.getMonth() / 3) + 1
+      return `Q${q} ${anchor.getFullYear()}`
+    }
+    case 'year': return String(anchor.getFullYear())
+  }
+}
+
+export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }) {
+  const navigate = useNavigate()
+  const [range, setRange] = useState<CalendarRange>('quarter')
+  const [anchor, setAnchor] = useState(() => new Date())
+
   const { data, isLoading } = useQuery({
     queryKey: ['mkt-projects', { limit: 200, offset: 0 }],
     queryFn: () => marketingApi.listProjects({ limit: 200, offset: 0 }),
   })
-  const projects = (data?.projects ?? []).filter((p) => p.start_date && p.end_date)
+  const { data: eventsData } = useQuery({
+    queryKey: ['hr-events'],
+    queryFn: () => hrApi.getEvents(),
+  })
+  const allProjects = (data?.projects ?? []).filter((p) => p.start_date && p.end_date)
+  const allEvents = (eventsData ?? []).filter((e) => e.start_date && e.end_date)
 
-  if (isLoading) return <TableSkeleton rows={6} columns={5} />
-  if (projects.length === 0) {
-    return (
-      <div className="text-center py-12 text-muted-foreground">
-        No projects with date ranges found. Set start/end dates to see the timeline.
-      </div>
-    )
-  }
-
-  // Compute timeline bounds
-  const allDates = projects.flatMap((p) => [new Date(p.start_date!), new Date(p.end_date!)])
-  const minDate = new Date(Math.min(...allDates.map((d) => d.getTime())))
-  const maxDate = new Date(Math.max(...allDates.map((d) => d.getTime())))
-  // Pad by 7 days each side
-  const timeStart = new Date(minDate.getTime() - 7 * 86400000)
-  const timeEnd = new Date(maxDate.getTime() + 7 * 86400000)
+  const { start: timeStart, end: timeEnd } = getRange(anchor, range)
   const totalMs = timeEnd.getTime() - timeStart.getTime()
 
-  // Generate month markers
-  const months: { label: string; left: number }[] = []
-  const cursor = new Date(timeStart.getFullYear(), timeStart.getMonth(), 1)
-  while (cursor <= timeEnd) {
-    const left = ((cursor.getTime() - timeStart.getTime()) / totalMs) * 100
-    months.push({ label: cursor.toLocaleDateString('ro-RO', { month: 'short', year: '2-digit' }), left: Math.max(0, left) })
-    cursor.setMonth(cursor.getMonth() + 1)
-  }
+  // Filter items overlapping current range
+  const projects = allProjects.filter((p) => {
+    const s = new Date(p.start_date!).getTime(), e = new Date(p.end_date!).getTime()
+    return s < timeEnd.getTime() && e > timeStart.getTime()
+  })
+  const events = allEvents.filter((e) => {
+    const s = new Date(e.start_date).getTime(), en = new Date(e.end_date).getTime()
+    return s < timeEnd.getTime() && en > timeStart.getTime()
+  })
 
-  // Today marker
+  const markers = generateGridMarkers(timeStart, timeEnd, range)
   const todayPct = ((Date.now() - timeStart.getTime()) / totalMs) * 100
 
   const barColors: Record<string, string> = {
@@ -960,8 +1042,71 @@ function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }) {
     archived: 'bg-gray-300',
   }
 
+  const renderGridAndToday = () => (
+    <>
+      {markers.map((m, i) => (
+        <div key={i} className="absolute top-0 h-full border-l border-dashed border-muted-foreground/10" style={{ left: `${m.left}%` }} />
+      ))}
+      {todayPct >= 0 && todayPct <= 100 && (
+        <div className="absolute top-0 h-full w-px bg-red-500/20" style={{ left: `${todayPct}%` }} />
+      )}
+    </>
+  )
+
+  const clampBar = (itemStart: Date, itemEnd: Date) => {
+    const s = Math.max(itemStart.getTime(), timeStart.getTime())
+    const e = Math.min(itemEnd.getTime(), timeEnd.getTime())
+    return {
+      leftPct: ((s - timeStart.getTime()) / totalMs) * 100,
+      widthPct: ((e - s) / totalMs) * 100,
+    }
+  }
+
+  const rangeButtons: { key: CalendarRange; label: string }[] = [
+    { key: 'day', label: 'Day' },
+    { key: 'week', label: 'Week' },
+    { key: 'month', label: 'Month' },
+    { key: 'quarter', label: 'Quarter' },
+    { key: 'year', label: 'Year' },
+  ]
+
+  if (isLoading) return <TableSkeleton rows={6} columns={5} />
+
   return (
     <div className="space-y-4">
+      {/* Toolbar: range selector + navigation */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex rounded-md border overflow-hidden">
+          {rangeButtons.map((rb) => (
+            <button
+              key={rb.key}
+              className={cn(
+                'px-2.5 py-1 text-xs font-medium transition-colors',
+                range === rb.key
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-background hover:bg-muted text-muted-foreground',
+              )}
+              onClick={() => setRange(rb.key)}
+            >
+              {rb.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1">
+          <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setAnchor(shiftAnchor(anchor, range, -1))}>
+            <span className="text-xs">&larr;</span>
+          </Button>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAnchor(new Date())}>
+            Today
+          </Button>
+          <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setAnchor(shiftAnchor(anchor, range, 1))}>
+            <span className="text-xs">&rarr;</span>
+          </Button>
+        </div>
+        <span className="text-sm font-medium ml-1">{rangeTitle(anchor, range)}</span>
+      </div>
+
+      {/* Legend */}
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
         {Object.entries(barColors).map(([status, cls]) => (
           <div key={status} className="flex items-center gap-1.5">
@@ -969,74 +1114,118 @@ function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }) {
             <span className="capitalize">{status.replace('_', ' ')}</span>
           </div>
         ))}
+        {allEvents.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-2 rounded-sm bg-purple-500" />
+            <span>Event</span>
+          </div>
+        )}
       </div>
 
-      <div className="rounded-lg border overflow-hidden">
-        {/* Month headers */}
-        <div className="relative h-7 bg-muted/50 border-b">
-          {months.map((m, i) => (
-            <div
-              key={i}
-              className="absolute top-0 h-full border-l border-dashed border-muted-foreground/20 flex items-center px-1.5"
-              style={{ left: `${m.left}%` }}
-            >
-              <span className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">{m.label}</span>
-            </div>
-          ))}
-          {/* Today line */}
-          {todayPct >= 0 && todayPct <= 100 && (
-            <div className="absolute top-0 h-full w-px bg-red-500 z-10" style={{ left: `${todayPct}%` }}>
-              <span className="absolute -top-0.5 -translate-x-1/2 text-[8px] text-red-500 font-bold">TODAY</span>
-            </div>
+      {projects.length === 0 && events.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          No campaigns or events in this period.
+        </div>
+      ) : (
+        <div className="rounded-lg border overflow-hidden">
+          {/* Grid headers */}
+          <div className="relative h-7 bg-muted/50 border-b">
+            {markers.map((m, i) => (
+              <div
+                key={i}
+                className="absolute top-0 h-full border-l border-dashed border-muted-foreground/20 flex items-center px-1"
+                style={{ left: `${m.left}%` }}
+              >
+                <span className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">{m.label}</span>
+              </div>
+            ))}
+            {todayPct >= 0 && todayPct <= 100 && (
+              <div className="absolute top-0 h-full w-px bg-red-500 z-10" style={{ left: `${todayPct}%` }}>
+                <span className="absolute -top-0.5 -translate-x-1/2 text-[8px] text-red-500 font-bold">TODAY</span>
+              </div>
+            )}
+          </div>
+
+          {/* Campaign rows */}
+          {projects.length > 0 && (
+            <>
+              <div className="px-2 py-1 bg-muted/30 border-b">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Campaigns ({projects.length})</span>
+              </div>
+              <div className="divide-y">
+                {projects.map((p) => {
+                  const { leftPct, widthPct } = clampBar(new Date(p.start_date!), new Date(p.end_date!))
+                  const spent = typeof p.total_spent === 'string' ? parseFloat(p.total_spent) : (p.total_spent ?? 0)
+                  const budget = typeof p.total_budget === 'string' ? parseFloat(p.total_budget as unknown as string) : (p.total_budget ?? 0)
+                  const burn = burnRate(spent, budget)
+                  return (
+                    <div
+                      key={p.id}
+                      className="relative h-10 hover:bg-muted/30 cursor-pointer transition-colors group"
+                      onClick={() => onSelect(p)}
+                    >
+                      {renderGridAndToday()}
+                      <div
+                        className={cn(
+                          'absolute top-1.5 h-7 rounded-md flex items-center px-2 min-w-[40px] shadow-sm transition-shadow group-hover:shadow-md',
+                          barColors[p.status] ?? 'bg-gray-400',
+                        )}
+                        style={{ left: `${Math.max(0, leftPct)}%`, width: `${Math.max(1, widthPct)}%` }}
+                      >
+                        <span className="text-[10px] font-medium text-white truncate drop-shadow-sm">
+                          {p.name}
+                        </span>
+                        {budget > 0 && (
+                          <span className="ml-auto text-[9px] text-white/80 shrink-0 tabular-nums pl-1">
+                            {burn}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Event rows */}
+          {events.length > 0 && (
+            <>
+              <div className="px-2 py-1 bg-muted/30 border-b border-t">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Events ({events.length})</span>
+              </div>
+              <div className="divide-y">
+                {events.map((e) => {
+                  const { leftPct, widthPct } = clampBar(new Date(e.start_date), new Date(e.end_date))
+                  return (
+                    <div
+                      key={`evt-${e.id}`}
+                      className="relative h-10 hover:bg-muted/30 cursor-pointer transition-colors group"
+                      onClick={() => navigate('/app/marketing/events')}
+                    >
+                      {renderGridAndToday()}
+                      <div
+                        className="absolute top-1.5 h-7 rounded-md flex items-center px-2 min-w-[40px] shadow-sm transition-shadow group-hover:shadow-md bg-purple-500"
+                        style={{ left: `${Math.max(0, leftPct)}%`, width: `${Math.max(1, widthPct)}%` }}
+                      >
+                        <CalendarDays className="h-3 w-3 text-white shrink-0 mr-1" />
+                        <span className="text-[10px] font-medium text-white truncate drop-shadow-sm">
+                          {e.name}
+                        </span>
+                        {e.company && (
+                          <span className="ml-auto text-[9px] text-white/80 shrink-0 pl-1">
+                            {e.company}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
           )}
         </div>
-
-        {/* Project rows */}
-        <div className="divide-y">
-          {projects.map((p) => {
-            const start = new Date(p.start_date!)
-            const end = new Date(p.end_date!)
-            const leftPct = ((start.getTime() - timeStart.getTime()) / totalMs) * 100
-            const widthPct = ((end.getTime() - start.getTime()) / totalMs) * 100
-            const spent = typeof p.total_spent === 'string' ? parseFloat(p.total_spent) : (p.total_spent ?? 0)
-            const budget = typeof p.total_budget === 'string' ? parseFloat(p.total_budget as unknown as string) : (p.total_budget ?? 0)
-            const burn = burnRate(spent, budget)
-            return (
-              <div
-                key={p.id}
-                className="relative h-10 hover:bg-muted/30 cursor-pointer transition-colors group"
-                onClick={() => onSelect(p)}
-              >
-                {/* Month grid lines */}
-                {months.map((m, i) => (
-                  <div key={i} className="absolute top-0 h-full border-l border-dashed border-muted-foreground/10" style={{ left: `${m.left}%` }} />
-                ))}
-                {/* Today line */}
-                {todayPct >= 0 && todayPct <= 100 && (
-                  <div className="absolute top-0 h-full w-px bg-red-500/20" style={{ left: `${todayPct}%` }} />
-                )}
-                {/* Bar */}
-                <div
-                  className={cn(
-                    'absolute top-1.5 h-7 rounded-md flex items-center px-2 min-w-[40px] shadow-sm transition-shadow group-hover:shadow-md',
-                    barColors[p.status] ?? 'bg-gray-400',
-                  )}
-                  style={{ left: `${Math.max(0, leftPct)}%`, width: `${Math.max(2, widthPct)}%` }}
-                >
-                  <span className="text-[10px] font-medium text-white truncate drop-shadow-sm">
-                    {p.name}
-                  </span>
-                  {budget > 0 && (
-                    <span className="ml-auto text-[9px] text-white/80 shrink-0 tabular-nums pl-1">
-                      {burn}%
-                    </span>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
+      )}
     </div>
   )
 }
@@ -1056,10 +1245,7 @@ const WIDGET_LABELS: Record<DashWidget, string> = {
   channelPerformance: 'Channel Performance',
 }
 
-function DashboardView({ showStats }: { showStats: boolean }) {
-  const navigate = useNavigate()
-
-  // Widget visibility
+export function useDashboardWidgets() {
   const [visibleWidgets, setVisibleWidgets] = useState<Set<DashWidget>>(() => {
     try {
       const saved = localStorage.getItem(DASH_WIDGETS_KEY)
@@ -1076,7 +1262,45 @@ function DashboardView({ showStats }: { showStats: boolean }) {
     })
   }
 
-  const showWidget = (w: DashWidget) => visibleWidgets.has(w)
+  const customizeButton = (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="icon" className="h-8 w-8" title="Customize">
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-2" align="end">
+        <div className="text-xs font-semibold text-muted-foreground px-2 pb-1.5">Toggle Widgets</div>
+        {ALL_WIDGETS.map((w) => (
+          <button
+            key={w}
+            type="button"
+            className="flex items-center gap-2 w-full px-2 py-1.5 rounded-sm text-sm hover:bg-muted transition-colors"
+            onClick={() => toggleWidget(w)}
+          >
+            <div className={cn(
+              'h-3.5 w-3.5 rounded border flex items-center justify-center',
+              visibleWidgets.has(w) ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30',
+            )}>
+              {visibleWidgets.has(w) && <Check className="h-2.5 w-2.5" />}
+            </div>
+            {WIDGET_LABELS[w]}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
+  )
+
+  return { visibleWidgets, customizeButton }
+}
+
+export function DashboardView({ showStats, widgetVisibility }: { showStats: boolean; widgetVisibility?: Set<DashWidget> }) {
+  const navigate = useNavigate()
+
+  // Fallback: if no external widget visibility passed, use internal default (all visible)
+  const fallbackWidgets = useMemo(() => new Set(ALL_WIDGETS), [])
+  const activeWidgets = widgetVisibility ?? fallbackWidgets
+  const showWidget = (w: DashWidget) => activeWidgets.has(w)
 
   const { data: summaryData, isLoading: summaryLoading } = useQuery({
     queryKey: ['mkt-dashboard-summary'],
@@ -1113,36 +1337,6 @@ function DashboardView({ showStats }: { showStats: boolean }) {
 
   return (
     <div className="space-y-6">
-      {/* Dashboard customize toggle */}
-      <div className="flex justify-end">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm">
-              <SlidersHorizontal className="h-3.5 w-3.5 mr-1.5" /> Customize
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-56 p-2" align="end">
-            <div className="text-xs font-semibold text-muted-foreground px-2 pb-1.5">Toggle Widgets</div>
-            {ALL_WIDGETS.map((w) => (
-              <button
-                key={w}
-                type="button"
-                className="flex items-center gap-2 w-full px-2 py-1.5 rounded-sm text-sm hover:bg-muted transition-colors"
-                onClick={() => toggleWidget(w)}
-              >
-                <div className={cn(
-                  'h-3.5 w-3.5 rounded border flex items-center justify-center',
-                  visibleWidgets.has(w) ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30',
-                )}>
-                  {visibleWidgets.has(w) && <Check className="h-2.5 w-2.5" />}
-                </div>
-                {WIDGET_LABELS[w]}
-              </button>
-            ))}
-          </PopoverContent>
-        </Popover>
-      </div>
-
       {/* Summary cards */}
       <div className={`grid grid-cols-2 gap-3 lg:grid-cols-5 ${showStats ? '' : 'hidden'}`}>
         <StatCard title="Active" value={summary?.active_count ?? 0} icon={<FolderOpen className="h-4 w-4" />} isLoading={summaryLoading} />

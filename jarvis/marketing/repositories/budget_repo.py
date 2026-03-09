@@ -108,6 +108,15 @@ class BudgetRepository(BaseRepository):
 
     def create_transaction(self, budget_line_id, amount, transaction_date, recorded_by, **kwargs):
         def _work(cursor):
+            invoice_id = kwargs.get('invoice_id')
+            if invoice_id:
+                cursor.execute('''
+                    SELECT 1 FROM mkt_budget_transactions
+                    WHERE budget_line_id = %s AND invoice_id = %s
+                    LIMIT 1
+                ''', (budget_line_id, invoice_id))
+                if cursor.fetchone():
+                    raise ValueError('This invoice is already linked to this budget line')
             cursor.execute('''
                 INSERT INTO mkt_budget_transactions
                     (budget_line_id, amount, direction, source, reference_id, invoice_id,
