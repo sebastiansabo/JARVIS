@@ -609,8 +609,7 @@ export function KpisTab({ projectId }: { projectId: number }) {
 
   const linkDealMut = useMutation({
     mutationFn: (dealId: number) => marketingApi.linkKpiDeal(linkSourcesKpiId!, dealId),
-    onSuccess: async () => {
-      await marketingApi.syncKpi(linkSourcesKpiId!)
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-kpi-deals', linkSourcesKpiId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-available-deals', projectId, linkSourcesKpiId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-project-kpis', projectId] })
@@ -619,8 +618,7 @@ export function KpisTab({ projectId }: { projectId: number }) {
 
   const unlinkDealMut = useMutation({
     mutationFn: (dealLinkId: number) => marketingApi.unlinkKpiDeal(linkSourcesKpiId!, dealLinkId),
-    onSuccess: async () => {
-      await marketingApi.syncKpi(linkSourcesKpiId!)
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-kpi-deals', linkSourcesKpiId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-available-deals', projectId, linkSourcesKpiId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-project-kpis', projectId] })
