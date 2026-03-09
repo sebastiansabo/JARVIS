@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -999,11 +1000,11 @@ function BonusDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Participation Start</Label>
-              <Input type="date" value={partStart} onChange={(e) => setPartStart(e.target.value)} min={selectedEvent?.start_date} max={selectedEvent?.end_date} />
+              <DateField value={partStart} onChange={setPartStart} min={selectedEvent?.start_date} max={selectedEvent?.end_date} className="w-full" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Participation End</Label>
-              <Input type="date" value={partEnd} onChange={(e) => setPartEnd(e.target.value)} min={selectedEvent?.start_date} max={selectedEvent?.end_date} />
+              <DateField value={partEnd} onChange={setPartEnd} min={selectedEvent?.start_date} max={selectedEvent?.end_date} className="w-full" />
             </div>
           </div>
 

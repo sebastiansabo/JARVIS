@@ -15,7 +15,7 @@ import { usePersistedState } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
-import { DatePicker } from '@/components/ui/date-picker'
+import { DateField as DatePicker } from '@/components/ui/date-field'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { toast } from 'sonner'
 

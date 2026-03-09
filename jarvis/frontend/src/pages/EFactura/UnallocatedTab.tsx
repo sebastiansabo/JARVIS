@@ -50,7 +50,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
+import { DateField } from '@/components/ui/date-field'
 import { cn, usePersistedState } from '@/lib/utils'
 import { efacturaApi } from '@/api/efactura'
 import { organizationApi } from '@/api/organization'
@@ -616,27 +616,14 @@ export default function UnallocatedTab({ showHidden, showFilters = false }: { sh
               </SelectContent>
             </Select>
 
-            <DatePresetSelect
+            <DateField
+              mode="range"
               startDate={filters.start_date ?? ''}
               endDate={filters.end_date ?? ''}
-              onChange={(s, e) => {
+              onRangeChange={(s, e) => {
                 setFilters((f) => ({ ...f, start_date: s || undefined, end_date: e || undefined, page: 1 }))
                 setSelectedIds(new Set())
               }}
-              className={isMobile ? 'w-full h-9 text-sm' : undefined}
-            />
-
-            <Input
-              type="date"
-              className={isMobile ? 'w-full' : 'w-[150px]'}
-              value={filters.start_date ?? ''}
-              onChange={(e) => updateFilter('start_date', e.target.value)}
-            />
-            <Input
-              type="date"
-              className={isMobile ? 'w-full' : 'w-[150px]'}
-              value={filters.end_date ?? ''}
-              onChange={(e) => updateFilter('end_date', e.target.value)}
             />
           </>
         )

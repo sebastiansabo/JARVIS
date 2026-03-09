@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { MultiSelectPills } from '@/components/shared/MultiSelectPills'
@@ -313,21 +314,11 @@ export default function UploadDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="dms-doc-date">Document Date</Label>
-              <Input
-                id="dms-doc-date"
-                type="date"
-                value={docDate}
-                onChange={(e) => setDocDate(e.target.value)}
-              />
+              <DateField value={docDate} onChange={setDocDate} className="w-full" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="dms-expiry-date">Expiration Date</Label>
-              <Input
-                id="dms-expiry-date"
-                type="date"
-                value={expiryDate}
-                onChange={(e) => setExpiryDate(e.target.value)}
-              />
+              <DateField value={expiryDate} onChange={setExpiryDate} className="w-full" />
             </div>
           </div>
 

@@ -29,7 +29,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
+import { DateField } from '@/components/ui/date-field'
 import { statementsApi } from '@/api/statements'
 import { toast } from 'sonner'
 import { cn, usePersistedState } from '@/lib/utils'
@@ -409,14 +409,12 @@ export default function TransactionsTab({ showFilters = false }: { showFilters?:
               </SelectContent>
             </Select>
 
-            <DatePresetSelect
+            <DateField
+              mode="range"
               startDate={dateFrom}
               endDate={dateTo}
-              onChange={(s, e) => { setDateFrom(s); setDateTo(e); setPage(0) }}
-              className={isMobile ? 'w-full h-9 text-sm' : undefined}
+              onRangeChange={(s, e) => { setDateFrom(s); setDateTo(e); setPage(0) }}
             />
-            <Input type="date" className={cn(isMobile ? 'w-full' : 'w-36')} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }} />
-            <Input type="date" className={cn(isMobile ? 'w-full' : 'w-36')} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }} />
 
           </>
         )

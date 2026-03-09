@@ -46,7 +46,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
-import { DatePresetSelect } from '@/components/shared/DatePresetSelect'
+import { DateField } from '@/components/ui/date-field'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
 import { QueryError } from '@/components/QueryError'
@@ -325,17 +325,13 @@ export default function Accounting() {
     { key: 'company', label: 'Company', type: 'select' as const, options: companyOptions },
     { key: 'department', label: 'Department', type: 'select' as const, options: departmentOptions },
     { key: 'status', label: 'Status', type: 'select' as const, options: statusOptions },
-    { key: 'start_date', label: 'Start Date', type: 'date' as const },
-    { key: 'end_date', label: 'End Date', type: 'date' as const },
   ], [companyOptions, departmentOptions, statusOptions])
 
   const filterValues: Record<string, string> = useMemo(() => ({
     company: filters.company ?? '',
     department: filters.department ?? '',
     status: filters.status ?? '',
-    start_date: filters.start_date ?? '',
-    end_date: filters.end_date ?? '',
-  }), [filters.company, filters.department, filters.status, filters.start_date, filters.end_date])
+  }), [filters.company, filters.department, filters.status])
 
   const handleFilterChange = useCallback((values: Record<string, string>) => {
     Object.entries(values).forEach(([key, value]) => {
@@ -444,10 +440,11 @@ export default function Accounting() {
               className="w-48"
             />
             <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} />
-            <DatePresetSelect
+            <DateField
+              mode="range"
               startDate={filters.start_date ?? ''}
               endDate={filters.end_date ?? ''}
-              onChange={(s, e) => handleFilterChange({ ...filterValues, start_date: s, end_date: e })}
+              onRangeChange={(s, e) => { updateFilter('start_date', s || undefined); updateFilter('end_date', e || undefined) }}
             />
             <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} />
             <div className="ml-auto flex items-center gap-2">

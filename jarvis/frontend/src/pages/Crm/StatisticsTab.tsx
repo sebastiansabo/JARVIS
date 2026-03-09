@@ -5,12 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
   Car, DollarSign, Users, Building2, TrendingUp, BarChart3, Filter, X, Check, ChevronsUpDown,
   MapPin, UserCheck, Link2, Phone, Mail, AlertTriangle, GitMerge, Tag,
 } from 'lucide-react'
+import { DateField } from '@/components/ui/date-field'
 import { crmApi } from '@/api/crm'
 
 function fmt(n: number) {
@@ -163,8 +163,13 @@ export default function StatisticsTab({
               <MultiSelect label="Dealers" options={dealersData?.dealers ?? []} selected={dealers} onChange={setDealers} />
               <MultiSelect label="Brands" options={brandsData?.brands ?? []} selected={brands} onChange={setBrands} />
               <MultiSelect label="Statuses" options={statusesData?.statuses.map(s => s.dossier_status) ?? []} selected={statuses} onChange={setStatuses} />
-              <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-[140px] h-9" title="From date" />
-              <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-[140px] h-9" title="To date" />
+              <DateField
+                mode="range"
+                startDate={dateFrom}
+                endDate={dateTo}
+                onRangeChange={(s, e) => { setDateFrom(s); setDateTo(e) }}
+                showPresets={false}
+              />
             </div>
           </CardContent>
         </Card>

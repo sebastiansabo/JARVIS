@@ -16,6 +16,7 @@ import { TagPicker } from '@/components/shared/TagPicker'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { MultiSelectPills } from '@/components/shared/MultiSelectPills'
@@ -570,11 +571,11 @@ export default function DocumentDetail() {
           </div>
           <div className="space-y-1">
             <Label htmlFor="edit-doc-date" className="text-xs">Doc Date</Label>
-            <Input id="edit-doc-date" type="date" value={editDocDate} onChange={(e) => setEditDocDate(e.target.value)} className="h-8 text-sm" />
+            <DateField value={editDocDate} onChange={setEditDocDate} className="h-8" />
           </div>
           <div className="space-y-1">
             <Label htmlFor="edit-expiry-date" className="text-xs">Expiry Date</Label>
-            <Input id="edit-expiry-date" type="date" value={editExpiryDate} onChange={(e) => setEditExpiryDate(e.target.value)} className="h-8 text-sm" />
+            <DateField value={editExpiryDate} onChange={setEditExpiryDate} className="h-8" />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Notify</Label>

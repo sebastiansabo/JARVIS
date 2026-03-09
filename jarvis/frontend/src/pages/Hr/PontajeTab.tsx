@@ -29,6 +29,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { StatCard } from '@/components/shared/StatCard'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
+import { DateField } from '@/components/ui/date-field'
 import { biostarApi } from '@/api/biostar'
 import { hrApi } from '@/api/hr'
 import { cn } from '@/lib/utils'
@@ -631,18 +632,16 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
         <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => stepDay(-1)} title="Previous day">
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <Input
-          type="date"
-          className="h-8 w-32 text-xs shrink-0"
+        <DateField
           value={quickFilter === 'custom' ? customStart : start}
-          onChange={(e) => { setQuickFilter('custom'); setCustomStart(e.target.value); if (!customEnd || e.target.value > customEnd) setCustomEnd(e.target.value) }}
+          onChange={(v) => { setQuickFilter('custom'); setCustomStart(v); if (!customEnd || v > customEnd) setCustomEnd(v) }}
+          className="h-8 shrink-0"
         />
         <span className="text-xs text-muted-foreground">—</span>
-        <Input
-          type="date"
-          className="h-8 w-32 text-xs shrink-0"
+        <DateField
           value={quickFilter === 'custom' ? customEnd : end}
-          onChange={(e) => { setQuickFilter('custom'); setCustomEnd(e.target.value); if (!customStart || e.target.value < customStart) setCustomStart(e.target.value) }}
+          onChange={(v) => { setQuickFilter('custom'); setCustomEnd(v); if (!customStart || v < customStart) setCustomStart(v) }}
+          className="h-8 shrink-0"
         />
         <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => stepDay(1)} title="Next day">
           <ChevronRight className="h-4 w-4" />

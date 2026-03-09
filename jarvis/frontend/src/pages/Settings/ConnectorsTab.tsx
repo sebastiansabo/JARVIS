@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -527,9 +528,9 @@ function BioStarConnectionSection() {
                 </Button>
               </div>
               <div className="flex items-center gap-2">
-                <Input type="date" className="h-8 text-xs w-[140px]" value={syncDateRange.start} onChange={(e) => setSyncDateRange({ ...syncDateRange, start: e.target.value })} />
+                <DateField value={syncDateRange.start} onChange={(v) => setSyncDateRange({ ...syncDateRange, start: v })} className="h-8" />
                 <span className="text-xs text-muted-foreground">to</span>
-                <Input type="date" className="h-8 text-xs w-[140px]" value={syncDateRange.end} onChange={(e) => setSyncDateRange({ ...syncDateRange, end: e.target.value })} />
+                <DateField value={syncDateRange.end} onChange={(v) => setSyncDateRange({ ...syncDateRange, end: v })} className="h-8" />
                 <Button size="sm" variant="outline" onClick={() => {
                   const params: { start_date: string; end_date?: string } = {
                     start_date: syncDateRange.start + 'T00:00:00.00Z',

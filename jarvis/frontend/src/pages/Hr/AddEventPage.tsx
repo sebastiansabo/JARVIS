@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -247,12 +248,12 @@ export default function AddEventPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Start Date *</Label>
-                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} onBlur={() => v.touch('startDate')} className={cn(v.error('startDate') && 'border-destructive')} />
+                  <DateField value={startDate} onChange={setStartDate} className={cn('w-full', v.error('startDate') && 'border-destructive')} />
                   <FieldError message={v.error('startDate')} />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">End Date *</Label>
-                  <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} onBlur={() => v.touch('endDate')} className={cn(v.error('endDate') && 'border-destructive')} />
+                  <DateField value={endDate} onChange={setEndDate} className={cn('w-full', v.error('endDate') && 'border-destructive')} />
                   <FieldError message={v.error('endDate')} />
                 </div>
               </div>
@@ -367,20 +368,10 @@ export default function AddEventPage() {
                         <div className="text-xs text-muted-foreground truncate">{row.employee.company ?? ''}</div>
                       </div>
                       <div className="col-span-2">
-                        <Input
-                          type="date"
-                          className="h-7 text-xs"
-                          value={row.partStart}
-                          onChange={(e) => updateRow(idx, { partStart: e.target.value })}
-                        />
+                        <DateField value={row.partStart} onChange={(v) => updateRow(idx, { partStart: v })} className="h-7 text-xs" />
                       </div>
                       <div className="col-span-2">
-                        <Input
-                          type="date"
-                          className="h-7 text-xs"
-                          value={row.partEnd}
-                          onChange={(e) => updateRow(idx, { partEnd: e.target.value })}
-                        />
+                        <DateField value={row.partEnd} onChange={(v) => updateRow(idx, { partEnd: v })} className="h-7 text-xs" />
                       </div>
                       <div className="col-span-1">
                         <Input

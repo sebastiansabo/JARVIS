@@ -8,6 +8,7 @@ import { bilantApi } from '@/api/bilant'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { BilantTemplate } from '@/types/bilant'
@@ -132,7 +133,7 @@ export function UploadDialog({ open, onOpenChange, companies, templates }: Uploa
             </div>
             <div className="space-y-2">
               <Label>Period Date</Label>
-              <Input type="date" value={periodDate} onChange={e => setPeriodDate(e.target.value)} />
+              <DateField value={periodDate} onChange={setPeriodDate} className="w-full" />
             </div>
           </div>
 

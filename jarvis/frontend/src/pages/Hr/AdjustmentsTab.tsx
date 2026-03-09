@@ -10,12 +10,11 @@ import {
   Clock,
   Wand2,
   RotateCcw,
-  ChevronLeft,
-  ChevronRight,
   DatabaseZap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DateField, todayStr as dfTodayStr } from '@/components/ui/date-field'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -24,15 +23,6 @@ import { biostarApi } from '@/api/biostar'
 import { toast } from 'sonner'
 import type { BioStarOffScheduleRow, BioStarAdjustment } from '@/types/biostar'
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function shiftDate(dateStr: string, days: number) {
-  const d = new Date(dateStr + 'T12:00:00')
-  d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
-}
 
 function formatTime(dt: string | null) {
   if (!dt) return '-'
@@ -107,7 +97,7 @@ export default function AdjustmentsTab({ showStats = false, showFilters = false 
   const isMobile = useIsMobile()
   const { user: authUser } = useAuth()
   const canAdjust = authUser?.can_adjust_punches ?? false
-  const [date, setDate] = useState(todayStr())
+  const [date, setDate] = useState(dfTodayStr())
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<'pending' | 'adjusted'>('pending')
 
@@ -228,27 +218,7 @@ export default function AdjustmentsTab({ showStats = false, showFilters = false 
       {/* Filters */}
       {showFilters && (
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 shrink-0">
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setDate(shiftDate(date, -1))}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Input
-              type="date"
-              className="h-8 w-40 text-sm"
-              value={date}
-              max={todayStr()}
-              onChange={(e) => setDate(e.target.value)}
-            />
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
-              disabled={date >= todayStr()}
-              onClick={() => setDate(shiftDate(date, 1))}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+          <DateField mode="navigation" value={date} onChange={setDate} max={dfTodayStr()} />
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
             <Input

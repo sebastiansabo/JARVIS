@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -653,14 +654,7 @@ export default function AddInvoice() {
                   <Label htmlFor="inv-date" className="text-xs">
                     Invoice Date <span className="text-destructive">*</span>
                   </Label>
-                  <Input
-                    id="inv-date"
-                    type="date"
-                    value={invoiceDate}
-                    onChange={(e) => setInvoiceDate(e.target.value)}
-                    onBlur={() => v.touch('invoiceDate')}
-                    className={cn(v.error('invoiceDate') && 'border-destructive')}
-                  />
+                  <DateField value={invoiceDate} onChange={setInvoiceDate} className={cn('w-full', v.error('invoiceDate') && 'border-destructive')} />
                   <FieldError message={v.error('invoiceDate')} />
                 </div>
               </div>

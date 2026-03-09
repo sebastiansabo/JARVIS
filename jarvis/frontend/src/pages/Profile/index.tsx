@@ -41,6 +41,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -442,21 +443,11 @@ function EditProfileDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-1.5">
               <Label htmlFor="edit-birthdate">Birthdate</Label>
-              <Input
-                id="edit-birthdate"
-                type="date"
-                value={form.birthdate}
-                onChange={(e) => setForm((f) => ({ ...f, birthdate: e.target.value }))}
-              />
+              <DateField value={form.birthdate ?? ''} onChange={(v) => setForm((f) => ({ ...f, birthdate: v }))} className="w-full" />
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="edit-contract">Contract Start Date</Label>
-              <Input
-                id="edit-contract"
-                type="date"
-                value={form.contract_work_date}
-                onChange={(e) => setForm((f) => ({ ...f, contract_work_date: e.target.value }))}
-              />
+              <DateField value={form.contract_work_date ?? ''} onChange={(v) => setForm((f) => ({ ...f, contract_work_date: v }))} className="w-full" />
             </div>
           </div>
         </div>

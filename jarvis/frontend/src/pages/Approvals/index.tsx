@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { SearchSelect } from '@/components/shared/SearchSelect'
+import { DateField } from '@/components/ui/date-field'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
@@ -608,21 +609,11 @@ export default function Approvals() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-sm font-medium">Start date</label>
-                <input
-                  type="date"
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                  value={newDelegation.starts_at}
-                  onChange={(e) => setNewDelegation(prev => ({ ...prev, starts_at: e.target.value }))}
-                />
+                <DateField value={newDelegation.starts_at} onChange={(v) => setNewDelegation(prev => ({ ...prev, starts_at: v }))} className="w-full" />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium">End date</label>
-                <input
-                  type="date"
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                  value={newDelegation.ends_at}
-                  onChange={(e) => setNewDelegation(prev => ({ ...prev, ends_at: e.target.value }))}
-                />
+                <DateField value={newDelegation.ends_at} onChange={(v) => setNewDelegation(prev => ({ ...prev, ends_at: v }))} className="w-full" />
               </div>
             </div>
             <div>

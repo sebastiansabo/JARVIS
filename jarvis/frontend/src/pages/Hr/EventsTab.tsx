@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -507,11 +508,11 @@ function EventDialog({ open, event, onClose }: { open: boolean; event: HrEvent |
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Start Date *</Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <DateField value={startDate} onChange={setStartDate} className="w-full" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">End Date *</Label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              <DateField value={endDate} onChange={setEndDate} className="w-full" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

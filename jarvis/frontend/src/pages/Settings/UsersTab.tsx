@@ -4,6 +4,7 @@ import { Plus, Trash2, Shield, ChevronDown, CheckSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -422,11 +423,11 @@ function UserFormDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
               <Label>Birthdate</Label>
-              <Input type="date" value={form.birthdate} readOnly disabled className="bg-muted" />
+              <DateField value={form.birthdate} onChange={() => {}} disabled className="bg-muted w-full" />
             </div>
             <div className="grid gap-2">
               <Label>Contract Start</Label>
-              <Input type="date" value={form.contract_work_date} onChange={(e) => setForm({ ...form, contract_work_date: e.target.value })} />
+              <DateField value={form.contract_work_date} onChange={(v) => setForm({ ...form, contract_work_date: v })} className="w-full" />
             </div>
           </div>
           {/* Organization (read-only, fetched from Organigram) */}
