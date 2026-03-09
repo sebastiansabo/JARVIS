@@ -1,7 +1,7 @@
 """Marketing project members, comments, files routes."""
 
 import logging
-from flask import g, jsonify, request
+from flask import jsonify, request
 from flask_login import login_required, current_user
 
 from marketing import marketing_bp
@@ -604,7 +604,7 @@ def api_link_kpi_deal(kpi_id):
     if not deal_id:
         return jsonify({'success': False, 'error': 'deal_id is required'}), 400
     try:
-        link_id = _kpi_repo.link_kpi_deal(kpi_id, deal_id, g.user['id'])
+        link_id = _kpi_repo.link_kpi_deal(kpi_id, deal_id, current_user.id)
         return jsonify({'success': True, 'id': link_id}), 201
     except Exception as e:
         return safe_error_response(e)
