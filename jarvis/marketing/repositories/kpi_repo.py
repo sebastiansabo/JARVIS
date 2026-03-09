@@ -385,13 +385,8 @@ class KpiRepository(BaseRepository):
                             role = ds['role']
                             deal_by_role[role] = deal_by_role.get(role, 0) + val
 
-            # Individual deal links (each linked deal = 1 unit, counted into 'input')
-            cursor.execute('''
-                SELECT COUNT(*) as total FROM mkt_kpi_deals WHERE project_kpi_id = %s
-            ''', (project_kpi_id,))
-            individual_deal_count = int(cursor.fetchone()['total'])
-            if individual_deal_count > 0:
-                deal_by_role['input'] = deal_by_role.get('input', 0) + individual_deal_count
+            # Individual deal links are handled by +1/-1 in link/unlink_kpi_deal,
+            # NOT by sync. This preserves manually recorded values.
 
             has_sources = bool(bl_by_role) or bool(dep_by_role) or bool(deal_by_role)
             if not has_sources:
