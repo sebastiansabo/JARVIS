@@ -575,8 +575,10 @@ def get_cron_jobs():
             'label': job['label'],
             'description': job['description'],
             'enabled': settings.get('enabled', True),
+            'schedule_type': settings.get('schedule_type', 'cron'),
             'hour': settings.get('hour', int(job['default_schedule'].split(':')[0])),
             'minute': settings.get('minute', int(job['default_schedule'].split(':')[1])),
+            'interval_minutes': settings.get('interval_minutes'),
             'last_run': settings.get('last_run'),
             'last_success': settings.get('last_success'),
             'last_message': settings.get('last_message'),
@@ -605,11 +607,22 @@ def update_cron_jobs():
         job_id = job.get('id')
         if not job_id:
             continue
-        cron_settings[job_id] = {
+        entry = {
             'enabled': bool(job.get('enabled', True)),
             'hour': int(job.get('hour', 1)),
             'minute': int(job.get('minute', 0)),
         }
+        if job.get('schedule_type') == 'interval':
+            entry['schedule_type'] = 'interval'
+            entry['interval_minutes'] = int(job.get('interval_minutes', 60))
+        else:
+            entry['schedule_type'] = 'cron'
+        # Preserve last_run info
+        existing = cron_settings.get(job_id, {})
+        for key in ('last_run', 'last_success', 'last_message'):
+            if key in existing:
+                entry[key] = existing[key]
+        cron_settings[job_id] = entry
     config['cron_jobs'] = cron_settings
     service.connector_repo.update(connector['id'], config=config)
 
@@ -631,16 +644,27 @@ def update_cron_jobs():
                 except Exception:
                     pass
                 if settings.get('enabled', True):
-                    scheduler.add_job(
-                        job_funcs[job_id],
-                        'cron',
-                        hour=settings['hour'],
-                        minute=settings['minute'],
-                        id=job_id,
-                        replace_existing=True,
-                        misfire_grace_time=300,
-                        coalesce=True,
-                    )
+                    if settings.get('schedule_type') == 'interval':
+                        scheduler.add_job(
+                            job_funcs[job_id],
+                            'interval',
+                            minutes=settings.get('interval_minutes', 60),
+                            id=job_id,
+                            replace_existing=True,
+                            misfire_grace_time=300,
+                            coalesce=True,
+                        )
+                    else:
+                        scheduler.add_job(
+                            job_funcs[job_id],
+                            'cron',
+                            hour=settings['hour'],
+                            minute=settings['minute'],
+                            id=job_id,
+                            replace_existing=True,
+                            misfire_grace_time=300,
+                            coalesce=True,
+                        )
     except Exception:
         pass  # Scheduler may not be running in dev
 

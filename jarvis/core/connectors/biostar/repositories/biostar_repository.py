@@ -202,7 +202,7 @@ class BioStarRepository(BaseRepository):
                          event_type, direction, device_id, device_name,
                          door_id, door_name, auth_type, raw_data)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (biostar_event_id) DO NOTHING
+                    ON CONFLICT (biostar_event_id, (event_datetime::date)) DO NOTHING
                 ''', (
                     log['biostar_event_id'], log['biostar_user_id'],
                     log['event_datetime'], log['event_type'],

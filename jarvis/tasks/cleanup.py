@@ -356,16 +356,27 @@ def start_scheduler():
         if not settings.get('enabled', True):
             logger.info(f"Skipping disabled cron job: {job_id}")
             continue
-        scheduler.add_job(
-            defaults['func'],
-            'cron',
-            hour=settings.get('hour', defaults['hour']),
-            minute=settings.get('minute', defaults['minute']),
-            id=job_id,
-            replace_existing=True,
-            misfire_grace_time=300,
-            coalesce=True,
-        )
+        if settings.get('schedule_type') == 'interval':
+            scheduler.add_job(
+                defaults['func'],
+                'interval',
+                minutes=settings.get('interval_minutes', 60),
+                id=job_id,
+                replace_existing=True,
+                misfire_grace_time=300,
+                coalesce=True,
+            )
+        else:
+            scheduler.add_job(
+                defaults['func'],
+                'cron',
+                hour=settings.get('hour', defaults['hour']),
+                minute=settings.get('minute', defaults['minute']),
+                id=job_id,
+                replace_existing=True,
+                misfire_grace_time=300,
+                coalesce=True,
+            )
 
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown(wait=False))

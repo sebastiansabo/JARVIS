@@ -223,8 +223,10 @@ export interface BioStarCronJob {
   label: string
   description: string
   enabled: boolean
+  schedule_type?: 'cron' | 'interval'
   hour: number
   minute: number
+  interval_minutes?: number
   last_run: string | null
   last_success: boolean | null
   last_message: string | null
