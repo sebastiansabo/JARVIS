@@ -125,7 +125,7 @@ function SourcePicker({ varDeals, availableBL, availableKpis, onLinkBL, onLinkDe
           <Plus className="h-3 w-3 mr-1" /> Add source
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+      <PopoverContent className="w-80 p-0 z-[9999]" align="start" side="bottom" sideOffset={4} avoidCollisions={false} onOpenAutoFocus={(e) => e.preventDefault()} style={{ maxHeight: 'var(--radix-popover-content-available-height, 320px)' }}>
         <div className="p-2 border-b">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -138,7 +138,7 @@ function SourcePicker({ varDeals, availableBL, availableKpis, onLinkBL, onLinkDe
             />
           </div>
         </div>
-        <div className="max-h-72 overflow-y-auto">
+        <div className="overflow-y-auto" style={{ maxHeight: 'calc(var(--radix-popover-content-available-height, 320px) - 44px)' }}>
           {filteredBL.length > 0 && (
             <div className="p-2">
               <div className="text-xs font-medium text-muted-foreground px-2 pb-1">Budget Lines</div>
