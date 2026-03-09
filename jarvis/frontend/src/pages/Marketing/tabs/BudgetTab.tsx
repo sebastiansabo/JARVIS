@@ -84,6 +84,8 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
   const [eventLineId, setEventLineId] = useState<number | null>(null)
   const [projectEvents, setProjectEvents] = useState<MktProjectEvent[]>([])
   const [linkedEventIds, setLinkedEventIds] = useState<Set<number>>(new Set())
+  const [confirmEvent, setConfirmEvent] = useState<MktProjectEvent | null>(null)
+  const [confirmAmount, setConfirmAmount] = useState('')
 
   const { data } = useQuery({
     queryKey: ['mkt-budget-lines', projectId],
@@ -159,7 +161,7 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
 
   const linkEventMut = useMutation({
     mutationFn: (ev: MktProjectEvent) => marketingApi.createTransaction(eventLineId!, {
-      amount: ev.event_cost,
+      amount: Number(confirmAmount),
       transaction_date: ev.event_start_date,
       direction: 'debit',
       source: 'event',
@@ -171,6 +173,8 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
       queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-transactions'] })
       setLinkedEventIds((prev) => new Set(prev).add(ev.event_id))
+      setConfirmEvent(null)
+      setConfirmAmount('')
     },
   })
 
@@ -704,7 +708,7 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                 <div>No events linked to this project.</div>
                 <div className="text-xs mt-1">Link events in the Events tab first.</div>
               </div>
-            ) : (
+            ) : (<>
               <div className="rounded-md border max-h-72 overflow-auto">
                 <Table>
                   <TableHeader className="sticky top-0 bg-background z-10">
@@ -712,7 +716,7 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                       <TableHead className="text-xs">Event</TableHead>
                       <TableHead className="text-xs w-28">Date</TableHead>
                       <TableHead className="text-xs">Company</TableHead>
-                      <TableHead className="text-xs text-right w-28">Cost</TableHead>
+                      <TableHead className="text-xs text-right w-28">Cost (RON)</TableHead>
                       <TableHead className="w-16" />
                     </TableRow>
                   </TableHeader>
@@ -729,15 +733,14 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                           <TableCell className="text-xs">{fmtDate(ev.event_start_date)}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{ev.event_company ?? '—'}</TableCell>
                           <TableCell className="text-right text-xs tabular-nums font-medium">
-                            {cost > 0 ? fmt(cost, currency) : <span className="text-muted-foreground">0</span>}
+                            {cost > 0 ? fmt(cost, 'RON') : <span className="text-muted-foreground">0</span>}
                           </TableCell>
                           <TableCell className="text-right">
                             {alreadyLinked ? (
                               <Check className="h-4 w-4 text-green-500 ml-auto" />
                             ) : cost > 0 ? (
                               <Button size="sm" variant="outline" className="h-6 text-xs px-2"
-                                disabled={linkEventMut.isPending}
-                                onClick={() => linkEventMut.mutate(ev)}>
+                                onClick={() => { setConfirmEvent(ev); setConfirmAmount(String(cost)) }}>
                                 Link
                               </Button>
                             ) : (
@@ -750,7 +753,35 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                   </TableBody>
                 </Table>
               </div>
-            )}
+              {confirmEvent && (
+                <div className="rounded-md border p-3 bg-muted/30 space-y-2">
+                  <div className="text-xs font-medium">{confirmEvent.event_name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    Event cost: {fmt(Number(confirmEvent.event_cost) || 0, 'RON')}
+                    {currency !== 'RON' && <>{' '}— enter amount in <strong>{currency}</strong>:</>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={confirmAmount}
+                      onChange={(e) => setConfirmAmount(e.target.value)}
+                      className="h-7 w-32 text-sm text-right tabular-nums"
+                      autoFocus
+                    />
+                    <span className="text-xs text-muted-foreground">{currency}</span>
+                    <Button size="sm" className="h-7 text-xs"
+                      disabled={!confirmAmount || Number(confirmAmount) <= 0 || linkEventMut.isPending}
+                      onClick={() => linkEventMut.mutate(confirmEvent)}>
+                      {linkEventMut.isPending ? 'Linking...' : 'Confirm'}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs"
+                      onClick={() => { setConfirmEvent(null); setConfirmAmount('') }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>)}
           </div>
           <div className="flex justify-end">
             <Button variant="outline" size="sm" onClick={() => setEventLineId(null)}>Done</Button>
