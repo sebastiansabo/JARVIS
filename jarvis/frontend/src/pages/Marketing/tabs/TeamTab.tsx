@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Users } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { usersApi } from '@/api/users'
 import type { UserDetail } from '@/types/users'
@@ -74,7 +74,11 @@ export function TeamTab({ projectId }: { projectId: number }) {
       </div>
 
       {members.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">No team members.</div>
+        <div className="text-center py-12 text-muted-foreground">
+          <Users className="mx-auto h-8 w-8 mb-2 opacity-40" />
+          <div>No team members yet</div>
+          <div className="text-xs mt-1">Add stakeholders and observers to this campaign.</div>
+        </div>
       ) : (
         <div className="rounded-md border">
           <Table>

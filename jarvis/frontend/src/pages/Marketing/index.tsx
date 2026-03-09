@@ -16,12 +16,13 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { cn } from '@/lib/utils'
 import {
-  Plus, Search, LayoutGrid, LayoutDashboard, List,
+  Plus, Search, LayoutGrid, LayoutDashboard, List, Columns3,
   DollarSign, Target, AlertTriangle, FolderOpen, FileText,
   BarChart3, PieChart, Download, SlidersHorizontal,
-  Archive, Trash2, RotateCcw, AlertCircle,
+  Archive, Trash2, RotateCcw, AlertCircle, Heart, GitCompareArrows, X, Check,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { marketingApi } from '@/api/marketing'
 import { settingsApi } from '@/api/settings'
@@ -54,7 +55,9 @@ function burnRate(spent: number, budget: number) {
   return Math.round((spent / budget) * 100)
 }
 
-type MainTab = 'projects' | 'dashboard' | 'archived' | 'trash'
+import { Calendar } from 'lucide-react'
+
+type MainTab = 'projects' | 'dashboard' | 'calendar' | 'archived' | 'trash'
 
 export default function Marketing() {
   const queryClient = useQueryClient()
@@ -67,6 +70,17 @@ export default function Marketing() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showStats, setShowStats] = useState(false)
   const [mainTab, setMainTab] = useTabParam<MainTab>('dashboard')
+  const [compareMode, setCompareMode] = useState(false)
+  const [compareIds, setCompareIds] = useState<Set<number>>(new Set())
+
+  const toggleCompare = (id: number) => {
+    setCompareIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else if (next.size < 4) next.add(id)
+      return next
+    })
+  }
 
   // Data queries
   const { data: projectsData, isLoading: projectsLoading, isError: projectsError, refetch: refetchProjects } = useQuery({
@@ -99,7 +113,7 @@ export default function Marketing() {
         title="Marketing"
         breadcrumbs={[
           { label: 'Marketing', shortLabel: 'Mkt.' },
-          { label: mainTab === 'projects' ? `Campaigns (${total})` : mainTab === 'dashboard' ? 'Dashboard' : mainTab === 'archived' ? 'Archived' : 'Trash' },
+          { label: mainTab === 'projects' ? `Campaigns (${total})` : mainTab === 'dashboard' ? 'Dashboard' : mainTab === 'calendar' ? 'Calendar' : mainTab === 'archived' ? 'Archived' : 'Trash' },
         ]}
         actions={
           <div className="flex items-center gap-2">
@@ -117,6 +131,7 @@ export default function Marketing() {
                 <TabsList className="w-auto">
                   <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
                   <TabsTrigger value="projects"><FolderOpen className="h-3.5 w-3.5" />Campaigns</TabsTrigger>
+                  <TabsTrigger value="calendar"><Calendar className="h-3.5 w-3.5" />Calendar</TabsTrigger>
                   <TabsTrigger value="archived"><Archive className="h-3.5 w-3.5" />Archived</TabsTrigger>
                   <TabsTrigger value="trash"><Trash2 className="h-3.5 w-3.5" />Trash</TabsTrigger>
                 </TabsList>
@@ -133,6 +148,7 @@ export default function Marketing() {
             <TabsList className="w-full">
               <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
               <TabsTrigger value="projects"><FolderOpen className="h-3.5 w-3.5" />Campaigns</TabsTrigger>
+              <TabsTrigger value="calendar"><Calendar className="h-3.5 w-3.5" />Calendar</TabsTrigger>
               <TabsTrigger value="archived"><Archive className="h-3.5 w-3.5" />Archived</TabsTrigger>
               <TabsTrigger value="trash"><Trash2 className="h-3.5 w-3.5" />Trash</TabsTrigger>
             </TabsList>
@@ -273,11 +289,22 @@ export default function Marketing() {
                   <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
                 )}
                 <div className="ml-auto flex gap-1">
-                  <Button variant={viewMode === 'table' ? 'secondary' : 'ghost'} size="icon" onClick={() => setViewMode('table')}>
+                  <Button
+                    variant={compareMode ? 'default' : 'ghost'}
+                    size="icon"
+                    onClick={() => { setCompareMode((v) => !v); setCompareIds(new Set()) }}
+                    title="Compare campaigns"
+                  >
+                    <GitCompareArrows className="h-4 w-4" />
+                  </Button>
+                  <Button variant={viewMode === 'table' ? 'secondary' : 'ghost'} size="icon" onClick={() => setViewMode('table')} title="Table view">
                     <List className="h-4 w-4" />
                   </Button>
-                  <Button variant={viewMode === 'cards' ? 'secondary' : 'ghost'} size="icon" onClick={() => setViewMode('cards')}>
+                  <Button variant={viewMode === 'cards' ? 'secondary' : 'ghost'} size="icon" onClick={() => setViewMode('cards')} title="Card view">
                     <LayoutGrid className="h-4 w-4" />
+                  </Button>
+                  <Button variant={viewMode === 'kanban' ? 'secondary' : 'ghost'} size="icon" onClick={() => setViewMode('kanban')} title="Kanban view">
+                    <Columns3 className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
@@ -289,10 +316,32 @@ export default function Marketing() {
             <QueryError message="Failed to load projects" onRetry={() => refetchProjects()} />
           ) : projectsLoading ? (
             <TableSkeleton rows={6} columns={7} />
+          ) : effectiveViewMode === 'kanban' ? (
+            <KanbanBoard
+              projects={projects}
+              onSelect={(p) => navigate(`/app/marketing/projects/${p.id}`)}
+              onStatusChange={async (p, newStatus) => {
+                const transitions: Record<string, () => Promise<unknown>> = {
+                  active: () => marketingApi.activateProject(p.id),
+                  paused: () => marketingApi.pauseProject(p.id),
+                  completed: () => marketingApi.completeProject(p.id),
+                  archived: () => marketingApi.archiveProject(p.id),
+                }
+                const fn = transitions[newStatus]
+                if (fn) {
+                  await fn()
+                  queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
+                  queryClient.invalidateQueries({ queryKey: ['mkt-dashboard-summary'] })
+                }
+              }}
+            />
           ) : effectiveViewMode === 'table' ? (
             <ProjectTable
               projects={projects}
               onSelect={(p) => navigate(`/app/marketing/projects/${p.id}`)}
+              compareMode={compareMode}
+              compareIds={compareIds}
+              onToggleCompare={toggleCompare}
               onArchive={async (p) => {
                 await marketingApi.archiveProject(p.id)
                 queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
@@ -310,6 +359,9 @@ export default function Marketing() {
             <ProjectCards
               projects={projects}
               onSelect={(p) => navigate(`/app/marketing/projects/${p.id}`)}
+              compareMode={compareMode}
+              compareIds={compareIds}
+              onToggleCompare={toggleCompare}
               onArchive={async (p) => {
                 await marketingApi.archiveProject(p.id)
                 queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
@@ -351,12 +403,29 @@ export default function Marketing() {
               </div>
             </div>
           )}
+
+          {/* Compare Panel */}
+          {compareMode && compareIds.size >= 2 && (
+            <ComparePanel
+              projects={projects.filter((p) => compareIds.has(p.id))}
+              onClose={() => { setCompareMode(false); setCompareIds(new Set()) }}
+            />
+          )}
+          {compareMode && compareIds.size < 2 && (
+            <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+              Select {2 - compareIds.size} more campaign{compareIds.size === 0 ? 's' : ''} to compare (up to 4)
+            </div>
+          )}
         </>
       )}
 
       {mainTab === 'dashboard' && <DashboardView showStats={showStats} />}
 
-
+      {mainTab === 'calendar' && (
+        <CalendarView
+          onSelect={(p) => navigate(`/app/marketing/projects/${p.id}`)}
+        />
+      )}
 
       {mainTab === 'archived' && (
         <ArchivedView
@@ -406,18 +475,210 @@ export default function Marketing() {
 }
 
 
+// ---- Health Score Utility ----
+
+function computeHealthScore(p: MktProject): { score: number; label: string; color: string; icon: React.ElementType } {
+  const budget = typeof p.total_budget === 'string' ? parseFloat(p.total_budget as unknown as string) : (p.total_budget ?? 0)
+  const spent = typeof p.total_spent === 'string' ? parseFloat(p.total_spent as string) : (p.total_spent ?? 0)
+  const burn = budget ? (spent / budget) * 100 : 0
+
+  // Timeline progress
+  let timelinePct = 0
+  if (p.start_date && p.end_date) {
+    const start = new Date(p.start_date).getTime()
+    const end = new Date(p.end_date).getTime()
+    const now = Date.now()
+    if (end > start) {
+      timelinePct = Math.max(0, Math.min(100, ((now - start) / (end - start)) * 100))
+    }
+  }
+
+  // Score: 100 = perfect, 0 = terrible
+  // Budget health: penalize if burn significantly outpaces timeline
+  let budgetHealth = 100
+  if (budget > 0) {
+    const expectedBurn = timelinePct || 50 // If no dates, assume midpoint
+    const burnDelta = burn - expectedBurn
+    if (burnDelta > 30) budgetHealth = 20
+    else if (burnDelta > 15) budgetHealth = 50
+    else if (burnDelta > 5) budgetHealth = 75
+    else budgetHealth = 100
+    if (burn > 95) budgetHealth = Math.min(budgetHealth, 30)
+  }
+
+  // Status health
+  let statusHealth = 100
+  if (p.status === 'paused') statusHealth = 60
+  else if (p.status === 'draft') statusHealth = 80
+  else if (p.status === 'active') statusHealth = 100
+  else if (p.status === 'completed') statusHealth = 100
+
+  const score = Math.round((budgetHealth * 0.7) + (statusHealth * 0.3))
+
+  if (score >= 80) return { score, label: 'Healthy', color: 'text-green-600 dark:text-green-400', icon: Heart }
+  if (score >= 50) return { score, label: 'At Risk', color: 'text-yellow-600 dark:text-yellow-400', icon: AlertTriangle }
+  return { score, label: 'Critical', color: 'text-red-600 dark:text-red-400', icon: AlertCircle }
+}
+
+function HealthBadge({ project }: { project: MktProject }) {
+  const health = computeHealthScore(project)
+  const Icon = health.icon
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className={`inline-flex items-center gap-1 text-xs font-medium ${health.color}`}>
+            <Icon className="h-3 w-3" />
+            {health.score}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          <div>Health: {health.label} ({health.score}/100)</div>
+          <div className="text-muted-foreground">Budget + timeline + status composite</div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+
+// ---- Kanban Board View ----
+
+const kanbanStatuses = [
+  { key: 'draft', label: 'Draft', color: 'border-t-gray-400' },
+  { key: 'pending_approval', label: 'Pending', color: 'border-t-yellow-400' },
+  { key: 'approved', label: 'Approved', color: 'border-t-green-400' },
+  { key: 'active', label: 'Active', color: 'border-t-blue-400' },
+  { key: 'paused', label: 'Paused', color: 'border-t-orange-400' },
+  { key: 'completed', label: 'Completed', color: 'border-t-emerald-400' },
+]
+
+function KanbanBoard({ projects, onSelect, onStatusChange: _onStatusChange }: {
+  projects: MktProject[]
+  onSelect: (p: MktProject) => void
+  onStatusChange?: (p: MktProject, newStatus: string) => void
+}) {
+  const grouped = new Map<string, MktProject[]>()
+  for (const s of kanbanStatuses) grouped.set(s.key, [])
+  for (const p of projects) {
+    const arr = grouped.get(p.status)
+    if (arr) arr.push(p)
+  }
+
+  // Non-empty columns only, plus always show active
+  const visibleStatuses = kanbanStatuses.filter(
+    (s) => s.key === 'active' || (grouped.get(s.key)?.length ?? 0) > 0
+  )
+
+  if (projects.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <FolderOpen className="mx-auto h-8 w-8 mb-2 opacity-40" />
+        No campaigns yet. Create your first campaign to get started.
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4 md:mx-0 md:px-0">
+      {visibleStatuses.map((status) => {
+        const items = grouped.get(status.key) ?? []
+        return (
+          <div
+            key={status.key}
+            className={cn(
+              'flex-shrink-0 w-[280px] rounded-lg border border-t-4 bg-muted/30',
+              status.color,
+            )}
+          >
+            <div className="px-3 py-2.5 border-b flex items-center justify-between">
+              <span className="text-sm font-semibold">{status.label}</span>
+              <Badge variant="secondary" className="text-xs h-5 px-1.5">{items.length}</Badge>
+            </div>
+            <div className="p-2 space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto">
+              {items.length === 0 && (
+                <div className="text-center py-6 text-xs text-muted-foreground">No projects</div>
+              )}
+              {items.map((p) => {
+                const spent = typeof p.total_spent === 'string' ? parseFloat(p.total_spent) : (p.total_spent ?? 0)
+                const budget = typeof p.total_budget === 'string' ? parseFloat(p.total_budget as unknown as string) : (p.total_budget ?? 0)
+                const burn = burnRate(spent, budget)
+                return (
+                  <div
+                    key={p.id}
+                    className="rounded-md border bg-card p-3 space-y-2 cursor-pointer hover:shadow-md hover:border-primary/30 transition-all"
+                    onClick={() => onSelect(p)}
+                  >
+                    <div className="flex items-start justify-between gap-1">
+                      <h4 className="text-sm font-medium truncate leading-tight">{p.name}</h4>
+                      <HealthBadge project={p} />
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {p.company_name}{p.brand_name ? ` / ${p.brand_name}` : ''}
+                    </div>
+                    {/* Budget mini-bar */}
+                    {budget > 0 && (
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[10px] text-muted-foreground tabular-nums">
+                          <span>{formatCurrency(spent, p.currency)}</span>
+                          <span>{burn}%</span>
+                        </div>
+                        <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${burn > 90 ? 'bg-red-500' : burn > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
+                            style={{ width: `${Math.min(burn, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {/* Channel chips */}
+                    {p.channel_mix?.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {p.channel_mix.slice(0, 3).map((ch) => (
+                          <span key={ch} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-muted text-muted-foreground">
+                            {ch.replace('_', ' ')}
+                          </span>
+                        ))}
+                        {p.channel_mix.length > 3 && (
+                          <span className="text-[10px] text-muted-foreground">+{p.channel_mix.length - 3}</span>
+                        )}
+                      </div>
+                    )}
+                    {/* Footer */}
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1">
+                      <span>{p.owner_name}</span>
+                      {p.start_date && (
+                        <span>{new Date(p.start_date).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short' })}</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+
 // ---- Table View ----
 
-function ProjectTable({ projects, onSelect, onArchive, onDelete }: {
+function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, compareIds, onToggleCompare }: {
   projects: MktProject[]
   onSelect: (p: MktProject) => void
   onArchive?: (p: MktProject) => void
   onDelete?: (p: MktProject) => void
+  compareMode?: boolean
+  compareIds?: Set<number>
+  onToggleCompare?: (id: number) => void
 }) {
   if (!projects.length) {
     return (
       <div className="text-center py-12 text-muted-foreground">
-        No projects found. Create your first marketing project.
+        <FolderOpen className="mx-auto h-8 w-8 mb-2 opacity-40" />
+        No campaigns yet. Create your first campaign to get started.
       </div>
     )
   }
@@ -427,10 +688,12 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete }: {
       <Table>
         <TableHeader>
           <TableRow>
+            {compareMode && <TableHead className="w-10" />}
             <TableHead>Project</TableHead>
             <TableHead>Company</TableHead>
             <TableHead>Type</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead className="text-center w-14">Health</TableHead>
             <TableHead className="text-right">Budget</TableHead>
             <TableHead className="text-right">Spent</TableHead>
             <TableHead>Burn</TableHead>
@@ -447,9 +710,19 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete }: {
             return (
               <TableRow
                 key={p.id}
-                className="cursor-pointer hover:bg-muted/50"
-                onClick={() => onSelect(p)}
+                className={cn('cursor-pointer hover:bg-muted/50', compareIds?.has(p.id) && 'bg-primary/5')}
+                onClick={() => compareMode ? onToggleCompare?.(p.id) : onSelect(p)}
               >
+                {compareMode && (
+                  <TableCell className="w-10">
+                    <div className={cn(
+                      'h-4 w-4 rounded border flex items-center justify-center transition-colors',
+                      compareIds?.has(p.id) ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30',
+                    )}>
+                      {compareIds?.has(p.id) && <Check className="h-3 w-3" />}
+                    </div>
+                  </TableCell>
+                )}
                 <TableCell className="font-medium max-w-[200px] truncate">{p.name}</TableCell>
                 <TableCell className="text-sm">{p.company_name}</TableCell>
                 <TableCell>
@@ -461,6 +734,9 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete }: {
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[p.status] ?? ''}`}>
                     {(p.status ?? '').replace('_', ' ')}
                   </span>
+                </TableCell>
+                <TableCell className="text-center">
+                  <HealthBadge project={p} />
                 </TableCell>
                 <TableCell className="text-right text-sm tabular-nums">
                   {formatCurrency(budget, p.currency)}
@@ -521,16 +797,20 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete }: {
 
 // ---- Card View ----
 
-function ProjectCards({ projects, onSelect, onArchive, onDelete }: {
+function ProjectCards({ projects, onSelect, onArchive, onDelete, compareMode, compareIds, onToggleCompare }: {
   projects: MktProject[]
   onSelect: (p: MktProject) => void
   onArchive?: (p: MktProject) => void
   onDelete?: (p: MktProject) => void
+  compareMode?: boolean
+  compareIds?: Set<number>
+  onToggleCompare?: (id: number) => void
 }) {
   if (!projects.length) {
     return (
       <div className="text-center py-12 text-muted-foreground">
-        No projects found. Create your first marketing project.
+        <FolderOpen className="mx-auto h-8 w-8 mb-2 opacity-40" />
+        No campaigns yet. Create your first campaign to get started.
       </div>
     )
   }
@@ -544,9 +824,20 @@ function ProjectCards({ projects, onSelect, onArchive, onDelete }: {
         return (
           <div
             key={p.id}
-            className="rounded-lg border bg-card p-4 space-y-3 cursor-pointer hover:border-primary/50 transition-colors"
-            onClick={() => onSelect(p)}
+            className={cn(
+              'rounded-lg border bg-card p-4 space-y-3 cursor-pointer hover:border-primary/50 transition-colors relative',
+              compareIds?.has(p.id) && 'border-primary ring-1 ring-primary/30',
+            )}
+            onClick={() => compareMode ? onToggleCompare?.(p.id) : onSelect(p)}
           >
+            {compareMode && (
+              <div className={cn(
+                'absolute top-2 right-2 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors z-10',
+                compareIds?.has(p.id) ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 bg-background',
+              )}>
+                {compareIds?.has(p.id) && <Check className="h-3 w-3" />}
+              </div>
+            )}
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="font-semibold truncate">{p.name}</h3>
@@ -619,10 +910,173 @@ function ProjectCards({ projects, onSelect, onArchive, onDelete }: {
 }
 
 
+// ---- Calendar/Timeline View ----
+
+function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['mkt-projects', { limit: 200, offset: 0 }],
+    queryFn: () => marketingApi.listProjects({ limit: 200, offset: 0 }),
+  })
+  const projects = (data?.projects ?? []).filter((p) => p.start_date && p.end_date)
+
+  if (isLoading) return <TableSkeleton rows={6} columns={5} />
+  if (projects.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        No projects with date ranges found. Set start/end dates to see the timeline.
+      </div>
+    )
+  }
+
+  // Compute timeline bounds
+  const allDates = projects.flatMap((p) => [new Date(p.start_date!), new Date(p.end_date!)])
+  const minDate = new Date(Math.min(...allDates.map((d) => d.getTime())))
+  const maxDate = new Date(Math.max(...allDates.map((d) => d.getTime())))
+  // Pad by 7 days each side
+  const timeStart = new Date(minDate.getTime() - 7 * 86400000)
+  const timeEnd = new Date(maxDate.getTime() + 7 * 86400000)
+  const totalMs = timeEnd.getTime() - timeStart.getTime()
+
+  // Generate month markers
+  const months: { label: string; left: number }[] = []
+  const cursor = new Date(timeStart.getFullYear(), timeStart.getMonth(), 1)
+  while (cursor <= timeEnd) {
+    const left = ((cursor.getTime() - timeStart.getTime()) / totalMs) * 100
+    months.push({ label: cursor.toLocaleDateString('ro-RO', { month: 'short', year: '2-digit' }), left: Math.max(0, left) })
+    cursor.setMonth(cursor.getMonth() + 1)
+  }
+
+  // Today marker
+  const todayPct = ((Date.now() - timeStart.getTime()) / totalMs) * 100
+
+  const barColors: Record<string, string> = {
+    draft: 'bg-gray-400',
+    pending_approval: 'bg-yellow-400',
+    approved: 'bg-green-400',
+    active: 'bg-blue-500',
+    paused: 'bg-orange-400',
+    completed: 'bg-emerald-500',
+    cancelled: 'bg-red-400',
+    archived: 'bg-gray-300',
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+        {Object.entries(barColors).map(([status, cls]) => (
+          <div key={status} className="flex items-center gap-1.5">
+            <span className={`w-3 h-2 rounded-sm ${cls}`} />
+            <span className="capitalize">{status.replace('_', ' ')}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-lg border overflow-hidden">
+        {/* Month headers */}
+        <div className="relative h-7 bg-muted/50 border-b">
+          {months.map((m, i) => (
+            <div
+              key={i}
+              className="absolute top-0 h-full border-l border-dashed border-muted-foreground/20 flex items-center px-1.5"
+              style={{ left: `${m.left}%` }}
+            >
+              <span className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">{m.label}</span>
+            </div>
+          ))}
+          {/* Today line */}
+          {todayPct >= 0 && todayPct <= 100 && (
+            <div className="absolute top-0 h-full w-px bg-red-500 z-10" style={{ left: `${todayPct}%` }}>
+              <span className="absolute -top-0.5 -translate-x-1/2 text-[8px] text-red-500 font-bold">TODAY</span>
+            </div>
+          )}
+        </div>
+
+        {/* Project rows */}
+        <div className="divide-y">
+          {projects.map((p) => {
+            const start = new Date(p.start_date!)
+            const end = new Date(p.end_date!)
+            const leftPct = ((start.getTime() - timeStart.getTime()) / totalMs) * 100
+            const widthPct = ((end.getTime() - start.getTime()) / totalMs) * 100
+            const spent = typeof p.total_spent === 'string' ? parseFloat(p.total_spent) : (p.total_spent ?? 0)
+            const budget = typeof p.total_budget === 'string' ? parseFloat(p.total_budget as unknown as string) : (p.total_budget ?? 0)
+            const burn = burnRate(spent, budget)
+            return (
+              <div
+                key={p.id}
+                className="relative h-10 hover:bg-muted/30 cursor-pointer transition-colors group"
+                onClick={() => onSelect(p)}
+              >
+                {/* Month grid lines */}
+                {months.map((m, i) => (
+                  <div key={i} className="absolute top-0 h-full border-l border-dashed border-muted-foreground/10" style={{ left: `${m.left}%` }} />
+                ))}
+                {/* Today line */}
+                {todayPct >= 0 && todayPct <= 100 && (
+                  <div className="absolute top-0 h-full w-px bg-red-500/20" style={{ left: `${todayPct}%` }} />
+                )}
+                {/* Bar */}
+                <div
+                  className={cn(
+                    'absolute top-1.5 h-7 rounded-md flex items-center px-2 min-w-[40px] shadow-sm transition-shadow group-hover:shadow-md',
+                    barColors[p.status] ?? 'bg-gray-400',
+                  )}
+                  style={{ left: `${Math.max(0, leftPct)}%`, width: `${Math.max(2, widthPct)}%` }}
+                >
+                  <span className="text-[10px] font-medium text-white truncate drop-shadow-sm">
+                    {p.name}
+                  </span>
+                  {budget > 0 && (
+                    <span className="ml-auto text-[9px] text-white/80 shrink-0 tabular-nums pl-1">
+                      {burn}%
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
 // ---- Dashboard View ----
+
+const DASH_WIDGETS_KEY = 'mkt-dashboard-widgets'
+const ALL_WIDGETS = ['alerts', 'budgetByChannel', 'kpiScoreboard', 'channelAttribution', 'budgetVsActual', 'channelPerformance'] as const
+type DashWidget = (typeof ALL_WIDGETS)[number]
+const WIDGET_LABELS: Record<DashWidget, string> = {
+  alerts: 'Budget Alerts',
+  budgetByChannel: 'Budget by Channel',
+  kpiScoreboard: 'KPI Scoreboard',
+  channelAttribution: 'Channel Attribution',
+  budgetVsActual: 'Budget vs Actual',
+  channelPerformance: 'Channel Performance',
+}
 
 function DashboardView({ showStats }: { showStats: boolean }) {
   const navigate = useNavigate()
+
+  // Widget visibility
+  const [visibleWidgets, setVisibleWidgets] = useState<Set<DashWidget>>(() => {
+    try {
+      const saved = localStorage.getItem(DASH_WIDGETS_KEY)
+      return saved ? new Set(JSON.parse(saved) as DashWidget[]) : new Set(ALL_WIDGETS)
+    } catch { return new Set(ALL_WIDGETS) }
+  })
+
+  function toggleWidget(w: DashWidget) {
+    setVisibleWidgets((prev) => {
+      const next = new Set(prev)
+      if (next.has(w)) next.delete(w); else next.add(w)
+      try { localStorage.setItem(DASH_WIDGETS_KEY, JSON.stringify([...next])) } catch { /* ignore */ }
+      return next
+    })
+  }
+
+  const showWidget = (w: DashWidget) => visibleWidgets.has(w)
 
   const { data: summaryData, isLoading: summaryLoading } = useQuery({
     queryKey: ['mkt-dashboard-summary'],
@@ -659,6 +1113,36 @@ function DashboardView({ showStats }: { showStats: boolean }) {
 
   return (
     <div className="space-y-6">
+      {/* Dashboard customize toggle */}
+      <div className="flex justify-end">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm">
+              <SlidersHorizontal className="h-3.5 w-3.5 mr-1.5" /> Customize
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-56 p-2" align="end">
+            <div className="text-xs font-semibold text-muted-foreground px-2 pb-1.5">Toggle Widgets</div>
+            {ALL_WIDGETS.map((w) => (
+              <button
+                key={w}
+                type="button"
+                className="flex items-center gap-2 w-full px-2 py-1.5 rounded-sm text-sm hover:bg-muted transition-colors"
+                onClick={() => toggleWidget(w)}
+              >
+                <div className={cn(
+                  'h-3.5 w-3.5 rounded border flex items-center justify-center',
+                  visibleWidgets.has(w) ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30',
+                )}>
+                  {visibleWidgets.has(w) && <Check className="h-2.5 w-2.5" />}
+                </div>
+                {WIDGET_LABELS[w]}
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
+      </div>
+
       {/* Summary cards */}
       <div className={`grid grid-cols-2 gap-3 lg:grid-cols-5 ${showStats ? '' : 'hidden'}`}>
         <StatCard title="Active" value={summary?.active_count ?? 0} icon={<FolderOpen className="h-4 w-4" />} isLoading={summaryLoading} />
@@ -668,9 +1152,59 @@ function DashboardView({ showStats }: { showStats: boolean }) {
         <StatCard title="KPI Alerts" value={summary?.kpi_alerts ?? 0} icon={<AlertTriangle className="h-4 w-4" />} isLoading={summaryLoading} />
       </div>
 
+      {/* Budget Alerts Panel */}
+      {showWidget('alerts') && !bvaLoading && (() => {
+        const alerts = bvaProjects
+          .map((p: Record<string, unknown>) => ({
+            id: p.id as number,
+            name: p.name as string,
+            budget: Number(p.total_budget) || 0,
+            spent: Number(p.total_spent) || 0,
+            util: Number(p.utilization_pct) || 0,
+            status: p.status as string,
+          }))
+          .filter((p) => p.budget > 0 && p.util >= 70 && p.status !== 'completed')
+          .sort((a, b) => b.util - a.util)
+
+        if (alerts.length === 0) return null
+        return (
+          <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/10 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-orange-600" />
+              <h3 className="font-semibold text-sm text-orange-800 dark:text-orange-200">Budget Alerts ({alerts.length})</h3>
+            </div>
+            <div className="space-y-2">
+              {alerts.slice(0, 5).map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-center gap-3 rounded-md bg-background/60 px-3 py-2 cursor-pointer hover:bg-background transition-colors"
+                  onClick={() => navigate(`/app/marketing/projects/${a.id}`)}
+                >
+                  {a.util >= 100 ? (
+                    <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="h-3.5 w-3.5 text-orange-500 shrink-0" />
+                  )}
+                  <span className="text-sm font-medium truncate flex-1">{a.name}</span>
+                  <span className={cn('text-xs font-medium tabular-nums', a.util >= 100 ? 'text-red-600' : 'text-orange-600')}>
+                    {a.util}%
+                  </span>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {formatCurrency(a.budget - a.spent)} left
+                  </span>
+                </div>
+              ))}
+              {alerts.length > 5 && (
+                <div className="text-xs text-muted-foreground text-center pt-1">+{alerts.length - 5} more alerts</div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Budget by Channel */}
-        <div className="rounded-lg border p-4 space-y-4">
+        {showWidget('budgetByChannel') && <div className="rounded-lg border p-4 space-y-4">
           <div className="flex items-center gap-2">
             <PieChart className="h-4 w-4 text-muted-foreground" />
             <h3 className="font-semibold text-sm">Budget by Channel</h3>
@@ -678,9 +1212,56 @@ function DashboardView({ showStats }: { showStats: boolean }) {
           {budgetLoading ? (
             <TableSkeleton rows={4} columns={3} showHeader={false} />
           ) : channels.length === 0 ? (
-            <div className="text-center py-6 text-sm text-muted-foreground">No budget data.</div>
+            <div className="text-center py-6 text-sm text-muted-foreground">
+              <DollarSign className="mx-auto h-6 w-6 mb-1.5 opacity-40" />
+              No budget data yet. Add budget lines to your campaigns.
+            </div>
           ) : (
             <div className="space-y-3">
+              {/* Mini donut + legend */}
+              {(() => {
+                const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f97316']
+                const sz = 100, cx = 50, cy = 50, r = 35, sw = 16
+                let cum = 0
+                const arcs = channels.map((ch, i) => {
+                  const planned = Number(ch.planned) || 0
+                  const pct = totalPlanned > 0 ? planned / totalPlanned : 0
+                  const sa = cum * 2 * Math.PI - Math.PI / 2
+                  cum += pct
+                  const ea = cum * 2 * Math.PI - Math.PI / 2
+                  const la = pct > 0.5 ? 1 : 0
+                  const x1 = cx + r * Math.cos(sa), y1 = cy + r * Math.sin(sa)
+                  const x2 = cx + r * Math.cos(ea), y2 = cy + r * Math.sin(ea)
+                  return {
+                    channel: ch.channel, color: COLORS[i % COLORS.length], pct,
+                    d: pct >= 0.999
+                      ? `M ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx + r - 0.001} ${cy}`
+                      : `M ${x1} ${y1} A ${r} ${r} 0 ${la} 1 ${x2} ${y2}`,
+                  }
+                })
+                return (
+                  <div className="flex items-center gap-4">
+                    <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`} className="shrink-0">
+                      {arcs.map((a, i) => (
+                        <path key={i} d={a.d} fill="none" stroke={a.color} strokeWidth={sw} strokeLinecap="butt" />
+                      ))}
+                      <text x={cx} y={cy + 4} textAnchor="middle" className="fill-foreground text-xs font-bold">
+                        {totalPlanned >= 1000 ? `${(totalPlanned / 1000).toFixed(0)}k` : totalPlanned}
+                      </text>
+                    </svg>
+                    <div className="flex-1 grid grid-cols-2 gap-x-3 gap-y-1">
+                      {arcs.map((a, i) => (
+                        <div key={i} className="flex items-center gap-1.5 text-xs">
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: a.color }} />
+                          <span className="truncate">{a.channel.replace('_', ' ')}</span>
+                          <span className="text-muted-foreground ml-auto">{Math.round(a.pct * 100)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+              {/* Channel bars */}
               {channels.map((ch) => {
                 const planned = Number(ch.planned) || 0
                 const spent = Number(ch.spent) || 0
@@ -713,10 +1294,10 @@ function DashboardView({ showStats }: { showStats: boolean }) {
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* KPI Scoreboard — Matrix Grid */}
-        <div className="rounded-lg border p-4 space-y-4">
+        {showWidget('kpiScoreboard') && <div className="rounded-lg border p-4 space-y-4">
           <div className="flex items-center gap-2">
             <Target className="h-4 w-4 text-muted-foreground" />
             <h3 className="font-semibold text-sm">KPI Scoreboard (Active Projects)</h3>
@@ -724,15 +1305,18 @@ function DashboardView({ showStats }: { showStats: boolean }) {
           {scoreboardLoading ? (
             <TableSkeleton rows={3} columns={5} />
           ) : kpis.length === 0 ? (
-            <div className="text-center py-6 text-sm text-muted-foreground">No KPIs tracked.</div>
+            <div className="text-center py-6 text-sm text-muted-foreground">
+              <Target className="mx-auto h-6 w-6 mb-1.5 opacity-40" />
+              No KPIs tracked. Configure KPIs on your active campaigns.
+            </div>
           ) : (
             <KpiMatrix kpis={kpis} onProjectClick={(id) => navigate(`/app/marketing/projects/${id}`)} />
           )}
-        </div>
+        </div>}
       </div>
 
       {/* Budget vs Actual Report */}
-      <div className="rounded-lg border p-4 space-y-4">
+      {showWidget('budgetVsActual') && <div className="rounded-lg border p-4 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
@@ -755,7 +1339,10 @@ function DashboardView({ showStats }: { showStats: boolean }) {
         {bvaLoading ? (
           <TableSkeleton rows={4} columns={6} />
         ) : bvaProjects.length === 0 ? (
-          <div className="text-center py-6 text-sm text-muted-foreground">No project data.</div>
+          <div className="text-center py-6 text-sm text-muted-foreground">
+            <BarChart3 className="mx-auto h-6 w-6 mb-1.5 opacity-40" />
+            No budget vs actual data. Create campaigns with budgets to see comparisons.
+          </div>
         ) : (
           <div className="rounded-md border">
             <Table>
@@ -813,10 +1400,74 @@ function DashboardView({ showStats }: { showStats: boolean }) {
             </Table>
           </div>
         )}
-      </div>
+      </div>}
+
+      {/* Channel Attribution Summary */}
+      {showWidget('channelAttribution') && !channelPerfLoading && channelPerf.length > 1 && (() => {
+        const sorted = [...channelPerf]
+          .map((ch: Record<string, unknown>) => ({
+            channel: ch.channel as string,
+            planned: Number(ch.total_planned) || 0,
+            spent: Number(ch.total_spent) || 0,
+            util: Number(ch.avg_utilization) || 0,
+            projects: Number(ch.project_count) || 0,
+          }))
+          .filter((c) => c.planned > 0)
+          .sort((a, b) => b.spent - a.spent)
+        const maxSpent = Math.max(...sorted.map((c) => c.spent), 1)
+        const totalChannelSpent = sorted.reduce((s, c) => s + c.spent, 0)
+
+        return (
+          <div className="rounded-lg border p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <GitCompareArrows className="h-4 w-4 text-muted-foreground" />
+              <h3 className="font-semibold text-sm">Channel Attribution</h3>
+            </div>
+            <div className="space-y-3">
+              {sorted.map((ch) => {
+                const shareOfSpend = totalChannelSpent ? Math.round((ch.spent / totalChannelSpent) * 100) : 0
+                const efficiency = ch.util <= 80 ? 'text-green-600 dark:text-green-400' : ch.util <= 95 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'
+                return (
+                  <div key={ch.channel} className="space-y-1">
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs capitalize">{ch.channel.replace('_', ' ')}</Badge>
+                        <span className="text-xs text-muted-foreground">{ch.projects} campaign{ch.projects !== 1 ? 's' : ''}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs tabular-nums">
+                        <span className="text-muted-foreground">{shareOfSpend}% of spend</span>
+                        <span className={efficiency}>{Math.round(ch.util)}% util</span>
+                        <span className="font-medium">{formatCurrency(ch.spent)}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 items-center">
+                      <div className="flex-1 h-3 rounded bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded bg-blue-500/80 transition-all"
+                          style={{ width: `${(ch.spent / maxSpent) * 100}%` }}
+                        />
+                      </div>
+                      <div className="w-12 h-3 rounded bg-muted overflow-hidden">
+                        <div
+                          className={cn('h-full rounded transition-all', ch.util > 90 ? 'bg-red-500' : ch.util > 70 ? 'bg-yellow-500' : 'bg-green-500')}
+                          style={{ width: `${Math.min(ch.util, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="text-[10px] text-muted-foreground flex items-center gap-4 pt-1">
+              <span>Long bar = spend share</span>
+              <span>Short bar = utilization</span>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Channel Performance Report */}
-      <div className="rounded-lg border p-4 space-y-4">
+      {showWidget('channelPerformance') && <div className="rounded-lg border p-4 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <PieChart className="h-4 w-4 text-muted-foreground" />
@@ -840,7 +1491,10 @@ function DashboardView({ showStats }: { showStats: boolean }) {
         {channelPerfLoading ? (
           <TableSkeleton rows={3} columns={5} />
         ) : channelPerf.length === 0 ? (
-          <div className="text-center py-6 text-sm text-muted-foreground">No channel data.</div>
+          <div className="text-center py-6 text-sm text-muted-foreground">
+            <PieChart className="mx-auto h-6 w-6 mb-1.5 opacity-40" />
+            No channel performance data yet.
+          </div>
         ) : (
           <div className="rounded-md border">
             <Table>
@@ -892,7 +1546,7 @@ function DashboardView({ showStats }: { showStats: boolean }) {
             </Table>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   )
 }
@@ -1124,6 +1778,88 @@ function TrashView({ onRestore, onPermanentDelete }: { onRestore: () => void; on
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+
+// ---- Compare Panel ----
+
+function ComparePanel({ projects, onClose }: { projects: MktProject[]; onClose: () => void }) {
+  const rows: { label: string; values: (p: MktProject) => React.ReactNode }[] = [
+    { label: 'Status', values: (p) => (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[p.status] ?? ''}`}>
+        {(p.status ?? '').replace('_', ' ')}
+      </span>
+    )},
+    { label: 'Health', values: (p) => <HealthBadge project={p} /> },
+    { label: 'Company', values: (p) => <span className="text-sm">{p.company_name}</span> },
+    { label: 'Type', values: (p) => <span className="text-sm capitalize">{(p.project_type ?? '').replace('_', ' ')}</span> },
+    { label: 'Budget', values: (p) => <span className="text-sm tabular-nums">{formatCurrency(p.total_budget, p.currency)}</span> },
+    { label: 'Spent', values: (p) => <span className="text-sm tabular-nums">{formatCurrency(p.total_spent, p.currency)}</span> },
+    { label: 'Burn Rate', values: (p) => {
+      const b = burnRate(
+        typeof p.total_spent === 'string' ? parseFloat(p.total_spent) : (p.total_spent ?? 0),
+        typeof p.total_budget === 'string' ? parseFloat(p.total_budget as unknown as string) : (p.total_budget ?? 0),
+      )
+      return (
+        <div className="flex items-center gap-2">
+          <div className="w-16 h-2 rounded-full bg-muted overflow-hidden">
+            <div
+              className={`h-full rounded-full ${b > 90 ? 'bg-red-500' : b > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
+              style={{ width: `${Math.min(b, 100)}%` }}
+            />
+          </div>
+          <span className="text-xs">{b}%</span>
+        </div>
+      )
+    }},
+    { label: 'Owner', values: (p) => <span className="text-sm">{p.owner_name ?? '—'}</span> },
+    { label: 'Channels', values: (p) => (
+      <div className="flex flex-wrap gap-1">
+        {(p.channel_mix ?? []).map((ch) => (
+          <Badge key={ch} variant="secondary" className="text-[10px]">{ch.replace('_', ' ')}</Badge>
+        ))}
+        {(!p.channel_mix || p.channel_mix.length === 0) && <span className="text-xs text-muted-foreground">—</span>}
+      </div>
+    )},
+    { label: 'Start', values: (p) => <span className="text-sm">{p.start_date ? new Date(p.start_date).toLocaleDateString('ro-RO') : '—'}</span> },
+    { label: 'End', values: (p) => <span className="text-sm">{p.end_date ? new Date(p.end_date).toLocaleDateString('ro-RO') : '—'}</span> },
+  ]
+
+  return (
+    <div className="rounded-lg border bg-card shadow-md">
+      <div className="flex items-center justify-between px-4 py-3 border-b">
+        <h3 className="font-semibold text-sm flex items-center gap-2">
+          <GitCompareArrows className="h-4 w-4" />
+          Comparing {projects.length} Campaigns
+        </h3>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[120px] text-xs">Metric</TableHead>
+              {projects.map((p) => (
+                <TableHead key={p.id} className="text-xs min-w-[160px]">{p.name}</TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.label}>
+                <TableCell className="text-xs font-medium text-muted-foreground">{row.label}</TableCell>
+                {projects.map((p) => (
+                  <TableCell key={p.id}>{row.values(p)}</TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   )
 }

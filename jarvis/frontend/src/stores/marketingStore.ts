@@ -14,8 +14,8 @@ const defaultColumns = [
 interface MarketingState
   extends DataTableState<MktProjectFilters>,
     ColumnState {
-  viewMode: 'table' | 'cards'
-  setViewMode: (mode: 'table' | 'cards') => void
+  viewMode: 'table' | 'cards' | 'kanban'
+  setViewMode: (mode: 'table' | 'cards' | 'kanban') => void
 }
 
 export const useMarketingStore = create<MarketingState>((set) => ({
@@ -31,7 +31,7 @@ export const useMarketingStore = create<MarketingState>((set) => ({
     set,
   ),
   viewMode:
-    (localStorage.getItem('marketing-view-mode') as 'table' | 'cards') ||
+    (localStorage.getItem('marketing-view-mode') as 'table' | 'cards' | 'kanban') ||
     'table',
   setViewMode: (mode) => {
     try {

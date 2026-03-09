@@ -1,15 +1,18 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTabParam } from '@/hooks/useTabParam'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Pencil, BarChart3, DollarSign, Target, Users,
-  CalendarDays, Clock, FileText, MessageSquare, Download,
+  CalendarDays, Clock, FileText, MessageSquare, Download, Plus,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { exportProjectPdf } from './exportProjectPdf'
@@ -40,11 +43,42 @@ export default function ProjectDetail() {
 
   const [activeTab, setActiveTab] = useTabParam<Tab>('overview')
   const [showEditDialog, setShowEditDialog] = useState(false)
+  const [showQuickSpend, setShowQuickSpend] = useState(false)
+  const [spendLineId, setSpendLineId] = useState('')
+  const [spendAmount, setSpendAmount] = useState('')
+  const [spendDate, setSpendDate] = useState(new Date().toISOString().slice(0, 10))
+  const [spendDesc, setSpendDesc] = useState('')
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['mkt-project', id],
     queryFn: () => marketingApi.getProject(id),
     enabled: !!id,
+  })
+
+  const { data: blData } = useQuery({
+    queryKey: ['mkt-budget-lines', id],
+    queryFn: () => marketingApi.getBudgetLines(id),
+    enabled: !!id,
+  })
+  const budgetLines = blData?.budget_lines ?? []
+
+  const spendMut = useMutation({
+    mutationFn: (data: { lineId: number; amount: number; date: string; desc: string }) =>
+      marketingApi.createTransaction(data.lineId, {
+        amount: data.amount,
+        direction: 'debit',
+        source: 'manual',
+        transaction_date: data.date,
+        description: data.desc || undefined,
+      } as any),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-budget-lines', id] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-project', id] })
+      setShowQuickSpend(false)
+      setSpendLineId('')
+      setSpendAmount('')
+      setSpendDesc('')
+    },
   })
 
   if (isLoading) {
@@ -144,6 +178,86 @@ export default function ProjectDetail() {
             }}
             onCancel={() => setShowEditDialog(false)}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Spend FAB */}
+      {budgetLines.length > 0 && (
+        <Button
+          className="fixed bottom-6 right-6 h-12 w-12 rounded-full shadow-lg z-40"
+          size="icon"
+          onClick={() => setShowQuickSpend(true)}
+        >
+          <Plus className="h-5 w-5" />
+        </Button>
+      )}
+
+      {/* Quick Spend Dialog */}
+      <Dialog open={showQuickSpend} onOpenChange={setShowQuickSpend}>
+        <DialogContent className="max-w-sm" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="h-4 w-4" /> Quick Spend
+            </DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!spendLineId || !spendAmount) return
+              spendMut.mutate({
+                lineId: Number(spendLineId),
+                amount: Number(spendAmount),
+                date: spendDate,
+                desc: spendDesc,
+              })
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label>Budget Line</Label>
+              <Select value={spendLineId} onValueChange={setSpendLineId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select channel..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {budgetLines.map((bl) => (
+                    <SelectItem key={bl.id} value={String(bl.id)}>
+                      {bl.channel}{bl.description ? ` – ${bl.description}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Amount ({project.currency || 'RON'})</Label>
+              <Input
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="0.00"
+                value={spendAmount}
+                onChange={(e) => setSpendAmount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date</Label>
+              <Input type="date" value={spendDate} onChange={(e) => setSpendDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description (optional)</Label>
+              <Input
+                placeholder="e.g. Facebook Ads invoice #123"
+                value={spendDesc}
+                onChange={(e) => setSpendDesc(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setShowQuickSpend(false)}>Cancel</Button>
+              <Button type="submit" disabled={!spendLineId || !spendAmount || spendMut.isPending}>
+                {spendMut.isPending ? 'Saving...' : 'Record Spend'}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

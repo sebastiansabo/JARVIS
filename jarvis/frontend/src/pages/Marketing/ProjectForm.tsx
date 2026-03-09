@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { RichTextEditor } from '@/components/shared/RichTextEditor'
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Save, FileDown } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { settingsApi } from '@/api/settings'
 import { organizationApi } from '@/api/organization'
@@ -259,6 +260,58 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
 
   const isSaving = createMutation.isPending || updateMutation.isPending
 
+  // ---- Template Management ----
+  const TMPL_KEY = 'mkt-campaign-templates'
+  const [templateName, setTemplateName] = useState('')
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false)
+
+  function getTemplates(): { name: string; data: Record<string, unknown> }[] {
+    try { return JSON.parse(localStorage.getItem(TMPL_KEY) || '[]') } catch { return [] }
+  }
+
+  function saveTemplate() {
+    if (!templateName.trim()) return
+    const templates = getTemplates()
+    const tmplData: Record<string, unknown> = {
+      project_type: form.project_type,
+      channel_mix: form.channel_mix,
+      currency: form.currency,
+      total_budget: form.total_budget,
+      objective: form.objective,
+      target_audience: form.target_audience,
+      approval_mode: form.approval_mode,
+      description: form.description,
+    }
+    // Replace if same name exists
+    const idx = templates.findIndex((t) => t.name === templateName.trim())
+    if (idx >= 0) templates[idx] = { name: templateName.trim(), data: tmplData }
+    else templates.push({ name: templateName.trim(), data: tmplData })
+    localStorage.setItem(TMPL_KEY, JSON.stringify(templates))
+    setShowSaveTemplate(false)
+    setTemplateName('')
+  }
+
+  function loadTemplate(tmpl: { name: string; data: Record<string, unknown> }) {
+    setForm((f) => ({
+      ...f,
+      project_type: (tmpl.data.project_type as string) || f.project_type,
+      channel_mix: (tmpl.data.channel_mix as string[]) || f.channel_mix,
+      currency: (tmpl.data.currency as string) || f.currency,
+      total_budget: (tmpl.data.total_budget as string) || f.total_budget,
+      objective: (tmpl.data.objective as string) || f.objective,
+      target_audience: (tmpl.data.target_audience as string) || f.target_audience,
+      approval_mode: ((tmpl.data.approval_mode as string) || f.approval_mode) as 'any' | 'all',
+      description: (tmpl.data.description as string) || f.description,
+    }))
+  }
+
+  function deleteTemplate(name: string) {
+    const templates = getTemplates().filter((t) => t.name !== name)
+    localStorage.setItem(TMPL_KEY, JSON.stringify(templates))
+  }
+
+  const savedTemplates = getTemplates()
+
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {error && (
@@ -266,6 +319,50 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
           {error}
         </div>
       )}
+
+      {/* Template Actions */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {!isEdit && savedTemplates.length > 0 && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button type="button" variant="outline" size="sm">
+                <FileDown className="h-3.5 w-3.5 mr-1.5" /> Load Template
+                <ChevronDown className="h-3 w-3 ml-1" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-1" align="start">
+              {savedTemplates.map((t) => (
+                <div key={t.name} className="flex items-center justify-between px-2 py-1.5 hover:bg-muted rounded-sm text-sm">
+                  <button type="button" className="flex-1 text-left truncate" onClick={() => loadTemplate(t)}>
+                    {t.name}
+                  </button>
+                  <button type="button" className="text-muted-foreground hover:text-destructive ml-1 shrink-0" onClick={() => deleteTemplate(t.name)}>
+                    &times;
+                  </button>
+                </div>
+              ))}
+            </PopoverContent>
+          </Popover>
+        )}
+        {showSaveTemplate ? (
+          <div className="flex items-center gap-1.5">
+            <Input
+              className="h-8 w-40 text-sm"
+              placeholder="Template name"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveTemplate() } }}
+              autoFocus
+            />
+            <Button type="button" variant="default" size="sm" onClick={saveTemplate} disabled={!templateName.trim()}>Save</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowSaveTemplate(false)}>Cancel</Button>
+          </div>
+        ) : (
+          <Button type="button" variant="ghost" size="sm" onClick={() => setShowSaveTemplate(true)}>
+            <Save className="h-3.5 w-3.5 mr-1.5" /> Save as Template
+          </Button>
+        )}
+      </div>
 
       {/* Name */}
       <div className="space-y-1.5">
@@ -503,21 +600,11 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="mkt-start-date">Start Date</Label>
-          <Input
-            id="mkt-start-date"
-            type="date"
-            value={form.start_date}
-            onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
-          />
+          <DateField value={form.start_date} onChange={(v) => setForm((f) => ({ ...f, start_date: v }))} className="w-full" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="mkt-end-date">End Date</Label>
-          <Input
-            id="mkt-end-date"
-            type="date"
-            value={form.end_date}
-            onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))}
-          />
+          <DateField value={form.end_date} onChange={(v) => setForm((f) => ({ ...f, end_date: v }))} className="w-full" />
         </div>
       </div>
 

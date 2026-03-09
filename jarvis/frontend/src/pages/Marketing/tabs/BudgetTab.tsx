@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -16,6 +17,51 @@ import { marketingApi } from '@/api/marketing'
 import { settingsApi } from '@/api/settings'
 import type { MktBudgetLine, InvoiceSearchResult } from '@/types/marketing'
 import { fmt, fmtDate } from './utils'
+
+// ── Inline Editable Cell ──
+
+function InlineEditCell({ value, currency: cur, onSave }: {
+  value: number; currency: string; onSave: (v: number) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  if (!editing) {
+    return (
+      <span
+        className="cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors"
+        onDoubleClick={(e) => { e.stopPropagation(); setDraft(String(value || '')); setEditing(true) }}
+        title="Double-click to edit"
+      >
+        {fmt(value, cur)}
+      </span>
+    )
+  }
+
+  return (
+    <Input
+      type="number"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={() => {
+        const n = Number(draft)
+        if (!isNaN(n) && n !== value) onSave(n)
+        setEditing(false)
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          const n = Number(draft)
+          if (!isNaN(n) && n !== value) onSave(n)
+          setEditing(false)
+        }
+        if (e.key === 'Escape') setEditing(false)
+      }}
+      className="h-7 w-28 text-sm text-right tabular-nums"
+      autoFocus
+    />
+  )
+}
 
 export function BudgetTab({ projectId, currency }: { projectId: number; currency: string }) {
   const queryClient = useQueryClient()
@@ -54,6 +100,15 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
       queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
       setShowAdd(false)
       setAddForm({ channel: '', planned_amount: '', description: '', period_type: 'campaign' })
+    },
+  })
+
+  const updateLineMut = useMutation({
+    mutationFn: ({ lineId, data }: { lineId: number; data: Partial<MktBudgetLine> }) =>
+      marketingApi.updateBudgetLine(projectId, lineId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-budget-lines', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
     },
   })
 
@@ -180,7 +235,11 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
       </div>
 
       {lines.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">No budget lines yet.</div>
+        <div className="text-center py-12 text-muted-foreground">
+          <DollarSign className="mx-auto h-8 w-8 mb-2 opacity-40" />
+          <div>No budget lines yet</div>
+          <div className="text-xs mt-1">Click "Add Line" to allocate budget to marketing channels.</div>
+        </div>
       ) : (
         <div className="rounded-md border">
           <Table>
@@ -218,8 +277,20 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
                       </TableCell>
                       <TableCell className="text-sm max-w-[200px] truncate">{l.description || '—'}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{l.period_type}</TableCell>
-                      <TableCell className="text-right text-sm tabular-nums">{fmt(l.planned_amount, currency)}</TableCell>
-                      <TableCell className="text-right text-sm tabular-nums">{fmt(l.approved_amount, currency)}</TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">
+                        <InlineEditCell
+                          value={Number(l.planned_amount) || 0}
+                          currency={currency}
+                          onSave={(v) => updateLineMut.mutate({ lineId: l.id, data: { planned_amount: v } })}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">
+                        <InlineEditCell
+                          value={Number(l.approved_amount) || 0}
+                          currency={currency}
+                          onSave={(v) => updateLineMut.mutate({ lineId: l.id, data: { approved_amount: v } })}
+                        />
+                      </TableCell>
                       <TableCell className="text-right text-sm tabular-nums">{fmt(l.spent_amount, currency)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -500,7 +571,7 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
             </div>
             <div className="space-y-1.5">
               <Label>Date *</Label>
-              <Input type="date" value={editTxForm.transaction_date} onChange={(e) => setEditTxForm((f) => ({ ...f, transaction_date: e.target.value }))} />
+              <DateField value={editTxForm.transaction_date} onChange={(v) => setEditTxForm((f) => ({ ...f, transaction_date: v }))} className="w-full" />
             </div>
             <div className="space-y-1.5">
               <Label>Description</Label>
@@ -530,7 +601,7 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
             </div>
             <div className="space-y-1.5">
               <Label>Date *</Label>
-              <Input type="date" value={spendForm.transaction_date} onChange={(e) => setSpendForm((f) => ({ ...f, transaction_date: e.target.value }))} />
+              <DateField value={spendForm.transaction_date} onChange={(v) => setSpendForm((f) => ({ ...f, transaction_date: v }))} className="w-full" />
             </div>
             <div className="space-y-1.5">
               <Label>Description</Label>

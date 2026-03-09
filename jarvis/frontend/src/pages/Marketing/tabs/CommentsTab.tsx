@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
-import { Pencil, Trash2, ClipboardCheck } from 'lucide-react'
+import { Pencil, Trash2, ClipboardCheck, MessageSquare } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { approvalsApi } from '@/api/approvals'
 import { fmtDatetime } from './utils'
@@ -127,7 +127,11 @@ export function CommentsTab({ projectId }: { projectId: number }) {
 
       {/* Unified timeline */}
       {timeline.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">No comments yet.</div>
+        <div className="text-center py-12 text-muted-foreground">
+          <MessageSquare className="mx-auto h-8 w-8 mb-2 opacity-40" />
+          <div>No comments yet</div>
+          <div className="text-xs mt-1">Start a conversation about this campaign.</div>
+        </div>
       ) : (
         <div className="space-y-4">
           {timeline.map((item) => {

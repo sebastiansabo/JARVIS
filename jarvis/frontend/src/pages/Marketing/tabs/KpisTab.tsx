@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -400,6 +400,31 @@ export function KpisTab({ projectId }: { projectId: number }) {
     },
   })
 
+  // Auto-sync interval
+  const AUTOSYNC_KEY = `mkt-autosync-${projectId}`
+  const [autoSyncMinutes, setAutoSyncMinutes] = useState<number>(() => {
+    try { return Number(localStorage.getItem(AUTOSYNC_KEY)) || 0 } catch { return 0 }
+  })
+  const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [lastSynced, setLastSynced] = useState<Date | null>(null)
+
+  useEffect(() => {
+    if (syncTimerRef.current) clearInterval(syncTimerRef.current)
+    if (autoSyncMinutes > 0 && kpis.length > 0) {
+      syncTimerRef.current = setInterval(() => {
+        syncAllMut.mutate(undefined, {
+          onSuccess: () => setLastSynced(new Date()),
+        })
+      }, autoSyncMinutes * 60 * 1000)
+    }
+    return () => { if (syncTimerRef.current) clearInterval(syncTimerRef.current) }
+  }, [autoSyncMinutes, kpis.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function setAutoSync(minutes: number) {
+    setAutoSyncMinutes(minutes)
+    try { localStorage.setItem(AUTOSYNC_KEY, String(minutes)) } catch { /* ignore */ }
+  }
+
   const toggleOverviewMut = useMutation({
     mutationFn: ({ kpiId, show }: { kpiId: number; show: boolean }) =>
       marketingApi.updateProjectKpi(projectId, kpiId, { show_on_overview: show }),
@@ -422,11 +447,34 @@ export function KpisTab({ projectId }: { projectId: number }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end gap-2">
+      <div className="flex items-center justify-end gap-2 flex-wrap">
         {kpis.length > 0 && (
-          <Button size="sm" variant="outline" onClick={() => syncAllMut.mutate()} disabled={syncAllMut.isPending}>
-            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncAllMut.isPending ? 'animate-spin' : ''}`} /> Refresh All
-          </Button>
+          <>
+            <div className="flex items-center gap-1.5 mr-2">
+              <span className="text-xs text-muted-foreground">Auto-sync:</span>
+              <Select value={String(autoSyncMinutes)} onValueChange={(v) => setAutoSync(Number(v))}>
+                <SelectTrigger className="h-7 w-[100px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Off</SelectItem>
+                  <SelectItem value="1">1 min</SelectItem>
+                  <SelectItem value="5">5 min</SelectItem>
+                  <SelectItem value="15">15 min</SelectItem>
+                  <SelectItem value="30">30 min</SelectItem>
+                  <SelectItem value="60">1 hour</SelectItem>
+                </SelectContent>
+              </Select>
+              {lastSynced && (
+                <span className="text-[10px] text-muted-foreground">
+                  Last: {lastSynced.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
+            <Button size="sm" variant="outline" onClick={() => syncAllMut.mutate(undefined, { onSuccess: () => setLastSynced(new Date()) })} disabled={syncAllMut.isPending}>
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncAllMut.isPending ? 'animate-spin' : ''}`} /> Refresh All
+            </Button>
+          </>
         )}
         <Button size="sm" onClick={() => setShowAdd(true)}>
           <Plus className="h-3.5 w-3.5 mr-1.5" /> Add KPI
@@ -434,7 +482,11 @@ export function KpisTab({ projectId }: { projectId: number }) {
       </div>
 
       {kpis.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">No KPIs configured.</div>
+        <div className="text-center py-12 text-muted-foreground">
+          <Target className="mx-auto h-8 w-8 mb-2 opacity-40" />
+          <div>No KPIs configured</div>
+          <div className="text-xs mt-1">Click "Add KPI" to track performance metrics for this campaign.</div>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {kpis.map((k) => {

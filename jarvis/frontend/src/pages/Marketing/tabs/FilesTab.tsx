@@ -179,7 +179,11 @@ export function FilesTab({ projectId }: { projectId: number }) {
       )}
 
       {files.length === 0 && linkedDocs.length === 0 && (
-        <div className="text-center py-4 text-muted-foreground text-sm">No files attached yet.</div>
+        <div className="text-center py-12 text-muted-foreground">
+          <Paperclip className="mx-auto h-8 w-8 mb-2 opacity-40" />
+          <div className="text-sm">No files attached yet</div>
+          <div className="text-xs mt-1">Upload files or link DMS documents to this campaign.</div>
+        </div>
       )}
 
       {/* ── Linked DMS Documents ── */}

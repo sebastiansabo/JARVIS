@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Clock } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { fmtDatetime } from './utils'
 
@@ -15,7 +16,11 @@ export function ActivityTab({ projectId }: { projectId: number }) {
   return (
     <div className="space-y-1">
       {items.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">No activity yet.</div>
+        <div className="text-center py-12 text-muted-foreground">
+          <Clock className="mx-auto h-8 w-8 mb-2 opacity-40" />
+          <div>No activity yet</div>
+          <div className="text-xs mt-1">Activity will appear as changes are made to this campaign.</div>
+        </div>
       ) : (
         <div className="space-y-0">
           {items.map((a) => (
