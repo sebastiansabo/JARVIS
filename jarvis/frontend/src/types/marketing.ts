@@ -402,6 +402,65 @@ export interface DmsDocSearchResult {
   file_count: number
 }
 
+// ── CRM Client Links ──
+
+export interface MktProjectClient {
+  id: number
+  project_id: number
+  client_id: number
+  linked_by: number
+  linked_by_name: string | null
+  created_at: string
+  display_name: string
+  client_type: string | null
+  phone: string | null
+  email: string | null
+  city: string | null
+  region: string | null
+  responsible: string | null
+  deal_count: number
+  total_revenue: number
+}
+
+export interface CrmClientSearchResult {
+  id: number
+  display_name: string
+  client_type: string | null
+  phone: string | null
+  email: string | null
+  city: string | null
+  responsible: string | null
+  deal_count: number
+}
+
+export interface CrmDeal {
+  id: number
+  source: string | null
+  brand: string | null
+  model_name: string | null
+  sale_price_net: number | null
+  gross_profit: number | null
+  contract_date: string | null
+  dossier_status: string | null
+  sales_person: string | null
+  vin: string | null
+  dealer_name: string | null
+  buyer_name: string | null
+}
+
+export interface MktKpiDealSource {
+  id: number
+  project_kpi_id: number
+  role: string
+  metric: string
+  brand_filter: string | null
+  source_filter: string | null
+  status_filter: string | null
+  date_from: string | null
+  date_to: string | null
+  created_at: string
+}
+
 export interface InvoiceSearchResult {
   id: number
   supplier: string

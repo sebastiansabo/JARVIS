@@ -2734,6 +2734,38 @@ def create_schema(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_kpi_deps_kpi ON mkt_kpi_dependencies(project_kpi_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_kpi_deps_dep ON mkt_kpi_dependencies(depends_on_kpi_id)')
 
+    # Project ↔ CRM Client linking
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_project_clients (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES mkt_projects(id) ON DELETE CASCADE,
+            client_id INTEGER NOT NULL REFERENCES crm_clients(id) ON DELETE CASCADE,
+            linked_by INTEGER NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT mkt_project_clients_unique UNIQUE (project_id, client_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_clients_project ON mkt_project_clients(project_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_clients_client ON mkt_project_clients(client_id)')
+
+    # KPI ↔ Deal Sources (aggregated CRM deal metrics)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_kpi_deal_sources (
+            id SERIAL PRIMARY KEY,
+            project_kpi_id INTEGER NOT NULL REFERENCES mkt_project_kpis(id) ON DELETE CASCADE,
+            role TEXT NOT NULL DEFAULT 'input',
+            metric TEXT NOT NULL DEFAULT 'count',
+            brand_filter TEXT,
+            source_filter VARCHAR(5),
+            status_filter TEXT,
+            date_from DATE,
+            date_to DATE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT mkt_kpi_deal_sources_unique UNIQUE (project_kpi_id, role, metric)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_kpi_deal_src_kpi ON mkt_kpi_deal_sources(project_kpi_id)')
+
     conn.commit()
 
     # Seed approval permissions_v2 if not already present

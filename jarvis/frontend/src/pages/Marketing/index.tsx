@@ -19,7 +19,7 @@ import {
   Plus, Search, LayoutGrid, LayoutDashboard, List, Columns3,
   DollarSign, Target, AlertTriangle, FolderOpen, FileText,
   BarChart3, PieChart, Download, SlidersHorizontal,
-  Archive, Trash2, RotateCcw, AlertCircle, Heart, GitCompareArrows, X, Check, CalendarDays,
+  Archive, Trash2, RotateCcw, AlertCircle, Heart, GitCompareArrows, X, Check, CalendarDays, Info,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -469,7 +469,20 @@ export default function Marketing() {
 
 // ---- Health Score Utility ----
 
-function computeHealthScore(p: MktProject): { score: number; label: string; color: string; icon: React.ElementType } {
+interface HealthResult {
+  score: number
+  label: string
+  color: string
+  icon: React.ElementType
+  budgetHealth: number
+  statusHealth: number
+  burn: number
+  expectedBurn: number
+  burnDelta: number
+  timelinePct: number
+}
+
+function computeHealthScore(p: MktProject): HealthResult {
   const budget = typeof p.total_budget === 'string' ? parseFloat(p.total_budget as unknown as string) : (p.total_budget ?? 0)
   const spent = typeof p.total_spent === 'string' ? parseFloat(p.total_spent as string) : (p.total_spent ?? 0)
   const burn = budget ? (spent / budget) * 100 : 0
@@ -485,12 +498,12 @@ function computeHealthScore(p: MktProject): { score: number; label: string; colo
     }
   }
 
-  // Score: 100 = perfect, 0 = terrible
   // Budget health: penalize if burn significantly outpaces timeline
   let budgetHealth = 100
+  const expectedBurn = timelinePct || 50
+  let burnDelta = 0
   if (budget > 0) {
-    const expectedBurn = timelinePct || 50 // If no dates, assume midpoint
-    const burnDelta = burn - expectedBurn
+    burnDelta = burn - expectedBurn
     if (burnDelta > 30) budgetHealth = 20
     else if (burnDelta > 15) budgetHealth = 50
     else if (burnDelta > 5) budgetHealth = 75
@@ -507,29 +520,145 @@ function computeHealthScore(p: MktProject): { score: number; label: string; colo
 
   const score = Math.round((budgetHealth * 0.7) + (statusHealth * 0.3))
 
-  if (score >= 80) return { score, label: 'Healthy', color: 'text-green-600 dark:text-green-400', icon: Heart }
-  if (score >= 50) return { score, label: 'At Risk', color: 'text-yellow-600 dark:text-yellow-400', icon: AlertTriangle }
-  return { score, label: 'Critical', color: 'text-red-600 dark:text-red-400', icon: AlertCircle }
+  const base = { score, budgetHealth, statusHealth, burn, expectedBurn, burnDelta, timelinePct }
+  if (score >= 80) return { ...base, label: 'Healthy', color: 'text-green-600 dark:text-green-400', icon: Heart }
+  if (score >= 50) return { ...base, label: 'At Risk', color: 'text-yellow-600 dark:text-yellow-400', icon: AlertTriangle }
+  return { ...base, label: 'Critical', color: 'text-red-600 dark:text-red-400', icon: AlertCircle }
 }
 
 function HealthBadge({ project }: { project: MktProject }) {
-  const health = computeHealthScore(project)
-  const Icon = health.icon
+  const h = computeHealthScore(project)
+  const Icon = h.icon
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className={`inline-flex items-center gap-1 text-xs font-medium ${health.color}`}>
+          <span className={`inline-flex items-center gap-1 text-xs font-medium ${h.color}`}>
             <Icon className="h-3 w-3" />
-            {health.score}
+            {h.score}
           </span>
         </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">
-          <div>Health: {health.label} ({health.score}/100)</div>
-          <div className="text-muted-foreground">Budget + timeline + status composite</div>
+        <TooltipContent side="top" className="max-w-[260px] p-3">
+          <div className="space-y-2 text-xs">
+            <div className="flex items-center justify-between font-medium">
+              <span>{h.label}</span>
+              <span className={h.color}>{h.score}/100</span>
+            </div>
+            <div className="h-px bg-border" />
+            <div className="space-y-1 text-muted-foreground">
+              <div className="flex justify-between">
+                <span>Budget Health (70%)</span>
+                <span className="font-medium text-foreground">{h.budgetHealth}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Status Health (30%)</span>
+                <span className="font-medium text-foreground">{h.statusHealth}</span>
+              </div>
+            </div>
+            <div className="h-px bg-border" />
+            <div className="space-y-0.5 text-muted-foreground">
+              <div className="flex justify-between">
+                <span>Budget burned</span>
+                <span>{h.burn.toFixed(1)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Timeline elapsed</span>
+                <span>{h.timelinePct.toFixed(1)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Burn vs expected</span>
+                <span className={h.burnDelta > 5 ? 'text-red-500' : h.burnDelta > 0 ? 'text-yellow-500' : 'text-green-500'}>
+                  {h.burnDelta > 0 ? '+' : ''}{h.burnDelta.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+          </div>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
+  )
+}
+
+function HealthInfoHeader() {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+          Health
+          <Info className="h-3 w-3 opacity-50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="center" className="w-[340px] p-4 text-xs">
+        <div className="space-y-3">
+          <div className="font-semibold text-sm">How Health Score Works</div>
+          <p className="text-muted-foreground leading-relaxed">
+            Each campaign gets a health score from 0 to 100 based on
+            budget pacing and project status.
+          </p>
+
+          <div className="space-y-2">
+            <div className="font-medium">Formula</div>
+            <div className="bg-muted rounded-md px-3 py-2 font-mono text-[11px]">
+              Health = Budget Health x 70% + Status Health x 30%
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="font-medium">Budget Health (0–100)</div>
+            <p className="text-muted-foreground leading-relaxed">
+              Compares how much budget you've spent vs. how far along
+              the campaign timeline is. Spending ahead of schedule
+              lowers the score.
+            </p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-muted-foreground mt-1">
+              <span>On pace or under ({"<"}5% over)</span><span className="text-right font-medium text-foreground">100</span>
+              <span>Slightly over (5–15%)</span><span className="text-right font-medium text-foreground">75</span>
+              <span>Significantly over (15–30%)</span><span className="text-right font-medium text-foreground">50</span>
+              <span>Way over budget ({">"}30%)</span><span className="text-right font-medium text-foreground">20</span>
+              <span>Budget {">"}95% depleted</span><span className="text-right font-medium text-foreground">max 30</span>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="font-medium">Status Health (0–100)</div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-muted-foreground">
+              <span>Active / Completed</span><span className="text-right font-medium text-foreground">100</span>
+              <span>Draft</span><span className="text-right font-medium text-foreground">80</span>
+              <span>Paused</span><span className="text-right font-medium text-foreground">60</span>
+            </div>
+          </div>
+
+          <div className="h-px bg-border" />
+
+          <div className="space-y-1.5">
+            <div className="font-medium">Score Ranges</div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Heart className="h-3 w-3 text-green-600" />
+                <span className="text-green-600 font-medium">80–100</span>
+                <span className="text-muted-foreground">Healthy — on track</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-3 w-3 text-yellow-600" />
+                <span className="text-yellow-600 font-medium">50–79</span>
+                <span className="text-muted-foreground">At Risk — needs attention</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-3 w-3 text-red-600" />
+                <span className="text-red-600 font-medium">0–49</span>
+                <span className="text-muted-foreground">Critical — overspending or stalled</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="h-px bg-border" />
+          <p className="text-muted-foreground italic leading-relaxed">
+            Hover over any health score to see the detailed breakdown
+            for that specific campaign.
+          </p>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -685,7 +814,9 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, co
             <TableHead>Company</TableHead>
             <TableHead>Type</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead className="text-center w-14">Health</TableHead>
+            <TableHead className="text-center w-14">
+                <HealthInfoHeader />
+              </TableHead>
             <TableHead className="text-right">Budget</TableHead>
             <TableHead className="text-right">Spent</TableHead>
             <TableHead>Burn</TableHead>

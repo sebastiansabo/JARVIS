@@ -9,9 +9,11 @@ from .file_repo import FileRepository
 from .event_repo import ProjectEventRepository
 from .okr_repo import OkrRepository
 from .dms_link_repo import ProjectDmsLinkRepository
+from .client_link_repo import ProjectClientLinkRepository
 
 __all__ = [
     'ProjectRepository', 'MemberRepository', 'BudgetRepository',
     'KpiRepository', 'ActivityRepository', 'CommentRepository', 'FileRepository',
     'ProjectEventRepository', 'OkrRepository', 'ProjectDmsLinkRepository',
+    'ProjectClientLinkRepository',
 ]

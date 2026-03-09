@@ -25,6 +25,10 @@ import type {
   MktKeyResult,
   SimBenchmark,
   SimSettings,
+  MktProjectClient,
+  CrmClientSearchResult,
+  CrmDeal,
+  MktKpiDealSource,
 } from '@/types/marketing'
 
 const BASE = '/marketing/api'
@@ -339,6 +343,37 @@ export const marketingApi = {
 
   searchDmsDocuments: (q?: string, limit = 20) =>
     api.get<{ documents: DmsDocSearchResult[] }>(`${BASE}/dms-documents/search${toQs({ q, limit })}`),
+
+  // ---- CRM Client Links ----
+
+  getProjectClients: (projectId: number) =>
+    api.get<{ clients: MktProjectClient[] }>(`${BASE}/projects/${projectId}/clients`),
+
+  linkClient: (projectId: number, clientId: number) =>
+    api.post<{ success: boolean; id: number }>(`${BASE}/projects/${projectId}/clients`, { client_id: clientId }),
+
+  unlinkClient: (projectId: number, clientId: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/projects/${projectId}/clients/${clientId}`),
+
+  getClientDeals: (projectId: number, clientId: number) =>
+    api.get<{ deals: CrmDeal[] }>(`${BASE}/projects/${projectId}/clients/${clientId}/deals`),
+
+  searchCrmClients: (q?: string, limit = 20) =>
+    api.get<{ clients: CrmClientSearchResult[] }>(`${BASE}/crm-clients/search${toQs({ q, limit })}`),
+
+  getClientCampaigns: (clientId: number) =>
+    api.get<{ campaigns: { id: number; project_id: number; project_name: string; project_status: string; start_date: string | null; end_date: string | null; total_budget: number; currency: string; created_at: string }[] }>(`${BASE}/crm-clients/${clientId}/campaigns`),
+
+  // ---- KPI Deal Sources ----
+
+  getKpiDealSources: (kpiId: number) =>
+    api.get<{ deal_sources: MktKpiDealSource[] }>(`${BASE}/kpis/${kpiId}/deal-sources`),
+
+  linkKpiDealSource: (kpiId: number, data: { role?: string; metric: string; brand_filter?: string; source_filter?: string; status_filter?: string; date_from?: string; date_to?: string }) =>
+    api.post<{ success: boolean; id: number }>(`${BASE}/kpis/${kpiId}/deal-sources`, data),
+
+  unlinkKpiDealSource: (kpiId: number, sourceId: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/kpis/${kpiId}/deal-sources/${sourceId}`),
 
   // ---- OKRs ----
 

@@ -532,6 +532,55 @@ def api_unlink_kpi_dependency(kpi_id, dep_kpi_id):
     return jsonify({'success': False, 'error': 'Dependency not found'}), 404
 
 
+# ---- KPI ↔ Deal Sources ----
+
+@marketing_bp.route('/api/kpis/<int:kpi_id>/deal-sources', methods=['GET'])
+@login_required
+@mkt_permission_required('kpi', 'view')
+def api_get_kpi_deal_sources(kpi_id):
+    """Get deal sources linked to a KPI."""
+    sources = _kpi_repo.get_kpi_deal_sources(kpi_id)
+    return jsonify({'deal_sources': sources})
+
+
+@marketing_bp.route('/api/kpis/<int:kpi_id>/deal-sources', methods=['POST'])
+@login_required
+@mkt_permission_required('kpi', 'edit')
+def api_link_kpi_deal_source(kpi_id):
+    """Link a deal source to a KPI."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+    role = data.get('role', 'input')
+    metric = data.get('metric', 'count')
+    if metric not in ('count', 'sum_revenue', 'sum_profit', 'avg_price'):
+        return jsonify({'success': False, 'error': 'Invalid metric'}), 400
+    if not role or not isinstance(role, str) or not role.replace('_', '').isalpha():
+        return jsonify({'success': False, 'error': 'role must be a valid variable name'}), 400
+    try:
+        source_id = _kpi_repo.link_deal_source(
+            kpi_id, role=role, metric=metric,
+            brand_filter=data.get('brand_filter'),
+            source_filter=data.get('source_filter'),
+            status_filter=data.get('status_filter'),
+            date_from=data.get('date_from'),
+            date_to=data.get('date_to'),
+        )
+        return jsonify({'success': True, 'id': source_id}), 201
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@marketing_bp.route('/api/kpis/<int:kpi_id>/deal-sources/<int:source_id>', methods=['DELETE'])
+@login_required
+@mkt_permission_required('kpi', 'edit')
+def api_unlink_kpi_deal_source(kpi_id, source_id):
+    """Remove a deal source from a KPI."""
+    if _kpi_repo.unlink_deal_source(kpi_id, source_id):
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Deal source not found'}), 404
+
+
 # ---- KPI Sync ----
 
 @marketing_bp.route('/api/projects/<int:project_id>/kpis/sync-all', methods=['POST'])

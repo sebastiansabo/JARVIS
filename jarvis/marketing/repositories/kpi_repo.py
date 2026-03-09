@@ -187,6 +187,40 @@ class KpiRepository(BaseRepository):
             WHERE project_kpi_id = %s AND depends_on_kpi_id = %s
         ''', (project_kpi_id, depends_on_kpi_id)) > 0
 
+    # ---- KPI ↔ Deal Sources ----
+
+    def get_kpi_deal_sources(self, project_kpi_id):
+        return self.query_all('''
+            SELECT * FROM mkt_kpi_deal_sources
+            WHERE project_kpi_id = %s
+            ORDER BY role, metric
+        ''', (project_kpi_id,))
+
+    def link_deal_source(self, project_kpi_id, role='input', metric='count',
+                         brand_filter=None, source_filter=None, status_filter=None,
+                         date_from=None, date_to=None):
+        row = self.execute('''
+            INSERT INTO mkt_kpi_deal_sources
+                (project_kpi_id, role, metric, brand_filter, source_filter,
+                 status_filter, date_from, date_to)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (project_kpi_id, role, metric)
+            DO UPDATE SET brand_filter = EXCLUDED.brand_filter,
+                          source_filter = EXCLUDED.source_filter,
+                          status_filter = EXCLUDED.status_filter,
+                          date_from = EXCLUDED.date_from,
+                          date_to = EXCLUDED.date_to
+            RETURNING id
+        ''', (project_kpi_id, role, metric, brand_filter, source_filter,
+              status_filter, date_from, date_to), returning=True)
+        return row['id'] if row else None
+
+    def unlink_deal_source(self, project_kpi_id, deal_source_id):
+        return self.execute('''
+            DELETE FROM mkt_kpi_deal_sources
+            WHERE id = %s AND project_kpi_id = %s
+        ''', (deal_source_id, project_kpi_id)) > 0
+
     # ---- Sync / Recalculate ----
 
     def sync_kpi(self, project_kpi_id):
@@ -232,14 +266,72 @@ class KpiRepository(BaseRepository):
             ''', (project_kpi_id,))
             dep_by_role = {r['role']: float(r['total']) for r in cursor.fetchall()}
 
-            has_sources = bool(bl_by_role) or bool(dep_by_role)
+            # Deal sources grouped by role — aggregate CRM deals from linked clients
+            deal_by_role = {}
+            cursor.execute(
+                'SELECT project_id FROM mkt_project_kpis WHERE id = %s',
+                (project_kpi_id,)
+            )
+            proj_row = cursor.fetchone()
+            if proj_row:
+                cursor.execute(
+                    'SELECT * FROM mkt_kpi_deal_sources WHERE project_kpi_id = %s',
+                    (project_kpi_id,)
+                )
+                deal_sources = cursor.fetchall()
+                if deal_sources:
+                    cursor.execute(
+                        'SELECT client_id FROM mkt_project_clients WHERE project_id = %s',
+                        (proj_row['project_id'],)
+                    )
+                    client_ids = [r['client_id'] for r in cursor.fetchall()]
+                    if client_ids:
+                        agg_map = {
+                            'count': 'COUNT(*)',
+                            'sum_revenue': 'COALESCE(SUM(sale_price_net), 0)',
+                            'sum_profit': 'COALESCE(SUM(gross_profit), 0)',
+                            'avg_price': 'COALESCE(AVG(sale_price_net), 0)',
+                        }
+                        for ds in deal_sources:
+                            agg_expr = agg_map.get(ds['metric'], 'COUNT(*)')
+                            conditions = ['client_id IN %s']
+                            params = [tuple(client_ids)]
+                            if ds.get('brand_filter'):
+                                conditions.append('brand ILIKE %s')
+                                params.append(f'%{ds["brand_filter"]}%')
+                            if ds.get('source_filter'):
+                                conditions.append('source = %s')
+                                params.append(ds['source_filter'])
+                            if ds.get('status_filter'):
+                                statuses = [s.strip() for s in ds['status_filter'].split(',')]
+                                placeholders = ','.join(['%s'] * len(statuses))
+                                conditions.append(f'dossier_status IN ({placeholders})')
+                                params.extend(statuses)
+                            if ds.get('date_from'):
+                                conditions.append('contract_date >= %s')
+                                params.append(ds['date_from'])
+                            if ds.get('date_to'):
+                                conditions.append('contract_date <= %s')
+                                params.append(ds['date_to'])
+                            where = ' AND '.join(conditions)
+                            cursor.execute(
+                                f'SELECT {agg_expr} as total FROM crm_deals WHERE {where}',
+                                tuple(params)
+                            )
+                            val = float(cursor.fetchone()['total'] or 0)
+                            role = ds['role']
+                            deal_by_role[role] = deal_by_role.get(role, 0) + val
+
+            has_sources = bool(bl_by_role) or bool(dep_by_role) or bool(deal_by_role)
             if not has_sources:
                 return {'synced': False, 'reason': 'No linked sources'}
 
-            # Merge variables from both sources (same variable name = summed)
+            # Merge variables from all sources (same variable name = summed)
             variables = {}
-            for role in set(bl_by_role.keys()) | set(dep_by_role.keys()):
-                variables[role] = bl_by_role.get(role, 0) + dep_by_role.get(role, 0)
+            for role in set(bl_by_role.keys()) | set(dep_by_role.keys()) | set(deal_by_role.keys()):
+                variables[role] = (bl_by_role.get(role, 0)
+                                   + dep_by_role.get(role, 0)
+                                   + deal_by_role.get(role, 0))
 
             # Calculate
             if formula:
@@ -287,12 +379,14 @@ class KpiRepository(BaseRepository):
         return synced
 
     def get_all_syncable_kpi_ids(self):
-        """Get all KPI IDs that have at least one linked budget line or dependency."""
+        """Get all KPI IDs that have at least one linked source."""
         rows = self.query_all('''
             SELECT DISTINCT project_kpi_id FROM (
                 SELECT project_kpi_id FROM mkt_kpi_budget_lines
                 UNION
                 SELECT project_kpi_id FROM mkt_kpi_dependencies
+                UNION
+                SELECT project_kpi_id FROM mkt_kpi_deal_sources
             ) src
         ''')
         return [r['project_kpi_id'] for r in rows]

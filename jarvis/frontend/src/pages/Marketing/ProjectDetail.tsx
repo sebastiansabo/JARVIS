@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  Pencil, BarChart3, DollarSign, Target, Users,
+  Pencil, BarChart3, DollarSign, Target, Users, UserCheck,
   PartyPopper, Clock, FileText, MessageSquare, Download, Plus,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
@@ -19,10 +19,10 @@ import { exportProjectPdf } from './exportProjectPdf'
 import ProjectForm from './ProjectForm'
 import {
   StatusActions, OverviewTab, BudgetTab, KpisTab, TeamTab,
-  EventsTab, ActivityTab, FilesTab, CommentsTab, statusColors,
+  EventsTab, ClientsTab, ActivityTab, FilesTab, CommentsTab, statusColors,
 } from './tabs'
 
-type Tab = 'overview' | 'budget' | 'kpis' | 'team' | 'events' | 'activity' | 'files' | 'comments'
+type Tab = 'overview' | 'budget' | 'kpis' | 'team' | 'events' | 'clients' | 'activity' | 'files' | 'comments'
 
 const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'overview', label: 'Overview', icon: BarChart3 },
@@ -30,6 +30,7 @@ const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'kpis', label: 'KPIs', icon: Target },
   { key: 'team', label: 'Team', icon: Users },
   { key: 'events', label: 'Events', icon: PartyPopper },
+  { key: 'clients', label: 'Clients', icon: UserCheck },
   { key: 'files', label: 'Files', icon: FileText },
   { key: 'comments', label: 'Comments', icon: MessageSquare },
   { key: 'activity', label: 'Activity', icon: Clock },
@@ -157,6 +158,7 @@ export default function ProjectDetail() {
       {activeTab === 'kpis' && <KpisTab projectId={id} />}
       {activeTab === 'team' && <TeamTab projectId={id} />}
       {activeTab === 'events' && <EventsTab projectId={id} />}
+      {activeTab === 'clients' && <ClientsTab projectId={id} />}
       {activeTab === 'activity' && <ActivityTab projectId={id} />}
       {activeTab === 'files' && <FilesTab projectId={id} />}
       {activeTab === 'comments' && <CommentsTab projectId={id} />}

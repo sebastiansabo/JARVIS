@@ -13,10 +13,10 @@ import { cn } from '@/lib/utils'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Trash2, DollarSign, Target, Link2, RefreshCw, BarChart3, Eye,
-  Sparkles, Pencil,
+  Sparkles, Pencil, UserCheck,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
-import type { MktProjectKpi, KpiBenchmarks } from '@/types/marketing'
+import type { MktProjectKpi, KpiBenchmarks, MktKpiDealSource } from '@/types/marketing'
 import { fmt, fmtDatetime } from './utils'
 
 // ── MiniSparkline ──
@@ -128,7 +128,13 @@ function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkSo
     queryFn: () => marketingApi.getKpiDependencies(k.id),
   })
   const linkedDepCount = depData?.dependencies?.length ?? 0
-  const hasLinks = linkedBLCount > 0 || linkedDepCount > 0
+
+  const { data: dealSrcData } = useQuery({
+    queryKey: ['mkt-kpi-deal-sources', k.id],
+    queryFn: () => marketingApi.getKpiDealSources(k.id),
+  })
+  const linkedDealCount = dealSrcData?.deal_sources?.length ?? 0
+  const hasLinks = linkedBLCount > 0 || linkedDepCount > 0 || linkedDealCount > 0
 
   const target = Number(k.target_value) || 0
   const avg = Number(k.average_value) || 0
@@ -382,6 +388,13 @@ export function KpisTab({ projectId }: { projectId: number }) {
   const linkedDeps = kpiDepData?.dependencies ?? []
   const linkedDepIds = new Set(linkedDeps.map((d) => d.depends_on_kpi_id))
 
+  const { data: kpiDealData } = useQuery({
+    queryKey: ['mkt-kpi-deal-sources', linkSourcesKpiId],
+    queryFn: () => marketingApi.getKpiDealSources(linkSourcesKpiId!),
+    enabled: !!linkSourcesKpiId,
+  })
+  const linkedDealSources: MktKpiDealSource[] = kpiDealData?.deal_sources ?? []
+
   const addMut = useMutation({
     mutationFn: () => {
       const def = definitions.find((d) => String(d.id) === addDefId)
@@ -444,6 +457,21 @@ export function KpisTab({ projectId }: { projectId: number }) {
     mutationFn: (depId: number) => marketingApi.unlinkKpiDependency(linkSourcesKpiId!, depId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-kpi-dependencies', linkSourcesKpiId] })
+    },
+  })
+
+  const linkDealSourceMut = useMutation({
+    mutationFn: ({ role, metric }: { role: string; metric: string }) =>
+      marketingApi.linkKpiDealSource(linkSourcesKpiId!, { role, metric }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-kpi-deal-sources', linkSourcesKpiId] })
+    },
+  })
+
+  const unlinkDealSourceMut = useMutation({
+    mutationFn: (sourceId: number) => marketingApi.unlinkKpiDealSource(linkSourcesKpiId!, sourceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-kpi-deal-sources', linkSourcesKpiId] })
     },
   })
 
@@ -1077,7 +1105,8 @@ export function KpisTab({ projectId }: { projectId: number }) {
                   {vars.map((varName) => {
                     const varBLs = linkedBudgetLines.filter((l) => l.role === varName)
                     const varDeps = linkedDeps.filter((d) => d.role === varName)
-                    const hasSources = varBLs.length > 0 || varDeps.length > 0
+                    const varDeals = linkedDealSources.filter((ds) => ds.role === varName)
+                    const hasSources = varBLs.length > 0 || varDeps.length > 0 || varDeals.length > 0
                     return (
                       <div key={varName} className="rounded-lg border p-3 space-y-2">
                         <div className="flex items-center justify-between">
@@ -1108,6 +1137,20 @@ export function KpisTab({ projectId }: { projectId: number }) {
                               <span className="text-xs tabular-nums text-muted-foreground">({Number(d.dep_current_value || 0).toLocaleString('ro-RO')})</span>
                             </div>
                             <button className="hover:text-destructive" onClick={() => unlinkDepMut.mutate(d.depends_on_kpi_id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                        {varDeals.map((ds) => (
+                          <div key={`deal-${ds.id}`} className="flex items-center justify-between rounded-md bg-muted/50 px-2.5 py-1.5">
+                            <div className="flex items-center gap-2 text-sm">
+                              <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span>CRM Deals</span>
+                              <Badge variant="outline" className="text-[10px] h-4 px-1.5">{ds.metric.replace('_', ' ')}</Badge>
+                              {ds.brand_filter && <span className="text-[10px] text-muted-foreground">{ds.brand_filter}</span>}
+                              {ds.source_filter && <span className="text-[10px] text-muted-foreground">{ds.source_filter === 'nw' ? 'New' : 'Used'}</span>}
+                            </div>
+                            <button className="hover:text-destructive" onClick={() => unlinkDealSourceMut.mutate(ds.id)}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -1157,9 +1200,28 @@ export function KpisTab({ projectId }: { projectId: number }) {
                                   ))}
                                 </div>
                               )}
-                              {availableBL.length === 0 && availableKpis.length === 0 && (
-                                <div className="p-4 text-center text-sm text-muted-foreground">No sources available</div>
-                              )}
+                              {(availableBL.length > 0 || availableKpis.length > 0) && <Separator />}
+                              <div className="p-2">
+                                <div className="text-xs font-medium text-muted-foreground px-2 pb-1">CRM Deal Metrics</div>
+                                {(['count', 'sum_revenue', 'sum_profit', 'avg_price'] as const).map((metric) => {
+                                  const labels: Record<string, string> = { count: 'Deal Count', sum_revenue: 'Total Revenue', sum_profit: 'Total Profit', avg_price: 'Avg Price' }
+                                  const alreadyLinked = varDeals.some((ds) => ds.metric === metric)
+                                  if (alreadyLinked) return null
+                                  return (
+                                    <div
+                                      key={metric}
+                                      className="flex items-center justify-between rounded-md px-2 py-1.5 cursor-pointer hover:bg-muted/50 text-sm"
+                                      onClick={() => linkDealSourceMut.mutate({ role: varName, metric })}
+                                    >
+                                      <div className="flex items-center gap-1.5">
+                                        <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                                        {labels[metric]}
+                                      </div>
+                                      <span className="text-[10px] text-muted-foreground">from linked clients</span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
                             </div>
                           </PopoverContent>
                         </Popover>
