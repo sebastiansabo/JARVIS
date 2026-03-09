@@ -609,17 +609,21 @@ export function KpisTab({ projectId }: { projectId: number }) {
 
   const linkDealMut = useMutation({
     mutationFn: (dealId: number) => marketingApi.linkKpiDeal(linkSourcesKpiId!, dealId),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await marketingApi.syncKpi(linkSourcesKpiId!)
       queryClient.invalidateQueries({ queryKey: ['mkt-kpi-deals', linkSourcesKpiId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-available-deals', projectId, linkSourcesKpiId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-project-kpis', projectId] })
     },
   })
 
   const unlinkDealMut = useMutation({
     mutationFn: (dealLinkId: number) => marketingApi.unlinkKpiDeal(linkSourcesKpiId!, dealLinkId),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await marketingApi.syncKpi(linkSourcesKpiId!)
       queryClient.invalidateQueries({ queryKey: ['mkt-kpi-deals', linkSourcesKpiId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-available-deals', projectId, linkSourcesKpiId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-project-kpis', projectId] })
     },
   })
 
@@ -791,13 +795,13 @@ export function KpisTab({ projectId }: { projectId: number }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-end gap-2 flex-wrap">
+      <div className="flex items-center justify-end gap-2">
         {kpis.length > 0 && (
           <>
-            <div className="flex items-center gap-1.5 mr-2">
-              <span className="text-xs text-muted-foreground">Auto-sync:</span>
+            <div className="flex items-center gap-1.5 mr-0 md:mr-2">
+              <span className="text-xs text-muted-foreground hidden md:inline">Auto-sync:</span>
               <Select value={String(autoSyncMinutes)} onValueChange={(v) => setAutoSync(Number(v))}>
-                <SelectTrigger className="h-7 w-[100px] text-xs">
+                <SelectTrigger className="h-9 md:h-7 w-[80px] md:w-[100px] text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -810,18 +814,20 @@ export function KpisTab({ projectId }: { projectId: number }) {
                 </SelectContent>
               </Select>
               {lastSynced && (
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-[10px] text-muted-foreground hidden md:inline">
                   Last: {lastSynced.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
             </div>
-            <Button size="sm" variant="outline" onClick={() => syncAllMut.mutate(undefined, { onSuccess: () => setLastSynced(new Date()) })} disabled={syncAllMut.isPending}>
-              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncAllMut.isPending ? 'animate-spin' : ''}`} /> Refresh All
+            <Button size="sm" className="h-9 md:h-8" variant="outline" onClick={() => { if (!syncAllMut.isPending) syncAllMut.mutate(undefined, { onSuccess: () => setLastSynced(new Date()) }) }} disabled={syncAllMut.isPending}>
+              {syncAllMut.isPending ? <RefreshCw className="h-3.5 w-3.5 md:mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 md:mr-1.5" />}
+              <span className="hidden md:inline">Refresh All</span>
             </Button>
           </>
         )}
-        <Button size="sm" onClick={() => setShowAdd(true)}>
-          <Plus className="h-3.5 w-3.5 mr-1.5" /> Add KPI
+        <Button size="sm" className="h-9 md:h-8" onClick={() => setShowAdd(true)}>
+          <Plus className="h-3.5 w-3.5 md:mr-1.5" />
+          <span className="hidden md:inline">Add KPI</span>
         </Button>
       </div>
 
@@ -1346,33 +1352,18 @@ export function KpisTab({ projectId }: { projectId: number }) {
                         <Plus className="h-3 w-3 mr-1" /> Add deal from linked clients
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[560px] p-0 z-[9999]" align="start" avoidCollisions={false} style={{ maxHeight: 'var(--radix-popover-content-available-height, 320px)' }}>
+                    <PopoverContent className="w-80 p-0 z-[9999]" align="start" avoidCollisions={false} style={{ maxHeight: 'var(--radix-popover-content-available-height, 320px)' }}>
                       {availableDeals.length > 0 ? (
                         <div className="overflow-y-auto" style={{ maxHeight: 'calc(var(--radix-popover-content-available-height, 320px) - 8px)' }}>
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="text-xs">Client</TableHead>
-                                <TableHead className="text-xs">Brand / Model</TableHead>
-                                <TableHead className="text-xs">Date</TableHead>
-                                <TableHead className="text-xs">VIN</TableHead>
-                                <TableHead className="text-xs w-14" />
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {availableDeals.map((d) => (
-                                <TableRow key={d.id} className="cursor-pointer hover:bg-muted/50" onClick={() => linkDealMut.mutate(d.id)}>
-                                  <TableCell className="text-xs py-1.5">{d.client_name}</TableCell>
-                                  <TableCell className="text-xs py-1.5">{d.brand} {d.model_name}</TableCell>
-                                  <TableCell className="text-xs py-1.5">{d.contract_date ? new Date(d.contract_date).toLocaleDateString('ro-RO') : '—'}</TableCell>
-                                  <TableCell className="text-xs font-mono py-1.5">{d.vin ?? '—'}</TableCell>
-                                  <TableCell className="py-1.5">
-                                    <Button size="sm" variant="ghost" className="h-6 text-xs px-2">Link</Button>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
+                          {availableDeals.map((d) => (
+                            <div key={d.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-muted/50 border-b last:border-b-0" onClick={() => linkDealMut.mutate(d.id)}>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium truncate">{d.client_name}</div>
+                                <div className="text-xs text-muted-foreground truncate">{d.brand} {d.model_name}{d.contract_date ? ` · ${new Date(d.contract_date).toLocaleDateString('ro-RO')}` : ''}</div>
+                              </div>
+                              <Plus className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            </div>
+                          ))}
                         </div>
                       ) : (
                         <p className="text-xs text-muted-foreground text-center py-4">
