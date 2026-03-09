@@ -240,6 +240,33 @@ export const biostarApi = {
     return res.data
   },
 
+  // ── Device Directions ──
+
+  getDevices: async () => {
+    const res = await api.get<{ success: boolean; data: Array<{
+      device_name: string; punch_count: number; unique_users: number;
+      first_seen: string; last_seen: string; direction: string | null
+    }> }>(`${BASE}/devices`)
+    return res.data
+  },
+
+  getDeviceDirections: async () => {
+    const res = await api.get<{ success: boolean; data: Record<string, string> }>(`${BASE}/device-directions`)
+    return res.data
+  },
+
+  saveDeviceDirections: (directions: Record<string, string | null>, backfill = false) =>
+    api.put<{ success: boolean; message: string; data: { backfilled: number } }>(
+      `${BASE}/device-directions`,
+      { directions, backfill },
+    ),
+
+  backfillDirections: () =>
+    api.post<{ success: boolean; message: string; data: { updated: number } }>(
+      `${BASE}/device-directions/backfill`,
+      {},
+    ),
+
   // ── Cron Jobs ──
 
   getCronJobs: async () => {

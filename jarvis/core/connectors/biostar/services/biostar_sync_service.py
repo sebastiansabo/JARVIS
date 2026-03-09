@@ -51,6 +51,7 @@ class BioStarSyncService:
         self.sync_repo = BioStarSyncRepository()
         self.connector_repo = ConnectorRepository()
         self.adj_repo = AdjustmentRepository()
+        self._device_directions = None  # Cache for sync runs
 
     # ── Connection Management ──
 
@@ -285,6 +286,8 @@ class BioStarSyncService:
 
     def sync_events(self, start_date=None, end_date=None):
         """Incremental sync: fetch events since last sync or given date range."""
+        # Refresh device direction cache for this sync run
+        self._device_directions = None
         run = self.sync_repo.create_run('events')
         run_id = run['run_id']
 
@@ -442,19 +445,43 @@ class BioStarSyncService:
             'raw_data': raw,
         }
 
+    def _load_device_directions(self):
+        """Load device→direction mapping from connector config. Cached per service instance."""
+        if self._device_directions is not None:
+            return self._device_directions
+        self._device_directions = {}
+        try:
+            connector = self.connector_repo.get_by_type('biostar')
+            if connector:
+                config = connector.get('config') or {}
+                if isinstance(config, str):
+                    config = json.loads(config)
+                self._device_directions = config.get('device_directions', {})
+        except Exception:
+            pass
+        return self._device_directions
+
     def _infer_direction(self, event):
-        """Infer IN/OUT from tna_key or device/door name patterns."""
+        """Infer IN/OUT from: 1) device mapping, 2) tna_key, 3) device name patterns."""
+        # 1. Check configured device→direction mapping (most reliable)
+        device = event.get('device_id', {})
+        device_name = ''
+        if isinstance(device, dict):
+            device_name = device.get('name', '') or ''
+
+        directions = self._load_device_directions()
+        if device_name and device_name in directions:
+            return directions[device_name]
+
+        # 2. Check tna_key (BioStar T&A module — often not available)
         tna_key = event.get('tna_key')
         if tna_key == 1 or tna_key == '1':
             return 'IN'
         if tna_key == 2 or tna_key == '2':
             return 'OUT'
 
-        # Fallback: check device/door name patterns (Romanian)
-        names_to_check = []
-        device = event.get('device_id', {})
-        if isinstance(device, dict):
-            names_to_check.append((device.get('name', '') or '').lower())
+        # 3. Fallback: check device/door name patterns
+        names_to_check = [device_name.lower()]
 
         door_raw = event.get('door_id')
         if isinstance(door_raw, list):
@@ -465,12 +492,52 @@ class BioStarSyncService:
             names_to_check.append((door_raw.get('name', '') or '').lower())
 
         for name in names_to_check:
-            if any(kw in name for kw in ('intrare', 'entry', 'in ')):
+            if any(kw in name for kw in ('intrare', 'entry', 'reader extern')):
                 return 'IN'
-            if any(kw in name for kw in ('iesire', 'exit', 'out ')):
+            if any(kw in name for kw in ('iesire', 'exit')):
                 return 'OUT'
 
         return None
+
+    # ── Device Directions ──
+
+    def get_device_directions(self):
+        """Get device→direction mapping from connector config."""
+        connector = self.connector_repo.get_by_type('biostar')
+        if not connector:
+            return {}
+        config = connector.get('config') or {}
+        if isinstance(config, str):
+            config = json.loads(config)
+        return config.get('device_directions', {})
+
+    def save_device_directions(self, directions):
+        """Save device→direction mapping to connector config."""
+        connector = self.connector_repo.get_by_type('biostar')
+        if not connector:
+            raise ValueError('BioStar connector not configured')
+        config = connector.get('config') or {}
+        if isinstance(config, str):
+            config = json.loads(config)
+        config['device_directions'] = directions
+        self.connector_repo.update(connector['id'], config=config)
+        # Invalidate cache
+        self._device_directions = None
+
+    def get_devices(self):
+        """Get all unique devices from punch logs with punch counts."""
+        return self.repo.get_devices()
+
+    def backfill_directions(self, directions=None):
+        """Update direction on existing punch logs based on device mapping.
+
+        Returns count of updated records.
+        """
+        if directions is None:
+            directions = self.get_device_directions()
+        if not directions:
+            return 0
+        return self.repo.backfill_directions(directions)
 
     # ── Getters ──
 

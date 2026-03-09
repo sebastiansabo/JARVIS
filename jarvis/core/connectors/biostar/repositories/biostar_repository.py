@@ -434,6 +434,43 @@ class BioStarRepository(BaseRepository):
             WHERE be.biostar_user_id = %s
         ''', (biostar_user_id,))
 
+    # ── Devices ──
+
+    def get_devices(self):
+        """Get all unique devices from punch logs with stats."""
+        return self.query_all('''
+            SELECT device_name,
+                   COUNT(*) AS punch_count,
+                   COUNT(DISTINCT biostar_user_id) AS unique_users,
+                   MIN(event_datetime) AS first_seen,
+                   MAX(event_datetime) AS last_seen
+            FROM biostar_punch_logs
+            WHERE device_name IS NOT NULL AND device_name != ''
+            GROUP BY device_name
+            ORDER BY punch_count DESC
+        ''')
+
+    def backfill_directions(self, directions):
+        """Update direction on existing punch logs based on device→direction mapping.
+
+        Args:
+            directions: dict of {device_name: 'IN'|'OUT'}
+
+        Returns: total number of updated rows.
+        """
+        total = 0
+        for device_name, direction in directions.items():
+            if direction not in ('IN', 'OUT'):
+                continue
+            result = self.execute('''
+                UPDATE biostar_punch_logs
+                SET direction = %s
+                WHERE device_name = %s AND (direction IS NULL OR direction != %s)
+            ''', (direction, device_name, direction))
+            if result:
+                total += result if isinstance(result, int) else 0
+        return total
+
     # ── JARVIS Users (for mapping) ──
 
     def get_jarvis_users(self):

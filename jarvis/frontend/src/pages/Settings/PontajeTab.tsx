@@ -14,6 +14,11 @@ import {
   Trash2,
   Ban,
   ShieldOff,
+  Router,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Minus,
+  RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -593,8 +598,148 @@ export default function PontajeTab() {
         )}
       </CardContent>
     </Card>
+    <DeviceDirections />
     <CheckinLocations />
     </div>
+  )
+}
+
+// ── Device Directions ──
+
+function DeviceDirections() {
+  const qc = useQueryClient()
+  const [localDirs, setLocalDirs] = useState<Record<string, string | null>>({})
+  const [dirty, setDirty] = useState(false)
+
+  const { data: devices = [], isLoading } = useQuery({
+    queryKey: ['biostar', 'devices'],
+    queryFn: biostarApi.getDevices,
+  })
+
+  // Sync server state into local state when data loads
+  useEffect(() => {
+    if (devices.length > 0 && !dirty) {
+      const dirs: Record<string, string | null> = {}
+      devices.forEach((d) => { dirs[d.device_name] = d.direction })
+      setLocalDirs(dirs)
+    }
+  }, [devices, dirty])
+
+  const setDirection = (deviceName: string, dir: string | null) => {
+    setLocalDirs((prev) => ({ ...prev, [deviceName]: dir }))
+    setDirty(true)
+  }
+
+  const saveMut = useMutation({
+    mutationFn: () => biostarApi.saveDeviceDirections(localDirs, true),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['biostar', 'devices'] })
+      const n = res.data?.backfilled ?? 0
+      toast.success(n > 0 ? `Saved. ${n} punch logs updated.` : 'Device directions saved.')
+      setDirty(false)
+    },
+    onError: () => toast.error('Failed to save device directions'),
+  })
+
+  const backfillMut = useMutation({
+    mutationFn: () => biostarApi.backfillDirections(),
+    onSuccess: (res) => {
+      toast.success(`${res.data?.updated ?? 0} punch logs updated`)
+    },
+    onError: () => toast.error('Backfill failed'),
+  })
+
+  if (isLoading) return null
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Router className="h-5 w-5" />
+              Device Directions
+            </CardTitle>
+            <CardDescription>
+              Assign IN/OUT direction to each BioStar reader device. This determines check-in vs check-out for punch logs.
+            </CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => backfillMut.mutate()}
+              disabled={backfillMut.isPending}
+            >
+              <RefreshCw className={cn('mr-1.5 h-3.5 w-3.5', backfillMut.isPending && 'animate-spin')} />
+              Re-apply
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => saveMut.mutate()}
+              disabled={!dirty || saveMut.isPending}
+            >
+              {saveMut.isPending ? 'Saving...' : 'Save & Apply'}
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Device Name</TableHead>
+                <TableHead className="text-center w-32">Direction</TableHead>
+                <TableHead className="text-right w-24">Punches</TableHead>
+                <TableHead className="text-right w-24 hidden sm:table-cell">Users</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {devices.map((d) => {
+                const dir = localDirs[d.device_name] ?? null
+                return (
+                  <TableRow key={d.device_name}>
+                    <TableCell className="font-medium text-sm">{d.device_name}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-center gap-1">
+                        <Button
+                          variant={dir === 'IN' ? 'default' : 'outline'}
+                          size="sm"
+                          className={cn('h-7 w-14 text-xs', dir === 'IN' && 'bg-green-600 hover:bg-green-700')}
+                          onClick={() => setDirection(d.device_name, dir === 'IN' ? null : 'IN')}
+                        >
+                          <ArrowDownToLine className="mr-0.5 h-3 w-3" />
+                          IN
+                        </Button>
+                        <Button
+                          variant={dir === 'OUT' ? 'default' : 'outline'}
+                          size="sm"
+                          className={cn('h-7 w-14 text-xs', dir === 'OUT' && 'bg-orange-600 hover:bg-orange-700')}
+                          onClick={() => setDirection(d.device_name, dir === 'OUT' ? null : 'OUT')}
+                        >
+                          <ArrowUpFromLine className="mr-0.5 h-3 w-3" />
+                          OUT
+                        </Button>
+                        {dir === null && (
+                          <Minus className="h-3.5 w-3.5 text-muted-foreground ml-1" />
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground">
+                      {d.punch_count.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground hidden sm:table-cell">
+                      {d.unique_users}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

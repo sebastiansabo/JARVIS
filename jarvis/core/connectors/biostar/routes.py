@@ -483,6 +483,69 @@ def get_adjustment_history(biostar_user_id):
     return jsonify({'success': True, 'data': history})
 
 
+# ── Device Directions ──
+
+@biostar_bp.route('/api/devices', methods=['GET'])
+@api_login_required
+def get_devices():
+    """Get all unique devices from punch logs with stats and configured directions."""
+    devices = service.get_devices()
+    directions = service.get_device_directions()
+    for d in devices:
+        d['direction'] = directions.get(d['device_name'])
+    return jsonify({'success': True, 'data': devices})
+
+
+@biostar_bp.route('/api/device-directions', methods=['GET'])
+@api_login_required
+def get_device_directions():
+    """Get device→direction mapping."""
+    directions = service.get_device_directions()
+    return jsonify({'success': True, 'data': directions})
+
+
+@biostar_bp.route('/api/device-directions', methods=['PUT'])
+@api_login_required
+def save_device_directions():
+    """Save device→direction mapping and optionally backfill existing punch logs."""
+    data = request.get_json()
+    if not data or 'directions' not in data:
+        return jsonify({'success': False, 'error': 'directions dict required'}), 400
+
+    directions = data['directions']
+    # Validate: values must be IN, OUT, or null
+    for device, direction in directions.items():
+        if direction is not None and direction not in ('IN', 'OUT'):
+            return jsonify({'success': False, 'error': f'Invalid direction for {device}: must be IN, OUT, or null'}), 400
+
+    # Remove null entries
+    clean = {k: v for k, v in directions.items() if v is not None}
+    service.save_device_directions(clean)
+
+    # Optionally backfill existing records
+    backfilled = 0
+    if data.get('backfill', False):
+        backfilled = service.backfill_directions(clean)
+
+    return jsonify({
+        'success': True,
+        'message': f'Device directions saved. {backfilled} punch logs updated.' if backfilled else 'Device directions saved.',
+        'data': {'backfilled': backfilled},
+    })
+
+
+@biostar_bp.route('/api/device-directions/backfill', methods=['POST'])
+@api_login_required
+def backfill_directions():
+    """Backfill direction on all existing punch logs based on configured device mapping."""
+    updated = service.backfill_directions()
+    return jsonify({
+        'success': True,
+        'message': f'{updated} punch logs updated',
+        'data': {'updated': updated},
+    })
+
+
 # ── Cron Job Settings ──
 
 BIOSTAR_CRON_JOBS = [
