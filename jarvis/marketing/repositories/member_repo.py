@@ -19,15 +19,30 @@ class MemberRepository(BaseRepository):
             ORDER BY m.created_at
         ''', (project_id,))
 
-    def add(self, project_id, user_id, role, added_by, department_structure_id=None):
+    def add(self, project_id, user_id, role, added_by, department_structure_id=None, responsibility=None):
         # ON CONFLICT DO UPDATE always returns a row
         row = self.execute('''
-            INSERT INTO mkt_project_members (project_id, user_id, role, added_by, department_structure_id)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role
+            INSERT INTO mkt_project_members (project_id, user_id, role, added_by, department_structure_id, responsibility)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role, responsibility = EXCLUDED.responsibility
             RETURNING id
-        ''', (project_id, user_id, role, added_by, department_structure_id), returning=True)
+        ''', (project_id, user_id, role, added_by, department_structure_id, responsibility), returning=True)
         return row['id'] if row else None
+
+    def update_member(self, member_id, **kwargs):
+        allowed = {'role', 'responsibility'}
+        updates = []
+        params = []
+        for key, val in kwargs.items():
+            if key in allowed:
+                updates.append(f'{key} = %s')
+                params.append(val)
+        if not updates:
+            return False
+        params.append(member_id)
+        return self.execute(
+            f'UPDATE mkt_project_members SET {", ".join(updates)} WHERE id = %s', params
+        ) > 0
 
     def update_role(self, member_id, role):
         return self.execute(

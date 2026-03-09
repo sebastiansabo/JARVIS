@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Pencil, AlertTriangle, AlertCircle, TrendingUp } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { marketingApi } from '@/api/marketing'
 import type { MktProject } from '@/types/marketing'
 import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
@@ -114,6 +115,28 @@ function BudgetDonutChart({ lines, currency }: { lines: { channel: string; plann
         })}
       </div>
     </div>
+  )
+}
+
+function KpiVarianceBadge({ kpiId, isLowerBetter }: { kpiId: number; isLowerBetter: boolean }) {
+  const { data } = useQuery({
+    queryKey: ['mkt-kpi-snapshots', kpiId],
+    queryFn: () => marketingApi.getKpiSnapshots(kpiId, 2),
+  })
+  const snaps = data?.snapshots ?? []
+  if (snaps.length < 2) return null
+  const variance = snaps[0].value - snaps[1].value
+  if (variance === 0) return null
+  const favorable = isLowerBetter ? variance < 0 : variance > 0
+  return (
+    <span className={cn(
+      'text-[10px] font-semibold tabular-nums px-1 py-0.5 rounded-full',
+      favorable
+        ? 'text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-950/40'
+        : 'text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-950/40',
+    )}>
+      {variance > 0 ? '+' : ''}{variance.toLocaleString('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+    </span>
   )
 }
 
@@ -265,7 +288,10 @@ export function OverviewTab({ project }: { project: MktProject }) {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {overviewKpis.map((k) => {
                 const target = Number(k.target_value) || 0
-                const current = Number(k.current_value) || 0
+                const agg = k.aggregation || 'latest'
+                const current = agg === 'average' ? (Number(k.average_value) || Number(k.current_value) || 0)
+                  : agg === 'cumulative' ? (Number(k.cumulative_value) || Number(k.current_value) || 0)
+                  : (Number(k.latest_value) || Number(k.current_value) || 0)
                 const isLowerBetter = k.direction === 'lower'
                 const pct = target
                   ? Math.round(isLowerBetter ? (target / Math.max(current, 0.01)) * 100 : (current / target) * 100)
@@ -282,6 +308,7 @@ export function OverviewTab({ project }: { project: MktProject }) {
                         <span className="text-xs text-muted-foreground">/ {target.toLocaleString('ro-RO')}</span>
                       )}
                     </div>
+                    <KpiVarianceBadge kpiId={k.id} isLowerBetter={isLowerBetter} />
                     {target > 0 && (
                       <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
                         <div

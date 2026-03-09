@@ -229,41 +229,6 @@ export async function exportProjectPdf(project: MktProject) {
     }
   } catch { /* skip */ }
 
-  // ── Activity ──
-  try {
-    const actData = await marketingApi.getActivity(project.id, 100)
-    const activity = actData?.activity ?? []
-    if (activity.length > 0) {
-      heading('Activity Log')
-      doc.setFontSize(9)
-      for (const a of activity) {
-        checkPage(LINE_HEIGHT * 2)
-        doc.setFont('helvetica', 'bold')
-        const actor = a.actor_name ?? 'System'
-        const date = fmtDate(a.created_at)
-        doc.text(`${actor} — ${date}`, MARGIN, y)
-        y += LINE_HEIGHT
-        doc.setFont('helvetica', 'normal')
-        const action = a.action.replace(/_/g, ' ')
-        const detailParts: string[] = []
-        if (a.details) {
-          for (const [k, v] of Object.entries(a.details)) {
-            if (v !== null && v !== undefined && v !== '') detailParts.push(`${k}: ${v}`)
-          }
-        }
-        const desc = detailParts.length > 0 ? `${action} (${detailParts.join(', ')})` : action
-        const lines = doc.splitTextToSize(desc, CONTENT_WIDTH)
-        for (const line of lines) {
-          checkPage(LINE_HEIGHT)
-          doc.text(line, MARGIN, y)
-          y += LINE_HEIGHT
-        }
-        y += 2
-      }
-      y += SECTION_GAP / 2
-    }
-  } catch { /* skip */ }
-
   // ── Save ──
   const slug = project.slug || project.name.toLowerCase().replace(/\s+/g, '-').slice(0, 30)
   doc.save(`${slug}-project-report.pdf`)

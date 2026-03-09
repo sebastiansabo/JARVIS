@@ -506,7 +506,7 @@ function BioStarConnectionSection() {
               <div>
                 <div className="flex items-center gap-1.5 text-sm font-medium"><Users className="h-3.5 w-3.5" /> Employees</div>
                 <p className="text-xs text-muted-foreground">
-                  {status.last_sync_users ? `Last: ${new Date(status.last_sync_users).toLocaleString('ro-RO')}` : 'Never'}
+                  {status.last_sync_users ? `Last: ${new Date(status.last_sync_users + 'Z').toLocaleString('ro-RO', { timeZone: 'Europe/Bucharest' })}` : 'Never'}
                 </p>
               </div>
               <Button size="sm" variant="outline" onClick={() => syncUsersMut.mutate()} disabled={syncUsersMut.isPending}>
@@ -519,7 +519,7 @@ function BioStarConnectionSection() {
                 <div>
                   <div className="flex items-center gap-1.5 text-sm font-medium"><Clock className="h-3.5 w-3.5" /> Events</div>
                   <p className="text-xs text-muted-foreground">
-                    {status.last_sync_events ? `Last: ${new Date(status.last_sync_events).toLocaleString('ro-RO')}` : 'Never'}
+                    {status.last_sync_events ? `Last: ${new Date(status.last_sync_events + 'Z').toLocaleString('ro-RO', { timeZone: 'Europe/Bucharest' })}` : 'Never'}
                   </p>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => syncEventsMut.mutate(undefined)} disabled={syncEventsMut.isPending}>
@@ -631,7 +631,7 @@ function BioStarSyncHistory() {
             {runs.map((run) => (
               <TableRow key={run.run_id}>
                 <TableCell className="capitalize text-sm">{run.sync_type}</TableCell>
-                <TableCell className="text-sm">{new Date(run.started_at).toLocaleString('ro-RO')}</TableCell>
+                <TableCell className="text-sm">{new Date(run.started_at + 'Z').toLocaleString('ro-RO', { timeZone: 'Europe/Bucharest' })}</TableCell>
                 <TableCell>
                   {!run.finished_at ? (
                     <span className="flex items-center gap-1 text-sm text-yellow-600"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Running</span>
@@ -717,7 +717,7 @@ function BioStarCronJobs() {
                     <XCircle className="h-3 w-3 text-red-500" />
                   )}
                   <span className="text-xs text-muted-foreground">
-                    {new Date(job.last_run).toLocaleString('ro-RO')} — {job.last_message}
+                    {new Date(job.last_run + 'Z').toLocaleString('ro-RO', { timeZone: 'Europe/Bucharest' })} — {job.last_message}
                   </span>
                 </div>
               )}

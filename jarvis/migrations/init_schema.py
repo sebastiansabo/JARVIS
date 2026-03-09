@@ -2520,10 +2520,12 @@ def create_schema(conn, cursor):
             role TEXT NOT NULL DEFAULT 'member',
             department_structure_id INTEGER REFERENCES department_structure(id),
             added_by INTEGER NOT NULL REFERENCES users(id),
+            responsibility TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT mkt_members_unique UNIQUE (project_id, user_id)
         )
     ''')
+    cursor.execute("ALTER TABLE mkt_project_members ADD COLUMN IF NOT EXISTS responsibility TEXT")
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_members_user ON mkt_project_members(user_id)')
 
     cursor.execute('''
@@ -2606,6 +2608,7 @@ def create_schema(conn, cursor):
             last_synced_at TIMESTAMP,
             notes TEXT,
             show_on_overview BOOLEAN DEFAULT FALSE,
+            aggregation TEXT DEFAULT 'latest',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT mkt_kpi_status_check CHECK (status IN ('no_data','on_track','at_risk','behind','exceeded')),
@@ -2613,6 +2616,7 @@ def create_schema(conn, cursor):
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_kpis_project ON mkt_project_kpis(project_id)')
+    cursor.execute("ALTER TABLE mkt_project_kpis ADD COLUMN IF NOT EXISTS aggregation TEXT DEFAULT 'latest'")
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS mkt_kpi_snapshots (

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2, Network, MapPin } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2, Network, MapPin, PartyPopper } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -60,9 +60,11 @@ const navItemsDef: NavItem[] = [
     icon: Megaphone,
     moduleKey: 'marketing',
     children: [
+      { path: '/app/marketing/dashboard', label: 'Dashboard', icon: TrendingUp, moduleKey: 'marketing_dashboard' },
+      { path: '/app/marketing/calendar', label: 'Calendar', icon: CalendarDays, moduleKey: 'marketing_calendar' },
       { path: '/app/marketing', label: 'Campaigns', icon: Megaphone, moduleKey: 'marketing_campaigns' },
+      { path: '/app/marketing/events', label: 'Events', icon: PartyPopper, moduleKey: 'marketing_events' },
       { path: '/app/marketing/simulator', label: 'Simulator', icon: Calculator, moduleKey: 'marketing_simulator' },
-      { path: '/app/marketing/events', label: 'Events', icon: CalendarDays, moduleKey: 'marketing_events' },
     ],
   },
   { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms' },

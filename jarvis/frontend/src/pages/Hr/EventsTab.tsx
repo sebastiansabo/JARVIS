@@ -129,6 +129,8 @@ function EventsList() {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
+  const [filterFrom, setFilterFrom] = useState('')
+  const [filterTo, setFilterTo] = useState('')
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
   const [selected, setSelected] = useState<number[]>([])
   const [selectMode, setSelectMode] = useState(false)
@@ -154,8 +156,18 @@ function EventsList() {
     )
   }, [events, search])
 
+  // Apply date filter
+  const dateFiltered = useMemo(() => {
+    if (!filterFrom && !filterTo) return filtered
+    return filtered.filter((e) => {
+      if (filterFrom && e.end_date && e.end_date < filterFrom) return false
+      if (filterTo && e.start_date && e.start_date > filterTo) return false
+      return true
+    })
+  }, [filtered, filterFrom, filterTo])
+
   // Entity tags for events
-  const eventIds = useMemo(() => filtered.map((e) => e.id), [filtered])
+  const eventIds = useMemo(() => dateFiltered.map((e) => e.id), [dateFiltered])
   const { data: eventTagsMap = {} } = useQuery({
     queryKey: ['entity-tags', 'event', eventIds],
     queryFn: () => tagsApi.getEntityTagsBulk('event', eventIds),
@@ -164,12 +176,12 @@ function EventsList() {
 
   // Apply tag filter client-side
   const displayedEvents = useMemo(() => {
-    if (filterTagIds.length === 0) return filtered
-    return filtered.filter((e) => {
+    if (filterTagIds.length === 0) return dateFiltered
+    return dateFiltered.filter((e) => {
       const tags = eventTagsMap[String(e.id)] ?? []
       return tags.some((t) => filterTagIds.includes(t.id))
     })
-  }, [filtered, filterTagIds, eventTagsMap])
+  }, [dateFiltered, filterTagIds, eventTagsMap])
 
   const deleteMutation = useMutation({
     mutationFn: (ids: number[]) => hrApi.bulkDeleteEvents(ids),
@@ -280,6 +292,8 @@ function EventsList() {
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input className="pl-8" placeholder="Search events..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
+          <DateField value={filterFrom} onChange={setFilterFrom} placeholder="From" className="w-[130px]" />
+          <DateField value={filterTo} onChange={setFilterTo} placeholder="To" className="w-[130px]" />
           <span className="hidden sm:inline text-xs text-muted-foreground">{displayedEvents.length} events</span>
           <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly={isMobile} />
         </div>

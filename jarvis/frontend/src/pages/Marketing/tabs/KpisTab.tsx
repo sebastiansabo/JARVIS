@@ -10,9 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Trash2, DollarSign, Target, Link2, RefreshCw, BarChart3, Eye,
-  Sparkles,
+  Sparkles, Pencil,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import type { MktProjectKpi, KpiBenchmarks } from '@/types/marketing'
@@ -98,19 +99,23 @@ function HistoryChart({ values }: { values: { value: number; date: string }[] })
 
 // ── KpiCard ──
 
-function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkSources, onSync, isSyncing, formula, benchmarks, onToggleOverview }: {
+function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkSources, onSync, isSyncing, formula, benchmarks, onToggleOverview, onUpdateAggregation, onEdit }: {
   kpi: MktProjectKpi; statusColors: Record<string, string>
   onRecord: () => void; onHistory: () => void; onDelete: () => void
   onLinkSources: () => void; onSync: () => void; isSyncing: boolean
   formula?: string | null
   benchmarks?: KpiBenchmarks | null
   onToggleOverview: () => void
+  onUpdateAggregation: (mode: 'latest' | 'average' | 'cumulative') => void
+  onEdit: () => void
 }) {
   const { data: snapsData } = useQuery({
     queryKey: ['mkt-kpi-snapshots', k.id],
     queryFn: () => marketingApi.getKpiSnapshots(k.id, 10),
   })
-  const sparkValues = [...(snapsData?.snapshots ?? [])].reverse().map((s) => s.value)
+  const snaps = snapsData?.snapshots ?? [] // newest first
+  const sparkValues = [...snaps].reverse().map((s) => s.value)
+  const variance = snaps.length >= 2 ? snaps[0].value - snaps[1].value : null
 
   const { data: blData } = useQuery({
     queryKey: ['mkt-kpi-budget-lines', k.id],
@@ -126,7 +131,13 @@ function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkSo
   const hasLinks = linkedBLCount > 0 || linkedDepCount > 0
 
   const target = Number(k.target_value) || 0
-  const current = Number(k.current_value) || 0
+  const avg = Number(k.average_value) || 0
+  const cumul = Number(k.cumulative_value) || 0
+  const latest = Number(k.latest_value) || 0
+  const agg = k.aggregation || 'latest'
+  const current = agg === 'average' ? (avg || Number(k.current_value) || 0)
+    : agg === 'cumulative' ? (cumul || Number(k.current_value) || 0)
+    : (latest || Number(k.current_value) || 0)
   const isLowerBetter = k.direction === 'lower'
   const pct = target
     ? Math.round(isLowerBetter ? (target / Math.max(current, 0.01)) * 100 : (current / target) * 100)
@@ -153,25 +164,59 @@ function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkSo
           {k.channel && <div className="text-xs text-muted-foreground">{k.channel}</div>}
         </div>
         <div className="flex items-center gap-1">
+          <Select value={agg} onValueChange={(v) => onUpdateAggregation(v as 'latest' | 'average' | 'cumulative')}>
+            <SelectTrigger className="h-5 w-auto text-[10px] px-1.5 gap-0.5 border-none bg-muted/50">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="latest">Latest</SelectItem>
+              <SelectItem value="average">Average</SelectItem>
+              <SelectItem value="cumulative">Cumulative</SelectItem>
+            </SelectContent>
+          </Select>
           {hasLinks && (
             <Badge variant="outline" className="text-[10px] h-5 px-1.5">auto</Badge>
           )}
           <span className={`text-xs font-medium ${statusColors[k.status] ?? ''}`}>
             {k.status.replace('_', ' ')}
           </span>
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onEdit} title="Edit KPI">
+            <Pencil className="h-3 w-3 text-muted-foreground" />
+          </Button>
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onDelete}>
             <Trash2 className="h-3 w-3 text-muted-foreground" />
           </Button>
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold tabular-nums">
-            {current.toLocaleString('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}{k.unit === 'percentage' ? '%' : k.unit === 'currency' ? ` ${k.currency || 'RON'}` : ''}
-          </span>
-          {target > 0 && <span className="text-sm text-muted-foreground">
-            / {target.toLocaleString('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}{k.unit === 'percentage' ? '%' : k.unit === 'currency' ? ` ${k.currency || 'RON'}` : k.unit === 'ratio' ? '' : ` ${k.unit}`}
-          </span>}
+        <div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold tabular-nums">
+              {current.toLocaleString('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}{k.unit === 'percentage' ? '%' : k.unit === 'currency' ? ` ${k.currency || 'RON'}` : ''}
+            </span>
+            {target > 0 && <span className="text-sm text-muted-foreground">
+              / {target.toLocaleString('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}{k.unit === 'percentage' ? '%' : k.unit === 'currency' ? ` ${k.currency || 'RON'}` : k.unit === 'ratio' ? '' : ` ${k.unit}`}
+            </span>}
+          </div>
+          {(latest > 0 || variance) && (
+            <div className="flex items-center gap-2 mt-0.5">
+              {latest > 0 && Math.round(current * 100) !== Math.round(latest * 100) && (
+                <span className="text-xs text-muted-foreground">
+                  Latest: {latest.toLocaleString('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}{k.unit === 'percentage' ? '%' : k.unit === 'currency' ? ` ${k.currency || 'RON'}` : ''}
+                </span>
+              )}
+              {variance !== null && variance !== 0 && (
+                <span className={cn(
+                  'text-[11px] font-semibold tabular-nums px-1.5 py-0.5 rounded-full',
+                  (isLowerBetter ? variance < 0 : variance > 0)
+                    ? 'text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-950/40'
+                    : 'text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-950/40',
+                )}>
+                  {variance > 0 ? '+' : ''}{variance.toLocaleString('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         {sparkValues.length >= 2 && (
           <MiniSparkline
@@ -271,10 +316,29 @@ export function KpisTab({ projectId }: { projectId: number }) {
   const [addDefId, setAddDefId] = useState('')
   const [addTarget, setAddTarget] = useState('')
   const [addCurrency, setAddCurrency] = useState('RON')
+  const [addAggregation, setAddAggregation] = useState<'latest' | 'average' | 'cumulative'>('latest')
   const [snapKpiId, setSnapKpiId] = useState<number | null>(null)
   const [snapValue, setSnapValue] = useState('')
   const [historyKpiId, setHistoryKpiId] = useState<number | null>(null)
   const [linkSourcesKpiId, setLinkSourcesKpiId] = useState<number | null>(null)
+
+  // Edit KPI state
+  const [editKpiId, setEditKpiId] = useState<number | null>(null)
+  const [editTarget, setEditTarget] = useState('')
+  const [editWarn, setEditWarn] = useState('')
+  const [editCrit, setEditCrit] = useState('')
+  const [editChannel, setEditChannel] = useState('')
+  const [editCurrency, setEditCurrency] = useState('RON')
+  const [editNotes, setEditNotes] = useState('')
+
+  // Custom KPI creation state
+  const [addMode, setAddMode] = useState<'catalog' | 'custom'>('catalog')
+  const [customName, setCustomName] = useState('')
+  const [customFormula, setCustomFormula] = useState('')
+  const [customUnit, setCustomUnit] = useState<'number' | 'currency' | 'percentage' | 'ratio'>('number')
+  const [customDirection, setCustomDirection] = useState<'higher' | 'lower'>('higher')
+  const [customDescription, setCustomDescription] = useState('')
+  const [formulaValid, setFormulaValid] = useState<{ valid: boolean; error: string | null; variables: string[] } | null>(null)
 
   const { data } = useQuery({
     queryKey: ['mkt-project-kpis', projectId],
@@ -323,16 +387,15 @@ export function KpisTab({ projectId }: { projectId: number }) {
       const def = definitions.find((d) => String(d.id) === addDefId)
       return marketingApi.addProjectKpi(projectId, {
         kpi_definition_id: Number(addDefId),
-        target_value: Number(addTarget) || null,
+        target_value: addTarget !== '' ? Number(addTarget) : null,
+        aggregation: addAggregation,
         ...(def?.unit === 'currency' ? { currency: addCurrency } : {}),
       } as Partial<MktProjectKpi>)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-project-kpis', projectId] })
       setShowAdd(false)
-      setAddDefId('')
-      setAddTarget('')
-      setAddCurrency('RON')
+      resetAddDialog()
     },
   })
 
@@ -408,26 +471,30 @@ export function KpisTab({ projectId }: { projectId: number }) {
   const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [lastSynced, setLastSynced] = useState<Date | null>(null)
 
+  // Keep a stable ref to avoid stale closure in setInterval
+  const syncAllRef = useRef(syncAllMut)
+  syncAllRef.current = syncAllMut
+
   useEffect(() => {
     if (syncTimerRef.current) clearInterval(syncTimerRef.current)
     if (autoSyncMinutes > 0 && kpis.length > 0) {
       syncTimerRef.current = setInterval(() => {
-        syncAllMut.mutate(undefined, {
+        syncAllRef.current.mutate(undefined, {
           onSuccess: () => setLastSynced(new Date()),
         })
       }, autoSyncMinutes * 60 * 1000)
     }
     return () => { if (syncTimerRef.current) clearInterval(syncTimerRef.current) }
-  }, [autoSyncMinutes, kpis.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [autoSyncMinutes, kpis.length])
 
   function setAutoSync(minutes: number) {
     setAutoSyncMinutes(minutes)
     try { localStorage.setItem(AUTOSYNC_KEY, String(minutes)) } catch { /* ignore */ }
   }
 
-  const toggleOverviewMut = useMutation({
-    mutationFn: ({ kpiId, show }: { kpiId: number; show: boolean }) =>
-      marketingApi.updateProjectKpi(projectId, kpiId, { show_on_overview: show }),
+  const updateKpiMut = useMutation({
+    mutationFn: ({ kpiId, updates }: { kpiId: number; updates: Record<string, unknown> }) =>
+      marketingApi.updateProjectKpi(projectId, kpiId, updates),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mkt-project-kpis', projectId] }),
   })
 
@@ -435,6 +502,107 @@ export function KpisTab({ projectId }: { projectId: number }) {
     mutationFn: (defId: number) => marketingApi.generateBenchmarks(defId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-kpi-definitions'] })
+    },
+  })
+
+  // Open edit dialog with current values
+  function openEdit(k: MktProjectKpi) {
+    setEditKpiId(k.id)
+    setEditTarget(k.target_value != null ? String(Number(k.target_value)) : '')
+    setEditWarn(k.threshold_warning != null ? String(Number(k.threshold_warning)) : '')
+    setEditCrit(k.threshold_critical != null ? String(Number(k.threshold_critical)) : '')
+    setEditChannel(k.channel || '')
+    setEditCurrency(k.currency || 'RON')
+    setEditNotes(k.notes || '')
+  }
+
+  const editMut = useMutation({
+    mutationFn: () =>
+      marketingApi.updateProjectKpi(projectId, editKpiId!, {
+        target_value: editTarget !== '' ? Number(editTarget) : null,
+        threshold_warning: editWarn !== '' ? Number(editWarn) : null,
+        threshold_critical: editCrit !== '' ? Number(editCrit) : null,
+        channel: editChannel || null,
+        currency: editCurrency,
+        notes: editNotes || null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-project-kpis', projectId] })
+      setEditKpiId(null)
+    },
+  })
+
+  // Create custom KPI definition + add to project
+  const createCustomMut = useMutation({
+    mutationFn: async () => {
+      const slug = customName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/(^_|_$)/g, '')
+      const res = await marketingApi.createKpiDefinition({
+        name: customName,
+        slug,
+        unit: customUnit,
+        direction: customDirection,
+        category: 'custom',
+        formula: customFormula || undefined,
+        description: customDescription || undefined,
+      })
+      // Now add it to the project
+      await marketingApi.addProjectKpi(projectId, {
+        kpi_definition_id: res.id,
+        target_value: addTarget !== '' ? Number(addTarget) : null,
+        aggregation: addAggregation,
+        ...(customUnit === 'currency' ? { currency: addCurrency } : {}),
+      } as Partial<MktProjectKpi>)
+      return res.id
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-project-kpis', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-kpi-definitions'] })
+      setShowAdd(false)
+      resetAddDialog()
+    },
+  })
+
+  function resetAddDialog() {
+    setAddDefId('')
+    setAddTarget('')
+    setAddCurrency('RON')
+    setAddAggregation('latest')
+    setAiSuggestion(null)
+    setAddMode('catalog')
+    setCustomName('')
+    setCustomFormula('')
+    setCustomUnit('number')
+    setCustomDirection('higher')
+    setCustomDescription('')
+    setFormulaValid(null)
+  }
+
+  // Formula validation
+  const validateFormulaMut = useMutation({
+    mutationFn: (formula: string) => marketingApi.validateFormula(formula),
+    onSuccess: (data) => setFormulaValid(data),
+  })
+
+  const [aiSuggestion, setAiSuggestion] = useState<{ suggested_target: number; reasoning: string; confidence: string } | null>(null)
+  const suggestMut = useMutation({
+    mutationFn: (defId: number) => marketingApi.suggestKpiTarget(projectId, defId),
+    onSuccess: (data) => {
+      setAiSuggestion(data)
+      setAddTarget(String(data.suggested_target))
+    },
+  })
+
+  const suggestInlineMut = useMutation({
+    mutationFn: () => marketingApi.suggestKpiTargetInline(projectId, {
+      kpi_name: customName,
+      unit: customUnit,
+      direction: customDirection,
+      formula: customFormula || undefined,
+      description: customDescription || undefined,
+    }),
+    onSuccess: (data) => {
+      setAiSuggestion(data)
+      setAddTarget(String(data.suggested_target))
     },
   })
 
@@ -504,7 +672,9 @@ export function KpisTab({ projectId }: { projectId: number }) {
                 onLinkSources={() => setLinkSourcesKpiId(k.id)}
                 onSync={() => syncMut.mutate(k.id)}
                 isSyncing={syncMut.isPending}
-                onToggleOverview={() => toggleOverviewMut.mutate({ kpiId: k.id, show: !k.show_on_overview })}
+                onToggleOverview={() => updateKpiMut.mutate({ kpiId: k.id, updates: { show_on_overview: !k.show_on_overview } })}
+                onUpdateAggregation={(mode) => updateKpiMut.mutate({ kpiId: k.id, updates: { aggregation: mode } })}
+                onEdit={() => openEdit(k)}
               />
             )
           })}
@@ -512,86 +682,316 @@ export function KpisTab({ projectId }: { projectId: number }) {
       )}
 
       {/* Add KPI Dialog */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="max-w-sm" aria-describedby={undefined}>
+      <Dialog open={showAdd} onOpenChange={(open) => { if (!open) { setShowAdd(false); resetAddDialog() } else setShowAdd(true) }}>
+        <DialogContent className="max-w-md" aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Add KPI</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>KPI Definition *</Label>
-              <Select value={addDefId} onValueChange={setAddDefId}>
-                <SelectTrigger><SelectValue placeholder="Select KPI" /></SelectTrigger>
-                <SelectContent>
-                  {definitions.map((d) => (
-                    <SelectItem key={d.id} value={String(d.id)}>{d.name} ({d.unit})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Mode tabs */}
+            <div className="flex border rounded-md overflow-hidden">
+              <button
+                className={cn('flex-1 text-xs py-1.5 px-3 transition-colors', addMode === 'catalog' ? 'bg-primary text-primary-foreground' : 'bg-muted/50 hover:bg-muted')}
+                onClick={() => setAddMode('catalog')}
+              >From Catalog</button>
+              <button
+                className={cn('flex-1 text-xs py-1.5 px-3 transition-colors', addMode === 'custom' ? 'bg-primary text-primary-foreground' : 'bg-muted/50 hover:bg-muted')}
+                onClick={() => setAddMode('custom')}
+              >Create Custom</button>
             </div>
-            <div className="space-y-1.5">
-              <Label>Target Value {addDefId && (() => {
-                const def = definitions.find((d) => String(d.id) === addDefId)
-                if (!def) return null
-                const labels: Record<string, string> = { percentage: '(%)', ratio: '(ratio)', number: '' }
-                if (def.unit === 'currency') return <span className="text-xs text-muted-foreground">({addCurrency})</span>
-                return <span className="text-xs text-muted-foreground">{labels[def.unit] || `(${def.unit})`}</span>
-              })()}</Label>
-              <div className="flex gap-2">
-                <Input type="number" className="flex-1" value={addTarget} onChange={(e) => setAddTarget(e.target.value)}
-                  placeholder={(() => {
-                    const def = definitions.find((d) => String(d.id) === addDefId)
-                    const ph: Record<string, string> = { currency: '0.00', percentage: '0-100', ratio: '0.00', number: '0' }
-                    return def ? ph[def.unit] || '0' : '0'
-                  })()} />
-                {addDefId && definitions.find((d) => String(d.id) === addDefId)?.unit === 'currency' && (
-                  <Select value={addCurrency} onValueChange={setAddCurrency}>
-                    <SelectTrigger className="w-[90px]"><SelectValue /></SelectTrigger>
+
+            {addMode === 'catalog' ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label>KPI Definition *</Label>
+                  <Select value={addDefId} onValueChange={(v) => { setAddDefId(v); setAiSuggestion(null) }}>
+                    <SelectTrigger><SelectValue placeholder="Select KPI" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="RON">RON</SelectItem>
-                      <SelectItem value="EUR">EUR</SelectItem>
+                      {definitions.map((d) => (
+                        <SelectItem key={d.id} value={String(d.id)}>{d.name} ({d.unit}){d.formula ? ' [calc]' : ''}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                )}
-              </div>
-            </div>
-            {addDefId && (() => {
-              const def = definitions.find((d) => String(d.id) === addDefId)
-              const segs = def?.benchmarks?.segments
-              if (segs?.length) return (
-                <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-2.5 space-y-1.5">
-                  <div className="text-xs font-medium text-blue-700 dark:text-blue-300">Industry Benchmarks (Romania)</div>
-                  {segs.map((s, i) => (
-                    <div key={i} className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-                      <span className="font-medium">{s.name}:</span>
-                      <span>avg {s.average.toLocaleString('ro-RO')}</span>
-                      <span className="opacity-40">·</span>
-                      <span className="text-blue-600 dark:text-blue-400">good {s.good.toLocaleString('ro-RO')}</span>
-                      <span className="opacity-40">·</span>
-                      <span className="text-green-600 dark:text-green-400">exc {s.excellent.toLocaleString('ro-RO')}</span>
-                    </div>
-                  ))}
                 </div>
-              )
-              return (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="w-full text-xs"
-                  disabled={benchmarkMut.isPending}
-                  onClick={() => benchmarkMut.mutate(Number(addDefId))}
-                >
-                  <Sparkles className={cn('h-3.5 w-3.5 mr-1.5', benchmarkMut.isPending && 'animate-spin')} />
-                  {benchmarkMut.isPending ? 'Generating benchmarks...' : 'Suggest target with AI'}
-                </Button>
-              )
-            })()}
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-              <Button disabled={!addDefId || addMut.isPending} onClick={() => addMut.mutate()}>
-                {addMut.isPending ? 'Adding...' : 'Add'}
-              </Button>
-            </div>
+                <div className="space-y-1.5">
+                  <Label>Target Value {addDefId && (() => {
+                    const def = definitions.find((d) => String(d.id) === addDefId)
+                    if (!def) return null
+                    const labels: Record<string, string> = { percentage: '(%)', ratio: '(ratio)', number: '' }
+                    if (def.unit === 'currency') return <span className="text-xs text-muted-foreground">({addCurrency})</span>
+                    return <span className="text-xs text-muted-foreground">{labels[def.unit] || `(${def.unit})`}</span>
+                  })()}</Label>
+                  <div className="flex gap-2">
+                    <Input type="number" className="flex-1" value={addTarget} onChange={(e) => setAddTarget(e.target.value)}
+                      placeholder={(() => {
+                        const def = definitions.find((d) => String(d.id) === addDefId)
+                        const ph: Record<string, string> = { currency: '0.00', percentage: '0-100', ratio: '0.00', number: '0' }
+                        return def ? ph[def.unit] || '0' : '0'
+                      })()} />
+                    {addDefId && definitions.find((d) => String(d.id) === addDefId)?.unit === 'currency' && (
+                      <Select value={addCurrency} onValueChange={setAddCurrency}>
+                        <SelectTrigger className="w-[90px]"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="RON">RON</SelectItem>
+                          <SelectItem value="EUR">EUR</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Aggregation Mode</Label>
+                  <Select value={addAggregation} onValueChange={(v) => setAddAggregation(v as 'latest' | 'average' | 'cumulative')}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="latest">Latest — last recorded value</SelectItem>
+                      <SelectItem value="average">Average — mean of all values</SelectItem>
+                      <SelectItem value="cumulative">Cumulative — sum of all values</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {addDefId && (
+                  <div className="space-y-2">
+                    {aiSuggestion && (
+                      <div className="rounded-md border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20 p-2.5 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-medium text-green-700 dark:text-green-300">AI Suggested Target</div>
+                          <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full font-medium',
+                            aiSuggestion.confidence === 'high' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' :
+                            aiSuggestion.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300' :
+                            'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+                          )}>{aiSuggestion.confidence} confidence</span>
+                        </div>
+                        <div className="text-sm font-bold tabular-nums">{aiSuggestion.suggested_target.toLocaleString('ro-RO')}</div>
+                        <div className="text-[11px] text-muted-foreground">{aiSuggestion.reasoning}</div>
+                      </div>
+                    )}
+                    {(() => {
+                      const def = definitions.find((d) => String(d.id) === addDefId)
+                      const segs = def?.benchmarks?.segments
+                      if (segs?.length) return (
+                        <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-2.5 space-y-1.5">
+                          <div className="text-xs font-medium text-blue-700 dark:text-blue-300">Industry Benchmarks (Romania)</div>
+                          {segs.map((s, i) => (
+                            <div key={i} className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                              <span className="font-medium">{s.name}:</span>
+                              <span>avg {s.average.toLocaleString('ro-RO')}</span>
+                              <span className="opacity-40">·</span>
+                              <span className="text-blue-600 dark:text-blue-400">good {s.good.toLocaleString('ro-RO')}</span>
+                              <span className="opacity-40">·</span>
+                              <span className="text-green-600 dark:text-green-400">exc {s.excellent.toLocaleString('ro-RO')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                      return null
+                    })()}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs"
+                      disabled={suggestMut.isPending || benchmarkMut.isPending}
+                      onClick={() => {
+                        suggestMut.mutate(Number(addDefId))
+                        const def = definitions.find((d) => String(d.id) === addDefId)
+                        if (!def?.benchmarks?.segments?.length) benchmarkMut.mutate(Number(addDefId))
+                      }}
+                    >
+                      <Sparkles className={cn('h-3.5 w-3.5 mr-1.5', (suggestMut.isPending || benchmarkMut.isPending) && 'animate-spin')} />
+                      {suggestMut.isPending ? 'Analyzing project data...' : 'Suggest target with AI'}
+                    </Button>
+                  </div>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => { setShowAdd(false); resetAddDialog() }}>Cancel</Button>
+                  <Button disabled={!addDefId || addMut.isPending} onClick={() => addMut.mutate()}>
+                    {addMut.isPending ? 'Adding...' : 'Add'}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <Label>Name *</Label>
+                  <Input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="e.g. Cost Per Lead" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Unit</Label>
+                    <Select value={customUnit} onValueChange={(v) => setCustomUnit(v as 'number' | 'currency' | 'percentage' | 'ratio')}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="number">Number</SelectItem>
+                        <SelectItem value="currency">Currency</SelectItem>
+                        <SelectItem value="percentage">Percentage</SelectItem>
+                        <SelectItem value="ratio">Ratio</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Direction</Label>
+                    <Select value={customDirection} onValueChange={(v) => setCustomDirection(v as 'higher' | 'lower')}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="higher">Higher is better</SelectItem>
+                        <SelectItem value="lower">Lower is better</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Formula <span className="text-xs text-muted-foreground">(optional — reference other KPIs)</span></Label>
+                  <Input
+                    value={customFormula}
+                    onChange={(e) => { setCustomFormula(e.target.value); setFormulaValid(null) }}
+                    onBlur={() => { if (customFormula.trim()) validateFormulaMut.mutate(customFormula) }}
+                    placeholder="e.g. spent / leads"
+                    className="font-mono text-sm"
+                  />
+                  {formulaValid && (
+                    formulaValid.valid ? (
+                      <div className="text-xs text-green-600 dark:text-green-400">
+                        Valid — variables: {formulaValid.variables.join(', ') || 'none'}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-red-600 dark:text-red-400">{formulaValid.error}</div>
+                    )
+                  )}
+                  {formulaValid?.valid && formulaValid.variables.length > 0 && (
+                    <div className="text-[11px] text-muted-foreground">
+                      After adding, link other project KPIs to these variables via the Link Sources button.
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Description</Label>
+                  <Input value={customDescription} onChange={(e) => setCustomDescription(e.target.value)} placeholder="Optional description" />
+                </div>
+                <Separator />
+                <div className="space-y-1.5">
+                  <Label>Target Value</Label>
+                  <div className="flex gap-2">
+                    <Input type="number" className="flex-1" value={addTarget} onChange={(e) => setAddTarget(e.target.value)} placeholder="0" />
+                    {customUnit === 'currency' && (
+                      <Select value={addCurrency} onValueChange={setAddCurrency}>
+                        <SelectTrigger className="w-[90px]"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="RON">RON</SelectItem>
+                          <SelectItem value="EUR">EUR</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Aggregation Mode</Label>
+                  <Select value={addAggregation} onValueChange={(v) => setAddAggregation(v as 'latest' | 'average' | 'cumulative')}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="latest">Latest</SelectItem>
+                      <SelectItem value="average">Average</SelectItem>
+                      <SelectItem value="cumulative">Cumulative</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {customName.trim() && (
+                  <div className="space-y-2">
+                    {aiSuggestion && (
+                      <div className="rounded-md border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20 p-2.5 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-medium text-green-700 dark:text-green-300">AI Suggested Target</div>
+                          <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full font-medium',
+                            aiSuggestion.confidence === 'high' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' :
+                            aiSuggestion.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300' :
+                            'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+                          )}>{aiSuggestion.confidence} confidence</span>
+                        </div>
+                        <div className="text-sm font-bold tabular-nums">{aiSuggestion.suggested_target.toLocaleString('ro-RO')}</div>
+                        <div className="text-[11px] text-muted-foreground">{aiSuggestion.reasoning}</div>
+                      </div>
+                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs"
+                      disabled={suggestInlineMut.isPending}
+                      onClick={() => suggestInlineMut.mutate()}
+                    >
+                      <Sparkles className={cn('h-3.5 w-3.5 mr-1.5', suggestInlineMut.isPending && 'animate-spin')} />
+                      {suggestInlineMut.isPending ? 'Analyzing project data...' : 'Suggest target with AI'}
+                    </Button>
+                  </div>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => { setShowAdd(false); resetAddDialog() }}>Cancel</Button>
+                  <Button
+                    disabled={!customName.trim() || createCustomMut.isPending || (customFormula.trim() !== '' && formulaValid?.valid === false)}
+                    onClick={() => createCustomMut.mutate()}
+                  >
+                    {createCustomMut.isPending ? 'Creating...' : 'Create & Add'}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit KPI Dialog */}
+      <Dialog open={!!editKpiId} onOpenChange={(open) => { if (!open) setEditKpiId(null) }}>
+        <DialogContent className="max-w-sm" aria-describedby={undefined}>
+          {(() => {
+            const editKpi = kpis.find((k) => k.id === editKpiId)
+            const isCurrencyUnit = editKpi?.unit === 'currency'
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Edit KPI — {editKpi?.kpi_name}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label>Target Value</Label>
+                    <div className="flex gap-2">
+                      <Input type="number" className="flex-1" value={editTarget} onChange={(e) => setEditTarget(e.target.value)} placeholder="0" />
+                      {isCurrencyUnit && (
+                        <Select value={editCurrency} onValueChange={setEditCurrency}>
+                          <SelectTrigger className="w-[90px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="RON">RON</SelectItem>
+                            <SelectItem value="EUR">EUR</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Warning Threshold</Label>
+                      <Input type="number" value={editWarn} onChange={(e) => setEditWarn(e.target.value)} placeholder="Optional" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Critical Threshold</Label>
+                      <Input type="number" value={editCrit} onChange={(e) => setEditCrit(e.target.value)} placeholder="Optional" />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Channel</Label>
+                    <Input value={editChannel} onChange={(e) => setEditChannel(e.target.value)} placeholder="e.g. google_ads, facebook" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Notes</Label>
+                    <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Optional notes" rows={2} className="resize-none" />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setEditKpiId(null)}>Cancel</Button>
+                    <Button disabled={editMut.isPending} onClick={() => editMut.mutate()}>
+                      {editMut.isPending ? 'Saving...' : 'Save'}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -719,7 +1119,7 @@ export function KpisTab({ projectId }: { projectId: number }) {
                             </Button>
                           </PopoverTrigger>
                           <PopoverContent className="w-80 p-0" align="start">
-                            <div className="max-h-64 overflow-y-auto">
+                            <div className="max-h-96 overflow-y-auto">
                               {availableBL.length > 0 && (
                                 <div className="p-2">
                                   <div className="text-xs font-medium text-muted-foreground px-2 pb-1">Budget Lines</div>
@@ -768,7 +1168,11 @@ export function KpisTab({ projectId }: { projectId: number }) {
                   })}
                 </div>
                 <div className="flex justify-end">
-                  <Button variant="outline" onClick={() => setLinkSourcesKpiId(null)}>Done</Button>
+                  <Button variant="outline" onClick={() => {
+                    // Sync the KPI to evaluate formula with newly linked sources
+                    if (linkSourcesKpiId) syncMut.mutate(linkSourcesKpiId)
+                    setLinkSourcesKpiId(null)
+                  }}>Done</Button>
                 </div>
               </>
             )

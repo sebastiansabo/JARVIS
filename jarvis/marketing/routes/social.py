@@ -50,6 +50,7 @@ def api_add_member(project_id):
         member_id = _member_repo.add(
             project_id, user_id, role, current_user.id,
             department_structure_id=data.get('department_structure_id'),
+            responsibility=data.get('responsibility'),
         )
         _activity_repo.log(project_id, 'member_added', actor_id=current_user.id,
                            details={'user_id': user_id, 'role': role})
@@ -74,16 +75,20 @@ def api_add_member(project_id):
 @login_required
 @mkt_permission_required('project', 'edit')
 def api_update_member(project_id, member_id):
-    """Update a member's role."""
+    """Update a member's role and/or responsibility."""
     data, error = get_json_or_error()
     if error:
         return error
 
-    role = data.get('role')
-    if not role:
-        return jsonify({'success': False, 'error': 'role is required'}), 400
+    updates = {}
+    if 'role' in data:
+        updates['role'] = data['role']
+    if 'responsibility' in data:
+        updates['responsibility'] = data['responsibility']
+    if not updates:
+        return jsonify({'success': False, 'error': 'Nothing to update'}), 400
 
-    if _member_repo.update_role(member_id, role):
+    if _member_repo.update_member(member_id, **updates):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Member not found'}), 404
 
@@ -268,6 +273,8 @@ def api_add_kpi(project_id):
             weight=data.get('weight', 50),
             threshold_warning=data.get('threshold_warning'),
             threshold_critical=data.get('threshold_critical'),
+            currency=data.get('currency', 'RON'),
+            aggregation=data.get('aggregation', 'latest'),
             notes=data.get('notes'),
         )
         _activity_repo.log(project_id, 'kpi_updated', actor_id=current_user.id,
@@ -307,6 +314,99 @@ def api_delete_kpi(project_id, kpi_id):
     if _kpi_repo.delete_project_kpi(kpi_id):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'KPI not found'}), 404
+
+
+@marketing_bp.route('/api/projects/<int:project_id>/suggest-kpi-target', methods=['POST'])
+@login_required
+@mkt_permission_required('kpi', 'view')
+def api_suggest_kpi_target(project_id):
+    """AI-suggest a KPI target based on project budget, channels, and existing KPIs."""
+    from marketing.services.benchmark_service import suggest_kpi_target
+    from marketing.repositories import BudgetRepository, ProjectRepository
+
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    kpi_definition_id = data.get('kpi_definition_id')
+
+    # Support inline KPI metadata for custom KPIs not yet saved
+    if kpi_definition_id:
+        defs = _kpi_repo.get_definitions(active_only=False)
+        defn = next((d for d in defs if d['id'] == kpi_definition_id), None)
+        if not defn:
+            return jsonify({'success': False, 'error': 'KPI definition not found'}), 404
+    elif data.get('kpi_name'):
+        defn = {
+            'name': data['kpi_name'],
+            'slug': data.get('kpi_slug', ''),
+            'unit': data.get('unit', 'number'),
+            'direction': data.get('direction', 'higher'),
+            'formula': data.get('formula'),
+            'description': data.get('description'),
+        }
+    else:
+        return jsonify({'success': False, 'error': 'kpi_definition_id or kpi_name required'}), 400
+
+    # Gather project context
+    project_repo = ProjectRepository()
+    project = project_repo.get_by_id(project_id)
+    if not project:
+        return jsonify({'success': False, 'error': 'Project not found'}), 404
+
+    budget_repo = BudgetRepository()
+    budget_lines = budget_repo.get_lines_by_project(project_id)
+    existing_kpis = _kpi_repo.get_by_project(project_id)
+
+    bl_list = [
+        {
+            'channel': bl.get('channel', ''),
+            'planned_amount': float(bl.get('planned_amount', 0) or 0),
+            'spent_amount': float(bl.get('computed_spent', 0) or bl.get('spent_amount', 0) or 0),
+            'currency': bl.get('currency', 'RON'),
+        }
+        for bl in budget_lines
+    ]
+    total_planned = sum(b['planned_amount'] for b in bl_list)
+    total_spent = sum(b['spent_amount'] for b in bl_list)
+
+    context = {
+        'project_name': project.get('name', ''),
+        'budget_total': total_planned,
+        'budget_spent': total_spent,
+        'currency': project.get('currency', 'RON'),
+        'start_date': str(project.get('start_date', '')),
+        'end_date': str(project.get('end_date', '')),
+        'budget_lines': bl_list,
+        'existing_kpis': [
+            {
+                'kpi_name': kp.get('kpi_name', ''),
+                'target_value': kp.get('target_value'),
+                'current_value': kp.get('current_value'),
+                'latest_value': kp.get('latest_value'),
+                'average_value': kp.get('average_value'),
+                'cumulative_value': kp.get('cumulative_value'),
+                'unit': kp.get('unit', ''),
+                'aggregation': kp.get('aggregation', 'latest'),
+            }
+            for kp in existing_kpis
+        ],
+    }
+
+    try:
+        result = suggest_kpi_target(
+            kpi_name=defn['name'],
+            kpi_slug=defn['slug'],
+            unit=defn['unit'],
+            direction=defn['direction'],
+            formula=defn.get('formula'),
+            description=defn.get('description'),
+            project_context=context,
+        )
+        return jsonify({'success': True, **result})
+    except Exception as e:
+        logger.error(f'Target suggestion failed for project {project_id}, def {kpi_definition_id}: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @marketing_bp.route('/api/projects/<int:project_id>/kpis/<int:kpi_id>/snapshot', methods=['POST'])

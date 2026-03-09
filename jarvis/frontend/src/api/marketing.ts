@@ -92,10 +92,10 @@ export const marketingApi = {
   getMembers: (projectId: number) =>
     api.get<{ members: MktMember[] }>(`${BASE}/projects/${projectId}/members`),
 
-  addMember: (projectId: number, data: { user_id: number; role: string; department_structure_id?: number }) =>
+  addMember: (projectId: number, data: { user_id: number; role: string; department_structure_id?: number; responsibility?: string }) =>
     api.post<{ success: boolean; id: number }>(`${BASE}/projects/${projectId}/members`, data),
 
-  updateMember: (projectId: number, memberId: number, data: { role: string }) =>
+  updateMember: (projectId: number, memberId: number, data: { role?: string; responsibility?: string }) =>
     api.put<{ success: boolean }>(`${BASE}/projects/${projectId}/members/${memberId}`, data),
 
   removeMember: (projectId: number, memberId: number) =>
@@ -282,6 +282,14 @@ export const marketingApi = {
 
   generateBenchmarks: (defId: number) =>
     api.post<{ success: boolean; benchmarks: import('@/types/marketing').KpiBenchmarks }>(`${BASE}/kpi-definitions/${defId}/generate-benchmarks`),
+
+  suggestKpiTarget: (projectId: number, kpiDefinitionId: number) =>
+    api.post<{ success: boolean; suggested_target: number; reasoning: string; confidence: string }>(
+      `${BASE}/projects/${projectId}/suggest-kpi-target`, { kpi_definition_id: kpiDefinitionId }),
+
+  suggestKpiTargetInline: (projectId: number, meta: { kpi_name: string; unit: string; direction: string; formula?: string; description?: string }) =>
+    api.post<{ success: boolean; suggested_target: number; reasoning: string; confidence: string }>(
+      `${BASE}/projects/${projectId}/suggest-kpi-target`, meta),
 
   // ---- Campaign Simulator ----
 

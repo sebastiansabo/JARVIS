@@ -61,6 +61,7 @@ export interface MktMember {
   user_email: string | null
   role: 'owner' | 'manager' | 'specialist' | 'viewer' | 'agency' | 'stakeholder' | 'observer'
   department_structure_id: number | null
+  responsibility: string | null
   added_by: number
   added_by_name: string | null
   created_at: string
@@ -148,6 +149,10 @@ export interface MktProjectKpi {
   channel: string | null
   target_value: number | null
   current_value: number | null
+  average_value: number | null
+  cumulative_value: number | null
+  latest_value: number | null
+  aggregation: 'latest' | 'average' | 'cumulative'
   weight: number
   threshold_warning: number | null
   threshold_critical: number | null

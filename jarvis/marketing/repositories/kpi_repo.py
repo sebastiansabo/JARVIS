@@ -18,6 +18,17 @@ class KpiRepository(BaseRepository):
 
     def create_definition(self, name, slug, unit='number', direction='higher',
                           category='performance', formula=None, description=None):
+        # Auto-resolve slug collisions by appending numeric suffix
+        base_slug = slug
+        counter = 1
+        while True:
+            existing = self.query_one(
+                'SELECT 1 FROM mkt_kpi_definitions WHERE slug = %s', (slug,)
+            )
+            if not existing:
+                break
+            slug = f'{base_slug}_{counter}'
+            counter += 1
         row = self.execute('''
             INSERT INTO mkt_kpi_definitions (name, slug, unit, direction, category, formula, description)
             VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
@@ -45,7 +56,14 @@ class KpiRepository(BaseRepository):
     def get_by_project(self, project_id):
         return self.query_all('''
             SELECT pk.*, kd.name as kpi_name, kd.slug as kpi_slug,
-                   kd.unit, kd.direction, kd.category, kd.formula
+                   kd.unit, kd.direction, kd.category, kd.formula,
+                   (SELECT ROUND(AVG(s.value)::numeric, 4) FROM mkt_kpi_snapshots s
+                    WHERE s.project_kpi_id = pk.id) as average_value,
+                   (SELECT ROUND(SUM(s.value)::numeric, 4) FROM mkt_kpi_snapshots s
+                    WHERE s.project_kpi_id = pk.id) as cumulative_value,
+                   (SELECT s.value FROM mkt_kpi_snapshots s
+                    WHERE s.project_kpi_id = pk.id
+                    ORDER BY s.recorded_at DESC LIMIT 1) as latest_value
             FROM mkt_project_kpis pk
             JOIN mkt_kpi_definitions kd ON kd.id = pk.kpi_definition_id
             WHERE pk.project_id = %s
@@ -56,8 +74,8 @@ class KpiRepository(BaseRepository):
         row = self.execute('''
             INSERT INTO mkt_project_kpis
                 (project_id, kpi_definition_id, channel, target_value, weight,
-                 threshold_warning, threshold_critical, currency, notes, show_on_overview)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 threshold_warning, threshold_critical, currency, notes, show_on_overview, aggregation)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (
             project_id, kpi_definition_id,
@@ -67,13 +85,14 @@ class KpiRepository(BaseRepository):
             kwargs.get('currency', 'RON'),
             kwargs.get('notes'),
             kwargs.get('show_on_overview', False),
+            kwargs.get('aggregation', 'latest'),
         ), returning=True)
         return row['id'] if row else None
 
     def update_project_kpi(self, kpi_id, **kwargs):
         allowed = {'target_value', 'current_value', 'weight', 'threshold_warning',
                     'threshold_critical', 'status', 'notes', 'channel', 'currency',
-                    'show_on_overview'}
+                    'show_on_overview', 'aggregation'}
         updates = []
         params = []
         for key, val in kwargs.items():
@@ -89,9 +108,24 @@ class KpiRepository(BaseRepository):
         ) > 0
 
     def delete_project_kpi(self, kpi_id):
-        return self.execute(
+        # Get the definition id before deleting
+        row = self.query_one(
+            'SELECT kpi_definition_id FROM mkt_project_kpis WHERE id = %s', (kpi_id,)
+        )
+        deleted = self.execute(
             'DELETE FROM mkt_project_kpis WHERE id = %s', (kpi_id,)
         ) > 0
+        # Clean up orphan custom definitions (no other project uses it)
+        if deleted and row:
+            def_id = row['kpi_definition_id']
+            still_used = self.query_one(
+                'SELECT 1 FROM mkt_project_kpis WHERE kpi_definition_id = %s', (def_id,)
+            )
+            if not still_used:
+                self.execute(
+                    'DELETE FROM mkt_kpi_definitions WHERE id = %s', (def_id,)
+                )
+        return deleted
 
     # ---- KPI ↔ Budget Line linking ----
 

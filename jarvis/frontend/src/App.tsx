@@ -15,6 +15,8 @@ const Approvals = lazy(() => import('./pages/Approvals'))
 const Marketing = lazy(() => import('./pages/Marketing'))
 const MarketingEvents = lazy(() => import('./pages/Marketing/Events'))
 const MarketingSimulator = lazy(() => import('./pages/Marketing/CampaignSimulator'))
+const MarketingCalendar = lazy(() => import('./pages/Marketing/CalendarPage'))
+const MarketingDashboard = lazy(() => import('./pages/Marketing/DashboardPage'))
 const ProjectDetail = lazy(() => import('./pages/Marketing/ProjectDetail'))
 const Bilant = lazy(() => import('./pages/Accounting/Bilant'))
 const BilantDetail = lazy(() => import('./pages/Accounting/Bilant/BilantDetail'))
@@ -63,6 +65,8 @@ export default function App() {
         <Route path="efactura/*" element={<SuspensePage><EFactura /></SuspensePage>} />
         <Route path="approvals" element={<SuspensePage><Approvals /></SuspensePage>} />
         <Route path="marketing" element={<SuspensePage><Marketing /></SuspensePage>} />
+        <Route path="marketing/dashboard" element={<SuspensePage><MarketingDashboard /></SuspensePage>} />
+        <Route path="marketing/calendar" element={<SuspensePage><MarketingCalendar /></SuspensePage>} />
         <Route path="marketing/simulator" element={<SuspensePage><MarketingSimulator /></SuspensePage>} />
         <Route path="marketing/events/*" element={<SuspensePage><MarketingEvents /></SuspensePage>} />
         <Route path="marketing/projects/:projectId" element={<SuspensePage><ProjectDetail /></SuspensePage>} />
