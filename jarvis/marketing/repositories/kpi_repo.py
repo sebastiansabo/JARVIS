@@ -239,34 +239,54 @@ class KpiRepository(BaseRepository):
         ''', (project_kpi_id,))
 
     def link_kpi_deal(self, project_kpi_id, deal_id, linked_by):
-        """Link an individual deal to a KPI (each deal = +1 to current_value)."""
-        row = self.execute('''
-            INSERT INTO mkt_kpi_deals (project_kpi_id, deal_id, linked_by)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (project_kpi_id, deal_id) DO NOTHING
-            RETURNING id
-        ''', (project_kpi_id, deal_id, linked_by), returning=True)
-        if row:
-            self.execute('''
+        """Link an individual deal to a KPI: inserts deal link + snapshot (value=1)."""
+        def _work(cursor):
+            cursor.execute('''
+                INSERT INTO mkt_kpi_deals (project_kpi_id, deal_id, linked_by)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (project_kpi_id, deal_id) DO NOTHING
+                RETURNING id
+            ''', (project_kpi_id, deal_id, linked_by))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            deal_link_id = row['id']
+            # Insert snapshot so cumulative KPIs reflect the +1
+            cursor.execute('''
+                INSERT INTO mkt_kpi_snapshots (project_kpi_id, value, source, recorded_by, notes)
+                VALUES (%s, 1, 'deal', %s, %s) RETURNING id
+            ''', (project_kpi_id, linked_by, f'deal_link:{deal_link_id}'))
+            # Update current_value
+            cursor.execute('''
                 UPDATE mkt_project_kpis
                 SET current_value = COALESCE(current_value, 0) + 1, updated_at = NOW()
                 WHERE id = %s
             ''', (project_kpi_id,))
-        return row['id'] if row else None
+            return deal_link_id
+        return self.execute_many(_work)
 
     def unlink_kpi_deal(self, project_kpi_id, deal_link_id):
-        """Unlink an individual deal from a KPI (each deal = -1 from current_value)."""
-        deleted = self.execute('''
-            DELETE FROM mkt_kpi_deals
-            WHERE id = %s AND project_kpi_id = %s
-        ''', (deal_link_id, project_kpi_id)) > 0
-        if deleted:
-            self.execute('''
+        """Unlink an individual deal from a KPI: removes deal link + its snapshot."""
+        def _work(cursor):
+            cursor.execute('''
+                DELETE FROM mkt_kpi_deals
+                WHERE id = %s AND project_kpi_id = %s
+            ''', (deal_link_id, project_kpi_id))
+            if cursor.rowcount == 0:
+                return False
+            # Delete the corresponding snapshot
+            cursor.execute('''
+                DELETE FROM mkt_kpi_snapshots
+                WHERE project_kpi_id = %s AND source = 'deal' AND notes = %s
+            ''', (project_kpi_id, f'deal_link:{deal_link_id}'))
+            # Decrement current_value
+            cursor.execute('''
                 UPDATE mkt_project_kpis
                 SET current_value = GREATEST(COALESCE(current_value, 0) - 1, 0), updated_at = NOW()
                 WHERE id = %s
             ''', (project_kpi_id,))
-        return deleted
+            return True
+        return self.execute_many(_work)
 
     def get_available_deals(self, project_id, project_kpi_id):
         """Get deals from linked clients that aren't already linked to this KPI."""
