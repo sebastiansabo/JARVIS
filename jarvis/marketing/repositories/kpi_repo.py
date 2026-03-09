@@ -221,6 +221,56 @@ class KpiRepository(BaseRepository):
             WHERE id = %s AND project_kpi_id = %s
         ''', (deal_source_id, project_kpi_id)) > 0
 
+    # ---- KPI ↔ Individual Deals ----
+
+    def get_kpi_deals(self, project_kpi_id):
+        """Get all individual deals linked to a KPI, with deal details."""
+        return self.query_all('''
+            SELECT kd.id, kd.project_kpi_id, kd.deal_id, kd.linked_by, kd.created_at,
+                   d.source, d.brand, d.model_name, d.sale_price_net, d.gross_profit,
+                   d.contract_date, d.dossier_status, d.sales_person, d.vin,
+                   d.dealer_name, d.buyer_name,
+                   u.name as linked_by_name
+            FROM mkt_kpi_deals kd
+            JOIN crm_deals d ON d.id = kd.deal_id
+            LEFT JOIN users u ON u.id = kd.linked_by
+            WHERE kd.project_kpi_id = %s
+            ORDER BY d.contract_date DESC
+        ''', (project_kpi_id,))
+
+    def link_kpi_deal(self, project_kpi_id, deal_id, linked_by):
+        """Link an individual deal to a KPI (each deal = 1 unit)."""
+        row = self.execute('''
+            INSERT INTO mkt_kpi_deals (project_kpi_id, deal_id, linked_by)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (project_kpi_id, deal_id) DO NOTHING
+            RETURNING id
+        ''', (project_kpi_id, deal_id, linked_by), returning=True)
+        return row['id'] if row else None
+
+    def unlink_kpi_deal(self, project_kpi_id, deal_link_id):
+        """Unlink an individual deal from a KPI."""
+        return self.execute('''
+            DELETE FROM mkt_kpi_deals
+            WHERE id = %s AND project_kpi_id = %s
+        ''', (deal_link_id, project_kpi_id)) > 0
+
+    def get_available_deals(self, project_id, project_kpi_id):
+        """Get deals from linked clients that aren't already linked to this KPI."""
+        return self.query_all('''
+            SELECT d.id, d.source, d.brand, d.model_name, d.sale_price_net,
+                   d.gross_profit, d.contract_date, d.dossier_status,
+                   d.sales_person, d.vin, d.buyer_name,
+                   c.display_name as client_name
+            FROM crm_deals d
+            JOIN crm_clients c ON c.id = d.client_id
+            JOIN mkt_project_clients pc ON pc.client_id = d.client_id AND pc.project_id = %s
+            WHERE d.id NOT IN (
+                SELECT deal_id FROM mkt_kpi_deals WHERE project_kpi_id = %s
+            )
+            ORDER BY d.contract_date DESC
+        ''', (project_id, project_kpi_id))
+
     # ---- Sync / Recalculate ----
 
     def sync_kpi(self, project_kpi_id):
@@ -322,6 +372,14 @@ class KpiRepository(BaseRepository):
                             role = ds['role']
                             deal_by_role[role] = deal_by_role.get(role, 0) + val
 
+            # Individual deal links (each linked deal = 1 unit, counted into 'input')
+            cursor.execute('''
+                SELECT COUNT(*) as total FROM mkt_kpi_deals WHERE project_kpi_id = %s
+            ''', (project_kpi_id,))
+            individual_deal_count = int(cursor.fetchone()['total'])
+            if individual_deal_count > 0:
+                deal_by_role['input'] = deal_by_role.get('input', 0) + individual_deal_count
+
             has_sources = bool(bl_by_role) or bool(dep_by_role) or bool(deal_by_role)
             if not has_sources:
                 return {'synced': False, 'reason': 'No linked sources'}
@@ -387,6 +445,8 @@ class KpiRepository(BaseRepository):
                 SELECT project_kpi_id FROM mkt_kpi_dependencies
                 UNION
                 SELECT project_kpi_id FROM mkt_kpi_deal_sources
+                UNION
+                SELECT project_kpi_id FROM mkt_kpi_deals
             ) src
         ''')
         return [r['project_kpi_id'] for r in rows]

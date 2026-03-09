@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Trash2, DollarSign, Target, Link2, RefreshCw, BarChart3, Eye,
-  Sparkles, Pencil, UserCheck,
+  Sparkles, Pencil, UserCheck, ShoppingCart, Search,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import type { MktProjectKpi, KpiBenchmarks, MktKpiDealSource } from '@/types/marketing'
@@ -97,6 +97,113 @@ function HistoryChart({ values }: { values: { value: number; date: string }[] })
   )
 }
 
+// ── SourcePicker (searchable dropdown for Add Source) ──
+
+function SourcePicker({ varDeals, availableBL, availableKpis, onLinkBL, onLinkDep, onLinkDealMetric }: {
+  varDeals: MktKpiDealSource[]
+  availableBL: { id: number; channel: string; spent_amount: number; currency: string }[]
+  availableKpis: MktProjectKpi[]
+  onLinkBL: (lineId: number) => void
+  onLinkDep: (depId: number) => void
+  onLinkDealMetric: (metric: string) => void
+}) {
+  const [q, setQ] = useState('')
+  const lq = q.toLowerCase()
+
+  const dealMetricLabels: Record<string, string> = { count: 'Deal Count', sum_revenue: 'Total Revenue', sum_profit: 'Total Profit', avg_price: 'Avg Price' }
+  const dealMetrics = (['count', 'sum_revenue', 'sum_profit', 'avg_price'] as const)
+    .filter((m) => !varDeals.some((ds) => ds.metric === m))
+
+  const filteredBL = availableBL.filter((bl) => !lq || (bl.channel ?? '').toLowerCase().includes(lq))
+  const filteredKpis = availableKpis.filter((pk) => !lq || (pk.kpi_name ?? '').toLowerCase().includes(lq))
+  const filteredMetrics = dealMetrics.filter((m) => !lq || dealMetricLabels[m].toLowerCase().includes(lq) || 'crm deal'.includes(lq))
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="w-full text-xs h-7">
+          <Plus className="h-3 w-3 mr-1" /> Add source
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+        <div className="p-2 border-b">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              className="h-7 pl-8 text-xs"
+              placeholder="Search sources..."
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="max-h-72 overflow-y-auto">
+          {filteredBL.length > 0 && (
+            <div className="p-2">
+              <div className="text-xs font-medium text-muted-foreground px-2 pb-1">Budget Lines</div>
+              {filteredBL.map((bl) => (
+                <div
+                  key={bl.id}
+                  className="flex items-center justify-between rounded-md px-2 py-1.5 cursor-pointer hover:bg-muted/50 text-sm"
+                  onClick={() => onLinkBL(bl.id)}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                    {(bl.channel ?? '').replace('_', ' ')}
+                  </div>
+                  <span className="text-xs tabular-nums text-muted-foreground">{fmt(bl.spent_amount, bl.currency)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {filteredBL.length > 0 && filteredKpis.length > 0 && <Separator />}
+          {filteredKpis.length > 0 && (
+            <div className="p-2">
+              <div className="text-xs font-medium text-muted-foreground px-2 pb-1">Project KPIs</div>
+              {filteredKpis.map((pk) => (
+                <div
+                  key={pk.id}
+                  className="flex items-center justify-between rounded-md px-2 py-1.5 cursor-pointer hover:bg-muted/50 text-sm"
+                  onClick={() => onLinkDep(pk.id)}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Target className="h-3.5 w-3.5 text-muted-foreground" />
+                    {pk.kpi_name}
+                  </div>
+                  <span className="text-xs tabular-nums text-muted-foreground">{Number(pk.current_value || 0).toLocaleString('ro-RO')}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {(filteredBL.length > 0 || filteredKpis.length > 0) && filteredMetrics.length > 0 && <Separator />}
+          {filteredMetrics.length > 0 && (
+            <div className="p-2">
+              <div className="text-xs font-medium text-muted-foreground px-2 pb-1">CRM Deal Metrics</div>
+              {filteredMetrics.map((metric) => (
+                <div
+                  key={metric}
+                  className="flex items-center justify-between rounded-md px-2 py-1.5 cursor-pointer hover:bg-muted/50 text-sm"
+                  onClick={() => onLinkDealMetric(metric)}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                    {dealMetricLabels[metric]}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground">from linked clients</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {filteredBL.length === 0 && filteredKpis.length === 0 && filteredMetrics.length === 0 && (
+            <div className="p-4 text-center text-sm text-muted-foreground">No sources match &ldquo;{q}&rdquo;</div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 // ── KpiCard ──
 
 function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkSources, onSync, isSyncing, formula, benchmarks, onToggleOverview, onUpdateAggregation, onEdit }: {
@@ -134,7 +241,13 @@ function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkSo
     queryFn: () => marketingApi.getKpiDealSources(k.id),
   })
   const linkedDealCount = dealSrcData?.deal_sources?.length ?? 0
-  const hasLinks = linkedBLCount > 0 || linkedDepCount > 0 || linkedDealCount > 0
+
+  const { data: kpiDealsCardData } = useQuery({
+    queryKey: ['mkt-kpi-deals', k.id],
+    queryFn: () => marketingApi.getKpiDeals(k.id),
+  })
+  const linkedIndividualDeals = kpiDealsCardData?.deals?.length ?? 0
+  const hasLinks = linkedBLCount > 0 || linkedDepCount > 0 || linkedDealCount > 0 || linkedIndividualDeals > 0
 
   const target = Number(k.target_value) || 0
   const avg = Number(k.average_value) || 0
@@ -283,6 +396,11 @@ function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkSo
               <Target className="h-3 w-3 mr-0.5" /> {d.dep_kpi_name} <span className="opacity-60 ml-0.5">({d.role})</span>
             </Badge>
           ))}
+          {linkedIndividualDeals > 0 && (
+            <Badge variant="outline" className="text-[10px] h-5">
+              <ShoppingCart className="h-3 w-3 mr-0.5" /> {linkedIndividualDeals} deal{linkedIndividualDeals > 1 ? 's' : ''}
+            </Badge>
+          )}
         </div>
       )}
       <div className="flex gap-1.5">
@@ -395,6 +513,20 @@ export function KpisTab({ projectId }: { projectId: number }) {
   })
   const linkedDealSources: MktKpiDealSource[] = kpiDealData?.deal_sources ?? []
 
+  const { data: kpiDealsData } = useQuery({
+    queryKey: ['mkt-kpi-deals', linkSourcesKpiId],
+    queryFn: () => marketingApi.getKpiDeals(linkSourcesKpiId!),
+    enabled: !!linkSourcesKpiId,
+  })
+  const linkedDeals = kpiDealsData?.deals ?? []
+
+  const { data: availableDealsData } = useQuery({
+    queryKey: ['mkt-available-deals', projectId, linkSourcesKpiId],
+    queryFn: () => marketingApi.getAvailableDeals(projectId, linkSourcesKpiId!),
+    enabled: !!linkSourcesKpiId,
+  })
+  const availableDeals = availableDealsData?.deals ?? []
+
   const addMut = useMutation({
     mutationFn: () => {
       const def = definitions.find((d) => String(d.id) === addDefId)
@@ -472,6 +604,22 @@ export function KpisTab({ projectId }: { projectId: number }) {
     mutationFn: (sourceId: number) => marketingApi.unlinkKpiDealSource(linkSourcesKpiId!, sourceId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-kpi-deal-sources', linkSourcesKpiId] })
+    },
+  })
+
+  const linkDealMut = useMutation({
+    mutationFn: (dealId: number) => marketingApi.linkKpiDeal(linkSourcesKpiId!, dealId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-kpi-deals', linkSourcesKpiId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-available-deals', projectId, linkSourcesKpiId] })
+    },
+  })
+
+  const unlinkDealMut = useMutation({
+    mutationFn: (dealLinkId: number) => marketingApi.unlinkKpiDeal(linkSourcesKpiId!, dealLinkId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-kpi-deals', linkSourcesKpiId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-available-deals', projectId, linkSourcesKpiId] })
     },
   })
 
@@ -1088,7 +1236,7 @@ export function KpisTab({ projectId }: { projectId: number }) {
 
       {/* Unified Link Sources Dialog */}
       <Dialog open={!!linkSourcesKpiId} onOpenChange={(open) => { if (!open) setLinkSourcesKpiId(null) }}>
-        <DialogContent className="max-w-lg" aria-describedby={undefined}>
+        <DialogContent className="max-w-2xl" aria-describedby={undefined}>
           {(() => {
             const editKpi = kpis.find((k) => k.id === linkSourcesKpiId)
             const def = editKpi ? definitions.find((d) => d.id === editKpi.kpi_definition_id) : null
@@ -1155,79 +1303,85 @@ export function KpisTab({ projectId }: { projectId: number }) {
                             </button>
                           </div>
                         ))}
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" size="sm" className="w-full text-xs h-7">
-                              <Plus className="h-3 w-3 mr-1" /> Add source
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-80 p-0" align="start">
-                            <div className="max-h-96 overflow-y-auto">
-                              {availableBL.length > 0 && (
-                                <div className="p-2">
-                                  <div className="text-xs font-medium text-muted-foreground px-2 pb-1">Budget Lines</div>
-                                  {availableBL.map((bl) => (
-                                    <div
-                                      key={bl.id}
-                                      className="flex items-center justify-between rounded-md px-2 py-1.5 cursor-pointer hover:bg-muted/50 text-sm"
-                                      onClick={() => linkBLMut.mutate({ lineId: bl.id, role: varName })}
-                                    >
-                                      <div className="flex items-center gap-1.5">
-                                        <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
-                                        {(bl.channel ?? '').replace('_', ' ')}
-                                      </div>
-                                      <span className="text-xs tabular-nums text-muted-foreground">{fmt(bl.spent_amount, bl.currency)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              {availableBL.length > 0 && availableKpis.length > 0 && <Separator />}
-                              {availableKpis.length > 0 && (
-                                <div className="p-2">
-                                  <div className="text-xs font-medium text-muted-foreground px-2 pb-1">Project KPIs</div>
-                                  {availableKpis.map((pk) => (
-                                    <div
-                                      key={pk.id}
-                                      className="flex items-center justify-between rounded-md px-2 py-1.5 cursor-pointer hover:bg-muted/50 text-sm"
-                                      onClick={() => linkDepMut.mutate({ depId: pk.id, role: varName })}
-                                    >
-                                      <div className="flex items-center gap-1.5">
-                                        <Target className="h-3.5 w-3.5 text-muted-foreground" />
-                                        {pk.kpi_name}
-                                      </div>
-                                      <span className="text-xs tabular-nums text-muted-foreground">{Number(pk.current_value || 0).toLocaleString('ro-RO')}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              {(availableBL.length > 0 || availableKpis.length > 0) && <Separator />}
-                              <div className="p-2">
-                                <div className="text-xs font-medium text-muted-foreground px-2 pb-1">CRM Deal Metrics</div>
-                                {(['count', 'sum_revenue', 'sum_profit', 'avg_price'] as const).map((metric) => {
-                                  const labels: Record<string, string> = { count: 'Deal Count', sum_revenue: 'Total Revenue', sum_profit: 'Total Profit', avg_price: 'Avg Price' }
-                                  const alreadyLinked = varDeals.some((ds) => ds.metric === metric)
-                                  if (alreadyLinked) return null
-                                  return (
-                                    <div
-                                      key={metric}
-                                      className="flex items-center justify-between rounded-md px-2 py-1.5 cursor-pointer hover:bg-muted/50 text-sm"
-                                      onClick={() => linkDealSourceMut.mutate({ role: varName, metric })}
-                                    >
-                                      <div className="flex items-center gap-1.5">
-                                        <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />
-                                        {labels[metric]}
-                                      </div>
-                                      <span className="text-[10px] text-muted-foreground">from linked clients</span>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          </PopoverContent>
-                        </Popover>
+                        <SourcePicker
+                          varDeals={varDeals}
+                          availableBL={availableBL}
+                          availableKpis={availableKpis}
+                          onLinkBL={(lineId) => linkBLMut.mutate({ lineId, role: varName })}
+                          onLinkDep={(depId) => linkDepMut.mutate({ depId, role: varName })}
+                          onLinkDealMetric={(metric) => linkDealSourceMut.mutate({ role: varName, metric })}
+                        />
                       </div>
                     )
                   })}
+                </div>
+                {/* Individual Deals section */}
+                <div className="rounded-lg border p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ShoppingCart className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-sm font-semibold">Individual Deals</span>
+                      {linkedDeals.length > 0 && (
+                        <Badge variant="default" className="text-[10px] h-4 px-1.5">{linkedDeals.length} deal{linkedDeals.length !== 1 ? 's' : ''} = +{linkedDeals.length}</Badge>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Each linked deal counts as 1 unit toward this KPI.</p>
+                  {linkedDeals.map((d) => (
+                    <div key={d.id} className="flex items-center justify-between rounded-md bg-muted/50 px-2.5 py-1.5">
+                      <div className="flex items-center gap-2 text-sm min-w-0">
+                        <ShoppingCart className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate font-medium">{d.buyer_name ?? '—'}</span>
+                        <span className="text-xs text-muted-foreground shrink-0">{d.brand} {d.model_name}</span>
+                        {d.contract_date && <span className="text-xs text-muted-foreground shrink-0">{new Date(d.contract_date).toLocaleDateString('ro-RO')}</span>}
+                        {d.vin && <span className="font-mono text-[10px] text-muted-foreground shrink-0">{d.vin}</span>}
+                      </div>
+                      <button className="hover:text-destructive shrink-0 ml-2" onClick={() => unlinkDealMut.mutate(d.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {availableDeals.length > 0 ? (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="w-full text-xs h-7">
+                          <Plus className="h-3 w-3 mr-1" /> Add deal from linked clients
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[560px] p-0" align="start">
+                        <div className="max-h-80 overflow-y-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-xs">Client</TableHead>
+                                <TableHead className="text-xs">Brand / Model</TableHead>
+                                <TableHead className="text-xs">Date</TableHead>
+                                <TableHead className="text-xs">VIN</TableHead>
+                                <TableHead className="text-xs w-14" />
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {availableDeals.map((d) => (
+                                <TableRow key={d.id} className="cursor-pointer hover:bg-muted/50" onClick={() => linkDealMut.mutate(d.id)}>
+                                  <TableCell className="text-xs py-1.5">{d.client_name}</TableCell>
+                                  <TableCell className="text-xs py-1.5">{d.brand} {d.model_name}</TableCell>
+                                  <TableCell className="text-xs py-1.5">{d.contract_date ? new Date(d.contract_date).toLocaleDateString('ro-RO') : '—'}</TableCell>
+                                  <TableCell className="text-xs font-mono py-1.5">{d.vin ?? '—'}</TableCell>
+                                  <TableCell className="py-1.5">
+                                    <Button size="sm" variant="ghost" className="h-6 text-xs px-2">Link</Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center py-1">
+                      {linkedDeals.length > 0 ? 'All deals from linked clients are assigned.' : 'Link CRM clients first to see available deals.'}
+                    </p>
+                  )}
                 </div>
                 <div className="flex justify-end">
                   <Button variant="outline" onClick={() => {

@@ -225,7 +225,7 @@ export function ClientsTab({ projectId }: { projectId: number }) {
 
       {/* Link Client Dialog */}
       <Dialog open={showLink} onOpenChange={setShowLink}>
-        <DialogContent className="max-w-lg" aria-describedby={undefined}>
+        <DialogContent className="max-w-[1080px]" aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Link CRM Client</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="relative">

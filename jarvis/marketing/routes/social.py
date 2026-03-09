@@ -1,7 +1,7 @@
 """Marketing project members, comments, files routes."""
 
 import logging
-from flask import jsonify, request
+from flask import g, jsonify, request
 from flask_login import login_required, current_user
 
 from marketing import marketing_bp
@@ -579,6 +579,54 @@ def api_unlink_kpi_deal_source(kpi_id, source_id):
     if _kpi_repo.unlink_deal_source(kpi_id, source_id):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Deal source not found'}), 404
+
+
+# ---- KPI ↔ Individual Deals ----
+
+@marketing_bp.route('/api/kpis/<int:kpi_id>/deals', methods=['GET'])
+@login_required
+@mkt_permission_required('kpi', 'view')
+def api_get_kpi_deals(kpi_id):
+    """Get individual deals linked to a KPI."""
+    deals = _kpi_repo.get_kpi_deals(kpi_id)
+    return jsonify({'deals': deals})
+
+
+@marketing_bp.route('/api/kpis/<int:kpi_id>/deals', methods=['POST'])
+@login_required
+@mkt_permission_required('kpi', 'edit')
+def api_link_kpi_deal(kpi_id):
+    """Link an individual deal to a KPI (each deal = 1 unit)."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+    deal_id = data.get('deal_id')
+    if not deal_id:
+        return jsonify({'success': False, 'error': 'deal_id is required'}), 400
+    try:
+        link_id = _kpi_repo.link_kpi_deal(kpi_id, deal_id, g.user['id'])
+        return jsonify({'success': True, 'id': link_id}), 201
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@marketing_bp.route('/api/kpis/<int:kpi_id>/deals/<int:deal_link_id>', methods=['DELETE'])
+@login_required
+@mkt_permission_required('kpi', 'edit')
+def api_unlink_kpi_deal(kpi_id, deal_link_id):
+    """Remove an individual deal from a KPI."""
+    if _kpi_repo.unlink_kpi_deal(kpi_id, deal_link_id):
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Deal link not found'}), 404
+
+
+@marketing_bp.route('/api/projects/<int:project_id>/kpis/<int:kpi_id>/available-deals', methods=['GET'])
+@login_required
+@mkt_permission_required('kpi', 'view')
+def api_get_available_deals(project_id, kpi_id):
+    """Get deals from linked clients not yet linked to this KPI."""
+    deals = _kpi_repo.get_available_deals(project_id, kpi_id)
+    return jsonify({'deals': deals})
 
 
 # ---- KPI Sync ----

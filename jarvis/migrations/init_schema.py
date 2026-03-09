@@ -2766,6 +2766,20 @@ def create_schema(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_kpi_deal_src_kpi ON mkt_kpi_deal_sources(project_kpi_id)')
 
+    # Individual deal links to KPIs (each deal = 1 unit toward the KPI)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_kpi_deals (
+            id SERIAL PRIMARY KEY,
+            project_kpi_id INTEGER NOT NULL REFERENCES mkt_project_kpis(id) ON DELETE CASCADE,
+            deal_id INTEGER NOT NULL REFERENCES crm_deals(id) ON DELETE CASCADE,
+            linked_by INTEGER NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT mkt_kpi_deals_unique UNIQUE (project_kpi_id, deal_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_kpi_deals_kpi ON mkt_kpi_deals(project_kpi_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_kpi_deals_deal ON mkt_kpi_deals(deal_id)')
+
     conn.commit()
 
     # Seed approval permissions_v2 if not already present

@@ -461,6 +461,41 @@ export interface MktKpiDealSource {
   created_at: string
 }
 
+export interface MktKpiDeal {
+  id: number
+  project_kpi_id: number
+  deal_id: number
+  linked_by: number
+  linked_by_name: string | null
+  created_at: string
+  source: string | null
+  brand: string | null
+  model_name: string | null
+  sale_price_net: number | null
+  gross_profit: number | null
+  contract_date: string | null
+  dossier_status: string | null
+  sales_person: string | null
+  vin: string | null
+  dealer_name: string | null
+  buyer_name: string | null
+}
+
+export interface AvailableDeal {
+  id: number
+  source: string | null
+  brand: string | null
+  model_name: string | null
+  sale_price_net: number | null
+  gross_profit: number | null
+  contract_date: string | null
+  dossier_status: string | null
+  sales_person: string | null
+  vin: string | null
+  buyer_name: string | null
+  client_name: string
+}
+
 export interface InvoiceSearchResult {
   id: number
   supplier: string

@@ -29,6 +29,8 @@ import type {
   CrmClientSearchResult,
   CrmDeal,
   MktKpiDealSource,
+  MktKpiDeal,
+  AvailableDeal,
 } from '@/types/marketing'
 
 const BASE = '/marketing/api'
@@ -374,6 +376,20 @@ export const marketingApi = {
 
   unlinkKpiDealSource: (kpiId: number, sourceId: number) =>
     api.delete<{ success: boolean }>(`${BASE}/kpis/${kpiId}/deal-sources/${sourceId}`),
+
+  // ---- KPI Individual Deals ----
+
+  getKpiDeals: (kpiId: number) =>
+    api.get<{ deals: MktKpiDeal[] }>(`${BASE}/kpis/${kpiId}/deals`),
+
+  linkKpiDeal: (kpiId: number, dealId: number) =>
+    api.post<{ success: boolean; id: number }>(`${BASE}/kpis/${kpiId}/deals`, { deal_id: dealId }),
+
+  unlinkKpiDeal: (kpiId: number, dealLinkId: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/kpis/${kpiId}/deals/${dealLinkId}`),
+
+  getAvailableDeals: (projectId: number, kpiId: number) =>
+    api.get<{ deals: AvailableDeal[] }>(`${BASE}/projects/${projectId}/kpis/${kpiId}/available-deals`),
 
   // ---- OKRs ----
 
