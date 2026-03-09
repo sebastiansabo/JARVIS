@@ -14,7 +14,6 @@ import {
   LogIn,
   LogOut,
   UserCheck,
-  Users,
   Fingerprint,
   ExternalLink,
   Calendar,
@@ -31,7 +30,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Checkbox } from '@/components/ui/checkbox'
 import { DateField } from '@/components/ui/date-field'
 import { biostarApi } from '@/api/biostar'
-import { hrApi } from '@/api/hr'
 import { cn } from '@/lib/utils'
 import type { BioStarDailySummary, BioStarRangeSummary, BioStarPunchLog } from '@/types/biostar'
 
@@ -150,7 +148,7 @@ const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
   { value: 'ytd', label: 'YTD' },
 ]
 
-export default function PontajeTab({ showStats = false, showFilters = false }: { showStats?: boolean; showFilters?: boolean }) {
+export default function PontajeTab({ showStats = false, showFilters = false, managerFilter = false }: { showStats?: boolean; showFilters?: boolean; managerFilter?: boolean }) {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const { user } = useAuth()
@@ -217,19 +215,6 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
     setVisibleDailyCols(s)
   }
   const resetRangeCols = () => setVisibleRangeCols(new Set(DEFAULT_RANGE_COLS))
-
-  // Manager filtering — check if current user is a manager via organigram data
-  const { data: orgData } = useQuery({
-    queryKey: ['hr-organigram'],
-    queryFn: () => hrApi.getOrganigram(),
-    staleTime: 5 * 60 * 1000,
-  })
-  const isUserManager = orgData?.is_manager ?? false
-
-  // Managers default to "My Team", HR admins see toggle too
-  const [teamFilter, setTeamFilter] = useState<'team' | 'all'>('team')
-  const showTeamToggle = isUserManager
-  const managerFilter = showTeamToggle && teamFilter === 'team'
 
   const is3Day = quickFilter === '3d'
   const { start, end, isSingleDay } = getDateRange(quickFilter, customStart, customEnd)
@@ -647,34 +632,6 @@ export default function PontajeTab({ showStats = false, showFilters = false }: {
           <ChevronRight className="h-4 w-4" />
         </Button>
         <span className="text-xs text-muted-foreground hidden md:inline">{rangeLabel}</span>
-        <div className="h-5 w-px bg-border hidden md:block mx-1" />
-        {showTeamToggle && (
-          <div className="flex rounded-md border shrink-0">
-            <button
-              onClick={() => setTeamFilter('team')}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors',
-                teamFilter === 'team'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Users className="h-3.5 w-3.5" />
-              My Team
-            </button>
-            <button
-              onClick={() => setTeamFilter('all')}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors',
-                teamFilter === 'all'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              All
-            </button>
-          </div>
-        )}
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input

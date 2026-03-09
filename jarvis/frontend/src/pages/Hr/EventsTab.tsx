@@ -392,7 +392,7 @@ function EventsList() {
                       </TableCell>
                     </TableRow>
                     {expandedRow === ev.id && (
-                      <TableRow key={`${ev.id}-detail`}>
+                      <TableRow>
                         <TableCell colSpan={11} className="p-0">
                           <EventParticipants eventId={ev.id} />
                         </TableCell>

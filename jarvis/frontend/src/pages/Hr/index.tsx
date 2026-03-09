@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { ClipboardCheck, Download, Fingerprint, LayoutDashboard, BarChart3, SlidersHorizontal, Plus } from 'lucide-react'
+import { ClipboardCheck, Download, Fingerprint, LayoutDashboard, BarChart3, SlidersHorizontal, Plus, Users } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
+import { cn } from '@/lib/utils'
 
 const BonusesTab = lazy(() => import('./BonusesTab'))
 const PontajeTab = lazy(() => import('./PontajeTab'))
@@ -50,6 +51,17 @@ export default function Hr() {
   const canExport = permissions?.permissions?.['hr.bonuses.export']?.allowed ?? false
   const canViewAmounts = permissions?.permissions?.['hr.bonuses.view_amounts']?.allowed ?? false
   const canViewAdjustments = permissions?.permissions?.['hr.pontaje_adjustments.view']?.allowed ?? false
+
+  // Team filter — lifted here so it renders next to page title
+  const { data: orgData } = useQuery({
+    queryKey: ['hr-organigram'],
+    queryFn: () => hrApi.getOrganigram(),
+    staleTime: 5 * 60 * 1000,
+  })
+  const isUserManager = orgData?.is_manager ?? false
+  const [teamFilter, setTeamFilter] = useState<'team' | 'all'>('team')
+  const showTeamToggle = isUserManager
+  const managerFilter = showTeamToggle && teamFilter === 'team'
 
   const tabs = useMemo(() => {
     const t: { to: string; label: string; icon: typeof Fingerprint }[] = [
@@ -92,7 +104,40 @@ export default function Hr() {
   return (
     <div className="space-y-4 md:space-y-6">
       <PageHeader
-        title={isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : 'Pontaje'}
+        title={
+          isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : (
+            <span className="flex items-center gap-3">
+              Pontaje
+              {showTeamToggle && (
+                <span className="flex rounded-md border">
+                  <button
+                    onClick={() => setTeamFilter('team')}
+                    className={cn(
+                      'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors rounded-l-md',
+                      teamFilter === 'team'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <Users className="h-3.5 w-3.5" />
+                    My Team
+                  </button>
+                  <button
+                    onClick={() => setTeamFilter('all')}
+                    className={cn(
+                      'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors rounded-r-md',
+                      teamFilter === 'all'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    All
+                  </button>
+                </span>
+              )}
+            </span>
+          )
+        }
         breadcrumbs={[
           { label: 'HR', href: '/app/hr/pontaje' },
           ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : [{ label: 'Pontaje' }]),
@@ -162,7 +207,7 @@ export default function Hr() {
       <Suspense fallback={<TabLoader />}>
         <Routes>
           <Route index element={<Navigate to="pontaje" replace />} />
-          <Route path="pontaje" element={<PontajeTab showStats={showStats} showFilters={showFilters} />} />
+          <Route path="pontaje" element={<PontajeTab showStats={showStats} showFilters={showFilters} managerFilter={managerFilter} />} />
           <Route path="bonuses" element={<BonusesTab canViewAmounts={canViewAmounts} showStats={showStats} showFilters={showFilters} addTrigger={bonusAddTrigger} />} />
           {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab showStats={showStats} showFilters={showFilters} />} />}
           <Route path="organigram" element={<OrganigramTab />} />
