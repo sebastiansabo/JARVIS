@@ -1327,28 +1327,28 @@ export function KpisTab({ projectId }: { projectId: number }) {
                   </div>
                   <p className="text-xs text-muted-foreground">Each linked deal counts as 1 unit toward this KPI.</p>
                   {linkedDeals.map((d) => (
-                    <div key={d.id} className="flex items-center justify-between rounded-md bg-muted/50 px-2.5 py-1.5">
-                      <div className="flex items-center gap-2 text-sm min-w-0">
-                        <ShoppingCart className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                        <span className="truncate font-medium">{d.buyer_name ?? '—'}</span>
-                        <span className="text-xs text-muted-foreground shrink-0">{d.brand} {d.model_name}</span>
-                        {d.contract_date && <span className="text-xs text-muted-foreground shrink-0">{new Date(d.contract_date).toLocaleDateString('ro-RO')}</span>}
-                        {d.vin && <span className="font-mono text-[10px] text-muted-foreground shrink-0">{d.vin}</span>}
+                    <div key={d.id} className="flex items-center gap-2 rounded-md bg-muted/50 px-2.5 py-1.5">
+                      <ShoppingCart className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0 text-sm">
+                        <span className="font-medium">{d.buyer_name ?? '—'}</span>
+                        <span className="text-xs text-muted-foreground ml-1">{d.brand} {d.model_name}</span>
+                        {d.contract_date && <span className="text-xs text-muted-foreground ml-1">{new Date(d.contract_date).toLocaleDateString('ro-RO')}</span>}
+                        {d.vin && <span className="font-mono text-[10px] text-muted-foreground ml-1">{d.vin}</span>}
                       </div>
-                      <button className="hover:text-destructive shrink-0 ml-2" onClick={() => unlinkDealMut.mutate(d.id)}>
+                      <button className="hover:text-destructive shrink-0" onClick={() => unlinkDealMut.mutate(d.id)}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   ))}
-                  {availableDeals.length > 0 ? (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" size="sm" className="w-full text-xs h-7">
-                          <Plus className="h-3 w-3 mr-1" /> Add deal from linked clients
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[560px] p-0" align="start">
-                        <div className="max-h-80 overflow-y-auto">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="w-full text-xs h-7">
+                        <Plus className="h-3 w-3 mr-1" /> Add deal from linked clients
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[560px] p-0 z-[9999]" align="start" avoidCollisions={false} style={{ maxHeight: 'var(--radix-popover-content-available-height, 320px)' }}>
+                      {availableDeals.length > 0 ? (
+                        <div className="overflow-y-auto" style={{ maxHeight: 'calc(var(--radix-popover-content-available-height, 320px) - 8px)' }}>
                           <Table>
                             <TableHeader>
                               <TableRow>
@@ -1374,13 +1374,13 @@ export function KpisTab({ projectId }: { projectId: number }) {
                             </TableBody>
                           </Table>
                         </div>
-                      </PopoverContent>
-                    </Popover>
-                  ) : (
-                    <p className="text-xs text-muted-foreground text-center py-1">
-                      {linkedDeals.length > 0 ? 'All deals from linked clients are assigned.' : 'Link CRM clients first to see available deals.'}
-                    </p>
-                  )}
+                      ) : (
+                        <p className="text-xs text-muted-foreground text-center py-4">
+                          {linkedDeals.length > 0 ? 'All deals from linked clients are assigned.' : 'Link CRM clients first to see available deals.'}
+                        </p>
+                      )}
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 </div>
                 <div className="flex justify-end pt-2">
