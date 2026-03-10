@@ -352,10 +352,15 @@ class ProjectService:
             cursor.execute('''
                 SELECT 1 FROM approval_requests
                 WHERE entity_type = 'mkt_project' AND entity_id = %s
-                  AND status IN ('pending', 'on_hold')
-                  AND (context_snapshot->>'approver_user_id')::int = %s
+                  AND status IN ('pending', 'in_progress')
+                  AND (
+                    -- Single approver (ad-hoc)
+                    (context_snapshot->>'approver_user_id')::int = %s
+                    -- Multi-stakeholder list
+                    OR context_snapshot->'stakeholder_approver_ids' @> to_jsonb(%s::int)
+                  )
                 LIMIT 1
-            ''', (project_id, user_id))
+            ''', (project_id, user_id, user_id))
             return cursor.fetchone() is not None
         finally:
             release_db(conn)

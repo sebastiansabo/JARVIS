@@ -13,7 +13,7 @@ export interface ApprovalRequest {
   flow_slug: string | null
   current_step_id: number | null
   current_step_name: string | null
-  status: 'pending' | 'approved' | 'rejected' | 'returned' | 'cancelled' | 'expired'
+  status: 'pending' | 'in_progress' | 'on_hold' | 'approved' | 'rejected' | 'returned' | 'cancelled' | 'expired'
   context_snapshot: Record<string, unknown> | null
   requested_by: ApprovalUser
   requested_at: string | null

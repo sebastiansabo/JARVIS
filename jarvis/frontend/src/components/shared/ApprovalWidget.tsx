@@ -27,6 +27,8 @@ interface ApprovalWidgetProps {
 
 const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; className: string }> = {
   pending: { label: 'Pending Approval', icon: Clock, className: 'text-yellow-600 dark:text-yellow-400' },
+  in_progress: { label: 'In Progress', icon: Clock, className: 'text-yellow-600 dark:text-yellow-400' },
+  on_hold: { label: 'Returned for Changes', icon: RotateCcw, className: 'text-blue-600 dark:text-blue-400' },
   approved: { label: 'Approved', icon: CheckCircle, className: 'text-green-600 dark:text-green-400' },
   rejected: { label: 'Rejected', icon: XCircle, className: 'text-red-600 dark:text-red-400' },
   returned: { label: 'Returned', icon: RotateCcw, className: 'text-blue-600 dark:text-blue-400' },
@@ -51,8 +53,8 @@ export function ApprovalWidget({ entityType, entityId, context, className, compa
 
   const history = historyData?.history ?? []
   const latestRequest = history[0] as ApprovalRequest | undefined
-  const hasPending = history.some((r: ApprovalRequest) => r.status === 'pending')
-  const pendingRequest = history.find((r: ApprovalRequest) => r.status === 'pending') as ApprovalRequest | undefined
+  const hasPending = history.some((r: ApprovalRequest) => ['pending', 'in_progress', 'on_hold'].includes(r.status))
+  const pendingRequest = history.find((r: ApprovalRequest) => ['pending', 'in_progress'].includes(r.status)) as ApprovalRequest | undefined
 
   // Check if current user is an approver for the pending request
   const { data: queueData } = useQuery({
@@ -188,7 +190,7 @@ export function ApprovalWidget({ entityType, entityId, context, className, compa
   }
 
   const canSubmit = !showApproverPicker || !!approverId
-  const canResubmit = latestRequest && (latestRequest.status === 'returned' || latestRequest.status === 'rejected')
+  const canResubmit = latestRequest && (latestRequest.status === 'on_hold' || latestRequest.status === 'rejected')
     && latestRequest.requested_by?.id === user?.id
   const decisions = (requestDetail as ApprovalRequestDetail | undefined)?.decisions ?? []
   const latestDecision = decisions[0] as ApprovalDecision | undefined
@@ -273,10 +275,10 @@ export function ApprovalWidget({ entityType, entityId, context, className, compa
       )}
 
       {/* Decision comment — shown prominently for returned/rejected */}
-      {latestDecision && (latestRequest?.status === 'returned' || latestRequest?.status === 'rejected') && (
+      {latestDecision && (latestRequest?.status === 'on_hold' || latestRequest?.status === 'rejected') && (
         <div className={cn(
           'rounded-md border p-3 text-sm',
-          latestRequest.status === 'returned' ? 'border-blue-300 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20' : 'border-red-300 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20',
+          latestRequest.status === 'on_hold' ? 'border-blue-300 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20' : 'border-red-300 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20',
         )}>
           <div className="flex items-start gap-2">
             <MessageSquare className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
@@ -406,7 +408,7 @@ export function ApprovalWidget({ entityType, entityId, context, className, compa
       )}
 
       {/* Decision history */}
-      {decisions.length > 0 && latestRequest?.status !== 'returned' && latestRequest?.status !== 'rejected' && (
+      {decisions.length > 0 && latestRequest?.status !== 'on_hold' && latestRequest?.status !== 'rejected' && (
         <div className="space-y-1">
           {decisions.map((d: ApprovalDecision) => (
             <DecisionLine key={d.id} decision={d} />
