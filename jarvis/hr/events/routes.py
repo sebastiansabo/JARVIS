@@ -809,7 +809,7 @@ def api_permissions():
             # View permissions default to allowed for HR users with no explicit entry
             # (team_pontaje requires explicit grant — it controls the My Team filter)
             # Explicit Deny in the permission matrix is respected and NOT overridden
-            if not allowed and action == 'view' and entity != 'team_pontaje' and not has_explicit:
+            if not allowed and action == 'view' and entity not in ('team_pontaje', 'pontaje_adjustments') and not has_explicit:
                 allowed = True
                 scope = 'all'
 
