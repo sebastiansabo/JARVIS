@@ -6,6 +6,7 @@ import { hrApi } from '@/api/hr'
 import { marketingApi } from '@/api/marketing'
 import { approvalsApi } from '@/api/approvals'
 import { notificationsApi } from '@/api/notifications'
+import type { User } from '@/types'
 
 /**
  * Runs the same queries as dashboard widgets (React Query deduplicates them)
@@ -13,32 +14,37 @@ import { notificationsApi } from '@/api/notifications'
  *
  * Widgets are considered empty when they would only show a placeholder message.
  * Status indicators (efactura, online_users) always count as "has data".
+ * Queries are gated by user permissions to avoid 403 errors for restricted roles.
  */
-export function useWidgetEmptyState() {
+export function useWidgetEmptyState(user: User | null) {
   const year = new Date().getFullYear()
 
   const invoices = useQuery({
     queryKey: ['dashboard', 'recentInvoices'],
     queryFn: () => dashboardApi.getRecentInvoices(5),
     staleTime: 60_000,
+    enabled: !!user?.can_access_accounting,
   })
 
   const statements = useQuery({
     queryKey: ['dashboard', 'statementsSummary'],
     queryFn: () => statementsApi.getSummary(),
     staleTime: 60_000,
+    enabled: !!user?.can_access_statements,
   })
 
   const hr = useQuery({
     queryKey: ['dashboard', 'hrSummary', year],
     queryFn: () => hrApi.getSummary({ year }),
     staleTime: 60_000,
+    enabled: !!user?.can_access_hr,
   })
 
   const marketing = useQuery({
     queryKey: ['dashboard', 'mktSummary'],
     queryFn: () => marketingApi.getDashboardSummary(),
     staleTime: 60_000,
+    enabled: !!user?.can_access_marketing,
   })
 
   const approvals = useQuery({

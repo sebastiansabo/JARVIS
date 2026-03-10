@@ -85,7 +85,7 @@ const WIDGET_COMPONENTS: Record<string, React.ComponentType<{ enabled: boolean }
 export default function Dashboard() {
   const { user } = useAuth()
   const { permittedWidgets, visibleWidgets, toggleWidget, updateLayout, setWidgetWidth, resetDefaults } = useDashboardPrefs(user)
-  const emptyWidgets = useWidgetEmptyState()
+  const emptyWidgets = useWidgetEmptyState(user)
   const toggleAiWidget = useAiAgentStore(s => s.toggleWidget)
   const navigate = useNavigate()
   const { width, containerRef } = useContainerWidth()
