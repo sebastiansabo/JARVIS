@@ -110,19 +110,25 @@ export default function App() {
         {/* CRM — requires can_access_crm */}
         <Route path="sales/crm" element={<Guard flag="can_access_crm"><SuspensePage><Crm /></SuspensePage></Guard>} />
 
+        {/* Approvals — requires can_access_approvals */}
+        <Route path="approvals" element={<Guard flag="can_access_approvals"><SuspensePage><Approvals /></SuspensePage></Guard>} />
+
+        {/* Marketing — requires can_access_marketing */}
+        <Route path="marketing" element={<Guard flag="can_access_marketing"><SuspensePage><Marketing /></SuspensePage></Guard>} />
+        <Route path="marketing/dashboard" element={<Guard flag="can_access_marketing"><SuspensePage><MarketingDashboard /></SuspensePage></Guard>} />
+        <Route path="marketing/calendar" element={<Guard flag="can_access_marketing"><SuspensePage><MarketingCalendar /></SuspensePage></Guard>} />
+        <Route path="marketing/simulator" element={<Guard flag="can_access_marketing"><SuspensePage><MarketingSimulator /></SuspensePage></Guard>} />
+        <Route path="marketing/events/*" element={<Guard flag="can_access_marketing"><SuspensePage><MarketingEvents /></SuspensePage></Guard>} />
+        <Route path="marketing/projects/:projectId" element={<Guard flag="can_access_marketing"><SuspensePage><ProjectDetail /></SuspensePage></Guard>} />
+
+        {/* DMS — requires can_access_dms */}
+        <Route path="dms" element={<Guard flag="can_access_dms"><SuspensePage><Dms /></SuspensePage></Guard>} />
+        <Route path="dms/documents/:documentId" element={<Guard flag="can_access_dms"><SuspensePage><DmsDocumentDetail /></SuspensePage></Guard>} />
+        <Route path="dms/suppliers" element={<Guard flag="can_access_dms"><SuspensePage><SuppliersPage /></SuspensePage></Guard>} />
+        <Route path="dms/suppliers/:supplierId" element={<Guard flag="can_access_dms"><SuspensePage><SupplierProfile /></SuspensePage></Guard>} />
+
         {/* Open-access modules — all authenticated users */}
-        <Route path="approvals" element={<SuspensePage><Approvals /></SuspensePage>} />
-        <Route path="marketing" element={<SuspensePage><Marketing /></SuspensePage>} />
-        <Route path="marketing/dashboard" element={<SuspensePage><MarketingDashboard /></SuspensePage>} />
-        <Route path="marketing/calendar" element={<SuspensePage><MarketingCalendar /></SuspensePage>} />
-        <Route path="marketing/simulator" element={<SuspensePage><MarketingSimulator /></SuspensePage>} />
-        <Route path="marketing/events/*" element={<SuspensePage><MarketingEvents /></SuspensePage>} />
-        <Route path="marketing/projects/:projectId" element={<SuspensePage><ProjectDetail /></SuspensePage>} />
         <Route path="ai-agent" element={<SuspensePage><AiAgent /></SuspensePage>} />
-        <Route path="dms" element={<SuspensePage><Dms /></SuspensePage>} />
-        <Route path="dms/documents/:documentId" element={<SuspensePage><DmsDocumentDetail /></SuspensePage>} />
-        <Route path="dms/suppliers" element={<SuspensePage><SuppliersPage /></SuspensePage>} />
-        <Route path="dms/suppliers/:supplierId" element={<SuspensePage><SupplierProfile /></SuspensePage>} />
         <Route path="mobile-checkin" element={<SuspensePage><MobileCheckin /></SuspensePage>} />
 
         <Route path="*" element={<Navigate to="dashboard" replace />} />

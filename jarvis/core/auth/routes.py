@@ -205,6 +205,9 @@ def api_current_user():
                 'can_access_efactura':   _access('efactura',   'can_access_efactura'),
                 'can_access_statements': _access('statements', 'can_access_statements'),
                 'can_access_crm':        _access('sales',      'can_access_crm'),
+                'can_access_marketing':  _access('marketing',  'can_access_marketing'),
+                'can_access_approvals':  _access('approvals',  'can_access_approvals'),
+                'can_access_dms':        _access('dms',        'can_access_dms'),
                 # Legacy / granular flags still read from role
                 'can_access_connectors': current_user.can_access_connectors,
                 'can_access_templates': current_user.can_access_templates,

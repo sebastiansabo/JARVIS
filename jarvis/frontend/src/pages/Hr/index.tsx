@@ -56,6 +56,7 @@ export default function Hr() {
   const canViewStructure = permissions?.permissions?.['hr.structure.view']?.allowed ?? false
   // Pontaje view: default true while permissions load; once loaded, gate on view_original
   const canViewPontaje = permissions ? (permissions?.permissions?.['hr.pontaje.view_original']?.allowed ?? true) : true
+  const canViewBonuses = permissions ? (permissions?.permissions?.['hr.bonuses.view']?.allowed ?? true) : true
 
   // Team filter — lifted here so it renders next to page title
   // scope='all' → Admin: toggle visible, can switch between All/My Team
@@ -222,7 +223,11 @@ export default function Hr() {
               ? <PontajeTab showStats={showStats} showFilters={showFilters} managerFilter={managerFilter} />
               : <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">You don't have permission to view pontaje.</div>
           } />
-          <Route path="bonuses" element={<BonusesTab canViewAmounts={canViewAmounts} showStats={showStats} showFilters={showFilters} addTrigger={bonusAddTrigger} />} />
+          <Route path="bonuses" element={
+            canViewBonuses
+              ? <BonusesTab canViewAmounts={canViewAmounts} showStats={showStats} showFilters={showFilters} addTrigger={bonusAddTrigger} />
+              : <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">You don't have permission to view bonuses.</div>
+          } />
           {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab showStats={showStats} showFilters={showFilters} />} />}
         </Routes>
       </Suspense>

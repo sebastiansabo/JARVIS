@@ -53,12 +53,13 @@ const navItemsDef: NavItem[] = [
       { path: '/app/hr/organigram', label: 'Organigram', icon: Network, moduleKey: 'hr_organigram' },
     ],
   },
-  { path: '/app/approvals', label: 'Approvals', icon: ClipboardCheck, moduleKey: 'approvals', badge: ApprovalBadge },
+  { path: '/app/approvals', label: 'Approvals', icon: ClipboardCheck, moduleKey: 'approvals', permission: 'can_access_approvals', badge: ApprovalBadge },
   {
     path: '/app/marketing',
     label: 'Marketing',
     icon: Megaphone,
     moduleKey: 'marketing',
+    permission: 'can_access_marketing',
     children: [
       { path: '/app/marketing/dashboard', label: 'Dashboard', icon: TrendingUp, moduleKey: 'marketing_dashboard' },
       { path: '/app/marketing/calendar', label: 'Calendar', icon: CalendarDays, moduleKey: 'marketing_calendar' },
@@ -67,8 +68,8 @@ const navItemsDef: NavItem[] = [
       { path: '/app/marketing/simulator', label: 'Simulator', icon: Calculator, moduleKey: 'marketing_simulator' },
     ],
   },
-  { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms' },
-  { path: '/app/dms/suppliers', label: 'Suppliers', icon: Building2, moduleKey: 'dms_suppliers' },
+  { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms', permission: 'can_access_dms' },
+  { path: '/app/dms/suppliers', label: 'Suppliers', icon: Building2, moduleKey: 'dms_suppliers', permission: 'can_access_dms' },
   {
     path: '/app/sales',
     label: 'Sales',
