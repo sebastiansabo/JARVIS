@@ -782,35 +782,24 @@ def api_permissions():
     """
     permissions = {}
 
-    # List of HR permissions to check
-    hr_perms = [
-        ('employees', 'view'), ('employees', 'add'), ('employees', 'edit'), ('employees', 'delete'),
-        ('events', 'view'), ('events', 'add'), ('events', 'edit'), ('events', 'delete'),
-        ('bonuses', 'view'), ('bonuses', 'add'), ('bonuses', 'edit'), ('bonuses', 'delete'),
-        ('bonuses', 'view_amounts'), ('bonuses', 'export'),
-        ('structure', 'view'), ('structure', 'edit'),
-        ('pontaje_adjustments', 'view'), ('pontaje_adjustments', 'edit'),
-        ('team_pontaje', 'view'), ('team_pontaje', 'edit'),
-    ]
-
     role_id = getattr(current_user, 'role_id', None)
     is_hr_manager = getattr(current_user, 'is_hr_manager', False)
     can_access_hr = getattr(current_user, 'can_access_hr', False)
 
-    for entity, action in hr_perms:
-        perm_key = f'hr.{entity}.{action}'
+    # Load all HR permissions dynamically from v2 schema — single query for this role
+    from core.roles.repositories.permission_repository import PermissionRepository as _PermRepo
+    _perm_repo_local = _PermRepo()
+    role_perms_map = _perm_repo_local.get_role_permissions_for_module(role_id, 'hr') if role_id else {}
 
-        # Default: denied
+    for perm_key, perm_data in role_perms_map.items():
+        entity, action = perm_key.split('.', 1)
         allowed = False
         scope = 'deny'
 
         if can_access_hr:
-            has_explicit = False
-            if role_id:
-                perm = check_permission_v2(role_id, 'hr', entity, action)
-                has_explicit = perm.get('has_explicit_entry', False)
-                allowed = perm['has_permission']
-                scope = perm.get('scope', 'deny') if allowed else 'deny'
+            has_explicit = perm_data.get('has_explicit_entry', False)
+            allowed = perm_data['has_permission']
+            scope = perm_data.get('scope', 'deny') if allowed else 'deny'
 
             # Fallback to is_hr_manager for write operations (only when no explicit entry)
             if not allowed and action in ('add', 'edit', 'delete', 'view_amounts', 'export') and is_hr_manager and not has_explicit:
@@ -824,7 +813,7 @@ def api_permissions():
                 allowed = True
                 scope = 'all'
 
-        permissions[perm_key] = {
+        permissions[f'hr.{perm_key}'] = {
             'allowed': allowed,
             'scope': scope
         }

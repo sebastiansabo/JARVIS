@@ -381,6 +381,48 @@ class PermissionRepository(BaseRepository):
         values = list(bool_updates.values()) + [role_id]
         cursor.execute(f'UPDATE roles SET {updates} WHERE id = %s', values)
 
+    def get_module_access_map(self, role_id: int) -> dict:
+        """Return {module_key: bool} for all module.access v2 permissions for a role."""
+        rows = self.query_all('''
+            SELECT p.module_key,
+                   COALESCE(rp.scope, 'deny') AS scope
+            FROM permissions_v2 p
+            LEFT JOIN role_permissions_v2 rp ON rp.permission_id = p.id AND rp.role_id = %s
+            WHERE p.entity_key = 'module' AND p.action_key = 'access'
+        ''', (role_id,))
+        return {r['module_key']: r['scope'] != 'deny' for r in rows} if rows else {}
+
+    def get_module_permission_keys(self, module: str) -> list:
+        """Return all (entity_key, action_key) tuples for a module (excluding module.access)."""
+        rows = self.query_all('''
+            SELECT entity_key, action_key
+            FROM permissions_v2
+            WHERE module_key = %s AND entity_key != 'module'
+            ORDER BY entity_key, action_key
+        ''', (module,))
+        return [(r['entity_key'], r['action_key']) for r in rows] if rows else []
+
+    def get_role_permissions_for_module(self, role_id: int, module: str) -> dict:
+        """Return all v2 permissions for a role+module as {entity.action: {has_permission, scope, has_explicit_entry}}."""
+        rows = self.query_all('''
+            SELECT p.entity_key, p.action_key, rp.scope, rp.granted
+            FROM permissions_v2 p
+            LEFT JOIN role_permissions_v2 rp ON rp.permission_id = p.id AND rp.role_id = %s
+            WHERE p.module_key = %s AND p.entity_key != 'module'
+            ORDER BY p.entity_key, p.action_key
+        ''', (role_id, module))
+        result = {}
+        for r in rows:
+            has_explicit = r['scope'] is not None
+            scope = r['scope'] or 'deny'
+            has_perm = scope != 'deny' or (r['granted'] or False)
+            result[f"{r['entity_key']}.{r['action_key']}"] = {
+                'has_permission': has_perm,
+                'scope': scope,
+                'has_explicit_entry': has_explicit,
+            }
+        return result
+
     def check_permission_v2(self, role_id: int, module: str, entity: str, action: str) -> dict:
         """Check if a role has a specific v2 permission."""
         row = self.query_one('''

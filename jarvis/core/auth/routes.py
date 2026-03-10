@@ -169,6 +169,17 @@ def reset_password(token):
 def api_current_user():
     """Get current user info for UI."""
     if current_user.is_authenticated:
+        # Derive module access flags from v2 permission schema (source of truth).
+        # Falls back to roles table booleans when no explicit v2 entry exists.
+        from core.roles.repositories.permission_repository import PermissionRepository as _PermRepo
+        _perm_repo = _PermRepo()
+        mod_access = _perm_repo.get_module_access_map(current_user.role_id) if current_user.role_id else {}
+
+        def _access(module_key, fallback_attr):
+            if module_key in mod_access:
+                return mod_access[module_key]
+            return bool(getattr(current_user, fallback_attr, False))
+
         return jsonify({
             'authenticated': True,
             'user': {
@@ -187,15 +198,17 @@ def api_current_user():
                 'can_edit_invoices': current_user.can_edit_invoices,
                 'can_delete_invoices': current_user.can_delete_invoices,
                 'can_view_invoices': current_user.can_view_invoices,
-                'can_access_accounting': current_user.can_access_accounting,
-                'can_access_settings': current_user.can_access_settings,
+                # Module access — driven by v2 permission matrix
+                'can_access_accounting': _access('accounting', 'can_access_accounting'),
+                'can_access_settings':   _access('settings',   'can_access_settings'),
+                'can_access_hr':         _access('hr',         'can_access_hr'),
+                'can_access_efactura':   _access('efactura',   'can_access_efactura'),
+                'can_access_statements': _access('statements', 'can_access_statements'),
+                'can_access_crm':        _access('sales',      'can_access_crm'),
+                # Legacy / granular flags still read from role
                 'can_access_connectors': current_user.can_access_connectors,
                 'can_access_templates': current_user.can_access_templates,
-                'can_access_hr': current_user.can_access_hr,
                 'is_hr_manager': current_user.is_hr_manager,
-                'can_access_efactura': current_user.can_access_efactura,
-                'can_access_statements': current_user.can_access_statements,
-                'can_access_crm': current_user.can_access_crm,
                 'can_edit_crm': current_user.can_edit_crm,
                 'can_delete_crm': current_user.can_delete_crm,
                 'can_export_crm': current_user.can_export_crm,

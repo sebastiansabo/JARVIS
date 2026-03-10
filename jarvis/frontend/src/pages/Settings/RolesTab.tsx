@@ -1,6 +1,6 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Pencil } from 'lucide-react'
+import { Plus, Trash2, Pencil, Save, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { rolesApi } from '@/api/roles'
@@ -23,11 +24,16 @@ const SCOPE_OPTIONS: { value: PermissionScope; label: string; color: string }[] 
   { value: 'all', label: 'All', color: 'text-green-500' },
 ]
 
+// key = `${permId}:${roleId}`
+type PendingMap = Map<string, { permId: number; roleId: number; scope: PermissionScope }>
+
 export default function RolesTab() {
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [editRole, setEditRole] = useState<Role | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  // Pending changes not yet saved
+  const [pending, setPending] = useState<PendingMap>(new Map())
 
   const { data: roles = [], isLoading: rolesLoading } = useQuery({
     queryKey: ['settings', 'roles'],
@@ -72,14 +78,38 @@ export default function RolesTab() {
     onError: () => toast.error('Failed to delete role'),
   })
 
-  const permMutation = useMutation({
-    mutationFn: ({ permId, roleId, scope }: { permId: number; roleId: number; scope: PermissionScope }) =>
-      rolesApi.setSinglePermissionV2(permId, roleId, { scope, granted: scope !== 'deny' }),
-    onSuccess: () => {
+  const [isSaving, setIsSaving] = useState(false)
+
+  const handlePermChange = useCallback((args: { permId: number; roleId: number; scope: PermissionScope }) => {
+    setPending((prev) => {
+      const next = new Map(prev)
+      next.set(`${args.permId}:${args.roleId}`, args)
+      return next
+    })
+  }, [])
+
+  const handleSave = async () => {
+    if (pending.size === 0) return
+    setIsSaving(true)
+    try {
+      await Promise.all(
+        Array.from(pending.values()).map(({ permId, roleId, scope }) =>
+          rolesApi.setSinglePermissionV2(permId, roleId, { scope, granted: scope !== 'deny' })
+        )
+      )
+      setPending(new Map())
       queryClient.invalidateQueries({ queryKey: ['settings', 'permissionMatrix'] })
-    },
-    onError: () => toast.error('Failed to update permission'),
-  })
+      toast.success(`${pending.size} permission${pending.size > 1 ? 's' : ''} saved`)
+    } catch {
+      toast.error('Failed to save permissions')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleDiscard = () => {
+    setPending(new Map())
+  }
 
   return (
     <div className="space-y-6">
@@ -141,9 +171,19 @@ export default function RolesTab() {
       </Card>
 
       {/* Permission Matrix */}
-      {matrix && <PermissionMatrixView matrix={matrix} roles={roles} onPermChange={permMutation.mutate} />}
+      {matrix && (
+        <PermissionMatrixView
+          matrix={matrix}
+          roles={roles}
+          pending={pending}
+          onPermChange={handlePermChange}
+          onSave={handleSave}
+          onDiscard={handleDiscard}
+          isSaving={isSaving}
+        />
+      )}
 
-      {/* Role Form Dialog (create + edit) */}
+      {/* Role Form Dialog */}
       <RoleFormDialog
         open={showAdd || !!editRole}
         role={editRole}
@@ -173,48 +213,80 @@ export default function RolesTab() {
 function PermissionMatrixView({
   matrix,
   roles,
+  pending,
   onPermChange,
+  onSave,
+  onDiscard,
+  isSaving,
 }: {
   matrix: PermissionMatrix
   roles: Role[]
+  pending: PendingMap
   onPermChange: (args: { permId: number; roleId: number; scope: PermissionScope }) => void
+  onSave: () => void
+  onDiscard: () => void
+  isSaving: boolean
 }) {
   const modules = matrix.modules || []
   const rolePerms = (matrix as unknown as Record<string, unknown>).role_permissions as Record<number, Record<number, RolePermission>> | undefined
 
   const getScope = (permId: number, roleId: number): PermissionScope => {
+    // Pending changes take priority
+    const pendingKey = `${permId}:${roleId}`
+    const pendingEntry = pending.get(pendingKey)
+    if (pendingEntry) return pendingEntry.scope
     if (!rolePerms) return 'deny'
     return (rolePerms[roleId]?.[permId]?.scope as PermissionScope) ?? 'deny'
   }
 
+  const isPending = (permId: number, roleId: number) =>
+    pending.has(`${permId}:${roleId}`)
+
   const getModuleActions = (mod: typeof modules[0]) =>
     mod.entities.flatMap((e) => e.actions)
 
-  const isModuleAllGranted = (mod: typeof modules[0], roleId: number) => {
+  const getModuleScope = (mod: typeof modules[0], roleId: number): PermissionScope | 'mixed' => {
     const actions = getModuleActions(mod)
-    return actions.length > 0 && actions.every((a) => getScope(a.id, roleId) !== 'deny')
+    if (actions.length === 0) return 'deny'
+    const scopes = actions.map((a) => getScope(a.id, roleId))
+    const unique = [...new Set(scopes)]
+    return unique.length === 1 ? unique[0] : 'mixed'
   }
 
-  const isModuleSomeGranted = (mod: typeof modules[0], roleId: number) => {
-    const actions = getModuleActions(mod)
-    const grantedCount = actions.filter((a) => getScope(a.id, roleId) !== 'deny').length
-    return grantedCount > 0 && grantedCount < actions.length
-  }
-
-  // Module toggle: grant all → 'all', revoke all → 'deny'
-  const toggleModule = (mod: typeof modules[0], roleId: number) => {
-    const targetScope: PermissionScope = isModuleAllGranted(mod, roleId) ? 'deny' : 'all'
+  // Bulk set all actions in a module to the chosen scope
+  const handleModuleBulk = (mod: typeof modules[0], roleId: number, scope: PermissionScope) => {
     getModuleActions(mod).forEach((action) => {
-      if (getScope(action.id, roleId) !== targetScope) {
-        onPermChange({ permId: action.id, roleId, scope: targetScope })
-      }
+      onPermChange({ permId: action.id, roleId, scope })
     })
   }
+
+  const pendingCount = pending.size
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Permission Matrix</CardTitle>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CardTitle>Permission Matrix</CardTitle>
+            {pendingCount > 0 && (
+              <Badge variant="secondary" className="text-xs">
+                {pendingCount} unsaved change{pendingCount > 1 ? 's' : ''}
+              </Badge>
+            )}
+          </div>
+          {pendingCount > 0 && (
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={onDiscard} disabled={isSaving}>
+                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                Discard
+              </Button>
+              <Button size="sm" onClick={onSave} disabled={isSaving}>
+                <Save className="mr-1.5 h-3.5 w-3.5" />
+                {isSaving ? 'Saving…' : `Save Changes (${pendingCount})`}
+              </Button>
+            </div>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
@@ -232,20 +304,23 @@ function PermissionMatrixView({
             <TableBody>
               {modules.map((mod) => (
                 <Fragment key={mod.key}>
-                  {/* Module header row */}
+                  {/* Module header row — bulk scope selector */}
                   <TableRow>
                     <TableCell className="bg-muted/50 font-semibold sticky left-0 z-10">
                       {mod.label}
                     </TableCell>
-                    {roles.map((role) => (
-                      <TableCell key={role.id} className="bg-muted/50 text-center">
-                        <ScopeToggle
-                          allGranted={isModuleAllGranted(mod, role.id)}
-                          someGranted={isModuleSomeGranted(mod, role.id)}
-                          onToggle={() => toggleModule(mod, role.id)}
-                        />
-                      </TableCell>
-                    ))}
+                    {roles.map((role) => {
+                      const modScope = getModuleScope(mod, role.id)
+                      return (
+                        <TableCell key={role.id} className="bg-muted/50 text-center">
+                          <ModuleScopeSelect
+                            value={modScope === 'mixed' ? 'deny' : modScope}
+                            isMixed={modScope === 'mixed'}
+                            onChange={(scope) => handleModuleBulk(mod, role.id, scope)}
+                          />
+                        </TableCell>
+                      )
+                    })}
                   </TableRow>
                   {/* Permission rows */}
                   {mod.entities.flatMap((entity) =>
@@ -254,14 +329,18 @@ function PermissionMatrixView({
                         <TableCell className="sticky left-0 z-10 bg-card text-sm pl-6">
                           {entity.label} &mdash; {action.label}
                         </TableCell>
-                        {roles.map((role) => (
-                          <TableCell key={role.id} className="text-center">
-                            <ScopeSelect
-                              value={getScope(action.id, role.id)}
-                              onChange={(scope) => onPermChange({ permId: action.id, roleId: role.id, scope })}
-                            />
-                          </TableCell>
-                        ))}
+                        {roles.map((role) => {
+                          const hasPending = isPending(action.id, role.id)
+                          return (
+                            <TableCell key={role.id} className="text-center">
+                              <ScopeSelect
+                                value={getScope(action.id, role.id)}
+                                onChange={(scope) => onPermChange({ permId: action.id, roleId: role.id, scope })}
+                                dirty={hasPending}
+                              />
+                            </TableCell>
+                          )
+                        })}
                       </TableRow>
                     )),
                   )}
@@ -275,25 +354,46 @@ function PermissionMatrixView({
   )
 }
 
-/** Small clickable indicator for module-level toggle (all/some/none) */
-function ScopeToggle({ allGranted, someGranted, onToggle }: { allGranted: boolean; someGranted: boolean; onToggle: () => void }) {
+/** Module-level bulk scope dropdown — shows current scope or Mixed indicator */
+function ModuleScopeSelect({
+  value,
+  isMixed,
+  onChange,
+}: {
+  value: PermissionScope
+  isMixed: boolean
+  onChange: (scope: PermissionScope) => void
+}) {
+  const current = SCOPE_OPTIONS.find((o) => o.value === value) ?? SCOPE_OPTIONS[0]
   return (
-    <button
-      onClick={onToggle}
-      className={`inline-flex items-center justify-center h-5 w-5 rounded border text-[10px] font-bold transition-colors
-        ${allGranted ? 'bg-green-500/20 border-green-500 text-green-500' : someGranted ? 'bg-orange-500/20 border-orange-500 text-orange-500' : 'bg-muted border-muted-foreground/30 text-muted-foreground'}`}
-    >
-      {allGranted ? 'A' : someGranted ? '~' : '-'}
-    </button>
+    <Select value={value} onValueChange={(v) => onChange(v as PermissionScope)}>
+      <SelectTrigger className={`h-6 w-[80px] text-[11px] font-semibold mx-auto border-dashed ${isMixed ? 'text-muted-foreground' : current.color}`}>
+        <SelectValue>{isMixed ? '~mixed' : current.label}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {SCOPE_OPTIONS.map((opt) => (
+          <SelectItem key={opt.value} value={opt.value} className={`text-xs font-medium ${opt.color}`}>
+            {opt.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
-function ScopeSelect({ value, onChange }: { value: PermissionScope; onChange: (scope: PermissionScope) => void }) {
+function ScopeSelect({
+  value,
+  onChange,
+  dirty,
+}: {
+  value: PermissionScope
+  onChange: (scope: PermissionScope) => void
+  dirty?: boolean
+}) {
   const current = SCOPE_OPTIONS.find((o) => o.value === value) ?? SCOPE_OPTIONS[0]
-
   return (
     <Select value={value} onValueChange={(v) => onChange(v as PermissionScope)}>
-      <SelectTrigger className={`h-7 w-[80px] text-xs mx-auto ${current.color}`}>
+      <SelectTrigger className={`h-7 w-[80px] text-xs mx-auto transition-all ${current.color} ${dirty ? 'ring-2 ring-orange-400 ring-offset-1' : ''}`}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
