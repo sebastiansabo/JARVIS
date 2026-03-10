@@ -409,7 +409,7 @@ export default function RequestDetail({ requestId, open, onClose }: RequestDetai
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
       <DialogContent className={cn(
         'max-h-[90vh] overflow-y-auto',
-        isMktProject ? 'max-w-[1080px]' : 'max-w-2xl',
+        isMktProject ? 'sm:max-w-[1080px] w-[calc(100vw-2rem)]' : 'sm:max-w-2xl',
       )}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">

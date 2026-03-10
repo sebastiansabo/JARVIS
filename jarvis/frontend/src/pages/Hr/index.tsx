@@ -51,16 +51,12 @@ export default function Hr() {
   const canExport = permissions?.permissions?.['hr.bonuses.export']?.allowed ?? false
   const canViewAmounts = permissions?.permissions?.['hr.bonuses.view_amounts']?.allowed ?? false
   const canViewAdjustments = permissions?.permissions?.['hr.pontaje_adjustments.view']?.allowed ?? false
+  const canViewTeamPontaje = permissions?.permissions?.['hr.team_pontaje.view']?.allowed ?? false
+  const teamPontajeScope = permissions?.permissions?.['hr.team_pontaje.view']?.scope ?? 'deny'
 
   // Team filter — lifted here so it renders next to page title
-  const { data: orgData } = useQuery({
-    queryKey: ['hr-organigram'],
-    queryFn: () => hrApi.getOrganigram(),
-    staleTime: 5 * 60 * 1000,
-  })
-  const isUserManager = orgData?.is_manager ?? false
   const [teamFilter, setTeamFilter] = useState<'team' | 'all'>('team')
-  const showTeamToggle = isUserManager
+  const showTeamToggle = canViewTeamPontaje && teamPontajeScope === 'all'
   const managerFilter = showTeamToggle && teamFilter === 'team'
 
   const tabs = useMemo(() => {
