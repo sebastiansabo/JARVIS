@@ -15,13 +15,41 @@ service = BioStarSyncService()
 
 
 def _resolve_manager_filter():
-    """If manager_filter=true is passed, resolve current user's managed employee IDs."""
-    if request.args.get('manager_filter', '').lower() != 'true':
+    """Resolve pontaje visibility based on team_pontaje permission scope.
+
+    - scope 'all': no filter unless frontend explicitly passes manager_filter=true
+    - scope 'department'/'own': always filter by managed employees (organigram)
+    - no permission: no filter (backward compat for can_access_hr users)
+    """
+    from core.roles.repositories.permission_repository import PermissionRepository
+
+    role_id = getattr(current_user, 'role_id', None)
+    explicit = request.args.get('manager_filter', '').lower() == 'true'
+
+    if role_id:
+        perm_repo = PermissionRepository()
+        perm = perm_repo.check_permission_v2(role_id, 'hr', 'team_pontaje', 'view')
+        has_perm = perm.get('has_permission', False)
+        scope = perm.get('scope', 'deny') if has_perm else 'deny'
+
+        # Admin (scope='all'): only filter when frontend asks
+        if scope == 'all':
+            if not explicit:
+                return None
+
+        # Non-admin with permission (scope='department'/'own'): always filter
+        elif has_perm and scope != 'deny':
+            pass  # fall through to filter
+
+        # No permission: no filter (backward compat)
+        else:
+            return None
+    elif not explicit:
         return None
+
     from hr.events.database import get_managed_employee_ids
     user_ids = get_managed_employee_ids(current_user.id)
-    # Return the list (possibly empty) so the query filters accordingly
-    return user_ids if user_ids else [-1]  # -1 ensures empty result if no managed employees
+    return user_ids if user_ids else [-1]
 
 
 def api_login_required(f):

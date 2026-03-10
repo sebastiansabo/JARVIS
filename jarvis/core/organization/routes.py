@@ -2,12 +2,33 @@
 
 Company management, department structure, and organizational lookups.
 """
+from functools import wraps
 from flask import jsonify, request
-from flask_login import login_required
+from flask_login import login_required, current_user
 
 from . import org_bp
 from .repositories import CompanyRepository, StructureRepository, StructureNodeRepository
 from core.utils.api_helpers import safe_error_response
+
+
+def _structure_edit_required(f):
+    """Require hr.structure.edit permission (or is_hr_manager fallback) for org write ops."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        # Check v2 permission first
+        role_id = getattr(current_user, 'role_id', None)
+        if role_id:
+            from core.roles.repositories.permission_repository import PermissionRepository
+            perm = PermissionRepository().check_permission_v2(role_id, 'hr', 'structure', 'edit')
+            if perm.get('has_permission'):
+                return f(*args, **kwargs)
+        # Fallback: is_hr_manager or can_access_settings (admin)
+        if getattr(current_user, 'is_hr_manager', False) or getattr(current_user, 'can_access_settings', False):
+            return f(*args, **kwargs)
+        return jsonify({'success': False, 'error': 'Permission denied: structure edit required'}), 403
+    return decorated
 
 _company_repo = CompanyRepository()
 _structure_repo = StructureRepository()
@@ -110,6 +131,7 @@ def api_companies_vat():
 
 @org_bp.route('/api/companies-vat', methods=['POST'])
 @login_required
+@_structure_edit_required
 def api_add_company_vat():
     """Add a new company with VAT."""
     data = request.get_json()
@@ -128,6 +150,7 @@ def api_add_company_vat():
 
 @org_bp.route('/api/companies-vat/<company>', methods=['PUT'])
 @login_required
+@_structure_edit_required
 def api_update_company_vat(company):
     """Update company VAT."""
     data = request.get_json()
@@ -143,6 +166,7 @@ def api_update_company_vat(company):
 
 @org_bp.route('/api/companies-vat/<company>', methods=['DELETE'])
 @login_required
+@_structure_edit_required
 def api_delete_company_vat(company):
     """Delete a company."""
     if _company_repo.delete_by_name(company):
@@ -171,6 +195,7 @@ def api_get_companies_config():
 
 @org_bp.route('/api/companies-config', methods=['POST'])
 @login_required
+@_structure_edit_required
 def api_create_company_config():
     """Create a new company."""
     data = request.get_json()
@@ -200,6 +225,7 @@ def api_get_company_config(company_id):
 
 @org_bp.route('/api/companies-config/<int:company_id>', methods=['PUT'])
 @login_required
+@_structure_edit_required
 def api_update_company_config(company_id):
     """Update a company."""
     data = request.get_json()
@@ -223,6 +249,7 @@ def api_update_company_config(company_id):
 
 @org_bp.route('/api/companies-config/<int:company_id>', methods=['DELETE'])
 @login_required
+@_structure_edit_required
 def api_delete_company_config(company_id):
     """Delete a company."""
     if _company_repo.delete(company_id):
@@ -241,6 +268,7 @@ def api_get_all_brands():
 
 @org_bp.route('/api/brands-all', methods=['POST'])
 @login_required
+@_structure_edit_required
 def api_create_brand():
     """Create a new brand."""
     data = request.get_json()
@@ -256,6 +284,7 @@ def api_create_brand():
 
 @org_bp.route('/api/companies-config/<int:company_id>/brands', methods=['POST'])
 @login_required
+@_structure_edit_required
 def api_link_brand(company_id):
     """Link a brand to a company."""
     data = request.get_json()
@@ -268,6 +297,7 @@ def api_link_brand(company_id):
 
 @org_bp.route('/api/companies-config/<int:company_id>/brands/<int:brand_id>', methods=['DELETE'])
 @login_required
+@_structure_edit_required
 def api_unlink_brand(company_id, brand_id):
     """Unlink a brand from a company."""
     if _company_repo.unlink_brand(company_id, brand_id):
@@ -284,6 +314,7 @@ def api_get_company_responsables(company_id):
 
 @org_bp.route('/api/companies-config/<int:company_id>/responsables', methods=['PUT'])
 @login_required
+@_structure_edit_required
 def api_set_company_responsables(company_id):
     """Set (replace) responsable users for a company."""
     data = request.get_json() or {}
@@ -303,6 +334,7 @@ def api_get_department_structures():
 
 @org_bp.route('/api/department-structures', methods=['POST'])
 @login_required
+@_structure_edit_required
 def api_create_department_structure():
     """Create a new department structure."""
     data = request.get_json()
@@ -336,6 +368,7 @@ def api_get_department_structure(structure_id):
 
 @org_bp.route('/api/department-structures/<int:structure_id>', methods=['PUT'])
 @login_required
+@_structure_edit_required
 def api_update_department_structure(structure_id):
     """Update a department structure."""
     data = request.get_json()
@@ -362,6 +395,7 @@ def api_update_department_structure(structure_id):
 
 @org_bp.route('/api/department-structures/<int:structure_id>', methods=['DELETE'])
 @login_required
+@_structure_edit_required
 def api_delete_department_structure(structure_id):
     """Delete a department structure."""
     if _structure_repo.delete(structure_id):
@@ -399,6 +433,7 @@ def api_get_structure_nodes():
 
 @org_bp.route('/api/structure-nodes', methods=['POST'])
 @login_required
+@_structure_edit_required
 def api_create_structure_node():
     """Create a new structure node."""
     data = request.get_json()
@@ -417,6 +452,7 @@ def api_create_structure_node():
 
 @org_bp.route('/api/structure-nodes/<int:node_id>', methods=['PUT'])
 @login_required
+@_structure_edit_required
 def api_update_structure_node(node_id):
     """Update a structure node (name and/or has_team)."""
     data = request.get_json() or {}
@@ -435,6 +471,7 @@ def api_update_structure_node(node_id):
 
 @org_bp.route('/api/structure-nodes/<int:node_id>', methods=['DELETE'])
 @login_required
+@_structure_edit_required
 def api_delete_structure_node(node_id):
     """Delete a structure node and its children."""
     if _node_repo.delete(node_id):
@@ -453,6 +490,7 @@ def api_get_all_node_members():
 
 @org_bp.route('/api/structure-nodes/<int:node_id>/members', methods=['POST'])
 @login_required
+@_structure_edit_required
 def api_add_node_member(node_id):
     """Add a member to a node."""
     data = request.get_json()
@@ -469,6 +507,7 @@ def api_add_node_member(node_id):
 
 @org_bp.route('/api/structure-nodes/<int:node_id>/members/<int:user_id>', methods=['DELETE'])
 @login_required
+@_structure_edit_required
 def api_remove_node_member(node_id, user_id):
     """Remove a member from a node."""
     if _node_repo.remove_member(node_id, user_id):
@@ -478,6 +517,7 @@ def api_remove_node_member(node_id, user_id):
 
 @org_bp.route('/api/structure-nodes/<int:node_id>/members/set', methods=['POST'])
 @login_required
+@_structure_edit_required
 def api_set_node_members(node_id):
     """Atomic replace: set all members of a given role for a node."""
     data = request.get_json()

@@ -55,9 +55,12 @@ export default function Hr() {
   const teamPontajeScope = permissions?.permissions?.['hr.team_pontaje.view']?.scope ?? 'deny'
 
   // Team filter — lifted here so it renders next to page title
+  // scope='all' → Admin: toggle visible, can switch between All/My Team
+  // scope='department'/'own' → Manager: always filtered by organigram, no toggle
   const [teamFilter, setTeamFilter] = useState<'team' | 'all'>('all')
   const showTeamToggle = canViewTeamPontaje && teamPontajeScope === 'all'
-  const managerFilter = showTeamToggle && teamFilter === 'team'
+  const forceTeamFilter = canViewTeamPontaje && teamPontajeScope !== 'all' && teamPontajeScope !== 'deny'
+  const managerFilter = forceTeamFilter || (showTeamToggle && teamFilter === 'team')
 
   const tabs = useMemo(() => {
     const t: { to: string; label: string; icon: typeof Fingerprint }[] = [
