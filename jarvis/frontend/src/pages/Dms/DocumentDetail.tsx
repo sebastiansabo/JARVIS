@@ -27,6 +27,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { dmsApi } from '@/api/dms'
 import { usersApi } from '@/api/users'
 import { rolesApi } from '@/api/roles'
+import { useAuthStore } from '@/stores/authStore'
 import { tagsApi } from '@/api/tags'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import type {
@@ -70,11 +71,13 @@ function fileIcon(mimeType: string | null) {
   return <File className="h-4 w-4 text-muted-foreground" />
 }
 
-function ChildRow({ child, navigate, onDelete, queryClient }: {
+function ChildRow({ child, navigate, onDelete, queryClient, canEdit, canDelete }: {
   child: DmsDocument
   navigate: (path: string) => void
   onDelete: () => void
   queryClient: QueryClient
+  canEdit: boolean
+  canDelete: boolean
 }) {
   const { data: childTags = [] } = useQuery({
     queryKey: ['entity-tags', 'dms_document', child.id],
@@ -132,12 +135,16 @@ function ChildRow({ child, navigate, onDelete, queryClient }: {
           <Button variant="ghost" size="icon" className="h-7 w-7" title="View" onClick={() => navigate(`/app/dms/documents/${child.id}`)}>
             <ExternalLink className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => navigate(`/app/dms/documents/${child.id}?edit=1`)}>
-            <Edit2 className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Delete" onClick={onDelete}>
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          {canEdit && (
+            <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => navigate(`/app/dms/documents/${child.id}?edit=1`)}>
+              <Edit2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {canDelete && (
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Delete" onClick={onDelete}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       </TableCell>
     </TableRow>
@@ -150,6 +157,10 @@ export default function DocumentDetail() {
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const docId = Number(documentId)
+
+  const user = useAuthStore((s) => s.user)
+  const canEdit = user?.permissions?.['dms.document.edit'] ?? true
+  const canDelete = user?.permissions?.['dms.document.delete'] ?? true
 
   const [uploadOpen, setUploadOpen] = useState(false)
   const [uploadRelType, setUploadRelType] = useState<DmsRelationshipType | undefined>()
@@ -531,7 +542,7 @@ export default function DocumentDetail() {
         }
         actions={
           <div className="flex items-center gap-2">
-            {editing ? (
+            {canEdit && (editing ? (
               <>
                 <Button size="icon" className="md:size-auto md:px-3" onClick={saveEdit} disabled={updateMutation.isPending}>
                   <Check className="h-4 w-4 md:mr-1" />
@@ -547,7 +558,7 @@ export default function DocumentDetail() {
                 <Edit2 className="h-4 w-4 md:mr-1" />
                 <span className="hidden md:inline">Edit</span>
               </Button>
-            )}
+            ))}
           </div>
         }
       />
@@ -737,10 +748,12 @@ export default function DocumentDetail() {
             <Users className="h-4 w-4" />
             Parties ({parties.length})
           </h3>
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAddingParty(true)}>
-            <Plus className="h-3 w-3 mr-1" />
-            Add Party
-          </Button>
+          {canEdit && (
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAddingParty(true)}>
+              <Plus className="h-3 w-3 mr-1" />
+              Add Party
+            </Button>
+          )}
         </div>
         {addingParty && (
           <div className="flex items-end gap-2 mb-2 p-2 rounded border bg-muted/30">
@@ -853,10 +866,12 @@ export default function DocumentDetail() {
                 }
               }}
             />
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => document.getElementById('dms-quick-upload')?.click()}>
-              <Plus className="h-3 w-3 mr-1" />
-              Add Files
-            </Button>
+            {canEdit && (
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => document.getElementById('dms-quick-upload')?.click()}>
+                <Plus className="h-3 w-3 mr-1" />
+                Add Files
+              </Button>
+            )}
           </div>
         </div>
         {files.length === 0 ? (
@@ -894,9 +909,11 @@ export default function DocumentDetail() {
                             <Download className="h-3.5 w-3.5" />
                           </a>
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDeleteFileId(f.id)}>
-                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                        </Button>
+                        {canDelete && (
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDeleteFileId(f.id)}>
+                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -966,10 +983,12 @@ export default function DocumentDetail() {
           <div key={rt.slug}>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium">{rt.label} ({items.length})</h3>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openChildUpload(rt.slug)}>
-                <Plus className="h-3 w-3 mr-1" />
-                Add
-              </Button>
+              {canEdit && (
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openChildUpload(rt.slug)}>
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add
+                </Button>
+              )}
             </div>
             {items.length === 0 ? (
               <p className="text-xs text-muted-foreground py-2">No {rt.label.toLowerCase()} added.</p>
@@ -989,7 +1008,7 @@ export default function DocumentDetail() {
                   </TableHeader>
                   <TableBody>
                     {items.map((child) => (
-                      <ChildRow key={child.id} child={child} navigate={navigate} onDelete={() => setDeleteChildId(child.id)} queryClient={queryClient} />
+                      <ChildRow key={child.id} child={child} navigate={navigate} onDelete={() => setDeleteChildId(child.id)} queryClient={queryClient} canEdit={canEdit} canDelete={canDelete} />
                     ))}
                   </TableBody>
                 </Table>
@@ -1006,19 +1025,21 @@ export default function DocumentDetail() {
             <FileSearch className="h-4 w-4" />
             Extracted Text ({chunks.length} chunks)
           </h3>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            disabled={extractMutation.isPending || files.length === 0}
-            onClick={() => extractMutation.mutate()}
-          >
-            {extractMutation.isPending ? (
-              <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Extracting...</>
-            ) : (
-              <><FileSearch className="h-3 w-3 mr-1" />Extract Text</>
-            )}
-          </Button>
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              disabled={extractMutation.isPending || files.length === 0}
+              onClick={() => extractMutation.mutate()}
+            >
+              {extractMutation.isPending ? (
+                <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Extracting...</>
+              ) : (
+                <><FileSearch className="h-3 w-3 mr-1" />Extract Text</>
+              )}
+            </Button>
+          )}
         </div>
         {chunks.length > 0 ? (
           <div className="space-y-2 max-h-60 overflow-y-auto rounded border p-2 bg-muted/20">

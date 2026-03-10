@@ -33,6 +33,7 @@ import { settingsApi } from '@/api/settings'
 import { organizationApi } from '@/api/organization'
 import { QueryError } from '@/components/QueryError'
 import { useMarketingStore } from '@/stores/marketingStore'
+import { useAuthStore } from '@/stores/authStore'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import type { MktProject, MktKpiScoreboardItem } from '@/types/marketing'
 import ProjectForm from './ProjectForm'
@@ -277,6 +278,8 @@ type MainTab = 'projects' | 'archived' | 'trash'
 export default function Marketing() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
+  const canCreate = user?.permissions?.['marketing.project.create'] ?? false
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('marketing_summary')
   const isMobile = useIsMobile()
   const { filters, updateFilter, clearFilters, viewMode, setViewMode } = useMarketingStore()
@@ -340,9 +343,11 @@ export default function Marketing() {
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
             </Button>
-            <Button size="icon" onClick={() => setShowCreateDialog(true)} title="New Campaign">
-              <Plus className="h-4 w-4" />
-            </Button>
+            {canCreate && (
+              <Button size="icon" onClick={() => setShowCreateDialog(true)} title="New Campaign">
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
             {!isMobile && (
               <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
                 <TabsList className="w-auto">
@@ -399,15 +404,17 @@ export default function Marketing() {
             />
           </div>
 
-          {/* AI Campaign Generator */}
-          <AICampaignGenerator
-            companies={companies}
-            onCreated={(projectId) => {
-              queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
-              queryClient.invalidateQueries({ queryKey: ['mkt-dashboard-summary'] })
-              navigate(`/app/marketing/projects/${projectId}`)
-            }}
-          />
+          {/* AI Campaign Generator — only for roles with project.create */}
+          {canCreate && (
+            <AICampaignGenerator
+              companies={companies}
+              onCreated={(projectId) => {
+                queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
+                queryClient.invalidateQueries({ queryKey: ['mkt-dashboard-summary'] })
+                navigate(`/app/marketing/projects/${projectId}`)
+              }}
+            />
+          )}
 
           {/* Filter Bar */}
           {(() => {
@@ -671,8 +678,8 @@ export default function Marketing() {
         />
       )}
 
-      {/* Create Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      {/* Create Dialog — only for roles with project.create */}
+      <Dialog open={canCreate && showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="sm:max-w-[1024px] max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>New Project</DialogTitle>

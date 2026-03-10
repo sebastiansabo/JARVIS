@@ -29,6 +29,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { SearchSelect } from '@/components/shared/SearchSelect'
 import { hrApi } from '@/api/hr'
 import { useHrStore } from '@/stores/hrStore'
+import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { EventBonus, BonusSummaryByEmployee, BonusSummaryByEvent } from '@/types/hr'
@@ -39,6 +40,8 @@ const MONTH_SHORT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
 export default function BonusesTab({ canViewAmounts, showFilters = false, showStats: _showStats = false, addTrigger = 0 }: { canViewAmounts: boolean; showFilters?: boolean; showStats?: boolean; addTrigger?: number }) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
+  const user = useAuthStore((s) => s.user)
+  const canAdd = user?.permissions?.['hr.bonuses.add'] ?? true
   const filters = useHrStore((s) => s.filters)
   const updateFilter = useHrStore((s) => s.updateFilter)
   const selectedBonusIds = useHrStore((s) => s.selectedIds)
@@ -118,8 +121,8 @@ export default function BonusesTab({ canViewAmounts, showFilters = false, showSt
 
   const years = Array.from({ length: 7 }, (_, i) => new Date().getFullYear() - 3 + i)
 
-  // Editable only when not locked, or when user has admin override
-  const isEditable = !lockStatus?.locked || !!lockStatus?.can_override
+  // Editable only when not locked, or when user has admin override — AND user has hr.bonuses.add
+  const isEditable = (!lockStatus?.locked || !!lockStatus?.can_override) && canAdd
 
   // Open add dialog when parent triggers it
   const prevTrigger = useRef(0)

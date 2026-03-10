@@ -52,30 +52,41 @@ function SuspensePage({ children }: { children: React.ReactNode }) {
 /** Route-level permission guard. Checks a boolean flag on the User object.
  *  If the user doesn't have the flag, renders an access-denied message.
  *  If the user object hasn't loaded yet (isLoading), renders a skeleton. */
+const AccessDenied = () => (
+  <div className="flex flex-col items-center justify-center h-[60vh] gap-3 text-center px-4">
+    <div className="rounded-full bg-muted p-4">
+      <svg className="h-8 w-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+          d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+      </svg>
+    </div>
+    <div className="space-y-1">
+      <p className="font-semibold text-foreground">Access Denied</p>
+      <p className="text-sm text-muted-foreground max-w-xs">
+        You don't have permission to access this module. Contact your administrator to request access.
+      </p>
+    </div>
+  </div>
+)
+
 function Guard({ flag, children }: { flag: keyof User; children: React.ReactNode }) {
   const user = useAuthStore((s) => s.user)
   const isLoading = useAuthStore((s) => s.isLoading)
 
   if (isLoading) return <PageLoader />
+  if (!user?.[flag]) return <AccessDenied />
 
-  if (!user?.[flag]) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] gap-3 text-center px-4">
-        <div className="rounded-full bg-muted p-4">
-          <svg className="h-8 w-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-              d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-          </svg>
-        </div>
-        <div className="space-y-1">
-          <p className="font-semibold text-foreground">Access Denied</p>
-          <p className="text-sm text-muted-foreground max-w-xs">
-            You don't have permission to access this module. Contact your administrator to request access.
-          </p>
-        </div>
-      </div>
-    )
-  }
+  return <>{children}</>
+}
+
+/** Gate by a V2 permission key ("module.entity.action") from the user.permissions map. */
+function V2Guard({ permKey, children }: { permKey: string; children: React.ReactNode }) {
+  const user = useAuthStore((s) => s.user)
+  const isLoading = useAuthStore((s) => s.isLoading)
+
+  if (isLoading) return <PageLoader />
+  // If permissions map not yet loaded, allow (will refresh); explicit false = deny
+  if (user?.permissions && user.permissions[permKey] === false) return <AccessDenied />
 
   return <>{children}</>
 }
@@ -117,7 +128,7 @@ export default function App() {
         <Route path="marketing" element={<Guard flag="can_access_marketing"><SuspensePage><Marketing /></SuspensePage></Guard>} />
         <Route path="marketing/dashboard" element={<Guard flag="can_access_marketing"><SuspensePage><MarketingDashboard /></SuspensePage></Guard>} />
         <Route path="marketing/calendar" element={<Guard flag="can_access_marketing"><SuspensePage><MarketingCalendar /></SuspensePage></Guard>} />
-        <Route path="marketing/simulator" element={<Guard flag="can_access_marketing"><SuspensePage><MarketingSimulator /></SuspensePage></Guard>} />
+        <Route path="marketing/simulator" element={<Guard flag="can_access_marketing"><V2Guard permKey="marketing.simulator.view"><SuspensePage><MarketingSimulator /></SuspensePage></V2Guard></Guard>} />
         <Route path="marketing/events/*" element={<Guard flag="can_access_marketing"><SuspensePage><MarketingEvents /></SuspensePage></Guard>} />
         <Route path="marketing/projects/:projectId" element={<Guard flag="can_access_marketing"><SuspensePage><ProjectDetail /></SuspensePage></Guard>} />
 

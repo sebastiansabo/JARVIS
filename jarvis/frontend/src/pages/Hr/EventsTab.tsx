@@ -41,6 +41,7 @@ import { tagsApi } from '@/api/tags'
 import { cn } from '@/lib/utils'
 import type { HrEvent } from '@/types/hr'
 import AddEventPage from './AddEventPage'
+import { useAuthStore } from '@/stores/authStore'
 
 function formatDate(d: string) {
   if (!d) return '—'
@@ -128,6 +129,8 @@ function EventsList() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
+  const user = useAuthStore((s) => s.user)
+  const canAdd = user?.permissions?.['hr.events.add'] ?? true
   const [search, setSearch] = useState('')
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
@@ -276,12 +279,16 @@ function EventsList() {
             <Button variant="ghost" size="icon" className={showFilters ? 'bg-muted' : ''} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => { setEditEvent(null); setDialogOpen(true) }} title="Quick Add">
-              <Plus className="h-4 w-4" />
-            </Button>
-            <Button size="icon" onClick={() => navigate('new')} title="Add Event + Employees">
-              <Users className="h-4 w-4" />
-            </Button>
+            {canAdd && (
+              <Button variant="ghost" size="icon" onClick={() => { setEditEvent(null); setDialogOpen(true) }} title="Quick Add">
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
+            {canAdd && (
+              <Button size="icon" onClick={() => navigate('new')} title="Add Event + Employees">
+                <Users className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         }
       />
