@@ -1842,8 +1842,167 @@ function MobileCalendarGrid({ range, anchor, projects, events, barColors, onSele
   )
 }
 
+// ── Desktop Outlook-style calendar views ──
+
+type DesktopMonthGridProps = MobileCalProps & {
+  year: number
+  month: number
+  cellHeight?: string
+  maxVisible?: number
+}
+
+function DesktopMonthGrid({ year, month, projects, events, barColors, onSelect, onEventClick, cellHeight = 'min-h-[110px]', maxVisible = 3 }: DesktopMonthGridProps) {
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`
+  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+  const first = new Date(year, month, 1)
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  let startDay = first.getDay() - 1
+  if (startDay < 0) startDay = 6
+  const weeks: (number | null)[][] = []
+  let week: (number | null)[] = Array(startDay).fill(null)
+  for (let d = 1; d <= daysInMonth; d++) {
+    week.push(d)
+    if (week.length === 7) { weeks.push(week); week = [] }
+  }
+  if (week.length > 0) {
+    while (week.length < 7) week.push(null)
+    weeks.push(week)
+  }
+
+  function getItemsForDay(day: number) {
+    const dayStart = new Date(year, month, day).getTime()
+    const dayEnd = new Date(year, month, day + 1).getTime()
+    return {
+      projects: projects.filter(p => {
+        const s = new Date(p.start_date!).getTime(), e = new Date(p.end_date!).getTime()
+        return s < dayEnd && e > dayStart
+      }),
+      events: events.filter(e => {
+        const s = new Date(e.start_date).getTime(), en = new Date(e.end_date).getTime()
+        return s < dayEnd && en > dayStart
+      }),
+    }
+  }
+
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <div className="grid grid-cols-7 bg-muted/50 border-b">
+        {dayNames.map(d => (
+          <div key={d} className="text-center text-xs font-semibold text-muted-foreground py-2">{d}</div>
+        ))}
+      </div>
+      {weeks.map((w, wi) => (
+        <div key={wi} className="grid grid-cols-7 border-b last:border-b-0">
+          {w.map((day, di) => {
+            if (day === null) return <div key={di} className={cn(cellHeight, 'border-r last:border-r-0 bg-muted/10')} />
+            const { projects: dp, events: de } = getItemsForDay(day)
+            const isToday = `${year}-${month}-${day}` === todayStr
+            type AnyItem = { kind: 'project'; p: MktProject } | { kind: 'event'; e: typeof events[0] }
+            const allItems: AnyItem[] = [
+              ...dp.map(p => ({ kind: 'project' as const, p })),
+              ...de.map(e => ({ kind: 'event' as const, e })),
+            ]
+            const visible = allItems.slice(0, maxVisible)
+            const overflow = allItems.length - maxVisible
+            return (
+              <div key={di} className={cn(cellHeight, 'border-r last:border-r-0 p-1 flex flex-col gap-0.5 overflow-hidden', isToday && 'bg-red-500/5')}>
+                <div className="flex justify-end mb-0.5">
+                  <span className={cn(
+                    'text-xs w-6 h-6 flex items-center justify-center rounded-full leading-none',
+                    isToday ? 'bg-red-500 text-white font-bold' : 'text-muted-foreground font-medium',
+                  )}>{day}</span>
+                </div>
+                {visible.map((item) => item.kind === 'project' ? (
+                  <div
+                    key={item.p.id}
+                    className={cn('px-1.5 py-0.5 rounded text-[11px] font-medium text-white truncate cursor-pointer hover:opacity-80 transition-opacity', barColors[item.p.status] ?? 'bg-gray-400')}
+                    onClick={() => onSelect(item.p)}
+                    title={item.p.name}
+                  >
+                    {item.p.name}
+                  </div>
+                ) : (
+                  <div
+                    key={`e-${item.e.id}`}
+                    className="px-1.5 py-0.5 rounded text-[11px] font-medium text-white truncate cursor-pointer hover:opacity-80 transition-opacity bg-purple-500 flex items-center gap-1"
+                    onClick={onEventClick}
+                    title={item.e.name}
+                  >
+                    <CalendarDays className="h-2.5 w-2.5 shrink-0" />
+                    {item.e.name}
+                  </div>
+                ))}
+                {overflow > 0 && (
+                  <div className="text-[10px] text-muted-foreground px-1">+{overflow} more</div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function DesktopMonthView({ anchor, projects, events, barColors, onSelect, onEventClick }: MobileCalProps & { anchor: Date }) {
+  return (
+    <DesktopMonthGrid
+      year={anchor.getFullYear()}
+      month={anchor.getMonth()}
+      projects={projects}
+      events={events}
+      barColors={barColors}
+      onSelect={onSelect}
+      onEventClick={onEventClick}
+    />
+  )
+}
+
+function DesktopQuarterView({ anchor, projects, events, barColors, onSelect, onEventClick }: MobileCalProps & { anchor: Date }) {
+  const qMonth = Math.floor(anchor.getMonth() / 3) * 3
+  const year = anchor.getFullYear()
+  const months = [qMonth, qMonth + 1, qMonth + 2]
+
+  return (
+    <div className="space-y-6">
+      {months.map(mo => {
+        const monthStart = new Date(year, mo, 1).getTime()
+        const monthEnd = new Date(year, mo + 1, 0, 23, 59, 59).getTime()
+        const mProjs = projects.filter(p => {
+          const s = new Date(p.start_date!).getTime(), e = new Date(p.end_date!).getTime()
+          return s <= monthEnd && e >= monthStart
+        })
+        const mEvts = events.filter(e => {
+          const s = new Date(e.start_date).getTime(), en = new Date(e.end_date).getTime()
+          return s <= monthEnd && en >= monthStart
+        })
+        const label = new Date(year, mo, 1).toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })
+        return (
+          <div key={mo}>
+            <div className="text-sm font-semibold capitalize mb-2">{label}</div>
+            <DesktopMonthGrid
+              year={year}
+              month={mo}
+              projects={mProjs}
+              events={mEvts}
+              barColors={barColors}
+              onSelect={onSelect}
+              onEventClick={onEventClick}
+              cellHeight="min-h-[90px]"
+              maxVisible={2}
+            />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }) {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const [range, setRange] = useState<CalendarRange>('quarter')
   const [anchor, setAnchor] = useState(() => new Date())
 
@@ -1964,17 +2123,49 @@ export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }
           onEventClick={() => navigate('/app/marketing/events')}
         />
       ) : range === 'quarter' ? (
-        <MobileQuarterView
-          anchor={anchor}
-          projects={projects}
-          events={events}
-          barColors={barColors}
-          onSelect={onSelect}
-          onEventClick={() => navigate('/app/marketing/events')}
-        />
+        isMobile ? (
+          <MobileQuarterView
+            anchor={anchor}
+            projects={projects}
+            events={events}
+            barColors={barColors}
+            onSelect={onSelect}
+            onEventClick={() => navigate('/app/marketing/events')}
+          />
+        ) : (
+          <DesktopQuarterView
+            anchor={anchor}
+            projects={projects}
+            events={events}
+            barColors={barColors}
+            onSelect={onSelect}
+            onEventClick={() => navigate('/app/marketing/events')}
+          />
+        )
+      ) : range === 'month' ? (
+        isMobile ? (
+          <MobileCalendarGrid
+            range="month"
+            anchor={anchor}
+            projects={projects}
+            events={events}
+            barColors={barColors}
+            onSelect={onSelect}
+            onEventClick={() => navigate('/app/marketing/events')}
+          />
+        ) : (
+          <DesktopMonthView
+            anchor={anchor}
+            projects={projects}
+            events={events}
+            barColors={barColors}
+            onSelect={onSelect}
+            onEventClick={() => navigate('/app/marketing/events')}
+          />
+        )
       ) : (
         <MobileCalendarGrid
-          range={range as 'month' | 'year'}
+          range="year"
           anchor={anchor}
           projects={projects}
           events={events}
