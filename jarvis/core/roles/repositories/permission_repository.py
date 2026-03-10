@@ -394,5 +394,5 @@ class PermissionRepository(BaseRepository):
         ''', (role_id, module, entity, action))
         if row:
             has_perm = row['scope'] != 'deny' or row['granted']
-            return {'has_permission': has_perm, 'scope': row['scope']}
-        return {'has_permission': False, 'scope': 'deny'}
+            return {'has_permission': has_perm, 'scope': row['scope'], 'has_explicit_entry': True}
+        return {'has_permission': False, 'scope': 'deny', 'has_explicit_entry': False}

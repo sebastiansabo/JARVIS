@@ -12,7 +12,13 @@ from core.utils.api_helpers import safe_error_response
 
 
 def _structure_view_required(f):
-    """Require hr.structure.view permission (or is_hr_manager / admin fallback) for org read ops."""
+    """Require hr.structure.view permission for org read ops.
+
+    Fallback chain (mirrors api_permissions view fallback):
+      1. Explicit v2 grant (scope != deny)
+      2. is_hr_manager or can_access_settings (admin)
+      3. can_access_hr — any HR user can view structure by default
+    """
     @wraps(f)
     def decorated(*args, **kwargs):
         if not current_user.is_authenticated:
@@ -24,6 +30,9 @@ def _structure_view_required(f):
             if perm.get('has_permission'):
                 return f(*args, **kwargs)
         if getattr(current_user, 'is_hr_manager', False) or getattr(current_user, 'can_access_settings', False):
+            return f(*args, **kwargs)
+        # Mirror the api_permissions fallback: any HR user can view structure
+        if getattr(current_user, 'can_access_hr', False):
             return f(*args, **kwargs)
         return jsonify({'success': False, 'error': 'Permission denied: structure view required'}), 403
     return decorated

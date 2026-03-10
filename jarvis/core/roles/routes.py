@@ -182,15 +182,42 @@ def api_set_role_perms_v2(role_id):
 @roles_bp.route('/api/permissions/v2/<int:permission_id>/role/<int:role_id>', methods=['PUT'])
 @admin_required
 def api_set_single_permission_v2(permission_id, role_id):
-    """Set a single v2 permission for a role."""
+    """Set a single v2 permission for a role.
+    If the permission is a module.access type, also syncs the corresponding
+    roles table boolean so that frontend Guards stay in sync.
+    """
     data = request.get_json()
+    # Map module.access permissions to their roles table boolean column
+    MODULE_ACCESS_COLUMNS = {
+        'hr':         'can_access_hr',
+        'accounting': 'can_access_accounting',
+        'statements': 'can_access_statements',
+        'efactura':   'can_access_efactura',
+        'settings':   'can_access_settings',
+        'sales':      'can_access_crm',
+    }
     try:
+        scope = data.get('scope')
+        granted = data.get('granted')
         _perm_repo.set_role_permission_v2(
             role_id=role_id,
             permission_id=permission_id,
-            scope=data.get('scope'),
-            granted=data.get('granted')
+            scope=scope,
+            granted=granted,
         )
+        # Sync module.access → roles table boolean
+        perm_info = _perm_repo.query_one(
+            'SELECT module_key, entity_key, action_key FROM permissions_v2 WHERE id = %s',
+            (permission_id,)
+        )
+        if perm_info and perm_info['entity_key'] == 'module' and perm_info['action_key'] == 'access':
+            col = MODULE_ACCESS_COLUMNS.get(perm_info['module_key'])
+            if col:
+                flag_value = scope != 'deny'
+                _role_repo.execute(
+                    f'UPDATE roles SET {col} = %s WHERE id = %s',
+                    (flag_value, role_id)
+                )
         return jsonify({'success': True})
     except Exception as e:
         return safe_error_response(e)

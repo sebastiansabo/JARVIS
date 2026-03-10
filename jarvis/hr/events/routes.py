@@ -805,19 +805,22 @@ def api_permissions():
         scope = 'deny'
 
         if can_access_hr:
+            has_explicit = False
             if role_id:
                 perm = check_permission_v2(role_id, 'hr', entity, action)
+                has_explicit = perm.get('has_explicit_entry', False)
                 allowed = perm['has_permission']
                 scope = perm.get('scope', 'deny') if allowed else 'deny'
 
-            # Fallback to is_hr_manager for write operations
-            if not allowed and action in ('add', 'edit', 'delete', 'view_amounts', 'export') and is_hr_manager:
+            # Fallback to is_hr_manager for write operations (only when no explicit entry)
+            if not allowed and action in ('add', 'edit', 'delete', 'view_amounts', 'export') and is_hr_manager and not has_explicit:
                 allowed = True
                 scope = 'all'
 
-            # View permissions default to allowed for HR users
+            # View permissions default to allowed for HR users with no explicit entry
             # (team_pontaje requires explicit grant — it controls the My Team filter)
-            if not allowed and action == 'view' and can_access_hr and entity != 'team_pontaje':
+            # Explicit Deny in the permission matrix is respected and NOT overridden
+            if not allowed and action == 'view' and entity != 'team_pontaje' and not has_explicit:
                 allowed = True
                 scope = 'all'
 
