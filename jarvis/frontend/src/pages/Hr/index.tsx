@@ -55,7 +55,7 @@ export default function Hr() {
   const teamPontajeScope = permissions?.permissions?.['hr.team_pontaje.view']?.scope ?? 'deny'
 
   // Team filter — lifted here so it renders next to page title
-  const [teamFilter, setTeamFilter] = useState<'team' | 'all'>('team')
+  const [teamFilter, setTeamFilter] = useState<'team' | 'all'>('all')
   const showTeamToggle = canViewTeamPontaje && teamPontajeScope === 'all'
   const managerFilter = showTeamToggle && teamFilter === 'team'
 

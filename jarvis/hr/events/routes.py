@@ -816,7 +816,8 @@ def api_permissions():
                 scope = 'all'
 
             # View permissions default to allowed for HR users
-            if not allowed and action == 'view' and can_access_hr:
+            # (team_pontaje requires explicit grant — it controls the My Team filter)
+            if not allowed and action == 'view' and can_access_hr and entity != 'team_pontaje':
                 allowed = True
                 scope = 'all'
 
