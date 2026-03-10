@@ -52,6 +52,7 @@ class User(UserMixin):
         self.can_edit_crm = user_data.get('can_edit_crm', False)
         self.can_delete_crm = user_data.get('can_delete_crm', False)
         self.can_export_crm = user_data.get('can_export_crm', False)
+        self.can_access_marketing = user_data.get('can_access_marketing', False)
 
         # Pontaje visibility permissions
         self.can_view_original_punches = user_data.get('can_view_original_punches', False)
