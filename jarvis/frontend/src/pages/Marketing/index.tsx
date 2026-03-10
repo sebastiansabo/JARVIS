@@ -1301,48 +1301,6 @@ function shiftAnchor(anchor: Date, range: CalendarRange, dir: 1 | -1): Date {
   }
 }
 
-function generateGridMarkers(start: Date, end: Date, range: CalendarRange): { label: string; left: number }[] {
-  const totalMs = end.getTime() - start.getTime()
-  const markers: { label: string; left: number }[] = []
-  const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) => d.toLocaleDateString('ro-RO', opts)
-
-  if (range === 'day') {
-    // Hourly markers
-    for (let h = 0; h < 24; h++) {
-      const t = new Date(start.getFullYear(), start.getMonth(), start.getDate(), h)
-      markers.push({ label: `${h}:00`, left: ((t.getTime() - start.getTime()) / totalMs) * 100 })
-    }
-  } else if (range === 'week') {
-    // Daily markers
-    const c = new Date(start)
-    while (c < end) {
-      markers.push({ label: fmt(c, { weekday: 'short', day: 'numeric' }), left: ((c.getTime() - start.getTime()) / totalMs) * 100 })
-      c.setDate(c.getDate() + 1)
-    }
-  } else if (range === 'month') {
-    // Daily markers (show every few days for readability)
-    const c = new Date(start)
-    while (c < end) {
-      markers.push({ label: String(c.getDate()), left: ((c.getTime() - start.getTime()) / totalMs) * 100 })
-      c.setDate(c.getDate() + 1)
-    }
-  } else if (range === 'quarter') {
-    // Weekly markers
-    const c = new Date(start)
-    while (c < end) {
-      markers.push({ label: fmt(c, { day: 'numeric', month: 'short' }), left: ((c.getTime() - start.getTime()) / totalMs) * 100 })
-      c.setDate(c.getDate() + 7)
-    }
-  } else {
-    // Monthly markers
-    const c = new Date(start.getFullYear(), start.getMonth(), 1)
-    while (c < end) {
-      markers.push({ label: fmt(c, { month: 'short' }), left: ((c.getTime() - start.getTime()) / totalMs) * 100 })
-      c.setMonth(c.getMonth() + 1)
-    }
-  }
-  return markers
-}
 
 function rangeTitle(anchor: Date, range: CalendarRange): string {
   const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) => d.toLocaleDateString('ro-RO', opts)
@@ -1886,7 +1844,6 @@ function MobileCalendarGrid({ range, anchor, projects, events, barColors, onSele
 
 export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }) {
   const navigate = useNavigate()
-  const isMobile = useIsMobile()
   const [range, setRange] = useState<CalendarRange>('quarter')
   const [anchor, setAnchor] = useState(() => new Date())
 
@@ -1902,7 +1859,6 @@ export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }
   const allEvents = (eventsData ?? []).filter((e) => e.start_date && e.end_date)
 
   const { start: timeStart, end: timeEnd } = getRange(anchor, range)
-  const totalMs = timeEnd.getTime() - timeStart.getTime()
 
   // Filter items overlapping current range
   const projects = allProjects.filter((p) => {
@@ -1914,9 +1870,6 @@ export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }
     return s < timeEnd.getTime() && en > timeStart.getTime()
   })
 
-  const markers = generateGridMarkers(timeStart, timeEnd, range)
-  const todayPct = ((Date.now() - timeStart.getTime()) / totalMs) * 100
-
   const barColors: Record<string, string> = {
     draft: 'bg-gray-400',
     pending_approval: 'bg-yellow-400',
@@ -1926,26 +1879,6 @@ export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }
     completed: 'bg-emerald-500',
     cancelled: 'bg-red-400',
     archived: 'bg-gray-300',
-  }
-
-  const renderGridAndToday = () => (
-    <>
-      {markers.map((m, i) => (
-        <div key={i} className="absolute top-0 h-full border-l border-dashed border-muted-foreground/10" style={{ left: `${m.left}%` }} />
-      ))}
-      {todayPct >= 0 && todayPct <= 100 && (
-        <div className="absolute top-0 h-full w-px bg-red-500/20" style={{ left: `${todayPct}%` }} />
-      )}
-    </>
-  )
-
-  const clampBar = (itemStart: Date, itemEnd: Date) => {
-    const s = Math.max(itemStart.getTime(), timeStart.getTime())
-    const e = Math.min(itemEnd.getTime(), timeEnd.getTime())
-    return {
-      leftPct: ((s - timeStart.getTime()) / totalMs) * 100,
-      widthPct: ((e - s) / totalMs) * 100,
-    }
   }
 
   const rangeButtons: { key: CalendarRange; label: string }[] = [
@@ -2012,7 +1945,7 @@ export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }
         <div className="text-center py-12 text-muted-foreground">
           No campaigns or events in this period.
         </div>
-      ) : isMobile && range === 'day' ? (
+      ) : range === 'day' ? (
         <MobileDayView
           anchor={anchor}
           projects={projects}
@@ -2021,7 +1954,7 @@ export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }
           onSelect={onSelect}
           onEventClick={() => navigate('/app/marketing/events')}
         />
-      ) : isMobile && range === 'week' ? (
+      ) : range === 'week' ? (
         <MobileWeekView
           anchor={anchor}
           projects={projects}
@@ -2030,7 +1963,7 @@ export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }
           onSelect={onSelect}
           onEventClick={() => navigate('/app/marketing/events')}
         />
-      ) : isMobile && range === 'quarter' ? (
+      ) : range === 'quarter' ? (
         <MobileQuarterView
           anchor={anchor}
           projects={projects}
@@ -2039,9 +1972,9 @@ export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }
           onSelect={onSelect}
           onEventClick={() => navigate('/app/marketing/events')}
         />
-      ) : isMobile && (range === 'month' || range === 'year') ? (
+      ) : (
         <MobileCalendarGrid
-          range={range}
+          range={range as 'month' | 'year'}
           anchor={anchor}
           projects={projects}
           events={events}
@@ -2049,105 +1982,6 @@ export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }
           onSelect={onSelect}
           onEventClick={() => navigate('/app/marketing/events')}
         />
-      ) : (
-        <div className="rounded-lg border overflow-hidden">
-          {/* Grid headers */}
-          <div className="relative h-7 bg-muted/50 border-b">
-            {markers.map((m, i) => (
-              <div
-                key={i}
-                className="absolute top-0 h-full border-l border-dashed border-muted-foreground/20 flex items-center px-1"
-                style={{ left: `${m.left}%` }}
-              >
-                <span className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">{m.label}</span>
-              </div>
-            ))}
-            {todayPct >= 0 && todayPct <= 100 && (
-              <div className="absolute top-0 h-full w-px bg-red-500 z-10" style={{ left: `${todayPct}%` }}>
-                <span className="absolute -top-0.5 -translate-x-1/2 text-[8px] text-red-500 font-bold">TODAY</span>
-              </div>
-            )}
-          </div>
-
-          {/* Campaign rows */}
-          {projects.length > 0 && (
-            <>
-              <div className="px-2 py-1 bg-muted/30 border-b">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Campaigns ({projects.length})</span>
-              </div>
-              <div className="divide-y">
-                {projects.map((p) => {
-                  const { leftPct, widthPct } = clampBar(new Date(p.start_date!), new Date(p.end_date!))
-                  const spent = typeof p.total_spent === 'string' ? parseFloat(p.total_spent) : (p.total_spent ?? 0)
-                  const budget = typeof p.total_budget === 'string' ? parseFloat(p.total_budget as unknown as string) : (p.total_budget ?? 0)
-                  const burn = burnRate(spent, budget)
-                  return (
-                    <div
-                      key={p.id}
-                      className="relative h-10 hover:bg-muted/30 cursor-pointer transition-colors group"
-                      onClick={() => onSelect(p)}
-                    >
-                      {renderGridAndToday()}
-                      <div
-                        className={cn(
-                          'absolute top-1.5 h-7 rounded-md flex items-center px-2 min-w-[40px] shadow-sm transition-shadow group-hover:shadow-md',
-                          barColors[p.status] ?? 'bg-gray-400',
-                        )}
-                        style={{ left: `${Math.max(0, leftPct)}%`, width: `${Math.max(1, widthPct)}%` }}
-                      >
-                        <span className="text-[10px] font-medium text-white truncate drop-shadow-sm">
-                          {p.name}
-                        </span>
-                        {budget > 0 && (
-                          <span className="ml-auto text-[9px] text-white/80 shrink-0 tabular-nums pl-1">
-                            {burn}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </>
-          )}
-
-          {/* Event rows */}
-          {events.length > 0 && (
-            <>
-              <div className="px-2 py-1 bg-muted/30 border-b border-t">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Events ({events.length})</span>
-              </div>
-              <div className="divide-y">
-                {events.map((e) => {
-                  const { leftPct, widthPct } = clampBar(new Date(e.start_date), new Date(e.end_date))
-                  return (
-                    <div
-                      key={`evt-${e.id}`}
-                      className="relative h-10 hover:bg-muted/30 cursor-pointer transition-colors group"
-                      onClick={() => navigate('/app/marketing/events')}
-                    >
-                      {renderGridAndToday()}
-                      <div
-                        className="absolute top-1.5 h-7 rounded-md flex items-center px-2 min-w-[40px] shadow-sm transition-shadow group-hover:shadow-md bg-purple-500"
-                        style={{ left: `${Math.max(0, leftPct)}%`, width: `${Math.max(1, widthPct)}%` }}
-                      >
-                        <CalendarDays className="h-3 w-3 text-white shrink-0 mr-1" />
-                        <span className="text-[10px] font-medium text-white truncate drop-shadow-sm">
-                          {e.name}
-                        </span>
-                        {e.company && (
-                          <span className="ml-auto text-[9px] text-white/80 shrink-0 pl-1">
-                            {e.company}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </>
-          )}
-        </div>
       )}
     </div>
   )

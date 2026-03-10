@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { hrApi } from '@/api/hr'
+import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useFormValidation } from '@/hooks/useFormValidation'
@@ -69,12 +70,8 @@ export default function AddEventPage() {
   const [searching, setSearching] = useState(false)
 
   // Permissions
-  const { data: permissions } = useQuery({
-    queryKey: ['hr-permissions'],
-    queryFn: () => hrApi.getPermissions(),
-    staleTime: 5 * 60 * 1000,
-  })
-  const canViewAmounts = permissions?.permissions?.['hr.bonuses.view_amounts']?.allowed ?? false
+  const user = useAuthStore((s) => s.user)
+  const canViewAmounts = user?.permissions?.['hr.bonuses.view_amounts'] ?? false
 
   // Queries
   const { data: companies = [] } = useQuery({

@@ -537,9 +537,12 @@ def add_bonus():
 
 @events_bp.route('/api/events', methods=['GET'])
 @login_required
-@hr_required
 def api_get_events():
-    """API: Get all events."""
+    """API: Get all events. Accessible to HR and Marketing users."""
+    can_hr = getattr(current_user, 'can_access_hr', False)
+    can_mkt = getattr(current_user, 'can_access_marketing', False)
+    if not can_hr and not can_mkt:
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
     events = get_all_hr_events()
     return jsonify(events)
 
