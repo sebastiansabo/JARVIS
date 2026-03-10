@@ -2,11 +2,13 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useTabParam } from '@/hooks/useTabParam'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -20,6 +22,7 @@ import {
   DollarSign, Target, AlertTriangle, FolderOpen, FileText,
   BarChart3, PieChart, Download, SlidersHorizontal,
   Archive, Trash2, RotateCcw, AlertCircle, Heart, GitCompareArrows, X, Check, CalendarDays, Info,
+  Sparkles, ChevronDown, ChevronUp, Loader2,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -33,6 +36,211 @@ import { useMarketingStore } from '@/stores/marketingStore'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import type { MktProject, MktKpiScoreboardItem } from '@/types/marketing'
 import ProjectForm from './ProjectForm'
+
+
+// ---- AI Campaign Generator ----
+
+const CAMPAIGN_TEMPLATES = [
+  {
+    label: 'Product Launch',
+    prompt: 'Launch campaign for a new vehicle model. Focus on brand awareness in the first month, transitioning to lead generation with digital ads, OOH, and showroom events.',
+    channels: ['meta_ads', 'google_ads', 'ooh', 'events'],
+  },
+  {
+    label: 'Always-On Digital',
+    prompt: 'Ongoing digital lead generation campaign across search and social. Optimize for cost per lead with retargeting and lookalike audiences.',
+    channels: ['meta_ads', 'google_ads', 'email'],
+  },
+  {
+    label: 'Event Campaign',
+    prompt: 'Promotional campaign around a dealership event or auto show. Drive foot traffic and test drive appointments via targeted local advertising.',
+    channels: ['meta_ads', 'events', 'sms', 'ooh'],
+  },
+  {
+    label: 'Branding Campaign',
+    prompt: 'Brand awareness campaign to build market presence. Multi-channel approach with emphasis on reach and frequency metrics.',
+    channels: ['meta_ads', 'google_ads', 'radio', 'ooh', 'influencer'],
+  },
+]
+
+function AICampaignGenerator({ companies, onCreated }: {
+  companies: { id: number; company: string }[]
+  onCreated: (projectId: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [prompt, setPrompt] = useState('')
+  const [product, setProduct] = useState('')
+  const [scope, setScope] = useState('')
+  const [budget, setBudget] = useState('')
+  const [currency, setCurrency] = useState('EUR')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [companyId, setCompanyId] = useState<number | null>(companies[0]?.id ?? null)
+  const [error, setError] = useState('')
+
+  const generateMut = useMutation({
+    mutationFn: (data: Parameters<typeof marketingApi.generateCampaign>[0]) =>
+      marketingApi.generateCampaign(data),
+    onSuccess: (res) => {
+      onCreated(res.id)
+      setOpen(false)
+      resetForm()
+    },
+    onError: (err: Error & { response?: { data?: { error?: string } } }) => {
+      setError(err.response?.data?.error || err.message || 'Generation failed')
+    },
+  })
+
+  const resetForm = () => {
+    setPrompt('')
+    setProduct('')
+    setScope('')
+    setBudget('')
+    setStartDate('')
+    setEndDate('')
+    setError('')
+  }
+
+  const applyTemplate = (t: typeof CAMPAIGN_TEMPLATES[0]) => {
+    setPrompt(t.prompt)
+  }
+
+  const handleGenerate = () => {
+    setError('')
+    if (!prompt.trim()) return setError('Describe what you want the campaign to achieve')
+    if (!budget || Number(budget) <= 0) return setError('Enter a valid budget')
+    if (!startDate || !endDate) return setError('Set start and end dates')
+    if (!companyId) return setError('Select a company')
+    generateMut.mutate({
+      prompt: prompt.trim(),
+      total_budget: Number(budget),
+      currency,
+      start_date: startDate,
+      end_date: endDate,
+      company_id: companyId,
+      product: product.trim() || undefined,
+      scope: scope.trim() || undefined,
+    })
+  }
+
+  return (
+    <div className="rounded-lg border bg-gradient-to-r from-violet-50/50 to-blue-50/50 dark:from-violet-950/20 dark:to-blue-950/20">
+      <button
+        className="flex w-full items-center justify-between px-4 py-3 text-left"
+        onClick={() => setOpen(!open)}
+      >
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-violet-500" />
+          <span className="text-sm font-medium">AI Campaign Generator</span>
+          <span className="text-xs text-muted-foreground">— create a full campaign from a brief</span>
+        </div>
+        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+      </button>
+
+      {open && (
+        <div className="border-t px-4 pb-4 pt-3 space-y-4">
+          {/* Templates */}
+          <div className="flex flex-wrap gap-1.5">
+            {CAMPAIGN_TEMPLATES.map((t) => (
+              <button
+                key={t.label}
+                onClick={() => applyTemplate(t)}
+                className="rounded-full border px-3 py-1 text-xs hover:bg-muted transition-colors"
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Main prompt */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Campaign Brief</Label>
+            <Textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Describe your campaign goals, target audience, and key messages..."
+              className="min-h-[80px] text-sm"
+            />
+          </div>
+
+          {/* Two-column parameters */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Product / Vehicle</Label>
+              <Input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="e.g. Audi Q5 Sportback" className="text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Scope / Goals</Label>
+              <Input value={scope} onChange={(e) => setScope(e.target.value)} placeholder="e.g. Brand awareness + lead generation" className="text-sm" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Budget</Label>
+              <Input type="number" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="50000" className="text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Currency</Label>
+              <Select value={currency} onValueChange={setCurrency}>
+                <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="RON">RON</SelectItem>
+                  <SelectItem value="EUR">EUR</SelectItem>
+                  <SelectItem value="USD">USD</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Start Date</Label>
+              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">End Date</Label>
+              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Company</Label>
+              <Select value={companyId ? String(companyId) : ''} onValueChange={(v) => setCompanyId(Number(v))}>
+                <SelectTrigger className="text-sm"><SelectValue placeholder="Select..." /></SelectTrigger>
+                <SelectContent>
+                  {companies.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="rounded-md border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-2.5 text-xs text-red-700 dark:text-red-400">
+              {error}
+            </div>
+          )}
+
+          {/* Action */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              Creates a draft project with budget lines, KPIs, and OKRs
+            </span>
+            <Button
+              onClick={handleGenerate}
+              disabled={generateMut.isPending}
+              className="gap-2"
+            >
+              {generateMut.isPending ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</>
+              ) : (
+                <><Sparkles className="h-4 w-4" /> Generate Campaign</>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 
 const statusColors: Record<string, string> = {
@@ -183,6 +391,16 @@ export default function Marketing() {
               isLoading={projectsLoading}
             />
           </div>
+
+          {/* AI Campaign Generator */}
+          <AICampaignGenerator
+            companies={companies}
+            onCreated={(projectId) => {
+              queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
+              queryClient.invalidateQueries({ queryKey: ['mkt-dashboard-summary'] })
+              navigate(`/app/marketing/projects/${projectId}`)
+            }}
+          />
 
           {/* Filter Bar */}
           {(() => {

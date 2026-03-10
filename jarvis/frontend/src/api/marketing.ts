@@ -421,4 +421,22 @@ export const marketingApi = {
     api.post<{ suggestions: Array<{ title: string; target_value: number; unit: string; linked_kpi_id: number | null }> }>(
       `${BASE}/projects/${projectId}/objectives/${objectiveId}/suggest-krs`
     ),
+
+  // ---- AI Campaign Generator ----
+
+  generateCampaign: (data: {
+    prompt: string
+    total_budget: number
+    currency: string
+    start_date: string
+    end_date: string
+    company_id: number
+    responsible_ids?: number[]
+    stakeholder_ids?: number[]
+    product?: string
+    scope?: string
+  }) =>
+    api.post<{ success: boolean; id: number; preview: { name: string; description: string; channels: string[]; budget_lines_count: number; kpis_count: number; objectives_count: number } }>(
+      `${BASE}/projects/generate`, data
+    ),
 }
