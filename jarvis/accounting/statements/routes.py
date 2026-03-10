@@ -15,25 +15,12 @@ from flask_login import login_required, current_user
 
 from . import statements_bp
 from .services import StatementsService
+from core.utils.api_helpers import api_login_required
 
 logger = logging.getLogger('jarvis.statements.routes')
 
 # Initialize service
 statements_service = StatementsService()
-
-
-def api_login_required(f):
-    """Like @login_required but returns JSON 401 for API endpoints instead of redirecting."""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated:
-            return jsonify({
-                'success': False,
-                'error': 'Authentication required',
-                'details': {'message': 'Please log in to access this resource'}
-            }), 401
-        return f(*args, **kwargs)
-    return decorated_function
 
 
 # File size limits

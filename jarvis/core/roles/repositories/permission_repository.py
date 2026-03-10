@@ -169,38 +169,6 @@ class PermissionRepository(BaseRepository):
         values = list(bool_updates.values()) + [role_id]
         cursor.execute(f'UPDATE roles SET {updates} WHERE id = %s', values)
 
-    def sync_role_from_booleans(self, role_id: int) -> bool:
-        """Sync old boolean columns to new permissions table (for migration)."""
-        def _work(cursor):
-            cursor.execute('SELECT * FROM roles WHERE id = %s', (role_id,))
-            role = cursor.fetchone()
-            if not role:
-                return False
-            permission_map = {
-                ('system', 'settings'): role.get('can_access_settings', False),
-                ('invoices', 'view'): role.get('can_view_invoices', False),
-                ('invoices', 'add'): role.get('can_add_invoices', False),
-                ('invoices', 'edit'): role.get('can_edit_invoices', False),
-                ('invoices', 'delete'): role.get('can_delete_invoices', False),
-                ('accounting', 'dashboard'): role.get('can_access_accounting', False),
-                ('accounting', 'templates'): role.get('can_access_templates', False),
-                ('accounting', 'connectors'): role.get('can_access_connectors', False),
-                ('hr', 'access'): role.get('can_access_hr', False),
-                ('hr', 'manager'): role.get('is_hr_manager', False),
-            }
-            cursor.execute('DELETE FROM role_permissions WHERE role_id = %s', (role_id,))
-            for (module_key, perm_key), granted in permission_map.items():
-                if granted:
-                    cursor.execute('''
-                        INSERT INTO role_permissions (role_id, permission_id, granted)
-                        SELECT %s, id, TRUE FROM permissions
-                        WHERE module_key = %s AND permission_key = %s
-                        ON CONFLICT (role_id, permission_id) DO NOTHING
-                    ''', (role_id, module_key, perm_key))
-            return True
-
-        return self.execute_many(_work)
-
     # ---- Permissions v2 ----
 
     def get_matrix(self) -> dict:
@@ -438,6 +406,25 @@ class PermissionRepository(BaseRepository):
             has_perm = scope != 'deny' or bool(r['granted'])
             result[f"{r['module_key']}.{r['entity_key']}.{r['action_key']}"] = has_perm
         return result
+
+    def get_all_role_permission_scopes(self, role_id: int) -> dict:
+        """Return {module.entity.action: scope_str} for all granted non-module v2 permissions.
+
+        Only includes permissions where scope != 'deny'. Used by auth endpoint to expose
+        scope metadata (e.g. 'own'/'department'/'all') to the frontend without a second
+        round-trip per module.
+        """
+        rows = self.query_all('''
+            SELECT p.module_key, p.entity_key, p.action_key, rp.scope
+            FROM permissions_v2 p
+            JOIN role_permissions_v2 rp ON rp.permission_id = p.id AND rp.role_id = %s
+            WHERE p.entity_key != 'module' AND rp.scope != 'deny'
+            ORDER BY p.module_key, p.entity_key, p.action_key
+        ''', (role_id,))
+        return {
+            f"{r['module_key']}.{r['entity_key']}.{r['action_key']}": r['scope']
+            for r in rows
+        }
 
     def check_permission_v2(self, role_id: int, module: str, entity: str, action: str) -> dict:
         """Check if a role has a specific v2 permission."""

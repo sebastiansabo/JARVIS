@@ -1,12 +1,12 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
 import { ClipboardCheck, Download, Fingerprint, LayoutDashboard, BarChart3, SlidersHorizontal, Plus, Users } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { hrApi } from '@/api/hr'
 import { useHrStore } from '@/stores/hrStore'
+import { useAuthStore } from '@/stores/authStore'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useIsMobile } from '@/hooks/useMediaQuery'
@@ -39,24 +39,23 @@ export default function Hr() {
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('hr_summary')
   const filters = useHrStore((s) => s.filters)
 
-  const { data: permissions } = useQuery({
-    queryKey: ['hr-permissions'],
-    queryFn: () => hrApi.getPermissions(),
-    staleTime: 5 * 60 * 1000,
-  })
+  const user = useAuthStore((s) => s.user)
+  const authLoading = useAuthStore((s) => s.isLoading)
+  const perms = user?.permissions
+  const scopes = user?.permission_scopes
 
   const [showStats, setShowStats] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [bonusAddTrigger, setBonusAddTrigger] = useState(0)
-  const canExport = permissions?.permissions?.['hr.bonuses.export']?.allowed ?? false
-  const canViewAmounts = permissions?.permissions?.['hr.bonuses.view_amounts']?.allowed ?? false
-  const canViewAdjustments = permissions?.permissions?.['hr.pontaje_adjustments.view']?.allowed ?? false
-  const canViewTeamPontaje = permissions?.permissions?.['hr.team_pontaje.view']?.allowed ?? false
-  const teamPontajeScope = permissions?.permissions?.['hr.team_pontaje.view']?.scope ?? 'deny'
-  const canViewStructure = permissions?.permissions?.['hr.structure.view']?.allowed ?? false
-  // Pontaje view: default true while permissions load; once loaded, gate on view_original
-  const canViewPontaje = permissions ? (permissions?.permissions?.['hr.pontaje.view_original']?.allowed ?? true) : true
-  const canViewBonuses = permissions ? (permissions?.permissions?.['hr.bonuses.view']?.allowed ?? true) : true
+  const canExport = perms?.['hr.bonuses.export'] ?? false
+  const canViewAmounts = perms?.['hr.bonuses.view_amounts'] ?? false
+  const canViewAdjustments = perms?.['hr.pontaje_adjustments.view'] ?? false
+  const canViewTeamPontaje = perms?.['hr.team_pontaje.view'] ?? false
+  const teamPontajeScope = scopes?.['hr.team_pontaje.view'] ?? 'deny'
+  const canViewStructure = perms?.['hr.structure.view'] ?? false
+  // Pontaje view: default true while auth loads; once loaded, gate on view_original
+  const canViewPontaje = authLoading || !user ? true : (perms?.['hr.pontaje.view_original'] ?? true)
+  const canViewBonuses = authLoading || !user ? true : (perms?.['hr.bonuses.view'] ?? true)
 
   // Team filter — lifted here so it renders next to page title
   // scope='all' → Admin: toggle visible, can switch between All/My Team
@@ -97,7 +96,7 @@ export default function Hr() {
             { label: 'Organigram' },
           ]}
         />
-        {!permissions ? (
+        {authLoading ? (
           <Skeleton className="h-64 w-full" />
         ) : !canViewStructure ? (
           <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">

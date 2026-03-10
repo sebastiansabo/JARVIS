@@ -59,6 +59,7 @@ import { organizationApi } from '@/api/organization'
 import { settingsApi } from '@/api/settings'
 import { tagsApi } from '@/api/tags'
 import { useAccountingStore, lockedColumns } from '@/stores/accountingStore'
+import { useAuthStore } from '@/stores/authStore'
 import { cn, usePersistedState } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { Invoice, InvoiceFilters } from '@/types/invoices'
@@ -102,6 +103,11 @@ export default function Accounting() {
   const [showStats, setShowStats] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
+
+  const user = useAuthStore((s) => s.user)
+  const canAdd = user?.can_add_invoices ?? true
+  const canEdit = user?.can_edit_invoices ?? true
+  const canDelete = user?.can_delete_invoices ?? true
 
   const filters = useAccountingStore((s) => s.filters)
   const selectedInvoiceIds = useAccountingStore((s) => s.selectedIds)
@@ -363,18 +369,22 @@ export default function Accounting() {
             <Button variant="ghost" size="icon" className={showFilters ? 'bg-muted' : ''} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className={cn('hidden md:inline-flex relative', showBin ? 'bg-destructive/15 text-destructive' : '')} onClick={() => { setShowBin(s => !s); clearSelected(); setSelectMode(false) }} title="Bin">
-              <Trash2 className="h-4 w-4" />
-              {binInvoices.length > 0 && <span className="absolute -top-1 -right-1 rounded-full bg-destructive px-1 py-0 text-[9px] text-destructive-foreground">{binInvoices.length}</span>}
-            </Button>
+            {canDelete && (
+              <Button variant="ghost" size="icon" className={cn('hidden md:inline-flex relative', showBin ? 'bg-destructive/15 text-destructive' : '')} onClick={() => { setShowBin(s => !s); clearSelected(); setSelectMode(false) }} title="Bin">
+                <Trash2 className="h-4 w-4" />
+                {binInvoices.length > 0 && <span className="absolute -top-1 -right-1 rounded-full bg-destructive px-1 py-0 text-[9px] text-destructive-foreground">{binInvoices.length}</span>}
+              </Button>
+            )}
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
             </Button>
-            <Button size="icon" asChild>
-              <Link to="/app/accounting/add">
-                <Plus className="h-4 w-4" />
-              </Link>
-            </Button>
+            {canAdd && (
+              <Button size="icon" asChild>
+                <Link to="/app/accounting/add">
+                  <Plus className="h-4 w-4" />
+                </Link>
+              </Button>
+            )}
           </div>
         }
       />
@@ -464,10 +474,12 @@ export default function Accounting() {
             entityIds={selectedInvoiceIds}
             onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
           />
-          <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selectedInvoiceIds)}>
-            <Trash2 className="mr-1 h-3.5 w-3.5" />
-            Delete
-          </Button>
+          {canDelete && (
+            <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selectedInvoiceIds)}>
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              Delete
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={() => { clearSelected(); setSelectMode(false) }}>
             Cancel
           </Button>
@@ -508,6 +520,8 @@ export default function Accounting() {
               onSort={setSort}
               isMobile={isMobile}
               selectMode={false}
+              canEdit={canEdit}
+              canDelete={canDelete}
             />
           )}
           <div className="flex items-center gap-3">
@@ -542,6 +556,8 @@ export default function Accounting() {
           onSort={setSort}
           isMobile={isMobile}
           selectMode={selectMode}
+          canEdit={canEdit}
+          canDelete={canDelete}
         />
       )}
 
@@ -814,6 +830,8 @@ function InvoiceTable({
   onSort,
   isMobile,
   selectMode,
+  canEdit,
+  canDelete,
 }: {
   invoices: Invoice[]
   isLoading: boolean
@@ -834,6 +852,8 @@ function InvoiceTable({
   onSort: (s: SortState | null) => void
   isMobile?: boolean
   selectMode?: boolean
+  canEdit?: boolean
+  canDelete?: boolean
 }) {
   const colCount = 2 + activeCols.length + 1 // checkbox + ID + visible cols + actions
 
@@ -1010,6 +1030,8 @@ function InvoiceTable({
                     isBin={isBin}
                     activeCols={activeCols}
                     colCount={colCount}
+                    canEdit={canEdit}
+                    canDelete={canDelete}
                   />
               ))}
             </TableBody>
@@ -1038,6 +1060,8 @@ const InvoiceRow = memo(function InvoiceRow({
   isBin,
   activeCols,
   colCount,
+  canEdit = true,
+  canDelete = true,
 }: {
   invoice: Invoice
   isSelected: boolean
@@ -1051,6 +1075,8 @@ const InvoiceRow = memo(function InvoiceRow({
   isBin: boolean
   activeCols: ColumnDef[]
   colCount: number
+  canEdit?: boolean
+  canDelete?: boolean
 }) {
   const queryClient = useQueryClient()
   const hasAllocations = inv.allocations && inv.allocations.length > 0
@@ -1105,12 +1131,16 @@ const InvoiceRow = memo(function InvoiceRow({
               </>
             ) : (
               <>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(inv)} title="Edit">
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(inv.id)} title="Delete">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                {canEdit && (
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(inv)} title="Edit">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {canDelete && (
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(inv.id)} title="Delete">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </>
             )}
           </div>

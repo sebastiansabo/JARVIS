@@ -175,6 +175,7 @@ def api_current_user():
         _perm_repo = _PermRepo()
         mod_access = _perm_repo.get_module_access_map(current_user.role_id) if current_user.role_id else {}
         all_perms = _perm_repo.get_all_role_permissions(current_user.role_id) if current_user.role_id else {}
+        perm_scopes = _perm_repo.get_all_role_permission_scopes(current_user.role_id) if current_user.role_id else {}
 
         def _access(module_key, fallback_attr):
             if module_key in mod_access:
@@ -223,6 +224,9 @@ def api_current_user():
                 # Full v2 permissions map for fine-grained UI (sidebar, tabs)
                 # Keys: "module.entity.action" → bool
                 'permissions': all_perms,
+                # Scope values for granted permissions — "module.entity.action" → scope string
+                # Used by HR module to determine team filter behavior without extra round-trip
+                'permission_scopes': perm_scopes,
             }
         })
     return jsonify({'authenticated': False})

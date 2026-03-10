@@ -13,6 +13,9 @@ from core.utils.api_helpers import error_response
 from . import ai_agent_bp
 from .services import AIAgentService
 from .models import ConversationStatus
+from core.roles.repositories import PermissionRepository
+
+_perm_repo = PermissionRepository()
 
 logger = get_logger('jarvis.ai_agent.routes')
 
@@ -41,13 +44,17 @@ def get_service() -> AIAgentService:
 
 
 def ai_agent_required(f):
-    """Decorator to require AI Agent access permission."""
+    """Decorator to require ai_agent.module.access V2 permission."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if not current_user.is_authenticated:
             return redirect(url_for('auth.login'))
-        # For now, allow all authenticated users
-        # Future: add can_access_ai_agent permission
+        role_id = getattr(current_user, 'role_id', None)
+        if not role_id:
+            return error_response('AI Agent access denied', 403)
+        perm = _perm_repo.check_permission_v2(role_id, 'ai_agent', 'module', 'access')
+        if not perm.get('has_permission'):
+            return error_response('AI Agent access denied', 403)
         return f(*args, **kwargs)
     return decorated
 

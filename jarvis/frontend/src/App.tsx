@@ -85,8 +85,8 @@ function V2Guard({ permKey, children }: { permKey: string; children: React.React
   const isLoading = useAuthStore((s) => s.isLoading)
 
   if (isLoading) return <PageLoader />
-  // If permissions map not yet loaded, allow (will refresh); explicit false = deny
-  if (user?.permissions && user.permissions[permKey] === false) return <AccessDenied />
+  // If permissions map not yet loaded, allow (will refresh on auth); any falsy value = deny
+  if (user?.permissions && !user.permissions[permKey]) return <AccessDenied />
 
   return <>{children}</>
 }

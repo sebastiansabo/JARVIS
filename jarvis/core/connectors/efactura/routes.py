@@ -6,12 +6,11 @@ Routes call EFacturaService for all business logic.
 """
 
 from datetime import date
-from functools import wraps
 from flask import request, jsonify, render_template, Response, redirect, session, url_for
 from flask_login import login_required, current_user
 
 from core.utils.logging_config import get_logger
-from core.utils.api_helpers import safe_error_response
+from core.utils.api_helpers import safe_error_response, api_login_required
 
 from . import efactura_bp
 from .config import InvoiceDirection, ArtifactType
@@ -22,19 +21,6 @@ logger = get_logger('jarvis.core.connectors.efactura.routes')
 
 # Initialize service
 efactura_service = EFacturaService()
-
-
-def api_login_required(f):
-    """Decorator for API endpoints that returns JSON 401 instead of redirect."""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated:
-            return jsonify({
-                'success': False,
-                'error': 'Authentication required',
-            }), 401
-        return f(*args, **kwargs)
-    return decorated_function
 
 
 # ============================================================

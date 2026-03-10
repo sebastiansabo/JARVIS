@@ -35,6 +35,8 @@ export interface User {
   can_adjust_punches: boolean
   // Full v2 permissions map — "module.entity.action" → bool (for sidebar/tab visibility)
   permissions?: Record<string, boolean>
+  // Scope values for granted permissions — "module.entity.action" → 'own'|'department'|'all'
+  permission_scopes?: Record<string, string>
 }
 
 export interface ApiResponse<T = unknown> {

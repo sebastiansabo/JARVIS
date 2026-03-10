@@ -1,6 +1,7 @@
 """API routes for the approval engine."""
 
 import logging
+from functools import wraps
 from flask import jsonify, request
 from flask_login import login_required, current_user
 
@@ -11,6 +12,7 @@ from .engine import (
 )
 from .repositories import FlowRepository, AuditRepository, DelegationRepository
 from core.utils.api_helpers import safe_error_response, handle_api_errors
+from core.roles.repositories import PermissionRepository
 
 logger = logging.getLogger('jarvis.core.approvals.routes')
 
@@ -18,6 +20,21 @@ _engine = ApprovalEngine()
 _flow_repo = FlowRepository()
 _audit_repo = AuditRepository()
 _delegation_repo = DelegationRepository()
+_perm_repo = PermissionRepository()
+
+
+def approvals_access_required(f):
+    """Require approvals.module.access V2 permission."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        role_id = getattr(current_user, 'role_id', None)
+        if not role_id:
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+        perm = _perm_repo.check_permission_v2(role_id, 'approvals', 'module', 'access')
+        if not perm.get('has_permission'):
+            return jsonify({'success': False, 'error': 'Approvals access denied'}), 403
+        return f(*args, **kwargs)
+    return decorated
 
 
 # ════════════════════════════════════════════
@@ -26,6 +43,7 @@ _delegation_repo = DelegationRepository()
 
 @approvals_bp.route('/api/requests', methods=['POST'])
 @login_required
+@approvals_access_required
 def api_submit_request():
     """Submit an entity for approval."""
     data = request.get_json()
@@ -59,6 +77,7 @@ def api_submit_request():
 
 @approvals_bp.route('/api/requests', methods=['GET'])
 @login_required
+@approvals_access_required
 def api_list_requests():
     """List approval requests with optional filters."""
     status = request.args.get('status')
@@ -77,6 +96,7 @@ def api_list_requests():
 
 @approvals_bp.route('/api/requests/<int:request_id>', methods=['GET'])
 @login_required
+@approvals_access_required
 def api_get_request(request_id):
     """Get request detail with decisions and audit log."""
     from .repositories import RequestRepository, DecisionRepository
@@ -97,6 +117,7 @@ def api_get_request(request_id):
 
 @approvals_bp.route('/api/requests/<int:request_id>/decide', methods=['POST'])
 @login_required
+@approvals_access_required
 def api_decide(request_id):
     """Approve/reject/return the current step."""
     data = request.get_json()
@@ -132,6 +153,7 @@ def api_decide(request_id):
 
 @approvals_bp.route('/api/requests/<int:request_id>/cancel', methods=['POST'])
 @login_required
+@approvals_access_required
 def api_cancel_request(request_id):
     """Cancel a pending request."""
     data = request.get_json() or {}
@@ -149,6 +171,7 @@ def api_cancel_request(request_id):
 
 @approvals_bp.route('/api/requests/<int:request_id>/resubmit', methods=['POST'])
 @login_required
+@approvals_access_required
 def api_resubmit(request_id):
     """Resubmit a rejected/returned request with updated context."""
     data = request.get_json()
@@ -166,6 +189,7 @@ def api_resubmit(request_id):
 
 @approvals_bp.route('/api/requests/<int:request_id>/escalate', methods=['POST'])
 @login_required
+@approvals_access_required
 def api_escalate(request_id):
     """Manual escalation."""
     data = request.get_json() or {}
@@ -191,6 +215,7 @@ def api_escalate(request_id):
 
 @approvals_bp.route('/api/my-queue', methods=['GET'])
 @login_required
+@approvals_access_required
 def api_my_queue():
     """Get pending decisions for current user."""
     entity_type = request.args.get('entity_type')
@@ -200,6 +225,7 @@ def api_my_queue():
 
 @approvals_bp.route('/api/my-queue/count', methods=['GET'])
 @login_required
+@approvals_access_required
 def api_my_queue_count():
     """Badge count for UI."""
     count = _engine.get_queue_count(current_user.id)
@@ -208,6 +234,7 @@ def api_my_queue_count():
 
 @approvals_bp.route('/api/my-requests', methods=['GET'])
 @login_required
+@approvals_access_required
 def api_my_requests():
     """Requests submitted by current user."""
     from .repositories import RequestRepository
@@ -221,6 +248,7 @@ def api_my_requests():
 
 @approvals_bp.route('/api/flows', methods=['GET'])
 @login_required
+@approvals_access_required
 def api_list_flows():
     """List all approval flows."""
     active_only = request.args.get('active_only', 'true').lower() == 'true'
@@ -262,6 +290,7 @@ def api_create_flow():
 
 @approvals_bp.route('/api/flows/<int:flow_id>', methods=['GET'])
 @login_required
+@approvals_access_required
 def api_get_flow(flow_id):
     """Get flow with steps."""
     flow = _flow_repo.get_flow_with_steps(flow_id)
@@ -386,6 +415,7 @@ def api_reorder_steps(flow_id):
 
 @approvals_bp.route('/api/delegations', methods=['GET'])
 @login_required
+@approvals_access_required
 def api_list_delegations():
     """Get delegations for current user."""
     delegations = _delegation_repo.get_active_for_user(current_user.id)
@@ -394,6 +424,7 @@ def api_list_delegations():
 
 @approvals_bp.route('/api/delegations', methods=['POST'])
 @login_required
+@approvals_access_required
 @handle_api_errors
 def api_create_delegation():
     """Create a new delegation."""
@@ -416,6 +447,7 @@ def api_create_delegation():
 
 @approvals_bp.route('/api/delegations/<int:delegation_id>', methods=['DELETE'])
 @login_required
+@approvals_access_required
 def api_delete_delegation(delegation_id):
     """Revoke a delegation."""
     if _delegation_repo.deactivate(delegation_id):
@@ -429,6 +461,7 @@ def api_delete_delegation(delegation_id):
 
 @approvals_bp.route('/api/requests/<int:request_id>/audit', methods=['GET'])
 @login_required
+@approvals_access_required
 def api_request_audit(request_id):
     """Audit trail for a request."""
     audit = _audit_repo.get_for_request(request_id)
@@ -458,6 +491,7 @@ def api_global_audit():
 
 @approvals_bp.route('/api/entity/<entity_type>/<int:entity_id>/history', methods=['GET'])
 @login_required
+@approvals_access_required
 def api_entity_history(entity_type, entity_id):
     """Full approval history for an entity, including decisions."""
     from .repositories import DecisionRepository

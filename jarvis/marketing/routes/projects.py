@@ -1,9 +1,8 @@
 """Marketing project CRUD + status transitions + approval submission."""
 
 import logging
-from functools import wraps
 
-from flask import jsonify, request, g
+from flask import request, g
 from flask_login import login_required, current_user
 
 from marketing import marketing_bp
@@ -12,8 +11,7 @@ from marketing.repositories import (
     ActivityRepository,
 )
 from marketing.services.project_service import ProjectService, UserContext
-from core.roles.repositories import PermissionRepository
-from core.utils.api_helpers import get_json_or_error, handle_api_errors
+from core.utils.api_helpers import get_json_or_error, handle_api_errors, v2_permission_required
 
 logger = logging.getLogger('jarvis.marketing.routes.projects')
 
@@ -21,28 +19,14 @@ _project_repo = ProjectRepository()
 _member_repo = MemberRepository()
 _budget_repo = BudgetRepository()
 _activity_repo = ActivityRepository()
-_perm_repo = PermissionRepository()
 _service = ProjectService()
 
 
-# ---- Permission decorator ----
+# ---- Permission decorator (thin wrapper around shared v2_permission_required) ----
 
 def mkt_permission_required(entity, action):
-    """Check marketing permissions_v2 with scope. Sets g.permission_scope."""
-    def decorator(f):
-        @wraps(f)
-        def decorated(*args, **kwargs):
-            if not current_user.is_authenticated:
-                return jsonify({'success': False, 'error': 'Authentication required'}), 401
-            role_id = getattr(current_user, 'role_id', None)
-            if role_id:
-                perm = _perm_repo.check_permission_v2(role_id, 'marketing', entity, action)
-                if perm.get('has_permission'):
-                    g.permission_scope = perm.get('scope', 'all')
-                    return f(*args, **kwargs)
-            return jsonify({'success': False, 'error': f'Permission denied: marketing.{entity}.{action}'}), 403
-        return decorated
-    return decorator
+    """Marketing V2 permission check. Delegates to v2_permission_required."""
+    return v2_permission_required('marketing', entity, action)
 
 
 # ---- Projects CRUD ----

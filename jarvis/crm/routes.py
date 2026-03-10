@@ -7,28 +7,38 @@ import tempfile
 import logging
 import threading
 from functools import wraps
-from flask import jsonify, request, Response, send_file
+from flask import jsonify, request, Response, send_file, g
 from flask_login import login_required, current_user
 
 from . import crm_bp
 from .repositories import ClientRepository, DealRepository, ImportRepository
 from .services.import_service import IMPORT_HANDLERS
+from core.roles.repositories import PermissionRepository
 
 logger = logging.getLogger('jarvis.crm.routes')
 
 _client_repo = ClientRepository()
 _deal_repo = DealRepository()
 _import_repo = ImportRepository()
+_perm_repo = PermissionRepository()
 
 
 def crm_required(f):
-    """Require can_access_crm permission."""
+    """Require sales.module.access V2 permission. Sets g.permission_scope."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if not current_user.is_authenticated:
             return jsonify({'success': False, 'error': 'Authentication required'}), 401
-        if not getattr(current_user, 'can_access_crm', False):
-            return jsonify({'success': False, 'error': 'CRM access denied'}), 403
+        role_id = getattr(current_user, 'role_id', None)
+        if role_id:
+            perm = _perm_repo.check_permission_v2(role_id, 'sales', 'module', 'access')
+            if not perm.get('has_permission'):
+                return jsonify({'success': False, 'error': 'CRM access denied'}), 403
+            g.permission_scope = perm.get('scope', 'all')
+        else:
+            if not getattr(current_user, 'can_access_crm', False):
+                return jsonify({'success': False, 'error': 'CRM access denied'}), 403
+            g.permission_scope = 'all'
         return f(*args, **kwargs)
     return decorated
 

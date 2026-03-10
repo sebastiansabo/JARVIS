@@ -9,6 +9,7 @@ from flask_login import current_user
 
 from . import biostar_bp
 from .services import BioStarSyncService
+from core.utils.api_helpers import api_login_required
 
 logger = logging.getLogger('jarvis.biostar.routes')
 service = BioStarSyncService()
@@ -59,16 +60,6 @@ def _get_managed_ids_with_self():
     if current_user.id not in user_ids:
         user_ids = [current_user.id] + user_ids
     return user_ids if user_ids else [-1]
-
-
-def api_login_required(f):
-    """Require authentication for API endpoints."""
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not current_user.is_authenticated:
-            return jsonify({'success': False, 'error': 'Authentication required'}), 401
-        return f(*args, **kwargs)
-    return decorated
 
 
 def adjust_permission_required(f):

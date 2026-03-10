@@ -104,35 +104,15 @@ def hr_manager_required(f):
 
 
 def hr_permission_required(entity: str, action: str):
-    """Decorator to check specific HR permission using permissions_v2.
+    """HR V2 permission check. Sets g.permission_scope and g.user_context.
 
-    Args:
-        entity: Entity within HR module (events, bonuses, employees, structure)
-        action: Action to check (view, add, edit, delete)
-
-    Usage:
-        @hr_permission_required('events', 'edit')
-        def api_update_event():
-            ...
-
-    Sets on Flask g object:
-        g.permission_scope: The scope level ('deny', 'own', 'department', 'all')
-        g.user_context: Dict with user_id, company, department, org_unit_id
+    All callers already have @login_required. Falls back to is_hr_manager
+    for write operations when no explicit V2 entry exists.
     """
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
-            if not current_user.is_authenticated:
-                return redirect(url_for('auth.login'))
-
-            # Check basic HR access first
-            if not getattr(current_user, 'can_access_hr', False):
-                if request.path.startswith('/hr/events/api/'):
-                    return jsonify({'success': False, 'error': 'HR access required'}), 403
-                flash('HR access required.', 'error')
-                return redirect(url_for('index'))
-
-            # Set user context for scope filtering
+            # Set user context for scope filtering in route handlers
             g.user_context = {
                 'user_id': current_user.id,
                 'company': getattr(current_user, 'company', None),
@@ -140,26 +120,19 @@ def hr_permission_required(entity: str, action: str):
                 'org_unit_id': getattr(current_user, 'org_unit_id', None)
             }
 
-            # Check specific permission using permissions_v2
             role_id = getattr(current_user, 'role_id', None)
             if role_id:
                 perm = check_permission_v2(role_id, 'hr', entity, action)
                 if perm['has_permission']:
-                    # Store scope for use in route handler
                     g.permission_scope = perm.get('scope', 'all')
                     return f(*args, **kwargs)
 
-            # Fallback to is_hr_manager for write operations
-            if action in ('add', 'edit', 'delete') and getattr(current_user, 'is_hr_manager', False):
-                # HR managers get 'all' scope
+            # Fallback: is_hr_manager covers write ops when V2 has no explicit entry
+            if action in ('add', 'edit', 'delete', 'export') and getattr(current_user, 'is_hr_manager', False):
                 g.permission_scope = 'all'
                 return f(*args, **kwargs)
 
-            # Permission denied
-            if request.path.startswith('/hr/events/api/'):
-                return jsonify({'success': False, 'error': f'Permission denied: hr.{entity}.{action}'}), 403
-            flash(f'Permission denied: HR {entity} {action}', 'error')
-            return redirect(url_for('hr.events.event_bonuses'))
+            return jsonify({'success': False, 'error': f'Permission denied: hr.{entity}.{action}'}), 403
         return decorated
     return decorator
 

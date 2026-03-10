@@ -1,15 +1,13 @@
 """DMS document routes."""
 import json
 import logging
-from functools import wraps
-from flask import request, jsonify, g
+from flask import request, jsonify
 from flask_login import login_required, current_user
 
 from dms import dms_bp
 from dms.repositories import DocumentRepository, FileRepository, RelTypeRepository
 from dms.services.document_service import DocumentService
-from core.roles.repositories import PermissionRepository
-from core.utils.api_helpers import safe_error_response, get_json_or_error
+from core.utils.api_helpers import safe_error_response, get_json_or_error, v2_permission_required
 
 logger = logging.getLogger('jarvis.dms.routes.documents')
 
@@ -17,25 +15,11 @@ _doc_repo = DocumentRepository()
 _file_repo = FileRepository()
 _rel_type_repo = RelTypeRepository()
 _service = DocumentService()
-_perm_repo = PermissionRepository()
 
 
 def dms_permission_required(entity, action):
-    """Check DMS permissions_v2 with scope."""
-    def decorator(f):
-        @wraps(f)
-        def decorated(*args, **kwargs):
-            if not current_user.is_authenticated:
-                return jsonify({'success': False, 'error': 'Authentication required'}), 401
-            role_id = getattr(current_user, 'role_id', None)
-            if role_id:
-                perm = _perm_repo.check_permission_v2(role_id, 'dms', entity, action)
-                if perm.get('has_permission'):
-                    g.permission_scope = perm.get('scope', 'all')
-                    return f(*args, **kwargs)
-            return jsonify({'success': False, 'error': f'Permission denied: dms.{entity}.{action}'}), 403
-        return decorated
-    return decorator
+    """DMS V2 permission check. Delegates to v2_permission_required."""
+    return v2_permission_required('dms', entity, action)
 
 
 # ---- Documents CRUD ----

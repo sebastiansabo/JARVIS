@@ -5,6 +5,7 @@ Handles all database operations for the users table (formerly responsables).
 from typing import Optional, List, Dict, Any
 
 from core.base_repository import BaseRepository
+from core.utils.scope_filter import apply_scope_filter
 
 
 class EmployeeRepository(BaseRepository):
@@ -24,14 +25,9 @@ class EmployeeRepository(BaseRepository):
         if active_only:
             query += ' AND is_active = TRUE'
 
-        if scope == 'own' and user_context:
-            query += ' AND id = %s'
-            params.append(user_context.get('user_id'))
-        elif scope == 'department' and user_context:
-            if user_context.get('department') and user_context.get('company'):
-                query += ' AND department = %s AND company = %s'
-                params.append(user_context['department'])
-                params.append(user_context['company'])
+        scope_sql, scope_params = apply_scope_filter(scope, user_context)
+        query += scope_sql
+        params.extend(scope_params)
 
         query += ' ORDER BY name'
         return self.query_all(query, params)

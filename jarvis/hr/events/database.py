@@ -4,6 +4,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database import get_db, get_cursor, release_db, dict_from_row
+from core.utils.scope_filter import apply_scope_filter
 
 
 # ============== HR Employees (now using users table) ==============
@@ -30,18 +31,9 @@ def get_all_hr_employees(active_only=True, scope='all', user_context=None):
     if active_only:
         query += ' AND is_active = TRUE'
 
-    # Apply scope-based filtering
-    if scope == 'own' and user_context:
-        # User can only see themselves
-        query += ' AND id = %s'
-        params.append(user_context.get('user_id'))
-    elif scope == 'department' and user_context:
-        # User can see employees in same company + department
-        if user_context.get('department') and user_context.get('company'):
-            query += ' AND department = %s AND company = %s'
-            params.append(user_context['department'])
-            params.append(user_context['company'])
-    # 'all' scope = no additional filtering
+    scope_sql, scope_params = apply_scope_filter(scope, user_context)
+    query += scope_sql
+    params.extend(scope_params)
 
     query += ' ORDER BY name'
 
@@ -260,18 +252,12 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
         query += ' AND b.event_id = %s'
         params.append(event_id)
 
-    # Apply scope-based filtering
-    if scope == 'own' and user_context:
-        # User can only see bonuses for themselves
-        query += ' AND b.user_id = %s'
-        params.append(user_context.get('user_id'))
-    elif scope == 'department' and user_context:
-        # User can see bonuses for users in same company + department
-        if user_context.get('department') and user_context.get('company'):
-            query += ' AND u.department = %s AND u.company = %s'
-            params.append(user_context['department'])
-            params.append(user_context['company'])
-    # 'all' scope = no additional filtering
+    scope_sql, scope_params = apply_scope_filter(
+        scope, user_context,
+        user_id_col='b.user_id', dept_col='u.department', company_col='u.company',
+    )
+    query += scope_sql
+    params.extend(scope_params)
 
     query += ' ORDER BY b.year DESC, b.month DESC, u.name'
 
