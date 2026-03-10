@@ -56,6 +56,9 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # ============== Blueprint Registrations ==============
 
+from admin_routes import admin_bp
+app.register_blueprint(admin_bp)
+
 from hr import hr_bp
 app.register_blueprint(hr_bp, url_prefix='/hr')
 

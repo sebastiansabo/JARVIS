@@ -435,6 +435,7 @@ export const marketingApi = {
     stakeholder_ids?: number[]
     product?: string
     scope?: string
+    area?: string
   }) =>
     api.post<{ success: boolean; id: number; preview: { name: string; description: string; channels: string[]; budget_lines_count: number; kpis_count: number; objectives_count: number } }>(
       `${BASE}/projects/generate`, data

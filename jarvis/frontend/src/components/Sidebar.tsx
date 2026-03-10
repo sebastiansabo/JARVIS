@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2, Network, MapPin, PartyPopper } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, Database } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -109,6 +109,23 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
     refetchInterval: 60_000,
   })
   const checkinLabel = checkinStatus?.next_direction === 'OUT' ? 'Check Out' : 'Check In'
+
+  // Temp migration button (superadmin only)
+  const [migrating, setMigrating] = useState(false)
+  const runMigration = useCallback(async () => {
+    if (!confirm('This will REPLACE invoices, allocations, reinvoices, statements and events with legacy data. Continue?')) return
+    setMigrating(true)
+    try {
+      const res = await fetch('/api/admin/run-migration', { method: 'POST', credentials: 'same-origin' })
+      const data = await res.json()
+      if (data.success) alert('Migration complete!\n\n' + data.output)
+      else alert('Migration failed:\n\n' + data.error)
+    } catch (e) {
+      alert('Request error: ' + e)
+    } finally {
+      setMigrating(false)
+    }
+  }, [])
 
   // Easter egg: 7-click logo reveal
   const clickCount = useRef(0)
@@ -421,6 +438,20 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 <TooltipContent side="right">{checkinLabel}</TooltipContent>
               </Tooltip>
               <Separator className="my-2" />
+              {user?.role_id === 1 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={runMigration}
+                      disabled={migrating}
+                      className="flex items-center justify-center rounded-md p-2 text-orange-500 transition-colors hover:bg-orange-500/10 disabled:opacity-50"
+                    >
+                      <Database className="h-5 w-5 shrink-0" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Run Legacy Migration</TooltipContent>
+                </Tooltip>
+              )}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link
@@ -468,6 +499,18 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 <span className="text-sm font-medium">{checkinLabel}</span>
               </Link>
               <Separator className="my-2" />
+              {user?.role_id === 1 && (
+                <button
+                  onClick={runMigration}
+                  disabled={migrating}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-orange-500 transition-colors hover:bg-orange-500/10 disabled:opacity-50"
+                >
+                  <Database className="h-4 w-4 shrink-0" />
+                  <span className="text-sm font-medium">
+                    {migrating ? 'Running migration…' : 'Run Legacy Migration'}
+                  </span>
+                </button>
+              )}
               <Link
                 to="/app/profile"
                 className={cn(

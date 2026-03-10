@@ -75,6 +75,8 @@ def api_generate_campaign():
             extra_context['product'] = data['product']
         if data.get('scope'):
             extra_context['scope'] = data['scope']
+        if data.get('area'):
+            extra_context['area'] = data['area']
 
         # Step 1: Generate campaign structure via AI
         ai_result = generate_campaign(

@@ -71,6 +71,7 @@ function AICampaignGenerator({ companies, onCreated }: {
   const [prompt, setPrompt] = useState('')
   const [product, setProduct] = useState('')
   const [scope, setScope] = useState('')
+  const [area, setArea] = useState('')
   const [budget, setBudget] = useState('')
   const [currency, setCurrency] = useState('EUR')
   const [startDate, setStartDate] = useState('')
@@ -95,6 +96,7 @@ function AICampaignGenerator({ companies, onCreated }: {
     setPrompt('')
     setProduct('')
     setScope('')
+    setArea('')
     setBudget('')
     setStartDate('')
     setEndDate('')
@@ -120,6 +122,7 @@ function AICampaignGenerator({ companies, onCreated }: {
       company_id: companyId,
       product: product.trim() || undefined,
       scope: scope.trim() || undefined,
+      area: area.trim() || undefined,
     })
   }
 
@@ -163,8 +166,8 @@ function AICampaignGenerator({ companies, onCreated }: {
             />
           </div>
 
-          {/* Two-column parameters */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Context parameters */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Product / Vehicle</Label>
               <Input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="e.g. Audi Q5 Sportback" className="text-sm" />
@@ -172,6 +175,10 @@ function AICampaignGenerator({ companies, onCreated }: {
             <div className="space-y-1.5">
               <Label className="text-xs">Scope / Goals</Label>
               <Input value={scope} onChange={(e) => setScope(e.target.value)} placeholder="e.g. Brand awareness + lead generation" className="text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Area / Counties</Label>
+              <Input value={area} onChange={(e) => setArea(e.target.value)} placeholder="e.g. Cluj, Mureș, Bistrița-Năsăud" className="text-sm" />
             </div>
           </div>
 
@@ -2686,13 +2693,13 @@ function KpiMatrix({ kpis, onProjectClick }: {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="overflow-x-auto max-h-80">
+      <div className="rounded-md border overflow-x-auto max-h-80">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="sticky left-0 z-10 bg-card min-w-[140px]">Project</TableHead>
+              <TableHead className="sticky left-0 z-10 bg-card min-w-[160px]">Project</TableHead>
               {kpiCols.map((name) => (
-                <TableHead key={name} className="text-center text-xs min-w-[90px]">{name}</TableHead>
+                <TableHead key={name} className="text-center text-xs whitespace-nowrap px-3">{name}</TableHead>
               ))}
             </TableRow>
           </TableHeader>

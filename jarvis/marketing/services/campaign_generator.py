@@ -9,18 +9,21 @@ logger = logging.getLogger('jarvis.marketing.campaign_generator')
 SYSTEM_PROMPT = """You are a marketing strategist for an automotive dealership group in Romania.
 Given a campaign brief, generate a complete marketing project structure.
 
+IMPORTANT: ALL text output (name, description, objective, target_audience, OKR titles, KPI notes,
+budget line descriptions) MUST be written in Romanian. Only channel codes and KPI slugs stay in English.
+
 Return ONLY valid JSON (no markdown fences) with this exact structure:
 {
-  "name": "Campaign Name",
-  "description": "2-3 paragraph project description / brief",
+  "name": "Numele Campaniei",
+  "description": "2-3 paragrafe cu descrierea proiectului / brief-ul campaniei",
   "project_type": "campaign|always_on|event|launch|branding|research",
-  "objective": "Strategic objective statement",
-  "target_audience": "Target audience description",
+  "objective": "Declarația obiectivului strategic",
+  "target_audience": "Descrierea detaliată a publicului țintă",
   "channel_mix": ["meta_ads", "google_ads", ...],
   "budget_lines": [
     {
       "channel": "meta_ads",
-      "description": "Brief description of what this budget covers",
+      "description": "Descriere scurtă a bugetului alocat",
       "planned_amount": 10000,
       "period_type": "campaign"
     }
@@ -31,16 +34,16 @@ Return ONLY valid JSON (no markdown fences) with this exact structure:
       "target_value": 150,
       "weight": 60,
       "aggregation": "latest",
-      "notes": "Brief note on why this target"
+      "notes": "Notă scurtă despre de ce acest target"
     }
   ],
   "objectives": [
     {
-      "title": "Objective title",
-      "description": "Objective description",
+      "title": "Titlu obiectiv",
+      "description": "Descriere obiectiv",
       "key_results": [
         {
-          "title": "Key result title",
+          "title": "Titlu rezultat cheie",
           "target_value": 500000,
           "unit": "number",
           "linked_kpi_slug": "impressions"
@@ -74,7 +77,12 @@ Rules:
 - Key results can reference KPIs via linked_kpi_slug (use slug from the catalog)
 - All monetary values in the campaign's currency
 - Be specific and actionable, not generic
-- Respond in the same language as the user's prompt"""
+- ALL generated text MUST be in Romanian (description, objective, target_audience, OKR titles/descriptions, KPI notes, budget descriptions)
+- When a vehicle model/product is provided, automatically determine the target audience based on:
+  - The vehicle segment (SUV, sedan, hatchback, electric, luxury, etc.)
+  - Typical buyer demographics for that model in Romania (age, income, lifestyle)
+  - Geographic targeting if area/counties are specified
+- When geographic area is provided, incorporate it into the campaign name, description, target_audience, and budget descriptions (e.g. geo-targeted ads for those counties)"""
 
 
 def generate_campaign(prompt, total_budget, currency, start_date, end_date,
@@ -144,8 +152,11 @@ PARAMETERS:
             user_prompt += f"- Product/Vehicle: {extra_context['product']}\n"
         if extra_context.get('scope'):
             user_prompt += f"- Scope/Goals: {extra_context['scope']}\n"
+        if extra_context.get('area'):
+            user_prompt += f"- Geographic Area: {extra_context['area']}\n"
 
-    user_prompt += "\nGenerate the full campaign structure with budget allocation, KPIs, and OKRs."
+    user_prompt += "\nGenerate the full campaign structure in Romanian with budget allocation, KPIs, and OKRs."
+    user_prompt += "\nAuto-detect target audience based on the vehicle model/product and geographic area."
 
     messages = [{'role': 'user', 'content': user_prompt}]
 
