@@ -2,7 +2,7 @@
 
 import logging
 
-from flask import request, g
+from flask import jsonify, request, g
 from flask_login import login_required, current_user
 
 from marketing import marketing_bp
