@@ -832,7 +832,8 @@ def api_permissions():
             'user_id': current_user.id,
             'company': getattr(current_user, 'company', None),
             'department': getattr(current_user, 'department', None),
-            'is_hr_manager': is_hr_manager
+            'is_hr_manager': is_hr_manager,
+            'can_access_hr': can_access_hr,
         }
     })
 
@@ -1418,6 +1419,13 @@ def api_export_bonuses():
 @hr_required
 def api_get_organigram():
     """API: Get organigram data — employees + department structures with manager mappings."""
+    role_id = getattr(current_user, 'role_id', None)
+    if role_id:
+        from core.roles.repositories.permission_repository import PermissionRepository
+        perm = PermissionRepository().check_permission_v2(role_id, 'hr', 'structure', 'view')
+        if not perm.get('has_permission') and not getattr(current_user, 'can_access_settings', False):
+            from flask import abort
+            abort(403)
     employees = get_all_hr_employees(active_only=True)
     structures = get_all_department_structures()
     companies = get_all_companies_with_brands()

@@ -53,6 +53,7 @@ export default function Hr() {
   const canViewAdjustments = permissions?.permissions?.['hr.pontaje_adjustments.view']?.allowed ?? false
   const canViewTeamPontaje = permissions?.permissions?.['hr.team_pontaje.view']?.allowed ?? false
   const teamPontajeScope = permissions?.permissions?.['hr.team_pontaje.view']?.scope ?? 'deny'
+  const canViewStructure = permissions?.permissions?.['hr.structure.view']?.allowed ?? false
 
   // Team filter — lifted here so it renders next to page title
   // scope='all' → Admin: toggle visible, can switch between All/My Team
@@ -93,9 +94,17 @@ export default function Hr() {
             { label: 'Organigram' },
           ]}
         />
-        <Suspense fallback={<TabLoader />}>
-          <OrganigramTab />
-        </Suspense>
+        {!permissions ? (
+          <Skeleton className="h-64 w-full" />
+        ) : !canViewStructure ? (
+          <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
+            You don't have permission to view the organigram.
+          </div>
+        ) : (
+          <Suspense fallback={<TabLoader />}>
+            <OrganigramTab />
+          </Suspense>
+        )}
       </div>
     )
   }
@@ -209,7 +218,6 @@ export default function Hr() {
           <Route path="pontaje" element={<PontajeTab showStats={showStats} showFilters={showFilters} managerFilter={managerFilter} />} />
           <Route path="bonuses" element={<BonusesTab canViewAmounts={canViewAmounts} showStats={showStats} showFilters={showFilters} addTrigger={bonusAddTrigger} />} />
           {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab showStats={showStats} showFilters={showFilters} />} />}
-          <Route path="organigram" element={<OrganigramTab />} />
         </Routes>
       </Suspense>
     </div>

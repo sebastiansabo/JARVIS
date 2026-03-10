@@ -11,6 +11,24 @@ from .repositories import CompanyRepository, StructureRepository, StructureNodeR
 from core.utils.api_helpers import safe_error_response
 
 
+def _structure_view_required(f):
+    """Require hr.structure.view permission (or is_hr_manager / admin fallback) for org read ops."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        role_id = getattr(current_user, 'role_id', None)
+        if role_id:
+            from core.roles.repositories.permission_repository import PermissionRepository
+            perm = PermissionRepository().check_permission_v2(role_id, 'hr', 'structure', 'view')
+            if perm.get('has_permission'):
+                return f(*args, **kwargs)
+        if getattr(current_user, 'is_hr_manager', False) or getattr(current_user, 'can_access_settings', False):
+            return f(*args, **kwargs)
+        return jsonify({'success': False, 'error': 'Permission denied: structure view required'}), 403
+    return decorated
+
+
 def _structure_edit_required(f):
     """Require hr.structure.edit permission (or is_hr_manager fallback) for org write ops."""
     @wraps(f)
@@ -423,6 +441,7 @@ def api_get_unique_brands():
 
 @org_bp.route('/api/structure-nodes', methods=['GET'])
 @login_required
+@_structure_view_required
 def api_get_structure_nodes():
     """Get all structure nodes, optionally filtered by company_id."""
     company_id = request.args.get('company_id', type=int)
@@ -483,6 +502,7 @@ def api_delete_structure_node(node_id):
 
 @org_bp.route('/api/structure-nodes/members', methods=['GET'])
 @login_required
+@_structure_view_required
 def api_get_all_node_members():
     """Bulk fetch all members across all structure nodes."""
     return jsonify(_node_repo.get_all_members())

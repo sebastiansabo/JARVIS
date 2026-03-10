@@ -65,6 +65,7 @@ export interface HrPermissions {
     company: string | null
     department: string | null
     is_hr_manager: boolean
+    can_access_hr: boolean
   }
 }
 
