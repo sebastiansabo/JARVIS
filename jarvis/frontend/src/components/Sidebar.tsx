@@ -18,7 +18,8 @@ interface NavItem {
   label: string
   icon: React.ElementType
   moduleKey?: string           // maps to module_menu_items.module_key
-  permission?: string
+  permission?: string          // top-level can_access_* flag
+  v2Permission?: string        // fine-grained v2 key: "module.entity.action"
   external?: boolean
   children?: NavItem[]
   badge?: React.ComponentType
@@ -27,7 +28,7 @@ interface NavItem {
 
 const navItemsDef: NavItem[] = [
   { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/app/ai-agent', label: 'AI Agent', icon: Bot, moduleKey: 'ai_agent' },
+  { path: '/app/ai-agent', label: 'AI Agent', icon: Bot, moduleKey: 'ai_agent', permission: 'can_access_ai_agent' },
   {
     path: '/app/accounting',
     label: 'Accounting',
@@ -48,9 +49,9 @@ const navItemsDef: NavItem[] = [
     moduleKey: 'hr',
     permission: 'can_access_hr',
     children: [
-      { path: '/app/hr/pontaje', label: 'Pontaje', icon: Fingerprint, moduleKey: 'hr_pontaje' },
-      { path: '/app/hr/bonuses', label: 'Bonuses', icon: Award, moduleKey: 'hr_bonuses' },
-      { path: '/app/hr/organigram', label: 'Organigram', icon: Network, moduleKey: 'hr_organigram' },
+      { path: '/app/hr/pontaje', label: 'Pontaje', icon: Fingerprint, moduleKey: 'hr_pontaje', v2Permission: 'hr.pontaje.view_original' },
+      { path: '/app/hr/bonuses', label: 'Bonuses', icon: Award, moduleKey: 'hr_bonuses', v2Permission: 'hr.bonuses.view' },
+      { path: '/app/hr/organigram', label: 'Organigram', icon: Network, moduleKey: 'hr_organigram', v2Permission: 'hr.structure.view' },
     ],
   },
   { path: '/app/approvals', label: 'Approvals', icon: ClipboardCheck, moduleKey: 'approvals', permission: 'can_access_approvals', badge: ApprovalBadge },
@@ -159,17 +160,25 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   }, [menuData])
 
   const visibleItems = useMemo(() => {
-    const filtered = navItemsDef.filter((item) => {
-      // Permission check (client-side)
+    const userPerms = user?.permissions
+
+    const isItemVisible = (item: NavItem): boolean => {
+      // Module-level flag (can_access_*)
       if (item.permission && !user?.[item.permission as keyof typeof user]) return false
-      // DB menu check: if item has a moduleKey and DB data is loaded,
-      // only show if that key is in the active set
+      // Fine-grained v2 permission — default true if map not loaded yet
+      if (item.v2Permission && userPerms) {
+        if (!(userPerms[item.v2Permission] ?? true)) return false
+      }
+      // DB menu visibility
       if (item.moduleKey && dbModuleMap !== null) {
         return dbModuleMap.has(item.moduleKey)
       }
       return true
-    })
-    // Sort by DB order where available, keep original order for items without a moduleKey
+    }
+
+    const filtered = navItemsDef.filter(isItemVisible)
+
+    // Sort by DB order where available
     if (dbModuleMap !== null) {
       filtered.sort((a, b) => {
         const orderA = a.moduleKey ? (dbModuleMap.get(a.moduleKey)?.sort_order ?? 99) : navItemsDef.indexOf(a)
@@ -177,14 +186,16 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
         return orderA - orderB
       })
     }
-    // Override labels with DB names
+    // Override labels with DB names; filter children by their own permissions
     return filtered.map(item => ({
       ...item,
       label: (item.moduleKey && dbModuleMap?.get(item.moduleKey)?.name) || item.label,
-      children: item.children?.map(child => ({
-        ...child,
-        label: (child.moduleKey && dbModuleMap?.get(child.moduleKey)?.name) || child.label,
-      })),
+      children: item.children
+        ?.filter(isItemVisible)
+        .map(child => ({
+          ...child,
+          label: (child.moduleKey && dbModuleMap?.get(child.moduleKey)?.name) || child.label,
+        })),
     }))
   }, [user, dbModuleMap])
 

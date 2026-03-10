@@ -26,12 +26,15 @@ export interface User {
   can_access_marketing: boolean
   can_access_approvals: boolean
   can_access_dms: boolean
+  can_access_ai_agent: boolean
   can_edit_crm: boolean
   can_delete_crm: boolean
   can_export_crm: boolean
   can_view_original_punches: boolean
   can_view_adjusted_punches: boolean
   can_adjust_punches: boolean
+  // Full v2 permissions map — "module.entity.action" → bool (for sidebar/tab visibility)
+  permissions?: Record<string, boolean>
 }
 
 export interface ApiResponse<T = unknown> {

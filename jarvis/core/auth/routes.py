@@ -174,6 +174,7 @@ def api_current_user():
         from core.roles.repositories.permission_repository import PermissionRepository as _PermRepo
         _perm_repo = _PermRepo()
         mod_access = _perm_repo.get_module_access_map(current_user.role_id) if current_user.role_id else {}
+        all_perms = _perm_repo.get_all_role_permissions(current_user.role_id) if current_user.role_id else {}
 
         def _access(module_key, fallback_attr):
             if module_key in mod_access:
@@ -208,6 +209,7 @@ def api_current_user():
                 'can_access_marketing':  _access('marketing',  'can_access_marketing'),
                 'can_access_approvals':  _access('approvals',  'can_access_approvals'),
                 'can_access_dms':        _access('dms',        'can_access_dms'),
+                'can_access_ai_agent':   _access('ai_agent',   'can_access_ai_agent'),
                 # Legacy / granular flags still read from role
                 'can_access_connectors': current_user.can_access_connectors,
                 'can_access_templates': current_user.can_access_templates,
@@ -218,6 +220,9 @@ def api_current_user():
                 'can_view_original_punches': current_user.can_view_original_punches,
                 'can_view_adjusted_punches': current_user.can_view_adjusted_punches,
                 'can_adjust_punches': current_user.can_adjust_punches,
+                # Full v2 permissions map for fine-grained UI (sidebar, tabs)
+                # Keys: "module.entity.action" → bool
+                'permissions': all_perms,
             }
         })
     return jsonify({'authenticated': False})

@@ -127,8 +127,10 @@ export default function App() {
         <Route path="dms/suppliers" element={<Guard flag="can_access_dms"><SuspensePage><SuppliersPage /></SuspensePage></Guard>} />
         <Route path="dms/suppliers/:supplierId" element={<Guard flag="can_access_dms"><SuspensePage><SupplierProfile /></SuspensePage></Guard>} />
 
+        {/* AI Agent — requires can_access_ai_agent */}
+        <Route path="ai-agent" element={<Guard flag="can_access_ai_agent"><SuspensePage><AiAgent /></SuspensePage></Guard>} />
+
         {/* Open-access modules — all authenticated users */}
-        <Route path="ai-agent" element={<SuspensePage><AiAgent /></SuspensePage>} />
         <Route path="mobile-checkin" element={<SuspensePage><MobileCheckin /></SuspensePage>} />
 
         <Route path="*" element={<Navigate to="dashboard" replace />} />

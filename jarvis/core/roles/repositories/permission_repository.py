@@ -423,6 +423,22 @@ class PermissionRepository(BaseRepository):
             }
         return result
 
+    def get_all_role_permissions(self, role_id: int) -> dict:
+        """Return {module.entity.action: bool} for ALL non-module v2 permissions (for sidebar/UI use)."""
+        rows = self.query_all('''
+            SELECT p.module_key, p.entity_key, p.action_key, rp.scope, rp.granted
+            FROM permissions_v2 p
+            LEFT JOIN role_permissions_v2 rp ON rp.permission_id = p.id AND rp.role_id = %s
+            WHERE p.entity_key != 'module'
+            ORDER BY p.module_key, p.entity_key, p.action_key
+        ''', (role_id,))
+        result = {}
+        for r in rows:
+            scope = r['scope'] or 'deny'
+            has_perm = scope != 'deny' or bool(r['granted'])
+            result[f"{r['module_key']}.{r['entity_key']}.{r['action_key']}"] = has_perm
+        return result
+
     def check_permission_v2(self, role_id: int, module: str, entity: str, action: str) -> dict:
         """Check if a role has a specific v2 permission."""
         row = self.query_one('''
