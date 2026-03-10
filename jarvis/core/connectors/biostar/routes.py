@@ -17,38 +17,47 @@ service = BioStarSyncService()
 def _resolve_manager_filter():
     """Resolve pontaje visibility based on team_pontaje permission scope.
 
-    - scope 'all': no filter unless frontend explicitly passes manager_filter=true
-    - scope 'department'/'own': always filter by managed employees (organigram)
-    - no permission: no filter (backward compat for can_access_hr users)
+    - scope 'all':        no filter (see everyone), unless frontend passes manager_filter=true
+    - scope 'department': filter by organigram-managed employees + self
+    - scope 'own':        only current user's own data
+    - scope 'deny':       return [-1] (deny all)
     """
     from core.roles.repositories.permission_repository import PermissionRepository
 
     role_id = getattr(current_user, 'role_id', None)
     explicit = request.args.get('manager_filter', '').lower() == 'true'
 
-    if role_id:
-        perm_repo = PermissionRepository()
-        perm = perm_repo.check_permission_v2(role_id, 'hr', 'team_pontaje', 'view')
-        has_perm = perm.get('has_permission', False)
-        scope = perm.get('scope', 'deny') if has_perm else 'deny'
+    if not role_id:
+        return [-1]
 
-        # Admin (scope='all'): only filter when frontend asks
-        if scope == 'all':
-            if not explicit:
-                return None
+    perm_repo = PermissionRepository()
+    perm = perm_repo.check_permission_v2(role_id, 'hr', 'team_pontaje', 'view')
+    has_perm = perm.get('has_permission', False)
+    scope = perm.get('scope', 'deny') if has_perm else 'deny'
 
-        # Non-admin with permission (scope='department'/'own'): always filter
-        elif has_perm and scope != 'deny':
-            pass  # fall through to filter
+    if scope == 'all':
+        # Admin/all: see everyone; respect explicit manager_filter toggle from frontend
+        return None if not explicit else _get_managed_ids_with_self()
 
-        # No permission: no filter (backward compat)
-        else:
-            return None
-    elif not explicit:
-        return None
+    if scope == 'department':
+        # See own team in organigram (subordinates + self)
+        return _get_managed_ids_with_self()
 
+    if scope == 'own':
+        # Only see their own punch data
+        return [current_user.id]
+
+    # scope == 'deny' or no permission
+    return [-1]
+
+
+def _get_managed_ids_with_self():
+    """Return organigram-managed employee IDs including the current user."""
     from hr.events.database import get_managed_employee_ids
-    user_ids = get_managed_employee_ids(current_user.id)
+    user_ids = get_managed_employee_ids(current_user.id) or []
+    # Include self so manager also sees their own punches
+    if current_user.id not in user_ids:
+        user_ids = [current_user.id] + user_ids
     return user_ids if user_ids else [-1]
 
 

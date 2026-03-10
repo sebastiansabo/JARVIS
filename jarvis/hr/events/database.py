@@ -985,15 +985,44 @@ def get_managed_employee_ids(manager_user_id, node_id=None):
     # No filter — return all visible employees
 
     # 1) Check L0: company_responsables → all users in that company
+    #    PLUS all structure tree members (L1-L5) under those companies
     l0_ids = []
     try:
         cursor.execute("""
-            SELECT DISTINCT u.id AS user_id
-            FROM company_responsables cr
-            JOIN companies c ON c.id = cr.company_id
-            JOIN users u ON u.company = c.company AND u.is_active = TRUE
-            WHERE cr.user_id = %s AND u.id != %s
-        """, (manager_user_id, manager_user_id))
+            WITH l0_companies AS (
+                SELECT cr.company_id
+                FROM company_responsables cr
+                WHERE cr.user_id = %s
+            ),
+            -- Users matched by company name
+            company_users AS (
+                SELECT DISTINCT u.id AS user_id
+                FROM l0_companies lc
+                JOIN companies c ON c.id = lc.company_id
+                JOIN users u ON u.company = c.company AND u.is_active = TRUE
+                WHERE u.id != %s
+            ),
+            -- Structure tree members under L0 companies (L1→L5 cascade)
+            company_nodes AS (
+                SELECT sn.id
+                FROM l0_companies lc
+                JOIN structure_nodes sn ON sn.company_id = lc.company_id
+            ),
+            tree_descendants AS (
+                SELECT id FROM company_nodes
+                UNION ALL
+                SELECT sn.id FROM structure_nodes sn JOIN tree_descendants td ON sn.parent_id = td.id
+            ),
+            structure_users AS (
+                SELECT DISTINCT snm.user_id
+                FROM tree_descendants td
+                JOIN structure_node_members snm ON snm.node_id = td.id AND snm.role = 'team'
+                WHERE snm.user_id != %s
+            )
+            SELECT user_id FROM company_users
+            UNION
+            SELECT user_id FROM structure_users
+        """, (manager_user_id, manager_user_id, manager_user_id))
         l0_ids = [r['user_id'] for r in cursor.fetchall()]
     except Exception:
         # Table may not exist yet — skip L0
