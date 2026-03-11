@@ -67,6 +67,7 @@ import { EditInvoiceDialog } from './EditInvoiceDialog'
 // import { SummaryTable } from './SummaryTable'
 import { AllocationEditor, allocationsToRows, rowsToApiPayload } from './AllocationEditor'
 import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
+import { BrandFilter } from '@/components/shared/BrandFilter'
 
 
 // Subtle row tint based on invoice status
@@ -104,6 +105,7 @@ export default function Accounting() {
   const [totalCurrency, setTotalCurrency] = useState<'RON' | 'EUR'>('RON')
   const [showFilters, setShowFilters] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
+  const [brandFilterKey, setBrandFilterKey] = useState<string | null>(null)
 
   const user = useAuthStore((s) => s.user)
   const canAdd = user?.can_add_invoices ?? true
@@ -403,6 +405,18 @@ export default function Accounting() {
           </div>
         }
       />
+
+      {/* Brand / company quick-filter */}
+      {!isMobile && (
+        <BrandFilter
+          mode="company"
+          value={brandFilterKey}
+          onSelect={(item) => {
+            setBrandFilterKey(item?.key ?? null)
+            updateFilter('company', (item?.companyName ?? '') as InvoiceFilters['company'])
+          }}
+        />
+      )}
 
       {/* Stats row */}
       {showStats && <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

@@ -25,6 +25,7 @@ export const useDmsStore = create<DmsState>((set) => ({
       columns: {
         storageKey: 'dms-document-columns',
         defaults: defaultColumns,
+        pageId: 'dms',
       },
       resetOffsetOnFilter: true,
     },

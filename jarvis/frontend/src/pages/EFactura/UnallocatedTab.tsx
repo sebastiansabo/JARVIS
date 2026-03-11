@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -51,6 +51,7 @@ import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { DateField } from '@/components/ui/date-field'
 import { cn, usePersistedState } from '@/lib/utils'
+import { getServerDefaults } from '@/lib/columnDefaults'
 import { efacturaApi } from '@/api/efactura'
 import { organizationApi } from '@/api/organization'
 import { TagBadgeList } from '@/components/shared/TagBadge'
@@ -187,6 +188,12 @@ function loadColumns(): string[] {
       if (valid.length > 0) return valid
     }
   } catch { /* ignore */ }
+  // Try server-configured defaults
+  const serverCols = getServerDefaults('efactura')
+  if (serverCols && serverCols.length > 0) {
+    const valid = serverCols.filter((k) => columnDefMap.has(k))
+    if (valid.length > 0) return valid
+  }
   return defaultColumns
 }
 
@@ -301,7 +308,7 @@ function ColumnToggle({
 }
 
 // ── Main Component ──────────────────────────────────────────
-export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenCount = 0, showFilters = false, search = '' }: { showHidden: boolean; onShowHiddenChange?: (v: boolean) => void; hiddenCount?: number; showFilters?: boolean; search?: string }) {
+export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenCount = 0, showFilters = false, search = '', companyId }: { showHidden: boolean; onShowHiddenChange?: (v: boolean) => void; hiddenCount?: number; showFilters?: boolean; search?: string; companyId?: number }) {
   const qc = useQueryClient()
   const isMobile = useIsMobile()
   const [savedLimit, setSavedLimit] = usePersistedState('efactura-page-size', 50)
@@ -334,6 +341,12 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   )
   // +3 for checkbox + tags + actions columns
   const totalColSpan = activeCols.length + 3
+
+  // Sync external company filter from parent BrandFilter widget
+  useEffect(() => {
+    setFilters((f) => ({ ...f, company_id: companyId, page: 1 }))
+    setSelectedIds(new Set())
+  }, [companyId])
 
   const updateFilter = (key: string, value: string | number | boolean | undefined) => {
     setFilters((f) => ({ ...f, [key]: value || undefined, page: 1 }))

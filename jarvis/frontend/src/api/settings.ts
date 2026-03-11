@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Theme, MenuItem, VatRate, DropdownOption, DefaultColumn } from '@/types/settings'
+import type { Theme, MenuItem, VatRate, DropdownOption, DefaultColumnsMap } from '@/types/settings'
 
 export interface AiModel {
   id: number
@@ -62,8 +62,8 @@ export const settingsApi = {
     api.post<{ success: boolean }>('/api/notification-settings/test', data),
 
   // Default Columns
-  getDefaultColumns: () => api.get<DefaultColumn[]>('/api/default-columns'),
-  setDefaultColumns: (data: { page: string; columns: string[] }) =>
+  getDefaultColumns: () => api.get<DefaultColumnsMap>('/api/default-columns'),
+  setDefaultColumns: (data: { page: string; columns: string[]; apply_to_all?: boolean }) =>
     api.post<{ success: boolean }>('/api/default-columns', data),
 
   // AI Agent Settings

@@ -25,6 +25,7 @@ export const useMarketingStore = create<MarketingState>((set) => ({
       columns: {
         storageKey: 'marketing-project-columns',
         defaults: defaultColumns,
+        pageId: 'marketing',
       },
       resetOffsetOnFilter: true,
     },

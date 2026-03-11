@@ -3,6 +3,7 @@ import { Menu } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/api/client'
+import { fetchColumnDefaults } from '@/lib/columnDefaults'
 import { Sidebar } from './Sidebar'
 import { AiAgentWidget, AiAgentPanel } from './AiAgentWidget'
 import { NotificationBell } from './NotificationBell'
@@ -25,6 +26,11 @@ export default function Layout() {
     api.post('/api/heartbeat').catch(() => {})
     const id = setInterval(() => { api.post('/api/heartbeat').catch(() => {}) }, 60_000)
     return () => clearInterval(id)
+  }, [user])
+
+  // Fetch server column defaults (invalidates stale localStorage)
+  useEffect(() => {
+    if (user) fetchColumnDefaults()
   }, [user])
 
   const toggleCollapsed = () => {

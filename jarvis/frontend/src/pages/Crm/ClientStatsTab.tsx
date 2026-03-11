@@ -175,7 +175,7 @@ export default function ClientStatsTab({ blacklistOnly, search = '' }: { blackli
   const [deleteId, setDeleteId] = useState<number | null>(null)
 
   const { visibleColumns, setVisibleColumns, defaultColumns } = useColumnState(
-    'crm-clients-columns', DEFAULT_VISIBLE, ALL_KEYS,
+    'crm-clients-columns', DEFAULT_VISIBLE, ALL_KEYS, 'crm_clients',
   )
 
   const activeColumns = ALL_COLUMNS.filter(c => visibleColumns.includes(c.key))

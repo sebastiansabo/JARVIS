@@ -33,6 +33,7 @@ import { tagsApi } from '@/api/tags'
 import { useDmsStore } from '@/stores/dmsStore'
 import type { DmsDocument, DmsFile, DmsCategory, DmsRelationshipTypeConfig } from '@/types/dms'
 import UploadDialog from './UploadDialog'
+import { BrandFilter } from '@/components/shared/BrandFilter'
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
   active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
@@ -91,6 +92,7 @@ export default function Dms() {
   const [selectMode, setSelectMode] = useState(false)
   const [showStats, setShowStats] = useState(false)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
+  const [brandFilterKey, setBrandFilterKey] = useState<string | null>(null)
 
   const companyId = filters.company_id || user?.company_id || undefined
 
@@ -394,6 +396,18 @@ export default function Dms() {
           </div>
         }
       />
+
+      {/* Brand / company quick-filter */}
+      {!isMobile && (
+        <BrandFilter
+          mode="company"
+          value={brandFilterKey}
+          onSelect={(item) => {
+            setBrandFilterKey(item?.key ?? null)
+            updateFilter('company_id', item?.companyId)
+          }}
+        />
+      )}
 
       {/* Mobile: search + filter sheet */}
       {isMobile && (() => {

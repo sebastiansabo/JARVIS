@@ -68,43 +68,66 @@ def api_test_email():
 
 # ============== Default Column Configuration ==============
 
+_VALID_COLUMN_PAGES = [
+    'accounting', 'crm_deals', 'crm_clients', 'dms', 'marketing', 'efactura',
+]
+
+
 @notifications_bp.route('/api/default-columns', methods=['GET'])
 @login_required
 def api_get_default_columns():
-    """Get default column configurations for all tabs."""
+    """Get default column configurations for all pages."""
+    import json
     settings = _notif_repo.get_settings()
-    return jsonify({
-        'accounting': settings.get('default_columns_accounting'),
-        'company': settings.get('default_columns_company'),
-        'department': settings.get('default_columns_department'),
-        'brand': settings.get('default_columns_brand')
-    })
+    result = {}
+    for page in _VALID_COLUMN_PAGES:
+        raw = settings.get(f'default_columns_{page}')
+        version = settings.get(f'default_columns_{page}_version', '0')
+        if raw:
+            try:
+                cols = json.loads(raw) if isinstance(raw, str) else raw
+            except (json.JSONDecodeError, TypeError):
+                cols = None
+        else:
+            cols = None
+        result[page] = {'columns': cols, 'version': int(version) if version else 0}
+    return jsonify(result)
 
 
 @notifications_bp.route('/api/default-columns', methods=['POST'])
 @login_required
 def api_set_default_columns():
     """Set default column configuration (admin only)."""
+    import json
     if not current_user.can_access_settings:
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json()
-    tab = data.get('tab')
-    config = data.get('config')
+    page = data.get('page') or data.get('tab')
+    columns = data.get('columns') or data.get('config')
+    apply_to_all = data.get('apply_to_all', False)
 
-    if not tab or not config:
-        return jsonify({'success': False, 'error': 'Tab and config are required'}), 400
+    if not page or not columns:
+        return jsonify({'success': False, 'error': 'page and columns are required'}), 400
 
-    valid_tabs = ['accounting', 'company', 'department', 'brand']
-    if tab not in valid_tabs:
-        return jsonify({'success': False, 'error': f'Invalid tab. Must be one of: {valid_tabs}'}), 400
+    if page not in _VALID_COLUMN_PAGES:
+        return jsonify({'success': False, 'error': f'Invalid page. Must be one of: {_VALID_COLUMN_PAGES}'}), 400
+
+    if not isinstance(columns, list):
+        return jsonify({'success': False, 'error': 'columns must be an array'}), 400
 
     try:
-        setting_key = f'default_columns_{tab}'
-        _notif_repo.save_setting(setting_key, config)
+        _notif_repo.save_setting(f'default_columns_{page}', json.dumps(columns))
+
+        if apply_to_all:
+            settings = _notif_repo.get_settings()
+            cur_version = int(settings.get(f'default_columns_{page}_version', '0') or '0')
+            _notif_repo.save_setting(f'default_columns_{page}_version', str(cur_version + 1))
+
         from core.auth.repositories import EventRepository
-        EventRepository().log_event('default_columns_set', event_description=f'Set default column config for {tab} tab')
-        return jsonify({'success': True, 'message': f'Default columns set for {tab} tab'})
+        action = 'applied to all users' if apply_to_all else 'saved as default'
+        EventRepository().log_event('default_columns_set', event_description=f'Column defaults for {page} {action}')
+        return jsonify({'success': True, 'message': f'Default columns set for {page}'})
     except Exception as e:
         return safe_error_response(e)
 

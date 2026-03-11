@@ -75,3 +75,8 @@ export interface DefaultColumn {
   columns: string[]
   user_id: number | null
 }
+
+/** Server response for GET /api/default-columns */
+export interface DefaultColumnsMap {
+  [page: string]: { columns: string[] | null; version: number }
+}

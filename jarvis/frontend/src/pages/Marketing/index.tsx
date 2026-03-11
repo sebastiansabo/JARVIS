@@ -36,6 +36,7 @@ import { QueryError } from '@/components/QueryError'
 import { useMarketingStore } from '@/stores/marketingStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
+import { BrandFilter } from '@/components/shared/BrandFilter'
 import type { MktProject, MktKpiScoreboardItem } from '@/types/marketing'
 import ProjectForm from './ProjectForm'
 
@@ -299,6 +300,7 @@ export default function Marketing() {
   const mainTab: MainTab = ((mainTabRaw as string) === 'dashboard' || (mainTabRaw as string) === 'calendar') ? 'projects' : mainTabRaw
   const [compareMode, setCompareMode] = useState(false)
   const [compareIds, setCompareIds] = useState<Set<number>>(new Set())
+  const [brandFilterKey, setBrandFilterKey] = useState<string | null>(null)
 
   const toggleCompare = (id: number) => {
     setCompareIds((prev) => {
@@ -375,6 +377,18 @@ export default function Marketing() {
           </div>
         }
       />
+
+      {/* Brand / company quick-filter */}
+      {!isMobile && (
+        <BrandFilter
+          mode="company"
+          value={brandFilterKey}
+          onSelect={(item) => {
+            setBrandFilterKey(item?.key ?? null)
+            updateFilter('company_id', item?.companyId)
+          }}
+        />
+      )}
 
       {/* Mobile tabs */}
       {isMobile && (

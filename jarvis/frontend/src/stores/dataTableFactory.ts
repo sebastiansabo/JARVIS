@@ -4,6 +4,7 @@
  * Provides standardised filter, selection, and (optional) column-visibility
  * state that is duplicated across accounting, HR, marketing, etc.
  */
+import { getServerDefaults } from '@/lib/columnDefaults'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -35,6 +36,8 @@ interface ColumnConfig {
   storageKey: string
   defaults: string[]
   locked?: Set<string>
+  /** Maps to server-side page key (e.g. 'accounting', 'dms'). */
+  pageId?: string
 }
 
 interface DataTableConfig<F> {
@@ -52,23 +55,35 @@ interface DataTableConfig<F> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SetFn = (...args: any[]) => void
 
+function ensureLocked(cols: string[], locked?: Set<string>): string[] {
+  if (!locked) return cols
+  for (const lc of locked) {
+    if (!cols.includes(lc)) cols.push(lc)
+  }
+  return cols
+}
+
 function loadColumns(cfg: ColumnConfig): string[] {
   try {
     const raw = localStorage.getItem(cfg.storageKey)
     if (raw) {
       const cols: string[] = JSON.parse(raw)
       if (Array.isArray(cols) && cols.length > 0) {
-        if (cfg.locked) {
-          for (const lc of cfg.locked) {
-            if (!cols.includes(lc)) cols.push(lc)
-          }
-        }
-        return cols
+        return ensureLocked(cols, cfg.locked)
       }
     }
   } catch {
     /* ignore */
   }
+
+  // Fall back to server-configured defaults (if loaded)
+  if (cfg.pageId) {
+    const serverCols = getServerDefaults(cfg.pageId)
+    if (serverCols && serverCols.length > 0) {
+      return ensureLocked([...serverCols], cfg.locked)
+    }
+  }
+
   return cfg.defaults
 }
 

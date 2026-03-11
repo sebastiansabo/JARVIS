@@ -17,6 +17,7 @@ import {
   Megaphone,
   FileText,
   Fingerprint,
+  Table2,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -38,6 +39,7 @@ const ApprovalsTab = lazy(() => import('./ApprovalsTab'))
 const MarketingTab = lazy(() => import('./MarketingTab'))
 const DocumentsTab = lazy(() => import('./DocumentsTab'))
 const PontajeTab = lazy(() => import('./PontajeTab'))
+const TablesTab = lazy(() => import('./TablesTab'))
 
 const tabs = [
   // Access
@@ -53,6 +55,7 @@ const tabs = [
   // Appearance
   { path: 'themes', label: 'Themes', icon: Palette },
   { path: 'menus', label: 'Menus', icon: Menu },
+  { path: 'tables', label: 'Tables', icon: Table2 },
   { path: 'tags', label: 'Tags', icon: Tags },
   // Monitoring
   { path: 'notifications', label: 'Notifications', icon: Bell },
@@ -127,6 +130,7 @@ export default function Settings() {
               <Route path="notifications" element={<NotificationsTab />} />
               <Route path="structure" element={<StructureTab />} />
               <Route path="activity" element={<ActivityTab />} />
+              <Route path="tables" element={<TablesTab />} />
               <Route path="tags" element={<TagsTab />} />
               <Route path="hr" element={<HrTab />} />
               <Route path="pontaje" element={<PontajeTab />} />

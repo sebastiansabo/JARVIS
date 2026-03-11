@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -100,7 +100,7 @@ function formatVal(v: unknown): string {
   return String(v)
 }
 
-export default function DealsTab({ showStats: _showStats = false, search = '' }: { showStats?: boolean; search?: string }) {
+export default function DealsTab({ showStats: _showStats = false, search = '', brandFilter = '' }: { showStats?: boolean; search?: string; brandFilter?: string }) {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
@@ -137,6 +137,9 @@ export default function DealsTab({ showStats: _showStats = false, search = '' }:
     setDateFrom(''); setDateTo(''); setSortBy(''); setSortOrder(''); setPage(0)
   }
 
+  // Sync external brand filter from parent BrandFilter widget
+  useEffect(() => { setBrand(brandFilter) }, [brandFilter])
+
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
   const [editDeal, setEditDeal] = useState<CrmDeal | null>(null)
@@ -146,6 +149,7 @@ export default function DealsTab({ showStats: _showStats = false, search = '' }:
     'crm-deals-columns',
     defaultVisible,
     columnDefs.map((c) => c.key),
+    'crm_deals',
   )
 
   const params: Record<string, string> = { limit: String(limit), offset: String(page * limit) }

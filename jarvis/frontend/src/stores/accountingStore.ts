@@ -37,6 +37,7 @@ export const useAccountingStore = create<AccountingState>((set) => ({
         storageKey: 'accounting-columns',
         defaults: defaultColumns,
         locked: lockedColumns,
+        pageId: 'accounting',
       },
     },
     set,

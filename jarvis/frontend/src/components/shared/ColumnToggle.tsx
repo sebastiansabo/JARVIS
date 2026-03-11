@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Columns3, GripVertical, ChevronUp, ChevronDown, EyeOff, Eye } from 'lucide-react'
 import { usePersistedState } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/useMediaQuery'
+import { getServerDefaults } from '@/lib/columnDefaults'
 
 export interface ColumnDef<T = unknown> {
   key: string
@@ -11,21 +12,34 @@ export interface ColumnDef<T = unknown> {
   render: (row: T) => React.ReactNode
 }
 
+/**
+ * Hook for column visibility state persisted to localStorage.
+ * Supports optional `pageId` to pull server-configured defaults as fallback.
+ */
 export function useColumnState(
   storageKey: string,
   defaultColumns: string[],
   allColumnKeys: string[],
+  pageId?: string,
 ) {
-  const [visibleColumns, setVisibleColumns] = usePersistedState<string[]>(storageKey, defaultColumns)
+  // Resolve effective defaults: server-configured > hardcoded
+  const serverCols = pageId ? getServerDefaults(pageId) : null
+  const effectiveDefaults =
+    serverCols && serverCols.length > 0
+      ? serverCols.filter((k) => allColumnKeys.includes(k))
+      : defaultColumns
+  const fallback = effectiveDefaults.length > 0 ? effectiveDefaults : defaultColumns
+
+  const [visibleColumns, setVisibleColumns] = usePersistedState<string[]>(storageKey, fallback)
 
   // Filter out any stale keys that no longer exist
   const validVisible = visibleColumns.filter((k) => allColumnKeys.includes(k))
-  const safeVisible = validVisible.length > 0 ? validVisible : defaultColumns
+  const safeVisible = validVisible.length > 0 ? validVisible : fallback
 
   return {
     visibleColumns: safeVisible,
     setVisibleColumns,
-    defaultColumns,
+    defaultColumns: fallback,
   }
 }
 
