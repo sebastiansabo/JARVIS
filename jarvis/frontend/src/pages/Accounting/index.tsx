@@ -234,32 +234,35 @@ export default function Accounting() {
     ) => (inv: Invoice) => {
       const current = inv[field as keyof Invoice] as string
       const currentOpt = options.find((o) => o.value === current)
+      const stop = (e: React.SyntheticEvent) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation() }
       return (
-        <Select
-          value={current}
-          onValueChange={(v) => updateFieldMutation.mutate({ id: inv.id, field, value: v })}
-        >
-          <SelectTrigger className="h-7 w-[130px] text-xs border-none bg-transparent shadow-none px-1.5">
-            <span className="flex items-center gap-1.5">
-              {currentOpt?.color && (
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: currentOpt.color }} />
-              )}
-              <span className="truncate">{currentOpt?.label ?? current}</span>
-            </span>
-          </SelectTrigger>
-          <SelectContent>
-            {options.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                <span className="flex items-center gap-1.5">
-                  {o.color && (
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: o.color }} />
-                  )}
-                  {o.label}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div onClick={stop} onPointerDown={stop} onMouseDown={stop}>
+          <Select
+            value={current}
+            onValueChange={(v) => updateFieldMutation.mutate({ id: inv.id, field, value: v })}
+          >
+            <SelectTrigger className="h-7 w-[130px] text-xs border-none bg-transparent shadow-none px-1.5">
+              <span className="flex items-center gap-1.5">
+                {currentOpt?.color && (
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: currentOpt.color }} />
+                )}
+                <span className="truncate">{currentOpt?.label ?? current}</span>
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  <span className="flex items-center gap-1.5">
+                    {o.color && (
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: o.color }} />
+                    )}
+                    {o.label}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       )
     }
 
