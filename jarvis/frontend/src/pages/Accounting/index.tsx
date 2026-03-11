@@ -1135,14 +1135,18 @@ const InvoiceRow = memo(function InvoiceRow({
             {inv.id}
           </span>
         </TableCell>
-        {activeCols.map((col) => (
-          <TableCell
-            key={col.key}
-            onClick={col.key === 'status' || col.key === 'payment_status' || col.key === 'tags' ? (e) => e.stopPropagation() : undefined}
-          >
-            {col.render(inv)}
-          </TableCell>
-        ))}
+        {activeCols.map((col) => {
+          const interactive = col.key === 'status' || col.key === 'payment_status' || col.key === 'tags'
+          return (
+            <TableCell
+              key={col.key}
+              onClick={interactive ? (e) => e.stopPropagation() : undefined}
+              onPointerDown={interactive ? (e) => e.stopPropagation() : undefined}
+            >
+              {col.render(inv)}
+            </TableCell>
+          )
+        })}
         <TableCell onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center gap-1">
             {isBin ? (
