@@ -163,6 +163,17 @@ def create_schema(conn, cursor):
         END $$;
     ''')
 
+    # Add logo_url to companies for configurable brand/company logos
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'companies' AND column_name = 'logo_url') THEN
+                ALTER TABLE companies ADD COLUMN logo_url TEXT;
+            END IF;
+        END $$;
+    ''')
+
     # Structure nodes (generic 5-level organigram tree under each company)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS structure_nodes (
