@@ -1707,6 +1707,27 @@ def create_schema(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_reinvoice_dest_allocation ON reinvoice_destinations(allocation_id)')
     conn.commit()
 
+    # Add allocation_mode column to invoices (whole = classic, per_line = multi-line)
+    try:
+        cursor.execute('ALTER TABLE invoices ADD COLUMN allocation_mode TEXT DEFAULT \'whole\'')
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
+
+    # Add line_item_index column to allocations (NULL = whole-invoice, 0+ = line item index)
+    try:
+        cursor.execute('ALTER TABLE allocations ADD COLUMN line_item_index INTEGER')
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
+
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_allocations_line_item ON allocations(invoice_id, line_item_index)')
+    conn.commit()
+
     # ============== HR Module Schema ==============
     # Create separate schema for HR data isolation
     cursor.execute('CREATE SCHEMA IF NOT EXISTS hr')

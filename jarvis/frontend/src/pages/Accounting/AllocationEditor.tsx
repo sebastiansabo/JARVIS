@@ -85,7 +85,7 @@ export function allocationsToRows(allocations: Allocation[], effectiveValue?: nu
   }))
 }
 
-export function rowsToApiPayload(company: string, rows: AllocationRow[]) {
+export function rowsToApiPayload(company: string, rows: AllocationRow[], lineItemIndex?: number) {
   return rows.map((r) => ({
     company,
     brand: r.brand || undefined,
@@ -94,6 +94,7 @@ export function rowsToApiPayload(company: string, rows: AllocationRow[]) {
     allocation_percent: r.percent,
     locked: r.locked,
     comment: r.comment || undefined,
+    ...(lineItemIndex !== undefined ? { line_item_index: lineItemIndex } : {}),
     reinvoice_destinations: r.reinvoiceDestinations
       .filter((rd) => rd.company && rd.department)
       .map((rd) => ({

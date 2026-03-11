@@ -34,6 +34,7 @@ import { useFormValidation } from '@/hooks/useFormValidation'
 import { FieldError } from '@/components/shared/FieldError'
 import type { ParseResult, SubmitInvoiceInput, DeptSuggestion } from '@/types/invoices'
 import { type AllocationRow, newRow, AllocationRowComponent } from '../AllocationEditor'
+import { LineItemAllocations } from '../LineItemAllocations'
 
 /* ──── Main Component ──── */
 
@@ -63,6 +64,8 @@ export default function AddInvoice() {
   // Allocations
   const [company, setCompany] = useState('')
   const [rows, setRows] = useState<AllocationRow[]>([newRow()])
+  const [allocationMode, setAllocationMode] = useState<'whole' | 'per_line'>('whole')
+  const [lineAllocations, setLineAllocations] = useState<Map<number, AllocationRow[]>>(new Map())
 
   // Currency conversion from parse
   const [valueRon, setValueRon] = useState<number | null>(null)
@@ -307,9 +310,25 @@ export default function AddInvoice() {
   const handleSubmit = async () => {
     v.touchAll()
     if (!v.isValid) return toast.error('Please fix the highlighted fields')
-    if (rows.some((r) => !r.brand && !r.department && !r.subdepartment))
-      return toast.error('Each row needs at least one level filled')
-    if (Math.abs(totalPercent - 100) > 1) return toast.error('Total allocation must be 100%')
+
+    // Validate based on allocation mode
+    if (allocationMode === 'per_line') {
+      // Multi-line: each line item must be fully allocated
+      for (let i = 0; i < lineItems.length; i++) {
+        const lineRows = lineAllocations.get(i) ?? []
+        if (lineRows.length === 0) return toast.error(`Line "${lineItems[i].description}" has no allocations`)
+        if (lineRows.some((r) => !r.brand && !r.department && !r.subdepartment))
+          return toast.error(`Line "${lineItems[i].description}" needs at least one level filled per row`)
+        const lineTotal = lineRows.reduce((s, r) => s + r.percent, 0)
+        if (Math.abs(lineTotal - 100) > 1)
+          return toast.error(`Line "${lineItems[i].description}" allocation must be 100% (currently ${lineTotal.toFixed(1)}%)`)
+      }
+    } else {
+      // Classic: existing validation
+      if (rows.some((r) => !r.brand && !r.department && !r.subdepartment))
+        return toast.error('Each row needs at least one level filled')
+      if (Math.abs(totalPercent - 100) > 1) return toast.error('Total allocation must be 100%')
+    }
 
     try {
       const check = await invoicesApi.checkInvoiceNumber(invoiceNumber)
@@ -319,6 +338,51 @@ export default function AddInvoice() {
       }
     } catch {
       // continue if check fails
+    }
+
+    // Build distributions based on mode
+    let distributions: SubmitInvoiceInput['distributions']
+    if (allocationMode === 'per_line') {
+      distributions = Array.from(lineAllocations.entries()).flatMap(([lineIdx, lineRows]) =>
+        lineRows.map((r) => ({
+          company,
+          brand: r.brand || undefined,
+          department: r.department,
+          subdepartment: r.subdepartment || undefined,
+          allocation: r.percent / 100,
+          locked: r.locked,
+          comment: r.comment || undefined,
+          line_item_index: lineIdx,
+          reinvoice_destinations: r.reinvoiceDestinations
+            .filter((rd) => rd.company && rd.department)
+            .map((rd) => ({
+              company: rd.company,
+              brand: rd.brand || undefined,
+              department: rd.department,
+              subdepartment: rd.subdepartment || undefined,
+              percent: rd.percentage,
+            })),
+        })),
+      )
+    } else {
+      distributions = rows.map((r) => ({
+        company,
+        brand: r.brand || undefined,
+        department: r.department,
+        subdepartment: r.subdepartment || undefined,
+        allocation: r.percent / 100,
+        locked: r.locked,
+        comment: r.comment || undefined,
+        reinvoice_destinations: r.reinvoiceDestinations
+          .filter((rd) => rd.company && rd.department)
+          .map((rd) => ({
+            company: rd.company,
+            brand: rd.brand || undefined,
+            department: rd.department,
+            subdepartment: rd.subdepartment || undefined,
+            percent: rd.percentage,
+          })),
+      }))
     }
 
     const data: SubmitInvoiceInput & Record<string, unknown> = {
@@ -337,28 +401,12 @@ export default function AddInvoice() {
       value_ron: valueRon ?? undefined,
       value_eur: valueEur ?? undefined,
       exchange_rate: exchangeRate ?? undefined,
+      allocation_mode: allocationMode,
       _line_items: lineItems.length > 0 ? lineItems : undefined,
       _invoice_type: invoiceType !== 'standard' ? invoiceType : undefined,
       _parse_result: parseResult ?? undefined,
       _efactura_match_id: efacturaMatch?.id ?? undefined,
-      distributions: rows.map((r) => ({
-        company,
-        brand: r.brand || undefined,
-        department: r.department,
-        subdepartment: r.subdepartment || undefined,
-        allocation: r.percent / 100,
-        locked: r.locked,
-        comment: r.comment || undefined,
-        reinvoice_destinations: r.reinvoiceDestinations
-          .filter((rd) => rd.company && rd.department)
-          .map((rd) => ({
-            company: rd.company,
-            brand: rd.brand || undefined,
-            department: rd.department,
-            subdepartment: rd.subdepartment || undefined,
-            percent: rd.percentage,
-          })),
-      })),
+      distributions,
     }
 
     submitMutation.mutate(data)
@@ -379,6 +427,8 @@ export default function AddInvoice() {
     setFile(null)
     setCompany('')
     setRows([newRow()])
+    setAllocationMode('whole')
+    setLineAllocations(new Map())
     setValueRon(null)
     setValueEur(null)
     setExchangeRate(null)
@@ -791,11 +841,49 @@ export default function AddInvoice() {
         <div className="lg:col-span-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-sm">Cost Distribution</CardTitle>
-              <Button size="sm" variant="outline" onClick={addRow} disabled={!company}>
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                Add Row
-              </Button>
+              <div className="flex items-center gap-3">
+                <CardTitle className="text-sm">Cost Distribution</CardTitle>
+                {lineItems.length > 1 && (
+                  <div className="flex items-center rounded-md border bg-muted/50 p-0.5 text-xs">
+                    <button
+                      type="button"
+                      className={cn(
+                        'rounded px-2 py-0.5 transition-colors',
+                        allocationMode === 'whole' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground',
+                      )}
+                      onClick={() => {
+                        if (allocationMode !== 'whole') {
+                          setAllocationMode('whole')
+                          setLineAllocations(new Map())
+                        }
+                      }}
+                    >
+                      Classic
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        'rounded px-2 py-0.5 transition-colors',
+                        allocationMode === 'per_line' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground',
+                      )}
+                      onClick={() => {
+                        if (allocationMode !== 'per_line') {
+                          setAllocationMode('per_line')
+                          setRows([newRow()])
+                        }
+                      }}
+                    >
+                      Multi-line
+                    </button>
+                  </div>
+                )}
+              </div>
+              {allocationMode === 'whole' && (
+                <Button size="sm" variant="outline" onClick={addRow} disabled={!company}>
+                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  Add Row
+                </Button>
+              )}
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Company selector */}
@@ -825,8 +913,8 @@ export default function AddInvoice() {
                 <FieldError message={v.error('company')} />
               </div>
 
-              {/* Allocation rows */}
-              {company && (
+              {/* Allocation rows — Classic mode */}
+              {company && allocationMode === 'whole' && (
                 <div className="space-y-2">
                   {/* Header */}
                   <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-1">
@@ -880,6 +968,19 @@ export default function AddInvoice() {
                     </span>
                   </div>
                 </div>
+              )}
+
+              {/* Allocation rows — Multi-line mode */}
+              {company && allocationMode === 'per_line' && lineItems.length > 0 && (
+                <LineItemAllocations
+                  lineItems={lineItems}
+                  company={company}
+                  companies={companies as string[]}
+                  brands={brands}
+                  currency={currency}
+                  allocations={lineAllocations}
+                  onChange={setLineAllocations}
+                />
               )}
             </CardContent>
           </Card>

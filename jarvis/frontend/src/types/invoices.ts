@@ -19,7 +19,17 @@ export interface Invoice {
   deleted_at: string | null
   created_at: string
   updated_at: string | null
+  allocation_mode?: 'whole' | 'per_line'
+  line_items?: LineItem[]
   allocations?: Allocation[]
+}
+
+export interface LineItem {
+  description: string
+  quantity: number
+  unit_price: number
+  amount: number
+  vat_rate?: number | null
 }
 
 export interface Allocation {
@@ -38,6 +48,7 @@ export interface Allocation {
   reinvoice_department: string | null
   reinvoice_subdepartment: string | null
   reinvoice_brand: string | null
+  line_item_index?: number | null
   reinvoice_destinations: {
     id: number
     company: string
@@ -142,6 +153,7 @@ export interface SubmitInvoiceInput {
   value_ron?: number
   value_eur?: number
   exchange_rate?: number
+  allocation_mode?: 'whole' | 'per_line'
   distributions: {
     company: string
     brand?: string
@@ -150,6 +162,7 @@ export interface SubmitInvoiceInput {
     allocation: number // 0-1 decimal
     locked?: boolean
     comment?: string
+    line_item_index?: number
     reinvoice_destinations?: {
       company: string
       brand?: string

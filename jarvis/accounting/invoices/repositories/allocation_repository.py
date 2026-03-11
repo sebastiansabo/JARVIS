@@ -93,18 +93,31 @@ class AllocationRepository(BaseRepository):
     def update_invoice_allocations(self, invoice_id, allocations):
         """Replace all allocations for an invoice with new ones (transactional)."""
         def _work(cursor):
-            cursor.execute('SELECT invoice_value, subtract_vat, net_value FROM invoices WHERE id = %s', (invoice_id,))
+            cursor.execute('SELECT invoice_value, subtract_vat, net_value, allocation_mode, line_items FROM invoices WHERE id = %s', (invoice_id,))
             result = cursor.fetchone()
             if not result:
                 raise ValueError(f"Invoice {invoice_id} not found")
             invoice_value = Decimal(str(result['invoice_value']))
             base_value = Decimal(str(result['net_value'])) if result['subtract_vat'] and result['net_value'] else invoice_value
+            allocation_mode = result.get('allocation_mode', 'whole')
+            line_items_json = result.get('line_items')
+            line_items = None
+            if line_items_json:
+                import json as _json
+                line_items = _json.loads(line_items_json) if isinstance(line_items_json, str) else line_items_json
 
             cursor.execute('DELETE FROM allocations WHERE invoice_id = %s', (invoice_id,))
 
             for alloc in allocations:
                 allocation_percent = Decimal(str(alloc['allocation_percent']))
-                gross_allocation_value = base_value * allocation_percent / 100
+
+                # Per-line mode: base_value comes from the specific line item
+                line_item_index = alloc.get('line_item_index')
+                if allocation_mode == 'per_line' and line_item_index is not None and line_items:
+                    line_amount = Decimal(str(line_items[line_item_index].get('amount', 0)))
+                    gross_allocation_value = line_amount * allocation_percent / 100
+                else:
+                    gross_allocation_value = base_value * allocation_percent / 100
 
                 reinvoice_dests = alloc.get('reinvoice_destinations', [])
                 total_reinvoice_percent = sum(Decimal(str(rd.get('percentage', 0))) for rd in reinvoice_dests)
@@ -121,8 +134,8 @@ class AllocationRepository(BaseRepository):
 
                 cursor.execute('''
                     INSERT INTO allocations (invoice_id, company, brand, department, subdepartment,
-                        allocation_percent, allocation_value, responsible, responsible_user_id, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment, locked, comment)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        allocation_percent, allocation_value, responsible, responsible_user_id, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment, locked, comment, line_item_index)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 ''', (
                     invoice_id,
@@ -139,7 +152,8 @@ class AllocationRepository(BaseRepository):
                     alloc.get('reinvoice_department'),
                     alloc.get('reinvoice_subdepartment'),
                     alloc.get('locked', False),
-                    alloc.get('comment')
+                    alloc.get('comment'),
+                    line_item_index
                 ))
                 allocation_id = cursor.fetchone()['id']
 

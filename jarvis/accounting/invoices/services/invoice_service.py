@@ -71,6 +71,7 @@ class InvoiceService:
                 net_value=data.get('net_value'),
                 line_items=data.get('_line_items'),
                 invoice_type=data.get('_invoice_type', 'standard'),
+                allocation_mode=data.get('allocation_mode', 'whole'),
             )
 
             self._track_corrections(data, invoice_id, user)
@@ -268,19 +269,38 @@ class InvoiceService:
         Orchestrates: validation -> repo update -> auto-status normalization ->
                       conditional email notification.
         """
-        total_percent = sum(float(a.get('allocation_percent', 0)) for a in allocations)
-        if abs(total_percent - 100) > 1.0:
-            return ServiceResult(
-                success=False,
-                error=f'Allocations must sum to 100%, got {round(total_percent, 2)}%',
-                status_code=400,
-            )
+        # Check allocation_mode to determine validation strategy
+        current_invoice = self.invoice_repo.get_with_allocations(invoice_id)
+        allocation_mode = current_invoice.get('allocation_mode', 'whole') if current_invoice else 'whole'
+
+        if allocation_mode == 'per_line':
+            # Per-line mode: group by line_item_index, each group must sum to 100%
+            from collections import defaultdict
+            by_line = defaultdict(float)
+            for a in allocations:
+                idx = a.get('line_item_index')
+                by_line[idx] += float(a.get('allocation_percent', 0))
+            for idx, total in by_line.items():
+                if abs(total - 100) > 1.0:
+                    return ServiceResult(
+                        success=False,
+                        error=f'Allocations for line item {idx} must sum to 100%, got {round(total, 2)}%',
+                        status_code=400,
+                    )
+        else:
+            # Classic mode: all allocations sum to 100%
+            total_percent = sum(float(a.get('allocation_percent', 0)) for a in allocations)
+            if abs(total_percent - 100) > 1.0:
+                return ServiceResult(
+                    success=False,
+                    error=f'Allocations must sum to 100%, got {round(total_percent, 2)}%',
+                    status_code=400,
+                )
 
         try:
             self.allocation_repo.update_invoice_allocations(invoice_id, allocations)
 
             # Auto-set status to first invoice_status option
-            current_invoice = self.invoice_repo.get_with_allocations(invoice_id)
             old_status = current_invoice.get('status') if current_invoice else None
             from core.settings.dropdowns.repositories import DropdownRepository
             status_options = DropdownRepository().get_options('invoice_status', active_only=True)

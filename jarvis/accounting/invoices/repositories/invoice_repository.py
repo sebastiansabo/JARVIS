@@ -36,20 +36,27 @@ class InvoiceRepository(BaseRepository):
              value_ron=None, value_eur=None, exchange_rate=None,
              comment=None, payment_status='not_paid',
              subtract_vat=False, vat_rate=None, net_value=None,
-             line_items=None, invoice_type='standard'):
+             line_items=None, invoice_type='standard',
+             allocation_mode='whole'):
         """Save invoice and its allocations to database. Returns the invoice ID."""
         def _work(cursor):
             cursor.execute('''
-                INSERT INTO invoices (supplier, invoice_template, invoice_number, invoice_date, invoice_value, currency, drive_link, value_ron, value_eur, exchange_rate, comment, payment_status, subtract_vat, vat_rate, net_value, line_items, invoice_type)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO invoices (supplier, invoice_template, invoice_number, invoice_date, invoice_value, currency, drive_link, value_ron, value_eur, exchange_rate, comment, payment_status, subtract_vat, vat_rate, net_value, line_items, invoice_type, allocation_mode)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            ''', (supplier, invoice_template, invoice_number, invoice_date, invoice_value, currency, drive_link, value_ron, value_eur, exchange_rate, comment, payment_status, subtract_vat, vat_rate, net_value, json.dumps(line_items) if line_items else None, invoice_type or 'standard'))
+            ''', (supplier, invoice_template, invoice_number, invoice_date, invoice_value, currency, drive_link, value_ron, value_eur, exchange_rate, comment, payment_status, subtract_vat, vat_rate, net_value, json.dumps(line_items) if line_items else None, invoice_type or 'standard', allocation_mode or 'whole'))
             invoice_id = cursor.fetchone()['id']
 
             # Use net_value for allocation calculations if VAT subtraction is enabled
             base_value = net_value if subtract_vat and net_value else invoice_value
             for dist in distributions:
-                gross_allocation_value = base_value * dist['allocation']
+                # Per-line mode: base_value comes from the specific line item
+                line_item_index = dist.get('line_item_index')
+                if allocation_mode == 'per_line' and line_item_index is not None and line_items:
+                    line_amount = float(line_items[line_item_index].get('amount', 0))
+                    gross_allocation_value = line_amount * dist['allocation']
+                else:
+                    gross_allocation_value = base_value * dist['allocation']
 
                 reinvoice_dests = dist.get('reinvoice_destinations', [])
                 total_reinvoice_percent = sum(rd.get('percentage', 0) for rd in reinvoice_dests)
@@ -93,8 +100,8 @@ class InvoiceRepository(BaseRepository):
                         responsible_user_id = row.get('manager_user_id')
 
                 cursor.execute('''
-                    INSERT INTO allocations (invoice_id, company, brand, department, subdepartment, allocation_percent, allocation_value, responsible, responsible_user_id, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment, locked, comment)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO allocations (invoice_id, company, brand, department, subdepartment, allocation_percent, allocation_value, responsible, responsible_user_id, reinvoice_to, reinvoice_brand, reinvoice_department, reinvoice_subdepartment, locked, comment, line_item_index)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 ''', (
                     invoice_id,
@@ -111,7 +118,8 @@ class InvoiceRepository(BaseRepository):
                     dist.get('reinvoice_department'),
                     dist.get('reinvoice_subdepartment'),
                     dist.get('locked', False),
-                    dist.get('comment')
+                    dist.get('comment'),
+                    dist.get('line_item_index')
                 ))
                 allocation_id = cursor.fetchone()['id']
 
@@ -310,6 +318,7 @@ class InvoiceRepository(BaseRepository):
                             'reinvoice_subdepartment', a.reinvoice_subdepartment,
                             'locked', a.locked,
                             'comment', a.comment,
+                            'line_item_index', a.line_item_index,
                             'reinvoice_destinations', COALESCE(
                                 (SELECT json_agg(
                                     json_build_object(
@@ -363,6 +372,7 @@ class InvoiceRepository(BaseRepository):
                             'reinvoice_subdepartment', a.reinvoice_subdepartment,
                             'locked', a.locked,
                             'comment', a.comment,
+                            'line_item_index', a.line_item_index,
                             'reinvoice_destinations', COALESCE(
                                 (SELECT json_agg(
                                     json_build_object(
@@ -387,7 +397,7 @@ class InvoiceRepository(BaseRepository):
                      pi.invoice_value, pi.currency, pi.value_ron, pi.value_eur, pi.exchange_rate,
                      pi.drive_link, pi.comment, pi.status, pi.payment_status, pi.deleted_at,
                      pi.created_at, pi.updated_at, pi.subtract_vat, pi.vat_rate, pi.net_value,
-                     pi.line_items, pi.invoice_type
+                     pi.line_items, pi.invoice_type, pi.allocation_mode
             ORDER BY pi.created_at DESC
             '''
 

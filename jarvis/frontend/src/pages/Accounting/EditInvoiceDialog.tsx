@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -9,12 +9,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { invoicesApi } from '@/api/invoices'
+import { organizationApi } from '@/api/organization'
 import { tagsApi } from '@/api/tags'
 import { TagBadge } from '@/components/shared/TagBadge'
 import { TagPicker } from '@/components/shared/TagPicker'
 import { toast } from 'sonner'
 import type { Invoice } from '@/types/invoices'
-import { AllocationEditor, type AllocationEditorRef, allocationsToRows, rowsToApiPayload } from './AllocationEditor'
+import { AllocationEditor, type AllocationEditorRef, type AllocationRow, allocationsToRows, rowsToApiPayload } from './AllocationEditor'
+import { LineItemAllocations } from './LineItemAllocations'
 import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
 
 interface SelectOption {
@@ -28,6 +30,29 @@ interface EditInvoiceDialogProps {
   onClose: () => void
   statusOptions: SelectOption[]
   paymentOptions: SelectOption[]
+}
+
+function buildInitialLineAllocations(invoice: Invoice, effectiveValue: number): Map<number, AllocationRow[]> {
+  const map = new Map<number, AllocationRow[]>()
+  if (!invoice.allocations) return map
+
+  // Group allocations by line_item_index
+  const grouped = new Map<number, typeof invoice.allocations>()
+  for (const alloc of invoice.allocations) {
+    const idx = alloc.line_item_index ?? -1
+    if (idx < 0) continue
+    const existing = grouped.get(idx) ?? []
+    existing.push(alloc)
+    grouped.set(idx, existing)
+  }
+
+  // Convert each group to AllocationRows
+  for (const [idx, allocs] of grouped) {
+    const lineAmount = invoice.line_items?.[idx]?.amount ?? effectiveValue
+    map.set(idx, allocationsToRows(allocs, lineAmount))
+  }
+
+  return map
 }
 
 export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, paymentOptions }: EditInvoiceDialogProps) {
@@ -47,6 +72,9 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
   const [driveLink, setDriveLink] = useState(invoice.drive_link || '')
   const [saving, setSaving] = useState(false)
 
+  const isPerLine = invoice.allocation_mode === 'per_line'
+  const lineItems = invoice.line_items ?? []
+
   const { data: invoiceTags = [] } = useQuery({
     queryKey: ['entity-tags', 'invoice', invoice.id],
     queryFn: () => tagsApi.getEntityTags('invoice', invoice.id),
@@ -60,7 +88,25 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
     return gross
   }, [invoiceValue, subtractVat, vatRate])
 
-  const handleSave = async () => {
+  // Per-line mode state
+  const [lineAllocations, setLineAllocations] = useState<Map<number, AllocationRow[]>>(() =>
+    isPerLine ? buildInitialLineAllocations(invoice, effectiveValue) : new Map(),
+  )
+
+  // Per-line mode needs company and brands
+  const perLineCompany = isPerLine ? (invoice.allocations?.[0]?.company ?? '') : ''
+  const { data: companies = [] } = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => organizationApi.getCompanies(),
+    enabled: isPerLine,
+  })
+  const { data: brands = [] } = useQuery({
+    queryKey: ['brands', perLineCompany],
+    queryFn: () => organizationApi.getBrands(perLineCompany),
+    enabled: isPerLine && !!perLineCompany,
+  })
+
+  const handleSave = useCallback(async () => {
     setSaving(true)
     try {
       // Save metadata
@@ -79,13 +125,23 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
         drive_link: driveLink || null,
       })
 
-      // Save allocations if editor has valid data
-      if (allocRef.current?.isValid()) {
-        const company = allocRef.current.getCompany()
-        const rows = allocRef.current.getRows()
-        await invoicesApi.updateAllocations(invoice.id, {
-          allocations: rowsToApiPayload(company, rows),
-        })
+      if (isPerLine) {
+        // Per-line mode: flatten line allocations into payload
+        const allAllocations = Array.from(lineAllocations.entries()).flatMap(([lineIdx, lineRows]) =>
+          rowsToApiPayload(perLineCompany, lineRows, lineIdx),
+        )
+        if (allAllocations.length > 0) {
+          await invoicesApi.updateAllocations(invoice.id, { allocations: allAllocations })
+        }
+      } else {
+        // Classic mode: use AllocationEditor ref
+        if (allocRef.current?.isValid()) {
+          const company = allocRef.current.getCompany()
+          const rows = allocRef.current.getRows()
+          await invoicesApi.updateAllocations(invoice.id, {
+            allocations: rowsToApiPayload(company, rows),
+          })
+        }
       }
 
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
@@ -96,7 +152,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
     } finally {
       setSaving(false)
     }
-  }
+  }, [invoice.id, supplier, invoiceNumber, invoiceDate, invoiceValue, currency, status, paymentStatus, subtractVat, vatRate, netValue, comment, driveLink, isPerLine, lineAllocations, perLineCompany, queryClient, onClose])
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -215,15 +271,29 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
 
           {/* Allocations */}
           <div className="border-t pt-4">
-            <Label className="text-xs font-medium mb-2 block">Allocations</Label>
-            <AllocationEditor
-              ref={allocRef}
-              initialCompany={invoice.allocations?.[0]?.company}
-              initialRows={invoice.allocations ? allocationsToRows(invoice.allocations, effectiveValue) : undefined}
-              effectiveValue={effectiveValue}
-              currency={currency}
-              compact
-            />
+            <Label className="text-xs font-medium mb-2 block">
+              Allocations{isPerLine ? ' (Multi-line)' : ''}
+            </Label>
+            {isPerLine && lineItems.length > 0 ? (
+              <LineItemAllocations
+                lineItems={lineItems}
+                company={perLineCompany}
+                companies={companies as string[]}
+                brands={brands}
+                currency={currency}
+                allocations={lineAllocations}
+                onChange={setLineAllocations}
+              />
+            ) : (
+              <AllocationEditor
+                ref={allocRef}
+                initialCompany={invoice.allocations?.[0]?.company}
+                initialRows={invoice.allocations ? allocationsToRows(invoice.allocations, effectiveValue) : undefined}
+                effectiveValue={effectiveValue}
+                currency={currency}
+                compact
+              />
+            )}
           </div>
         </div>
         <DialogFooter>
