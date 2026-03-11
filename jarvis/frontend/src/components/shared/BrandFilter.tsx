@@ -84,7 +84,9 @@ function LogoPill({ item, isActive }: { item: BrandFilterItem; isActive: boolean
         alt={item.label}
         onError={onError}
         className={cn(
-          'h-7 w-auto max-w-[100px] object-contain transition-opacity dark:invert',
+          'h-7 w-auto max-w-[100px] object-contain transition-opacity',
+          // Only invert static file logos in dark mode, not base64 uploaded logos
+          item.logo?.startsWith('/static/') && 'dark:invert',
           isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-100',
         )}
       />

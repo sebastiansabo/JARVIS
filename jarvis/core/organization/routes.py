@@ -293,9 +293,8 @@ def api_delete_company_config(company_id):
 @login_required
 @_structure_edit_required
 def api_upload_company_logo(company_id):
-    """Upload a logo image for a company. Saves to /static/uploads/logos/."""
-    import os, glob as _glob, time as _time
-    from werkzeug.utils import secure_filename
+    """Upload a logo image for a company. Stores as base64 data URL in DB."""
+    import os, base64
 
     company = _company_repo.get(company_id)
     if not company:
@@ -305,26 +304,18 @@ def api_upload_company_logo(company_id):
     if not file or not file.filename:
         return jsonify({'success': False, 'error': 'No file uploaded'}), 400
 
-    allowed = {'.png', '.jpg', '.jpeg', '.svg', '.webp'}
+    mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                '.svg': 'image/svg+xml', '.webp': 'image/webp'}
     ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in allowed:
-        return jsonify({'success': False, 'error': f'Invalid file type. Allowed: {", ".join(allowed)}'}), 400
+    mime = mime_map.get(ext)
+    if not mime:
+        return jsonify({'success': False, 'error': f'Invalid file type. Allowed: {", ".join(mime_map.keys())}'}), 400
 
-    # Ensure upload directory exists
-    upload_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'static', 'uploads', 'logos')
-    os.makedirs(upload_dir, exist_ok=True)
+    data = file.read()
+    if len(data) > 500_000:  # 500KB limit
+        return jsonify({'success': False, 'error': 'File too large (max 500KB)'}), 400
 
-    # Remove any previous logo files for this company (may have different extension)
-    for old in _glob.glob(os.path.join(upload_dir, f'company-{company_id}.*')):
-        os.remove(old)
-
-    # Save with deterministic name: company-{id}.{ext}
-    filename = secure_filename(f'company-{company_id}{ext}')
-    filepath = os.path.join(upload_dir, filename)
-    file.save(filepath)
-
-    # Cache-bust: append timestamp so browsers fetch the new file
-    logo_url = f'/static/uploads/logos/{filename}?v={int(_time.time())}'
+    logo_url = f'data:{mime};base64,{base64.b64encode(data).decode()}'
     _company_repo.update(company_id=company_id, logo_url=logo_url)
     return jsonify({'success': True, 'logo_url': logo_url})
 
@@ -334,19 +325,9 @@ def api_upload_company_logo(company_id):
 @_structure_edit_required
 def api_delete_company_logo(company_id):
     """Remove logo from a company."""
-    import os
     company = _company_repo.get(company_id)
     if not company:
         return jsonify({'success': False, 'error': 'Company not found'}), 404
-
-    old_url = company.get('logo_url')
-    if old_url and old_url.startswith('/static/uploads/logos/'):
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        # Strip query params (cache-buster) before resolving path
-        clean_url = old_url.split('?')[0]
-        old_path = os.path.join(base_dir, clean_url.lstrip('/'))
-        if os.path.exists(old_path):
-            os.remove(old_path)
 
     _company_repo.update(company_id=company_id, logo_url=None)
     return jsonify({'success': True})
