@@ -307,7 +307,8 @@ export default function AddInvoice() {
   const handleSubmit = async () => {
     v.touchAll()
     if (!v.isValid) return toast.error('Please fix the highlighted fields')
-    if (rows.some((r) => !r.department)) return toast.error('All rows need a department')
+    if (rows.some((r) => !r.brand && !r.department && !r.subdepartment))
+      return toast.error('Each row needs at least one level filled')
     if (Math.abs(totalPercent - 100) > 1) return toast.error('Total allocation must be 100%')
 
     try {
