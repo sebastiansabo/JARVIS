@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck, SlidersHorizontal } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 import { crmApi, type CrmClient, type CrmDeal } from '@/api/crm'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
@@ -132,11 +132,9 @@ const DEFAULT_VISIBLE = ['display_name', 'nr_reg', 'client_type', 'phone', 'emai
 const ALL_KEYS = ALL_COLUMNS.map(c => c.key)
 const LOCKED = new Set(['display_name'])
 
-export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: boolean } = {}) {
+export default function ClientStatsTab({ blacklistOnly, search = '' }: { blacklistOnly?: boolean; search?: string } = {}) {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
-
-  const [search, setSearch] = useState('')
   const [clientType, setClientType] = useState('')
   const [responsible, setResponsible] = useState('')
   const [city, setCity] = useState('')
@@ -163,7 +161,7 @@ export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: bool
   const hasFilters = !!(search || clientType || responsible || city || dateFrom || dateTo || sortBy || showBlacklisted)
   const filterCount = [clientType, city, responsible, dateFrom, dateTo, showBlacklisted].filter(Boolean).length
   const clearFilters = () => {
-    setSearch(''); setClientType(''); setResponsible(''); setCity('')
+    setClientType(''); setResponsible(''); setCity('')
     setDateFrom(''); setDateTo(''); setSortBy(''); setSortOrder(''); setShowBlacklisted(''); setPage(0)
   }
 
@@ -296,10 +294,6 @@ export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: bool
         {isMobile ? (
           <>
             <div className="flex items-center gap-2 mt-3">
-              <div className="relative flex-1 min-w-0">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search name..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-8 h-9" />
-              </div>
               <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 relative" onClick={() => setFiltersOpen(true)}>
                 <SlidersHorizontal className="h-4 w-4" />
                 {filterCount > 0 && (
@@ -355,10 +349,6 @@ export default function ClientStatsTab({ blacklistOnly }: { blacklistOnly?: bool
           </>
         ) : (
           <div className="flex flex-wrap gap-1.5 mt-3">
-            <div className="relative flex-1 min-w-[180px]">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search name..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-8 h-9" />
-            </div>
             <Select value={clientType || '_all'} onValueChange={v => { setClientType(v === '_all' ? '' : v); setPage(0) }}>
               <SelectTrigger className="w-[130px] h-9"><SelectValue placeholder="Type" /></SelectTrigger>
               <SelectContent>

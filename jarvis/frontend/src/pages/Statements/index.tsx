@@ -1,10 +1,11 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard, BarChart3, Clock, CheckCircle, SlidersHorizontal, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { SearchInput } from '@/components/shared/SearchInput'
 import { StatCard } from '@/components/shared/StatCard'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -13,7 +14,6 @@ import { useIsMobile } from '@/hooks/useMediaQuery'
 import { statementsApi } from '@/api/statements'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import type { TransactionFilters } from '@/types/statements'
-import { useState } from 'react'
 
 const TransactionsTab = lazy(() => import('./TransactionsTab'))
 const FilesTab = lazy(() => import('./FilesTab'))
@@ -44,6 +44,7 @@ export default function Statements() {
   const [showStats, setShowStats] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [totalCurrency, setTotalCurrency] = useState<'RON' | 'EUR'>('RON')
+  const [search, setSearch] = useState('')
   const [uploadOpen, setUploadOpen] = useState(false)
   const [mappingAddOpen, setMappingAddOpen] = useState(false)
   const isOnFilesTab = location.pathname.includes('/files')
@@ -73,6 +74,14 @@ export default function Statements() {
           { label: 'Bank Statements', shortLabel: 'Stmt.' },
           { label: activeTab?.label ?? 'Transactions' },
         ]}
+        search={!isOnFilesTab && !isOnMappingsTab ? (
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder={isMobile ? 'Search...' : 'Search transaction...'}
+            className={isMobile ? 'w-40' : 'w-48'}
+          />
+        ) : undefined}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
@@ -178,7 +187,7 @@ export default function Statements() {
       <Suspense fallback={<TabLoader />}>
         <Routes>
           <Route index element={<Navigate to="transactions" replace />} />
-          <Route path="transactions" element={<TransactionsTab showFilters={showFilters} />} />
+          <Route path="transactions" element={<TransactionsTab showFilters={showFilters} search={search} />} />
           <Route path="files" element={<FilesTab showFilters={showFilters} uploadOpen={uploadOpen} onUploadOpenChange={setUploadOpen} />} />
           <Route path="mappings" element={<MappingsTab showFilters={showFilters} addOpen={mappingAddOpen} onAddOpenChange={setMappingAddOpen} />} />
         </Routes>

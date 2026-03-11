@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import {
-  Search,
   ChevronDown,
   ChevronRight,
   ChevronLeft,
@@ -20,7 +19,6 @@ import {
   Columns3,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -148,13 +146,12 @@ const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
   { value: 'ytd', label: 'YTD' },
 ]
 
-export default function PontajeTab({ showStats = false, showFilters = false, managerFilter = false }: { showStats?: boolean; showFilters?: boolean; managerFilter?: boolean }) {
+export default function PontajeTab({ showStats = false, showFilters = false, managerFilter = false, search = '' }: { showStats?: boolean; showFilters?: boolean; managerFilter?: boolean; search?: string }) {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const { user } = useAuth()
   const showOriginal = user?.can_view_original_punches ?? false
   const showAdjusted = user?.can_view_adjusted_punches ?? false
-  const [search, setSearch] = useState('')
   const [groupFilter, setGroupFilter] = useState<string>('all')
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -632,15 +629,6 @@ export default function PontajeTab({ showStats = false, showFilters = false, man
           <ChevronRight className="h-4 w-4" />
         </Button>
         <span className="text-xs text-muted-foreground hidden md:inline">{rangeLabel}</span>
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            className="pl-9"
-            placeholder="Search by name, email, group..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
         <Select value={groupFilter} onValueChange={setGroupFilter}>
           <SelectTrigger className="w-40 md:w-44 shrink-0">
             <SelectValue placeholder="All Groups" />

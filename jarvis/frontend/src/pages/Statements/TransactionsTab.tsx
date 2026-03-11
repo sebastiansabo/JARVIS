@@ -70,7 +70,7 @@ const statusColors: Record<string, string> = {
   ignored: 'bg-muted text-muted-foreground',
 }
 
-export default function TransactionsTab({ showFilters = false }: { showFilters?: boolean }) {
+export default function TransactionsTab({ showFilters = false, search = '' }: { showFilters?: boolean; search?: string }) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
 
@@ -81,7 +81,6 @@ export default function TransactionsTab({ showFilters = false }: { showFilters?:
   const [supplier, setSupplier] = useState('__all__')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [search, setSearch] = useState('')
   const [sort, setSort] = useState('newest')
   const [hideIgnored, setHideIgnored] = useState(false)
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
@@ -258,7 +257,6 @@ export default function TransactionsTab({ showFilters = false }: { showFilters?:
     setSupplier('__all__')
     setDateFrom('')
     setDateTo('')
-    setSearch('')
     setSort('newest')
     setPage(0)
   }
@@ -423,10 +421,6 @@ export default function TransactionsTab({ showFilters = false }: { showFilters?:
           return (
             <>
               <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input className="pl-8" placeholder="Search..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} />
-                </div>
                 <Button variant="outline" size="icon" className="shrink-0" onClick={() => setFiltersOpen(true)}>
                   <SlidersHorizontal className="h-4 w-4" />
                   {activeFilterCount > 0 && (
@@ -480,10 +474,6 @@ export default function TransactionsTab({ showFilters = false }: { showFilters?:
         return (
           <div className="flex flex-wrap items-center gap-2">
             {filterControls}
-            <div className="relative flex-1 max-w-xs">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-8" placeholder="Search..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} />
-            </div>
             <Button
               variant={hideIgnored ? 'default' : 'outline'}
               size="icon"

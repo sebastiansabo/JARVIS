@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { SearchInput } from '@/components/shared/SearchInput'
 import { efacturaApi } from '@/api/efactura'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
@@ -49,6 +50,7 @@ export default function EFactura() {
   const [showFilters, setShowFilters] = useState(false)
   const [mappingAddTrigger, setMappingAddTrigger] = useState(0)
   const [mappingImportTrigger, setMappingImportTrigger] = useState(0)
+  const [search, setSearch] = useState('')
   const location = useLocation()
   const activeEfTab = tabs.find(t => location.pathname.startsWith(t.to))
   const isOnMappingsTab = location.pathname.includes('/mappings')
@@ -71,6 +73,14 @@ export default function EFactura() {
           { label: 'e-Factura', shortLabel: 'e-Fact.' },
           { label: activeEfTab?.label ?? 'Unallocated' },
         ]}
+        search={!isOnMappingsTab ? (
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder={isMobile ? 'Search...' : 'Search supplier, invoice#...'}
+            className={isMobile ? 'w-40' : 'w-48'}
+          />
+        ) : undefined}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${showFilters ? 'bg-muted' : ''}`} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
@@ -152,7 +162,7 @@ export default function EFactura() {
       <Suspense fallback={<TabLoader />}>
         <Routes>
           <Route index element={<Navigate to="unallocated" replace />} />
-          <Route path="unallocated" element={<UnallocatedTab showHidden={showHidden} showFilters={showFilters} />} />
+          <Route path="unallocated" element={<UnallocatedTab showHidden={showHidden} showFilters={showFilters} search={search} />} />
           <Route path="mappings" element={<MappingsTab showFilters={showFilters} addTrigger={mappingAddTrigger} importTrigger={mappingImportTrigger} />} />
           {/* Redirect removed/old routes */}
           <Route path="fetch" element={<Navigate to="/app/efactura/unallocated" replace />} />

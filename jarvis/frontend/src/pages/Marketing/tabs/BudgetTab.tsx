@@ -63,7 +63,7 @@ function InlineEditCell({ value, currency: cur, onSave }: {
   )
 }
 
-export function BudgetTab({ projectId, currency }: { projectId: number; currency: string }) {
+export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId: number; currency: string; totalBudget?: number }) {
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [addForm, setAddForm] = useState({ channel: '', planned_amount: '', description: '', period_type: 'campaign' })
@@ -280,7 +280,8 @@ export function BudgetTab({ projectId, currency }: { projectId: number; currency
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex gap-4 text-sm">
-          <span>Planned: <strong>{fmt(totalPlanned, currency)}</strong></span>
+          <span>Total Planned: <strong>{fmt(totalBudget, currency)}</strong></span>
+          <span>Channel Split: <strong className={totalPlanned !== totalBudget ? 'text-red-500' : ''}>{fmt(totalPlanned, currency)}</strong></span>
           <span>Approved: <strong>{fmt(totalApproved, currency)}</strong></span>
           <span>Spent: <strong>{fmt(totalSpent, currency)}</strong></span>
         </div>

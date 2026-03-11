@@ -4,7 +4,6 @@ import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useAuth } from '@/hooks/useAuth'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import {
-  Search,
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -13,7 +12,6 @@ import {
   DatabaseZap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { DateField, todayStr as dfTodayStr } from '@/components/ui/date-field'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -92,13 +90,12 @@ function formatWorked(durationSeconds: number | null, lunchMinutes: number) {
   return `${h}h ${m.toString().padStart(2, '0')}m`
 }
 
-export default function AdjustmentsTab({ showStats = false, showFilters = false }: { showStats?: boolean; showFilters?: boolean }) {
+export default function AdjustmentsTab({ showStats = false, showFilters = false, search = '' }: { showStats?: boolean; showFilters?: boolean; search?: string }) {
   const qc = useQueryClient()
   const isMobile = useIsMobile()
   const { user: authUser } = useAuth()
   const canAdjust = authUser?.can_adjust_punches ?? false
   const [date, setDate] = useState(dfTodayStr())
-  const [search, setSearch] = useState('')
   const [tab, setTab] = useState<'pending' | 'adjusted'>('pending')
 
   const { data: status } = useQuery({
@@ -219,15 +216,6 @@ export default function AdjustmentsTab({ showStats = false, showFilters = false 
       {showFilters && (
         <div className="flex flex-wrap items-center gap-2">
           <DateField mode="navigation" value={date} onChange={setDate} max={dfTodayStr()} />
-          <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-9 h-8"
-              placeholder="Search by name..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
           <div className="flex gap-1 ml-auto">
             <Button
               variant={tab === 'pending' ? 'default' : 'outline'}

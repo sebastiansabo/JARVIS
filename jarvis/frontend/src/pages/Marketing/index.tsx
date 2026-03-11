@@ -4,6 +4,7 @@ import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useTabParam } from '@/hooks/useTabParam'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { SearchInput } from '@/components/shared/SearchInput'
 import { StatCard } from '@/components/shared/StatCard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,7 +19,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { cn } from '@/lib/utils'
 import {
-  Plus, Search, LayoutGrid, LayoutDashboard, List, Columns3,
+  Plus, LayoutGrid, LayoutDashboard, List, Columns3,
   DollarSign, Target, AlertTriangle, FolderOpen, FileText,
   BarChart3, PieChart, Download, SlidersHorizontal,
   Archive, Trash2, RotateCcw, AlertCircle, Heart, GitCompareArrows, X, Check, CalendarDays, Info,
@@ -335,6 +336,14 @@ export default function Marketing() {
           { label: 'Marketing', shortLabel: 'Mkt.' },
           { label: mainTab === 'projects' ? `Campaigns (${total})` : mainTab === 'archived' ? 'Archived' : 'Trash' },
         ]}
+        search={
+          <SearchInput
+            value={filters.search ?? ''}
+            onChange={(v) => updateFilter('search', v || undefined)}
+            placeholder={isMobile ? 'Search...' : 'Search projects...'}
+            className={isMobile ? 'w-40' : 'w-48'}
+          />
+        }
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
@@ -473,10 +482,6 @@ export default function Marketing() {
               return (
                 <>
                   <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input className="pl-8" placeholder="Search..." value={filters.search ?? ''} onChange={(e) => updateFilter('search', e.target.value || undefined)} />
-                    </div>
                     <Button variant="outline" size="icon" className="shrink-0" onClick={() => setFiltersOpen(true)}>
                       <SlidersHorizontal className="h-4 w-4" />
                       {activeFilterCount > 0 && (
@@ -510,10 +515,6 @@ export default function Marketing() {
 
             return (
               <div className="flex flex-wrap gap-3 items-center">
-                <div className="relative flex-1 min-w-0 max-w-sm">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="Search projects..." className="pl-9" value={filters.search ?? ''} onChange={(e) => updateFilter('search', e.target.value || undefined)} />
-                </div>
                 {filterControls}
                 {Object.values(filters).some((v) => v != null && v !== '' && v !== 50 && v !== 0) && (
                   <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>

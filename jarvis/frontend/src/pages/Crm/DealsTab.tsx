@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search, Download, Pencil, Trash2, Car, TrendingUp, Palette, FilterX, SlidersHorizontal } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Download, Pencil, Trash2, Car, TrendingUp, Palette, FilterX, SlidersHorizontal } from 'lucide-react'
 import { crmApi, type CrmDeal } from '@/api/crm'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -100,12 +100,10 @@ function formatVal(v: unknown): string {
   return String(v)
 }
 
-export default function DealsTab({ showStats = false }: { showStats?: boolean }) {
+export default function DealsTab({ showStats = false, search = '' }: { showStats?: boolean; search?: string }) {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
-
-  const [search, setSearch] = useState('')
   const [source, setSource] = useState<string>('all')
   const [brand, setBrand] = useState('')
   const [status, setStatus] = useState('')
@@ -134,7 +132,7 @@ export default function DealsTab({ showStats = false }: { showStats?: boolean })
 
   const hasFilters = !!(search || source !== 'all' || brand || status || dealer || salesPerson || buyer || vinSearch || dateFrom || dateTo || sortBy)
   const clearFilters = () => {
-    setSearch(''); setSource('all'); setBrand(''); setStatus('')
+    setSource('all'); setBrand(''); setStatus('')
     setDealer(''); setSalesPerson(''); setBuyer(''); setVinSearch('')
     setDateFrom(''); setDateTo(''); setSortBy(''); setSortOrder(''); setPage(0)
   }
@@ -337,10 +335,6 @@ export default function DealsTab({ showStats = false }: { showStats?: boolean })
             return (
               <div className="mt-3 space-y-2">
                 <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Model..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-8" />
-                  </div>
                   <Button variant="outline" size="icon" className="shrink-0" onClick={() => setFiltersOpen(true)}>
                     <SlidersHorizontal className="h-4 w-4" />
                     {activeFilterCount > 0 && (
@@ -374,10 +368,6 @@ export default function DealsTab({ showStats = false }: { showStats?: boolean })
 
           return (
             <div className="flex flex-wrap gap-1.5 mt-3">
-              <div className="relative flex-1 min-w-[160px]">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Model..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} className="pl-8 h-9" />
-              </div>
               {filterControls}
               {hasFilters && (
                 <Button variant="ghost" size="sm" className="h-9 px-2 text-muted-foreground hover:text-foreground" onClick={clearFilters}>

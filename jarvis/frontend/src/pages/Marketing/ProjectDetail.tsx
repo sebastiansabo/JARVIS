@@ -156,7 +156,7 @@ export default function ProjectDetail() {
 
       {/* Tab Content */}
       {activeTab === 'overview' && <OverviewTab project={project} />}
-      {activeTab === 'budget' && <BudgetTab projectId={id} currency={project.currency} />}
+      {activeTab === 'budget' && <BudgetTab projectId={id} currency={project.currency} totalBudget={Number(project.total_budget) || 0} />}
       {activeTab === 'kpis' && <KpisTab projectId={id} />}
       {activeTab === 'team' && <TeamTab projectId={id} />}
       {activeTab === 'events' && <EventsTab projectId={id} />}

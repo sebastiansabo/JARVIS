@@ -4,6 +4,7 @@ import { ClipboardCheck, Download, Fingerprint, LayoutDashboard, BarChart3, Slid
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { SearchInput } from '@/components/shared/SearchInput'
 import { hrApi } from '@/api/hr'
 import { useHrStore } from '@/stores/hrStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -47,6 +48,7 @@ export default function Hr() {
   const [showStats, setShowStats] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [bonusAddTrigger, setBonusAddTrigger] = useState(0)
+  const [search, setSearch] = useState('')
   const canExport = perms?.['hr.bonuses.export'] ?? false
   const canViewAmounts = perms?.['hr.bonuses.view_amounts'] ?? false
   const canViewAdjustments = perms?.['hr.pontaje_adjustments.view'] ?? false
@@ -152,6 +154,14 @@ export default function Hr() {
           { label: 'HR', href: '/app/hr/pontaje' },
           ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : [{ label: 'Pontaje' }]),
         ]}
+        search={
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder={isBonusesPage ? 'Search employee, event...' : isAdjustmentsPage ? 'Search by name...' : 'Search by name, email, group...'}
+            className={isMobile ? 'w-40' : 'w-48'}
+          />
+        }
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
@@ -219,15 +229,15 @@ export default function Hr() {
           <Route index element={<Navigate to="pontaje" replace />} />
           <Route path="pontaje" element={
             canViewPontaje
-              ? <PontajeTab showStats={showStats} showFilters={showFilters} managerFilter={managerFilter} />
+              ? <PontajeTab showStats={showStats} showFilters={showFilters} managerFilter={managerFilter} search={search} />
               : <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">You don't have permission to view pontaje.</div>
           } />
           <Route path="bonuses" element={
             canViewBonuses
-              ? <BonusesTab canViewAmounts={canViewAmounts} showStats={showStats} showFilters={showFilters} addTrigger={bonusAddTrigger} />
+              ? <BonusesTab canViewAmounts={canViewAmounts} showStats={showStats} showFilters={showFilters} addTrigger={bonusAddTrigger} search={search} />
               : <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">You don't have permission to view bonuses.</div>
           } />
-          {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab showStats={showStats} showFilters={showFilters} />} />}
+          {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab showStats={showStats} showFilters={showFilters} search={search} />} />}
         </Routes>
       </Suspense>
     </div>

@@ -2,7 +2,7 @@ import { Fragment, useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  FolderOpen, FileText, Plus, Search, Trash2, RotateCcw,
+  FolderOpen, FileText, Plus, Search, Trash2,
   Paperclip, Users as ChildrenIcon, ChevronRight, BarChart3,
   Download, Calendar, Bell, Edit2, File, FileSpreadsheet,
   Image as ImageIcon, PenTool, Tags, Shield, X, CheckSquare, SlidersHorizontal,
@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { SearchInput } from '@/components/shared/SearchInput'
 import { StatCard } from '@/components/shared/StatCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TagPicker } from '@/components/shared/TagPicker'
@@ -89,7 +90,6 @@ export default function Dms() {
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [selectMode, setSelectMode] = useState(false)
   const [showStats, setShowStats] = useState(false)
-  const [showSearch, setShowSearch] = useState(false)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
 
   const companyId = filters.company_id || user?.company_id || undefined
@@ -336,6 +336,14 @@ export default function Dms() {
       <PageHeader
         title="Documents"
         breadcrumbs={[{ label: 'Documents', shortLabel: 'Docs.' }]}
+        search={
+          <SearchInput
+            value={search}
+            onChange={(v) => { setSearch(v); setDebouncedSearch(v) }}
+            placeholder={isMobile ? 'Search...' : 'Search documents...'}
+            className={isMobile ? 'w-40' : 'w-48'}
+          />
+        }
         actions={
           <div className="flex items-center gap-2">
             {!isMobile && (
@@ -377,11 +385,6 @@ export default function Dms() {
                 />
               </>
             )}
-            {!isMobile && (
-              <Button variant="ghost" size="icon" className={showSearch ? 'bg-muted' : ''} onClick={() => setShowSearch(s => !s)} title="Toggle search">
-                <Search className="h-4 w-4" />
-              </Button>
-            )}
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
               <BarChart3 className="h-4 w-4" />
             </Button>
@@ -391,22 +394,6 @@ export default function Dms() {
           </div>
         }
       />
-
-      {/* Desktop: search bar */}
-      {!isMobile && showSearch && (
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search documents..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-          </div>
-          {(filters.category_id || filters.status || search) && (
-            <Button variant="ghost" size="sm" onClick={() => { clearFilters(); setSearch(''); setDebouncedSearch('') }}>
-              <RotateCcw className="h-3.5 w-3.5 mr-1" />
-              Clear
-            </Button>
-          )}
-        </div>
-      )}
 
       {/* Mobile: search + filter sheet */}
       {isMobile && (() => {

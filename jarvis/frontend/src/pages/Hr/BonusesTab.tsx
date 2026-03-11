@@ -6,7 +6,6 @@ import {
   Trash2,
   Pencil,
   Copy,
-  Search,
   Users,
   CalendarDays,
   ChevronRight,
@@ -37,7 +36,7 @@ import type { EventBonus, BonusSummaryByEmployee, BonusSummaryByEvent } from '@/
 const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const MONTH_SHORT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-export default function BonusesTab({ canViewAmounts, showFilters = false, showStats: _showStats = false, addTrigger = 0 }: { canViewAmounts: boolean; showFilters?: boolean; showStats?: boolean; addTrigger?: number }) {
+export default function BonusesTab({ canViewAmounts, showFilters = false, showStats: _showStats = false, addTrigger = 0, search = '' }: { canViewAmounts: boolean; showFilters?: boolean; showStats?: boolean; addTrigger?: number; search?: string }) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const user = useAuthStore((s) => s.user)
@@ -49,7 +48,6 @@ export default function BonusesTab({ canViewAmounts, showFilters = false, showSt
   const toggleBonusSelected = useHrStore((s) => s.toggleSelected)
   const clearSelected = useHrStore((s) => s.clearSelected)
   const [subTab, setSubTab] = useState<'list' | 'by-employee' | 'by-event'>('list')
-  const [search, setSearch] = useState('')
   const [editBonus, setEditBonus] = useState<EventBonus | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [isDuplicate, setIsDuplicate] = useState(false)
@@ -194,17 +192,6 @@ export default function BonusesTab({ canViewAmounts, showFilters = false, showSt
               </SelectContent>
             </Select>
 
-            {subTab === 'list' && (
-              <div className="relative flex-1 max-w-xs">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  className="pl-8"
-                  placeholder="Search employee, event..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-            )}
           </div>
 
           <div className="flex gap-1">

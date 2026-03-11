@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Users, Car, Upload, BarChart3, PieChart, UserCheck, Ban, Filter } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { SearchInput } from '@/components/shared/SearchInput'
 import { StatCard } from '@/components/shared/StatCard'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useIsMobile } from '@/hooks/useMediaQuery'
@@ -20,6 +21,7 @@ export default function Crm() {
   const [tab, setTab] = useState('dashboard')
   const [showStats, setShowStats] = useState(false)
   const [dealsShowStats, setDealsShowStats] = useState(false)
+  const [search, setSearch] = useState('')
   const [statsShowFilters, setStatsShowFilters] = useState(false)
   const [statsShowCards, setStatsShowCards] = useState(false)
   const { data: stats } = useQuery({ queryKey: ['crm-stats'], queryFn: crmApi.getStats })
@@ -33,6 +35,14 @@ export default function Crm() {
             { label: 'Samsaru' },
             { label: tab === 'dashboard' ? 'Dashboard' : tab === 'deals' ? 'Sales' : tab === 'clients' ? 'Clients' : tab === 'statistics' ? 'Statistics' : tab === 'import' ? 'Import' : 'Blacklist' },
           ]}
+          search={(tab === 'deals' || tab === 'clients' || tab === 'blacklist') ? (
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder={tab === 'deals' ? 'Search model...' : 'Search name...'}
+              className={isMobile ? 'w-40' : 'w-48'}
+            />
+          ) : undefined}
           actions={
             <div className="flex items-center gap-2">
               {(tab === 'dashboard' || tab === 'deals') && (
@@ -84,11 +94,11 @@ export default function Crm() {
           {stats && <DashboardContent stats={stats} showStats={showStats} />}
         </TabsContent>
 
-        <TabsContent value="deals"><DealsTab showStats={dealsShowStats} /></TabsContent>
-        <TabsContent value="clients"><ClientStatsTab /></TabsContent>
+        <TabsContent value="deals"><DealsTab showStats={dealsShowStats} search={search} /></TabsContent>
+        <TabsContent value="clients"><ClientStatsTab search={search} /></TabsContent>
         <TabsContent value="statistics"><StatisticsTab showFilters={statsShowFilters} setShowFilters={setStatsShowFilters} showStats={statsShowCards} /></TabsContent>
         <TabsContent value="import"><ImportTab /></TabsContent>
-        <TabsContent value="blacklist"><ClientStatsTab blacklistOnly /></TabsContent>
+        <TabsContent value="blacklist"><ClientStatsTab blacklistOnly search={search} /></TabsContent>
       </div>
     </Tabs>
   )

@@ -18,7 +18,6 @@ import {
   ChevronDown,
   CheckSquare,
   SlidersHorizontal,
-  Search,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,7 +46,6 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { EmptyState } from '@/components/shared/EmptyState'
 import { QueryError } from '@/components/QueryError'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import { SearchInput } from '@/components/shared/SearchInput'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { DateField } from '@/components/ui/date-field'
@@ -302,12 +300,11 @@ function ColumnToggle({
 }
 
 // ── Main Component ──────────────────────────────────────────
-export default function UnallocatedTab({ showHidden, showFilters = false }: { showHidden: boolean; showFilters?: boolean }) {
+export default function UnallocatedTab({ showHidden, showFilters = false, search = '' }: { showHidden: boolean; showFilters?: boolean; search?: string }) {
   const qc = useQueryClient()
   const isMobile = useIsMobile()
   const [savedLimit, setSavedLimit] = usePersistedState('efactura-page-size', 50)
   const [filters, setFilters] = useState<EFacturaInvoiceFilters>({ page: 1, limit: savedLimit })
-  const [search, setSearch] = useState('')
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -630,7 +627,6 @@ export default function UnallocatedTab({ showHidden, showFilters = false }: { sh
 
         const clearFilters = () => {
           setFilters((f) => ({ page: 1, limit: f.limit }))
-          setSearch('')
           setFilterTagIds([])
           setSelectedIds(new Set())
         }
@@ -639,10 +635,6 @@ export default function UnallocatedTab({ showHidden, showFilters = false }: { sh
           return (
             <>
               <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input className="pl-8" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
-                </div>
                 <Button variant="outline" size="icon" className="shrink-0" onClick={() => setFiltersOpen(true)}>
                   <SlidersHorizontal className="h-4 w-4" />
                   {activeFilterCount > 0 && (
@@ -687,12 +679,6 @@ export default function UnallocatedTab({ showHidden, showFilters = false }: { sh
             {showFilters && (
               <>
                 {filterControls}
-                <SearchInput
-                  value={search}
-                  onChange={setSearch}
-                  placeholder="Search supplier, invoice#..."
-                  className="w-[200px]"
-                />
                 <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
                 {activeFilterCount > 0 && (
                   <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>

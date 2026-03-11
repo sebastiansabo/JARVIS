@@ -368,6 +368,14 @@ export default function Accounting() {
           { label: 'Accounting', shortLabel: 'Acc.' },
           { label: 'Invoices' },
         ]}
+        search={
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder={isMobile ? 'Search...' : 'Search supplier or invoice #...'}
+            className={isMobile ? 'w-40' : 'w-48'}
+          />
+        }
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
@@ -430,16 +438,10 @@ export default function Accounting() {
       </div>}
 
 
-      {/* Filter + Search bar */}
+      {/* Filter bar */}
       {(
         isMobile ? (
           <div className="flex items-center gap-2">
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder="Search..."
-              className="flex-1"
-            />
             <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} iconOnly />
             <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
             {selectMode ? (
@@ -452,12 +454,6 @@ export default function Accounting() {
           </div>
         ) : showFilters ? (
           <div className="flex flex-wrap items-center gap-2">
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder="Search supplier or invoice #..."
-              className="w-48"
-            />
             <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} />
             <DateField
               mode="range"
