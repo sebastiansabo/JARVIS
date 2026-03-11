@@ -19,11 +19,11 @@ export default function Layout() {
     try { return localStorage.getItem('sidebar-collapsed') === 'true' } catch { return false }
   })
 
-  // Heartbeat: update last_seen + keep server warm every 30s
+  // Heartbeat: update last_seen + keep server warm every 60s
   useEffect(() => {
     if (!user) return
     api.post('/api/heartbeat').catch(() => {})
-    const id = setInterval(() => { api.post('/api/heartbeat').catch(() => {}) }, 30_000)
+    const id = setInterval(() => { api.post('/api/heartbeat').catch(() => {}) }, 60_000)
     return () => clearInterval(id)
   }, [user])
 

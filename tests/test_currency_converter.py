@@ -302,8 +302,8 @@ class TestFetchRatesForYear:
     """Tests for _fetch_rates_for_year() function."""
 
     @patch('core.services.currency_converter.requests.get')
-    def test_uses_current_url_for_current_year(self, mock_get):
-        """Should use current rates URL for current year"""
+    def test_uses_both_urls_for_current_year(self, mock_get):
+        """Should try yearly archive first, then current URL for current year"""
         mock_response = MagicMock()
         mock_response.content = b'''<?xml version="1.0"?>
         <DataSet xmlns="http://www.bnr.ro/xsd"><Body></Body></DataSet>'''
@@ -312,8 +312,11 @@ class TestFetchRatesForYear:
         current_year = datetime.now().year
         _fetch_rates_for_year(current_year)
 
-        mock_get.assert_called_once()
-        assert BNR_CURRENT_URL in str(mock_get.call_args)
+        # Should call both yearly archive and current URL
+        assert mock_get.call_count == 2
+        call_urls = [str(c) for c in mock_get.call_args_list]
+        assert any(str(current_year) in u for u in call_urls)
+        assert any(BNR_CURRENT_URL in u for u in call_urls)
 
     @patch('core.services.currency_converter.requests.get')
     def test_uses_yearly_url_for_past_years(self, mock_get):

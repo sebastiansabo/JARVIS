@@ -421,12 +421,21 @@ function TagFormDialog({ open, tag, onClose, onSave, isPending }: {
 }) {
   const [name, setName] = useState('')
   const [color, setColor] = useState('#3b82f6')
+  const [groupId, setGroupId] = useState<number | null>(null)
+  const [isGlobal, setIsGlobal] = useState(true)
+
+  const { data: groups = [] } = useQuery({
+    queryKey: ['settings', 'tagGroups'],
+    queryFn: () => tagsApi.getGroups(),
+    enabled: open,
+  })
 
   const resetForm = () => {
     if (tag) {
       setName(tag.name); setColor(tag.color || '#3b82f6')
+      setGroupId(tag.group_id); setIsGlobal(tag.is_global)
     } else {
-      setName(''); setColor('#3b82f6')
+      setName(''); setColor('#3b82f6'); setGroupId(null); setIsGlobal(true)
     }
   }
 
@@ -442,16 +451,37 @@ function TagFormDialog({ open, tag, onClose, onSave, isPending }: {
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="grid gap-2">
+            <Label>Group</Label>
+            <Select value={groupId ? String(groupId) : '__none__'} onValueChange={(v) => setGroupId(v === '__none__' ? null : Number(v))}>
+              <SelectTrigger><SelectValue placeholder="No group" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">No group</SelectItem>
+                {groups.filter((g) => g.is_active).map((g) => (
+                  <SelectItem key={g.id} value={String(g.id)}>
+                    <span className="flex items-center gap-2">
+                      {g.color && <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: g.color }} />}
+                      {g.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
             <Label>Color</Label>
             <div className="flex gap-2">
               <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-8 w-8 cursor-pointer rounded border" />
               <Input value={color} onChange={(e) => setColor(e.target.value)} className="h-8" />
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <Switch checked={isGlobal} onCheckedChange={setIsGlobal} />
+            <Label className="text-xs">Global (visible to all users)</Label>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={!name || isPending} onClick={() => onSave({ name, color, is_global: tag?.is_global ?? true })}>
+          <Button disabled={!name || isPending} onClick={() => onSave({ name, color, group_id: groupId, is_global: isGlobal })}>
             {isPending ? 'Saving...' : 'Save'}
           </Button>
         </DialogFooter>
