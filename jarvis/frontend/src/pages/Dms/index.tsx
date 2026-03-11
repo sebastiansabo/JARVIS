@@ -349,6 +349,16 @@ export default function Dms() {
         actions={
           <div className="flex items-center gap-2">
             {!isMobile && (
+              <BrandFilter
+                mode="company"
+                value={brandFilterKey}
+                onSelect={(item) => {
+                  setBrandFilterKey(item?.key ?? null)
+                  updateFilter('company_id', item?.companyId)
+                }}
+              />
+            )}
+            {!isMobile && (
               <>
                 <Select
                   value={filters.category_id?.toString() || 'all'}
@@ -396,18 +406,6 @@ export default function Dms() {
           </div>
         }
       />
-
-      {/* Brand / company quick-filter */}
-      {!isMobile && (
-        <BrandFilter
-          mode="company"
-          value={brandFilterKey}
-          onSelect={(item) => {
-            setBrandFilterKey(item?.key ?? null)
-            updateFilter('company_id', item?.companyId)
-          }}
-        />
-      )}
 
       {/* Mobile: search + filter sheet */}
       {isMobile && (() => {

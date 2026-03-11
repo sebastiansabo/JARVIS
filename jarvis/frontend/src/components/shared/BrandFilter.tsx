@@ -11,7 +11,7 @@
  * The widget auto-fetches company/brand data from the organization API.
  * Logos are resolved from: 1) DB logo_url  2) hardcoded fallback map by name
  */
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { organizationApi } from '@/api/organization'
 import { cn } from '@/lib/utils'
@@ -69,6 +69,37 @@ interface BrandFilterProps {
   hideAll?: boolean
   /** Optional: extra className on the container */
   className?: string
+}
+
+/* ── Pill with image error fallback ───────────────────────── */
+
+function LogoPill({ item, isActive }: { item: BrandFilterItem; isActive: boolean }) {
+  const [imgFailed, setImgFailed] = useState(false)
+  const onError = useCallback(() => setImgFailed(true), [])
+
+  if (item.logo && !imgFailed) {
+    return (
+      <img
+        src={item.logo}
+        alt={item.label}
+        onError={onError}
+        className={cn(
+          'h-7 w-auto max-w-[100px] object-contain transition-opacity dark:invert',
+          isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-100',
+        )}
+      />
+    )
+  }
+  return (
+    <span
+      className={cn(
+        'text-xs font-medium whitespace-nowrap',
+        isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
+      )}
+    >
+      {item.label}
+    </span>
+  )
 }
 
 /* ── Component ────────────────────────────────────────────── */
@@ -158,25 +189,7 @@ export function BrandFilter({
                 : 'border-transparent hover:border-border hover:bg-accent/50',
             )}
           >
-            {item.logo ? (
-              <img
-                src={item.logo}
-                alt={item.label}
-                className={cn(
-                  'h-5 w-auto max-w-[80px] object-contain transition-opacity dark:invert',
-                  isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-100',
-                )}
-              />
-            ) : (
-              <span
-                className={cn(
-                  'text-xs font-medium whitespace-nowrap',
-                  isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
-                )}
-              >
-                {item.label}
-              </span>
-            )}
+            <LogoPill item={item} isActive={isActive} />
             {isActive && (
               <X className="h-3 w-3 text-primary/60" />
             )}

@@ -354,6 +354,16 @@ export default function Marketing() {
         }
         actions={
           <div className="flex items-center gap-2">
+            {!isMobile && (
+              <BrandFilter
+                mode="company"
+                value={brandFilterKey}
+                onSelect={(item) => {
+                  setBrandFilterKey(item?.key ?? null)
+                  updateFilter('company_id', item?.companyId)
+                }}
+              />
+            )}
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
               <BarChart3 className="h-4 w-4" />
             </Button>
@@ -377,18 +387,6 @@ export default function Marketing() {
           </div>
         }
       />
-
-      {/* Brand / company quick-filter */}
-      {!isMobile && (
-        <BrandFilter
-          mode="company"
-          value={brandFilterKey}
-          onSelect={(item) => {
-            setBrandFilterKey(item?.key ?? null)
-            updateFilter('company_id', item?.companyId)
-          }}
-        />
-      )}
 
       {/* Mobile tabs */}
       {isMobile && (

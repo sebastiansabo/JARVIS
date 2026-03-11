@@ -44,6 +44,16 @@ export default function Crm() {
           ) : undefined}
           actions={
             <div className="flex items-center gap-2">
+              {!isMobile && (tab === 'deals' || tab === 'dashboard') && (
+                <BrandFilter
+                  mode="brand"
+                  value={brandFilterKey}
+                  onSelect={(item) => {
+                    setBrandFilterKey(item?.key ?? null)
+                    setFilterBrand(item?.brandName ?? '')
+                  }}
+                />
+              )}
               {!isMobile && (
                 <TabsList className="w-auto">
                   <TabsTrigger value="dashboard"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
@@ -69,18 +79,6 @@ export default function Crm() {
               <TabsTrigger value="blacklist"><Ban className="h-4 w-4" />Blacklist</TabsTrigger>
             </TabsList>
           </MobileBottomTabs>
-        )}
-
-        {/* Brand quick-filter */}
-        {!isMobile && (tab === 'deals' || tab === 'dashboard') && (
-          <BrandFilter
-            mode="brand"
-            value={brandFilterKey}
-            onSelect={(item) => {
-              setBrandFilterKey(item?.key ?? null)
-              setFilterBrand(item?.brandName ?? '')
-            }}
-          />
         )}
 
         <TabsContent value="dashboard" className="space-y-4">

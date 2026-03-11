@@ -84,6 +84,16 @@ export default function EFactura() {
         ) : undefined}
         actions={
           <div className="flex items-center gap-2">
+            {!isMobile && !isOnMappingsTab && (
+              <BrandFilter
+                mode="company"
+                value={brandFilterKey}
+                onSelect={(item) => {
+                  setBrandFilterKey(item?.key ?? null)
+                  setFilterCompanyId(item?.companyId)
+                }}
+              />
+            )}
             <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${showFilters ? 'bg-muted' : ''}`} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
@@ -147,18 +157,6 @@ export default function EFactura() {
             </TabsList>
           </MobileBottomTabs>
         </Tabs>
-      )}
-
-      {/* Brand quick-filter */}
-      {!isMobile && !isOnMappingsTab && (
-        <BrandFilter
-          mode="company"
-          value={brandFilterKey}
-          onSelect={(item) => {
-            setBrandFilterKey(item?.key ?? null)
-            setFilterCompanyId(item?.companyId)
-          }}
-        />
       )}
 
       {/* Tab content */}
