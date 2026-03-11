@@ -316,12 +316,18 @@ export default function Accounting() {
   const displayedBinInvoices = useMemo(() => applySearchAndSort(binInvoices), [binInvoices, applySearchAndSort])
 
   const totalRon = useMemo(
-    () => displayedInvoices.reduce((sum, i) => sum + Number(i.value_ron ?? i.net_value ?? 0), 0),
+    () => displayedInvoices.reduce((sum, i) => {
+      if (i.value_ron != null) return sum + Number(i.value_ron)
+      return i.currency === 'RON' ? sum + Number(i.net_value ?? 0) : sum
+    }, 0),
     [displayedInvoices],
   )
 
   const totalEur = useMemo(
-    () => displayedInvoices.reduce((sum, i) => sum + Number(i.value_eur ?? i.net_value ?? 0), 0),
+    () => displayedInvoices.reduce((sum, i) => {
+      if (i.value_eur != null) return sum + Number(i.value_eur)
+      return i.currency === 'EUR' ? sum + Number(i.net_value ?? 0) : sum
+    }, 0),
     [displayedInvoices],
   )
 

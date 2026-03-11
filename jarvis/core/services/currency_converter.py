@@ -103,24 +103,23 @@ def _fetch_rates_for_year(year: int) -> dict:
 
     current_year = datetime.now().year
 
-    # Use current rates URL for current year, yearly archive for past years
+    # Always try yearly archive first (has full history), fall back to current
+    urls = [BNR_YEARLY_URL.format(year=year)]
     if year == current_year:
-        url = BNR_CURRENT_URL
-    else:
-        url = BNR_YEARLY_URL.format(year=year)
+        urls.append(BNR_CURRENT_URL)
 
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
+    rates_by_date = {}
+    for url in urls:
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            parsed = _parse_bnr_xml(response.content)
+            rates_by_date.update(parsed)
+        except Exception as e:
+            print(f"Error fetching BNR rates from {url}: {e}")
 
-        rates_by_date = _parse_bnr_xml(response.content)
-        _rate_cache[year] = rates_by_date
-
-        return rates_by_date
-    except Exception as e:
-        print(f"Error fetching BNR rates for {year}: {e}")
-        _rate_cache[year] = {}
-        return {}
+    _rate_cache[year] = rates_by_date
+    return rates_by_date
 
 
 def _parse_bnr_xml(xml_content: bytes) -> dict:
