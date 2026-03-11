@@ -294,7 +294,7 @@ def api_delete_company_config(company_id):
 @_structure_edit_required
 def api_upload_company_logo(company_id):
     """Upload a logo image for a company. Saves to /static/uploads/logos/."""
-    import os
+    import os, glob as _glob, time as _time
     from werkzeug.utils import secure_filename
 
     company = _company_repo.get(company_id)
@@ -314,12 +314,17 @@ def api_upload_company_logo(company_id):
     upload_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'static', 'uploads', 'logos')
     os.makedirs(upload_dir, exist_ok=True)
 
+    # Remove any previous logo files for this company (may have different extension)
+    for old in _glob.glob(os.path.join(upload_dir, f'company-{company_id}.*')):
+        os.remove(old)
+
     # Save with deterministic name: company-{id}.{ext}
     filename = secure_filename(f'company-{company_id}{ext}')
     filepath = os.path.join(upload_dir, filename)
     file.save(filepath)
 
-    logo_url = f'/static/uploads/logos/{filename}'
+    # Cache-bust: append timestamp so browsers fetch the new file
+    logo_url = f'/static/uploads/logos/{filename}?v={int(_time.time())}'
     _company_repo.update(company_id=company_id, logo_url=logo_url)
     return jsonify({'success': True, 'logo_url': logo_url})
 
@@ -337,7 +342,9 @@ def api_delete_company_logo(company_id):
     old_url = company.get('logo_url')
     if old_url and old_url.startswith('/static/uploads/logos/'):
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        old_path = os.path.join(base_dir, old_url.lstrip('/'))
+        # Strip query params (cache-buster) before resolving path
+        clean_url = old_url.split('?')[0]
+        old_path = os.path.join(base_dir, clean_url.lstrip('/'))
         if os.path.exists(old_path):
             os.remove(old_path)
 
