@@ -1168,7 +1168,19 @@ const InvoiceRow = memo(function InvoiceRow({
                 />
               ) : (
                 <>
-                  <table className="text-xs w-full border-separate border-spacing-x-3 border-spacing-y-0">
+                  <table className="text-xs w-full">
+                    <thead>
+                      <tr className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
+                        <th className="py-1 pr-4 text-left font-medium">Company</th>
+                        <th className="py-1 pr-4 text-left font-medium">Brand</th>
+                        <th className="py-1 pr-4 text-left font-medium">Department</th>
+                        <th className="py-1 pr-4 text-left font-medium">Sub-dept</th>
+                        <th className="py-1 pr-4 text-right font-medium">Amount</th>
+                        <th className="py-1 pr-4 text-right font-medium w-14">%</th>
+                        <th className="py-1 text-left font-medium">Comment</th>
+                        <th className="w-7" />
+                      </tr>
+                    </thead>
                     <tbody>
                       {inv.allocations!.map((alloc, idx) => {
                         const hasReinvoice = alloc.reinvoice_destinations?.length > 0
@@ -1178,14 +1190,14 @@ const InvoiceRow = memo(function InvoiceRow({
                         return (
                         <React.Fragment key={alloc.id}>
                           <tr className={cn('border-t border-border/50', hasReinvoice && 'text-muted-foreground/50')}>
-                            <td className="py-1">{alloc.company}</td>
-                            <td className="py-1">{alloc.brand || '-'}</td>
-                            <td className="py-1">{alloc.department}</td>
-                            <td className="py-1">{alloc.subdepartment || '-'}</td>
-                            <td className={cn('py-1 text-right', hasReinvoice && 'opacity-40')}>
+                            <td className="py-1 pr-4">{alloc.company}</td>
+                            <td className="py-1 pr-4">{alloc.brand || '-'}</td>
+                            <td className="py-1 pr-4">{alloc.department}</td>
+                            <td className="py-1 pr-4">{alloc.subdepartment || '-'}</td>
+                            <td className={cn('py-1 pr-4 text-right tabular-nums', hasReinvoice && 'opacity-40')}>
                               <CurrencyDisplay value={alloc.allocation_value} currency={inv.currency} />
                             </td>
-                            <td className="py-1 text-right">{alloc.allocation_percent}%</td>
+                            <td className="py-1 pr-4 text-right tabular-nums">{alloc.allocation_percent}%</td>
                             <td className="py-1 text-muted-foreground max-w-[150px] truncate">
                               {alloc.comment ? (
                                 <TooltipProvider delayDuration={200}>
@@ -1210,14 +1222,14 @@ const InvoiceRow = memo(function InvoiceRow({
                           </tr>
                           {hasReinvoice && alloc.reinvoice_destinations.map((rd) => (
                             <tr key={rd.id} className="text-[11px]">
-                              <td className="py-0.5 pl-6 text-foreground">{rd.company}</td>
-                              <td className="py-0.5 text-foreground">{rd.brand || '-'}</td>
-                              <td className="py-0.5 text-foreground">{rd.department}</td>
-                              <td className="py-0.5 text-foreground">{rd.subdepartment || '-'}</td>
-                              <td className="py-0.5 text-right text-foreground">
+                              <td className="py-0.5 pl-6 pr-4 text-foreground">{rd.company}</td>
+                              <td className="py-0.5 pr-4 text-foreground">{rd.brand || '-'}</td>
+                              <td className="py-0.5 pr-4 text-foreground">{rd.department}</td>
+                              <td className="py-0.5 pr-4 text-foreground">{rd.subdepartment || '-'}</td>
+                              <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">
                                 <CurrencyDisplay value={rd.value} currency={inv.currency} />
                               </td>
-                              <td className="py-0.5 text-right text-foreground">{rd.percentage}%</td>
+                              <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">{rd.percentage}%</td>
                               <td className="py-0.5 text-muted-foreground italic">reinvoiced</td>
                             </tr>
                           ))}

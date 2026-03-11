@@ -3,8 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Users, Car, Upload, BarChart3, PieChart, UserCheck, Ban, Filter } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Users, Car, Upload, BarChart3, PieChart, UserCheck, Ban } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { StatCard } from '@/components/shared/StatCard'
@@ -19,11 +18,8 @@ import ImportTab from './ImportTab'
 export default function Crm() {
   const isMobile = useIsMobile()
   const [tab, setTab] = useState('dashboard')
-  const [showStats, setShowStats] = useState(false)
-  const [dealsShowStats, setDealsShowStats] = useState(false)
   const [search, setSearch] = useState('')
   const [statsShowFilters, setStatsShowFilters] = useState(false)
-  const [statsShowCards, setStatsShowCards] = useState(false)
   const { data: stats } = useQuery({ queryKey: ['crm-stats'], queryFn: crmApi.getStats })
 
   return (
@@ -45,24 +41,6 @@ export default function Crm() {
           ) : undefined}
           actions={
             <div className="flex items-center gap-2">
-              {(tab === 'dashboard' || tab === 'deals') && (
-                <Button variant="ghost" size="icon" className={((tab === 'dashboard' && showStats) || (tab === 'deals' && dealsShowStats)) ? 'bg-muted' : ''} onClick={() => {
-                  if (tab === 'dashboard') setShowStats(s => !s)
-                  else setDealsShowStats(s => !s)
-                }} title="Toggle stats">
-                  <BarChart3 className="h-4 w-4" />
-                </Button>
-              )}
-              {tab === 'statistics' && (
-                <>
-                  <Button variant="ghost" size="icon" className={statsShowCards ? 'bg-muted' : ''} onClick={() => setStatsShowCards(s => !s)} title="Toggle stats">
-                    <BarChart3 className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className={statsShowFilters ? 'bg-muted' : ''} onClick={() => setStatsShowFilters(s => !s)} title="Toggle filters">
-                    <Filter className="h-4 w-4" />
-                  </Button>
-                </>
-              )}
               {!isMobile && (
                 <TabsList className="w-auto">
                   <TabsTrigger value="dashboard"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
@@ -91,12 +69,12 @@ export default function Crm() {
         )}
 
         <TabsContent value="dashboard" className="space-y-4">
-          {stats && <DashboardContent stats={stats} showStats={showStats} />}
+          {stats && <DashboardContent stats={stats} />}
         </TabsContent>
 
-        <TabsContent value="deals"><DealsTab showStats={dealsShowStats} search={search} /></TabsContent>
+        <TabsContent value="deals"><DealsTab showStats search={search} /></TabsContent>
         <TabsContent value="clients"><ClientStatsTab search={search} /></TabsContent>
-        <TabsContent value="statistics"><StatisticsTab showFilters={statsShowFilters} setShowFilters={setStatsShowFilters} showStats={statsShowCards} /></TabsContent>
+        <TabsContent value="statistics"><StatisticsTab showFilters={statsShowFilters} setShowFilters={setStatsShowFilters} showStats /></TabsContent>
         <TabsContent value="import"><ImportTab /></TabsContent>
         <TabsContent value="blacklist"><ClientStatsTab blacklistOnly search={search} /></TabsContent>
       </div>
@@ -104,10 +82,10 @@ export default function Crm() {
   )
 }
 
-function DashboardContent({ stats, showStats }: { stats: CrmStats; showStats: boolean }) {
+function DashboardContent({ stats }: { stats: CrmStats }) {
   return (
     <div className="space-y-4">
-      <div className={`grid grid-cols-2 gap-3 ${showStats ? '' : 'hidden'}`}>
+      <div className="grid grid-cols-2 gap-3">
         <StatCard title="Total Clients" value={stats.clients.total.toLocaleString()} description={`${stats.clients.persons} persons, ${stats.clients.companies} companies`} icon={<Users className="h-4 w-4" />} />
         <StatCard title="Car Deals" value={stats.deals.total.toLocaleString()} description={`${stats.deals.new_cars} NW, ${stats.deals.used_cars} GW`} icon={<Car className="h-4 w-4" />} />
       </div>

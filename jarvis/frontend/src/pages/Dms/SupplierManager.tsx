@@ -4,11 +4,12 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useDebounce } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import {
-  Plus, Edit2, Trash2, Check, X, Search, Building2, User, FileText, CheckSquare,
-  ChevronRight, ChevronDown, Tags, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, RefreshCw, SlidersHorizontal,
+  Plus, Edit2, Trash2, Check, X, Building2, User, FileText, CheckSquare,
+  ChevronRight, ChevronDown, Tags, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { SearchInput } from '@/components/shared/SearchInput'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -381,7 +382,6 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
   const [editSup, setEditSup] = useState<DmsSupplier | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteSupId, setDeleteSupId] = useState<number | null>(null)
@@ -537,6 +537,12 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
           { label: 'Documents', shortLabel: 'Docs.', href: '/app/dms' },
           { label: 'Suppliers' },
         ]}
+        search={
+          <div className="flex items-center gap-2">
+            <SearchInput value={search} onChange={setSearch} placeholder={isMobile ? 'Search...' : 'Search suppliers...'} className={isMobile ? 'w-40' : 'w-48'} />
+            <span className="text-xs text-muted-foreground whitespace-nowrap">{suppliers.length} suppliers</span>
+          </div>
+        }
         actions={
           <div className="flex items-center gap-1.5">
             {isMobile && (
@@ -548,15 +554,6 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
                 {selectMode ? <X className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
               </Button>
             )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className={showFilters ? 'bg-muted' : ''}
-              onClick={() => setShowFilters(s => !s)}
-              title="Toggle filters"
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -599,16 +596,6 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
         </div>
       )}
 
-      {/* Filters */}
-      {showFilters && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-0 max-w-xs">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search suppliers..." className="pl-8 h-9" />
-          </div>
-          <span className="text-xs text-muted-foreground">{suppliers.length} suppliers</span>
-        </div>
-      )}
 
       {/* List */}
       {isLoading ? (

@@ -97,6 +97,9 @@ export default function Hr() {
             { label: 'HR', href: '/app/hr/pontaje' },
             { label: 'Organigram' },
           ]}
+          search={
+            <SearchInput value={search} onChange={setSearch} placeholder={isMobile ? 'Search...' : 'Search by name, node, company...'} className={isMobile ? 'w-40' : 'w-56'} />
+          }
         />
         {authLoading ? (
           <Skeleton className="h-64 w-full" />
@@ -106,7 +109,7 @@ export default function Hr() {
           </div>
         ) : (
           <Suspense fallback={<TabLoader />}>
-            <OrganigramTab />
+            <OrganigramTab search={search} />
           </Suspense>
         )}
       </div>

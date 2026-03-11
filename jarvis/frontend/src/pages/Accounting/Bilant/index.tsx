@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Scale, Plus, Upload, FileSpreadsheet, Trash2, Copy, Eye, Download, Pencil, ChevronRight, ChevronDown, Search, BookOpen, FileUp, X, BarChart3, FileText, LayoutList, SlidersHorizontal } from 'lucide-react'
+import { Scale, Plus, Upload, FileSpreadsheet, Trash2, Copy, Eye, Download, Pencil, ChevronRight, ChevronDown, Search, BookOpen, FileUp, X, BarChart3, FileText, LayoutList } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { bilantApi } from '@/api/bilant'
@@ -70,7 +70,6 @@ export default function Bilant() {
   const [anafName, setAnafName] = useState('')
   const [anafCompany, setAnafCompany] = useState<string>('')
   const [showStats, setShowStats] = useState(false)
-  const [showFilters, setShowFilters] = useState(false)
 
   // ── Queries ──
 
@@ -214,6 +213,19 @@ export default function Bilant() {
           { label: 'Bilant' },
           { label: tabs.find(t => t.key === tab)?.label ?? 'Generations' },
         ]}
+        search={
+          <Select value={companyFilter} onValueChange={setCompanyFilter}>
+            <SelectTrigger className="h-8 w-[160px] text-xs">
+              <SelectValue placeholder="All companies" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All companies</SelectItem>
+              {companies.map(c => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
         actions={
           <div className="flex items-center gap-2">
             {tab === 'generations' && (
@@ -221,9 +233,6 @@ export default function Bilant() {
                 <BarChart3 className="h-4 w-4" />
               </Button>
             )}
-            <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${showFilters ? 'bg-muted' : ''}`} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
-              <SlidersHorizontal className="h-4 w-4" />
-            </Button>
             {tab === 'templates' && (
               <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={() => setShowAnafImport(true)} title="Import ANAF PDF">
                 <FileUp className="h-4 w-4" />
@@ -276,39 +285,24 @@ export default function Bilant() {
         </Tabs>
       )}
 
-      {/* Filters row */}
-      {showFilters && (
+      {/* Plan de Conturi extra filters */}
+      {tab === 'plan-conturi' && (
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={companyFilter} onValueChange={setCompanyFilter}>
+          <div className="relative flex-1 min-w-0 max-w-xs">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input value={coaSearch} onChange={e => setCoaSearch(e.target.value)} placeholder="Search by code or name..." className="h-9 pl-8 text-sm" />
+          </div>
+          <Select value={coaClassFilter} onValueChange={setCoaClassFilter}>
             <SelectTrigger className="h-9 w-[180px] text-xs">
-              <SelectValue placeholder="All companies" />
+              <SelectValue placeholder="All classes" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All companies</SelectItem>
-              {companies.map(c => (
-                <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+              <SelectItem value="all">All classes</SelectItem>
+              {CLASS_NAMES.map(([cls, name]) => (
+                <SelectItem key={cls} value={String(cls)}>{cls} — {name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {tab === 'plan-conturi' && (
-            <>
-              <div className="relative flex-1 min-w-0 max-w-xs">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                <Input value={coaSearch} onChange={e => setCoaSearch(e.target.value)} placeholder="Search by code or name..." className="h-9 pl-8 text-sm" />
-              </div>
-              <Select value={coaClassFilter} onValueChange={setCoaClassFilter}>
-                <SelectTrigger className="h-9 w-[180px] text-xs">
-                  <SelectValue placeholder="All classes" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All classes</SelectItem>
-                  {CLASS_NAMES.map(([cls, name]) => (
-                    <SelectItem key={cls} value={String(cls)}>{cls} — {name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </>
-          )}
         </div>
       )}
 

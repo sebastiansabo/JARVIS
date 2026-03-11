@@ -22,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -300,7 +301,7 @@ function ColumnToggle({
 }
 
 // ── Main Component ──────────────────────────────────────────
-export default function UnallocatedTab({ showHidden, showFilters = false, search = '' }: { showHidden: boolean; showFilters?: boolean; search?: string }) {
+export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenCount = 0, showFilters = false, search = '' }: { showHidden: boolean; onShowHiddenChange?: (v: boolean) => void; hiddenCount?: number; showFilters?: boolean; search?: string }) {
   const qc = useQueryClient()
   const isMobile = useIsMobile()
   const [savedLimit, setSavedLimit] = usePersistedState('efactura-page-size', 50)
@@ -674,18 +675,23 @@ export default function UnallocatedTab({ showHidden, showFilters = false, search
           )
         }
 
+        if (!showFilters) return null
         return (
           <div className="flex flex-wrap items-center gap-2">
-            {showFilters && (
-              <>
-                {filterControls}
-                <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
-                {activeFilterCount > 0 && (
-                  <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
-                )}
-              </>
+            {filterControls}
+            <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
+            {activeFilterCount > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
             )}
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
+              {onShowHiddenChange && (
+                <div className="flex items-center gap-1.5">
+                  <Switch id="show-hidden" checked={showHidden} onCheckedChange={onShowHiddenChange} />
+                  <Label htmlFor="show-hidden" className="text-xs cursor-pointer text-muted-foreground whitespace-nowrap">
+                    Show Hidden ({hiddenCount})
+                  </Label>
+                </div>
+              )}
               <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
             </div>
           </div>

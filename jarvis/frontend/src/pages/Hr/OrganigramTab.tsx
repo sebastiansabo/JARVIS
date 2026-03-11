@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Search,
   ChevronDown,
   ChevronRight,
   Building2,
@@ -11,7 +10,6 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -110,9 +108,8 @@ const levelBg = [
 
 /* ──── Main component ──── */
 
-export default function OrganigramTab() {
+export default function OrganigramTab({ search = '' }: { search?: string }) {
   const queryClient = useQueryClient()
-  const [search, setSearch] = useState('')
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
 
   const { data: companies = [], isLoading: loadingCompanies } = useQuery({
@@ -300,16 +297,6 @@ export default function OrganigramTab() {
 
   return (
     <div className="space-y-4">
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search by name, node, company..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
 
       {filteredCompanies.length === 0 ? (
         <EmptyState

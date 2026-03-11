@@ -12,8 +12,6 @@ import {
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { efacturaApi } from '@/api/efactura'
@@ -148,21 +146,13 @@ export default function EFactura() {
         </Tabs>
       )}
 
-      {/* Show Hidden filter (unallocated only, behind filter toggle) */}
-      {showFilters && !isOnMappingsTab && (
-        <div className="flex items-center gap-2">
-          <Switch id="show-hidden" checked={showHidden} onCheckedChange={setShowHidden} />
-          <Label htmlFor="show-hidden" className="text-xs cursor-pointer text-muted-foreground">
-            Show Hidden ({hiddenCount ?? 0})
-          </Label>
-        </div>
-      )}
+      {/* Show Hidden toggle is now inside UnallocatedTab filter row */}
 
       {/* Tab content */}
       <Suspense fallback={<TabLoader />}>
         <Routes>
           <Route index element={<Navigate to="unallocated" replace />} />
-          <Route path="unallocated" element={<UnallocatedTab showHidden={showHidden} showFilters={showFilters} search={search} />} />
+          <Route path="unallocated" element={<UnallocatedTab showHidden={showHidden} onShowHiddenChange={setShowHidden} hiddenCount={hiddenCount ?? 0} showFilters={showFilters} search={search} />} />
           <Route path="mappings" element={<MappingsTab showFilters={showFilters} addTrigger={mappingAddTrigger} importTrigger={mappingImportTrigger} />} />
           {/* Redirect removed/old routes */}
           <Route path="fetch" element={<Navigate to="/app/efactura/unallocated" replace />} />

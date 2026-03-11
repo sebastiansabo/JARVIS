@@ -36,7 +36,7 @@ import type { EventBonus, BonusSummaryByEmployee, BonusSummaryByEvent } from '@/
 const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const MONTH_SHORT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-export default function BonusesTab({ canViewAmounts, showFilters = false, showStats: _showStats = false, addTrigger = 0, search = '' }: { canViewAmounts: boolean; showFilters?: boolean; showStats?: boolean; addTrigger?: number; search?: string }) {
+export default function BonusesTab({ canViewAmounts, showFilters: _showFilters = false, showStats: _showStats = false, addTrigger = 0, search = '' }: { canViewAmounts: boolean; showFilters?: boolean; showStats?: boolean; addTrigger?: number; search?: string }) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
   const user = useAuthStore((s) => s.user)
@@ -164,55 +164,49 @@ export default function BonusesTab({ canViewAmounts, showFilters = false, showSt
         )}
       </div>
 
-      {/* Filters + sub-tabs (behind toggle) */}
-      {showFilters && (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={String(filters.year ?? '__all__')} onValueChange={(v) => updateFilter('year', v === '__all__' ? undefined : Number(v))}>
-              <SelectTrigger className="w-24">
-                <SelectValue placeholder="Year" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All years</SelectItem>
-                {years.map((y) => (
-                  <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      {/* Filters + sub-tabs (inline) */}
+      <div className="flex flex-wrap items-center gap-2">
+        {(['list', 'by-employee', 'by-event'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => { setSubTab(t); clearSelected() }}
+            className={cn(
+              'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+              subTab === t ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {t === 'list' ? 'Bonuses' : t === 'by-employee' ? 'By Employee' : 'By Event'}
+          </button>
+        ))}
 
-            <Select value={String(filters.month ?? '__all__')} onValueChange={(v) => updateFilter('month', v === '__all__' ? undefined : Number(v))}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="Month" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All months</SelectItem>
-                {MONTHS.slice(1).map((m, i) => (
-                  <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-          </div>
-
-          <div className="flex gap-1">
-            {(['list', 'by-employee', 'by-event'] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => { setSubTab(t); clearSelected() }}
-                className={cn(
-                  'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                  subTab === t ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {t === 'list' ? 'Bonuses' : t === 'by-employee' ? 'By Employee' : 'By Event'}
-              </button>
+        <Select value={String(filters.year ?? '__all__')} onValueChange={(v) => updateFilter('year', v === '__all__' ? undefined : Number(v))}>
+          <SelectTrigger className="h-8 w-20 text-xs">
+            <SelectValue placeholder="Year" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All years</SelectItem>
+            {years.map((y) => (
+              <SelectItem key={y} value={String(y)}>{y}</SelectItem>
             ))}
-            <span className="ml-2 self-center text-xs text-muted-foreground">
-              {subTab === 'list' ? filtered.length : subTab === 'by-employee' ? byEmployee.length : byEvent.length} rows
-            </span>
-          </div>
-        </>
-      )}
+          </SelectContent>
+        </Select>
+
+        <Select value={String(filters.month ?? '__all__')} onValueChange={(v) => updateFilter('month', v === '__all__' ? undefined : Number(v))}>
+          <SelectTrigger className="h-8 w-28 text-xs">
+            <SelectValue placeholder="Month" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All months</SelectItem>
+            {MONTHS.slice(1).map((m, i) => (
+              <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <span className="text-xs text-muted-foreground">
+          {subTab === 'list' ? filtered.length : subTab === 'by-employee' ? byEmployee.length : byEvent.length} rows
+        </span>
+      </div>
 
       {/* Tables */}
       {isError && (

@@ -7,7 +7,6 @@ import {
   Plus,
   Trash2,
   Pencil,
-  Search,
   CalendarDays,
   Users,
   ChevronRight,
@@ -30,6 +29,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { QueryError } from '@/components/QueryError'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { SearchInput } from '@/components/shared/SearchInput'
 import { hrApi } from '@/api/hr'
 import { marketingApi } from '@/api/marketing'
 import { Badge } from '@/components/ui/badge'
@@ -132,6 +132,7 @@ function EventsList() {
   const user = useAuthStore((s) => s.user)
   const canAdd = user?.permissions?.['hr.events.add'] ?? true
   const [search, setSearch] = useState('')
+  const [filterCompany, setFilterCompany] = useState<string>('all')
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
@@ -148,16 +149,27 @@ function EventsList() {
     queryFn: () => hrApi.getEvents(),
   })
 
+  // Unique companies for filter
+  const companies = useMemo(() => {
+    const set = new Set<string>()
+    events.forEach((e) => { if (e.company) set.add(e.company) })
+    return Array.from(set).sort()
+  }, [events])
+
   const filtered = useMemo(() => {
-    if (!search) return events
+    let list = events
+    if (filterCompany !== 'all') {
+      list = list.filter((e) => e.company === filterCompany)
+    }
+    if (!search) return list
     const q = search.toLowerCase()
-    return events.filter(
+    return list.filter(
       (e) =>
         e.name.toLowerCase().includes(q) ||
         (e.company?.toLowerCase().includes(q) ?? false) ||
         (e.description?.toLowerCase().includes(q) ?? false),
     )
-  }, [events, search])
+  }, [events, search, filterCompany])
 
   // Apply date filter
   const dateFiltered = useMemo(() => {
@@ -253,6 +265,22 @@ function EventsList() {
           { label: 'Marketing', shortLabel: 'Mkt.', href: '/app/marketing' },
           { label: 'Events' },
         ]}
+        search={
+          <div className="flex items-center gap-2">
+            <SearchInput value={search} onChange={setSearch} placeholder={isMobile ? 'Search...' : 'Search events...'} className={isMobile ? 'w-40' : 'w-48'} />
+            <Select value={filterCompany} onValueChange={setFilterCompany}>
+              <SelectTrigger className="h-8 w-[140px] text-xs">
+                <SelectValue placeholder="All companies" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All companies</SelectItem>
+                {companies.map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        }
         actions={
           <div className="flex items-center gap-2">
             {selected.length > 0 && (
@@ -295,14 +323,10 @@ function EventsList() {
 
       {showFilters && (
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-0 max-w-xs">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input className="pl-8" placeholder="Search events..." value={search} onChange={(e) => setSearch(e.target.value)} />
-          </div>
           <DateField value={filterFrom} onChange={setFilterFrom} placeholder="From" className="w-[130px]" />
           <DateField value={filterTo} onChange={setFilterTo} placeholder="To" className="w-[130px]" />
-          <span className="hidden sm:inline text-xs text-muted-foreground">{displayedEvents.length} events</span>
           <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly={isMobile} />
+          <span className="text-xs text-muted-foreground">{displayedEvents.length} events</span>
         </div>
       )}
 

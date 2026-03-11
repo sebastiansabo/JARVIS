@@ -100,7 +100,7 @@ function formatVal(v: unknown): string {
   return String(v)
 }
 
-export default function DealsTab({ showStats = false, search = '' }: { showStats?: boolean; search?: string }) {
+export default function DealsTab({ showStats: _showStats = false, search = '' }: { showStats?: boolean; search?: string }) {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
@@ -250,7 +250,7 @@ export default function DealsTab({ showStats = false, search = '' }: { showStats
 
         {/* Info cards */}
         {stats && (
-          <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 mt-2 ${showStats ? '' : 'hidden'}`}>
+          <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 mt-2`}>
             <div className="rounded-lg border bg-card p-3 flex items-center gap-2.5">
               <div className="rounded-md bg-primary/10 p-1.5"><Car className="h-4 w-4 text-primary" /></div>
               <div>

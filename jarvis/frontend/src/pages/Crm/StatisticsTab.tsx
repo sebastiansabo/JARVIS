@@ -82,16 +82,14 @@ function MultiSelect({ label, options, selected, onChange }: {
 export default function StatisticsTab({
   showFilters: showFiltersProp,
   setShowFilters: setShowFiltersProp,
-  showStats: showStatsProp,
+  showStats: _showStats,
 }: {
   showFilters?: boolean
   setShowFilters?: (v: boolean) => void
   showStats?: boolean
 } = {}) {
   const isMobile = useIsMobile()
-  const [showStatsLocal] = useState(false)
   const [showFiltersLocal, setShowFiltersLocal] = useState(false)
-  const showStats = showStatsProp ?? showStatsLocal
   const showFilters = showFiltersProp ?? showFiltersLocal
   const setShowFilters = setShowFiltersProp ?? setShowFiltersLocal
   const [dealers, setDealers] = useState<string[]>([])
@@ -179,7 +177,7 @@ export default function StatisticsTab({
         <div className="flex items-center justify-center py-12 text-muted-foreground">Loading statistics...</div>
       ) : (
         <>
-          <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 ${showStats ? '' : 'hidden'}`}>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <SummaryCard icon={Car} label="Total Deals" value={fmt(data.totals.total_deals)} color="text-primary" bg="bg-primary/10" />
             <SummaryCard icon={DollarSign} label="Total Revenue" value={fmt(data.totals.total_revenue)} color="text-green-500" bg="bg-green-500/10" />
             <SummaryCard icon={TrendingUp} label="Avg Price" value={fmt(data.totals.avg_price)} color="text-blue-500" bg="bg-blue-500/10" />
@@ -243,7 +241,7 @@ export default function StatisticsTab({
             <h2 className="text-lg font-semibold pt-4">Client Statistics</h2>
 
             {/* Summary cards */}
-            <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 ${showStats ? '' : 'hidden'}`}>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               <SummaryCard icon={Users} label="Total Clients" value={fmt(total)} color="text-primary" bg="bg-primary/10" />
               <SummaryCard icon={Link2} label="With Deals" value={fmt(clientStats.clients_with_deals)} sub={pct(clientStats.clients_with_deals, total)} color="text-green-500" bg="bg-green-500/10" />
               <SummaryCard icon={UserCheck} label="Linked Deals" value={fmt(clientStats.total_deals_linked)} color="text-blue-500" bg="bg-blue-500/10" />
