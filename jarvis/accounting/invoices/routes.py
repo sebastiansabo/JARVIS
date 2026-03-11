@@ -61,6 +61,93 @@ def submit_invoice():
     return jsonify({'success': False, 'error': result.error}), result.status_code
 
 
+# ============== BULK INVOICE UPLOAD ==============
+
+@invoices_bp.route('/api/invoices/bulk-parse', methods=['POST'])
+@login_required
+def api_bulk_parse():
+    """Parse multiple uploaded invoices using AI. Returns array of parse results."""
+    if not current_user.can_add_invoices:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+    files = request.files.getlist('files[]')
+    if not files:
+        return jsonify({'success': False, 'error': 'No files uploaded'}), 400
+    if len(files) > 20:
+        return jsonify({'success': False, 'error': 'Maximum 20 files per batch'}), 400
+
+    allowed_extensions = {'.pdf', '.jpg', '.jpeg', '.png', '.tiff', '.tif'}
+    results = []
+    for f in files:
+        _, ext = os.path.splitext(f.filename.lower())
+        if ext not in allowed_extensions:
+            results.append({'filename': f.filename, 'success': False, 'error': f'File type {ext} not allowed'})
+            continue
+        file_data = f.read()
+        if len(file_data) > 50 * 1024 * 1024:
+            results.append({'filename': f.filename, 'success': False, 'error': 'File too large (max 50MB)'})
+            continue
+        result = _service.parse_invoice(file_data, f.filename)
+        if result.success:
+            inv_num = result.data.get('invoice_number', '')
+            dup = _invoice_repo.check_number_exists(inv_num) if inv_num else {'exists': False}
+            results.append({
+                'filename': f.filename,
+                'success': True,
+                'data': result.data,
+                'duplicate': dup.get('exists', False),
+            })
+        else:
+            results.append({'filename': f.filename, 'success': False, 'error': result.error})
+
+    return jsonify({'success': True, 'results': results})
+
+
+@invoices_bp.route('/api/invoices/bulk-submit', methods=['POST'])
+@login_required
+def api_bulk_submit():
+    """Submit multiple parsed invoices at once."""
+    if not current_user.can_add_invoices:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+    data = request.get_json()
+    invoices = data.get('invoices', [])
+    if not invoices:
+        return jsonify({'success': False, 'error': 'No invoices provided'}), 400
+
+    user_ctx = _get_user_context()
+    results = []
+    for inv in invoices:
+        try:
+            result = _service.submit_invoice(inv, user_ctx)
+            if result.success:
+                results.append({
+                    'invoice_number': inv.get('invoice_number', ''),
+                    'success': True,
+                    'invoice_id': result.data.get('invoice_id'),
+                })
+            else:
+                results.append({
+                    'invoice_number': inv.get('invoice_number', ''),
+                    'success': False,
+                    'error': result.error,
+                })
+        except Exception as e:
+            results.append({
+                'invoice_number': inv.get('invoice_number', ''),
+                'success': False,
+                'error': str(e),
+            })
+
+    saved = sum(1 for r in results if r['success'])
+    return jsonify({
+        'success': True,
+        'results': results,
+        'saved_count': saved,
+        'total': len(invoices),
+    })
+
+
 # ============== INVOICE PARSING ==============
 
 @invoices_bp.route('/api/parse-invoice', methods=['POST'])

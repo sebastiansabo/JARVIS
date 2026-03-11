@@ -10,6 +10,7 @@ const Settings = lazy(() => import('./pages/Settings'))
 const Profile = lazy(() => import('./pages/Profile'))
 const Accounting = lazy(() => import('./pages/Accounting'))
 const AddInvoice = lazy(() => import('./pages/Accounting/AddInvoice'))
+const BulkUpload = lazy(() => import('./pages/Accounting/BulkUpload'))
 const Hr = lazy(() => import('./pages/Hr'))
 const Statements = lazy(() => import('./pages/Statements'))
 const EFactura = lazy(() => import('./pages/EFactura'))
@@ -102,6 +103,7 @@ export default function App() {
         {/* Accounting — requires can_access_accounting */}
         <Route path="accounting" element={<Guard flag="can_access_accounting"><SuspensePage><Accounting /></SuspensePage></Guard>} />
         <Route path="accounting/add" element={<Guard flag="can_access_accounting"><SuspensePage><AddInvoice /></SuspensePage></Guard>} />
+        <Route path="accounting/bulk-upload" element={<Guard flag="can_access_accounting"><SuspensePage><BulkUpload /></SuspensePage></Guard>} />
         <Route path="accounting/bilant" element={<Guard flag="can_access_accounting"><SuspensePage><Bilant /></SuspensePage></Guard>} />
         <Route path="accounting/bilant/:generationId" element={<Guard flag="can_access_accounting"><SuspensePage><BilantDetail /></SuspensePage></Guard>} />
         <Route path="accounting/bilant/templates/:templateId" element={<Guard flag="can_access_accounting"><SuspensePage><TemplateEditor /></SuspensePage></Guard>} />

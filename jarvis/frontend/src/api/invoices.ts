@@ -37,6 +37,25 @@ export const invoicesApi = {
   updateDriveLink: (invoiceId: number, driveLink: string) =>
     api.put<{ success: boolean }>(`/api/invoices/${invoiceId}/drive-link`, { drive_link: driveLink }),
 
+  // Bulk upload & save
+  bulkParse: async (files: File[]): Promise<{
+    success: boolean
+    results: Array<{ filename: string; success: boolean; data?: Record<string, unknown>; error?: string; duplicate?: boolean }>
+  }> => {
+    const formData = new FormData()
+    files.forEach((f) => formData.append('files[]', f))
+    const response = await fetch('/api/invoices/bulk-parse', { method: 'POST', body: formData, credentials: 'same-origin' })
+    if (!response.ok) throw new Error(`Bulk parse failed: ${response.status}`)
+    return response.json()
+  },
+  bulkSubmit: (invoices: Array<SubmitInvoiceInput & Record<string, unknown>>) =>
+    api.post<{
+      success: boolean
+      results: Array<{ invoice_number: string; success: boolean; invoice_id?: number; error?: string }>
+      saved_count: number
+      total: number
+    }>('/api/invoices/bulk-submit', { invoices }),
+
   // Submit & Parse
   submitInvoice: (data: SubmitInvoiceInput) => api.post<{ success: boolean; id: number }>('/api/submit', data),
   parseInvoice: async (file: File, templateId?: number): Promise<unknown> => {
