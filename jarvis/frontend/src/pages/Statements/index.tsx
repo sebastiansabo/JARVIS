@@ -1,11 +1,12 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard, BarChart3, Clock, CheckCircle, DollarSign, SlidersHorizontal, Plus } from 'lucide-react'
+import { ArrowLeftRight, FileText, LinkIcon, Download, LayoutDashboard, BarChart3, Clock, CheckCircle, SlidersHorizontal, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
+import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useIsMobile } from '@/hooks/useMediaQuery'
@@ -42,6 +43,7 @@ export default function Statements() {
   const [filters] = useState<TransactionFilters>({})
   const [showStats, setShowStats] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const [totalCurrency, setTotalCurrency] = useState<'RON' | 'EUR'>('RON')
   const [uploadOpen, setUploadOpen] = useState(false)
   const [mappingAddOpen, setMappingAddOpen] = useState(false)
   const isOnFilesTab = location.pathname.includes('/files')
@@ -56,8 +58,10 @@ export default function Statements() {
     new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v)
 
   const bs = summary?.by_status
-  const totalCount = (bs?.pending?.count ?? 0) + (bs?.resolved?.count ?? 0) + (bs?.ignored?.count ?? 0) + (bs?.merged?.count ?? 0)
-  const totalAmount = (bs?.pending?.total ?? 0) + (bs?.resolved?.total ?? 0) + (bs?.ignored?.total ?? 0) + (bs?.merged?.total ?? 0)
+  const totalCount = (Number(bs?.pending?.count) || 0) + (Number(bs?.resolved?.count) || 0) + (Number(bs?.ignored?.count) || 0) + (Number(bs?.merged?.count) || 0)
+  const byCurrency = summary?.by_currency ?? {}
+  const totalRon = Number(byCurrency['RON']) || 0
+  const totalEur = Number(byCurrency['EUR']) || 0
 
   const activeTab = tabs.find(t => location.pathname.startsWith(t.to))
 
@@ -134,12 +138,21 @@ export default function Statements() {
           icon={<CheckCircle className="h-4 w-4" />}
           isLoading={isLoading}
         />
-        <StatCard
-          title="Total Amount"
-          value={totalAmount !== 0 ? `${fmtAmount(Math.abs(totalAmount))} RON` : '—'}
-          icon={<DollarSign className="h-4 w-4" />}
-          isLoading={isLoading}
-        />
+        <Card className="gap-0 py-0 cursor-pointer select-none" onClick={() => setTotalCurrency(c => c === 'RON' ? 'EUR' : 'RON')}>
+          <CardContent className="px-3 py-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground">Total {totalCurrency}</p>
+              <span className="text-xs font-bold text-muted-foreground">{totalCurrency}</span>
+            </div>
+            <p className="text-base font-semibold leading-snug">
+              {(() => {
+                const amt = totalCurrency === 'RON' ? totalRon : totalEur
+                return amt !== 0 ? `${fmtAmount(Math.abs(amt))}` : '—'
+              })()}
+            </p>
+            <p className="text-[11px] text-muted-foreground">Click to toggle {totalCurrency === 'RON' ? 'EUR' : 'RON'}</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Mobile tab nav */}

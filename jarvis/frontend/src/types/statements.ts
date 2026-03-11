@@ -66,6 +66,7 @@ export interface TransactionSummary {
   }
   by_company: { company_name: string; company_cui: string; count: number; total: number }[]
   by_supplier: { matched_supplier: string; count: number; total: number }[]
+  by_currency?: Record<string, number>
 }
 
 export interface TransactionFilters {

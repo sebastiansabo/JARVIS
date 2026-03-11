@@ -715,12 +715,12 @@ def get_transaction_summary(company_cui: str = None, supplier: str = None,
         status_where = ' AND '.join(status_conditions) if status_conditions else '1=1'
 
         cursor.execute(f'''
-            SELECT status, COUNT(*) as count, SUM(amount) as total
+            SELECT status, COUNT(*) as count, COALESCE(SUM(amount), 0) as total
             FROM bank_statement_transactions
             WHERE {status_where}
             GROUP BY status
         ''', status_params)
-        by_status = {row['status']: {'count': row['count'], 'total': row['total']}
+        by_status = {row['status']: {'count': row['count'], 'total': float(row['total'])}
                      for row in cursor.fetchall()}
 
         # By supplier - apply company filter (and other filters except supplier)
@@ -775,10 +775,21 @@ def get_transaction_summary(company_cui: str = None, supplier: str = None,
         ''', company_params)
         by_company = [dict(row) for row in cursor.fetchall()]
 
+        # By currency totals
+        cursor.execute(f'''
+            SELECT COALESCE(currency, 'RON') as currency,
+                   COALESCE(SUM(amount), 0) as total
+            FROM bank_statement_transactions
+            WHERE {status_where}
+            GROUP BY COALESCE(currency, 'RON')
+        ''', status_params)
+        by_currency = {row['currency']: float(row['total']) for row in cursor.fetchall()}
+
         return {
             'by_status': by_status,
             'by_supplier': by_supplier,
-            'by_company': by_company
+            'by_company': by_company,
+            'by_currency': by_currency,
         }
     finally:
         release_db(conn)

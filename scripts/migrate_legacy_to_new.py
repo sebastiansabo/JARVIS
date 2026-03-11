@@ -18,7 +18,7 @@ Usage:
   python3 scripts/migrate_legacy_to_new.py [--dry-run] [--only invoices,statements,hr]
   python3 scripts/migrate_legacy_to_new.py --only invoices          # just invoices group
   python3 scripts/migrate_legacy_to_new.py --only invoices,hr       # invoices + hr
-  python3 scripts/migrate_legacy_to_new.py                          # all (default)
+  python3 scripts/migrate_legacy_to_new.py                          # interactive menu
 """
 
 import os
@@ -35,20 +35,51 @@ if not LEGACY_DSN or not NEW_DSN:
 
 DRY_RUN = "--dry-run" in sys.argv
 
-ALL_GROUPS = ["invoices", "statements", "hr"]
+ALL_GROUPS = [
+    ("invoices",   "invoices, allocations, reinvoice_destinations"),
+    ("statements", "bank_statements, bank_statement_transactions"),
+    ("hr",         "hr.events, hr.event_bonuses"),
+]
+GROUP_NAMES = [g[0] for g in ALL_GROUPS]
 
-# Parse --only flag
-SELECTED_GROUPS = set(ALL_GROUPS)
+# Parse --only flag or show interactive menu
+SELECTED_GROUPS = None
 for i, arg in enumerate(sys.argv):
     if arg == "--only" and i + 1 < len(sys.argv):
         raw = sys.argv[i + 1].split(",")
-        invalid = [g for g in raw if g not in ALL_GROUPS]
+        invalid = [g for g in raw if g not in GROUP_NAMES]
         if invalid:
             print(f"ERROR: Unknown group(s): {', '.join(invalid)}")
-            print(f"  Valid groups: {', '.join(ALL_GROUPS)}")
+            print(f"  Valid groups: {', '.join(GROUP_NAMES)}")
             sys.exit(1)
         SELECTED_GROUPS = set(raw)
         break
+
+if SELECTED_GROUPS is None:
+    # Interactive selection
+    print("\n╔══════════════════════════════════════════════════════════╗")
+    print("║           Legacy → Staging Migration                   ║")
+    print("╠══════════════════════════════════════════════════════════╣")
+    for idx, (name, tables) in enumerate(ALL_GROUPS, 1):
+        print(f"║  {idx}. {name:<12} → {tables:<40}║")
+    print("╚══════════════════════════════════════════════════════════╝")
+    print()
+    SELECTED_GROUPS = set()
+    for name, tables in ALL_GROUPS:
+        answer = input(f"  Migrate {name}? (y/n): ").strip().lower()
+        if answer in ("y", "yes"):
+            SELECTED_GROUPS.add(name)
+
+    if not SELECTED_GROUPS:
+        print("\nNothing selected. Exiting.")
+        sys.exit(0)
+
+    mode = "[DRY RUN] " if DRY_RUN else ""
+    print(f"\n{mode}Selected: {', '.join(sorted(SELECTED_GROUPS))}")
+    confirm = input("  Proceed? (y/n): ").strip().lower()
+    if confirm not in ("y", "yes"):
+        print("Aborted.")
+        sys.exit(0)
 
 # Tables that belong to each group (for truncate)
 GROUP_TABLES = {
@@ -75,6 +106,7 @@ def safe_uid(uid, valid_ids):
 
 def migrate():
     groups_label = ", ".join(sorted(SELECTED_GROUPS))
+    print()
     print(f"{'[DRY RUN] ' if DRY_RUN else ''}Groups: {groups_label}")
     print("Connecting to databases...")
     legacy = psycopg2.connect(LEGACY_DSN)

@@ -101,6 +101,7 @@ export default function Accounting() {
   const [sort, setSort] = usePersistedState<SortState | null>('accounting-sort', null)
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
   const [showStats, setShowStats] = useState(false)
+  const [totalCurrency, setTotalCurrency] = useState<'RON' | 'EUR'>('RON')
   const [showFilters, setShowFilters] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
 
@@ -390,7 +391,7 @@ export default function Accounting() {
       />
 
       {/* Stats row */}
-      {showStats && <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      {showStats && <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           title="Invoices"
           value={displayedInvoices.length}
@@ -408,16 +409,18 @@ export default function Accounting() {
           icon={<FolderTree className="h-4 w-4" />}
           isLoading={isLoading}
         />
-        <StatCard
-          title="Total RON"
-          value={new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalRon)}
-          icon={<span className="text-xs font-bold">RON</span>}
-        />
-        <StatCard
-          title="Total EUR"
-          value={new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalEur)}
-          icon={<span className="text-xs font-bold">EUR</span>}
-        />
+        <Card className="gap-0 py-0 cursor-pointer select-none" onClick={() => setTotalCurrency(c => c === 'RON' ? 'EUR' : 'RON')}>
+          <CardContent className="px-3 py-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground">Total {totalCurrency}</p>
+              <span className="text-xs font-bold text-muted-foreground">{totalCurrency}</span>
+            </div>
+            <p className="text-base font-semibold leading-snug">
+              {new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalCurrency === 'RON' ? totalRon : totalEur)}
+            </p>
+            <p className="text-[11px] text-muted-foreground">Click to toggle {totalCurrency === 'RON' ? 'EUR' : 'RON'}</p>
+          </CardContent>
+        </Card>
       </div>}
 
 
