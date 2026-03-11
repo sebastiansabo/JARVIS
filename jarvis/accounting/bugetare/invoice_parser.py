@@ -188,12 +188,21 @@ LINE ITEMS (line_items):
 - quantity, unit_price, amount should be numbers (not strings)
 - vat_rate should be the percentage (e.g., 19 for 19%), or null if not shown
 - If no itemized table is found, return an empty array []
+
+ADVERTISING INVOICE LINE ITEMS:
+- For Meta/Facebook invoices: each CAMPAIGN listed under "Campanii" section is a separate line item. Campaign names often start with [CA], "Postare:", "Stoc_", "GENERARE", or similar prefixes. Each campaign has a date range and a cost — use the cost as amount, quantity=1, unit_price=amount.
+- For Google Ads invoices: each campaign or account section with a subtotal is a separate line item.
+- For TikTok invoices: the "Consumption Details" table lists campaigns with IDs and costs — each row is a separate line item.
+- For VGS/Fleet invoices: each vehicle transaction, fuel charge, or card charge is a separate line item. Include the vehicle/card identifier in the description.
+- CRITICAL: Do NOT lump all campaigns into a single line item. Each campaign MUST be a separate object in the array.
+- CRITICAL: Examine ALL pages for campaign data — campaigns may span multiple pages.
+
 - Return ONLY the JSON, no other text"""
     })
 
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=2048,
+        max_tokens=4096,
         messages=[
             {"role": "user", "content": content}
         ]
@@ -347,6 +356,94 @@ IMPORTANT:
         return result
     except (json.JSONDecodeError, ValueError):
         return {}
+
+
+def extract_line_items_with_ai(file_path: str, api_key: Optional[str] = None) -> list[dict]:
+    """
+    Extract line items from an invoice using AI vision.
+    Targeted extraction — only asks for line_items, not full invoice data.
+    Used as a supplement when template-based parsing produces no line items.
+    """
+    if api_key is None:
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+
+    if not api_key:
+        return []
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    ext = os.path.splitext(file_path)[1].lower()
+
+    if ext == '.pdf':
+        images = pdf_to_images(file_path)
+    elif ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+        images = [encode_image_to_base64(file_path)]
+    else:
+        return []
+
+    content = []
+    for image_data, media_type in images:
+        content.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": media_type,
+                "data": image_data
+            }
+        })
+
+    content.append({
+        "type": "text",
+        "text": """Extract ALL line items from this invoice. Return ONLY a valid JSON array.
+
+Each line item object must have:
+{"description": "Item description", "quantity": 1.0, "unit_price": 100.00, "amount": 100.00, "vat_rate": 19}
+
+ADVERTISING INVOICES (Meta/Facebook, Google Ads, TikTok, etc.):
+- Each CAMPAIGN is a separate line item — do NOT lump campaigns together
+- Campaign names often start with [CA], "Postare:", "Stoc_", "GENERARE", or similar prefixes
+- Use the campaign name as "description" and its cost as "amount"
+- For campaigns: quantity = 1, unit_price = amount
+- Meta/Facebook: look for the "Campanii" section — each campaign has a name line followed by a date range + cost
+- Google Ads: each campaign or account section with a subtotal is a line item
+- TikTok: the "Consumption Details" table lists campaigns with IDs and costs
+- Include ALL campaigns found across ALL pages
+
+FLEET/VEHICLE INVOICES (VGS, OMV, MOL, Petrom, etc.):
+- Each vehicle transaction, fuel charge, or card charge is a separate line item
+- Include vehicle/card identifier in the description if visible
+
+STANDARD INVOICES:
+- Each product or service row in the invoice table is a line item
+- Include quantity, unit price, amount, and VAT rate when visible
+
+IMPORTANT:
+- quantity, unit_price, amount must be numbers (not strings)
+- vat_rate should be the percentage (e.g., 19 for 19%), or null if not shown
+- If no itemized content is found, return an empty array: []
+- Return ONLY the JSON array, no other text"""
+    })
+
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            messages=[
+                {"role": "user", "content": content}
+            ]
+        )
+
+        response_text = response.content[0].text
+        result = BaseProvider._extract_json(response_text)
+
+        if isinstance(result, list):
+            return result
+        if isinstance(result, dict) and 'line_items' in result:
+            return result['line_items']
+        return []
+    except Exception as e:
+        print(f"AI line items extraction error: {e}")
+        return []
 
 
 def apply_template(template: dict, text: str = None) -> dict:
@@ -1143,6 +1240,17 @@ def auto_detect_and_parse(file_bytes: bytes, filename: str, templates: list[dict
                 except Exception as e:
                     # AI fallback failed, continue with template results
                     print(f"AI fallback failed for missing fields: {e}")
+
+            # Extract line items if template parsing didn't produce any
+            # Template-based parsing only gets header fields — line items need AI vision
+            if not result.get('line_items'):
+                try:
+                    line_items = extract_line_items_with_ai(tmp_path, api_key)
+                    if line_items:
+                        result['line_items'] = line_items
+                        result['line_items_source'] = 'ai_extraction'
+                except Exception as e:
+                    print(f"AI line items extraction failed: {e}")
 
             return result
         else:
