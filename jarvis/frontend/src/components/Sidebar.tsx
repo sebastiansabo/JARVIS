@@ -39,7 +39,7 @@ const navItemsDef: NavItem[] = [
       { path: '/app/accounting', label: 'Invoices', icon: Calculator, moduleKey: 'accounting_dashboard' },
       { path: '/app/statements', label: 'Statements', icon: Landmark, moduleKey: 'accounting_statements' },
       { path: '/app/efactura', label: 'e-Factura', icon: FileText, moduleKey: 'accounting_efactura' },
-      { path: '/app/accounting/bilant', label: 'Bilant', icon: Scale, moduleKey: 'accounting_bilant' },
+      { path: '/app/accounting/bilant', label: 'Bilant', icon: Scale, moduleKey: 'accounting_bilant', v2Permission: 'bilant.templates.view' },
     ],
   },
   {
@@ -410,7 +410,16 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
 
   return (
     <TooltipProvider delayDuration={collapsed ? 100 : 400}>
-      <div className="flex h-full flex-col">
+      <div
+        className="flex h-full flex-col"
+        onClick={(e) => {
+          if (!onToggle) return
+          const target = e.target as HTMLElement
+          // Only toggle if clicking empty space (not buttons, links, inputs, switches)
+          if (target.closest('a, button, input, [role="switch"], [role="combobox"], [role="menuitem"]')) return
+          onToggle()
+        }}
+      >
         {/* Header */}
         <div className={cn('flex h-14 items-center border-b', collapsed ? 'justify-center px-2' : 'justify-between px-4')}>
           <Link to="/app/dashboard" className="flex items-center gap-2 text-lg font-semibold" onClick={handleLogoClick}>
@@ -558,8 +567,10 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 onClick={onToggle}
                 aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 className={cn(
-                  'flex w-full items-center rounded-md text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
-                  collapsed ? 'justify-center p-2' : 'gap-2 px-3 py-2',
+                  'flex w-full items-center rounded-md text-sm transition-colors',
+                  collapsed
+                    ? 'justify-center p-2 bg-accent text-accent-foreground hover:bg-accent/80'
+                    : 'gap-2 px-3 py-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                 )}
               >
                 {collapsed ? (

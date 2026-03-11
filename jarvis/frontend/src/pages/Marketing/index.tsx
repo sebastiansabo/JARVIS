@@ -1350,7 +1350,7 @@ function MobileDayView({ anchor, projects, events, barColors, onSelect, onEventC
               className={cn('flex items-center gap-2 rounded-md px-2.5 py-2.5 cursor-pointer', barColors[p.status] ?? 'bg-gray-400')}
               onClick={() => onSelect(p)}
             >
-              <span className="text-xs font-medium text-white truncate">{p.name}</span>
+              <span className="text-xs font-medium text-white truncate">{p.brand_name ? `[${p.brand_name}] ` : ''}{p.name}</span>
               <span className="ml-auto text-[10px] text-white/80 shrink-0">
                 {new Date(p.start_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })} – {new Date(p.end_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })}
               </span>
@@ -1479,7 +1479,7 @@ function MobileWeekView({ anchor, projects, events, barColors, onSelect, onEvent
                       className={cn('flex items-center gap-2 rounded px-2 py-1.5 cursor-pointer', barColors[p.status] ?? 'bg-gray-400')}
                       onClick={() => onSelect(p)}
                     >
-                      <span className="text-[11px] font-medium text-white truncate">{p.name}</span>
+                      <span className="text-[11px] font-medium text-white truncate">{p.brand_name ? `[${p.brand_name}] ` : ''}{p.name}</span>
                     </div>
                   ))}
                   {items.events.map((e) => (
@@ -1618,7 +1618,7 @@ function MobileQuarterView({ anchor, projects, events, barColors, onSelect, onEv
               className={cn('flex items-center gap-2 rounded-md px-2.5 py-2 cursor-pointer', barColors[p.status] ?? 'bg-gray-400')}
               onClick={() => onSelect(p)}
             >
-              <span className="text-xs font-medium text-white truncate">{p.name}</span>
+              <span className="text-xs font-medium text-white truncate">{p.brand_name ? `[${p.brand_name}] ` : ''}{p.name}</span>
               <span className="ml-auto text-[10px] text-white/80 shrink-0">
                 {new Date(p.start_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })} – {new Date(p.end_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })}
               </span>
@@ -1785,7 +1785,7 @@ function MobileCalendarGrid({ range, anchor, projects, events, barColors, onSele
                 className={cn('flex items-center gap-2 rounded-md px-2.5 py-2 cursor-pointer', barColors[p.status] ?? 'bg-gray-400')}
                 onClick={() => onSelect(p)}
               >
-                <span className="text-xs font-medium text-white truncate">{p.name}</span>
+                <span className="text-xs font-medium text-white truncate">{p.brand_name ? `[${p.brand_name}] ` : ''}{p.name}</span>
                 <span className="ml-auto text-[10px] text-white/80 shrink-0">
                   {new Date(p.start_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })} – {new Date(p.end_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })}
                 </span>
@@ -1830,7 +1830,7 @@ function MobileCalendarGrid({ range, anchor, projects, events, barColors, onSele
               className={cn('flex items-center gap-2 rounded-md px-2.5 py-2 cursor-pointer', barColors[p.status] ?? 'bg-gray-400')}
               onClick={() => onSelect(p)}
             >
-              <span className="text-xs font-medium text-white truncate">{p.name}</span>
+              <span className="text-xs font-medium text-white truncate">{p.brand_name ? `[${p.brand_name}] ` : ''}{p.name}</span>
               <span className="ml-auto text-[10px] text-white/80 shrink-0">
                 {new Date(p.start_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })} – {new Date(p.end_date!).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })}
               </span>
@@ -1919,9 +1919,9 @@ function DesktopMonthGrid({ year, month, projects, events, barColors, onSelect, 
                     key={item.p.id}
                     className={cn('px-1.5 py-0.5 rounded text-[11px] font-medium text-white truncate cursor-pointer hover:opacity-80 transition-opacity', barColors[item.p.status] ?? 'bg-gray-400')}
                     onClick={() => onSelect(item.p)}
-                    title={item.p.name}
+                    title={`${item.p.name}${item.p.company_name ? ` — ${item.p.company_name}` : ''}${item.p.brand_name ? ` / ${item.p.brand_name}` : ''}`}
                   >
-                    {item.p.name}
+                    {item.p.brand_name ? `[${item.p.brand_name}] ` : ''}{item.p.name}
                   </div>
                 ) : (
                   <div

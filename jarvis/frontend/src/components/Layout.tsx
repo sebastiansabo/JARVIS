@@ -16,7 +16,7 @@ export default function Layout() {
   const { user, isLoading } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => {
-    try { return localStorage.getItem('sidebar-collapsed') === 'true' } catch { return false }
+    try { const v = localStorage.getItem('sidebar-collapsed'); return v === null ? true : v === 'true' } catch { return true }
   })
 
   // Heartbeat: update last_seen + keep server warm every 60s
