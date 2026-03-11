@@ -471,7 +471,7 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
           {/* Brands */}
           {availableBrands.length > 0 && (
             <div className="space-y-1.5">
-              <Label>Level 1</Label>
+              <Label>Department</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-between font-normal">
@@ -513,16 +513,16 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
             </div>
           )}
 
-          {/* Level 2 */}
+          {/* Subdivision */}
           {availableDepts.length > 0 && (availableBrands.length === 0 || form.brand_ids.length > 0) && (
             <div className="space-y-1.5">
-              <Label>Level 2</Label>
+              <Label>Subdivision</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-between font-normal">
                     <span className="truncate">
                       {form.department_ids.length === 0
-                        ? 'Select level 2...'
+                        ? 'Select subdivision...'
                         : `${form.department_ids.length} selected`}
                     </span>
                     <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />

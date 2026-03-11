@@ -1164,9 +1164,9 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                 <p className="text-[11px] text-muted-foreground">Leave empty to use the supplier mapping default</p>
               </div>
 
-              {/* Level 2 Override */}
+              {/* Subdivision Override */}
               <div className="space-y-1">
-                <Label className="text-xs">Level 2 Override</Label>
+                <Label className="text-xs">Subdivision Override</Label>
                 {departments.length > 0 ? (
                   <Select
                     value={overrides.department_override || '__default__'}
@@ -1198,7 +1198,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
 
               {subdepartments1.length > 0 && (
               <div className="space-y-1">
-                <Label className="text-xs">Level 3 Override</Label>
+                <Label className="text-xs">Detail Override</Label>
                 <Select
                   value={overrides.subdepartment_override || '__default__'}
                   onValueChange={(v) => setOverrides((o) => ({
@@ -1247,11 +1247,11 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                 </div>
               </div>
 
-              {/* Level 2 (split — conditional) */}
+              {/* Subdivision (split — conditional) */}
               {splitDept && (
                 <>
                   <div className="space-y-1">
-                    <Label className="text-xs">Level 2 (split)</Label>
+                    <Label className="text-xs">Subdivision (split)</Label>
                     {departments.length > 0 ? (
                       <Select
                         value={overrides.department_override_2 || '__default__'}
@@ -1275,13 +1275,13 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                       <Input
                         value={overrides.department_override_2}
                         onChange={(e) => setOverrides((o) => ({ ...o, department_override_2: e.target.value }))}
-                        placeholder="Level 2..."
+                        placeholder="Subdivision..."
                       />
                     )}
                   </div>
                   {subdepartments2.length > 0 && (
                   <div className="space-y-1">
-                    <Label className="text-xs">Level 3 (split)</Label>
+                    <Label className="text-xs">Detail (split)</Label>
                     <Select
                       value={overrides.subdepartment_override_2 || '__default__'}
                       onValueChange={(v) => setOverrides((o) => ({

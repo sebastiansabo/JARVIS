@@ -197,12 +197,12 @@ function MappingFormDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">Select a company to populate Level 1/2/3 dropdowns</p>
+            <p className="text-[11px] text-muted-foreground">Select a company to populate Department / Subdivision / Detail dropdowns</p>
           </div>
 
-          {/* Level 1 */}
+          {/* Department */}
           <div className="space-y-1">
-            <Label className="text-xs">Level 1</Label>
+            <Label className="text-xs">Department</Label>
             {company && brands.length > 0 ? (
               <Select
                 value={form.brand || '__none__'}
@@ -223,10 +223,10 @@ function MappingFormDialog({
             )}
           </div>
 
-          {/* Level 2 — only show if no brands OR brand selected */}
+          {/* Subdivision — only show if no brands OR brand selected */}
           {(!company || brands.length === 0 || !!form.brand) && (
           <div className="space-y-1">
-            <Label className="text-xs">Level 2</Label>
+            <Label className="text-xs">Subdivision</Label>
             {company && departments.length > 0 ? (
               <Select
                 value={form.department || '__none__'}
@@ -251,10 +251,10 @@ function MappingFormDialog({
           </div>
           )}
 
-          {/* Level 3 — only show when department selected and subdepartments exist */}
+          {/* Detail — only show when department selected and subdepartments exist */}
           {company && !!form.department && (subdepartments.length > 0 || form.subdepartment) && (
           <div className="space-y-1">
-            <Label className="text-xs">Level 3</Label>
+            <Label className="text-xs">Detail</Label>
             {subdepartments.length > 0 ? (
               <Select
                 value={form.subdepartment || '__none__'}
@@ -271,7 +271,7 @@ function MappingFormDialog({
                 </SelectContent>
               </Select>
             ) : (
-              <Input value={form.subdepartment} onChange={(e) => set('subdepartment', e.target.value)} placeholder="Level 3..." />
+              <Input value={form.subdepartment} onChange={(e) => set('subdepartment', e.target.value)} placeholder="Detail..." />
             )}
           </div>
           )}

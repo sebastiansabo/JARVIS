@@ -830,9 +830,9 @@ export default function AddInvoice() {
                 <div className="space-y-2">
                   {/* Header */}
                   <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-1">
-                    {brands.length > 0 && <div className="col-span-2">Level 1</div>}
-                    <div className={brands.length > 0 ? 'col-span-3' : 'col-span-4'}>Level 2</div>
-                    <div className="col-span-2">Level 3</div>
+                    {brands.length > 0 && <div className="col-span-2">Department</div>}
+                    <div className={brands.length > 0 ? 'col-span-3' : 'col-span-4'}>Subdivision</div>
+                    <div className="col-span-2">Detail</div>
                     <div className="col-span-1 text-right">%</div>
                     <div className="col-span-2 text-right">
                       Value ({currency})
