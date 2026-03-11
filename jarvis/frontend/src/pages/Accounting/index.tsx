@@ -234,35 +234,32 @@ export default function Accounting() {
     ) => (inv: Invoice) => {
       const current = inv[field as keyof Invoice] as string
       const currentOpt = options.find((o) => o.value === current)
-      const stop = (e: React.SyntheticEvent) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation() }
       return (
-        <div onClick={stop} onPointerDown={stop} onMouseDown={stop}>
-          <Select
-            value={current}
-            onValueChange={(v) => updateFieldMutation.mutate({ id: inv.id, field, value: v })}
-          >
-            <SelectTrigger className="h-7 w-[130px] text-xs border-none bg-transparent shadow-none px-1.5">
-              <span className="flex items-center gap-1.5">
-                {currentOpt?.color && (
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: currentOpt.color }} />
-                )}
-                <span className="truncate">{currentOpt?.label ?? current}</span>
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              {options.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  <span className="flex items-center gap-1.5">
-                    {o.color && (
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: o.color }} />
-                    )}
-                    {o.label}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Select
+          value={current}
+          onValueChange={(v) => updateFieldMutation.mutate({ id: inv.id, field, value: v })}
+        >
+          <SelectTrigger className="h-7 w-[130px] text-xs border-none bg-transparent shadow-none px-1.5">
+            <span className="flex items-center gap-1.5">
+              {currentOpt?.color && (
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: currentOpt.color }} />
+              )}
+              <span className="truncate">{currentOpt?.label ?? current}</span>
+            </span>
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                <span className="flex items-center gap-1.5">
+                  {o.color && (
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: o.color }} />
+                  )}
+                  {o.label}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       )
     }
 
@@ -1127,7 +1124,11 @@ const InvoiceRow = memo(function InvoiceRow({
 
   return (
     <>
-      <TableRow className={cn('cursor-pointer hover:bg-muted/40', isSelected && 'bg-muted/50')} onClick={() => onToggleExpand(inv.id)} aria-expanded={isExpanded}>
+      <TableRow className={cn('cursor-pointer hover:bg-muted/40', isSelected && 'bg-muted/50')} onClick={(e) => {
+        const target = e.target as HTMLElement
+        if (target.closest('[data-slot="select-trigger"], [data-slot="select-content"], [role="combobox"], [role="option"], [role="listbox"], button, input, [data-radix-collection-item]')) return
+        onToggleExpand(inv.id)
+      }} aria-expanded={isExpanded}>
         <TableCell onClick={(e) => e.stopPropagation()}>
           <Checkbox checked={isSelected} onCheckedChange={() => onToggleSelect(inv.id)} />
         </TableCell>
@@ -1138,18 +1139,11 @@ const InvoiceRow = memo(function InvoiceRow({
             {inv.id}
           </span>
         </TableCell>
-        {activeCols.map((col) => {
-          const interactive = col.key === 'status' || col.key === 'payment_status' || col.key === 'tags'
-          return (
-            <TableCell
-              key={col.key}
-              onClick={interactive ? (e) => e.stopPropagation() : undefined}
-              onPointerDown={interactive ? (e) => e.stopPropagation() : undefined}
-            >
-              {col.render(inv)}
-            </TableCell>
-          )
-        })}
+        {activeCols.map((col) => (
+          <TableCell key={col.key}>
+            {col.render(inv)}
+          </TableCell>
+        ))}
         <TableCell onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center gap-1">
             {isBin ? (
