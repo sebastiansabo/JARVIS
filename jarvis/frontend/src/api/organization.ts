@@ -40,6 +40,14 @@ export const organizationApi = {
     api.put<{ success: boolean }>(`/api/companies-config/${id}`, data),
   deleteCompanyConfig: (id: number) => api.delete<{ success: boolean }>(`/api/companies-config/${id}`),
 
+  // Company logo
+  uploadCompanyLogo: (id: number, file: File) => {
+    const form = new FormData()
+    form.append('logo', file)
+    return api.post<{ success: boolean; logo_url: string }>(`/api/companies-config/${id}/logo`, form)
+  },
+  deleteCompanyLogo: (id: number) => api.delete<{ success: boolean }>(`/api/companies-config/${id}/logo`),
+
   // Company responsables
   getCompanyResponsables: (companyId: number) =>
     api.get<{ user_id: number; user_name: string }[]>(`/api/companies-config/${companyId}/responsables`),

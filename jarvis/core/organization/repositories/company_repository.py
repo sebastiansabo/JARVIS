@@ -70,14 +70,14 @@ class CompanyRepository(BaseRepository):
         """Get a specific company by ID."""
         return self.query_one('SELECT * FROM companies WHERE id = %s', (company_id,))
 
-    def save(self, company: str, vat: str = None, parent_company_id: int = None) -> int:
+    def save(self, company: str, vat: str = None, parent_company_id: int = None, logo_url: str = None) -> int:
         """Create a new company. Returns company ID."""
         try:
             result = self.execute('''
-                INSERT INTO companies (company, vat, parent_company_id)
-                VALUES (%s, %s, %s)
+                INSERT INTO companies (company, vat, parent_company_id, logo_url)
+                VALUES (%s, %s, %s, %s)
                 RETURNING id
-            ''', (company, vat, parent_company_id), returning=True)
+            ''', (company, vat, parent_company_id, logo_url), returning=True)
             clear_companies_vat_cache()
             return result['id']
         except Exception as e:
@@ -102,7 +102,7 @@ class CompanyRepository(BaseRepository):
             current = row['parent_company_id'] if row else None
         return False
 
-    def update(self, company_id: int, company: str = None, vat: str = None, parent_company_id: object = 'UNSET') -> bool:
+    def update(self, company_id: int, company: str = None, vat: str = None, parent_company_id: object = 'UNSET', logo_url: object = 'UNSET') -> bool:
         """Update a company. Returns True if updated."""
         def _work(cursor):
             # Check for circular references if parent is being changed
@@ -121,6 +121,9 @@ class CompanyRepository(BaseRepository):
             if parent_company_id != 'UNSET':
                 updates.append('parent_company_id = %s')
                 params.append(parent_company_id)
+            if logo_url != 'UNSET':
+                updates.append('logo_url = %s')
+                params.append(logo_url)
             if not updates:
                 return False
 
@@ -177,7 +180,7 @@ class CompanyRepository(BaseRepository):
     def get_all_with_vat_and_brands(self) -> list[dict]:
         """Get all companies with VAT numbers, brand associations, and hierarchy."""
         def _work(cursor):
-            cursor.execute('SELECT id, company, vat, parent_company_id, display_order FROM companies ORDER BY display_order, company')
+            cursor.execute('SELECT id, company, vat, parent_company_id, display_order, logo_url FROM companies ORDER BY display_order, company')
             companies = [dict(row) for row in cursor.fetchall()]
 
             cursor.execute('''

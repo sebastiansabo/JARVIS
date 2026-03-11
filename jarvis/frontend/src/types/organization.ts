@@ -10,6 +10,7 @@ export interface CompanyWithBrands extends Company {
   brands_list: { id: number; brand_id: number; brand: string }[]
   parent_company_id: number | null
   display_order: number
+  logo_url: string | null
 }
 
 export interface Brand {

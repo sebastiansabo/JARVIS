@@ -7,9 +7,9 @@
  * Usage modes:
  *   mode="brand"   → shows brand logos (Toyota, Mazda, VW, Audi, Volvo, MG)
  *   mode="company"  → shows company logos (loaded from API, matched to known logos)
- *   mode="both"     → shows company pills grouped by brand
  *
  * The widget auto-fetches company/brand data from the organization API.
+ * Logos are resolved from: 1) DB logo_url  2) hardcoded fallback map by name
  */
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 import { X } from 'lucide-react'
 import type { CompanyWithBrands } from '@/types/organization'
 
-/* ── Logo mapping ─────────────────────────────────────────── */
+/* ── Logo fallback mapping (used when no DB logo_url) ────── */
 
 const BRAND_LOGOS: Record<string, string> = {
   toyota: '/static/img/brands/toyota.png',
@@ -31,7 +31,7 @@ const BRAND_LOGOS: Record<string, string> = {
   autoworld: '/static/img/brands/autoworld_holding.png',
 }
 
-function logoFor(name: string): string | null {
+function logoFallback(name: string): string | null {
   const key = name.toLowerCase().replace(/\s+/g, '')
   for (const [k, v] of Object.entries(BRAND_LOGOS)) {
     if (key.includes(k)) return v
@@ -97,7 +97,7 @@ export function BrandFilter({
             seen.set(bKey, {
               key: `brand:${b.brand_id}`,
               label: b.brand,
-              logo: logoFor(b.brand),
+              logo: logoFallback(b.brand),
               brandId: b.brand_id,
               brandName: b.brand,
             })
@@ -111,9 +111,9 @@ export function BrandFilter({
     return companies
       .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
       .map((c): BrandFilterItem => {
-        // Try to find a brand logo for the company
+        // Priority: DB logo_url → hardcoded fallback by company name → fallback by brand name
         const primaryBrand = c.brands_list?.[0]?.brand
-        const logo = logoFor(c.company) ?? (primaryBrand ? logoFor(primaryBrand) : null)
+        const logo = c.logo_url ?? logoFallback(c.company) ?? (primaryBrand ? logoFallback(primaryBrand) : null)
         return {
           key: `company:${c.id}`,
           label: c.company,
@@ -163,28 +163,20 @@ export function BrandFilter({
                 src={item.logo}
                 alt={item.label}
                 className={cn(
-                  'h-4 w-4 object-contain transition-opacity dark:invert',
+                  'h-5 w-auto max-w-[80px] object-contain transition-opacity dark:invert',
                   isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-100',
                 )}
               />
             ) : (
               <span
                 className={cn(
-                  'flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[9px] font-bold leading-none',
-                  isActive ? 'bg-primary/20 text-primary' : 'text-muted-foreground',
+                  'text-xs font-medium whitespace-nowrap',
+                  isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
                 )}
               >
-                {item.label.charAt(0)}
+                {item.label}
               </span>
             )}
-            <span
-              className={cn(
-                'text-xs font-medium whitespace-nowrap',
-                isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
-              )}
-            >
-              {item.label}
-            </span>
             {isActive && (
               <X className="h-3 w-3 text-primary/60" />
             )}

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Pencil, Building2, Layers, GitBranch, BarChart3, Crown, ChevronRight, ChevronDown, Users } from 'lucide-react'
+import { Plus, Trash2, Pencil, Building2, Layers, GitBranch, BarChart3, Crown, ChevronRight, ChevronDown, Users, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -476,16 +476,48 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
   open: boolean; company: CompanyWithBrands | null; companies: CompanyWithBrands[]; onClose: () => void
   onSave: (data: Partial<CompanyWithBrands> & { parent_company_id?: number | null }) => void; isPending: boolean
 }) {
+  const queryClient = useQueryClient()
   const [name, setName] = useState('')
   const [vat, setVat] = useState('')
   const [parentId, setParentId] = useState<string>('none')
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
 
   const resetForm = () => {
     if (company) {
       setName(company.company); setVat(company.vat || ''); setParentId(company.parent_company_id ? String(company.parent_company_id) : 'none')
+      setLogoPreview(company.logo_url || null)
     } else {
-      setName(''); setVat(''); setParentId('none')
+      setName(''); setVat(''); setParentId('none'); setLogoPreview(null)
     }
+  }
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !company) return
+    setUploading(true)
+    try {
+      const res = await organizationApi.uploadCompanyLogo(company.id, file)
+      setLogoPreview(res.logo_url)
+      queryClient.invalidateQueries({ queryKey: ['settings', 'companiesConfig'] })
+      queryClient.invalidateQueries({ queryKey: ['companies-config'] })
+      toast.success('Logo uploaded')
+    } catch { toast.error('Failed to upload logo') }
+    setUploading(false)
+    e.target.value = ''
+  }
+
+  const handleLogoRemove = async () => {
+    if (!company) return
+    setUploading(true)
+    try {
+      await organizationApi.deleteCompanyLogo(company.id)
+      setLogoPreview(null)
+      queryClient.invalidateQueries({ queryKey: ['settings', 'companiesConfig'] })
+      queryClient.invalidateQueries({ queryKey: ['companies-config'] })
+      toast.success('Logo removed')
+    } catch { toast.error('Failed to remove logo') }
+    setUploading(false)
   }
 
   const parentOptions = companies.filter(c => !company || c.id !== company.id)
@@ -517,6 +549,34 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
               </SelectContent>
             </Select>
           </div>
+          {/* Logo upload — only for existing companies (need ID for upload endpoint) */}
+          {company && (
+            <div className="grid gap-2">
+              <Label>Logo</Label>
+              <div className="flex items-center gap-3">
+                {logoPreview ? (
+                  <div className="relative">
+                    <img src={logoPreview} alt="Logo" className="h-10 w-auto max-w-[120px] rounded border object-contain p-1 dark:invert" />
+                    <button
+                      onClick={handleLogoRemove}
+                      disabled={uploading}
+                      className="absolute -right-1.5 -top-1.5 rounded-full bg-destructive p-0.5 text-destructive-foreground shadow-sm hover:bg-destructive/90"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex h-10 w-20 items-center justify-center rounded border border-dashed text-muted-foreground">
+                    <Upload className="h-4 w-4" />
+                  </div>
+                )}
+                <label className="cursor-pointer">
+                  <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" className="hidden" onChange={handleLogoUpload} disabled={uploading} />
+                  <span className="text-xs font-medium text-primary hover:underline">{uploading ? 'Uploading...' : logoPreview ? 'Change' : 'Upload'}</span>
+                </label>
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>

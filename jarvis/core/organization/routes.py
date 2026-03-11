@@ -233,7 +233,8 @@ def api_create_company_config():
         company_id = _company_repo.save(
             company=data.get('company'),
             vat=data.get('vat'),
-            parent_company_id=data.get('parent_company_id')
+            parent_company_id=data.get('parent_company_id'),
+            logo_url=data.get('logo_url')
         )
         return jsonify({'success': True, 'id': company_id})
     except ValueError as e:
@@ -261,11 +262,13 @@ def api_update_company_config(company_id):
 
     try:
         parent_id = data.get('parent_company_id', 'UNSET')
+        logo_url = data.get('logo_url', 'UNSET')
         success = _company_repo.update(
             company_id=company_id,
             company=data.get('company'),
             vat=data.get('vat'),
-            parent_company_id=parent_id
+            parent_company_id=parent_id,
+            logo_url=logo_url
         )
         if success:
             return jsonify({'success': True})
@@ -282,6 +285,64 @@ def api_delete_company_config(company_id):
     if _company_repo.delete(company_id):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Company not found'}), 404
+
+
+# ============== COMPANY LOGO UPLOAD ==============
+
+@org_bp.route('/api/companies-config/<int:company_id>/logo', methods=['POST'])
+@login_required
+@_structure_edit_required
+def api_upload_company_logo(company_id):
+    """Upload a logo image for a company. Saves to /static/uploads/logos/."""
+    import os
+    from werkzeug.utils import secure_filename
+
+    company = _company_repo.get(company_id)
+    if not company:
+        return jsonify({'success': False, 'error': 'Company not found'}), 404
+
+    file = request.files.get('logo')
+    if not file or not file.filename:
+        return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+
+    allowed = {'.png', '.jpg', '.jpeg', '.svg', '.webp'}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed:
+        return jsonify({'success': False, 'error': f'Invalid file type. Allowed: {", ".join(allowed)}'}), 400
+
+    # Ensure upload directory exists
+    upload_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'static', 'uploads', 'logos')
+    os.makedirs(upload_dir, exist_ok=True)
+
+    # Save with deterministic name: company-{id}.{ext}
+    filename = secure_filename(f'company-{company_id}{ext}')
+    filepath = os.path.join(upload_dir, filename)
+    file.save(filepath)
+
+    logo_url = f'/static/uploads/logos/{filename}'
+    _company_repo.update(company_id=company_id, logo_url=logo_url)
+    return jsonify({'success': True, 'logo_url': logo_url})
+
+
+@org_bp.route('/api/companies-config/<int:company_id>/logo', methods=['DELETE'])
+@login_required
+@_structure_edit_required
+def api_delete_company_logo(company_id):
+    """Remove logo from a company."""
+    import os
+    company = _company_repo.get(company_id)
+    if not company:
+        return jsonify({'success': False, 'error': 'Company not found'}), 404
+
+    old_url = company.get('logo_url')
+    if old_url and old_url.startswith('/static/uploads/logos/'):
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        old_path = os.path.join(base_dir, old_url.lstrip('/'))
+        if os.path.exists(old_path):
+            os.remove(old_path)
+
+    _company_repo.update(company_id=company_id, logo_url=None)
+    return jsonify({'success': True})
 
 
 # ============== BRANDS ==============
