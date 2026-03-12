@@ -255,7 +255,7 @@ export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditor
           ))}
 
           {/* Total + actions */}
-          <div className="flex items-center justify-between border-t pt-2 px-1">
+          <div className="flex items-center justify-between border-t pt-2 px-1 pr-16">
             <div className="flex items-center gap-3">
               <span className="text-xs font-medium">Total:</span>
               <span

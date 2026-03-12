@@ -1018,6 +1018,9 @@ export default function DocumentDetail() {
         )
       })}
 
+      {/* Linked Invoices (reverse lookup) */}
+      <LinkedInvoicesSection docId={docId} navigate={navigate} />
+
       {/* Extracted Content */}
       <div>
         <div className="flex items-center justify-between mb-2">
@@ -1183,6 +1186,73 @@ export default function DocumentDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+/* ──── Linked Invoices (reverse lookup from DMS → Invoices) ──── */
+
+function LinkedInvoicesSection({ docId, navigate }: { docId: number; navigate: (path: string) => void }) {
+  const { data } = useQuery({
+    queryKey: ['dms-doc-invoices', docId],
+    queryFn: () => dmsApi.getDocumentInvoices(docId),
+    staleTime: 60_000,
+  })
+  const invoices = data?.invoices ?? []
+
+  if (invoices.length === 0) return null
+
+  const STATUS_COLORS: Record<string, string> = {
+    new: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    bugetata: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    processed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+    nebugetata: 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400',
+  }
+
+  return (
+    <div>
+      <h3 className="text-sm font-medium flex items-center gap-1.5 mb-2">
+        <FileText className="h-4 w-4" />
+        Linked Invoices ({invoices.length})
+      </h3>
+      <div className="rounded-md border overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead className="text-xs py-1.5">Supplier</TableHead>
+              <TableHead className="text-xs py-1.5">Invoice #</TableHead>
+              <TableHead className="text-xs py-1.5">Date</TableHead>
+              <TableHead className="text-xs py-1.5 text-right">Value</TableHead>
+              <TableHead className="text-xs py-1.5">Status</TableHead>
+              <TableHead className="text-xs py-1.5">Linked by</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {invoices.map((inv) => (
+              <TableRow
+                key={inv.id}
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => navigate('/app/accounting')}
+              >
+                <TableCell className="py-1.5 text-sm">{inv.supplier}</TableCell>
+                <TableCell className="py-1.5 text-xs font-mono">{inv.invoice_number}</TableCell>
+                <TableCell className="py-1.5 text-xs">
+                  {new Date(inv.invoice_date).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </TableCell>
+                <TableCell className="py-1.5 text-xs text-right tabular-nums">
+                  {Number(inv.invoice_value).toLocaleString('ro-RO', { minimumFractionDigits: 2 })} {inv.currency}
+                </TableCell>
+                <TableCell className="py-1.5">
+                  <Badge className={cn('text-[10px] px-1.5 py-0', STATUS_COLORS[inv.status?.toLowerCase()] || 'bg-gray-100 text-gray-600')}>
+                    {inv.status}
+                  </Badge>
+                </TableCell>
+                <TableCell className="py-1.5 text-xs text-muted-foreground">{inv.linked_by_name || '—'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   )
 }

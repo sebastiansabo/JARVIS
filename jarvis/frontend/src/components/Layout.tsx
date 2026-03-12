@@ -24,13 +24,13 @@ export default function Layout() {
     if (!user) return
 
     let timer: ReturnType<typeof setTimeout>
-    let interval = 55_000 // ~55s base
+    let interval = 30_000 // ~30s base — keep DO proxy connection alive
     const MAX_INTERVAL = 5 * 60_000
 
     const ping = () => {
       if (document.hidden) return // skip when tab not visible
       fetch('/api/heartbeat', { method: 'POST', credentials: 'same-origin' })
-        .then(r => { if (r.ok) interval = 55_000 }) // reset on success
+        .then(r => { if (r.ok) interval = 30_000 }) // reset on success
         .catch(() => { interval = Math.min(interval * 2, MAX_INTERVAL) }) // backoff on failure
         .finally(() => { timer = setTimeout(ping, interval) })
     }

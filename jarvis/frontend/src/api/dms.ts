@@ -296,4 +296,11 @@ export const dmsApi = {
 
   reorderPartyRoles: (ids: number[]) =>
     api.put<{ success: boolean }>(`/dms/api/dms/party-roles/reorder`, { ids }),
+
+  // ---- Linked Invoices (reverse lookup) ----
+
+  getDocumentInvoices: (documentId: number) =>
+    api.get<{ invoices: import('@/types/invoices').LinkedInvoice[] }>(
+      `/api/dms-documents/${documentId}/invoices`,
+    ),
 }

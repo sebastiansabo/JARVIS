@@ -25,6 +25,9 @@ const queryClient = new QueryClient({
       retry: 1,
       refetchOnWindowFocus: false,
     },
+    mutations: {
+      retry: 1,
+    },
   },
   queryCache: new QueryCache({
     onError: (error, query) => {

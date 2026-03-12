@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, memo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -25,6 +25,10 @@ import {
   CheckSquare,
   SlidersHorizontal,
   LayoutDashboard,
+  Link2,
+  Search,
+  X,
+  Paperclip,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -60,9 +64,12 @@ import { settingsApi } from '@/api/settings'
 import { tagsApi } from '@/api/tags'
 import { useAccountingStore, lockedColumns } from '@/stores/accountingStore'
 import { useAuthStore } from '@/stores/authStore'
-import { cn, usePersistedState } from '@/lib/utils'
+import { cn, usePersistedState, useDebounce } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { Invoice, InvoiceFilters } from '@/types/invoices'
+import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import type { Invoice, InvoiceFilters, InvoiceDmsLink, DmsDocSearchResult } from '@/types/invoices'
 import { EditInvoiceDialog } from './EditInvoiceDialog'
 // import { SummaryTable } from './SummaryTable'
 import { AllocationEditor, allocationsToRows, rowsToApiPayload } from './AllocationEditor'
@@ -1229,16 +1236,22 @@ const InvoiceRow = memo(function InvoiceRow({
                 />
               ) : (
                 <>
+                  {(() => {
+                    const allRows = inv.allocations!.flatMap(a => [a, ...(a.reinvoice_destinations ?? [])])
+                    const hasBrand = allRows.some(r => !!(r as Record<string, unknown>).brand)
+                    const hasSubdept = allRows.some(r => !!(r as Record<string, unknown>).subdepartment)
+                    const hasComment = inv.allocations!.some(a => !!a.comment)
+                    return (
                   <table className="text-xs w-full">
                     <thead>
                       <tr className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
                         <th className="py-1 pr-4 text-left font-medium">Company</th>
-                        <th className="py-1 pr-4 text-left font-medium">Brand</th>
+                        {hasBrand && <th className="py-1 pr-4 text-left font-medium">Brand</th>}
                         <th className="py-1 pr-4 text-left font-medium">Department</th>
-                        <th className="py-1 pr-4 text-left font-medium">Sub-dept</th>
+                        {hasSubdept && <th className="py-1 pr-4 text-left font-medium">Sub-dept</th>}
                         <th className="py-1 pr-4 text-right font-medium">Amount</th>
                         <th className="py-1 pr-4 text-right font-medium w-14">%</th>
-                        <th className="py-1 text-left font-medium">Comment</th>
+                        {hasComment && <th className="py-1 text-left font-medium">Comment</th>}
                         <th className="w-7" />
                       </tr>
                     </thead>
@@ -1252,13 +1265,14 @@ const InvoiceRow = memo(function InvoiceRow({
                         <React.Fragment key={alloc.id}>
                           <tr className={cn('border-t border-border/50', hasReinvoice && 'text-muted-foreground/50')}>
                             <td className="py-1 pr-4">{alloc.company}</td>
-                            <td className="py-1 pr-4">{alloc.brand || '-'}</td>
+                            {hasBrand && <td className="py-1 pr-4">{alloc.brand || '-'}</td>}
                             <td className="py-1 pr-4">{alloc.department}</td>
-                            <td className="py-1 pr-4">{alloc.subdepartment || '-'}</td>
+                            {hasSubdept && <td className="py-1 pr-4">{alloc.subdepartment || '-'}</td>}
                             <td className={cn('py-1 pr-4 text-right tabular-nums', hasReinvoice && 'opacity-40')}>
                               <CurrencyDisplay value={alloc.allocation_value} currency={inv.currency} />
                             </td>
                             <td className="py-1 pr-4 text-right tabular-nums">{alloc.allocation_percent}%</td>
+                            {hasComment && (
                             <td className="py-1 text-muted-foreground max-w-[150px] truncate">
                               {alloc.comment ? (
                                 <TooltipProvider delayDuration={200}>
@@ -1273,6 +1287,7 @@ const InvoiceRow = memo(function InvoiceRow({
                                 </TooltipProvider>
                               ) : ''}
                             </td>
+                            )}
                             {idx === 0 && !isBin && (
                               <td rowSpan={totalTableRows} className="py-1 pl-1 align-middle w-7">
                                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditingAllocations(true)}>
@@ -1284,23 +1299,28 @@ const InvoiceRow = memo(function InvoiceRow({
                           {hasReinvoice && alloc.reinvoice_destinations.map((rd) => (
                             <tr key={rd.id} className="text-[11px]">
                               <td className="py-0.5 pl-6 pr-4 text-foreground">{rd.company}</td>
-                              <td className="py-0.5 pr-4 text-foreground">{rd.brand || '-'}</td>
+                              {hasBrand && <td className="py-0.5 pr-4 text-foreground">{rd.brand || '-'}</td>}
                               <td className="py-0.5 pr-4 text-foreground">{rd.department}</td>
-                              <td className="py-0.5 pr-4 text-foreground">{rd.subdepartment || '-'}</td>
+                              {hasSubdept && <td className="py-0.5 pr-4 text-foreground">{rd.subdepartment || '-'}</td>}
                               <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">
                                 <CurrencyDisplay value={rd.value} currency={inv.currency} />
                               </td>
                               <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">{rd.percentage}%</td>
-                              <td className="py-0.5 text-muted-foreground italic">reinvoiced</td>
+                              {hasComment && <td className="py-0.5 text-muted-foreground italic">reinvoiced</td>}
                             </tr>
                           ))}
                         </React.Fragment>
                       )})}
                     </tbody>
                   </table>
+                    )
+                  })()}
                   <div className="mt-2 flex justify-end">
                     <ApprovalWidget entityType="invoice" entityId={inv.id} compact />
                   </div>
+
+                  {/* ── Linked DMS Documents ── */}
+                  <InvoiceLinkedDocs invoiceId={inv.id} isBin={isBin} canEdit={canEdit} />
                 </>
               )}
             </div>
@@ -1310,3 +1330,188 @@ const InvoiceRow = memo(function InvoiceRow({
     </>
   )
 })
+
+/* ──── Linked DMS Documents section inside expanded row ──── */
+
+const DMS_STATUS_COLORS: Record<string, string> = {
+  draft: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+  active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  archived: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+}
+
+function InvoiceLinkedDocs({ invoiceId, isBin, canEdit }: { invoiceId: number; isBin: boolean; canEdit: boolean }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false)
+
+  const { data: dmsData } = useQuery({
+    queryKey: ['invoice-dms-docs', invoiceId],
+    queryFn: () => invoicesApi.getInvoiceDmsDocuments(invoiceId),
+  })
+  const linkedDocs: InvoiceDmsLink[] = dmsData?.documents ?? []
+
+  const unlinkMut = useMutation({
+    mutationFn: (docId: number) => invoicesApi.unlinkDmsDocument(invoiceId, docId),
+    onSuccess: () => {
+      toast.success('Document unlinked')
+      queryClient.invalidateQueries({ queryKey: ['invoice-dms-docs', invoiceId] })
+    },
+    onError: () => toast.error('Failed to unlink document'),
+  })
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border/50">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium flex items-center gap-1.5 text-muted-foreground">
+          <Link2 className="h-3.5 w-3.5" />
+          Linked Documents{linkedDocs.length > 0 && ` (${linkedDocs.length})`}
+        </span>
+        {!isBin && canEdit && (
+          <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2" onClick={() => setLinkDialogOpen(true)}>
+            <Link2 className="h-3 w-3 mr-1" />Link
+          </Button>
+        )}
+      </div>
+
+      {linkedDocs.length > 0 && (
+        <div className="space-y-1">
+          {linkedDocs.map((doc) => (
+            <div key={doc.id} className="flex items-center gap-2 text-xs rounded-md border px-2.5 py-1.5 hover:bg-muted/50 group">
+              <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span
+                className="font-medium truncate cursor-pointer hover:underline text-blue-600 dark:text-blue-400"
+                onClick={() => navigate(`/app/dms/documents/${doc.document_id}`)}
+              >
+                {doc.title}
+              </span>
+              {doc.category_name && (
+                <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0" style={{ borderColor: doc.category_color || undefined, color: doc.category_color || undefined }}>
+                  {doc.category_name}
+                </Badge>
+              )}
+              <Badge className={cn('text-[10px] px-1 py-0 shrink-0', DMS_STATUS_COLORS[doc.status])}>{doc.status}</Badge>
+              {doc.file_count > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-muted-foreground shrink-0">
+                  <Paperclip className="h-3 w-3" />{doc.file_count}
+                </span>
+              )}
+              <span className="flex-1" />
+              {!isBin && canEdit && (
+                <Button
+                  variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100"
+                  onClick={() => unlinkMut.mutate(doc.document_id)}
+                >
+                  <X className="h-3 w-3 text-destructive" />
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <InvoiceLinkDocumentDialog
+        open={linkDialogOpen}
+        onOpenChange={setLinkDialogOpen}
+        invoiceId={invoiceId}
+        linkedDocIds={linkedDocs.map((d) => d.document_id)}
+      />
+    </div>
+  )
+}
+
+/* ──── Link Document Dialog — search and pick DMS documents ──── */
+
+function InvoiceLinkDocumentDialog({
+  open,
+  onOpenChange,
+  invoiceId,
+  linkedDocIds,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  invoiceId: number
+  linkedDocIds: number[]
+}) {
+  const queryClient = useQueryClient()
+  const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
+
+  const { data } = useQuery({
+    queryKey: ['invoice-dms-search', debouncedSearch],
+    queryFn: () => invoicesApi.searchDmsDocuments(debouncedSearch || undefined),
+    enabled: open,
+  })
+  const results: DmsDocSearchResult[] = data?.documents ?? []
+
+  const linkMut = useMutation({
+    mutationFn: (documentId: number) => invoicesApi.linkDmsDocument(invoiceId, documentId),
+    onSuccess: () => {
+      toast.success('Document linked')
+      queryClient.invalidateQueries({ queryKey: ['invoice-dms-docs', invoiceId] })
+      queryClient.invalidateQueries({ queryKey: ['invoice-dms-search'] })
+    },
+    onError: () => toast.error('Failed to link document'),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg" aria-describedby={undefined}>
+        <DialogHeader><DialogTitle>Link DMS Document</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search documents by title or number..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+              autoFocus
+            />
+          </div>
+
+          <div className="max-h-[300px] overflow-y-auto space-y-1">
+            {results.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No documents found</p>
+            ) : results.map((doc) => {
+              const isLinked = linkedDocIds.includes(doc.id)
+              return (
+                <div
+                  key={doc.id}
+                  className={cn(
+                    'flex items-center gap-3 rounded-md border p-2.5',
+                    isLinked ? 'opacity-50' : 'hover:bg-muted/50 cursor-pointer',
+                  )}
+                  onClick={() => !isLinked && linkMut.mutate(doc.id)}
+                >
+                  <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium truncate">{doc.title}</div>
+                    <div className="text-xs text-muted-foreground flex items-center gap-2">
+                      {doc.doc_number && <span>{doc.doc_number}</span>}
+                      {doc.category_name && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0" style={{ borderColor: doc.category_color || undefined, color: doc.category_color || undefined }}>
+                          {doc.category_name}
+                        </Badge>
+                      )}
+                      <Badge className={cn('text-[10px] px-1 py-0', DMS_STATUS_COLORS[doc.status])}>{doc.status}</Badge>
+                      {doc.file_count > 0 && (
+                        <span className="inline-flex items-center gap-0.5"><Paperclip className="h-3 w-3" />{doc.file_count}</span>
+                      )}
+                    </div>
+                  </div>
+                  {isLinked ? (
+                    <span className="text-xs text-muted-foreground">Linked</span>
+                  ) : (
+                    <Button variant="ghost" size="sm" className="h-7 shrink-0" disabled={linkMut.isPending}>
+                      <Link2 className="h-3.5 w-3.5 mr-1" />Link
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}

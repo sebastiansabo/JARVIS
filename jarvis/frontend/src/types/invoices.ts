@@ -137,6 +137,64 @@ export interface InvoiceFilters {
   search?: string
 }
 
+// ── Invoice-DMS Document Links ──
+
+export interface InvoiceDmsLink {
+  id: number
+  invoice_id: number
+  document_id: number
+  linked_by: number
+  linked_by_name: string | null
+  created_at: string
+  title: string
+  description: string | null
+  status: string
+  doc_number: string | null
+  doc_date: string | null
+  expiry_date: string | null
+  days_to_expiry: number | null
+  category_id: number | null
+  category_name: string | null
+  category_color: string | null
+  signature_status: string | null
+  company_id: number | null
+  company_name: string | null
+  created_by: number
+  created_by_name: string | null
+  doc_created_at: string
+  visibility: string
+  file_count: number
+  children_count: number
+}
+
+export interface LinkedInvoice {
+  id: number
+  invoice_id: number
+  document_id: number
+  linked_by: number
+  linked_by_name: string | null
+  created_at: string
+  supplier: string
+  invoice_number: string
+  invoice_date: string
+  invoice_value: number
+  currency: string
+  status: string
+  payment_status: string
+}
+
+export interface DmsDocSearchResult {
+  id: number
+  title: string
+  status: string
+  doc_number: string | null
+  doc_date: string | null
+  expiry_date: string | null
+  category_name: string | null
+  category_color: string | null
+  file_count: number
+}
+
 export interface SubmitInvoiceInput {
   supplier: string
   invoice_template?: string

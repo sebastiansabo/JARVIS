@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Invoice, InvoiceSummary, InvoiceFilters, SubmitInvoiceInput, InvoiceTemplate, DeptSuggestion } from '@/types/invoices'
+import type { Invoice, InvoiceSummary, InvoiceFilters, SubmitInvoiceInput, InvoiceTemplate, DeptSuggestion, InvoiceDmsLink, DmsDocSearchResult } from '@/types/invoices'
 
 function buildQueryString(filters: InvoiceFilters & { limit?: number; offset?: number; include_allocations?: boolean }): string {
   const params = new URLSearchParams()
@@ -105,4 +105,20 @@ export const invoicesApi = {
     api.get<InvoiceSummary[]>(`/api/db/summary/brand${buildQueryString(filters ?? {})}`),
   getSupplierSummary: (filters?: InvoiceFilters) =>
     api.get<InvoiceSummary[]>(`/api/db/summary/supplier${buildQueryString(filters ?? {})}`),
+
+  // ---- DMS Document Links ----
+
+  getInvoiceDmsDocuments: (invoiceId: number) =>
+    api.get<{ documents: InvoiceDmsLink[] }>(`/api/invoices/${invoiceId}/dms-documents`),
+
+  linkDmsDocument: (invoiceId: number, documentId: number) =>
+    api.post<{ success: boolean; id: number }>(`/api/invoices/${invoiceId}/dms-documents`, { document_id: documentId }),
+
+  unlinkDmsDocument: (invoiceId: number, documentId: number) =>
+    api.delete<{ success: boolean }>(`/api/invoices/${invoiceId}/dms-documents/${documentId}`),
+
+  searchDmsDocuments: (q?: string, limit = 20) =>
+    api.get<{ documents: DmsDocSearchResult[] }>(
+      `/api/invoices/dms-search${q ? `?q=${encodeURIComponent(q)}&limit=${limit}` : `?limit=${limit}`}`,
+    ),
 }
