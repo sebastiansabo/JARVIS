@@ -284,27 +284,19 @@ export function LineItemAllocations({
           return (
             <div key={groupKey} className={cn('rounded-lg border bg-card', isMerged && 'border-blue-200 dark:border-blue-800')}>
               {/* Header */}
-              <div className="flex items-center gap-1 pr-3">
-                {/* Checkbox for ungrouped items */}
-                {!isMerged && (
-                  <div
-                    className="pl-2 py-2 shrink-0"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      toggleSelect(groupKey)
-                    }}
-                  >
+              <div className="flex items-center min-w-0">
+                {/* Checkbox area — fixed width for alignment */}
+                <div className="w-8 shrink-0 flex items-center justify-center">
+                  {!isMerged && (
                     <Checkbox
                       checked={selected.has(groupKey)}
+                      onCheckedChange={() => toggleSelect(groupKey)}
                       className="h-3.5 w-3.5"
                     />
-                  </div>
-                )}
-                <button
-                  className={cn(
-                    'flex flex-1 items-center gap-2 py-2 text-sm hover:bg-muted/50 transition-colors',
-                    isMerged ? 'pl-3' : 'pl-1',
                   )}
+                </div>
+                <button
+                  className="flex flex-1 items-center gap-2 py-2 pr-3 text-sm hover:bg-muted/50 transition-colors min-w-0"
                   onClick={() => toggleItem(groupKey)}
                 >
                   {isExpanded ? (
@@ -313,18 +305,18 @@ export function LineItemAllocations({
                     <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                   )}
                   {isMerged ? (
-                    <span className="flex-1 text-left">
+                    <span className="flex-1 text-left min-w-0">
                       <span className="inline-flex items-center gap-1.5">
                         <Layers className="h-3.5 w-3.5 text-blue-500" />
                         <span className="font-medium">{group.length} items merged</span>
                       </span>
                     </span>
                   ) : (
-                    <span className="flex-1 text-left truncate font-medium">
+                    <span className="flex-1 text-left truncate font-medium min-w-0">
                       {lineItems[groupKey]?.description}
                     </span>
                   )}
-                  <span className="tabular-nums text-muted-foreground shrink-0">
+                  <span className="tabular-nums text-muted-foreground shrink-0 ml-auto">
                     {formatNumber(groupAmount)} {currency}
                   </span>
                   {isValid ? (
