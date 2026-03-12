@@ -68,7 +68,7 @@ export const invoicesApi = {
   },
 
   // Submit & Parse
-  submitInvoice: (data: SubmitInvoiceInput) => api.post<{ success: boolean; id: number }>('/api/submit', data),
+  submitInvoice: (data: SubmitInvoiceInput) => api.post<{ success: boolean; invoice_id: number }>('/api/submit', data),
   parseInvoice: async (file: File, templateId?: number): Promise<unknown> => {
     const formData = new FormData()
     formData.append('file', file)

@@ -349,17 +349,18 @@ export default function AddInvoice() {
       const result = await invoicesApi.submitInvoice(data)
       // Auto-upload file to Google Drive after save
       const currentFile = fileRef.current
-      if (result.id && currentFile) {
+      const invoiceId = result.invoice_id
+      if (invoiceId && currentFile) {
         try {
           const driveCompany = data.distributions?.[0]?.company ?? ''
           const driveResult = await invoicesApi.uploadToDrive(currentFile, data.invoice_date, driveCompany, data.invoice_number)
           if (driveResult.success && driveResult.drive_link) {
-            await invoicesApi.updateDriveLink(result.id, driveResult.drive_link)
+            await invoicesApi.updateDriveLink(invoiceId, driveResult.drive_link)
           } else {
-            console.warn('Drive upload response:', driveResult)
+            toast.error('Drive upload failed: ' + (driveResult.error || 'Unknown error'))
           }
         } catch (err) {
-          console.warn('Drive upload failed:', err)
+          toast.error('Drive upload failed')
         }
       }
       return result
