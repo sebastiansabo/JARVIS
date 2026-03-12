@@ -182,9 +182,95 @@ export interface PartySuggestion {
   email?: string | null
 }
 
+// ---- Folders ----
+
+export interface DmsFolder {
+  id: number
+  name: string
+  description: string | null
+  icon: string
+  color: string
+  parent_id: number | null
+  path: string
+  depth: number
+  company_id: number
+  created_by: number
+  created_by_name: string | null
+  inherit_permissions: boolean
+  sort_order: number
+  metadata: Record<string, unknown>
+  document_count: number
+  subfolder_count: number
+  drive_folder_id: string | null
+  drive_folder_url: string | null
+  drive_synced_at: string | null
+  created_at: string
+  updated_at: string | null
+  deleted_at: string | null
+}
+
+export interface DmsFolderAclEntry {
+  id: number
+  folder_id: number
+  user_id: number | null
+  role_id: number | null
+  user_name: string | null
+  user_email: string | null
+  role_name: string | null
+  can_view: boolean
+  can_add: boolean
+  can_edit: boolean
+  can_delete: boolean
+  can_manage: boolean
+  granted_by: number
+  granted_by_name: string | null
+  created_at: string
+}
+
+export interface DmsFolderPermissions {
+  can_view: boolean
+  can_add: boolean
+  can_edit: boolean
+  can_delete: boolean
+  can_manage: boolean
+  source: 'role_bypass' | 'user_acl' | 'role_acl' | 'default'
+  source_folder_id?: number
+}
+
+export interface DmsAuditEntry {
+  id: number
+  entity_type: 'folder' | 'document' | 'file' | 'acl'
+  entity_id: number
+  action: string
+  changes: Record<string, unknown> | null
+  user_id: number
+  user_name: string | null
+  user_email: string | null
+  company_id: number
+  ip_address: string | null
+  created_at: string
+}
+
+export interface DmsModuleLink {
+  id: number
+  link_type: 'folder' | 'document'
+  folder_id: number | null
+  document_id: number | null
+  folder_name?: string | null
+  folder_path?: string | null
+  document_title?: string | null
+  document_status?: string | null
+  module: string
+  module_entity_id: number
+  linked_by: number
+  linked_by_name: string | null
+  created_at: string
+}
+
 export interface DmsFilters {
   category_id?: number
   company_id?: number
+  folder_id?: number
   status?: string
   search?: string
   limit?: number

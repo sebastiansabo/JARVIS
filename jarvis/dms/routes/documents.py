@@ -29,7 +29,11 @@ def dms_permission_required(entity, action):
 @dms_permission_required('document', 'view')
 def api_list_documents():
     """List root documents with filters and visibility."""
-    company_id = getattr(current_user, 'company_id', None)
+    folder_id = request.args.get('folder_id', type=int)
+    # When browsing a specific folder, skip company_id filter — folder scopes results
+    company_id = request.args.get('company_id', type=int) or (
+        getattr(current_user, 'company_id', None) if not folder_id else None
+    )
     # Non-admin users get visibility filtering
     user_id = current_user.id if company_id else None
     role_id = getattr(current_user, 'role_id', None) if company_id else None
@@ -43,6 +47,7 @@ def api_list_documents():
         offset=request.args.get('offset', 0, type=int),
         user_id=user_id,
         role_id=role_id,
+        folder_id=folder_id,
     )
     return jsonify({'success': True, **result})
 
@@ -54,11 +59,6 @@ def api_get_document(doc_id):
     """Get a single document with children and files."""
     doc = _doc_repo.get_by_id(doc_id)
     if not doc:
-        return jsonify({'success': False, 'error': 'Document not found'}), 404
-
-    # Company isolation
-    user_company = getattr(current_user, 'company_id', None)
-    if user_company and doc['company_id'] != user_company:
         return jsonify({'success': False, 'error': 'Document not found'}), 404
 
     # Fetch children grouped by type
@@ -148,10 +148,6 @@ def api_update_document(doc_id):
     if not doc:
         return jsonify({'success': False, 'error': 'Document not found'}), 404
 
-    user_company = getattr(current_user, 'company_id', None)
-    if user_company and doc['company_id'] != user_company:
-        return jsonify({'success': False, 'error': 'Document not found'}), 404
-
     try:
         fields = {}
         for key in ('title', 'description', 'category_id', 'status',
@@ -181,10 +177,6 @@ def api_delete_document(doc_id):
     """Soft-delete a document."""
     doc = _doc_repo.get_by_id(doc_id)
     if not doc:
-        return jsonify({'success': False, 'error': 'Document not found'}), 404
-
-    user_company = getattr(current_user, 'company_id', None)
-    if user_company and doc['company_id'] != user_company:
         return jsonify({'success': False, 'error': 'Document not found'}), 404
 
     _doc_repo.soft_delete(doc_id)
@@ -232,8 +224,7 @@ def api_batch_delete():
         ids = [int(i) for i in ids]
     except (TypeError, ValueError):
         return jsonify({'success': False, 'error': 'All ids must be integers'}), 400
-    company_id = getattr(current_user, 'company_id', None)
-    affected = _doc_repo.batch_soft_delete(ids, company_id) or 0
+    affected = _doc_repo.batch_soft_delete(ids, None) or 0
     return jsonify({'success': True, 'affected': affected})
 
 
@@ -258,8 +249,7 @@ def api_batch_category():
         category_id = int(category_id)
     except (TypeError, ValueError):
         return jsonify({'success': False, 'error': 'Invalid ids or category_id'}), 400
-    company_id = getattr(current_user, 'company_id', None)
-    affected = _doc_repo.batch_update_category(ids, category_id, company_id) or 0
+    affected = _doc_repo.batch_update_category(ids, category_id, None) or 0
     return jsonify({'success': True, 'affected': affected})
 
 
@@ -283,8 +273,7 @@ def api_batch_status():
         ids = [int(i) for i in ids]
     except (TypeError, ValueError):
         return jsonify({'success': False, 'error': 'All ids must be integers'}), 400
-    company_id = getattr(current_user, 'company_id', None)
-    affected = _doc_repo.batch_update_status(ids, status, company_id) or 0
+    affected = _doc_repo.batch_update_status(ids, status, None) or 0
     return jsonify({'success': True, 'affected': affected})
 
 
@@ -323,10 +312,6 @@ def api_create_child(doc_id):
     # Get parent to inherit company_id and category_id
     parent = _doc_repo.get_by_id(doc_id)
     if not parent:
-        return jsonify({'success': False, 'error': 'Parent document not found'}), 404
-
-    user_company = getattr(current_user, 'company_id', None)
-    if user_company and parent['company_id'] != user_company:
         return jsonify({'success': False, 'error': 'Parent document not found'}), 404
 
     try:

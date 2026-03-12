@@ -6,6 +6,7 @@ interface Breadcrumb {
   label: string
   shortLabel?: string
   href?: string
+  onClick?: () => void
 }
 
 interface PageHeaderProps {
@@ -33,6 +34,10 @@ export function PageHeader({ title, description, breadcrumbs, actions, search }:
                 <Link to={crumb.href} className="hover:text-foreground transition-colors">
                   {crumb.shortLabel || crumb.label}
                 </Link>
+              ) : crumb.onClick ? (
+                <button type="button" onClick={crumb.onClick} className="hover:text-foreground transition-colors">
+                  {crumb.shortLabel || crumb.label}
+                </button>
               ) : (
                 <span>{crumb.shortLabel || crumb.label}</span>
               )}
@@ -67,6 +72,10 @@ export function PageHeader({ title, description, breadcrumbs, actions, search }:
                     <Link to={crumb.href} className="text-muted-foreground hover:text-foreground transition-colors text-base sm:text-lg font-medium">
                       {text}
                     </Link>
+                  ) : crumb.onClick ? (
+                    <button type="button" onClick={crumb.onClick} className="text-muted-foreground hover:text-foreground transition-colors text-base sm:text-lg font-medium">
+                      {text}
+                    </button>
                   ) : (
                     <span className="text-muted-foreground text-base sm:text-lg font-medium">{text}</span>
                   )

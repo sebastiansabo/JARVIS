@@ -1454,6 +1454,131 @@ def init_db():
                 )
             ''')
 
+            # ── DMS Folders (hierarchical organization) ──
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS dms_folders (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    icon TEXT DEFAULT 'bi-folder',
+                    color TEXT DEFAULT '#6c757d',
+                    parent_id INTEGER REFERENCES dms_folders(id) ON DELETE CASCADE,
+                    path TEXT NOT NULL DEFAULT '/',
+                    depth INTEGER NOT NULL DEFAULT 0,
+                    company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+                    created_by INTEGER NOT NULL REFERENCES users(id),
+                    inherit_permissions BOOLEAN DEFAULT TRUE,
+                    sort_order INTEGER DEFAULT 0,
+                    metadata JSONB DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP,
+                    UNIQUE(parent_id, name, company_id)
+                )
+            ''')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_dms_folders_path ON dms_folders(path text_pattern_ops)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_dms_folders_parent ON dms_folders(parent_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_dms_folders_company ON dms_folders(company_id)")
+
+            # ── DMS Folder ACL (per-user/role permissions) ──
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS dms_folder_acl (
+                    id SERIAL PRIMARY KEY,
+                    folder_id INTEGER NOT NULL REFERENCES dms_folders(id) ON DELETE CASCADE,
+                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    role_id INTEGER REFERENCES roles(id) ON DELETE CASCADE,
+                    can_view BOOLEAN DEFAULT FALSE,
+                    can_add BOOLEAN DEFAULT FALSE,
+                    can_edit BOOLEAN DEFAULT FALSE,
+                    can_delete BOOLEAN DEFAULT FALSE,
+                    can_manage BOOLEAN DEFAULT FALSE,
+                    granted_by INTEGER NOT NULL REFERENCES users(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT acl_grantee_check CHECK (
+                        (user_id IS NOT NULL AND role_id IS NULL) OR
+                        (user_id IS NULL AND role_id IS NOT NULL)
+                    )
+                )
+            ''')
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_dms_folder_acl_user
+                ON dms_folder_acl(folder_id, user_id) WHERE user_id IS NOT NULL
+            """)
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_dms_folder_acl_role
+                ON dms_folder_acl(folder_id, role_id) WHERE role_id IS NOT NULL
+            """)
+
+            # ── DMS Audit Log (change tracking) ──
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS dms_audit_log (
+                    id SERIAL PRIMARY KEY,
+                    entity_type TEXT NOT NULL,
+                    entity_id INTEGER NOT NULL,
+                    action TEXT NOT NULL,
+                    changes JSONB,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    company_id INTEGER NOT NULL REFERENCES companies(id),
+                    ip_address TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_dms_audit_entity ON dms_audit_log(entity_type, entity_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_dms_audit_user ON dms_audit_log(user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_dms_audit_created ON dms_audit_log(created_at DESC)")
+
+            # ── DMS Module Links (universal cross-module linking) ──
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS dms_module_links (
+                    id SERIAL PRIMARY KEY,
+                    link_type TEXT NOT NULL,
+                    folder_id INTEGER REFERENCES dms_folders(id) ON DELETE CASCADE,
+                    document_id INTEGER REFERENCES dms_documents(id) ON DELETE CASCADE,
+                    module TEXT NOT NULL,
+                    module_entity_id INTEGER NOT NULL,
+                    linked_by INTEGER NOT NULL REFERENCES users(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT link_source_check CHECK (
+                        (link_type = 'folder' AND folder_id IS NOT NULL AND document_id IS NULL) OR
+                        (link_type = 'document' AND document_id IS NOT NULL AND folder_id IS NULL)
+                    )
+                )
+            ''')
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_dms_module_links_folder
+                ON dms_module_links(folder_id, module, module_entity_id)
+                WHERE folder_id IS NOT NULL
+            """)
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_dms_module_links_document
+                ON dms_module_links(document_id, module, module_entity_id)
+                WHERE document_id IS NOT NULL
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_dms_module_links_module ON dms_module_links(module, module_entity_id)")
+
+            # ── Add folder_id to dms_documents ──
+            cursor.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE dms_documents ADD COLUMN folder_id INTEGER REFERENCES dms_folders(id) ON DELETE SET NULL;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_dms_documents_folder ON dms_documents(folder_id)")
+
+            # ── Add Google Drive sync columns to dms_folders ──
+            for col_def in [
+                "drive_folder_id TEXT",
+                "drive_folder_url TEXT",
+                "drive_synced_at TIMESTAMP",
+            ]:
+                col_name = col_def.split()[0]
+                cursor.execute(f"""
+                    DO $$ BEGIN
+                        ALTER TABLE dms_folders ADD COLUMN {col_def};
+                    EXCEPTION WHEN duplicate_column THEN NULL;
+                    END $$;
+                """)
+
             # Seed default relationship types
             cursor.execute('SELECT COUNT(*) as cnt FROM dms_relationship_types')
             if cursor.fetchone()['cnt'] == 0:
@@ -1556,6 +1681,57 @@ def init_db():
                             VALUES (%s, %s, %s, %s)
                             ON CONFLICT (role_id, permission_id) DO NOTHING
                         ''', (role['id'], perm['id'], scope, granted))
+
+            # Seed folder permissions (incremental — safe to re-run)
+            cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'dms' AND entity_key = 'folder'")
+            if cursor.fetchone()['cnt'] == 0:
+                cursor.execute('''
+                    INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order) VALUES
+                    ('dms', 'Documents', 'bi-folder', 'folder', 'Folders', 'view', 'View', 'View folders', FALSE, 9),
+                    ('dms', 'Documents', 'bi-folder', 'folder', 'Folders', 'create', 'Create', 'Create folders', FALSE, 10),
+                    ('dms', 'Documents', 'bi-folder', 'folder', 'Folders', 'edit', 'Edit', 'Edit folders and settings', FALSE, 11),
+                    ('dms', 'Documents', 'bi-folder', 'folder', 'Folders', 'delete', 'Delete', 'Delete folders', FALSE, 12),
+                    ('dms', 'Documents', 'bi-folder', 'folder', 'Folders', 'manage_acl', 'Manage ACL', 'Manage folder permissions', FALSE, 13)
+                ''')
+                cursor.execute('SELECT id, name FROM roles')
+                roles_for_folders = cursor.fetchall()
+                cursor.execute("SELECT id, action_key FROM permissions_v2 WHERE module_key = 'dms' AND entity_key = 'folder'")
+                folder_perms = cursor.fetchall()
+                for role in roles_for_folders:
+                    for perm in folder_perms:
+                        if role['name'] in ('Admin', 'Manager'):
+                            scope, granted = 'all', True
+                        elif role['name'] == 'User':
+                            if perm['action_key'] in ('view', 'create'):
+                                scope, granted = 'all', True
+                            else:
+                                scope, granted = 'deny', False
+                        else:
+                            scope = 'all' if perm['action_key'] == 'view' else 'deny'
+                            granted = perm['action_key'] == 'view'
+                        cursor.execute('''
+                            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+                            VALUES (%s, %s, %s, %s)
+                            ON CONFLICT (role_id, permission_id) DO NOTHING
+                        ''', (role['id'], perm['id'], scope, granted))
+
+            # ── Auto-seed company root folders ──
+            # Each company gets a root folder named after the company
+            cursor.execute('''
+                INSERT INTO dms_folders (name, company_id, created_by, path, depth, sort_order)
+                SELECT c.company, c.id, 1, '/', 0, c.id
+                FROM companies c
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM dms_folders f
+                    WHERE f.company_id = c.id AND f.parent_id IS NULL AND f.depth = 0
+                )
+            ''')
+            # Fix paths for newly inserted root folders (set path = /{id}/)
+            cursor.execute('''
+                UPDATE dms_folders
+                SET path = '/' || id || '/'
+                WHERE depth = 0 AND path = '/'
+            ''')
 
             # ── Menu items: add 'archived' status + sync from registry ──
             cursor.execute("""

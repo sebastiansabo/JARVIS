@@ -6,10 +6,14 @@ class DocumentRepository(BaseRepository):
 
     def list_documents(self, company_id=None, category_id=None, status=None,
                        search=None, limit=50, offset=0,
-                       user_id=None, role_id=None):
+                       user_id=None, role_id=None, folder_id=None):
         """List root documents (parent_id IS NULL) with filters and visibility."""
         conditions = ['d.parent_id IS NULL', 'd.deleted_at IS NULL']
         params = []
+
+        if folder_id:
+            conditions.append('d.folder_id = %s')
+            params.append(folder_id)
 
         if company_id:
             conditions.append('d.company_id = %s')

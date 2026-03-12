@@ -1,7 +1,7 @@
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Settings2, RotateCcw } from 'lucide-react'
 import { WIDGET_CATALOG, type WidgetPref } from './types'
 import { cn } from '@/lib/utils'
@@ -20,16 +20,18 @@ export function CustomizeSheet({ permittedWidgets, toggleWidget, setWidgetWidth,
 
   return (
     <Sheet>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <SheetTrigger asChild>
-            <Button variant="outline" size="icon">
-              <Settings2 className="h-4 w-4" />
-            </Button>
-          </SheetTrigger>
-        </TooltipTrigger>
-        <TooltipContent>Customize</TooltipContent>
-      </Tooltip>
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon">
+                <Settings2 className="h-4 w-4" />
+              </Button>
+            </SheetTrigger>
+          </TooltipTrigger>
+          <TooltipContent>Customize</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <SheetContent className="w-[340px] sm:w-[380px]">
         <SheetHeader>
           <SheetTitle>Customize Dashboard</SheetTitle>

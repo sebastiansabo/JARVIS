@@ -6,6 +6,7 @@ import {
   FileText,
   Building2,
   FolderTree,
+  FolderArchive,
 
   Trash2,
   Plus,
@@ -229,6 +230,20 @@ export default function Accounting() {
       toast.success('Invoice(s) permanently deleted')
     },
     onError: () => toast.error('Failed to permanently delete'),
+  })
+
+  const storeToDmsMutation = useMutation({
+    mutationFn: (ids: number[]) => invoicesApi.storeToDms(ids),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['invoice-dms-docs'] })
+      clearSelected()
+      const msg = [`${result.stored} stored`]
+      if (result.skipped > 0) msg.push(`${result.skipped} already stored`)
+      if (result.errors > 0) msg.push(`${result.errors} failed`)
+      toast.success(`Store to DMS: ${msg.join(', ')}`)
+    },
+    onError: () => toast.error('Failed to store to DMS'),
   })
 
   const updateFieldMutation = useMutation({
@@ -533,6 +548,14 @@ export default function Accounting() {
             entityIds={selectedInvoiceIds}
             onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
           />
+          <Button
+            variant="outline" size="sm"
+            onClick={() => storeToDmsMutation.mutate(selectedInvoiceIds)}
+            disabled={storeToDmsMutation.isPending}
+          >
+            <FolderArchive className="mr-1 h-3.5 w-3.5" />
+            {storeToDmsMutation.isPending ? 'Storing...' : 'Store to DMS'}
+          </Button>
           {canDelete && (
             <Button variant="destructive" size="sm" onClick={() => setDeleteIds(selectedInvoiceIds)}>
               <Trash2 className="mr-1 h-3.5 w-3.5" />
@@ -1154,6 +1177,17 @@ const InvoiceRow = memo(function InvoiceRow({
   const hasAllocations = inv.allocations && inv.allocations.length > 0
   const [editingAllocations, setEditingAllocations] = useState(false)
 
+  const storeToDmsMut = useMutation({
+    mutationFn: () => invoicesApi.storeToDms([inv.id]),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['invoice-dms-docs', inv.id] })
+      if (result.stored > 0) toast.success('Invoice stored to DMS')
+      else if (result.skipped > 0) toast.info('Invoice already stored in DMS')
+      else toast.error('Failed to store to DMS')
+    },
+    onError: () => toast.error('Failed to store to DMS'),
+  })
+
   const saveMutation = useMutation({
     mutationFn: (payload: { company: string; rows: import('./AllocationEditor').AllocationRow[] }) =>
       invoicesApi.updateAllocations(inv.id, {
@@ -1207,6 +1241,16 @@ const InvoiceRow = memo(function InvoiceRow({
                 {canEdit && (
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(inv)} title="Edit">
                     <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {canEdit && (
+                  <Button
+                    variant="ghost" size="icon" className="h-7 w-7"
+                    onClick={() => storeToDmsMut.mutate()}
+                    disabled={storeToDmsMut.isPending}
+                    title="Store to DMS"
+                  >
+                    <FolderArchive className="h-3.5 w-3.5" />
                   </Button>
                 )}
                 {canDelete && (

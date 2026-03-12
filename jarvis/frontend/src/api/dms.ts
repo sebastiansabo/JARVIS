@@ -17,6 +17,11 @@ import type {
   DmsDriveSync,
   DmsSupplier,
   PartySuggestion,
+  DmsFolder,
+  DmsFolderAclEntry,
+  DmsFolderPermissions,
+  DmsAuditEntry,
+  DmsModuleLink,
 } from '@/types/dms'
 
 const BASE = '/dms/api'
@@ -302,5 +307,144 @@ export const dmsApi = {
   getDocumentInvoices: (documentId: number) =>
     api.get<{ invoices: import('@/types/invoices').LinkedInvoice[] }>(
       `/api/dms-documents/${documentId}/invoices`,
+    ),
+
+  // ---- Folders ----
+
+  listFolders: (parentId?: number) =>
+    api.get<{ success: boolean; folders: DmsFolder[] }>(
+      `/dms/api/dms/folders${toQs({ parent_id: parentId })}`,
+    ),
+
+  getFolderTree: () =>
+    api.get<{ success: boolean; folders: DmsFolder[] }>(
+      `/dms/api/dms/folders/tree`,
+    ),
+
+  getFolder: (id: number) =>
+    api.get<{ success: boolean; folder: DmsFolder; ancestors: DmsFolder[]; children: DmsFolder[] }>(
+      `/dms/api/dms/folders/${id}`,
+    ),
+
+  createFolder: (data: { name: string; parent_id?: number; description?: string; icon?: string; color?: string; inherit_permissions?: boolean }) =>
+    api.post<{ success: boolean; folder: DmsFolder }>(
+      `/dms/api/dms/folders`, data,
+    ),
+
+  updateFolder: (id: number, data: Partial<DmsFolder>) =>
+    api.put<{ success: boolean; folder: DmsFolder }>(
+      `/dms/api/dms/folders/${id}`, data,
+    ),
+
+  deleteFolder: (id: number) =>
+    api.delete<{ success: boolean }>(`/dms/api/dms/folders/${id}`),
+
+  moveFolder: (id: number, parentId: number | null) =>
+    api.post<{ success: boolean; folder: DmsFolder }>(
+      `/dms/api/dms/folders/${id}/move`, { parent_id: parentId },
+    ),
+
+  reorderFolders: (folderIds: number[]) =>
+    api.put<{ success: boolean }>(`/dms/api/dms/folders/reorder`, { folder_ids: folderIds }),
+
+  searchFolders: (query: string) =>
+    api.get<{ success: boolean; folders: DmsFolder[] }>(
+      `/dms/api/dms/folders/search${toQs({ q: query })}`,
+    ),
+
+  // ---- Folder ACL ----
+
+  getFolderAcl: (folderId: number) =>
+    api.get<{ success: boolean; acl: DmsFolderAclEntry[] }>(
+      `/dms/api/dms/folders/${folderId}/acl`,
+    ),
+
+  setFolderAcl: (folderId: number, data: {
+    user_id?: number; role_id?: number;
+    can_view?: boolean; can_add?: boolean; can_edit?: boolean;
+    can_delete?: boolean; can_manage?: boolean;
+  }) =>
+    api.post<{ success: boolean; entry: DmsFolderAclEntry }>(
+      `/dms/api/dms/folders/${folderId}/acl`, data,
+    ),
+
+  batchSetFolderAcl: (folderId: number, entries: Array<{
+    user_id?: number; role_id?: number;
+    can_view?: boolean; can_add?: boolean; can_edit?: boolean;
+    can_delete?: boolean; can_manage?: boolean;
+  }>) =>
+    api.post<{ success: boolean; entries: DmsFolderAclEntry[] }>(
+      `/dms/api/dms/folders/${folderId}/acl/batch`, { entries },
+    ),
+
+  removeFolderAcl: (folderId: number, aclId: number) =>
+    api.delete<{ success: boolean }>(`/dms/api/dms/folders/${folderId}/acl/${aclId}`),
+
+  getMyFolderPermissions: (folderId: number) =>
+    api.get<{ success: boolean; permissions: DmsFolderPermissions }>(
+      `/dms/api/dms/folders/${folderId}/my-permissions`,
+    ),
+
+  // ---- Folder Module Links ----
+
+  getFolderLinks: (folderId: number) =>
+    api.get<{ success: boolean; links: DmsModuleLink[] }>(
+      `/dms/api/dms/folders/${folderId}/links`,
+    ),
+
+  linkFolder: (folderId: number, module: string, moduleEntityId: number) =>
+    api.post<{ success: boolean; link: DmsModuleLink }>(
+      `/dms/api/dms/folders/${folderId}/links`, { module, module_entity_id: moduleEntityId },
+    ),
+
+  unlinkFolder: (folderId: number, module: string, entityId: number) =>
+    api.delete<{ success: boolean }>(
+      `/dms/api/dms/folders/${folderId}/links/${module}/${entityId}`,
+    ),
+
+  getModuleLinks: (module: string, entityId: number) =>
+    api.get<{ success: boolean; links: DmsModuleLink[] }>(
+      `/dms/api/dms/module-links/${module}/${entityId}`,
+    ),
+
+  // ---- Audit Log ----
+
+  getAuditLog: (params?: { entity_type?: string; limit?: number; offset?: number }) =>
+    api.get<{ success: boolean; entries: DmsAuditEntry[] }>(
+      `/dms/api/dms/audit${toQs({ ...params })}`,
+    ),
+
+  getEntityAudit: (entityType: string, entityId: number) =>
+    api.get<{ success: boolean; entries: DmsAuditEntry[] }>(
+      `/dms/api/dms/audit/${entityType}/${entityId}`,
+    ),
+
+  getFolderActivity: (folderId: number) =>
+    api.get<{ success: boolean; entries: DmsAuditEntry[] }>(
+      `/dms/api/dms/folders/${folderId}/activity`,
+    ),
+
+  // ---- Folder Structure Sync ----
+
+  syncFolderStructure: (years?: number[]) =>
+    api.post<{ success: boolean; companies: number; created: { roots: number; year_folders: number; category_folders: number } }>(
+      `/dms/api/dms/folders/sync-structure`, years ? { years } : {},
+    ),
+
+  // ---- Google Drive Sync ----
+
+  syncFolderToDrive: (folderId: number) =>
+    api.post<{ success: boolean; drive_folder_id?: string; drive_folder_url?: string }>(
+      `/dms/api/dms/folders/${folderId}/drive-sync`, {},
+    ),
+
+  getFolderDriveStatus: (folderId: number) =>
+    api.get<{ success: boolean; synced: boolean; drive_folder_id?: string; drive_folder_url?: string; drive_synced_at?: string }>(
+      `/dms/api/dms/folders/${folderId}/drive-sync`,
+    ),
+
+  syncAllFoldersToDrive: (companyId?: number) =>
+    api.post<{ success: boolean; total: number; synced: number; skipped: number; errors: number }>(
+      `/dms/api/dms/folders/drive-sync-all`, companyId ? { company_id: companyId } : {},
     ),
 }

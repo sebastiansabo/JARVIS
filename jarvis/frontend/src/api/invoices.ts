@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Invoice, InvoiceSummary, InvoiceFilters, SubmitInvoiceInput, InvoiceTemplate, DeptSuggestion, InvoiceDmsLink, DmsDocSearchResult } from '@/types/invoices'
+import type { Invoice, InvoiceSummary, InvoiceFilters, SubmitInvoiceInput, InvoiceTemplate, DeptSuggestion, InvoiceDmsLink, DmsDocSearchResult, StoreToDmsResult } from '@/types/invoices'
 
 function buildQueryString(filters: InvoiceFilters & { limit?: number; offset?: number; include_allocations?: boolean }): string {
   const params = new URLSearchParams()
@@ -121,4 +121,8 @@ export const invoicesApi = {
     api.get<{ documents: DmsDocSearchResult[] }>(
       `/api/invoices/dms-search${q ? `?q=${encodeURIComponent(q)}&limit=${limit}` : `?limit=${limit}`}`,
     ),
+
+  // ---- Store to DMS ----
+  storeToDms: (invoiceIds: number[]) =>
+    api.post<StoreToDmsResult>('/api/invoices/store-to-dms', { invoice_ids: invoiceIds }),
 }

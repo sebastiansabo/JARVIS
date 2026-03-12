@@ -195,6 +195,18 @@ export interface DmsDocSearchResult {
   file_count: number
 }
 
+export interface StoreToDmsResult {
+  success: boolean
+  stored: number
+  skipped: number
+  errors: number
+  details: {
+    stored: { invoice_id: number; document_id: number; folder_id: number; title: string }[]
+    skipped: { id: number; reason: string; document_id?: number }[]
+    errors: { id: number; error: string }[]
+  }
+}
+
 export interface SubmitInvoiceInput {
   supplier: string
   invoice_template?: string

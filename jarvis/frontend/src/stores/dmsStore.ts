@@ -16,6 +16,10 @@ interface DmsState
     ColumnState {
   viewMode: 'table' | 'cards'
   setViewMode: (mode: 'table' | 'cards') => void
+  selectedFolderId: number | null
+  setSelectedFolderId: (id: number | null) => void
+  folderTreeOpen: boolean
+  setFolderTreeOpen: (open: boolean) => void
 }
 
 export const useDmsStore = create<DmsState>((set) => ({
@@ -41,5 +45,12 @@ export const useDmsStore = create<DmsState>((set) => ({
       /* ignore */
     }
     set({ viewMode: mode })
+  },
+  selectedFolderId: null,
+  setSelectedFolderId: (id) => set({ selectedFolderId: id }),
+  folderTreeOpen: localStorage.getItem('dms-folder-tree-open') !== 'false',
+  setFolderTreeOpen: (open) => {
+    try { localStorage.setItem('dms-folder-tree-open', String(open)) } catch { /* */ }
+    set({ folderTreeOpen: open })
   },
 }))

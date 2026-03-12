@@ -6,6 +6,7 @@ import {
   Paperclip, Users as ChildrenIcon, ChevronRight, BarChart3,
   Download, Calendar, Bell, Edit2, File, FileSpreadsheet,
   Image as ImageIcon, PenTool, Tags, Shield, X, CheckSquare, SlidersHorizontal,
+  PanelLeftClose, PanelLeftOpen, Receipt,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -32,8 +33,9 @@ import { dmsApi } from '@/api/dms'
 import { tagsApi } from '@/api/tags'
 import { useDmsStore } from '@/stores/dmsStore'
 import { useShallow } from 'zustand/react/shallow'
-import type { DmsDocument, DmsFile, DmsCategory, DmsRelationshipTypeConfig } from '@/types/dms'
+import type { DmsDocument, DmsFile, DmsCategory, DmsRelationshipTypeConfig, DmsFolder } from '@/types/dms'
 import UploadDialog from './UploadDialog'
+import FolderTree from './FolderTree'
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
   active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
@@ -78,8 +80,8 @@ export default function Dms() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
-  const { filters, updateFilter, clearFilters, selectedIds, toggleSelected, selectAll, clearSelected, visibleColumns, setVisibleColumns } = useDmsStore(
-    useShallow((s) => ({ filters: s.filters, updateFilter: s.updateFilter, clearFilters: s.clearFilters, selectedIds: s.selectedIds, toggleSelected: s.toggleSelected, selectAll: s.selectAll, clearSelected: s.clearSelected, visibleColumns: s.visibleColumns, setVisibleColumns: s.setVisibleColumns }))
+  const { filters, updateFilter, clearFilters, selectedIds, toggleSelected, selectAll, clearSelected, visibleColumns, setVisibleColumns, selectedFolderId, setSelectedFolderId, folderTreeOpen, setFolderTreeOpen } = useDmsStore(
+    useShallow((s) => ({ filters: s.filters, updateFilter: s.updateFilter, clearFilters: s.clearFilters, selectedIds: s.selectedIds, toggleSelected: s.toggleSelected, selectAll: s.selectAll, clearSelected: s.clearSelected, visibleColumns: s.visibleColumns, setVisibleColumns: s.setVisibleColumns, selectedFolderId: s.selectedFolderId, setSelectedFolderId: s.setSelectedFolderId, folderTreeOpen: s.folderTreeOpen, setFolderTreeOpen: s.setFolderTreeOpen }))
   )
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -98,15 +100,48 @@ export default function Dms() {
 
   const companyId = filters.company_id || user?.company_id || undefined
 
+  // Folder tree (shared cache with FolderTree sidebar)
+  const { data: folderTreeData } = useQuery({
+    queryKey: ['dms-folder-tree'],
+    queryFn: () => dmsApi.getFolderTree(),
+  })
+
+  const folderBreadcrumbs = useMemo(() => {
+    const base = [{ label: 'DMS', shortLabel: 'DMS', onClick: () => setSelectedFolderId(null) }]
+    if (!selectedFolderId || !folderTreeData?.folders?.length) {
+      return [...base, { label: 'Documents', shortLabel: 'Docs.' }]
+    }
+    const map = new Map<number, DmsFolder>()
+    for (const f of folderTreeData.folders) map.set(f.id, f)
+    // Walk up parent chain
+    const chain: DmsFolder[] = []
+    let cur = map.get(selectedFolderId)
+    while (cur) {
+      chain.unshift(cur)
+      cur = cur.parent_id ? map.get(cur.parent_id) : undefined
+    }
+    return [
+      ...base,
+      ...chain.map((f, i) => ({
+        label: f.name,
+        shortLabel: f.name.length > 12 ? f.name.slice(0, 10) + '…' : f.name,
+        ...(i < chain.length - 1 ? { onClick: () => setSelectedFolderId(f.id) } : {}),
+      })),
+    ]
+  }, [selectedFolderId, folderTreeData, setSelectedFolderId])
+
   // Queries
   const { data: categoriesData } = useQuery({
     queryKey: ['dms-categories', companyId],
     queryFn: () => dmsApi.listCategories(companyId),
   })
 
+  // When a folder is selected, skip company_id filter — folder already scopes results
+  const effectiveCompanyId = selectedFolderId ? undefined : companyId
+
   const { data: docsData, isLoading: docsLoading } = useQuery({
-    queryKey: ['dms-documents', { ...filters, search: debouncedSearch, company_id: companyId }],
-    queryFn: () => dmsApi.listDocuments({ ...filters, search: debouncedSearch, company_id: companyId }),
+    queryKey: ['dms-documents', { ...filters, search: debouncedSearch, company_id: effectiveCompanyId, folder_id: selectedFolderId }],
+    queryFn: () => dmsApi.listDocuments({ ...filters, search: debouncedSearch, company_id: effectiveCompanyId, folder_id: selectedFolderId ?? undefined }),
   })
 
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false)
@@ -336,10 +371,22 @@ export default function Dms() {
   }
 
   return (
-    <div className="space-y-4 md:space-y-6">
+    <div className="flex gap-0">
+      {/* Folder tree sidebar (desktop only) */}
+      {!isMobile && folderTreeOpen && (
+        <div className="w-60 shrink-0 border-r bg-muted/20 h-[calc(100vh-4rem)] sticky top-16 overflow-hidden">
+          <FolderTree
+            selectedFolderId={selectedFolderId}
+            onSelectFolder={setSelectedFolderId}
+          />
+        </div>
+      )}
+
+      {/* Main content */}
+      <div className="flex-1 min-w-0 space-y-4 md:space-y-6 pl-4 md:pl-6">
       <PageHeader
-        title="Documents"
-        breadcrumbs={[{ label: 'Documents', shortLabel: 'Docs.' }]}
+        title={folderBreadcrumbs[folderBreadcrumbs.length - 1]?.label || 'Documents'}
+        breadcrumbs={folderBreadcrumbs}
         search={
           <SearchInput
             value={search}
@@ -388,6 +435,11 @@ export default function Dms() {
                   onChange={setVisibleColumns}
                 />
               </>
+            )}
+            {!isMobile && (
+              <Button variant="ghost" size="icon" className={folderTreeOpen ? 'bg-muted' : ''} onClick={() => setFolderTreeOpen(!folderTreeOpen)} title="Toggle folder tree">
+                {folderTreeOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+              </Button>
             )}
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
               <BarChart3 className="h-4 w-4" />
@@ -713,6 +765,7 @@ export default function Dms() {
         onConfirm={() => batchDeleteMutation.mutate(selectedIds)}
       />
     </div>
+    </div>
   )
 }
 
@@ -817,11 +870,17 @@ function DocumentExpandedDetails({
     staleTime: 5 * 60_000,
   })
 
+  const { data: invoicesData } = useQuery({
+    queryKey: ['dms-doc-invoices', doc.id],
+    queryFn: () => dmsApi.getDocumentInvoices(doc.id),
+  })
+
   const relTypes: DmsRelationshipTypeConfig[] = relTypesData?.types || []
   const detail = data?.document
   const files: DmsFile[] = detail?.files || []
   const children: Partial<Record<string, DmsDocument[]>> = detail?.children || {}
   const hasChildren = relTypes.some((t) => (children[t.slug]?.length ?? 0) > 0)
+  const linkedInvoices = invoicesData?.invoices || []
 
   return (
     <div className="space-y-3">
@@ -957,6 +1016,48 @@ function DocumentExpandedDetails({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Linked Invoices */}
+      {linkedInvoices.length > 0 && (
+        <div>
+          <p className="text-sm font-medium flex items-center gap-1.5 mb-2">
+            <Receipt className="h-4 w-4" />
+            Linked Invoices ({linkedInvoices.length})
+          </p>
+          <div className="rounded border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="text-xs py-1.5">Supplier</TableHead>
+                  <TableHead className="text-xs py-1.5">Invoice #</TableHead>
+                  <TableHead className="text-xs py-1.5">Date</TableHead>
+                  <TableHead className="text-xs py-1.5 text-right">Value</TableHead>
+                  <TableHead className="text-xs py-1.5">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {linkedInvoices.map((inv) => (
+                  <TableRow
+                    key={inv.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={(e) => { e.stopPropagation(); navigate(`/app/accounting/invoices/${inv.invoice_id}`) }}
+                  >
+                    <TableCell className="text-xs py-1.5 font-medium">{inv.supplier}</TableCell>
+                    <TableCell className="text-xs py-1.5">{inv.invoice_number || '—'}</TableCell>
+                    <TableCell className="text-xs py-1.5 text-muted-foreground">{inv.invoice_date ? formatDate(inv.invoice_date) : '—'}</TableCell>
+                    <TableCell className="text-xs py-1.5 text-right font-medium">
+                      {inv.invoice_value?.toLocaleString('ro-RO', { minimumFractionDigits: 2 })} {inv.currency}
+                    </TableCell>
+                    <TableCell className="text-xs py-1.5">
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">{inv.status}</Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
 

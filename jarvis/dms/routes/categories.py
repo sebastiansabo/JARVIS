@@ -7,11 +7,13 @@ from flask_login import login_required, current_user
 from dms import dms_bp
 from dms.repositories import CategoryRepository
 from dms.routes.documents import dms_permission_required
+from dms.services.folder_sync_service import FolderSyncService
 from core.utils.api_helpers import safe_error_response, get_json_or_error
 
 logger = logging.getLogger('jarvis.dms.routes.categories')
 
 _cat_repo = CategoryRepository()
+_folder_sync = FolderSyncService()
 
 
 @dms_bp.route('/api/dms/categories', methods=['GET'])
@@ -63,15 +65,25 @@ def api_create_category():
             allowed_role_ids = [int(r) for r in allowed_role_ids] or None
         else:
             allowed_role_ids = None
+        icon = data.get('icon', 'bi-folder')
+        color = data.get('color', '#6c757d')
+        sort_order = data.get('sort_order', 0)
         row = _cat_repo.create(
             name=name, slug=slug, company_id=company_id,
-            icon=data.get('icon', 'bi-folder'),
-            color=data.get('color', '#6c757d'),
+            icon=icon, color=color,
             description=data.get('description'),
-            sort_order=data.get('sort_order', 0),
+            sort_order=sort_order,
             created_by=current_user.id,
             allowed_role_ids=allowed_role_ids,
         )
+        # Auto-create category folders under all existing year folders
+        try:
+            _folder_sync.sync_new_category(
+                category_name=name, category_id=row['id'],
+                icon=icon, color=color, sort_order=sort_order,
+                created_by=current_user.id)
+        except Exception:
+            logger.warning('Failed to sync folder for new category %s', name, exc_info=True)
         return jsonify({'success': True, 'id': row['id']}), 201
     except Exception as e:
         return safe_error_response(e)
@@ -98,7 +110,22 @@ def api_update_category(cat_id):
         if 'allowed_role_ids' in data:
             val = data['allowed_role_ids']
             fields['allowed_role_ids'] = [int(r) for r in val] if isinstance(val, list) and val else None
+
+        old_name = cat['name']
         _cat_repo.update(cat_id, **fields)
+
+        # Sync folder renames/icon/color changes
+        new_name = fields.get('name')
+        if new_name or 'icon' in fields or 'color' in fields:
+            try:
+                _folder_sync.rename_category_folders(
+                    old_name=old_name,
+                    new_name=new_name or old_name,
+                    new_icon=fields.get('icon'),
+                    new_color=fields.get('color'))
+            except Exception:
+                logger.warning('Failed to sync folder rename for category %s', cat_id, exc_info=True)
+
         return jsonify({'success': True})
     except Exception as e:
         return safe_error_response(e)
