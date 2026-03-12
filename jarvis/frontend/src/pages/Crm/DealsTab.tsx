@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, Fragment } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -100,7 +100,7 @@ function formatVal(v: unknown): string {
   return String(v)
 }
 
-export default function DealsTab({ showStats: _showStats = false, search = '', brandFilter = '' }: { showStats?: boolean; search?: string; brandFilter?: string }) {
+export default function DealsTab({ showStats: _showStats = false, search = '' }: { showStats?: boolean; search?: string }) {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
@@ -137,8 +137,6 @@ export default function DealsTab({ showStats: _showStats = false, search = '', b
     setDateFrom(''); setDateTo(''); setSortBy(''); setSortOrder(''); setPage(0)
   }
 
-  // Sync external brand filter from parent BrandFilter widget
-  useEffect(() => { setBrand(brandFilter) }, [brandFilter])
 
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)

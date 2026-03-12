@@ -2,7 +2,6 @@ import { Outlet } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { api } from '@/api/client'
 import { fetchColumnDefaults } from '@/lib/columnDefaults'
 import { Sidebar } from './Sidebar'
 import { AiAgentWidget, AiAgentPanel } from './AiAgentWidget'
@@ -20,12 +19,30 @@ export default function Layout() {
     try { const v = localStorage.getItem('sidebar-collapsed'); return v === null ? true : v === 'true' } catch { return true }
   })
 
-  // Heartbeat: update last_seen + keep server warm every 60s
+  // Heartbeat: keep server warm while user is active
   useEffect(() => {
     if (!user) return
-    api.post('/api/heartbeat').catch(() => {})
-    const id = setInterval(() => { api.post('/api/heartbeat').catch(() => {}) }, 60_000)
-    return () => clearInterval(id)
+
+    let timer: ReturnType<typeof setTimeout>
+    let interval = 55_000 // ~55s base
+    const MAX_INTERVAL = 5 * 60_000
+
+    const ping = () => {
+      if (document.hidden) return // skip when tab not visible
+      fetch('/api/heartbeat', { method: 'POST', credentials: 'same-origin' })
+        .then(r => { if (r.ok) interval = 55_000 }) // reset on success
+        .catch(() => { interval = Math.min(interval * 2, MAX_INTERVAL) }) // backoff on failure
+        .finally(() => { timer = setTimeout(ping, interval) })
+    }
+
+    // ping immediately, then schedule
+    ping()
+
+    // when tab becomes visible, ping right away to wake server
+    const onVisible = () => { if (!document.hidden) { clearTimeout(timer); ping() } }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => { clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible) }
   }, [user])
 
   // Fetch server column defaults (invalidates stale localStorage)

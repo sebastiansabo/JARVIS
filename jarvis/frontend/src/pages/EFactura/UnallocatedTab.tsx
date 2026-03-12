@@ -342,7 +342,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   // +3 for checkbox + tags + actions columns
   const totalColSpan = activeCols.length + 3
 
-  // Sync external company filter from parent BrandFilter widget
+  // Sync external company filter from parent
   useEffect(() => {
     setFilters((f) => ({ ...f, company_id: companyId, page: 1 }))
     setSelectedIds(new Set())

@@ -9,7 +9,6 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { StatCard } from '@/components/shared/StatCard'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useIsMobile } from '@/hooks/useMediaQuery'
-import { BrandFilter } from '@/components/shared/BrandFilter'
 import { crmApi, type CrmStats } from '@/api/crm'
 import DealsTab from './DealsTab'
 import StatisticsTab from './StatisticsTab'
@@ -21,8 +20,6 @@ export default function Crm() {
   const [tab, setTab] = useState('dashboard')
   const [search, setSearch] = useState('')
   const [statsShowFilters, setStatsShowFilters] = useState(false)
-  const [brandFilterKey, setBrandFilterKey] = useState<string | null>(null)
-  const [filterBrand, setFilterBrand] = useState('')
   const { data: stats } = useQuery({ queryKey: ['crm-stats'], queryFn: crmApi.getStats })
 
   return (
@@ -44,16 +41,6 @@ export default function Crm() {
           ) : undefined}
           actions={
             <div className="flex items-center gap-2">
-              {!isMobile && (tab === 'deals' || tab === 'dashboard') && (
-                <BrandFilter
-                  mode="brand"
-                  value={brandFilterKey}
-                  onSelect={(item) => {
-                    setBrandFilterKey(item?.key ?? null)
-                    setFilterBrand(item?.brandName ?? '')
-                  }}
-                />
-              )}
               {!isMobile && (
                 <TabsList className="w-auto">
                   <TabsTrigger value="dashboard"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
@@ -85,7 +72,7 @@ export default function Crm() {
           {stats && <DashboardContent stats={stats} />}
         </TabsContent>
 
-        <TabsContent value="deals"><DealsTab showStats search={search} brandFilter={filterBrand} /></TabsContent>
+        <TabsContent value="deals"><DealsTab showStats search={search} /></TabsContent>
         <TabsContent value="clients"><ClientStatsTab search={search} /></TabsContent>
         <TabsContent value="statistics"><StatisticsTab showFilters={statsShowFilters} setShowFilters={setStatsShowFilters} showStats /></TabsContent>
         <TabsContent value="import"><ImportTab /></TabsContent>
