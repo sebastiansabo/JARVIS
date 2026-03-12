@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom'
 import {
   Upload,
   FileText,
-  Wand2,
   Plus,
   Loader2,
   ArrowLeft,
@@ -55,7 +54,7 @@ export default function AddInvoice() {
   const [templateName, setTemplateName] = useState('')
 
   // Upload modal
-  const [uploadOpen, setUploadOpen] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(true)
   const [file, setFile] = useState<File | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [parseTemplateId, setParseTemplateId] = useState<string>('auto')
@@ -343,12 +342,14 @@ export default function AddInvoice() {
       // Auto-upload file to Google Drive after save
       if (result.id && file) {
         try {
-          const driveResult = await invoicesApi.uploadToDrive(file, data.invoice_date, data.distributions[0]?.company ?? '', data.invoice_number)
+          const driveResult = await invoicesApi.uploadToDrive(file, data.invoice_date, company, data.invoice_number)
           if (driveResult.success && driveResult.drive_link) {
             await invoicesApi.updateDriveLink(result.id, driveResult.drive_link)
+          } else {
+            console.warn('Drive upload response:', driveResult)
           }
-        } catch {
-          // Drive upload is non-blocking — invoice is already saved
+        } catch (err) {
+          console.warn('Drive upload failed:', err)
         }
       }
       return result
@@ -623,11 +624,7 @@ export default function AddInvoice() {
                 onClick={handleParse}
                 disabled={!file || isParsing}
               >
-                {isParsing ? (
-                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                ) : (
-                  <Wand2 className="mr-1.5 h-4 w-4" />
-                )}
+                {isParsing && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
                 {isParsing ? 'Parsing...' : 'Parse Invoice'}
               </Button>
               <Button

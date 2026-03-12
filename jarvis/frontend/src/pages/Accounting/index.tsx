@@ -25,7 +25,6 @@ import {
   CheckSquare,
   SlidersHorizontal,
   LayoutDashboard,
-  Upload,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -407,18 +406,11 @@ export default function Accounting() {
               <LayoutDashboard className="h-4 w-4" />
             </Button>
             {canAdd && (
-              <>
-                <Button variant="outline" size="sm" asChild className="hidden md:inline-flex">
-                  <Link to="/app/accounting/bulk-upload">
-                    <Upload className="h-4 w-4 mr-1" /> Bulk
-                  </Link>
-                </Button>
-                <Button size="icon" asChild>
-                  <Link to="/app/accounting/add">
-                    <Plus className="h-4 w-4" />
-                  </Link>
-                </Button>
-              </>
+              <Button size="icon" asChild>
+                <Link to="/app/accounting/add">
+                  <Plus className="h-4 w-4" />
+                </Link>
+              </Button>
             )}
           </div>
         }

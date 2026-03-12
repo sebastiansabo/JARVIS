@@ -79,7 +79,7 @@ export default function Layout() {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          'hidden border-r transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] md:block',
+          'hidden border-r transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] md:block overflow-hidden',
           collapsed ? 'w-16' : 'w-64',
         )}
       >
