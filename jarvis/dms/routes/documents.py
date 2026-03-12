@@ -114,6 +114,10 @@ def api_create_document():
         else:
             allowed_user_ids = None
 
+        folder_id = data.get('folder_id')
+        if folder_id is not None:
+            folder_id = int(folder_id)
+
         row = _doc_repo.create(
             title=title,
             company_id=company_id,
@@ -129,6 +133,7 @@ def api_create_document():
             visibility=visibility,
             allowed_role_ids=allowed_role_ids,
             allowed_user_ids=allowed_user_ids,
+            folder_id=folder_id,
         )
         return jsonify({'success': True, 'id': row['id']}), 201
     except Exception as e:

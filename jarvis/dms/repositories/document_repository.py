@@ -180,8 +180,9 @@ class DocumentRepository(BaseRepository):
             INSERT INTO dms_documents (title, description, category_id, company_id, status,
                                        parent_id, relationship_type, metadata,
                                        doc_number, doc_date, expiry_date, notify_user_id,
-                                       created_by, visibility, allowed_role_ids, allowed_user_ids)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s)
+                                       created_by, visibility, allowed_role_ids, allowed_user_ids,
+                                       folder_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (
             title,
@@ -200,6 +201,7 @@ class DocumentRepository(BaseRepository):
             kwargs.get('visibility', 'all'),
             kwargs.get('allowed_role_ids'),
             kwargs.get('allowed_user_ids'),
+            kwargs.get('folder_id'),
         ), returning=True)
 
     def update(self, doc_id, **fields):

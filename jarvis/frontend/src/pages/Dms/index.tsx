@@ -741,6 +741,7 @@ export default function Dms() {
         onOpenChange={setUploadOpen}
         companyId={companyId}
         categories={categories}
+        folderId={selectedFolderId}
       />
 
       {/* Delete Confirmation */}

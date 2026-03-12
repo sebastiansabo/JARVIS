@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Upload, X, FileText, Image as ImageIcon, Shield } from 'lucide-react'
+import { Upload, X, FileText, Image as ImageIcon, Shield, Folder, ChevronRight, ChevronDown, Search, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -15,7 +15,8 @@ import { dmsApi } from '@/api/dms'
 import { organizationApi } from '@/api/organization'
 import { usersApi } from '@/api/users'
 import { rolesApi } from '@/api/roles'
-import type { DmsCategory, DmsRelationshipType } from '@/types/dms'
+import { settingsApi } from '@/api/settings'
+import type { DmsCategory, DmsFolder, DmsRelationshipType } from '@/types/dms'
 
 const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'xlsx', 'jpg', 'jpeg', 'png', 'tiff', 'tif', 'gif']
 const MAX_FILE_SIZE = 25 * 1024 * 1024
@@ -27,6 +28,7 @@ interface UploadDialogProps {
   categories: DmsCategory[]
   parentId?: number
   defaultRelType?: DmsRelationshipType
+  folderId?: number | null
 }
 
 interface PendingFile {
@@ -36,7 +38,7 @@ interface PendingFile {
 }
 
 export default function UploadDialog({
-  open, onOpenChange, companyId, categories, parentId, defaultRelType,
+  open, onOpenChange, companyId, categories, parentId, defaultRelType, folderId: propFolderId,
 }: UploadDialogProps) {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -55,6 +57,19 @@ export default function UploadDialog({
   const [allowedUserIds, setAllowedUserIds] = useState<number[]>([])
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const [uploading, setUploading] = useState(false)
+  const [docMode, setDocMode] = useState<'main' | 'child'>(parentId ? 'child' : 'main')
+  const [parentSearch, setParentSearch] = useState('')
+  const [selectedParentId, setSelectedParentId] = useState<number | null>(parentId ?? null)
+  const [selectedParentTitle, setSelectedParentTitle] = useState('')
+  const [parentDropdownOpen, setParentDropdownOpen] = useState(false)
+  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(propFolderId ?? null)
+  const [folderTreeOpen, setFolderTreeOpen] = useState(false)
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<number>>(new Set())
+
+  // Sync folder when prop changes
+  useEffect(() => {
+    setSelectedFolderId(propFolderId ?? null)
+  }, [propFolderId])
 
   const needsCompanyPicker = !companyId
 
@@ -82,8 +97,35 @@ export default function UploadDialog({
     queryKey: ['dms-rel-types'],
     queryFn: () => dmsApi.listRelationshipTypes(),
     staleTime: 5 * 60_000,
-    enabled: !!parentId && open,
+    enabled: (!!parentId || docMode === 'child') && open,
   })
+
+  // Search parent documents for child mode
+  const { data: parentDocsData } = useQuery({
+    queryKey: ['dms-parent-search', parentSearch],
+    queryFn: () => dmsApi.listDocuments({ search: parentSearch, limit: 15 }),
+    enabled: open && docMode === 'child' && parentSearch.length >= 2,
+    staleTime: 30_000,
+  })
+  const parentDocs = parentDocsData?.documents || []
+
+  const { data: folderTreeData } = useQuery({
+    queryKey: ['dms-folder-tree'],
+    queryFn: () => dmsApi.getFolderTree(),
+    staleTime: 5 * 60_000,
+    enabled: open,
+  })
+  const allFolders: DmsFolder[] = folderTreeData?.folders || []
+
+  const { data: dmsConfigOpts } = useQuery({
+    queryKey: ['settings', 'dropdown-options', 'dms_config'],
+    queryFn: () => settingsApi.getDropdownOptions('dms_config'),
+    staleTime: 5 * 60_000,
+    enabled: open,
+  })
+  const requireParentForChild = dmsConfigOpts?.find((o) => o.value === 'require_parent_for_child')?.is_active ?? true
+
+  const selectedFolderName = allFolders.find((f) => f.id === selectedFolderId)?.name
 
   // Sync relType when defaultRelType changes (e.g. different child type button clicked)
   useEffect(() => {
@@ -101,6 +143,14 @@ export default function UploadDialog({
     setExpiryDate('')
     setNotifyUserId('')
     setRelType(defaultRelType || '')
+    setDocMode(parentId ? 'child' : 'main')
+    setParentSearch('')
+    setSelectedParentId(parentId ?? null)
+    setSelectedParentTitle('')
+    setParentDropdownOpen(false)
+    setSelectedFolderId(propFolderId ?? null)
+    setFolderTreeOpen(false)
+    setExpandedFolderIds(new Set())
     setVisibility('all')
     setAllowedRoleIds([])
     setAllowedUserIds([])
@@ -143,6 +193,8 @@ export default function UploadDialog({
 
   const resolvedCompanyId = companyId || (selectedCompanyId ? Number(selectedCompanyId) : undefined)
 
+  const effectiveParentId = docMode === 'child' ? (selectedParentId ?? parentId) : null
+
   const handleSubmit = async () => {
     if (!title.trim()) {
       toast.error('Title is required')
@@ -150,6 +202,10 @@ export default function UploadDialog({
     }
     if (!resolvedCompanyId) {
       toast.error('Please select a company')
+      return
+    }
+    if (docMode === 'child' && !effectiveParentId && requireParentForChild) {
+      toast.error('Please select a parent document')
       return
     }
     const validFiles = pendingFiles.filter((f) => !f.error)
@@ -170,11 +226,12 @@ export default function UploadDialog({
         visibility,
         allowed_role_ids: visibility === 'restricted' && allowedRoleIds.length ? allowedRoleIds : null,
         allowed_user_ids: visibility === 'restricted' && allowedUserIds.length ? allowedUserIds : null,
+        folder_id: selectedFolderId || undefined,
       }
 
       let docId: number
-      if (parentId) {
-        const res = await dmsApi.createChild(parentId, {
+      if (effectiveParentId) {
+        const res = await dmsApi.createChild(effectiveParentId, {
           title: title.trim(),
           description: description.trim() || undefined,
           relationship_type: (relType || 'other') as DmsRelationshipType,
@@ -211,8 +268,9 @@ export default function UploadDialog({
 
       queryClient.invalidateQueries({ queryKey: ['dms-documents'] })
       queryClient.invalidateQueries({ queryKey: ['dms-stats'] })
-      if (parentId) {
-        queryClient.invalidateQueries({ queryKey: ['dms-document', parentId] })
+      queryClient.invalidateQueries({ queryKey: ['dms-folder-tree'] })
+      if (effectiveParentId) {
+        queryClient.invalidateQueries({ queryKey: ['dms-document', effectiveParentId] })
       }
       reset()
       onOpenChange(false)
@@ -224,157 +282,261 @@ export default function UploadDialog({
     }
   }
 
+  const isChild = docMode === 'child' || !!parentId
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v) }}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{parentId ? 'Add Child Document' : 'Upload Document'}</DialogTitle>
+      <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col gap-0 p-0">
+        <DialogHeader className="px-6 pt-6 pb-3">
+          <DialogTitle>{effectiveParentId ? 'Add Child Document' : 'Upload Document'}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Title */}
-          <div className="space-y-1.5">
-            <Label htmlFor="dms-title">Title *</Label>
-            <Input
-              id="dms-title"
-              placeholder="Document title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
+        <div className="space-y-3 overflow-y-auto px-6 pb-2">
+          {/* ── Document type toggle ── */}
+          {!parentId && (
+            <div className="flex gap-0.5 rounded-lg bg-muted p-0.5">
+              <button
+                type="button"
+                className={cn(
+                  'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  docMode === 'main' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => { setDocMode('main'); setSelectedParentId(null); setSelectedParentTitle(''); setParentSearch('') }}
+              >
+                Main Document
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  docMode === 'child' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => setDocMode('child')}
+              >
+                <Link2 className="h-3 w-3" />
+                Child Document
+              </button>
+            </div>
+          )}
+
+          {/* ── Parent document picker (child mode) ── */}
+          {docMode === 'child' && !parentId && (
+            <div className="space-y-1">
+              <Label className="text-xs">Parent Document{requireParentForChild ? ' *' : ''}</Label>
+              {selectedParentId ? (
+                <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs">
+                  <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span className="flex-1 truncate font-medium">{selectedParentTitle}</span>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => { setSelectedParentId(null); setSelectedParentTitle(''); setParentSearch('') }}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search parent document..."
+                    value={parentSearch}
+                    onChange={(e) => { setParentSearch(e.target.value); setParentDropdownOpen(true) }}
+                    onFocus={() => parentSearch.length >= 2 && setParentDropdownOpen(true)}
+                    className="pl-8 h-8 text-xs"
+                  />
+                  {parentDropdownOpen && parentSearch.length >= 2 && (
+                    <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md max-h-40 overflow-y-auto">
+                      {parentDocs.length === 0 ? (
+                        <p className="text-xs text-muted-foreground p-2.5 text-center">No documents found</p>
+                      ) : (
+                        parentDocs.map((doc) => (
+                          <div
+                            key={doc.id}
+                            className="flex items-center gap-2 px-2.5 py-1.5 text-xs cursor-pointer hover:bg-muted/80 transition-colors"
+                            onClick={() => {
+                              setSelectedParentId(doc.id)
+                              setSelectedParentTitle(doc.title)
+                              setParentSearch('')
+                              setParentDropdownOpen(false)
+                            }}
+                          >
+                            <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="truncate font-medium">{doc.title}</p>
+                              {doc.doc_number && (
+                                <p className="text-[10px] text-muted-foreground">{doc.doc_number}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Title + Doc Number row ── */}
+          <div className="grid grid-cols-5 gap-2">
+            <div className="col-span-3 space-y-1">
+              <Label className="text-xs" htmlFor="dms-title">Title *</Label>
+              <Input id="dms-title" placeholder="Document title" value={title} onChange={(e) => setTitle(e.target.value)} className="h-8 text-xs" />
+            </div>
+            <div className="col-span-2 space-y-1">
+              <Label className="text-xs" htmlFor="dms-doc-number">Doc Number</Label>
+              <Input id="dms-doc-number" placeholder="CTR-2025-0001" value={docNumber} onChange={(e) => setDocNumber(e.target.value)} className="h-8 text-xs" />
+            </div>
           </div>
 
-          {/* Description */}
-          <div className="space-y-1.5">
-            <Label htmlFor="dms-desc">Description</Label>
-            <Textarea
-              id="dms-desc"
-              placeholder="Optional description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-            />
+          {/* ── Description (compact) ── */}
+          <div className="space-y-1">
+            <Label className="text-xs" htmlFor="dms-desc">Description</Label>
+            <Textarea id="dms-desc" placeholder="Optional description" value={description} onChange={(e) => setDescription(e.target.value)} rows={1} className="text-xs min-h-[32px] resize-y" />
           </div>
 
-          {/* Company selector for admin users */}
+          {/* ── Company selector for admin users ── */}
           {needsCompanyPicker && (
-            <div className="space-y-1.5">
-              <Label>Company *</Label>
+            <div className="space-y-1">
+              <Label className="text-xs">Company *</Label>
               <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
-                <SelectTrigger><SelectValue placeholder="Select company..." /></SelectTrigger>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select company..." /></SelectTrigger>
                 <SelectContent>
                   {(companies || []).map((c) => (
-                    <SelectItem key={c.id} value={c.id.toString()}>
-                      {c.company}
-                    </SelectItem>
+                    <SelectItem key={c.id} value={c.id.toString()} className="text-xs">{c.company}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           )}
 
-          {/* Doc Number */}
-          <div className="space-y-1.5">
-            <Label htmlFor="dms-doc-number">Document Number</Label>
-            <Input
-              id="dms-doc-number"
-              placeholder="e.g. CTR-2025-0001"
-              value={docNumber}
-              onChange={(e) => setDocNumber(e.target.value)}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            {/* Category */}
-            <div className="space-y-1.5">
-              <Label>Category</Label>
+          {/* ── Folder | Category | Status row ── */}
+          <div className={cn('grid gap-2', isChild ? 'grid-cols-4' : 'grid-cols-3')}>
+            <div className={cn('space-y-1', isChild ? 'col-span-1' : 'col-span-1')}>
+              <Label className="text-xs">Folder</Label>
+              <div
+                className="flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs cursor-pointer hover:bg-muted/50 transition-colors h-8"
+                onClick={() => setFolderTreeOpen(!folderTreeOpen)}
+              >
+                <Folder className="h-3 w-3 text-muted-foreground shrink-0" />
+                <span className={cn('flex-1 truncate', !selectedFolderName && 'text-muted-foreground')}>
+                  {selectedFolderName || 'Root'}
+                </span>
+                {selectedFolderId ? (
+                  <button type="button" className="text-muted-foreground hover:text-foreground" onClick={(e) => { e.stopPropagation(); setSelectedFolderId(null) }}>
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : (
+                  <ChevronDown className={cn('h-3 w-3 text-muted-foreground transition-transform', folderTreeOpen && 'rotate-180')} />
+                )}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Category</Label>
               <Select value={categoryId} onValueChange={setCategoryId}>
-                <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select..." /></SelectTrigger>
                 <SelectContent>
                   {categories.map((c) => (
-                    <SelectItem key={c.id} value={c.id.toString()}>
-                      {c.name}
-                    </SelectItem>
+                    <SelectItem key={c.id} value={c.id.toString()} className="text-xs">{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-
-            {/* Status */}
-            <div className="space-y-1.5">
-              <Label>Status</Label>
+            <div className="space-y-1">
+              <Label className="text-xs">Status</Label>
               <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="draft" className="text-xs">Draft</SelectItem>
+                  <SelectItem value="active" className="text-xs">Active</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {isChild && (
+              <div className="space-y-1">
+                <Label className="text-xs">Rel. Type</Label>
+                <Select value={relType || 'other'} onValueChange={(v) => setRelType(v as DmsRelationshipType)}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(relTypesData?.types || []).map((rt) => (
+                      <SelectItem key={rt.slug} value={rt.slug} className="text-xs">{rt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
-          {/* Dates row */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="dms-doc-date">Document Date</Label>
-              <DateField value={docDate} onChange={setDocDate} className="w-full" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="dms-expiry-date">Expiration Date</Label>
-              <DateField value={expiryDate} onChange={setExpiryDate} className="w-full" />
-            </div>
-          </div>
-
-          {/* Notify person */}
-          <div className="space-y-1.5">
-            <Label>Notify Person</Label>
-            <Select value={notifyUserId || 'none'} onValueChange={(v) => setNotifyUserId(v === 'none' ? '' : v)}>
-              <SelectTrigger><SelectValue placeholder="Select user to notify..." /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                {(users || []).map((u) => (
-                  <SelectItem key={u.id} value={u.id.toString()}>
-                    {u.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Relationship type (only for children) */}
-          {parentId && (
-            <div className="space-y-1.5">
-              <Label>Type</Label>
-              <Select value={relType || 'other'} onValueChange={(v) => setRelType(v as DmsRelationshipType)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {(relTypesData?.types || []).map((rt) => (
-                    <SelectItem key={rt.slug} value={rt.slug}>
-                      {rt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* ── Folder tree dropdown (conditionally shown) ── */}
+          {folderTreeOpen && (
+            <div className="rounded-md border max-h-40 overflow-y-auto p-1 -mt-1">
+              {allFolders.length === 0 ? (
+                <p className="text-xs text-muted-foreground p-2">No folders available</p>
+              ) : (
+                <FolderTreePicker
+                  folders={allFolders}
+                  parentId={null}
+                  selectedId={selectedFolderId}
+                  expandedIds={expandedFolderIds}
+                  onSelect={(id) => { setSelectedFolderId(id); setFolderTreeOpen(false) }}
+                  onToggleExpand={(id) =>
+                    setExpandedFolderIds((prev) => {
+                      const next = new Set(prev)
+                      next.has(id) ? next.delete(id) : next.add(id)
+                      return next
+                    })
+                  }
+                  depth={0}
+                />
+              )}
             </div>
           )}
 
-          {/* Visibility */}
-          <div className="space-y-2">
-            <Label className="flex items-center gap-1.5">
-              <Shield className="h-3.5 w-3.5" />
-              Visibility
-            </Label>
-            <Select value={visibility} onValueChange={(v) => setVisibility(v as 'all' | 'restricted')}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Everyone</SelectItem>
-                <SelectItem value="restricted">Restricted</SelectItem>
-              </SelectContent>
-            </Select>
+          {/* ── Dates + Notify row ── */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Doc Date</Label>
+              <DateField value={docDate} onChange={setDocDate} className="w-full h-8 text-xs" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Expiry Date</Label>
+              <DateField value={expiryDate} onChange={setExpiryDate} className="w-full h-8 text-xs" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Notify</Label>
+              <Select value={notifyUserId || 'none'} onValueChange={(v) => setNotifyUserId(v === 'none' ? '' : v)}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="None" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none" className="text-xs">None</SelectItem>
+                  {(users || []).map((u) => (
+                    <SelectItem key={u.id} value={u.id.toString()} className="text-xs">{u.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* ── Visibility (compact) ── */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs flex items-center gap-1">
+                <Shield className="h-3 w-3" />
+                Visibility
+              </Label>
+              <Select value={visibility} onValueChange={(v) => setVisibility(v as 'all' | 'restricted')}>
+                <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="text-xs">Everyone</SelectItem>
+                  <SelectItem value="restricted" className="text-xs">Restricted</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
             {visibility === 'restricted' && (
-              <div className="space-y-3 rounded-md border border-dashed border-amber-400/50 p-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Allowed Roles</Label>
+              <div className="space-y-2 rounded-md border border-dashed border-amber-400/50 p-2.5">
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Allowed Roles</Label>
                   <MultiSelectPills
                     options={(roles || []).map((r) => ({ value: r.id, label: r.name }))}
                     selected={allowedRoleIds}
@@ -382,8 +544,8 @@ export default function UploadDialog({
                     placeholder="Select roles..."
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Allowed Users</Label>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Allowed Users</Label>
                   <MultiSelectPills
                     options={(users || []).map((u) => ({ value: u.id, label: u.name }))}
                     selected={allowedUserIds}
@@ -392,27 +554,25 @@ export default function UploadDialog({
                   />
                 </div>
                 {allowedRoleIds.length === 0 && allowedUserIds.length === 0 && (
-                  <p className="text-xs text-amber-600">
-                    No roles or users selected — only you and admins will see this document.
-                  </p>
+                  <p className="text-[10px] text-amber-600">No roles/users selected — only you and admins will see this.</p>
                 )}
               </div>
             )}
           </div>
 
-          {/* File drop zone */}
+          {/* ── File drop zone (compact) ── */}
           <div
-            className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
+            className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors"
             onClick={() => fileInputRef.current?.click()}
             onDrop={handleDrop}
             onDragOver={(e) => e.preventDefault()}
           >
-            <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-            <p className="text-sm text-muted-foreground">
+            <Upload className="h-5 w-5 mx-auto text-muted-foreground mb-1" />
+            <p className="text-xs text-muted-foreground">
               Drop files here or <span className="text-primary font-medium">browse</span>
             </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              PDF, DOCX, XLSX, JPG, PNG, TIFF, GIF — max 25MB each
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              PDF, DOCX, XLSX, JPG, PNG, TIFF, GIF — max 25MB
             </p>
             <input
               ref={fileInputRef}
@@ -424,33 +584,31 @@ export default function UploadDialog({
             />
           </div>
 
-          {/* File list */}
+          {/* ── File list ── */}
           {pendingFiles.length > 0 && (
-            <div className="space-y-2 max-h-40 overflow-y-auto">
+            <div className="space-y-1 max-h-28 overflow-y-auto">
               {pendingFiles.map((pf, idx) => (
                 <div
                   key={idx}
                   className={cn(
-                    'flex items-center gap-2 rounded-md border p-2 text-sm',
+                    'flex items-center gap-2 rounded-md border p-1.5 text-xs',
                     pf.error && 'border-destructive bg-destructive/5',
                   )}
                 >
                   {pf.preview ? (
-                    <img src={pf.preview} alt="" className="h-8 w-8 rounded object-cover" />
+                    <img src={pf.preview} alt="" className="h-6 w-6 rounded object-cover" />
                   ) : pf.file.type.startsWith('image/') ? (
-                    <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                    <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
                   ) : (
-                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
                   )}
                   <span className="flex-1 truncate">{pf.file.name}</span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-[10px] text-muted-foreground">
                     {(pf.file.size / 1024).toFixed(0)} KB
                   </span>
-                  {pf.error && (
-                    <span className="text-xs text-destructive">{pf.error}</span>
-                  )}
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeFile(idx)}>
-                    <X className="h-3.5 w-3.5" />
+                  {pf.error && <span className="text-[10px] text-destructive">{pf.error}</span>}
+                  <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => removeFile(idx)}>
+                    <X className="h-3 w-3" />
                   </Button>
                 </div>
               ))}
@@ -458,15 +616,93 @@ export default function UploadDialog({
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => { reset(); onOpenChange(false) }} disabled={uploading}>
+        <DialogFooter className="px-6 py-3 border-t">
+          <Button variant="outline" size="sm" onClick={() => { reset(); onOpenChange(false) }} disabled={uploading}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={uploading || !title.trim() || !resolvedCompanyId}>
-            {uploading ? 'Uploading...' : parentId ? 'Add' : 'Create & Upload'}
+          <Button size="sm" onClick={handleSubmit} disabled={uploading || !title.trim() || !resolvedCompanyId || (docMode === 'child' && !effectiveParentId && requireParentForChild)}>
+            {uploading ? 'Uploading...' : effectiveParentId ? 'Add Child' : 'Create & Upload'}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/* ── Compact inline folder tree picker ── */
+function FolderTreePicker({
+  folders,
+  parentId,
+  selectedId,
+  expandedIds,
+  onSelect,
+  onToggleExpand,
+  depth,
+}: {
+  folders: DmsFolder[]
+  parentId: number | null
+  selectedId: number | null
+  expandedIds: Set<number>
+  onSelect: (id: number) => void
+  onToggleExpand: (id: number) => void
+  depth: number
+}) {
+  const children = folders
+    .filter((f) => f.parent_id === parentId)
+    .sort((a, b) => a.sort_order - b.sort_order)
+
+  if (children.length === 0) return null
+
+  return (
+    <>
+      {children.map((folder) => {
+        const hasChildren = folders.some((f) => f.parent_id === folder.id)
+        const isExpanded = expandedIds.has(folder.id)
+        const isSelected = selectedId === folder.id
+
+        return (
+          <div key={folder.id}>
+            <div
+              className={cn(
+                'flex items-center gap-1 rounded px-1.5 py-1 text-sm cursor-pointer hover:bg-muted/80 transition-colors',
+                isSelected && 'bg-primary/10 text-primary font-medium',
+              )}
+              style={{ paddingLeft: `${depth * 16 + 6}px` }}
+              onClick={() => onSelect(folder.id)}
+            >
+              {hasChildren ? (
+                <button
+                  type="button"
+                  className="p-0.5 hover:bg-muted rounded"
+                  onClick={(e) => { e.stopPropagation(); onToggleExpand(folder.id) }}
+                >
+                  {isExpanded
+                    ? <ChevronDown className="h-3 w-3" />
+                    : <ChevronRight className="h-3 w-3" />}
+                </button>
+              ) : (
+                <span className="w-4" />
+              )}
+              <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: folder.color || undefined }} />
+              <span className="truncate">{folder.name}</span>
+              {folder.document_count > 0 && (
+                <span className="text-[10px] text-muted-foreground ml-auto">{folder.document_count}</span>
+              )}
+            </div>
+            {hasChildren && isExpanded && (
+              <FolderTreePicker
+                folders={folders}
+                parentId={folder.id}
+                selectedId={selectedId}
+                expandedIds={expandedIds}
+                onSelect={onSelect}
+                onToggleExpand={onToggleExpand}
+                depth={depth + 1}
+              />
+            )}
+          </div>
+        )
+      })}
+    </>
   )
 }
