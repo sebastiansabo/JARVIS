@@ -119,11 +119,13 @@ export default function StructureTab() {
   const { data: companies = [] } = useQuery({
     queryKey: ['settings', 'companiesConfig'],
     queryFn: organizationApi.getCompaniesConfig,
+    staleTime: 10 * 60_000,
   })
 
   const { data: structureNodes = [] } = useQuery({
     queryKey: ['settings', 'structureNodes'],
     queryFn: organizationApi.getStructureNodes,
+    staleTime: 10 * 60_000,
   })
 
   return (

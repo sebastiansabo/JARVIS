@@ -106,6 +106,12 @@ export default function Accounting() {
   const [showFilters, setShowFilters] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
   const [brandFilterKey, setBrandFilterKey] = useState<string | null>(null)
+  const [binSelectedIds, setBinSelectedIds] = useState<number[]>([])
+
+  const toggleBinSelected = useCallback((id: number) => {
+    setBinSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
+  }, [])
+  const clearBinSelected = useCallback(() => setBinSelectedIds([]), [])
 
   const user = useAuthStore((s) => s.user)
   const canAdd = user?.can_add_invoices ?? true
@@ -221,8 +227,30 @@ export default function Accounting() {
   const updateFieldMutation = useMutation({
     mutationFn: ({ id, field, value }: { id: number; field: string; value: string }) =>
       invoicesApi.updateInvoice(id, { [field]: value }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoices'] }),
-    onError: () => toast.error('Failed to update'),
+    onMutate: async ({ id, field, value }) => {
+      // Cancel in-flight fetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: ['invoices'] })
+      // Snapshot previous data for rollback
+      const prev = queryClient.getQueryData<Invoice[]>(['invoices', filters])
+      // Optimistically update cache — instant UI feedback
+      if (prev) {
+        queryClient.setQueryData<Invoice[]>(['invoices', filters], prev.map((inv) =>
+          inv.id === id ? { ...inv, [field]: value } : inv
+        ))
+      }
+      return { prev }
+    },
+    onError: (_err, _vars, context) => {
+      // Rollback on failure
+      if (context?.prev) {
+        queryClient.setQueryData(['invoices', filters], context.prev)
+      }
+      toast.error('Failed to update')
+    },
+    onSettled: () => {
+      // Sync with server in background (won't flash — data is already correct)
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+    },
   })
 
   // Build active columns with inline dropdowns for status/payment
@@ -335,6 +363,13 @@ export default function Accounting() {
 
   const allSelected = displayedInvoices.length > 0 && selectedInvoiceIds.length === displayedInvoices.length
   const someSelected = selectedInvoiceIds.length > 0 && !allSelected
+
+  const binAllSelected = displayedBinInvoices.length > 0 && binSelectedIds.length === displayedBinInvoices.length
+  const binSomeSelected = binSelectedIds.length > 0 && !binAllSelected
+  const handleBinSelectAll = useCallback(() => {
+    if (binAllSelected) clearBinSelected()
+    else setBinSelectedIds(displayedBinInvoices.map((i) => i.id))
+  }, [binAllSelected, displayedBinInvoices, clearBinSelected])
 
   const filterFields: FilterField[] = useMemo(() => [
     { key: 'company', label: 'Company', type: 'select' as const, options: companyOptions },
@@ -514,17 +549,30 @@ export default function Accounting() {
             </span>
             <div className="h-px flex-1 bg-destructive/30" />
           </div>
+          {binSelectedIds.length > 0 && (
+            <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2">
+              <span className="text-sm font-medium">{binSelectedIds.length} selected</span>
+              <div className="flex-1" />
+              <Button variant="outline" size="sm" onClick={() => { restoreMutation.mutate(binSelectedIds); clearBinSelected() }}>
+                <RotateCcw className="mr-1 h-3.5 w-3.5" /> Restore
+              </Button>
+              <Button variant="destructive" size="sm" onClick={() => { setPermanentDeleteIds(binSelectedIds); clearBinSelected() }}>
+                <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete Forever
+              </Button>
+              <Button variant="ghost" size="sm" onClick={clearBinSelected}>Cancel</Button>
+            </div>
+          )}
           {binError ? (
             <QueryError message="Failed to load recycle bin" onRetry={refetchBin} />
           ) : (
             <InvoiceTable
               invoices={displayedBinInvoices}
               isLoading={binLoading}
-              selectedIds={[]}
-              allSelected={false}
-              someSelected={false}
-              onSelectAll={() => {}}
-              onToggleSelect={() => {}}
+              selectedIds={binSelectedIds}
+              allSelected={binAllSelected}
+              someSelected={binSomeSelected}
+              onSelectAll={handleBinSelectAll}
+              onToggleSelect={toggleBinSelected}
               onEdit={setEditInvoice}
               onDelete={() => {}}
               onRestore={(id) => restoreMutation.mutate([id])}
@@ -536,7 +584,7 @@ export default function Accounting() {
               sort={sort}
               onSort={setSort}
               isMobile={isMobile}
-              selectMode={false}
+              selectMode={true}
               canEdit={canEdit}
               canDelete={canDelete}
             />

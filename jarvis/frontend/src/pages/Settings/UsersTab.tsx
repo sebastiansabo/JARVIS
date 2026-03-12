@@ -55,11 +55,13 @@ export default function UsersTab() {
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['settings', 'users'],
     queryFn: usersApi.getUsers,
+    staleTime: 10 * 60_000,
   })
 
   const { data: roles = [] } = useQuery({
     queryKey: ['settings', 'roles'],
     queryFn: rolesApi.getRoles,
+    staleTime: 10 * 60_000,
   })
 
   const createMutation = useMutation({

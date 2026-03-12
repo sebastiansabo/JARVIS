@@ -34,6 +34,7 @@ import { settingsApi } from '@/api/settings'
 import { organizationApi } from '@/api/organization'
 import { QueryError } from '@/components/QueryError'
 import { useMarketingStore } from '@/stores/marketingStore'
+import { useShallow } from 'zustand/react/shallow'
 import { useAuthStore } from '@/stores/authStore'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import type { MktProject, MktKpiScoreboardItem } from '@/types/marketing'
@@ -289,7 +290,9 @@ export default function Marketing() {
   const canCreate = user?.permissions?.['marketing.project.create'] ?? false
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('marketing_summary')
   const isMobile = useIsMobile()
-  const { filters, updateFilter, clearFilters, viewMode, setViewMode } = useMarketingStore()
+  const { filters, updateFilter, clearFilters, viewMode, setViewMode } = useMarketingStore(
+    useShallow((s) => ({ filters: s.filters, updateFilter: s.updateFilter, clearFilters: s.clearFilters, viewMode: s.viewMode, setViewMode: s.setViewMode }))
+  )
   const [filtersOpen, setFiltersOpen] = useState(false)
   const effectiveViewMode = isMobile ? 'cards' : viewMode
   const [showCreateDialog, setShowCreateDialog] = useState(false)

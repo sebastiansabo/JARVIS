@@ -76,6 +76,7 @@ export default function BulkUpload() {
   const { data: companies = [] } = useQuery({
     queryKey: ['companies'],
     queryFn: organizationApi.getCompanies,
+    staleTime: 10 * 60_000,
   })
 
   // ── File handling ──
@@ -412,18 +413,21 @@ function InvoiceRow({
     queryKey: ['brands', inv.company],
     queryFn: () => organizationApi.getBrands(inv.company),
     enabled: !!inv.company,
+    staleTime: 5 * 60_000,
   })
 
   const { data: departments = [] } = useQuery({
     queryKey: ['departments', inv.company, inv.brand || null],
     queryFn: () => organizationApi.getDepartments(inv.company, inv.brand || undefined),
     enabled: !!inv.company,
+    staleTime: 5 * 60_000,
   })
 
   const { data: subdepartments = [] } = useQuery({
     queryKey: ['subdepartments', inv.company, inv.department],
     queryFn: () => organizationApi.getSubdepartments(inv.company, inv.department),
     enabled: !!inv.company && !!inv.department,
+    staleTime: 5 * 60_000,
   })
 
   const { data: suggestions = [] } = useQuery({

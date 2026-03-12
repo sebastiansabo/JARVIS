@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Plus, Trash2, Search, ChevronRight, UserCheck, Phone, Mail, MapPin } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, useDebounce } from '@/lib/utils'
 import { marketingApi } from '@/api/marketing'
 import type { CrmClientSearchResult, CrmDeal } from '@/types/marketing'
 import { fmt, fmtDate } from './utils'
@@ -79,8 +79,7 @@ export function ClientsTab({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient()
   const [showLink, setShowLink] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
-  const [clientResults, setClientResults] = useState<CrmClientSearchResult[]>([])
-  const [isSearching, setIsSearching] = useState(false)
+  const debouncedClientSearch = useDebounce(clientSearch, 300)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
 
   const { data } = useQuery({
@@ -95,7 +94,6 @@ export function ClientsTab({ projectId }: { projectId: number }) {
       queryClient.invalidateQueries({ queryKey: ['mkt-project-clients', projectId] })
       setShowLink(false)
       setClientSearch('')
-      setClientResults([])
     },
   })
 
@@ -107,16 +105,12 @@ export function ClientsTab({ projectId }: { projectId: number }) {
     },
   })
 
-  async function searchClients(q: string) {
-    setClientSearch(q)
-    if (q.length < 1) { setClientResults([]); return }
-    setIsSearching(true)
-    try {
-      const res = await marketingApi.searchCrmClients(q)
-      setClientResults(res?.clients ?? [])
-    } catch { setClientResults([]) }
-    setIsSearching(false)
-  }
+  const { data: searchData, isLoading: isSearching } = useQuery({
+    queryKey: ['mkt-client-search', debouncedClientSearch],
+    queryFn: () => marketingApi.searchCrmClients(debouncedClientSearch),
+    enabled: showLink && debouncedClientSearch.length >= 1,
+  })
+  const clientResults: CrmClientSearchResult[] = searchData?.clients ?? []
 
   const linkedIds = new Set(clients.map((c) => c.client_id))
 
@@ -127,7 +121,7 @@ export function ClientsTab({ projectId }: { projectId: number }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button size="sm" onClick={() => { setShowLink(true); setClientSearch(''); setClientResults([]) }}>
+        <Button size="sm" onClick={() => { setShowLink(true); setClientSearch('') }}>
           <Plus className="h-3.5 w-3.5 mr-1.5" /> Link Client
         </Button>
       </div>
@@ -234,7 +228,7 @@ export function ClientsTab({ projectId }: { projectId: number }) {
                 className="pl-9"
                 placeholder="Search clients by name, phone, email..."
                 value={clientSearch}
-                onChange={(e) => searchClients(e.target.value)}
+                onChange={(e) => setClientSearch(e.target.value)}
                 autoFocus
               />
             </div>
@@ -280,7 +274,7 @@ export function ClientsTab({ projectId }: { projectId: number }) {
                 </Table>
               </div>
             )}
-            {clientSearch.length >= 1 && !isSearching && clientResults.length === 0 && (
+            {debouncedClientSearch.length >= 1 && !isSearching && clientResults.length === 0 && (
               <div className="text-center text-sm text-muted-foreground py-4">No clients found.</div>
             )}
           </div>

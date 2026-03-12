@@ -1,4 +1,4 @@
-import { useState, useMemo, useImperativeHandle, forwardRef } from 'react'
+import { useState, useMemo, useCallback, useImperativeHandle, forwardRef, memo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2, Lock, Unlock, MessageSquare, ArrowRightLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -138,17 +138,19 @@ export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditor
   const { data: companies = [] } = useQuery({
     queryKey: ['companies'],
     queryFn: () => organizationApi.getCompanies(),
+    staleTime: 10 * 60_000,
   })
 
   const { data: brands = [] } = useQuery({
     queryKey: ['brands', company],
     queryFn: () => organizationApi.getBrands(company),
     enabled: !!company,
+    staleTime: 5 * 60_000,
   })
 
   const totalPercent = useMemo(() => rows.reduce((s, r) => s + r.percent, 0), [rows])
 
-  const updateRow = (id: string, updates: Partial<AllocationRow>) => {
+  const updateRow = useCallback((id: string, updates: Partial<AllocationRow>) => {
     setRows((prev) =>
       prev.map((r) => {
         if (r.id !== id) return r
@@ -162,7 +164,7 @@ export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditor
         return updated
       }),
     )
-  }
+  }, [effectiveValue])
 
   const addRow = () => {
     const unlocked = rows.filter((r) => !r.locked)
@@ -179,9 +181,9 @@ export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditor
     })
   }
 
-  const removeRow = (id: string) => {
-    if (rows.length <= 1) return
+  const removeRow = useCallback((id: string) => {
     setRows((prev) => {
+      if (prev.length <= 1) return prev
       const remaining = prev.filter((r) => r.id !== id)
       const lockedTotal = remaining.filter((r) => r.locked).reduce((s, r) => s + r.percent, 0)
       const availablePercent = 100 - lockedTotal
@@ -193,7 +195,7 @@ export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditor
         return { ...r, percent: perRow, value: effectiveValue * (perRow / 100) }
       })
     })
-  }
+  }, [effectiveValue])
 
   useImperativeHandle(ref, () => ({
     getCompany: () => company,
@@ -298,7 +300,7 @@ export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditor
 
 /* ──── Allocation Row Component ──── */
 
-export function AllocationRowComponent({
+export const AllocationRowComponent = memo(function AllocationRowComponent({
   row,
   company,
   allCompanies,
@@ -326,12 +328,14 @@ export function AllocationRowComponent({
     queryKey: ['departments', company, row.brand || null],
     queryFn: () => organizationApi.getDepartments(company, row.brand || undefined),
     enabled: !!company,
+    staleTime: 5 * 60_000,
   })
 
   const { data: subdepartments = [] } = useQuery({
     queryKey: ['subdepartments', company, row.department],
     queryFn: () => organizationApi.getSubdepartments(company, row.department),
     enabled: !!row.department,
+    staleTime: 5 * 60_000,
   })
 
   const { data: managerData } = useQuery({
@@ -343,6 +347,7 @@ export function AllocationRowComponent({
         brand: row.brand || undefined,
       }),
     enabled: !!row.department,
+    staleTime: 5 * 60_000,
   })
 
   const toggleReinvoice = (checked: boolean) => {
@@ -571,7 +576,7 @@ export function AllocationRowComponent({
       )}
     </div>
   )
-}
+})
 
 /* ──── Reinvoice Destination Row ──── */
 
@@ -601,6 +606,7 @@ function ReinvoiceDestRow({
     queryKey: ['brands', dest.company],
     queryFn: () => organizationApi.getBrands(dest.company),
     enabled: !!dest.company,
+    staleTime: 5 * 60_000,
   })
 
   // Cascade: pass brand to filter departments (same as main allocation row)
@@ -608,12 +614,14 @@ function ReinvoiceDestRow({
     queryKey: ['departments', dest.company, dest.brand || null],
     queryFn: () => organizationApi.getDepartments(dest.company, dest.brand || undefined),
     enabled: !!dest.company,
+    staleTime: 5 * 60_000,
   })
 
   const { data: targetSubdepts = [] } = useQuery({
     queryKey: ['subdepartments', dest.company, dest.department],
     queryFn: () => organizationApi.getSubdepartments(dest.company, dest.department),
     enabled: !!dest.department,
+    staleTime: 5 * 60_000,
   })
 
   const hasBrands = targetBrands.length > 0

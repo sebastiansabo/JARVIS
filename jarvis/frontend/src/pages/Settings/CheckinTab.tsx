@@ -53,6 +53,7 @@ export default function CheckinTab() {
       const res = await checkinApi.getAllLocations()
       return (res as any).data ?? res
     },
+    staleTime: 10 * 60_000,
   })
 
   const saveMutation = useMutation({

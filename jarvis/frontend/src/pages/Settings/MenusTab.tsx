@@ -28,6 +28,7 @@ export default function MenusTab() {
       const res = await settingsApi.getAllModuleMenu()
       return res.items ?? (res as unknown as MenuItem[])
     },
+    staleTime: 10 * 60_000,
   })
 
   const createMutation = useMutation({

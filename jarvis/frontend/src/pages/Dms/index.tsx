@@ -31,6 +31,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { dmsApi } from '@/api/dms'
 import { tagsApi } from '@/api/tags'
 import { useDmsStore } from '@/stores/dmsStore'
+import { useShallow } from 'zustand/react/shallow'
 import type { DmsDocument, DmsFile, DmsCategory, DmsRelationshipTypeConfig } from '@/types/dms'
 import UploadDialog from './UploadDialog'
 const STATUS_COLORS: Record<string, string> = {
@@ -77,7 +78,9 @@ export default function Dms() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
-  const { filters, updateFilter, clearFilters, selectedIds, toggleSelected, selectAll, clearSelected, visibleColumns, setVisibleColumns } = useDmsStore()
+  const { filters, updateFilter, clearFilters, selectedIds, toggleSelected, selectAll, clearSelected, visibleColumns, setVisibleColumns } = useDmsStore(
+    useShallow((s) => ({ filters: s.filters, updateFilter: s.updateFilter, clearFilters: s.clearFilters, selectedIds: s.selectedIds, toggleSelected: s.toggleSelected, selectAll: s.selectAll, clearSelected: s.clearSelected, visibleColumns: s.visibleColumns, setVisibleColumns: s.setVisibleColumns }))
+  )
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -164,7 +167,7 @@ export default function Dms() {
   const { data: allTags = [] } = useQuery({
     queryKey: ['tags'],
     queryFn: () => tagsApi.getTags(),
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
   })
 
   const categories: DmsCategory[] = categoriesData?.categories || []
@@ -811,7 +814,7 @@ function DocumentExpandedDetails({
   const { data: relTypesData } = useQuery({
     queryKey: ['dms-rel-types'],
     queryFn: () => dmsApi.listRelationshipTypes(),
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
   })
 
   const relTypes: DmsRelationshipTypeConfig[] = relTypesData?.types || []

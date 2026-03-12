@@ -168,10 +168,10 @@ export default function DealsTab({ showStats: _showStats = false, search = '' }:
     queryKey: ['crm-deals', params],
     queryFn: () => crmApi.getDeals(params),
   })
-  const { data: brandsData } = useQuery({ queryKey: ['crm-brands'], queryFn: crmApi.getBrands })
-  const { data: statusesData } = useQuery({ queryKey: ['crm-deal-statuses'], queryFn: crmApi.getDealStatuses })
-  const { data: dealersData } = useQuery({ queryKey: ['crm-dealers'], queryFn: crmApi.getDealers })
-  const { data: salesPersonsData } = useQuery({ queryKey: ['crm-sales-persons'], queryFn: crmApi.getSalesPersons })
+  const { data: brandsData } = useQuery({ queryKey: ['crm-brands'], queryFn: crmApi.getBrands, staleTime: 10 * 60_000 })
+  const { data: statusesData } = useQuery({ queryKey: ['crm-deal-statuses'], queryFn: crmApi.getDealStatuses, staleTime: 10 * 60_000 })
+  const { data: dealersData } = useQuery({ queryKey: ['crm-dealers'], queryFn: crmApi.getDealers, staleTime: 10 * 60_000 })
+  const { data: salesPersonsData } = useQuery({ queryKey: ['crm-sales-persons'], queryFn: crmApi.getSalesPersons, staleTime: 10 * 60_000 })
   const { data: stats } = useQuery({ queryKey: ['crm-stats'], queryFn: crmApi.getStats })
 
   const deleteMutation = useMutation({

@@ -37,31 +37,37 @@ export default function AiTab() {
   const { data: settings, isLoading: settingsLoading } = useQuery({
     queryKey: ['settings', 'ai'],
     queryFn: settingsApi.getAiSettings,
+    staleTime: 10 * 60_000,
   })
 
   const { data: models, isLoading: modelsLoading } = useQuery({
     queryKey: ['settings', 'ai-models'],
     queryFn: settingsApi.getAllModels,
+    staleTime: 10 * 60_000,
   })
 
   const { data: ragStats, isLoading: statsLoading } = useQuery({
     queryKey: ['settings', 'rag-stats'],
     queryFn: settingsApi.getRagStats,
+    staleTime: 10 * 60_000,
   })
 
   const { data: ragPerms } = useQuery({
     queryKey: ['settings', 'rag-source-permissions'],
     queryFn: settingsApi.getRagSourcePermissions,
+    staleTime: 10 * 60_000,
   })
 
   const { data: feedbackStats } = useQuery({
     queryKey: ['settings', 'feedback-stats'],
     queryFn: aiAgentApi.getFeedbackStats,
+    staleTime: 10 * 60_000,
   })
 
   const { data: knowledgeData, isLoading: knowledgeLoading } = useQuery({
     queryKey: ['settings', 'learned-knowledge'],
     queryFn: () => aiAgentApi.getLearnedKnowledge(100, 0),
+    staleTime: 10 * 60_000,
   })
 
   // ── Form state ──

@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { cn } from '@/lib/utils'
+import { cn, useDebounce } from '@/lib/utils'
 import {
   Trash2, Upload, FileText, Link2, Search, ChevronRight,
   Paperclip, Calendar, Users as ChildrenIcon, Download, X,
@@ -559,10 +559,11 @@ function LinkDocumentDialog({
 }) {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
 
   const { data } = useQuery({
-    queryKey: ['mkt-dms-search', search],
-    queryFn: () => marketingApi.searchDmsDocuments(search || undefined),
+    queryKey: ['mkt-dms-search', debouncedSearch],
+    queryFn: () => marketingApi.searchDmsDocuments(debouncedSearch || undefined),
     enabled: open,
   })
   const results: DmsDocSearchResult[] = data?.documents ?? []

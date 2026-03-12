@@ -50,6 +50,7 @@ export default function CategoryManager({ companyId }: CategoryManagerProps) {
   const { data: rolesData } = useQuery({
     queryKey: ['roles-list'],
     queryFn: () => rolesApi.getRoles(),
+    staleTime: 5 * 60_000,
   })
 
   const categories: DmsCategory[] = data?.categories || []

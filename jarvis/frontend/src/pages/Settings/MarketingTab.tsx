@@ -47,6 +47,7 @@ function KpiDefinitionsSection() {
   const { data: defsData, isLoading } = useQuery({
     queryKey: ['mkt-kpi-definitions-all'],
     queryFn: () => marketingApi.getKpiDefinitions(false),
+    staleTime: 10 * 60_000,
   })
   const definitions = defsData?.definitions ?? []
 

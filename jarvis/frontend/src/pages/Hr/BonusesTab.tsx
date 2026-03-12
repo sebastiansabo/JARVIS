@@ -836,6 +836,7 @@ function BonusDialog({
   const { data: bonusTypes = [] } = useQuery({
     queryKey: ['hr-bonus-types-active'],
     queryFn: () => hrApi.getBonusTypes(true),
+    staleTime: 5 * 60_000,
     enabled: open,
   })
 

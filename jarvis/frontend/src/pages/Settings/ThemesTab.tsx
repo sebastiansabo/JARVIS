@@ -24,6 +24,7 @@ export default function ThemesTab() {
   const { data: themes = [], isLoading } = useQuery({
     queryKey: ['settings', 'themes'],
     queryFn: settingsApi.getThemes,
+    staleTime: 10 * 60_000,
   })
 
   const createMutation = useMutation({

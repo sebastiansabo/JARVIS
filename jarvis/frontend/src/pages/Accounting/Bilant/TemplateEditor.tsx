@@ -59,6 +59,7 @@ export default function TemplateEditor() {
   const { data: companiesData } = useQuery({
     queryKey: ['companies-config'],
     queryFn: () => organizationApi.getCompaniesConfig(),
+    staleTime: 10 * 60_000,
   })
   const companies = companiesData || []
 

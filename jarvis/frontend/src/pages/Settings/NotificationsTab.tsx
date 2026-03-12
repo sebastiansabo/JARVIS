@@ -16,6 +16,7 @@ export default function NotificationsTab() {
   const { data: settings, isLoading } = useQuery({
     queryKey: ['settings', 'notifications'],
     queryFn: settingsApi.getNotificationSettings,
+    staleTime: 10 * 60_000,
   })
 
   const [form, setForm] = useState({

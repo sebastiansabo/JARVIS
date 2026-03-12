@@ -25,9 +25,9 @@ export function EditDealDialog({ deal, open, onOpenChange }: Props) {
   const [selectedClient, setSelectedClient] = useState<{ id: number; name: string } | null>(null)
   const debouncedClientSearch = useDebounce(clientSearch, 300)
 
-  const { data: dossierData } = useQuery({ queryKey: ['crm-deal-statuses'], queryFn: crmApi.getDealStatuses, enabled: open })
-  const { data: orderData } = useQuery({ queryKey: ['crm-order-statuses'], queryFn: crmApi.getOrderStatuses, enabled: open })
-  const { data: contractData } = useQuery({ queryKey: ['crm-contract-statuses'], queryFn: crmApi.getContractStatuses, enabled: open })
+  const { data: dossierData } = useQuery({ queryKey: ['crm-deal-statuses'], queryFn: crmApi.getDealStatuses, staleTime: 10 * 60_000, enabled: open })
+  const { data: orderData } = useQuery({ queryKey: ['crm-order-statuses'], queryFn: crmApi.getOrderStatuses, staleTime: 10 * 60_000, enabled: open })
+  const { data: contractData } = useQuery({ queryKey: ['crm-contract-statuses'], queryFn: crmApi.getContractStatuses, staleTime: 10 * 60_000, enabled: open })
   const { data: clientsData } = useQuery({
     queryKey: ['crm-clients-search', debouncedClientSearch],
     queryFn: () => crmApi.getClients({ name: debouncedClientSearch, limit: '10' }),

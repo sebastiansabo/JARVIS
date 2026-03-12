@@ -33,6 +33,7 @@ function VatRatesSection() {
   const { data: vatRates = [], isLoading } = useQuery({
     queryKey: ['settings', 'vatRates'],
     queryFn: () => settingsApi.getVatRates(),
+    staleTime: 10 * 60_000,
   })
 
   const createMutation = useMutation({
@@ -205,6 +206,7 @@ function DropdownSection({ type, title }: { type: string; title: string }) {
   const { data: options = [], isLoading } = useQuery({
     queryKey: ['settings', 'dropdownOptions', type],
     queryFn: () => settingsApi.getDropdownOptions(type),
+    staleTime: 5 * 60_000,
   })
 
   const createMutation = useMutation({

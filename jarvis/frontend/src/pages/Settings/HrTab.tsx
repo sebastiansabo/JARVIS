@@ -29,6 +29,7 @@ function BonusLockSection() {
   const { data: settings } = useQuery({
     queryKey: ['settings', 'hrSettings'],
     queryFn: hrApi.getSettings,
+    staleTime: 10 * 60_000,
   })
 
   const [lockDay, setLockDay] = useState(15)
@@ -90,6 +91,7 @@ function BonusTypesSection() {
   const { data: bonusTypes = [], isLoading } = useQuery({
     queryKey: ['settings', 'bonusTypes'],
     queryFn: () => hrApi.getBonusTypes(),
+    staleTime: 10 * 60_000,
   })
 
   const createMutation = useMutation({

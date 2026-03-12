@@ -183,8 +183,8 @@ export default function ClientStatsTab({ blacklistOnly, search = '' }: { blackli
   const colSpan = activeColumns.length + 2 // +1 chevron +1 checkbox
 
   // Metadata for filter dropdowns
-  const { data: citiesData } = useQuery({ queryKey: ['crm-client-cities'], queryFn: () => crmApi.getClientCities() })
-  const { data: responsiblesData } = useQuery({ queryKey: ['crm-client-responsibles'], queryFn: () => crmApi.getClientResponsibles() })
+  const { data: citiesData } = useQuery({ queryKey: ['crm-client-cities'], queryFn: () => crmApi.getClientCities(), staleTime: 10 * 60_000 })
+  const { data: responsiblesData } = useQuery({ queryKey: ['crm-client-responsibles'], queryFn: () => crmApi.getClientResponsibles(), staleTime: 10 * 60_000 })
 
   const params: Record<string, string> = { limit: String(limit), offset: String(page * limit) }
   if (search) params.name = search

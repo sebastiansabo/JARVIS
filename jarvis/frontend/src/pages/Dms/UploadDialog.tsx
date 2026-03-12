@@ -61,6 +61,7 @@ export default function UploadDialog({
   const { data: companies } = useQuery({
     queryKey: ['companies-config'],
     queryFn: () => organizationApi.getCompaniesConfig(),
+    staleTime: 10 * 60_000,
     enabled: needsCompanyPicker && open,
   })
 
@@ -73,13 +74,14 @@ export default function UploadDialog({
   const { data: roles } = useQuery({
     queryKey: ['roles'],
     queryFn: () => rolesApi.getRoles(),
+    staleTime: 5 * 60_000,
     enabled: open,
   })
 
   const { data: relTypesData } = useQuery({
     queryKey: ['dms-rel-types'],
     queryFn: () => dmsApi.listRelationshipTypes(),
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
     enabled: !!parentId && open,
   })
 

@@ -38,11 +38,13 @@ export default function RolesTab() {
   const { data: roles = [], isLoading: rolesLoading } = useQuery({
     queryKey: ['settings', 'roles'],
     queryFn: rolesApi.getRoles,
+    staleTime: 10 * 60_000,
   })
 
   const { data: matrix } = useQuery({
     queryKey: ['settings', 'permissionMatrix'],
     queryFn: rolesApi.getPermissionMatrix,
+    staleTime: 10 * 60_000,
   })
 
   const createMutation = useMutation({

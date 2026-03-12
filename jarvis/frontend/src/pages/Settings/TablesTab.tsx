@@ -161,6 +161,7 @@ export default function TablesTab() {
   const { data: serverDefaults } = useQuery<DefaultColumnsMap>({
     queryKey: ['default-columns'],
     queryFn: settingsApi.getDefaultColumns,
+    staleTime: 10 * 60_000,
   })
 
   // Current server-saved columns for selected page

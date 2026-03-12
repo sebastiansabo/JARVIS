@@ -212,13 +212,13 @@ export default function DocumentDetail() {
   const { data: relTypesData } = useQuery({
     queryKey: ['dms-rel-types'],
     queryFn: () => dmsApi.listRelationshipTypes(),
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
   })
 
   const { data: partyRolesData } = useQuery({
     queryKey: ['dms-party-roles'],
     queryFn: () => dmsApi.listPartyRoles(),
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
   })
   const partyRoleOptions = (partyRolesData?.roles || []).map((r: { slug: string; label: string }) => ({ value: r.slug, label: r.label }))
 

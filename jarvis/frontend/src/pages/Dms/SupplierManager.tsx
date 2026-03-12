@@ -59,7 +59,7 @@ function SupplierTagCell({ supId }: { supId: number }) {
     queryKey: ['entity-tags', 'supplier', supId],
     queryFn: () => tagsApi.getEntityTags('supplier', supId),
   })
-  const { data: allTags = [] } = useQuery({ queryKey: ['tags'], queryFn: () => tagsApi.getTags() })
+  const { data: allTags = [] } = useQuery({ queryKey: ['tags'], queryFn: () => tagsApi.getTags(), staleTime: 5 * 60_000 })
 
   const filtered = (allTags as Tag[]).filter((t) =>
     t.name.toLowerCase().includes(search.toLowerCase()),
@@ -401,7 +401,7 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
     queryFn: () => dmsApi.listSuppliers({ search: debouncedSearch || undefined, active_only: false, limit: 200 }),
   })
 
-  const { data: allTags = [] } = useQuery({ queryKey: ['tags'], queryFn: () => tagsApi.getTags() })
+  const { data: allTags = [] } = useQuery({ queryKey: ['tags'], queryFn: () => tagsApi.getTags(), staleTime: 5 * 60_000 })
 
   const suppliers: DmsSupplier[] = useMemo(() => {
     const list = data?.suppliers || []

@@ -392,6 +392,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   const { data: supplierTypes = [] } = useQuery({
     queryKey: ['supplier-types'],
     queryFn: () => efacturaApi.getSupplierTypes(true),
+    staleTime: 5 * 60_000,
     enabled: !!editInvoice,
   })
 
@@ -410,14 +411,51 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
     onSuccess: invalidateAll,
   })
 
+  const unallocQueryKey = ['efactura-unallocated', { ...filters, search }]
+  const hiddenQueryKey = ['efactura-hidden', { ...filters, search }]
+
   const bulkHideMut = useMutation({
     mutationFn: (ids: number[]) => efacturaApi.bulkHide(ids),
-    onSuccess: invalidateAll,
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: unallocQueryKey })
+      const prev = qc.getQueryData<typeof unallocData>(unallocQueryKey)
+      if (prev) {
+        const idSet = new Set(ids)
+        qc.setQueryData(unallocQueryKey, {
+          ...prev,
+          invoices: prev.invoices.filter((i: { id: number }) => !idSet.has(i.id)),
+        })
+      }
+      setSelectedIds(new Set())
+      setConfirmAction(null)
+      return { prev }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) qc.setQueryData(unallocQueryKey, context.prev)
+    },
+    onSettled: invalidateAll,
   })
 
   const bulkRestoreHiddenMut = useMutation({
     mutationFn: (ids: number[]) => efacturaApi.bulkRestoreHidden(ids),
-    onSuccess: invalidateAll,
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: hiddenQueryKey })
+      const prev = qc.getQueryData<typeof hiddenData>(hiddenQueryKey)
+      if (prev) {
+        const idSet = new Set(ids)
+        qc.setQueryData(hiddenQueryKey, {
+          ...prev,
+          invoices: prev.invoices.filter((i: { id: number }) => !idSet.has(i.id)),
+        })
+      }
+      setSelectedIds(new Set())
+      setConfirmAction(null)
+      return { prev }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) qc.setQueryData(hiddenQueryKey, context.prev)
+    },
+    onSettled: invalidateAll,
   })
 
   const deleteMut = useMutation({

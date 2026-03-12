@@ -17,7 +17,7 @@ export function StatusActions({ project, onDone }: { project: MktProject; onDone
   const { data: membersData } = useQuery({ queryKey: ['mkt-members', project.id], queryFn: () => marketingApi.getMembers(project.id) })
   const stakeholders = (membersData?.members ?? []).filter((m) => m.role === 'stakeholder')
   const hasStakeholders = stakeholders.length > 0
-  const { data: allUsers } = useQuery({ queryKey: ['users-list'], queryFn: () => usersApi.getUsers(), enabled: submitOpen && !hasStakeholders })
+  const { data: allUsers } = useQuery({ queryKey: ['users-list'], queryFn: () => usersApi.getUsers(), staleTime: 10 * 60_000, enabled: submitOpen && !hasStakeholders })
   const submitMut = useMutation({
     mutationFn: () => marketingApi.submitApproval(project.id, hasStakeholders ? undefined : selectedApprover),
     onSuccess: () => { setSubmitOpen(false); setSelectedApprover(undefined); onDone() },

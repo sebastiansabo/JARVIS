@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { cn } from '@/lib/utils'
+import { cn, useDebounce } from '@/lib/utils'
 import {
   Plus, Trash2, DollarSign, Link2, Search, Pencil, Check,
   ChevronDown, ChevronRight, CalendarDays,
@@ -69,16 +69,14 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
   const [addForm, setAddForm] = useState({ channel: '', planned_amount: '', description: '', period_type: 'campaign' })
   const [linkLineId, setLinkLineId] = useState<number | null>(null)
   const [invoiceSearch, setInvoiceSearch] = useState('')
-  const [invoiceResults, setInvoiceResults] = useState<InvoiceSearchResult[]>([])
-  const [isSearching, setIsSearching] = useState(false)
+  const debouncedInvoiceSearch = useDebounce(invoiceSearch, 300)
   const [linkedInvoiceIds, setLinkedInvoiceIds] = useState<Set<number>>(new Set())
   const [spendLineId, setSpendLineId] = useState<number | null>(null)
   const [spendForm, setSpendForm] = useState({ amount: '', transaction_date: '', description: '' })
   const [expandedLineId, setExpandedLineId] = useState<number | null>(null)
   const [linkTxId, setLinkTxId] = useState<number | null>(null)
   const [txInvoiceSearch, setTxInvoiceSearch] = useState('')
-  const [txInvoiceResults, setTxInvoiceResults] = useState<InvoiceSearchResult[]>([])
-  const [isTxSearching, setIsTxSearching] = useState(false)
+  const debouncedTxInvoiceSearch = useDebounce(txInvoiceSearch, 300)
   const [editTxId, setEditTxId] = useState<number | null>(null)
   const [editTxForm, setEditTxForm] = useState({ amount: '', transaction_date: '', description: '' })
   const [eventLineId, setEventLineId] = useState<number | null>(null)
@@ -221,7 +219,6 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
       queryClient.invalidateQueries({ queryKey: ['mkt-transactions', expandedLineId] })
       setLinkTxId(null)
       setTxInvoiceSearch('')
-      setTxInvoiceResults([])
     },
   })
 
@@ -239,37 +236,28 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
     },
   })
 
-  async function searchTxInvoices(q: string) {
-    setTxInvoiceSearch(q)
-    if (q.length < 2) { setTxInvoiceResults([]); return }
-    setIsTxSearching(true)
-    try {
-      const res = await marketingApi.searchInvoices(q)
-      setTxInvoiceResults(res?.invoices ?? [])
-    } catch { setTxInvoiceResults([]) }
-    setIsTxSearching(false)
-  }
+  const { data: invoiceSearchData, isLoading: isSearching } = useQuery({
+    queryKey: ['mkt-invoice-search', debouncedInvoiceSearch],
+    queryFn: () => marketingApi.searchInvoices(debouncedInvoiceSearch),
+    enabled: linkLineId !== null && debouncedInvoiceSearch.length >= 2,
+  })
+  const invoiceResults: InvoiceSearchResult[] = invoiceSearchData?.invoices ?? []
+
+  const { data: txInvoiceSearchData, isLoading: isTxSearching } = useQuery({
+    queryKey: ['mkt-tx-invoice-search', debouncedTxInvoiceSearch],
+    queryFn: () => marketingApi.searchInvoices(debouncedTxInvoiceSearch),
+    enabled: linkTxId !== null && debouncedTxInvoiceSearch.length >= 2,
+  })
+  const txInvoiceResults: InvoiceSearchResult[] = txInvoiceSearchData?.invoices ?? []
 
   async function openLinkDialog(lineId: number) {
     setLinkLineId(lineId)
     setInvoiceSearch('')
-    setInvoiceResults([])
     try {
       const res = await marketingApi.getTransactions(lineId)
       const ids = new Set<number>((res?.transactions ?? []).filter((t: { invoice_id?: number | null }) => t.invoice_id).map((t: { invoice_id?: number | null }) => t.invoice_id as number))
       setLinkedInvoiceIds(ids)
     } catch { setLinkedInvoiceIds(new Set()) }
-  }
-
-  async function searchInvoices(q: string) {
-    setInvoiceSearch(q)
-    if (q.length < 2) { setInvoiceResults([]); return }
-    setIsSearching(true)
-    try {
-      const res = await marketingApi.searchInvoices(q)
-      setInvoiceResults(res?.invoices ?? [])
-    } catch { setInvoiceResults([]) }
-    setIsSearching(false)
   }
 
   const totalPlanned = lines.reduce((s, l) => s + (Number(l.planned_amount) || 0), 0)
@@ -451,7 +439,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                                             </div>
                                           ) : (
                                             <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5 text-muted-foreground"
-                                              onClick={(e) => { e.stopPropagation(); setLinkTxId(tx.id); setTxInvoiceSearch(''); setTxInvoiceResults([]) }}>
+                                              onClick={(e) => { e.stopPropagation(); setLinkTxId(tx.id); setTxInvoiceSearch('') }}>
                                               <Link2 className="h-3 w-3 mr-0.5" /> Link
                                             </Button>
                                           )}
@@ -515,7 +503,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                 className="pl-9"
                 placeholder="Search by supplier or invoice number..."
                 value={invoiceSearch}
-                onChange={(e) => searchInvoices(e.target.value)}
+                onChange={(e) => setInvoiceSearch(e.target.value)}
                 autoFocus
               />
             </div>
@@ -561,7 +549,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                 </Table>
               </div>
             )}
-            {invoiceSearch.length >= 2 && !isSearching && invoiceResults.length === 0 && (
+            {debouncedInvoiceSearch.length >= 2 && !isSearching && invoiceResults.length === 0 && (
               <div className="text-center text-xs text-muted-foreground py-4">No invoices found.</div>
             )}
           </div>
@@ -572,7 +560,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
       </Dialog>
 
       {/* Link Invoice to Transaction Dialog */}
-      <Dialog open={!!linkTxId} onOpenChange={(open) => { if (!open) { setLinkTxId(null); setTxInvoiceSearch(''); setTxInvoiceResults([]) } }}>
+      <Dialog open={!!linkTxId} onOpenChange={(open) => { if (!open) { setLinkTxId(null); setTxInvoiceSearch('') } }}>
         <DialogContent className="sm:max-w-[1080px]" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Link Invoice to Transaction</DialogTitle>
@@ -584,7 +572,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                 className="pl-9"
                 placeholder="Search by supplier or invoice number..."
                 value={txInvoiceSearch}
-                onChange={(e) => searchTxInvoices(e.target.value)}
+                onChange={(e) => setTxInvoiceSearch(e.target.value)}
                 autoFocus
               />
             </div>
@@ -623,12 +611,12 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                 </Table>
               </div>
             )}
-            {txInvoiceSearch.length >= 2 && !isTxSearching && txInvoiceResults.length === 0 && (
+            {debouncedTxInvoiceSearch.length >= 2 && !isTxSearching && txInvoiceResults.length === 0 && (
               <div className="text-center text-xs text-muted-foreground py-4">No invoices found.</div>
             )}
           </div>
           <div className="flex justify-end">
-            <Button variant="outline" size="sm" onClick={() => { setLinkTxId(null); setTxInvoiceSearch(''); setTxInvoiceResults([]) }}>Cancel</Button>
+            <Button variant="outline" size="sm" onClick={() => { setLinkTxId(null); setTxInvoiceSearch('') }}>Cancel</Button>
           </div>
         </DialogContent>
       </Dialog>

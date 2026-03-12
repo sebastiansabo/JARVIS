@@ -88,6 +88,7 @@ export default function AddEventPage() {
   const { data: bonusTypes = [] } = useQuery({
     queryKey: ['hr-bonus-types-active'],
     queryFn: () => hrApi.getBonusTypes(true),
+    staleTime: 5 * 60_000,
   })
 
   // Employee search

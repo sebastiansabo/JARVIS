@@ -102,11 +102,13 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
     queryKey: ['companies'],
     queryFn: () => organizationApi.getCompanies(),
     enabled: isPerLine,
+    staleTime: 10 * 60_000,
   })
   const { data: brands = [] } = useQuery({
     queryKey: ['brands', perLineCompany],
     queryFn: () => organizationApi.getBrands(perLineCompany),
     enabled: isPerLine && !!perLineCompany,
+    staleTime: 5 * 60_000,
   })
 
   const handleSave = useCallback(async () => {

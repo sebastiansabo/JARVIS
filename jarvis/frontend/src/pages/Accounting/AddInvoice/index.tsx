@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -55,7 +55,9 @@ export default function AddInvoice() {
 
   // Upload modal
   const [uploadOpen, setUploadOpen] = useState(true)
-  const [file, setFile] = useState<File | null>(null)
+  const [file, _setFile] = useState<File | null>(null)
+  const fileRef = useRef<File | null>(null)
+  const setFile = useCallback((f: File | null) => { fileRef.current = f; _setFile(f) }, [])
   const [isDragOver, setIsDragOver] = useState(false)
   const [parseTemplateId, setParseTemplateId] = useState<string>('auto')
   const [isParsing, setIsParsing] = useState(false)
@@ -84,32 +86,38 @@ export default function AddInvoice() {
   const { data: companies = [] } = useQuery({
     queryKey: ['companies'],
     queryFn: () => organizationApi.getCompanies(),
+    staleTime: 10 * 60_000,
   })
 
   const { data: templates = [] } = useQuery({
     queryKey: ['templates'],
     queryFn: () => invoicesApi.getTemplates(),
+    staleTime: 10 * 60_000,
   })
 
   const { data: vatRates = [] } = useQuery({
     queryKey: ['vat-rates'],
     queryFn: () => settingsApi.getVatRates(true),
+    staleTime: 10 * 60_000,
   })
 
   const { data: brands = [] } = useQuery({
     queryKey: ['brands', company],
     queryFn: () => organizationApi.getBrands(company),
     enabled: !!company,
+    staleTime: 5 * 60_000,
   })
 
   const { data: companiesVat = [] } = useQuery({
     queryKey: ['companies-vat'],
     queryFn: () => organizationApi.getCompaniesVat(),
+    staleTime: 10 * 60_000,
   })
 
   const { data: paymentOptions = [] } = useQuery({
     queryKey: ['settings', 'dropdowns', 'payment_status'],
     queryFn: () => settingsApi.getDropdownOptions('payment_status'),
+    staleTime: 10 * 60_000,
   })
 
   // Fetch department suggestions when supplier changes
@@ -340,9 +348,11 @@ export default function AddInvoice() {
     mutationFn: async (data: SubmitInvoiceInput) => {
       const result = await invoicesApi.submitInvoice(data)
       // Auto-upload file to Google Drive after save
-      if (result.id && file) {
+      const currentFile = fileRef.current
+      if (result.id && currentFile) {
         try {
-          const driveResult = await invoicesApi.uploadToDrive(file, data.invoice_date, company, data.invoice_number)
+          const driveCompany = data.distributions?.[0]?.company ?? ''
+          const driveResult = await invoicesApi.uploadToDrive(currentFile, data.invoice_date, driveCompany, data.invoice_number)
           if (driveResult.success && driveResult.drive_link) {
             await invoicesApi.updateDriveLink(result.id, driveResult.drive_link)
           } else {

@@ -111,9 +111,9 @@ export default function StatisticsTab({
     queryKey: ['crm-detailed-stats', filterParams],
     queryFn: () => crmApi.getDetailedStats(filterParams),
   })
-  const { data: dealersData } = useQuery({ queryKey: ['crm-dealers'], queryFn: crmApi.getDealers })
-  const { data: brandsData } = useQuery({ queryKey: ['crm-brands'], queryFn: crmApi.getBrands })
-  const { data: statusesData } = useQuery({ queryKey: ['crm-deal-statuses'], queryFn: crmApi.getDealStatuses })
+  const { data: dealersData } = useQuery({ queryKey: ['crm-dealers'], queryFn: crmApi.getDealers, staleTime: 10 * 60_000 })
+  const { data: brandsData } = useQuery({ queryKey: ['crm-brands'], queryFn: crmApi.getBrands, staleTime: 10 * 60_000 })
+  const { data: statusesData } = useQuery({ queryKey: ['crm-deal-statuses'], queryFn: crmApi.getDealStatuses, staleTime: 10 * 60_000 })
   const { data: clientStats } = useQuery({ queryKey: ['crm-client-detailed-stats'], queryFn: crmApi.getClientDetailedStats })
 
   return (

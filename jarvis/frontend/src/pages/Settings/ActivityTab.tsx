@@ -22,6 +22,7 @@ export default function ActivityTab() {
   const { data: eventTypes = [] } = useQuery({
     queryKey: ['settings', 'eventTypes'],
     queryFn: usersApi.getEventTypes,
+    staleTime: 10 * 60_000,
   })
 
   return (

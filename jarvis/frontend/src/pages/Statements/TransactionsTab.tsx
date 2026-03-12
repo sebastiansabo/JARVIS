@@ -154,11 +154,27 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, newStatus }: { id: number; newStatus: string }) =>
       statementsApi.updateTransaction(id, { status: newStatus as Transaction['status'] }),
-    onSuccess: () => {
+    onMutate: async ({ id, newStatus }) => {
+      await queryClient.cancelQueries({ queryKey: ['statements-transactions', filters] })
+      const prev = queryClient.getQueryData<{ transactions: Transaction[]; count: number }>(['statements-transactions', filters])
+      if (prev) {
+        queryClient.setQueryData(['statements-transactions', filters], {
+          ...prev,
+          transactions: prev.transactions.map((t) =>
+            t.id === id ? { ...t, status: newStatus as Transaction['status'] } : t
+          ),
+        })
+      }
+      return { prev }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) queryClient.setQueryData(['statements-transactions', filters], context.prev)
+      toast.error('Failed to update status')
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['statements-transactions'] })
       queryClient.invalidateQueries({ queryKey: ['statements-summary'] })
     },
-    onError: () => toast.error('Failed to update status'),
   })
 
   const bulkIgnoreMutation = useMutation({

@@ -59,6 +59,7 @@ function TagGroupsSection() {
   const { data: groups = [], isLoading } = useQuery({
     queryKey: ['settings', 'tagGroups'],
     queryFn: () => tagsApi.getGroups(),
+    staleTime: 10 * 60_000,
   })
 
   const createMutation = useMutation({
@@ -267,6 +268,7 @@ function TagsSection() {
   const { data: tags = [], isLoading } = useQuery({
     queryKey: ['settings', 'tags'],
     queryFn: () => tagsApi.getTags(),
+    staleTime: 10 * 60_000,
   })
 
   const createMutation = useMutation({
@@ -427,6 +429,7 @@ function TagFormDialog({ open, tag, onClose, onSave, isPending }: {
   const { data: groups = [] } = useQuery({
     queryKey: ['settings', 'tagGroups'],
     queryFn: () => tagsApi.getGroups(),
+    staleTime: 10 * 60_000,
     enabled: open,
   })
 

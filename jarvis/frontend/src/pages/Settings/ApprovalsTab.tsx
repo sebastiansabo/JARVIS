@@ -55,6 +55,7 @@ function FlowsSection() {
   const { data: flowsData, isLoading } = useQuery({
     queryKey: ['settings', 'approval-flows'],
     queryFn: () => approvalsApi.getFlows(false),
+    staleTime: 10 * 60_000,
   })
   const flows = flowsData?.flows ?? []
 
@@ -178,6 +179,7 @@ function FlowDialog({ flow, open, onClose }: FlowDialogProps) {
   const { data: structure = [] } = useQuery({
     queryKey: ['organization-structure'],
     queryFn: () => organizationApi.getStructure(),
+    staleTime: 10 * 60_000,
   })
 
   const companies = [...new Set(structure.map((s: DepartmentStructure) => s.company))]
@@ -349,16 +351,19 @@ function StepsEditor({ flowId }: { flowId: number }) {
   const { data: roles = [] } = useQuery({
     queryKey: ['settings', 'roles'],
     queryFn: () => rolesApi.getRoles(),
+    staleTime: 10 * 60_000,
   })
 
   const { data: users = [] } = useQuery({
     queryKey: ['users-list'],
     queryFn: () => usersApi.getUsers(),
+    staleTime: 10 * 60_000,
   })
 
   const { data: structure = [] } = useQuery({
     queryKey: ['organization-structure'],
     queryFn: () => organizationApi.getStructure(),
+    staleTime: 10 * 60_000,
   })
 
   const deleteStepMutation = useMutation({
