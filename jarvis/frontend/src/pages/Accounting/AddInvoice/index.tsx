@@ -399,7 +399,7 @@ export default function AddInvoice() {
               brand: rd.brand || undefined,
               department: rd.department,
               subdepartment: rd.subdepartment || undefined,
-              percent: rd.percentage,
+              percentage: rd.percentage,
             })),
         })),
       )
@@ -419,7 +419,7 @@ export default function AddInvoice() {
             brand: rd.brand || undefined,
             department: rd.department,
             subdepartment: rd.subdepartment || undefined,
-            percent: rd.percentage,
+            percentage: rd.percentage,
           })),
       }))
     }
@@ -1029,9 +1029,9 @@ export default function AddInvoice() {
         </div>
       </div>
 
-      {/* Sticky bottom action bar */}
-      <div className="sticky bottom-0 -mx-6 -mb-6 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="flex items-center justify-between gap-3 px-6 py-3">
+      {/* Bottom action bar */}
+      <div className="border-t pt-4">
+        <div className="flex items-center justify-between gap-3">
           <Button variant="outline" onClick={clearForm}>
             Clear Form
           </Button>

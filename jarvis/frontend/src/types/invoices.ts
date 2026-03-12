@@ -168,7 +168,7 @@ export interface SubmitInvoiceInput {
       brand?: string
       department: string
       subdepartment?: string
-      percent: number
+      percentage: number
     }[]
   }[]
 }
