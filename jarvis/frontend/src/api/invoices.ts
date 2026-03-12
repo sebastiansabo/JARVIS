@@ -56,6 +56,17 @@ export const invoicesApi = {
       total: number
     }>('/api/invoices/bulk-submit', { invoices }),
 
+  // Drive upload
+  uploadToDrive: async (file: File, invoiceDate: string, company: string, invoiceNumber: string): Promise<{ success: boolean; drive_link?: string; error?: string }> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('invoice_date', invoiceDate)
+    formData.append('company', company)
+    formData.append('invoice_number', invoiceNumber)
+    const response = await fetch('/api/drive/upload', { method: 'POST', body: formData, credentials: 'same-origin' })
+    return response.json()
+  },
+
   // Submit & Parse
   submitInvoice: (data: SubmitInvoiceInput) => api.post<{ success: boolean; id: number }>('/api/submit', data),
   parseInvoice: async (file: File, templateId?: number): Promise<unknown> => {

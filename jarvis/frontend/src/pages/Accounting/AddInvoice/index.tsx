@@ -338,7 +338,21 @@ export default function AddInvoice() {
 
   // Submit
   const submitMutation = useMutation({
-    mutationFn: (data: SubmitInvoiceInput) => invoicesApi.submitInvoice(data),
+    mutationFn: async (data: SubmitInvoiceInput) => {
+      const result = await invoicesApi.submitInvoice(data)
+      // Auto-upload file to Google Drive after save
+      if (result.id && file) {
+        try {
+          const driveResult = await invoicesApi.uploadToDrive(file, data.invoice_date, data.distributions[0]?.company ?? '', data.invoice_number)
+          if (driveResult.success && driveResult.drive_link) {
+            await invoicesApi.updateDriveLink(result.id, driveResult.drive_link)
+          }
+        } catch {
+          // Drive upload is non-blocking — invoice is already saved
+        }
+      }
+      return result
+    },
     onSuccess: () => {
       toast.success('Invoice saved successfully')
       navigate('/app/accounting')
