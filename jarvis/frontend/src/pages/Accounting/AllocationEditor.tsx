@@ -597,9 +597,16 @@ function ReinvoiceDestRow({
   // Filter out source company from targets
   const targetCompanies = allCompanies.filter((c) => c !== sourceCompany)
 
+  const { data: targetBrands = [] } = useQuery({
+    queryKey: ['brands', dest.company],
+    queryFn: () => organizationApi.getBrands(dest.company),
+    enabled: !!dest.company,
+  })
+
+  // Cascade: pass brand to filter departments (same as main allocation row)
   const { data: targetDepts = [] } = useQuery({
-    queryKey: ['departments', dest.company],
-    queryFn: () => organizationApi.getDepartments(dest.company),
+    queryKey: ['departments', dest.company, dest.brand || null],
+    queryFn: () => organizationApi.getDepartments(dest.company, dest.brand || undefined),
     enabled: !!dest.company,
   })
 
@@ -609,17 +616,16 @@ function ReinvoiceDestRow({
     enabled: !!dest.department,
   })
 
-  const { data: targetBrands = [] } = useQuery({
-    queryKey: ['brands', dest.company],
-    queryFn: () => organizationApi.getBrands(dest.company),
-    enabled: !!dest.company,
-  })
+  const hasBrands = targetBrands.length > 0
+  // Cascade: L2 requires L1 selected (if brands exist); L3 requires L2 selected
+  const showL2 = hasBrands ? (!!dest.brand && targetDepts.length > 0) : (!!dest.company && targetDepts.length > 0)
+  const showL3 = showL2 && !!dest.department && targetSubdepts.length > 0
 
   return (
     <div className="flex items-center gap-2">
       <Select
         value={dest.company || '__none__'}
-        onValueChange={(v) => onUpdate({ company: v === '__none__' ? '' : v, department: '', subdepartment: '', brand: '' })}
+        onValueChange={(v) => onUpdate({ company: v === '__none__' ? '' : v, brand: '', department: '', subdepartment: '' })}
       >
         <SelectTrigger className="h-7 text-xs w-32">
           <SelectValue placeholder="Company" />
@@ -631,10 +637,10 @@ function ReinvoiceDestRow({
           ))}
         </SelectContent>
       </Select>
-      {!!dest.company && targetBrands.length > 0 && (
+      {!!dest.company && hasBrands && (
         <Select
           value={dest.brand || '__none__'}
-          onValueChange={(v) => onUpdate({ brand: v === '__none__' ? '' : v })}
+          onValueChange={(v) => onUpdate({ brand: v === '__none__' ? '' : v, department: '', subdepartment: '' })}
         >
           <SelectTrigger className="h-7 text-xs w-28">
             <SelectValue placeholder="Brand" />
@@ -647,7 +653,7 @@ function ReinvoiceDestRow({
           </SelectContent>
         </Select>
       )}
-      {!!dest.company && (
+      {showL2 && (
         <Select
           value={dest.department || '__none__'}
           onValueChange={(v) => onUpdate({ department: v === '__none__' ? '' : v, subdepartment: '' })}
@@ -663,7 +669,7 @@ function ReinvoiceDestRow({
           </SelectContent>
         </Select>
       )}
-      {!!dest.department && targetSubdepts.length > 0 && (
+      {showL3 && (
         <Select
           value={dest.subdepartment || '__none__'}
           onValueChange={(v) => onUpdate({ subdepartment: v === '__none__' ? '' : v })}

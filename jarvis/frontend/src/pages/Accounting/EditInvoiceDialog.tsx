@@ -92,6 +92,9 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
   const [lineAllocations, setLineAllocations] = useState<Map<number, AllocationRow[]>>(() =>
     isPerLine ? buildInitialLineAllocations(invoice, effectiveValue) : new Map(),
   )
+  const [lineGroups, setLineGroups] = useState(() =>
+    lineItems.map((_: unknown, i: number) => [i]),
+  )
 
   // Per-line mode needs company and brands
   const perLineCompany = isPerLine ? (invoice.allocations?.[0]?.company ?? '') : ''
@@ -283,6 +286,8 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
                 currency={currency}
                 allocations={lineAllocations}
                 onChange={setLineAllocations}
+                groups={lineGroups}
+                onGroupsChange={setLineGroups}
               />
             ) : (
               <AllocationEditor

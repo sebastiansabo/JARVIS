@@ -34,7 +34,7 @@ import { useFormValidation } from '@/hooks/useFormValidation'
 import { FieldError } from '@/components/shared/FieldError'
 import type { ParseResult, SubmitInvoiceInput, DeptSuggestion } from '@/types/invoices'
 import { type AllocationRow, newRow, AllocationRowComponent } from '../AllocationEditor'
-import { LineItemAllocations } from '../LineItemAllocations'
+import { LineItemAllocations, generateMergeComment, type LineGroup } from '../LineItemAllocations'
 
 /* ──── Main Component ──── */
 
@@ -66,6 +66,7 @@ export default function AddInvoice() {
   const [rows, setRows] = useState<AllocationRow[]>([newRow()])
   const [allocationMode, setAllocationMode] = useState<'whole' | 'per_line'>('whole')
   const [lineAllocations, setLineAllocations] = useState<Map<number, AllocationRow[]>>(new Map())
+  const [lineGroups, setLineGroups] = useState<LineGroup[]>([])
 
   // Currency conversion from parse
   const [valueRon, setValueRon] = useState<number | null>(null)
@@ -144,6 +145,17 @@ export default function AddInvoice() {
     return gross / (1 + selectedVatRate.rate / 100)
   }, [invoiceValue, subtractVat, selectedVatRate])
 
+  // Line items with VAT subtracted (for multi-line allocation mode)
+  const effectiveLineItems = useMemo(() => {
+    if (!subtractVat || !selectedVatRate) return lineItems
+    return lineItems.map((item) => ({
+      ...item,
+      amount: item.vat_rate != null
+        ? item.amount / (1 + item.vat_rate / 100)
+        : item.amount / (1 + selectedVatRate.rate / 100),
+    }))
+  }, [lineItems, subtractVat, selectedVatRate])
+
   const totalPercent = useMemo(
     () => rows.reduce((sum, r) => sum + r.percent, 0),
     [rows],
@@ -199,8 +211,15 @@ export default function AddInvoice() {
         if (d.value_eur != null) setValueEur(d.value_eur)
         if (d.exchange_rate != null) setExchangeRate(d.exchange_rate)
         if (d.auto_detected_template) setTemplateName(d.auto_detected_template)
-        if (d.line_items?.length) setLineItems(d.line_items)
-        else setLineItems([])
+        if (d.line_items?.length) {
+          setLineItems(d.line_items)
+          setLineGroups(d.line_items.map((_: unknown, i: number) => [i]))
+          setLineAllocations(new Map())
+        } else {
+          setLineItems([])
+          setLineGroups([])
+          setLineAllocations(new Map())
+        }
         setInvoiceType(d.invoice_type || 'standard')
         setEfacturaMatch(d.efactura_match ?? null)
         setParseResult({ supplier: d.supplier, invoice_number: d.invoice_number, invoice_value: d.invoice_value, invoice_date: d.invoice_date })
@@ -239,6 +258,26 @@ export default function AddInvoice() {
       setIsParsing(false)
     }
   }
+
+  // Recalculate allocation values when VAT settings change
+  useEffect(() => {
+    // Classic mode: sync row values to effectiveValue
+    setRows((prev) =>
+      prev.map((r) => ({ ...r, value: effectiveValue * (r.percent / 100) })),
+    )
+    // Multi-line mode: sync row values to effective line item amounts
+    setLineAllocations((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Map(prev)
+      effectiveLineItems.forEach((item, idx) => {
+        const rows = next.get(idx)
+        if (rows) {
+          next.set(idx, rows.map((r) => ({ ...r, value: item.amount * (r.percent / 100) })))
+        }
+      })
+      return next
+    })
+  }, [effectiveValue, effectiveLineItems])
 
   const updateRow = (id: string, updates: Partial<AllocationRow>) => {
     setRows((prev) =>
@@ -393,7 +432,7 @@ export default function AddInvoice() {
       invoice_value: parseFloat(invoiceValue),
       currency,
       drive_link: driveLink || undefined,
-      comment: comment || undefined,
+      comment: [comment, generateMergeComment(lineGroups, lineItems)].filter(Boolean).join('\n\n') || undefined,
       payment_status: paymentStatus,
       subtract_vat: subtractVat,
       vat_rate: selectedVatRate?.rate,
@@ -429,6 +468,7 @@ export default function AddInvoice() {
     setRows([newRow()])
     setAllocationMode('whole')
     setLineAllocations(new Map())
+    setLineGroups([])
     setValueRon(null)
     setValueEur(null)
     setExchangeRate(null)
@@ -973,13 +1013,15 @@ export default function AddInvoice() {
               {/* Allocation rows — Multi-line mode */}
               {company && allocationMode === 'per_line' && lineItems.length > 0 && (
                 <LineItemAllocations
-                  lineItems={lineItems}
+                  lineItems={effectiveLineItems}
                   company={company}
                   companies={companies as string[]}
                   brands={brands}
                   currency={currency}
                   allocations={lineAllocations}
                   onChange={setLineAllocations}
+                  groups={lineGroups}
+                  onGroupsChange={setLineGroups}
                 />
               )}
             </CardContent>
