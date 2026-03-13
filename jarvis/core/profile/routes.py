@@ -53,6 +53,11 @@ def api_profile_summary():
         invoices_summary = _profile_repo.get_user_invoices_summary(current_user.email)
         activity_count = _profile_repo.get_user_activity_count(current_user.id)
 
+        # Add mobile-friendly pending/allocated fields
+        by_status = invoices_summary.get('by_status', {})
+        invoices_summary['pending'] = by_status.get('pending', 0) + by_status.get('in_progress', 0)
+        invoices_summary['allocated'] = by_status.get('allocated', 0) + by_status.get('approved', 0)
+
         # Get HR events summary for this user
         hr_events_summary = _profile_repo.get_user_event_bonuses_summary(current_user.id)
 

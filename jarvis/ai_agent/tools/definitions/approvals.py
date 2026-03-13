@@ -12,12 +12,12 @@ def get_pending_approvals(params: dict, user_id: int) -> dict:
 
         if params.get('scope') == 'all':
             cursor.execute("""
-                SELECT ar.id, ar.entity_type, ar.entity_id, ar.title,
+                SELECT ar.id, ar.entity_type, ar.entity_id,
                        ar.status, ar.priority, ar.created_at,
                        u.name AS requested_by,
                        ar.context_snapshot
                 FROM approval_requests ar
-                LEFT JOIN users u ON u.id = ar.requested_by_id
+                LEFT JOIN users u ON u.id = ar.requested_by
                 WHERE ar.status = 'pending'
                 ORDER BY ar.created_at DESC
                 LIMIT 50
@@ -25,19 +25,19 @@ def get_pending_approvals(params: dict, user_id: int) -> dict:
         else:
             # Get pending for this specific user (assigned to them)
             cursor.execute("""
-                SELECT ar.id, ar.entity_type, ar.entity_id, ar.title,
+                SELECT ar.id, ar.entity_type, ar.entity_id,
                        ar.status, ar.priority, ar.created_at,
                        u.name AS requested_by,
                        ar.context_snapshot
                 FROM approval_requests ar
-                LEFT JOIN users u ON u.id = ar.requested_by_id
+                LEFT JOIN users u ON u.id = ar.requested_by
                 JOIN approval_steps s ON s.flow_id = ar.flow_id
-                    AND s.step_order = ar.current_step
+                    AND s.id = ar.current_step_id
                 WHERE ar.status = 'pending'
                   AND (
-                    (s.approver_type = 'user' AND s.approver_id = %s)
-                    OR (s.approver_type = 'role' AND s.approver_id IN (
-                        SELECT role_id FROM users WHERE id = %s
+                    (s.approver_type = 'specific_user' AND s.approver_user_id = %s)
+                    OR (s.approver_type = 'role' AND s.approver_role_name IN (
+                        SELECT r.name FROM roles r JOIN users usr ON usr.role_id = r.id WHERE usr.id = %s
                     ))
                     OR (s.approver_type = 'context_approver'
                         AND ar.context_snapshot->>'approver_user_id' = %s::text)
@@ -73,12 +73,14 @@ def get_approval_status(params: dict, user_id: int) -> dict:
     try:
         cursor = get_cursor(conn)
         cursor.execute("""
-            SELECT ar.id, ar.entity_type, ar.entity_id, ar.title,
-                   ar.status, ar.priority, ar.current_step, ar.total_steps,
+            SELECT ar.id, ar.entity_type, ar.entity_id,
+                   ar.status, ar.priority, ar.current_step_id,
                    ar.created_at, ar.updated_at,
-                   u.name AS requested_by
+                   u.name AS requested_by,
+                   ar.context_snapshot,
+                   (SELECT COUNT(*) FROM approval_steps WHERE flow_id = ar.flow_id) AS total_steps
             FROM approval_requests ar
-            LEFT JOIN users u ON u.id = ar.requested_by_id
+            LEFT JOIN users u ON u.id = ar.requested_by
             WHERE ar.id = %s
         """, [request_id])
         row = cursor.fetchone()
@@ -92,17 +94,17 @@ def get_approval_status(params: dict, user_id: int) -> dict:
 
         # Get decisions
         cursor.execute("""
-            SELECT ad.step_order, ad.decision, ad.comment,
-                   ad.created_at, u.name AS decided_by
+            SELECT ad.step_id, ad.decision, ad.comment,
+                   ad.decided_at, u.name AS decided_by
             FROM approval_decisions ad
-            LEFT JOIN users u ON u.id = ad.user_id
+            LEFT JOIN users u ON u.id = ad.decided_by
             WHERE ad.request_id = %s
-            ORDER BY ad.step_order, ad.created_at
+            ORDER BY ad.step_id, ad.decided_at
         """, [request_id])
         result['decisions'] = [dict(r) for r in cursor.fetchall()]
         for d in result['decisions']:
-            if d.get('created_at'):
-                d['created_at'] = str(d['created_at'])
+            if d.get('decided_at'):
+                d['decided_at'] = str(d['decided_at'])
 
         return result
     finally:

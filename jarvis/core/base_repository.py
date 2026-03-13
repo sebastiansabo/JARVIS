@@ -25,7 +25,19 @@ Usage:
             return self.execute_many(_work)
 """
 
+import logging
+import os
+import time as _time
+
 from database import get_db, get_cursor, release_db, dict_from_row
+
+_logger = logging.getLogger('jarvis.db')
+_SLOW_MS = int(os.environ.get('SLOW_QUERY_MS', '200'))
+
+
+def _warn_slow(elapsed_ms: float, sql: str):
+    if elapsed_ms > _SLOW_MS:
+        _logger.warning(f'Slow query {elapsed_ms:.0f}ms: {sql[:120]}')
 
 
 class BaseRepository:
@@ -35,8 +47,10 @@ class BaseRepository:
         conn = get_db()
         try:
             cursor = get_cursor(conn)
+            t0 = _time.perf_counter()
             cursor.execute(sql, params or ())
             row = cursor.fetchone()
+            _warn_slow((_time.perf_counter() - t0) * 1000, sql)
             return dict_from_row(row) if row else None
         finally:
             release_db(conn)
@@ -46,8 +60,11 @@ class BaseRepository:
         conn = get_db()
         try:
             cursor = get_cursor(conn)
+            t0 = _time.perf_counter()
             cursor.execute(sql, params or ())
-            return [dict_from_row(r) for r in cursor.fetchall()]
+            rows = cursor.fetchall()
+            _warn_slow((_time.perf_counter() - t0) * 1000, sql)
+            return [dict_from_row(r) for r in rows]
         finally:
             release_db(conn)
 
@@ -65,7 +82,9 @@ class BaseRepository:
         conn = get_db()
         try:
             cursor = get_cursor(conn)
+            t0 = _time.perf_counter()
             cursor.execute(sql, params or ())
+            _warn_slow((_time.perf_counter() - t0) * 1000, sql)
             if returning:
                 result = cursor.fetchone()
                 conn.commit()

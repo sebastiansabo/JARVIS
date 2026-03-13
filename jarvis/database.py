@@ -1868,6 +1868,57 @@ def init_db():
                 )
             ''')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_checkin_locations_active ON checkin_locations(is_active)')
+
+            # BioStar tables (needed for GPS check-in + pontaje)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS biostar_employees (
+                    id SERIAL PRIMARY KEY,
+                    biostar_user_id VARCHAR(50) NOT NULL UNIQUE,
+                    name VARCHAR(255) NOT NULL,
+                    email VARCHAR(255),
+                    phone VARCHAR(50),
+                    user_group_id VARCHAR(50),
+                    user_group_name VARCHAR(255),
+                    department VARCHAR(255),
+                    title VARCHAR(255),
+                    status VARCHAR(20) NOT NULL DEFAULT 'active',
+                    mapped_jarvis_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    photo_url TEXT,
+                    schedule_start VARCHAR(10),
+                    schedule_end VARCHAR(10),
+                    lunch_break_minutes INTEGER DEFAULT 60,
+                    working_hours INTEGER DEFAULT 8,
+                    is_blacklisted BOOLEAN NOT NULL DEFAULT FALSE,
+                    last_synced_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_biostar_employees_mapped ON biostar_employees(mapped_jarvis_user_id)')
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS biostar_punch_logs (
+                    id SERIAL PRIMARY KEY,
+                    biostar_event_id VARCHAR(100) NOT NULL,
+                    biostar_user_id VARCHAR(50) NOT NULL,
+                    event_datetime TIMESTAMP NOT NULL,
+                    event_type VARCHAR(50) DEFAULT 'DEVICE_PUNCH',
+                    direction VARCHAR(10),
+                    device_id VARCHAR(50),
+                    device_name VARCHAR(255),
+                    door_id VARCHAR(50),
+                    door_name VARCHAR(255),
+                    temperature NUMERIC(4,1),
+                    raw_data JSONB,
+                    synced_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+            ''')
+            cursor.execute('''CREATE UNIQUE INDEX IF NOT EXISTS idx_biostar_punch_dedup
+                ON biostar_punch_logs(biostar_event_id, (event_datetime::date))''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_biostar_punch_user ON biostar_punch_logs(biostar_user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_biostar_punch_datetime ON biostar_punch_logs(event_datetime)')
+
             conn.commit()
             logger.info('Incremental migration complete')
             return

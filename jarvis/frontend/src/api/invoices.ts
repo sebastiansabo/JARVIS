@@ -1,21 +1,11 @@
 import { api } from './client'
+import { buildQs } from './utils'
 import type { Invoice, InvoiceSummary, InvoiceFilters, SubmitInvoiceInput, InvoiceTemplate, DeptSuggestion, InvoiceDmsLink, DmsDocSearchResult, StoreToDmsResult } from '@/types/invoices'
-
-function buildQueryString(filters: InvoiceFilters & { limit?: number; offset?: number; include_allocations?: boolean }): string {
-  const params = new URLSearchParams()
-  Object.entries(filters).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      params.set(key, String(value))
-    }
-  })
-  const qs = params.toString()
-  return qs ? `?${qs}` : ''
-}
 
 export const invoicesApi = {
   // Invoice CRUD
   getInvoices: (filters: InvoiceFilters & { limit?: number; offset?: number; include_allocations?: boolean } = {}) =>
-    api.get<Invoice[]>(`/api/db/invoices${buildQueryString(filters)}`),
+    api.get<Invoice[]>(`/api/db/invoices${buildQs(filters)}`),
   getInvoice: (id: number) => api.get<Invoice>(`/api/db/invoices/${id}`),
   updateInvoice: (id: number, data: Partial<Invoice>) => api.put<{ success: boolean }>(`/api/db/invoices/${id}`, data),
   deleteInvoice: (id: number) => api.delete<{ success: boolean }>(`/api/db/invoices/${id}`),
@@ -98,13 +88,13 @@ export const invoicesApi = {
 
   // Summaries
   getCompanySummary: (filters?: InvoiceFilters) =>
-    api.get<InvoiceSummary[]>(`/api/db/summary/company${buildQueryString(filters ?? {})}`),
+    api.get<InvoiceSummary[]>(`/api/db/summary/company${buildQs(filters ?? {})}`),
   getDepartmentSummary: (filters?: InvoiceFilters) =>
-    api.get<InvoiceSummary[]>(`/api/db/summary/department${buildQueryString(filters ?? {})}`),
+    api.get<InvoiceSummary[]>(`/api/db/summary/department${buildQs(filters ?? {})}`),
   getBrandSummary: (filters?: InvoiceFilters) =>
-    api.get<InvoiceSummary[]>(`/api/db/summary/brand${buildQueryString(filters ?? {})}`),
+    api.get<InvoiceSummary[]>(`/api/db/summary/brand${buildQs(filters ?? {})}`),
   getSupplierSummary: (filters?: InvoiceFilters) =>
-    api.get<InvoiceSummary[]>(`/api/db/summary/supplier${buildQueryString(filters ?? {})}`),
+    api.get<InvoiceSummary[]>(`/api/db/summary/supplier${buildQs(filters ?? {})}`),
 
   // ---- DMS Document Links ----
 

@@ -538,12 +538,29 @@ def add_bonus():
 @events_bp.route('/api/events', methods=['GET'])
 @login_required
 def api_get_events():
-    """API: Get all events. Accessible to HR and Marketing users."""
-    can_hr = getattr(current_user, 'can_access_hr', False)
-    can_mkt = getattr(current_user, 'can_access_marketing', False)
-    if not can_hr and not can_mkt:
-        return jsonify({'success': False, 'error': 'Access denied'}), 403
+    """API: Get all events. Read-only listing is open to all authenticated users."""
+    from datetime import date
     events = get_all_hr_events()
+    upcoming_param = request.args.get('upcoming')
+    if upcoming_param is not None:
+        today = date.today().isoformat()
+        if upcoming_param.lower() == 'true':
+            events = [e for e in events if (e.get('start_date') or '') >= today]
+        else:
+            events = [e for e in events if (e.get('end_date') or e.get('start_date') or '') < today]
+    # Map field names for mobile compatibility
+    for e in events:
+        if 'name' in e and 'title' not in e:
+            e['title'] = e['name']
+        if 'start_date' in e and 'date' not in e:
+            e['date'] = e['start_date']
+        e.setdefault('status', 'active')
+        e.setdefault('location', e.get('company') or '')
+        e.setdefault('participants_count', 0)
+        e.setdefault('type', 'HR Event')
+    # Wrap in {events: [...]} when upcoming param used (mobile), bare array otherwise (web)
+    if upcoming_param is not None:
+        return jsonify({'events': events})
     return jsonify(events)
 
 

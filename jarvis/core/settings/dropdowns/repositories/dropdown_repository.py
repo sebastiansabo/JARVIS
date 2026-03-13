@@ -7,8 +7,13 @@ import logging
 from typing import Optional
 
 from core.base_repository import BaseRepository
+from core.cache import create_cache, get_cache_lock, _is_cache_valid
 
 logger = logging.getLogger('jarvis.core.settings.dropdowns.repository')
+
+# Cache all dropdown options per type (near-static data, 5 min TTL)
+_options_cache: dict[str, dict] = {}  # key: dropdown_type → cache entry
+_options_all_cache = create_cache(ttl=300)  # cache for get_options(type=None)
 
 
 class DropdownRepository(BaseRepository):
@@ -75,6 +80,19 @@ class DropdownRepository(BaseRepository):
 
     def get_options(self, dropdown_type: str = None, active_only: bool = False) -> list[dict]:
         """Get dropdown options, optionally filtered by type and active status."""
+        # Cache only non-filtered reads (most common call pattern)
+        if not active_only:
+            lock = get_cache_lock()
+            if dropdown_type:
+                with lock:
+                    entry = _options_cache.get(dropdown_type)
+                    if entry and _is_cache_valid(entry):
+                        return entry['data']
+            else:
+                with lock:
+                    if _is_cache_valid(_options_all_cache):
+                        return _options_all_cache['data']
+
         query = 'SELECT * FROM dropdown_options WHERE 1=1'
         params = []
         if dropdown_type:
@@ -83,7 +101,26 @@ class DropdownRepository(BaseRepository):
         if active_only:
             query += ' AND is_active = TRUE'
         query += ' ORDER BY dropdown_type, sort_order, label'
-        return self.query_all(query, tuple(params) if params else None)
+        result = self.query_all(query, tuple(params) if params else None)
+
+        if not active_only:
+            lock = get_cache_lock()
+            if dropdown_type:
+                with lock:
+                    _options_cache[dropdown_type] = {'data': result, 'timestamp': __import__('time').time(), 'ttl': 300}
+            else:
+                with lock:
+                    _options_all_cache['data'] = result
+                    _options_all_cache['timestamp'] = __import__('time').time()
+        return result
+
+    def _invalidate_options_cache(self, dropdown_type: str = None):
+        """Clear cached options — call after any write operation."""
+        lock = get_cache_lock()
+        with lock:
+            if dropdown_type and dropdown_type in _options_cache:
+                del _options_cache[dropdown_type]
+            _options_all_cache['data'] = None  # invalidate the all-types cache
 
     def get_option(self, option_id: int) -> Optional[dict]:
         """Get a specific dropdown option by ID."""
@@ -98,6 +135,7 @@ class DropdownRepository(BaseRepository):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (dropdown_type, value, label, color, opacity, sort_order, is_active, notify_on_status), returning=True)
+        self._invalidate_options_cache(dropdown_type)
         return result['id']
 
     def update_option(self, option_id: int, value: str = None, label: str = None,
@@ -130,11 +168,17 @@ class DropdownRepository(BaseRepository):
         if not updates:
             return False
         params.append(option_id)
-        return self.execute(f"UPDATE dropdown_options SET {', '.join(updates)} WHERE id = %s", tuple(params)) > 0
+        updated = self.execute(f"UPDATE dropdown_options SET {', '.join(updates)} WHERE id = %s", tuple(params)) > 0
+        if updated:
+            self._invalidate_options_cache()
+        return updated
 
     def delete_option(self, option_id: int) -> bool:
         """Delete a dropdown option."""
-        return self.execute('DELETE FROM dropdown_options WHERE id = %s', (option_id,)) > 0
+        deleted = self.execute('DELETE FROM dropdown_options WHERE id = %s', (option_id,)) > 0
+        if deleted:
+            self._invalidate_options_cache()
+        return deleted
 
     def should_notify_on_status(self, status_value: str, dropdown_type: str = 'invoice_status') -> bool:
         """Check if a status value should trigger notifications."""

@@ -682,6 +682,7 @@ export default function Dms() {
                             selectedIds.includes(doc.id) && 'bg-primary/5',
                           )}
                           onClick={() => setExpandedRow(expandedRow === doc.id ? null : doc.id)}
+                          aria-expanded={expandedRow === doc.id}
                         >
                           <TableCell className="px-2" onClick={(e) => e.stopPropagation()}>
                             <Checkbox
@@ -690,7 +691,7 @@ export default function Dms() {
                             />
                           </TableCell>
                           <TableCell className="px-2">
-                            <ChevronRight className={cn('h-4 w-4 transition-transform', expandedRow === doc.id ? 'rotate-90' : '')} />
+                            <ChevronRight aria-hidden="true" className={cn('h-4 w-4 transition-transform', expandedRow === doc.id ? 'rotate-90' : '')} />
                           </TableCell>
                           {activeColumnDefs.map((col) => (
                             <TableCell key={col.key} className={col.className}>

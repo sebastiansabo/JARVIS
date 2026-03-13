@@ -4,9 +4,12 @@ Registered at app startup via register_approval_hooks().
 """
 
 import logging
+import os
 from core.notifications.notify import notify_user, notify_users
 
 logger = logging.getLogger('jarvis.core.approvals.handlers')
+
+_APP_BASE_URL = os.environ.get('APP_BASE_URL', 'https://jarvis-mkt-t6fk7.ondigitalocean.app')
 
 
 # ── Email helpers ──
@@ -159,7 +162,7 @@ def _on_submitted(payload):
                 _approval_email_base(
                     f'Cerere de aprobare nouă',
                     body,
-                    f'https://jarvis-mkt-t6fk7.ondigitalocean.app{link}',
+                    f'{_APP_BASE_URL}{link}',
                     'Vezi cererea',
                 ),
             )
@@ -204,7 +207,7 @@ def _on_approved(payload):
                 email,
                 f'Aprobat: {project_title}',
                 _approval_email_base('Cererea a fost aprobată ✓', body,
-                    f'https://jarvis-mkt-t6fk7.ondigitalocean.app{link}', 'Vezi proiectul'),
+                    f'{_APP_BASE_URL}{link}', 'Vezi proiectul'),
             )
 
     # Auto-update invoice status to 'approved'
@@ -300,7 +303,7 @@ def _on_rejected(payload):
                 email,
                 f'Respins: {project_title}',
                 _approval_email_base('Cererea a fost respinsă', body,
-                    f'https://jarvis-mkt-t6fk7.ondigitalocean.app{link}', 'Vezi proiectul'),
+                    f'{_APP_BASE_URL}{link}', 'Vezi proiectul'),
             )
 
     # Revert marketing project to draft on rejection
@@ -354,7 +357,7 @@ def _on_returned(payload):
                 email,
                 f'Returnata pentru modificari: {project_title}',
                 _approval_email_base('Cererea a fost returnată', body,
-                    f'https://jarvis-mkt-t6fk7.ondigitalocean.app{link}', 'Revizuieste proiectul'),
+                    f'{_APP_BASE_URL}{link}', 'Revizuieste proiectul'),
             )
 
     # Revert marketing project to draft on return
@@ -406,7 +409,7 @@ def _on_step_advanced(payload):
                 email,
                 f'Cerere in asteptare — Etapa: {step_name}',
                 _approval_email_base('Cerere de aprobare în așteptare', body,
-                    f'https://jarvis-mkt-t6fk7.ondigitalocean.app{link}', 'Revizuieste cererea'),
+                    f'{_APP_BASE_URL}{link}', 'Revizuieste cererea'),
             )
 
 

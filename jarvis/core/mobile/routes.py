@@ -299,88 +299,114 @@ def api_mobile_dashboard():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            result = {}
+            result = {'stats': {}}
 
-            # Stat cards
-            cur.execute("""
-                SELECT
-                    COUNT(*) as total_invoices,
-                    COALESCE(SUM(invoice_value), 0) as total_amount,
-                    COUNT(*) FILTER (WHERE status = 'pending') as pending_invoices
-                FROM invoices WHERE deleted_at IS NULL
-            """)
-            inv = cur.fetchone()
-            result['stats'] = {
-                'invoices': inv[0] if inv else 0,
-                'revenue': float(inv[1]) if inv else 0,
-                'pending_invoices': inv[2] if inv else 0,
-            }
+            # Stat cards — invoices
+            try:
+                cur.execute("""
+                    SELECT
+                        COUNT(*) as total_invoices,
+                        COALESCE(SUM(invoice_value), 0) as total_amount,
+                        COUNT(*) FILTER (WHERE status = 'pending') as pending_invoices
+                    FROM invoices WHERE deleted_at IS NULL
+                """)
+                inv = cur.fetchone()
+                result['stats']['invoices'] = inv[0] if inv else 0
+                result['stats']['revenue'] = float(inv[1]) if inv else 0
+                result['stats']['pending_invoices'] = inv[2] if inv else 0
+            except Exception:
+                conn.rollback()
+                result['stats'].update({'invoices': 0, 'revenue': 0, 'pending_invoices': 0})
 
             # Pending approvals count for this user
-            cur.execute("""
-                SELECT COUNT(*) FROM approval_step_decisions asd
-                JOIN approval_request_steps ars ON ars.id = asd.step_id
-                JOIN approval_requests ar ON ar.id = ars.request_id
-                WHERE asd.approver_id = %s AND asd.decision = 'pending'
-                AND ar.status = 'pending'
-            """, (user.id,))
-            row = cur.fetchone()
-            result['stats']['pending_approvals'] = row[0] if row else 0
+            try:
+                cur.execute("""
+                    SELECT COUNT(*) FROM approval_step_decisions asd
+                    JOIN approval_request_steps ars ON ars.id = asd.step_id
+                    JOIN approval_requests ar ON ar.id = ars.request_id
+                    WHERE asd.approver_id = %s AND asd.decision = 'pending'
+                    AND ar.status = 'pending'
+                """, (user.id,))
+                row = cur.fetchone()
+                result['stats']['pending_approvals'] = row[0] if row else 0
+            except Exception:
+                conn.rollback()
+                result['stats']['pending_approvals'] = 0
 
             # Pending signatures count
-            cur.execute("""
-                SELECT COUNT(*) FROM document_signatures
-                WHERE signed_by = %s AND status = 'pending'
-            """, (user.id,))
-            row = cur.fetchone()
-            result['stats']['pending_signatures'] = row[0] if row else 0
+            try:
+                cur.execute("""
+                    SELECT COUNT(*) FROM document_signatures
+                    WHERE signed_by = %s AND status = 'pending'
+                """, (user.id,))
+                row = cur.fetchone()
+                result['stats']['pending_signatures'] = row[0] if row else 0
+            except Exception:
+                conn.rollback()
+                result['stats']['pending_signatures'] = 0
 
             # Client count
-            cur.execute("SELECT COUNT(*) FROM crm_clients WHERE is_blacklisted = false")
-            row = cur.fetchone()
-            result['stats']['clients'] = row[0] if row else 0
+            try:
+                cur.execute("SELECT COUNT(*) FROM crm_clients WHERE is_blacklisted = false")
+                row = cur.fetchone()
+                result['stats']['clients'] = row[0] if row else 0
+            except Exception:
+                conn.rollback()
+                result['stats']['clients'] = 0
 
             # Recent invoices (last 5)
-            cur.execute("""
-                SELECT id, invoice_number, supplier,
-                       invoice_value as amount, currency, invoice_date as date,
-                       status
-                FROM invoices WHERE deleted_at IS NULL
-                ORDER BY created_at DESC LIMIT 5
-            """)
-            cols = [d[0] for d in cur.description]
-            result['recent_invoices'] = [dict(zip(cols, r)) for r in cur.fetchall()]
-            for inv in result['recent_invoices']:
-                if inv.get('date'):
-                    inv['date'] = str(inv['date'])
-                if inv.get('amount'):
-                    inv['amount'] = float(inv['amount'])
+            try:
+                cur.execute("""
+                    SELECT id, invoice_number, supplier,
+                           invoice_value as amount, currency, invoice_date as date,
+                           status
+                    FROM invoices WHERE deleted_at IS NULL
+                    ORDER BY created_at DESC LIMIT 5
+                """)
+                cols = [d[0] for d in cur.description]
+                result['recent_invoices'] = [dict(zip(cols, r)) for r in cur.fetchall()]
+                for inv in result['recent_invoices']:
+                    if inv.get('date'):
+                        inv['date'] = str(inv['date'])
+                    if inv.get('amount'):
+                        inv['amount'] = float(inv['amount'])
+            except Exception:
+                conn.rollback()
+                result['recent_invoices'] = []
 
             # Recent clients (last 5)
-            cur.execute("""
-                SELECT id, name, cui, contact_person, phone, email, city, client_type as status
-                FROM crm_clients WHERE is_blacklisted = false
-                ORDER BY created_at DESC LIMIT 5
-            """)
-            cols = [d[0] for d in cur.description]
-            result['recent_clients'] = [dict(zip(cols, r)) for r in cur.fetchall()]
+            try:
+                cur.execute("""
+                    SELECT id, name, cui, contact_person, phone, email, city, client_type as status
+                    FROM crm_clients WHERE is_blacklisted = false
+                    ORDER BY created_at DESC LIMIT 5
+                """)
+                cols = [d[0] for d in cur.description]
+                result['recent_clients'] = [dict(zip(cols, r)) for r in cur.fetchall()]
+            except Exception:
+                conn.rollback()
+                result['recent_clients'] = []
 
             # Upcoming events (next 3)
-            cur.execute("""
-                SELECT he.id, he.title, he.event_date as date, he.end_date,
-                       he.location, he.event_type as type, he.status,
-                       (SELECT COUNT(*) FROM hr_event_participants WHERE event_id = he.id) as participants_count
-                FROM hr_events he
-                WHERE he.event_date >= CURRENT_DATE
-                ORDER BY he.event_date ASC LIMIT 3
-            """)
-            cols = [d[0] for d in cur.description]
-            result['upcoming_events'] = [dict(zip(cols, r)) for r in cur.fetchall()]
-            for ev in result['upcoming_events']:
-                if ev.get('date'):
-                    ev['date'] = str(ev['date'])
-                if ev.get('end_date'):
-                    ev['end_date'] = str(ev['end_date'])
+            try:
+                cur.execute("""
+                    SELECT he.id, he.title, he.event_date as date, he.end_date,
+                           he.location, he.event_type as type, he.status,
+                           (SELECT COUNT(*) FROM hr_event_participants WHERE event_id = he.id) as participants_count
+                    FROM hr_events he
+                    WHERE he.event_date >= CURRENT_DATE
+                    ORDER BY he.event_date ASC LIMIT 3
+                """)
+                cols = [d[0] for d in cur.description]
+                result['upcoming_events'] = [dict(zip(cols, r)) for r in cur.fetchall()]
+                for ev in result['upcoming_events']:
+                    if ev.get('date'):
+                        ev['date'] = str(ev['date'])
+                    if ev.get('end_date'):
+                        ev['end_date'] = str(ev['end_date'])
+            except Exception:
+                conn.rollback()
+                result['upcoming_events'] = []
 
             return jsonify(result)
     finally:
@@ -408,35 +434,47 @@ def api_widget_data():
         checked_in = last.get('direction') == 'IN'
         last_punch_time = last.get('event_datetime')
 
+    pending_count = 0
+    next_event = None
+    next_event_date = None
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            # Pending approvals
-            cur.execute("""
-                SELECT COUNT(*) FROM approval_step_decisions asd
-                JOIN approval_request_steps ars ON ars.id = asd.step_id
-                JOIN approval_requests ar ON ar.id = ars.request_id
-                WHERE asd.approver_id = %s AND asd.decision = 'pending' AND ar.status = 'pending'
-            """, (user.id,))
-            pending = cur.fetchone()
+            try:
+                cur.execute("""
+                    SELECT COUNT(*) FROM approval_step_decisions asd
+                    JOIN approval_request_steps ars ON ars.id = asd.step_id
+                    JOIN approval_requests ar ON ar.id = ars.request_id
+                    WHERE asd.approver_id = %s AND asd.decision = 'pending' AND ar.status = 'pending'
+                """, (user.id,))
+                row = cur.fetchone()
+                pending_count = row[0] if row else 0
+            except Exception:
+                conn.rollback()
 
-            # Next event
-            cur.execute("""
-                SELECT title, event_date FROM hr_events
-                WHERE event_date >= CURRENT_DATE
-                ORDER BY event_date ASC LIMIT 1
-            """)
-            ev = cur.fetchone()
-
-            return jsonify({
-                'checked_in': checked_in,
-                'last_punch_time': last_punch_time,
-                'pending_approvals': pending[0] if pending else 0,
-                'next_event': ev[0] if ev else None,
-                'next_event_date': str(ev[1]) if ev else None,
-            })
+            try:
+                cur.execute("""
+                    SELECT title, event_date FROM hr_events
+                    WHERE event_date >= CURRENT_DATE
+                    ORDER BY event_date ASC LIMIT 1
+                """)
+                ev = cur.fetchone()
+                if ev:
+                    next_event = ev[0]
+                    next_event_date = str(ev[1])
+            except Exception:
+                conn.rollback()
     finally:
         conn.close()
+
+    return jsonify({
+        'checked_in': checked_in,
+        'last_punch_time': last_punch_time,
+        'pending_approvals': pending_count,
+        'next_event': next_event,
+        'next_event_date': next_event_date,
+    })
 
 
 # ============== NFC CHECK-IN ==============
