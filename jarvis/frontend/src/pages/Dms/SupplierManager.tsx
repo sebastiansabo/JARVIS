@@ -116,7 +116,7 @@ function SupplierTagCell({ supId }: { supId: number }) {
 /* ── Expanded detail: documents + invoices ── */
 function SupplierExpandedDetail({ supId }: { supId: number }) {
   const navigate = useNavigate()
-  const [tab, setTab] = useState<'documents' | 'invoices'>('documents')
+  const [tab, setTab] = useState<'documents' | 'invoices'>('invoices')
 
   const { data: docsData, isLoading: docsLoading } = useQuery({
     queryKey: ['supplier-documents', supId],
@@ -136,17 +136,17 @@ function SupplierExpandedDetail({ supId }: { supId: number }) {
       <div className="flex gap-0 border-b bg-muted/40">
         <button
           type="button"
-          className={`px-4 py-1.5 text-xs font-medium transition-colors ${tab === 'documents' ? 'border-b-2 border-primary text-foreground bg-background' : 'text-muted-foreground hover:text-foreground'}`}
-          onClick={() => setTab('documents')}
-        >
-          Documents {docs.length > 0 && <span className="ml-1 text-[10px] text-muted-foreground">({docs.length})</span>}
-        </button>
-        <button
-          type="button"
           className={`px-4 py-1.5 text-xs font-medium transition-colors ${tab === 'invoices' ? 'border-b-2 border-primary text-foreground bg-background' : 'text-muted-foreground hover:text-foreground'}`}
           onClick={() => setTab('invoices')}
         >
           Invoices {invoices.length > 0 && <span className="ml-1 text-[10px] text-muted-foreground">({invoices.length})</span>}
+        </button>
+        <button
+          type="button"
+          className={`px-4 py-1.5 text-xs font-medium transition-colors ${tab === 'documents' ? 'border-b-2 border-primary text-foreground bg-background' : 'text-muted-foreground hover:text-foreground'}`}
+          onClick={() => setTab('documents')}
+        >
+          Documents {docs.length > 0 && <span className="ml-1 text-[10px] text-muted-foreground">({docs.length})</span>}
         </button>
       </div>
 
