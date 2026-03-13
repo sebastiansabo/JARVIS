@@ -418,6 +418,142 @@ def _register_routes(flask_app: Flask):
     def react_assets(filename):
         return send_from_directory(os.path.join(_react_dir, 'assets'), filename)
 
+    # ── Public APK download ──────────────────────────────────────────
+    @flask_app.route('/download/jarvis.apk')
+    def download_apk():
+        downloads_dir = os.path.join(flask_app.static_folder, 'downloads')
+        return send_from_directory(downloads_dir, 'jarvis.apk',
+                                   as_attachment=True,
+                                   mimetype='application/vnd.android.package-archive')
+
+    @flask_app.route('/download')
+    def download_page():
+        base_url = request.host_url.rstrip('/')
+        apk_url = f'{base_url}/download/jarvis.apk'
+        html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JARVIS Mobile - Download</title>
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }}
+  .card {{
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 20px;
+    padding: 48px 40px;
+    max-width: 420px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.4);
+  }}
+  .logo {{
+    width: 80px; height: 80px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    border-radius: 20px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 24px;
+    font-size: 36px; font-weight: 700; color: white;
+  }}
+  h1 {{ font-size: 28px; font-weight: 700; margin-bottom: 8px; }}
+  .subtitle {{ color: #94a3b8; font-size: 15px; margin-bottom: 32px; }}
+  .qr-container {{
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    display: inline-block;
+    margin-bottom: 24px;
+  }}
+  .qr-container img {{ display: block; }}
+  .download-btn {{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: white;
+    text-decoration: none;
+    padding: 14px 32px;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }}
+  .download-btn:hover {{
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(59,130,246,0.4);
+  }}
+  .download-btn svg {{ width: 20px; height: 20px; }}
+  .instructions {{
+    margin-top: 28px;
+    padding-top: 24px;
+    border-top: 1px solid #334155;
+    text-align: left;
+  }}
+  .instructions h3 {{
+    font-size: 14px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+  }}
+  .instructions ol {{
+    padding-left: 20px;
+    color: #cbd5e1;
+    font-size: 14px;
+    line-height: 1.8;
+  }}
+  .version {{
+    margin-top: 20px;
+    font-size: 12px;
+    color: #64748b;
+  }}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">J</div>
+  <h1>JARVIS Mobile</h1>
+  <p class="subtitle">Scan the QR code or tap the button to download</p>
+
+  <div class="qr-container">
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={apk_url}&format=png"
+         alt="QR Code" width="200" height="200" />
+  </div>
+
+  <br/>
+  <a href="{apk_url}" class="download-btn">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3"/>
+    </svg>
+    Download APK
+  </a>
+
+  <div class="instructions">
+    <h3>Installation</h3>
+    <ol>
+      <li>Download the APK file</li>
+      <li>Open the file on your Android device</li>
+      <li>Allow "Install from unknown sources" if prompted</li>
+      <li>Tap Install and open JARVIS</li>
+    </ol>
+  </div>
+
+  <p class="version">Android &bull; v1.0.0</p>
+</div>
+</body>
+</html>'''
+        return html, 200, {{'Content-Type': 'text/html'}}
+
 
 # Module-level instance for gunicorn + `flask run`
 app = create_app()
