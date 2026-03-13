@@ -14,7 +14,7 @@ from ..repositories import InvoiceRepository, AllocationRepository
 
 logger = logging.getLogger('jarvis.invoices.service')
 
-ROLE_HIERARCHY = ['Viewer', 'Manager', 'Admin']
+ROLE_HIERARCHY = ['Viewer', 'User', 'HR', 'Manager', 'Dep Contabilitate', 'Admin']
 
 
 @dataclass
