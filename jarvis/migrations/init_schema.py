@@ -14,6 +14,7 @@ from .domains.schema_marketing import create_schema_marketing
 from .domains.schema_signatures import create_schema_signatures
 from .domains.schema_bilant import create_schema_bilant
 from .domains.schema_crm import create_schema_crm
+from .version_manager import run_pending_migrations
 
 
 def create_schema(conn, cursor):
@@ -34,4 +35,5 @@ def create_schema(conn, cursor):
     create_schema_signatures(conn, cursor)
     create_schema_bilant(conn, cursor)
     create_schema_crm(conn, cursor)
+    run_pending_migrations(conn, cursor)
     conn.commit()

@@ -22,7 +22,7 @@ def _add_cors(response):
     """Allow cross-origin requests from mobile app."""
     origin = request.headers.get('Origin', '')
     # Allow capacitor:// (native app) and localhost dev
-    if origin.startswith(('capacitor://', 'http://localhost', 'http://127.0.0.1')):
+    if origin.startswith(('capacitor://', 'http://localhost', 'https://localhost', 'http://127.0.0.1')):
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
