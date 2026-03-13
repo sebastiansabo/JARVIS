@@ -5,6 +5,9 @@ Handles department structure CRUD and organizational lookups.
 from typing import Optional
 
 from core.base_repository import BaseRepository
+from core.cache import create_cache, get_cache_lock, _is_cache_valid
+
+_all_cache = create_cache(ttl=300)  # org structure changes rarely, 5 min TTL
 
 
 class StructureRepository(BaseRepository):
@@ -12,12 +15,24 @@ class StructureRepository(BaseRepository):
 
     def get_all(self) -> list[dict]:
         """Get all department structures with responsable info."""
-        return self.query_all('''
+        with get_cache_lock():
+            if _is_cache_valid(_all_cache):
+                return _all_cache['data']
+        result = self.query_all('''
             SELECT ds.*, u.name as responsable_name, u.email as responsable_email
             FROM department_structure ds
             LEFT JOIN users u ON ds.responsable_id = u.id
             ORDER BY ds.company, ds.brand, ds.department, ds.subdepartment
         ''')
+        import time as _t
+        with get_cache_lock():
+            _all_cache['data'] = result
+            _all_cache['timestamp'] = _t.time()
+        return result
+
+    def _invalidate_cache(self):
+        with get_cache_lock():
+            _all_cache['data'] = None
 
     def get(self, structure_id: int) -> Optional[dict]:
         """Get a specific department structure by ID."""
@@ -43,6 +58,7 @@ class StructureRepository(BaseRepository):
         ''', (company, brand, department, subdepartment, manager, marketing,
               responsable_id, manager_ids, marketing_ids, cc_email),
             returning=True)
+        self._invalidate_cache()
         return result['id']
 
     def update(self, structure_id: int, company: str = None, department: str = None,
@@ -89,14 +105,20 @@ class StructureRepository(BaseRepository):
             return False
 
         params.append(structure_id)
-        return self.execute(
+        updated = self.execute(
             f'UPDATE department_structure SET {", ".join(updates)} WHERE id = %s',
             params
         ) > 0
+        if updated:
+            self._invalidate_cache()
+        return updated
 
     def delete(self, structure_id: int) -> bool:
         """Delete a department structure entry."""
-        return self.execute('DELETE FROM department_structure WHERE id = %s', (structure_id,)) > 0
+        deleted = self.execute('DELETE FROM department_structure WHERE id = %s', (structure_id,)) > 0
+        if deleted:
+            self._invalidate_cache()
+        return deleted
 
     def get_cc_email(self, company: str, department: str) -> Optional[str]:
         """Get the CC email for a specific department in a company."""

@@ -1,4 +1,5 @@
 import { api } from './client'
+import { buildQs } from './utils'
 import type {
   CompanyConnection,
   EFacturaInvoice,
@@ -23,15 +24,6 @@ import type {
 } from '@/types/efactura'
 
 const BASE = '/efactura/api'
-
-function buildQs(params: Record<string, unknown>): string {
-  const qs = new URLSearchParams()
-  Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
-  })
-  const s = qs.toString()
-  return s ? `?${s}` : ''
-}
 
 export const efacturaApi = {
   // ── Connections ────────────────────────────────────────────
