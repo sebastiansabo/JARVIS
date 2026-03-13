@@ -49,7 +49,7 @@ export interface ApprovalStep {
   flow_id: number | null
   name: string | null
   step_order: number | null
-  approver_type: 'user' | 'role' | 'group' | 'department_manager' | null
+  approver_type: 'specific_user' | 'role' | 'context_approver' | 'department_manager' | null
   approver_user_id: number | null
   approver_role_name: string | null
   requires_all: boolean | null

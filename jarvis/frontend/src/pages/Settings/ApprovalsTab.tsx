@@ -32,7 +32,7 @@ const ENTITY_TYPES = [
 ]
 
 const APPROVER_TYPES = [
-  { value: 'user', label: 'Specific User' },
+  { value: 'specific_user', label: 'Specific User' },
   { value: 'role', label: 'Role' },
   { value: 'department_manager', label: 'Department Manager' },
 ]
@@ -404,7 +404,7 @@ function StepsEditor({ flowId }: { flowId: number }) {
                     </span>
                     <span className="font-medium">{step.name}</span>
                     <Badge variant="outline" className="text-xs">
-                      {step.approver_type === 'user' ? 'User' : step.approver_type === 'role' ? 'Role' : 'Dept Manager'}
+                      {step.approver_type === 'specific_user' ? 'User' : step.approver_type === 'role' ? 'Role' : step.approver_type === 'context_approver' ? 'Context' : 'Dept Manager'}
                     </Badge>
                     {step.approver_role_name && (
                       <span className="text-xs text-muted-foreground">{step.approver_role_name}</span>
@@ -553,7 +553,7 @@ function StepDialog({ flowId, step, open, onClose, roles, users, structure }: St
           </div>
           <div>
             <Label>Approver Type</Label>
-            <Select value={form.approver_type ?? ''} onValueChange={(v) => setForm(f => ({ ...f, approver_type: v as 'user' | 'role' | 'department_manager' }))}>
+            <Select value={form.approver_type ?? ''} onValueChange={(v) => setForm(f => ({ ...f, approver_type: v as 'specific_user' | 'role' | 'department_manager' }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {APPROVER_TYPES.map(at => (
@@ -563,7 +563,7 @@ function StepDialog({ flowId, step, open, onClose, roles, users, structure }: St
             </Select>
           </div>
 
-          {form.approver_type === 'user' && (
+          {form.approver_type === 'specific_user' && (
             <div>
               <Label>Approver User</Label>
               <Select value={form.approver_user_id} onValueChange={(v) => setForm(f => ({ ...f, approver_user_id: v }))}>
