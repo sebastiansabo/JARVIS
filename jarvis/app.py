@@ -221,9 +221,9 @@ def _register_hooks(flask_app: Flask):
         user_id = payload.get('sub')
         if not user_id:
             return
-        user = _user_repo.find_by_id(user_id)
-        if user:
-            _fl_login(user)
+        user_data = _user_repo.get_by_id(user_id)
+        if user_data:
+            _fl_login(User(user_data))
 
     @flask_app.after_request
     def _mobile_cors(response):
