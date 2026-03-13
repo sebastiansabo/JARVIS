@@ -16,11 +16,27 @@ from flask_login import login_required, current_user
 from . import statements_bp
 from .services import StatementsService
 from core.utils.api_helpers import api_login_required
+from core.roles.repositories.permission_repository import PermissionRepository
 
 logger = logging.getLogger('jarvis.statements.routes')
 
 # Initialize service
 statements_service = StatementsService()
+_perm_repo = PermissionRepository()
+
+
+def statements_access_required(f):
+    """Require statements.module.access V2 permission."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        role_id = getattr(current_user, 'role_id', None)
+        if not role_id:
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+        perm = _perm_repo.check_permission_v2(role_id, 'statements', 'module', 'access')
+        if not perm.get('has_permission'):
+            return jsonify({'success': False, 'error': 'Statements access denied'}), 403
+        return f(*args, **kwargs)
+    return decorated
 
 
 # File size limits
@@ -181,6 +197,7 @@ def files_page():
 
 @statements_bp.route('/api/upload', methods=['POST'])
 @api_login_required
+@statements_access_required
 def upload_statements():
     """
     Upload and parse bank statement PDF(s).
@@ -250,6 +267,7 @@ def upload_statements():
 
 @statements_bp.route('/api/statements', methods=['GET'])
 @api_login_required
+@statements_access_required
 def list_statements():
     """List all uploaded statements with pagination."""
     limit = int(request.args.get('limit', 100))
@@ -265,6 +283,7 @@ def list_statements():
 
 @statements_bp.route('/api/statements/<int:statement_id>', methods=['GET'])
 @api_login_required
+@statements_access_required
 def get_statement_detail(statement_id):
     """Get details for a single statement."""
     stmt = statements_service.get_statement(statement_id)
@@ -276,6 +295,7 @@ def get_statement_detail(statement_id):
 
 @statements_bp.route('/api/statements/<int:statement_id>', methods=['DELETE'])
 @api_login_required
+@statements_access_required
 def delete_statement_route(statement_id):
     """Delete a statement and all its transactions."""
     result = statements_service.delete_statement(statement_id)
@@ -289,6 +309,7 @@ def delete_statement_route(statement_id):
 
 @statements_bp.route('/api/filters', methods=['GET'])
 @api_login_required
+@statements_access_required
 def get_filter_options():
     """Get available filter options for dropdowns."""
     options = statements_service.get_filter_options()
@@ -303,6 +324,7 @@ def get_filter_options():
 
 @statements_bp.route('/api/transactions', methods=['GET'])
 @api_login_required
+@statements_access_required
 def list_transactions():
     """List transactions with optional filters."""
     transactions = statements_service.get_all_transactions(
@@ -326,6 +348,7 @@ def list_transactions():
 
 @statements_bp.route('/api/transactions/<int:transaction_id>', methods=['GET'])
 @api_login_required
+@statements_access_required
 def get_single_transaction(transaction_id):
     """Get a single transaction by ID."""
     txn = statements_service.get_transaction(transaction_id)
@@ -337,6 +360,7 @@ def get_single_transaction(transaction_id):
 
 @statements_bp.route('/api/transactions/<int:transaction_id>', methods=['PUT'])
 @api_login_required
+@statements_access_required
 def update_single_transaction(transaction_id):
     """Update a transaction."""
     data, error = get_json_or_error()
@@ -368,6 +392,7 @@ def update_single_transaction(transaction_id):
 
 @statements_bp.route('/api/transactions/bulk-ignore', methods=['POST'])
 @api_login_required
+@statements_access_required
 @rate_limit_bulk
 def bulk_ignore_transactions():
     """Bulk ignore transactions."""
@@ -412,6 +437,7 @@ def bulk_ignore_transactions():
 
 @statements_bp.route('/api/transactions/bulk-status', methods=['POST'])
 @api_login_required
+@statements_access_required
 @rate_limit_bulk
 def bulk_update_transaction_status():
     """Bulk update status for transactions."""
@@ -451,6 +477,7 @@ def bulk_update_transaction_status():
 
 @statements_bp.route('/api/summary', methods=['GET'])
 @api_login_required
+@statements_access_required
 def transactions_summary():
     """Get summary statistics for transactions."""
     summary = statements_service.get_transaction_summary(
@@ -467,6 +494,7 @@ def transactions_summary():
 
 @statements_bp.route('/api/export/csv', methods=['GET'])
 @api_login_required
+@statements_access_required
 def export_transactions_csv():
     """Export transactions to CSV format."""
     # Get transactions with same filters as list endpoint
@@ -521,6 +549,7 @@ def export_transactions_csv():
 
 @statements_bp.route('/api/mappings', methods=['GET'])
 @api_login_required
+@statements_access_required
 def list_mappings():
     """List all vendor mappings."""
     active_only = request.args.get('active_only', 'true').lower() == 'true'
@@ -534,6 +563,7 @@ def list_mappings():
 
 @statements_bp.route('/api/mappings', methods=['POST'])
 @api_login_required
+@statements_access_required
 def create_mapping():
     """Create a new vendor mapping."""
     data, error = get_json_or_error()
@@ -585,6 +615,7 @@ def create_mapping():
 
 @statements_bp.route('/api/mappings/<int:mapping_id>', methods=['GET'])
 @api_login_required
+@statements_access_required
 def get_single_mapping(mapping_id):
     """Get a single vendor mapping by ID."""
     mapping = statements_service.get_mapping(mapping_id)
@@ -596,6 +627,7 @@ def get_single_mapping(mapping_id):
 
 @statements_bp.route('/api/mappings/<int:mapping_id>', methods=['PUT'])
 @api_login_required
+@statements_access_required
 def update_single_mapping(mapping_id):
     """Update a vendor mapping."""
     data, error = get_json_or_error()
@@ -632,6 +664,7 @@ def update_single_mapping(mapping_id):
 
 @statements_bp.route('/api/mappings/<int:mapping_id>', methods=['DELETE'])
 @api_login_required
+@statements_access_required
 def delete_single_mapping(mapping_id):
     """Delete a vendor mapping."""
     result = statements_service.delete_mapping(mapping_id)
@@ -645,6 +678,7 @@ def delete_single_mapping(mapping_id):
 
 @statements_bp.route('/api/transactions/link-invoice', methods=['POST'])
 @api_login_required
+@statements_access_required
 def link_invoice_to_transaction():
     """Link an existing invoice to a bank statement transaction."""
     data, error = get_json_or_error()
@@ -692,6 +726,7 @@ def link_invoice_to_transaction():
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/unlink', methods=['POST'])
 @api_login_required
+@statements_access_required
 def unlink_invoice_from_transaction(transaction_id):
     """Remove the invoice link from a transaction."""
     result = statements_service.unlink_invoice(transaction_id)
@@ -713,6 +748,7 @@ def unlink_invoice_from_transaction(transaction_id):
 
 @statements_bp.route('/api/transactions/auto-match', methods=['POST'])
 @api_login_required
+@statements_access_required
 def auto_match_invoices():
     """Run automatic invoice matching on pending transactions."""
     data = request.get_json(silent=True) or {}
@@ -739,6 +775,7 @@ def auto_match_invoices():
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/suggestions', methods=['GET'])
 @api_login_required
+@statements_access_required
 def get_invoice_suggestions(transaction_id):
     """Get invoice suggestions for a specific transaction."""
     result = statements_service.get_invoice_suggestions(transaction_id)
@@ -758,6 +795,7 @@ def get_invoice_suggestions(transaction_id):
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/accept-match', methods=['POST'])
 @api_login_required
+@statements_access_required
 def accept_match(transaction_id):
     """Accept a suggested invoice match."""
     data = request.get_json(silent=True) or {}
@@ -775,6 +813,7 @@ def accept_match(transaction_id):
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/reject-match', methods=['POST'])
 @api_login_required
+@statements_access_required
 def reject_match(transaction_id):
     """Reject a suggested invoice match."""
     result = statements_service.reject_match(transaction_id)
@@ -791,6 +830,7 @@ def reject_match(transaction_id):
 
 @statements_bp.route('/api/transactions/merge', methods=['POST'])
 @api_login_required
+@statements_access_required
 def merge_transactions_route():
     """Merge multiple transactions into a single transaction."""
     data = request.get_json(silent=True) or {}
@@ -824,6 +864,7 @@ def merge_transactions_route():
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/unmerge', methods=['POST'])
 @api_login_required
+@statements_access_required
 def unmerge_transaction_route(transaction_id):
     """Unmerge a merged transaction, restoring the original transactions."""
     result = statements_service.unmerge_transaction(transaction_id)
@@ -842,6 +883,7 @@ def unmerge_transaction_route(transaction_id):
 
 @statements_bp.route('/api/transactions/<int:transaction_id>/merged-sources', methods=['GET'])
 @api_login_required
+@statements_access_required
 def get_merged_sources(transaction_id):
     """Get the original transactions that were merged into this transaction."""
     result = statements_service.get_merged_sources(transaction_id)

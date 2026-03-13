@@ -6,11 +6,13 @@ Routes call EFacturaService for all business logic.
 """
 
 from datetime import date
+from functools import wraps
 from flask import request, jsonify, render_template, Response, redirect, session, url_for
 from flask_login import login_required, current_user
 
 from core.utils.logging_config import get_logger
 from core.utils.api_helpers import safe_error_response, api_login_required
+from core.roles.repositories.permission_repository import PermissionRepository
 
 from . import efactura_bp
 from .config import InvoiceDirection, ArtifactType
@@ -21,6 +23,21 @@ logger = get_logger('jarvis.core.connectors.efactura.routes')
 
 # Initialize service
 efactura_service = EFacturaService()
+_perm_repo = PermissionRepository()
+
+
+def efactura_access_required(f):
+    """Require efactura.module.access V2 permission."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        role_id = getattr(current_user, 'role_id', None)
+        if not role_id:
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+        perm = _perm_repo.check_permission_v2(role_id, 'efactura', 'module', 'access')
+        if not perm.get('has_permission'):
+            return jsonify({'success': False, 'error': 'e-Factura access denied'}), 403
+        return f(*args, **kwargs)
+    return decorated
 
 
 # ============================================================
@@ -36,6 +53,7 @@ def index():
 
 @efactura_bp.route('/api/migrate-junction-table', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def migrate_junction_table():
     """One-time migration to create the supplier mapping types junction table."""
     try:
@@ -78,6 +96,7 @@ def sync_history_page():
 
 @efactura_bp.route('/api/connections', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def list_connections():
     """List all company connections."""
     try:
@@ -93,6 +112,7 @@ def list_connections():
 
 @efactura_bp.route('/api/connections/<cif>', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_connection(cif: str):
     """Get connection details by CIF."""
     try:
@@ -115,6 +135,7 @@ def get_connection(cif: str):
 
 @efactura_bp.route('/api/connections', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def create_connection():
     """Create a new company connection."""
     try:
@@ -159,6 +180,7 @@ def create_connection():
 
 @efactura_bp.route('/api/connections/<cif>', methods=['DELETE'])
 @api_login_required
+@efactura_access_required
 def delete_connection(cif: str):
     """Delete a company connection."""
     try:
@@ -185,6 +207,7 @@ def delete_connection(cif: str):
 
 @efactura_bp.route('/api/invoices', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def list_invoices():
     """List invoices with filters."""
     try:
@@ -245,6 +268,7 @@ def list_invoices():
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_invoice(invoice_id: int):
     """Get invoice details with artifacts."""
     try:
@@ -267,6 +291,7 @@ def get_invoice(invoice_id: int):
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/download/<artifact_type>', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def download_artifact(invoice_id: int, artifact_type: str):
     """Download invoice artifact."""
     try:
@@ -300,6 +325,7 @@ def download_artifact(invoice_id: int, artifact_type: str):
 
 @efactura_bp.route('/api/invoices/summary', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_invoice_summary():
     """Get invoice summary statistics."""
     try:
@@ -333,6 +359,7 @@ def get_invoice_summary():
 
 @efactura_bp.route('/api/sync/trigger', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def trigger_sync():
     """Manually trigger sync for a company."""
     try:
@@ -359,6 +386,7 @@ def trigger_sync():
 
 @efactura_bp.route('/api/sync/history', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_sync_history():
     """Get sync run history."""
     try:
@@ -378,6 +406,7 @@ def get_sync_history():
 
 @efactura_bp.route('/api/sync/errors/<run_id>', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_sync_errors(run_id: str):
     """Get errors for a sync run."""
     try:
@@ -394,6 +423,7 @@ def get_sync_errors(run_id: str):
 
 @efactura_bp.route('/api/sync/stats', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_error_stats():
     """Get error statistics for monitoring."""
     try:
@@ -417,6 +447,7 @@ def get_error_stats():
 
 @efactura_bp.route('/api/rate-limit', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_rate_limit():
     """Get current rate limit status."""
     try:
@@ -440,6 +471,7 @@ def get_rate_limit():
 
 @efactura_bp.route('/api/anaf/messages', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def fetch_anaf_messages():
     """
     Fetch messages directly from ANAF API (or mock).
@@ -495,6 +527,7 @@ def fetch_anaf_messages():
 
 @efactura_bp.route('/api/anaf/download/<message_id>', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def download_anaf_message(message_id: str):
     """
     Download invoice ZIP from ANAF (or mock).
@@ -533,6 +566,7 @@ def download_anaf_message(message_id: str):
 
 @efactura_bp.route('/api/anaf/debug/<message_id>', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def debug_anaf_message(message_id: str):
     """
     Debug endpoint to analyze ANAF message content.
@@ -585,6 +619,7 @@ def debug_anaf_message(message_id: str):
 
 @efactura_bp.route('/api/anaf/status', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def anaf_status():
     """Get ANAF client status (mock mode, rate limits, etc.)."""
     try:
@@ -601,6 +636,7 @@ def anaf_status():
 
 @efactura_bp.route('/api/company/lookup', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def lookup_company():
     """
     Lookup company info from ANAF public API by CIF.
@@ -639,6 +675,7 @@ def lookup_company():
 
 @efactura_bp.route('/api/company/lookup-batch', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def lookup_companies_batch():
     """
     Lookup multiple companies from ANAF public API.
@@ -681,6 +718,7 @@ def lookup_companies_batch():
 
 @efactura_bp.route('/api/import', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def import_from_anaf():
     """
     Import invoices from ANAF into local storage.
@@ -723,6 +761,7 @@ def import_from_anaf():
 
 @efactura_bp.route('/api/sync', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def sync_all():
     """
     Sync all invoices from all connected companies.
@@ -761,6 +800,7 @@ def sync_all():
 
 @efactura_bp.route('/api/sync/companies', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_sync_companies():
     """
     Get list of companies available for sync.
@@ -789,6 +829,7 @@ def get_sync_companies():
 
 @efactura_bp.route('/api/sync/company', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def sync_single_company():
     """
     Sync invoices for a single company.
@@ -834,6 +875,7 @@ def sync_single_company():
 
 @efactura_bp.route('/api/invoices/unallocated', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def list_unallocated_invoices():
     """
     List invoices that have not been sent to the Invoice Module.
@@ -901,6 +943,7 @@ def list_unallocated_invoices():
 
 @efactura_bp.route('/api/invoices/unallocated/count', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_unallocated_count():
     """Get count of unallocated invoices for badge."""
     try:
@@ -917,6 +960,7 @@ def get_unallocated_count():
 
 @efactura_bp.route('/api/invoices/unallocated/ids', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_unallocated_ids():
     """Get all IDs of unallocated invoices (for select all functionality)."""
     try:
@@ -948,6 +992,7 @@ def get_unallocated_ids():
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/overrides', methods=['PUT'])
 @api_login_required
+@efactura_access_required
 def update_invoice_overrides(invoice_id):
     """
     Update invoice-level overrides for Type, Department, and Subdepartment.
@@ -990,6 +1035,7 @@ def update_invoice_overrides(invoice_id):
 
 @efactura_bp.route('/api/invoices/bulk-overrides', methods=['PUT'])
 @api_login_required
+@efactura_access_required
 def bulk_update_invoice_overrides():
     """
     Bulk update invoice-level overrides for multiple invoices.
@@ -1044,6 +1090,7 @@ def bulk_update_invoice_overrides():
 
 @efactura_bp.route('/api/invoices/send-to-module', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def send_to_invoice_module():
     """
     Send selected invoices to the main JARVIS Invoice Module.
@@ -1084,6 +1131,7 @@ def send_to_invoice_module():
 
 @efactura_bp.route('/api/invoices/duplicates', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_duplicate_invoices():
     """
     Get list of unallocated e-Factura invoices that are duplicates of existing invoices.
@@ -1106,6 +1154,7 @@ def get_duplicate_invoices():
 
 @efactura_bp.route('/api/invoices/mark-duplicates', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def mark_duplicate_invoices():
     """
     Mark selected e-Factura invoices as duplicates.
@@ -1138,6 +1187,7 @@ def mark_duplicate_invoices():
 
 @efactura_bp.route('/api/invoices/duplicates/ai', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_ai_duplicate_invoices():
     """
     Get list of potential duplicates detected using AI similarity matching.
@@ -1164,6 +1214,7 @@ def get_ai_duplicate_invoices():
 
 @efactura_bp.route('/api/invoices/mark-duplicates/ai', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def mark_ai_duplicate_invoices():
     """
     Mark AI-detected duplicates by linking to specified existing invoices.
@@ -1197,6 +1248,7 @@ def mark_ai_duplicate_invoices():
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/ignore', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def ignore_invoice(invoice_id: int):
     """
     Mark an invoice as ignored (soft delete).
@@ -1236,6 +1288,7 @@ def ignore_invoice(invoice_id: int):
 
 @efactura_bp.route('/api/invoices/hidden', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def list_hidden_invoices():
     """
     List hidden (ignored) invoices.
@@ -1287,6 +1340,7 @@ def list_hidden_invoices():
 
 @efactura_bp.route('/api/invoices/hidden/count', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_hidden_count():
     """Get count of hidden invoices for badge."""
     try:
@@ -1303,6 +1357,7 @@ def get_hidden_count():
 
 @efactura_bp.route('/api/invoices/bulk-hide', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def bulk_hide_invoices():
     """
     Hide multiple invoices.
@@ -1333,6 +1388,7 @@ def bulk_hide_invoices():
 
 @efactura_bp.route('/api/invoices/bulk-restore-hidden', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def bulk_restore_from_hidden():
     """
     Restore multiple invoices from hidden.
@@ -1367,6 +1423,7 @@ def bulk_restore_from_hidden():
 
 @efactura_bp.route('/api/invoices/bin', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def list_deleted_invoices():
     """
     List deleted invoices (bin).
@@ -1418,6 +1475,7 @@ def list_deleted_invoices():
 
 @efactura_bp.route('/api/invoices/bin/count', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_bin_count():
     """Get count of deleted invoices for badge."""
     try:
@@ -1434,6 +1492,7 @@ def get_bin_count():
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/delete', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def delete_invoice(invoice_id: int):
     """
     Move an invoice to the bin.
@@ -1459,6 +1518,7 @@ def delete_invoice(invoice_id: int):
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/restore', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def restore_invoice(invoice_id: int):
     """
     Restore an invoice from the bin.
@@ -1484,6 +1544,7 @@ def restore_invoice(invoice_id: int):
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/permanent-delete', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def permanent_delete_invoice(invoice_id: int):
     """
     Permanently delete an invoice from the bin.
@@ -1509,6 +1570,7 @@ def permanent_delete_invoice(invoice_id: int):
 
 @efactura_bp.route('/api/invoices/bulk-delete', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def bulk_delete_invoices():
     """
     Move multiple invoices to the bin.
@@ -1539,6 +1601,7 @@ def bulk_delete_invoices():
 
 @efactura_bp.route('/api/invoices/bulk-restore-bin', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def bulk_restore_from_bin():
     """
     Restore multiple invoices from the bin.
@@ -1569,6 +1632,7 @@ def bulk_restore_from_bin():
 
 @efactura_bp.route('/api/invoices/bulk-permanent-delete', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def bulk_permanent_delete_invoices():
     """
     Permanently delete multiple invoices from the bin.
@@ -1599,6 +1663,7 @@ def bulk_permanent_delete_invoices():
 
 @efactura_bp.route('/api/invoices/cleanup-old', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def cleanup_old_unallocated():
     """
     Permanently delete unallocated invoices older than N days.
@@ -1631,6 +1696,7 @@ def cleanup_old_unallocated():
 
 @efactura_bp.route('/api/invoices/<int:invoice_id>/pdf', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_invoice_pdf(invoice_id: int):
     """
     Get PDF for a stored e-Factura invoice.
@@ -1660,6 +1726,7 @@ def get_invoice_pdf(invoice_id: int):
 
 @efactura_bp.route('/api/anaf/export-pdf/<message_id>', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def export_invoice_pdf(message_id: str):
     """
     Export invoice as PDF.
@@ -1873,6 +1940,7 @@ def oauth_callback():
 
 @efactura_bp.route('/oauth/revoke', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def oauth_revoke():
     """
     Revoke OAuth tokens and disconnect from ANAF.
@@ -1928,6 +1996,7 @@ def oauth_revoke():
 
 @efactura_bp.route('/oauth/status', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def oauth_status():
     """
     Get OAuth authentication status for a company.
@@ -1967,6 +2036,7 @@ def oauth_status():
 
 @efactura_bp.route('/oauth/refresh', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def oauth_refresh():
     """
     Manually refresh OAuth access token.
@@ -2041,6 +2111,7 @@ supplier_mapping_repo = SupplierMappingRepository()
 
 @efactura_bp.route('/api/mappings', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def list_supplier_mappings():
     """
     List all supplier mappings.
@@ -2065,6 +2136,7 @@ def list_supplier_mappings():
 
 @efactura_bp.route('/api/mappings/<int:mapping_id>', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def get_supplier_mapping(mapping_id: int):
     """Get a single supplier mapping by ID."""
     try:
@@ -2087,6 +2159,7 @@ def get_supplier_mapping(mapping_id: int):
 
 @efactura_bp.route('/api/mappings', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def create_supplier_mapping():
     """
     Create a new supplier mapping.
@@ -2173,6 +2246,7 @@ def create_supplier_mapping():
 
 @efactura_bp.route('/api/mappings/<int:mapping_id>', methods=['PUT'])
 @api_login_required
+@efactura_access_required
 def update_supplier_mapping(mapping_id: int):
     """
     Update a supplier mapping.
@@ -2246,6 +2320,7 @@ def update_supplier_mapping(mapping_id: int):
 
 @efactura_bp.route('/api/mappings/<int:mapping_id>', methods=['DELETE'])
 @api_login_required
+@efactura_access_required
 def delete_supplier_mapping(mapping_id: int):
     """Delete a supplier mapping."""
     try:
@@ -2269,6 +2344,7 @@ def delete_supplier_mapping(mapping_id: int):
 @efactura_bp.route('/api/suppliers/distinct', methods=['GET'])
 @efactura_bp.route('/api/partners/distinct', methods=['GET'])  # backward compat
 @api_login_required
+@efactura_access_required
 def get_distinct_suppliers():
     """
     Get distinct supplier names and CIFs from e-Factura invoices.
@@ -2290,6 +2366,7 @@ def get_distinct_suppliers():
 
 @efactura_bp.route('/api/mappings/lookup', methods=['GET'])
 @api_login_required
+@efactura_access_required
 def lookup_supplier_mapping():
     """
     Find a mapping for a partner name/CIF combination.
@@ -2325,6 +2402,7 @@ def lookup_supplier_mapping():
 
 @efactura_bp.route('/api/mappings/bulk-delete', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def bulk_delete_supplier_mappings():
     """
     Bulk delete supplier mappings.
@@ -2364,6 +2442,7 @@ def bulk_delete_supplier_mappings():
 
 @efactura_bp.route('/api/mappings/bulk-set-type', methods=['POST'])
 @api_login_required
+@efactura_access_required
 def bulk_set_mappings_type():
     """
     Bulk set type for supplier mappings.
@@ -2427,6 +2506,7 @@ supplier_type_repo = SupplierTypeRepository()
 @efactura_bp.route('/api/supplier-types', methods=['GET'])
 @efactura_bp.route('/api/partner-types', methods=['GET'])  # backward compat
 @api_login_required
+@efactura_access_required
 def list_supplier_types():
     """
     List all supplier types.
@@ -2456,6 +2536,7 @@ def list_supplier_types():
 @efactura_bp.route('/api/supplier-types/<int:type_id>', methods=['GET'])
 @efactura_bp.route('/api/partner-types/<int:type_id>', methods=['GET'])  # backward compat
 @api_login_required
+@efactura_access_required
 def get_supplier_type(type_id: int):
     """Get a single supplier type by ID."""
     try:
@@ -2479,6 +2560,7 @@ def get_supplier_type(type_id: int):
 @efactura_bp.route('/api/supplier-types', methods=['POST'])
 @efactura_bp.route('/api/partner-types', methods=['POST'])  # backward compat
 @api_login_required
+@efactura_access_required
 def create_supplier_type():
     """
     Create a new supplier type.
@@ -2534,6 +2616,7 @@ def create_supplier_type():
 @efactura_bp.route('/api/supplier-types/<int:type_id>', methods=['PUT'])
 @efactura_bp.route('/api/partner-types/<int:type_id>', methods=['PUT'])  # backward compat
 @api_login_required
+@efactura_access_required
 def update_supplier_type(type_id: int):
     """
     Update a supplier type.
@@ -2579,6 +2662,7 @@ def update_supplier_type(type_id: int):
 @efactura_bp.route('/api/supplier-types/<int:type_id>', methods=['DELETE'])
 @efactura_bp.route('/api/partner-types/<int:type_id>', methods=['DELETE'])  # backward compat
 @api_login_required
+@efactura_access_required
 def delete_supplier_type(type_id: int):
     """Delete a supplier type (soft delete)."""
     try:

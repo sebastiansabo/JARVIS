@@ -9,6 +9,7 @@ from .repositories import InvoiceRepository, AllocationRepository, SummaryReposi
 from .services import InvoiceService
 from .services.invoice_service import UserContext
 from core.utils.api_helpers import error_response, safe_error_response, handle_api_errors
+from core.roles.repositories.permission_repository import PermissionRepository
 
 logger = logging.getLogger('jarvis.invoices.routes')
 
@@ -16,6 +17,31 @@ _invoice_repo = InvoiceRepository()
 _allocation_repo = AllocationRepository()
 _summary_repo = SummaryRepository()
 _service = InvoiceService()
+_perm_repo = PermissionRepository()
+
+
+_LEGACY_FLAG = {
+    'view': 'can_view_invoices',
+    'add': 'can_add_invoices',
+    'edit': 'can_edit_invoices',
+    'delete': 'can_delete_invoices',
+}
+
+def _check_invoice_perm(action: str) -> bool:
+    """Check invoices.records.<action> V2 permission for current user.
+
+    Falls back to legacy boolean flag when no explicit v2 entry exists,
+    so local/dev environments without seeded role_permissions_v2 still work.
+    """
+    role_id = getattr(current_user, 'role_id', None)
+    if not role_id:
+        return False
+    perm = _perm_repo.check_permission_v2(role_id, 'invoices', 'records', action)
+    if perm.get('has_explicit_entry'):
+        return perm.get('has_permission', False)
+    # No v2 entry — fall back to legacy boolean on current_user
+    legacy = _LEGACY_FLAG.get(action)
+    return bool(getattr(current_user, legacy, False)) if legacy else False
 
 
 def _get_user_context() -> UserContext:
@@ -51,7 +77,7 @@ def accounting():
 @login_required
 def submit_invoice():
     """Submit an invoice with its cost distribution."""
-    if not current_user.can_add_invoices:
+    if not _check_invoice_perm('add'):
         return jsonify({'success': False, 'error': 'You do not have permission to add invoices'}), 403
 
     data = request.get_json()
@@ -70,7 +96,7 @@ def submit_invoice():
 @login_required
 def api_bulk_parse():
     """Parse multiple uploaded invoices using AI. Returns array of parse results."""
-    if not current_user.can_add_invoices:
+    if not _check_invoice_perm('add'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     files = request.files.getlist('files[]')
@@ -110,7 +136,7 @@ def api_bulk_parse():
 @login_required
 def api_bulk_submit():
     """Submit multiple parsed invoices at once."""
-    if not current_user.can_add_invoices:
+    if not _check_invoice_perm('add'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json()
@@ -157,7 +183,7 @@ def api_bulk_submit():
 @login_required
 def api_parse_invoice():
     """Parse an uploaded invoice using AI or template (with auto-detection)."""
-    if not current_user.can_add_invoices:
+    if not _check_invoice_perm('add'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file uploaded'}), 400
@@ -253,7 +279,7 @@ def api_list_invoices():
 @login_required
 def api_db_invoices():
     """Get all invoices from database with pagination and optional filters."""
-    if not current_user.can_view_invoices:
+    if not _check_invoice_perm('view'):
         return error_response('You do not have permission to view invoices', 403)
 
     limit = request.args.get('limit', 10000, type=int)
@@ -289,7 +315,7 @@ def api_db_invoices():
 @login_required
 def api_db_invoice_detail(invoice_id):
     """Get invoice with all allocations."""
-    if not current_user.can_view_invoices:
+    if not _check_invoice_perm('view'):
         return error_response('You do not have permission to view invoices', 403)
 
     invoice = _invoice_repo.get_with_allocations(invoice_id)
@@ -302,7 +328,7 @@ def api_db_invoice_detail(invoice_id):
 @login_required
 def api_db_delete_invoice(invoice_id):
     """Soft delete an invoice (move to bin)."""
-    if not current_user.can_delete_invoices:
+    if not _check_invoice_perm('delete'):
         return jsonify({'success': False, 'error': 'You do not have permission to delete invoices'}), 403
     if _invoice_repo.delete(invoice_id):
         _service._log_event(_get_user_context(), 'invoice_deleted',
@@ -316,7 +342,7 @@ def api_db_delete_invoice(invoice_id):
 @login_required
 def api_db_restore_invoice(invoice_id):
     """Restore a soft-deleted invoice from the bin."""
-    if not current_user.can_delete_invoices:
+    if not _check_invoice_perm('delete'):
         return jsonify({'success': False, 'error': 'You do not have permission to restore invoices'}), 403
     if _invoice_repo.restore(invoice_id):
         _service._log_event(_get_user_context(), 'invoice_restored',
@@ -330,7 +356,7 @@ def api_db_restore_invoice(invoice_id):
 @login_required
 def api_db_permanently_delete_invoice(invoice_id):
     """Permanently delete an invoice. Also deletes from Google Drive."""
-    if not current_user.can_delete_invoices:
+    if not _check_invoice_perm('delete'):
         return jsonify({'success': False, 'error': 'You do not have permission to delete invoices'}), 403
 
     result = _service.permanently_delete(invoice_id, _get_user_context())
@@ -343,7 +369,7 @@ def api_db_permanently_delete_invoice(invoice_id):
 @login_required
 def api_db_bulk_delete_invoices():
     """Soft delete multiple invoices."""
-    if not current_user.can_delete_invoices:
+    if not _check_invoice_perm('delete'):
         return jsonify({'success': False, 'error': 'You do not have permission to delete invoices'}), 403
     data = request.get_json()
     invoice_ids = data.get('invoice_ids', [])
@@ -357,7 +383,7 @@ def api_db_bulk_delete_invoices():
 @login_required
 def api_db_bulk_restore_invoices():
     """Restore multiple soft-deleted invoices."""
-    if not current_user.can_delete_invoices:
+    if not _check_invoice_perm('delete'):
         return jsonify({'success': False, 'error': 'You do not have permission to restore invoices'}), 403
     data = request.get_json()
     invoice_ids = data.get('invoice_ids', [])
@@ -371,7 +397,7 @@ def api_db_bulk_restore_invoices():
 @login_required
 def api_db_bulk_permanently_delete_invoices():
     """Permanently delete multiple invoices. Also deletes from Google Drive."""
-    if not current_user.can_delete_invoices:
+    if not _check_invoice_perm('delete'):
         return jsonify({'success': False, 'error': 'You do not have permission to delete invoices'}), 403
     data = request.get_json()
     invoice_ids = data.get('invoice_ids', [])
@@ -386,7 +412,7 @@ def api_db_bulk_permanently_delete_invoices():
 @login_required
 def api_db_get_deleted_invoices():
     """Get all soft-deleted invoices (bin)."""
-    if not current_user.can_view_invoices:
+    if not _check_invoice_perm('view'):
         return error_response('You do not have permission to view invoices', 403)
 
     invoices = _invoice_repo.get_all(include_deleted=True, limit=500)
@@ -397,7 +423,7 @@ def api_db_get_deleted_invoices():
 @login_required
 def api_db_update_invoice(invoice_id):
     """Update an invoice."""
-    if not current_user.can_edit_invoices:
+    if not _check_invoice_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json()
@@ -413,7 +439,7 @@ def api_db_update_invoice(invoice_id):
 @login_required
 def api_db_update_allocations(invoice_id):
     """Update all allocations for an invoice."""
-    if not current_user.can_edit_invoices:
+    if not _check_invoice_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json()
@@ -434,7 +460,7 @@ def api_db_update_allocations(invoice_id):
 @handle_api_errors
 def api_update_allocation_comment(allocation_id):
     """Update the comment for a specific allocation."""
-    if not current_user.can_edit_invoices:
+    if not _check_invoice_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     data = request.get_json()
     comment = data.get('comment', '')
@@ -450,7 +476,7 @@ def api_update_allocation_comment(allocation_id):
 @handle_api_errors
 def api_update_invoice_drive_link(invoice_id):
     """Update only the drive_link for an invoice."""
-    if not current_user.can_edit_invoices:
+    if not _check_invoice_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     data = request.get_json()
     drive_link = data.get('drive_link')
@@ -470,7 +496,7 @@ def api_update_invoice_drive_link(invoice_id):
 @login_required
 def api_db_search():
     """Search invoices by supplier or invoice number, respecting active filters."""
-    if not current_user.can_view_invoices:
+    if not _check_invoice_perm('view'):
         return error_response('You do not have permission to view invoices', 403)
 
     query = request.args.get('q', '')
@@ -497,7 +523,7 @@ def api_db_search():
 @login_required
 def api_invoices_search():
     """Search invoices by supplier, invoice number, or ID."""
-    if not current_user.can_view_invoices:
+    if not _check_invoice_perm('view'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     query = request.args.get('q', '').strip()
@@ -535,7 +561,7 @@ def api_check_invoice_number():
 @login_required
 def api_db_summary_company():
     """Get summary grouped by company."""
-    if not current_user.can_view_invoices:
+    if not _check_invoice_perm('view'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
@@ -550,7 +576,7 @@ def api_db_summary_company():
 @login_required
 def api_db_summary_department():
     """Get summary grouped by department."""
-    if not current_user.can_view_invoices:
+    if not _check_invoice_perm('view'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     company = request.args.get('company')
     start_date = request.args.get('start_date')
@@ -566,7 +592,7 @@ def api_db_summary_department():
 @login_required
 def api_db_summary_brand():
     """Get summary grouped by brand (Linie de business)."""
-    if not current_user.can_view_invoices:
+    if not _check_invoice_perm('view'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     company = request.args.get('company')
     start_date = request.args.get('start_date')
@@ -582,7 +608,7 @@ def api_db_summary_brand():
 @login_required
 def api_db_summary_supplier():
     """Get summary grouped by supplier."""
-    if not current_user.can_view_invoices:
+    if not _check_invoice_perm('view'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     company = request.args.get('company')
     start_date = request.args.get('start_date')
@@ -608,7 +634,7 @@ def api_store_invoices_to_dms():
 
     Body: { invoice_ids: [1, 2, 3] }
     """
-    if not current_user.can_edit_invoices:
+    if not _check_invoice_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json(silent=True) or {}
