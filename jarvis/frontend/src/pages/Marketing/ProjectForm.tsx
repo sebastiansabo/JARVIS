@@ -327,7 +327,7 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           onBlur={() => v.touch('name')}
           className={cn(v.error('name') && 'border-destructive')}
-          placeholder="Q1 2026 Brand Campaign"
+          placeholder="Q1 2026 Brand Project"
         />
         <FieldError message={v.error('name')} />
       </div>
@@ -392,8 +392,8 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
                 <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
-              <div className="max-h-48 overflow-y-auto space-y-1">
+            <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+              <div className="max-h-48 overflow-y-auto space-y-1" onWheel={(e) => e.stopPropagation()}>
                 {(channelOptions ?? []).map((opt: { value: string; label: string }) => (
                   <label key={opt.value} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
                     <Checkbox
@@ -438,8 +438,8 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
                   <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
-                <div className="max-h-48 overflow-y-auto space-y-1">
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+                <div className="max-h-48 overflow-y-auto space-y-1" onWheel={(e) => e.stopPropagation()}>
                   {(companies ?? []).map((c: CompanyWithBrands) => (
                     <label key={c.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
                       <Checkbox
@@ -483,8 +483,8 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
                     <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
-                  <div className="max-h-48 overflow-y-auto space-y-1">
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+                  <div className="max-h-48 overflow-y-auto space-y-1" onWheel={(e) => e.stopPropagation()}>
                     {availableBrands.map((b) => (
                       <label key={b.brand_id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
                         <Checkbox
@@ -528,8 +528,8 @@ export default function ProjectForm({ project, onSuccess, onCancel }: Props) {
                     <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start">
-                  <div className="max-h-48 overflow-y-auto space-y-1">
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-2" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+                  <div className="max-h-48 overflow-y-auto space-y-1" onWheel={(e) => e.stopPropagation()}>
                     {availableDepts.map((d) => {
                       const label = d.subdepartment ? `${d.department} / ${d.subdepartment}` : d.department
                       return (

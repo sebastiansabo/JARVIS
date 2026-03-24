@@ -108,7 +108,7 @@ export default function ProjectDetail() {
         title={project.name}
         breadcrumbs={[
           { label: 'Marketing', shortLabel: 'Mkt.', href: '/app/marketing' },
-          { label: 'Campaigns', shortLabel: 'Camp.', href: '/app/marketing?tab=projects' },
+          { label: 'Projects', shortLabel: 'Proj.', href: '/app/marketing?tab=projects' },
           { label: project.name },
         ]}
         description={

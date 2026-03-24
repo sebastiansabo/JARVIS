@@ -130,7 +130,7 @@ export function ClientsTab({ projectId }: { projectId: number }) {
         <div className="text-center py-12 text-muted-foreground">
           <UserCheck className="mx-auto h-8 w-8 mb-2 opacity-40" />
           <div>No CRM clients linked</div>
-          <div className="text-xs mt-1">Link clients to track their deals against campaign KPIs.</div>
+          <div className="text-xs mt-1">Link clients to track their deals against project KPIs.</div>
         </div>
       ) : (
         <div className="rounded-md border">

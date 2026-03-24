@@ -104,7 +104,7 @@ export function TeamTab({ projectId }: { projectId: number }) {
         <div className="text-center py-12 text-muted-foreground">
           <Users className="mx-auto h-8 w-8 mb-2 opacity-40" />
           <div>No team members yet</div>
-          <div className="text-xs mt-1">Add stakeholders and observers to this campaign.</div>
+          <div className="text-xs mt-1">Add stakeholders and observers to this project.</div>
         </div>
       ) : (
         <div className="rounded-md border">

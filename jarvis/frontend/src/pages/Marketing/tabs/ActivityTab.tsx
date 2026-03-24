@@ -19,7 +19,7 @@ export function ActivityTab({ projectId }: { projectId: number }) {
         <div className="text-center py-12 text-muted-foreground">
           <Clock className="mx-auto h-8 w-8 mb-2 opacity-40" />
           <div>No activity yet</div>
-          <div className="text-xs mt-1">Activity will appear as changes are made to this campaign.</div>
+          <div className="text-xs mt-1">Activity will appear as changes are made to this project.</div>
         </div>
       ) : (
         <div className="space-y-0">

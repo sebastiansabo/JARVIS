@@ -118,7 +118,7 @@ function AICampaignGenerator({ companies, onCreated }: {
 
   const handleGenerate = () => {
     setError('')
-    if (!prompt.trim()) return setError('Describe what you want the campaign to achieve')
+    if (!prompt.trim()) return setError('Describe what you want the project to achieve')
     if (!budget || Number(budget) <= 0) return setError('Enter a valid budget')
     if (!startDate || !endDate) return setError('Set start and end dates')
     if (!companyId) return setError('Select a company')
@@ -143,8 +143,8 @@ function AICampaignGenerator({ companies, onCreated }: {
       >
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-violet-500" />
-          <span className="text-sm font-medium">AI Campaign Generator</span>
-          <span className="text-xs text-muted-foreground">— create a full campaign from a brief</span>
+          <span className="text-sm font-medium">AI Project Generator</span>
+          <span className="text-xs text-muted-foreground">— create a full project from a brief</span>
         </div>
         {open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
       </button>
@@ -166,11 +166,11 @@ function AICampaignGenerator({ companies, onCreated }: {
 
           {/* Main prompt */}
           <div className="space-y-1.5">
-            <Label className="text-xs">Campaign Brief</Label>
+            <Label className="text-xs">Project Brief</Label>
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Describe your campaign goals, target audience, and key messages..."
+              placeholder="Describe your project goals, target audience, and key messages..."
               className="min-h-[80px] text-sm"
             />
           </div>
@@ -248,7 +248,7 @@ function AICampaignGenerator({ companies, onCreated }: {
               {generateMut.isPending ? (
                 <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</>
               ) : (
-                <><Sparkles className="h-4 w-4" /> Generate Campaign</>
+                <><Sparkles className="h-4 w-4" /> Generate Project</>
               )}
             </Button>
           </div>
@@ -344,7 +344,7 @@ export default function Marketing() {
         title="Marketing"
         breadcrumbs={[
           { label: 'Marketing', shortLabel: 'Mkt.' },
-          { label: mainTab === 'projects' ? `Campaigns (${total})` : mainTab === 'archived' ? 'Archived' : 'Trash' },
+          { label: mainTab === 'projects' ? `Projects (${total})` : mainTab === 'archived' ? 'Archived' : 'Trash' },
         ]}
         search={
           <SearchInput
@@ -363,14 +363,14 @@ export default function Marketing() {
               <LayoutDashboard className="h-4 w-4" />
             </Button>
             {canCreate && (
-              <Button size="icon" onClick={() => setShowCreateDialog(true)} title="New Campaign">
+              <Button size="icon" onClick={() => setShowCreateDialog(true)} title="New Project">
                 <Plus className="h-4 w-4" />
               </Button>
             )}
             {!isMobile && (
               <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
                 <TabsList className="w-auto">
-                  <TabsTrigger value="projects" title="Campaigns"><FolderOpen className="h-3.5 w-3.5" /></TabsTrigger>
+                  <TabsTrigger value="projects" title="Projects"><FolderOpen className="h-3.5 w-3.5" /></TabsTrigger>
                   <TabsTrigger value="archived" title="Archived"><Archive className="h-3.5 w-3.5" /></TabsTrigger>
                   <TabsTrigger value="trash" title="Trash"><Trash2 className="h-3.5 w-3.5" /></TabsTrigger>
                 </TabsList>
@@ -385,7 +385,7 @@ export default function Marketing() {
         <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
-              <TabsTrigger value="projects" title="Campaigns"><FolderOpen className="h-3.5 w-3.5" /></TabsTrigger>
+              <TabsTrigger value="projects" title="Projects"><FolderOpen className="h-3.5 w-3.5" /></TabsTrigger>
               <TabsTrigger value="archived" title="Archived"><Archive className="h-3.5 w-3.5" /></TabsTrigger>
               <TabsTrigger value="trash" title="Trash"><Trash2 className="h-3.5 w-3.5" /></TabsTrigger>
             </TabsList>
@@ -398,7 +398,7 @@ export default function Marketing() {
           {/* Stat Cards — computed from filtered projects */}
           <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
             <StatCard
-              title="Campaigns"
+              title="Projects"
               value={projects.length}
               icon={<FolderOpen className="h-4 w-4" />}
               isLoading={projectsLoading}
@@ -534,7 +534,7 @@ export default function Marketing() {
                     variant={compareMode ? 'default' : 'ghost'}
                     size="icon"
                     onClick={() => { setCompareMode((v) => !v); setCompareIds(new Set()) }}
-                    title="Compare campaigns"
+                    title="Compare projects"
                   >
                     <GitCompareArrows className="h-4 w-4" />
                   </Button>
@@ -654,13 +654,13 @@ export default function Marketing() {
           )}
           {compareMode && compareIds.size < 2 && (
             <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-              Select {2 - compareIds.size} more campaign{compareIds.size === 0 ? 's' : ''} to compare (up to 4)
+              Select {2 - compareIds.size} more project{compareIds.size === 0 ? 's' : ''} to compare (up to 4)
             </div>
           )}
         </>
       )}
 
-      {/* Dashboard and Calendar are now view modes within Campaigns tab */}
+      {/* Dashboard and Calendar are now view modes within Projects tab */}
 
       {mainTab === 'archived' && (
         <ArchivedView
@@ -835,7 +835,7 @@ function HealthInfoHeader() {
         <div className="space-y-3">
           <div className="font-semibold text-sm">How Health Score Works</div>
           <p className="text-muted-foreground leading-relaxed">
-            Each campaign gets a health score from 0 to 100 based on
+            Each project gets a health score from 0 to 100 based on
             budget pacing and project status.
           </p>
 
@@ -850,7 +850,7 @@ function HealthInfoHeader() {
             <div className="font-medium">Budget Health (0–100)</div>
             <p className="text-muted-foreground leading-relaxed">
               Compares how much budget you've spent vs. how far along
-              the campaign timeline is. Spending ahead of schedule
+              the project timeline is. Spending ahead of schedule
               lowers the score.
             </p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-muted-foreground mt-1">
@@ -897,7 +897,7 @@ function HealthInfoHeader() {
           <div className="h-px bg-border" />
           <p className="text-muted-foreground italic leading-relaxed">
             Hover over any health score to see the detailed breakdown
-            for that specific campaign.
+            for that specific project.
           </p>
         </div>
       </PopoverContent>
@@ -938,7 +938,7 @@ function KanbanBoard({ projects, onSelect, onStatusChange: _onStatusChange }: {
     return (
       <div className="text-center py-12 text-muted-foreground">
         <FolderOpen className="mx-auto h-8 w-8 mb-2 opacity-40" />
-        No campaigns yet. Create your first campaign to get started.
+        No projects yet. Create your first project to get started.
       </div>
     )
   }
@@ -1042,7 +1042,7 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, co
     return (
       <div className="text-center py-12 text-muted-foreground">
         <FolderOpen className="mx-auto h-8 w-8 mb-2 opacity-40" />
-        No campaigns yet. Create your first campaign to get started.
+        No projects yet. Create your first project to get started.
       </div>
     )
   }
@@ -1176,7 +1176,7 @@ function ProjectCards({ projects, onSelect, onArchive, onDelete, compareMode, co
     return (
       <div className="text-center py-12 text-muted-foreground">
         <FolderOpen className="mx-auto h-8 w-8 mb-2 opacity-40" />
-        No campaigns yet. Create your first campaign to get started.
+        No projects yet. Create your first project to get started.
       </div>
     )
   }
@@ -1354,7 +1354,7 @@ function MobileDayView({ anchor, projects, events, barColors, onSelect, onEventC
       {/* All-day / spanning campaigns */}
       {projects.length > 0 && (
         <div className="space-y-1.5">
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Campaigns ({projects.length})</div>
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Projects ({projects.length})</div>
           {projects.map((p) => (
             <div
               key={p.id}
@@ -1412,7 +1412,7 @@ function MobileDayView({ anchor, projects, events, barColors, onSelect, onEventC
       </div>
 
       {projects.length === 0 && events.length === 0 && (
-        <div className="text-center py-8 text-muted-foreground text-sm">No campaigns or events today.</div>
+        <div className="text-center py-8 text-muted-foreground text-sm">No projects or events today.</div>
       )}
     </div>
   )
@@ -1622,7 +1622,7 @@ function MobileQuarterView({ anchor, projects, events, barColors, onSelect, onEv
       {/* Campaign list */}
       {projects.length > 0 && (
         <div className="space-y-1.5">
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Campaigns ({projects.length})</div>
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Projects ({projects.length})</div>
           {projects.map((p) => (
             <div
               key={p.id}
@@ -1789,7 +1789,7 @@ function MobileCalendarGrid({ range, anchor, projects, events, barColors, onSele
         {/* Campaign list below the grid */}
         {projects.length > 0 && (
           <div className="space-y-1.5">
-            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Campaigns ({projects.length})</div>
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Projects ({projects.length})</div>
             {projects.map((p) => (
               <div
                 key={p.id}
@@ -1834,7 +1834,7 @@ function MobileCalendarGrid({ range, anchor, projects, events, barColors, onSele
       {/* Campaign list */}
       {projects.length > 0 && (
         <div className="space-y-1.5">
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Campaigns ({projects.length})</div>
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Projects ({projects.length})</div>
           {projects.map((p) => (
             <div
               key={p.id}
@@ -2113,7 +2113,7 @@ export function CalendarView({ onSelect }: { onSelect: (p: MktProject) => void }
 
       {projects.length === 0 && events.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
-          No campaigns or events in this period.
+          No projects or events in this period.
         </div>
       ) : range === 'day' ? (
         <MobileDayView
@@ -2367,7 +2367,7 @@ export function DashboardView({ showStats, widgetVisibility }: { showStats: bool
           ) : channels.length === 0 ? (
             <div className="text-center py-6 text-sm text-muted-foreground">
               <DollarSign className="mx-auto h-6 w-6 mb-1.5 opacity-40" />
-              No budget data yet. Add budget lines to your campaigns.
+              No budget data yet. Add budget lines to your projects.
             </div>
           ) : (
             <div className="space-y-3">
@@ -2460,7 +2460,7 @@ export function DashboardView({ showStats, widgetVisibility }: { showStats: bool
           ) : kpis.length === 0 ? (
             <div className="text-center py-6 text-sm text-muted-foreground">
               <Target className="mx-auto h-6 w-6 mb-1.5 opacity-40" />
-              No KPIs tracked. Configure KPIs on your active campaigns.
+              No KPIs tracked. Configure KPIs on your active projects.
             </div>
           ) : (
             <KpiMatrix kpis={kpis} onProjectClick={(id) => navigate(`/app/marketing/projects/${id}`)} />
@@ -2494,7 +2494,7 @@ export function DashboardView({ showStats, widgetVisibility }: { showStats: bool
         ) : bvaProjects.length === 0 ? (
           <div className="text-center py-6 text-sm text-muted-foreground">
             <BarChart3 className="mx-auto h-6 w-6 mb-1.5 opacity-40" />
-            No budget vs actual data. Create campaigns with budgets to see comparisons.
+            No budget vs actual data. Create projects with budgets to see comparisons.
           </div>
         ) : (
           <div className="rounded-md border">
@@ -2585,7 +2585,7 @@ export function DashboardView({ showStats, widgetVisibility }: { showStats: bool
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="text-xs capitalize">{ch.channel.replace('_', ' ')}</Badge>
-                        <span className="text-xs text-muted-foreground">{ch.projects} campaign{ch.projects !== 1 ? 's' : ''}</span>
+                        <span className="text-xs text-muted-foreground">{ch.projects} project{ch.projects !== 1 ? 's' : ''}</span>
                       </div>
                       <div className="flex items-center gap-3 text-xs tabular-nums">
                         <span className="text-muted-foreground">{shareOfSpend}% of spend</span>
@@ -2985,7 +2985,7 @@ function ComparePanel({ projects, onClose }: { projects: MktProject[]; onClose: 
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <h3 className="font-semibold text-sm flex items-center gap-2">
           <GitCompareArrows className="h-4 w-4" />
-          Comparing {projects.length} Campaigns
+          Comparing {projects.length} Projects
         </h3>
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
           <X className="h-4 w-4" />

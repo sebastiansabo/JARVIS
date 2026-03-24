@@ -130,7 +130,7 @@ export function CommentsTab({ projectId }: { projectId: number }) {
         <div className="text-center py-12 text-muted-foreground">
           <MessageSquare className="mx-auto h-8 w-8 mb-2 opacity-40" />
           <div>No comments yet</div>
-          <div className="text-xs mt-1">Start a conversation about this campaign.</div>
+          <div className="text-xs mt-1">Start a conversation about this project.</div>
         </div>
       ) : (
         <div className="space-y-4">

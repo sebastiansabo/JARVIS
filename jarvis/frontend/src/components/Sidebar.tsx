@@ -64,7 +64,7 @@ const navItemsDef: NavItem[] = [
     children: [
       { path: '/app/marketing/dashboard', label: 'Dashboard', icon: TrendingUp, moduleKey: 'marketing_dashboard' },
       { path: '/app/marketing/calendar', label: 'Calendar', icon: CalendarDays, moduleKey: 'marketing_calendar' },
-      { path: '/app/marketing', label: 'Campaigns', icon: Megaphone, moduleKey: 'marketing_campaigns' },
+      { path: '/app/marketing', label: 'Projects', icon: Megaphone, moduleKey: 'marketing_campaigns' },
       { path: '/app/marketing/events', label: 'Events', icon: PartyPopper, moduleKey: 'marketing_events' },
       { path: '/app/marketing/simulator', label: 'Simulator', icon: Calculator, moduleKey: 'marketing_simulator', v2Permission: 'marketing.simulator.view' },
     ],

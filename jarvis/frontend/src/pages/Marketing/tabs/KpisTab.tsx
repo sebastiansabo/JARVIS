@@ -833,7 +833,7 @@ export function KpisTab({ projectId }: { projectId: number }) {
         <div className="text-center py-12 text-muted-foreground">
           <Target className="mx-auto h-8 w-8 mb-2 opacity-40" />
           <div>No KPIs configured</div>
-          <div className="text-xs mt-1">Click "Add KPI" to track performance metrics for this campaign.</div>
+          <div className="text-xs mt-1">Click "Add KPI" to track performance metrics for this project.</div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

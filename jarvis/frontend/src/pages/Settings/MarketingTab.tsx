@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Save, Bot, RefreshCw } from 'lucide-react'
+import { Plus, Pencil, Save, Bot, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -14,8 +14,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { marketingApi } from '@/api/marketing'
+import { settingsApi } from '@/api/settings'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from 'sonner'
 import type { MktKpiDefinition, KpiBenchmarks } from '@/types/marketing'
+import type { DropdownOption } from '@/types/settings'
 
 const UNITS = [
   { value: 'number', label: 'Number' },
@@ -34,8 +37,204 @@ const CATEGORIES = ['performance', 'financial', 'engagement', 'conversion', 'bra
 export default function MarketingTab() {
   return (
     <div className="space-y-6">
+      <ChannelOptionsSection />
       <KpiDefinitionsSection />
     </div>
+  )
+}
+
+/* ── Channel Options (mkt_channel) ──────────────────────── */
+
+function ChannelOptionsSection() {
+  const queryClient = useQueryClient()
+  const [showForm, setShowForm] = useState(false)
+  const [editOpt, setEditOpt] = useState<DropdownOption | null>(null)
+  const [deleteId, setDeleteId] = useState<number | null>(null)
+
+  const { data: options = [], isLoading } = useQuery({
+    queryKey: ['dropdown-options', 'mkt_channel'],
+    queryFn: () => settingsApi.getDropdownOptions('mkt_channel'),
+    staleTime: 5 * 60_000,
+  })
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['dropdown-options', 'mkt_channel'] })
+
+  const createMut = useMutation({
+    mutationFn: (data: Partial<DropdownOption>) => settingsApi.addDropdownOption(data),
+    onSuccess: () => { invalidate(); setShowForm(false); toast.success('Channel added') },
+    onError: (e: any) => toast.error(e?.message || 'Failed to create'),
+  })
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<DropdownOption> }) =>
+      settingsApi.updateDropdownOption(id, data),
+    onSuccess: () => { invalidate(); setShowForm(false); setEditOpt(null); toast.success('Channel updated') },
+    onError: (e: any) => toast.error(e?.message || 'Failed to update'),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => settingsApi.deleteDropdownOption(id),
+    onSuccess: () => { invalidate(); setDeleteId(null); toast.success('Channel deleted') },
+    onError: (e: any) => toast.error(e?.message || 'Failed to delete'),
+  })
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Channel Options</CardTitle>
+            <CardDescription>
+              Manage the marketing channels available in project budget lines and channel mix.
+            </CardDescription>
+          </div>
+          <Button size="sm" onClick={() => { setEditOpt(null); setShowForm(true) }}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add Channel
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-10 animate-pulse rounded bg-muted" />
+            ))}
+          </div>
+        ) : options.length === 0 ? (
+          <EmptyState title="No channels" description="Add your first marketing channel." />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Value</TableHead>
+                <TableHead>Label</TableHead>
+                <TableHead>Order</TableHead>
+                <TableHead>Active</TableHead>
+                <TableHead className="w-24">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {options.map((opt) => (
+                <TableRow key={opt.id}>
+                  <TableCell className="font-mono text-xs">{opt.value}</TableCell>
+                  <TableCell className="font-medium">{opt.label}</TableCell>
+                  <TableCell>{opt.sort_order}</TableCell>
+                  <TableCell>{opt.is_active ? 'Yes' : 'No'}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => { setEditOpt(opt); setShowForm(true) }}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteId(opt.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+
+      <ChannelFormDialog
+        open={showForm || !!editOpt}
+        option={editOpt}
+        optionCount={options.length}
+        onClose={() => { setShowForm(false); setEditOpt(null) }}
+        onSave={(data) => {
+          if (editOpt) {
+            updateMut.mutate({ id: editOpt.id, data })
+          } else {
+            createMut.mutate(data)
+          }
+        }}
+        isPending={createMut.isPending || updateMut.isPending}
+      />
+
+      <ConfirmDialog
+        open={!!deleteId}
+        onOpenChange={() => setDeleteId(null)}
+        title="Delete Channel"
+        description="This will remove the channel option. Existing budget lines using it won't be affected."
+        onConfirm={() => deleteId && deleteMut.mutate(deleteId)}
+        destructive
+      />
+    </Card>
+  )
+}
+
+function ChannelFormDialog({ open, option, optionCount, onClose, onSave, isPending }: {
+  open: boolean; option: DropdownOption | null; optionCount: number
+  onClose: () => void; onSave: (data: Partial<DropdownOption>) => void; isPending: boolean
+}) {
+  const [value, setValue] = useState('')
+  const [label, setLabel] = useState('')
+  const [sortOrder, setSortOrder] = useState(0)
+  const [isActive, setIsActive] = useState(true)
+
+  const resetForm = () => {
+    if (option) {
+      setValue(option.value); setLabel(option.label)
+      setSortOrder(option.sort_order); setIsActive(option.is_active)
+    } else {
+      setValue(''); setLabel(''); setSortOrder(optionCount + 1); setIsActive(true)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); else resetForm() }}>
+      <DialogContent className="sm:max-w-md" onOpenAutoFocus={resetForm}>
+        <DialogHeader>
+          <DialogTitle>{option ? 'Edit Channel' : 'Add Channel'}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-2">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label>Value (key)</Label>
+              <Input
+                value={value}
+                onChange={(e) => setValue(e.target.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''))}
+                placeholder="google_ads"
+                className="font-mono text-sm"
+                disabled={!!option}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Label</Label>
+              <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Google Ads" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label>Sort Order</Label>
+              <Input type="number" value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value))} />
+            </div>
+            <div className="flex items-center gap-2 pt-6">
+              <Switch checked={isActive} onCheckedChange={setIsActive} />
+              <Label className="text-sm">{isActive ? 'Active' : 'Inactive'}</Label>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            disabled={!value || !label || isPending}
+            onClick={() => onSave({
+              dropdown_type: 'mkt_channel',
+              value,
+              label,
+              sort_order: sortOrder,
+              is_active: isActive,
+            })}
+          >
+            <Save className="mr-1.5 h-4 w-4" />
+            {isPending ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

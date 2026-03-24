@@ -182,7 +182,7 @@ export function FilesTab({ projectId }: { projectId: number }) {
         <div className="text-center py-12 text-muted-foreground">
           <Paperclip className="mx-auto h-8 w-8 mb-2 opacity-40" />
           <div className="text-sm">No files attached yet</div>
-          <div className="text-xs mt-1">Upload files or link DMS documents to this campaign.</div>
+          <div className="text-xs mt-1">Upload files or link DMS documents to this project.</div>
         </div>
       )}
 
@@ -223,7 +223,7 @@ export function FilesTab({ projectId }: { projectId: number }) {
             )}
             <div className="space-y-1.5">
               <Label>Description (optional)</Label>
-              <Input value={fileDesc} onChange={(e) => setFileDesc(e.target.value)} placeholder="e.g., Campaign brief Q1" />
+              <Input value={fileDesc} onChange={(e) => setFileDesc(e.target.value)} placeholder="e.g., Project brief Q1" />
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => { setShowUpload(false); setSelectedFile(null); setFileDesc('') }}>Cancel</Button>
