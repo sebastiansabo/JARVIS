@@ -454,6 +454,14 @@ export function KpisTab({ projectId }: { projectId: number }) {
   const [editChannel, setEditChannel] = useState('')
   const [editCurrency, setEditCurrency] = useState('RON')
   const [editNotes, setEditNotes] = useState('')
+  const [editAggregation, setEditAggregation] = useState<'latest' | 'average' | 'cumulative'>('latest')
+  // Definition fields (for custom KPIs)
+  const [editName, setEditName] = useState('')
+  const [editUnit, setEditUnit] = useState<'number' | 'currency' | 'percentage' | 'ratio'>('number')
+  const [editDirection, setEditDirection] = useState<'higher' | 'lower'>('higher')
+  const [editFormula, setEditFormula] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editFormulaValid, setEditFormulaValid] = useState<{ valid: boolean; error: string | null; variables: string[] } | null>(null)
 
   // Custom KPI creation state
   const [addMode, setAddMode] = useState<'catalog' | 'custom'>('catalog')
@@ -692,20 +700,46 @@ export function KpisTab({ projectId }: { projectId: number }) {
     setEditChannel(k.channel || '')
     setEditCurrency(k.currency || 'RON')
     setEditNotes(k.notes || '')
+    setEditAggregation(k.aggregation || 'latest')
+    // Definition fields
+    const def = definitions.find((d) => d.id === k.kpi_definition_id)
+    setEditName(def?.name || k.kpi_name || '')
+    setEditUnit((k.unit as 'number' | 'currency' | 'percentage' | 'ratio') || 'number')
+    setEditDirection((k.direction as 'higher' | 'lower') || 'higher')
+    setEditFormula(k.formula || '')
+    setEditDescription(def?.description || '')
+    setEditFormulaValid(null)
   }
 
   const editMut = useMutation({
-    mutationFn: () =>
-      marketingApi.updateProjectKpi(projectId, editKpiId!, {
+    mutationFn: async () => {
+      const editKpi = kpis.find((k) => k.id === editKpiId)
+      // Update definition fields for custom KPIs
+      if (editKpi?.category === 'custom' && editKpi.kpi_definition_id) {
+        const slug = editName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/(^_|_$)/g, '')
+        await marketingApi.updateKpiDefinition(editKpi.kpi_definition_id, {
+          name: editName,
+          slug,
+          unit: editUnit,
+          direction: editDirection,
+          formula: editFormula || undefined,
+          description: editDescription || undefined,
+        })
+      }
+      // Update project KPI fields
+      await marketingApi.updateProjectKpi(projectId, editKpiId!, {
         target_value: editTarget !== '' ? Number(editTarget) : null,
         threshold_warning: editWarn !== '' ? Number(editWarn) : null,
         threshold_critical: editCrit !== '' ? Number(editCrit) : null,
         channel: editChannel || null,
         currency: editCurrency,
         notes: editNotes || null,
-      }),
+        aggregation: editAggregation,
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-project-kpis', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-kpi-definitions'] })
       setEditKpiId(null)
     },
   })
@@ -759,6 +793,10 @@ export function KpisTab({ projectId }: { projectId: number }) {
   const validateFormulaMut = useMutation({
     mutationFn: (formula: string) => marketingApi.validateFormula(formula),
     onSuccess: (data) => setFormulaValid(data),
+  })
+  const validateEditFormulaMut = useMutation({
+    mutationFn: (formula: string) => marketingApi.validateFormula(formula),
+    onSuccess: (data) => setEditFormulaValid(data),
   })
 
   const [aiSuggestion, setAiSuggestion] = useState<{ suggested_target: number; reasoning: string; confidence: string } | null>(null)
@@ -1122,13 +1160,72 @@ export function KpisTab({ projectId }: { projectId: number }) {
         <DialogContent className="max-w-sm" aria-describedby={undefined}>
           {(() => {
             const editKpi = kpis.find((k) => k.id === editKpiId)
-            const isCurrencyUnit = editKpi?.unit === 'currency'
+            const isCustom = editKpi?.category === 'custom'
+            const isCurrencyUnit = isCustom ? editUnit === 'currency' : editKpi?.unit === 'currency'
             return (
               <>
                 <DialogHeader>
-                  <DialogTitle>Edit KPI — {editKpi?.kpi_name}</DialogTitle>
+                  <DialogTitle>Edit KPI{isCustom ? '' : ` — ${editKpi?.kpi_name}`}</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-4">
+                <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+                  {/* Definition fields — only for custom KPIs */}
+                  {isCustom && (
+                    <>
+                      <div className="space-y-1.5">
+                        <Label>Name *</Label>
+                        <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="e.g. Cost Per Lead" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label>Unit</Label>
+                          <Select value={editUnit} onValueChange={(v) => setEditUnit(v as 'number' | 'currency' | 'percentage' | 'ratio')}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="number">Number</SelectItem>
+                              <SelectItem value="currency">Currency</SelectItem>
+                              <SelectItem value="percentage">Percentage</SelectItem>
+                              <SelectItem value="ratio">Ratio</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Direction</Label>
+                          <Select value={editDirection} onValueChange={(v) => setEditDirection(v as 'higher' | 'lower')}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="higher">Higher is better</SelectItem>
+                              <SelectItem value="lower">Lower is better</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Formula <span className="text-xs text-muted-foreground">(optional)</span></Label>
+                        <Input
+                          value={editFormula}
+                          onChange={(e) => { setEditFormula(e.target.value); setEditFormulaValid(null) }}
+                          onBlur={() => { if (editFormula.trim()) validateEditFormulaMut.mutate(editFormula) }}
+                          placeholder="e.g. spent / leads"
+                          className="font-mono text-sm"
+                        />
+                        {editFormulaValid && (
+                          editFormulaValid.valid ? (
+                            <div className="text-xs text-green-600 dark:text-green-400">
+                              Valid — variables: {editFormulaValid.variables.join(', ') || 'none'}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-red-600 dark:text-red-400">{editFormulaValid.error}</div>
+                          )
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Description</Label>
+                        <Input value={editDescription} onChange={(e) => setEditDescription(e.target.value)} placeholder="Optional description" />
+                      </div>
+                      <Separator />
+                    </>
+                  )}
+                  {/* Project KPI fields */}
                   <div className="space-y-1.5">
                     <Label>Target Value</Label>
                     <div className="flex gap-2">
@@ -1143,6 +1240,17 @@ export function KpisTab({ projectId }: { projectId: number }) {
                         </Select>
                       )}
                     </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Aggregation Mode</Label>
+                    <Select value={editAggregation} onValueChange={(v) => setEditAggregation(v as 'latest' | 'average' | 'cumulative')}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="latest">Latest</SelectItem>
+                        <SelectItem value="average">Average</SelectItem>
+                        <SelectItem value="cumulative">Cumulative</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
@@ -1164,7 +1272,7 @@ export function KpisTab({ projectId }: { projectId: number }) {
                   </div>
                   <div className="flex justify-end gap-2">
                     <Button variant="outline" onClick={() => setEditKpiId(null)}>Cancel</Button>
-                    <Button disabled={editMut.isPending} onClick={() => editMut.mutate()}>
+                    <Button disabled={editMut.isPending || (isCustom && !editName.trim())} onClick={() => editMut.mutate()}>
                       {editMut.isPending ? 'Saving...' : 'Save'}
                     </Button>
                   </div>
