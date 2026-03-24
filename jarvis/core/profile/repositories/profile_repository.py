@@ -95,7 +95,7 @@ class ProfileRepository(BaseRepository):
         return '(' + ' OR '.join(conditions) + ')', params
 
     # ------------------------------------------------------------------
-    # User invoices (by responsible — profile "my invoices")
+    # User invoices (org-scope based: L0>L1>L2>L3>L4, fallback to own)
     # ------------------------------------------------------------------
 
     def get_user_invoices_by_responsible_name(
@@ -109,7 +109,9 @@ class ProfileRepository(BaseRepository):
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
-        """Get invoices where user is the responsible person."""
+        """Get invoices visible to the user based on L0-L5 org scope.
+        Fallback: if no org assignments, show only directly-responsible invoices.
+        """
         def _work(cursor):
             cursor.execute('SELECT id FROM users WHERE LOWER(email) = LOWER(%s)', [user_email])
             user_row = cursor.fetchone()
@@ -117,8 +119,18 @@ class ProfileRepository(BaseRepository):
                 return []
 
             user_id = user_row['id']
+            org_sql, org_params = self._build_org_filter(cursor, user_id)
 
-            query = '''
+            if org_sql:
+                # Org scope: L0 sees all company, L1 sees dept+descendants, etc.
+                scope = org_sql
+                scope_params = org_params
+            else:
+                # No org assignments: show only own invoices
+                scope = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
+                scope_params = [user_id, user_id]
+
+            query = f'''
                 SELECT
                     i.id, i.invoice_number, i.invoice_date, i.invoice_value,
                     i.currency, i.supplier, i.status, i.drive_link, i.comment,
@@ -127,10 +139,10 @@ class ProfileRepository(BaseRepository):
                     a.allocation_percent, a.allocation_value
                 FROM invoices i
                 INNER JOIN allocations a ON i.id = a.invoice_id
-                WHERE (a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))
+                WHERE {scope}
                 AND i.deleted_at IS NULL
             '''
-            params = [user_id, user_id]
+            params = list(scope_params)
 
             if status:
                 query += ' AND i.status = %s'
@@ -165,7 +177,7 @@ class ProfileRepository(BaseRepository):
         search: Optional[str] = None,
         department: Optional[str] = None,
     ) -> int:
-        """Count invoices where user is the responsible person."""
+        """Count invoices visible via L0-L5 org scope (fallback: own)."""
         def _work(cursor):
             cursor.execute('SELECT id FROM users WHERE LOWER(email) = LOWER(%s)', [user_email])
             user_row = cursor.fetchone()
@@ -173,15 +185,23 @@ class ProfileRepository(BaseRepository):
                 return 0
 
             user_id = user_row['id']
+            org_sql, org_params = self._build_org_filter(cursor, user_id)
 
-            query = '''
+            if org_sql:
+                scope = org_sql
+                scope_params = org_params
+            else:
+                scope = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
+                scope_params = [user_id, user_id]
+
+            query = f'''
                 SELECT COUNT(DISTINCT i.id) as count
                 FROM invoices i
                 INNER JOIN allocations a ON i.id = a.invoice_id
-                WHERE (a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))
+                WHERE {scope}
                 AND i.deleted_at IS NULL
             '''
-            params = [user_id, user_id]
+            params = list(scope_params)
 
             if status:
                 query += ' AND i.status = %s'
@@ -206,7 +226,7 @@ class ProfileRepository(BaseRepository):
         return self.execute_many(_work)
 
     def get_user_invoices_summary(self, user_email: str) -> dict:
-        """Get invoice summary stats for invoices where user is responsible."""
+        """Get invoice summary stats via L0-L5 org scope (fallback: own)."""
         def _work(cursor):
             cursor.execute('SELECT id FROM users WHERE LOWER(email) = LOWER(%s)', [user_email])
             user_row = cursor.fetchone()
@@ -214,9 +234,14 @@ class ProfileRepository(BaseRepository):
                 return {'total': 0, 'total_value': 0, 'by_status': {}}
 
             user_id = user_row['id']
+            org_sql, org_params = self._build_org_filter(cursor, user_id)
 
-            base_where = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
-            base_params = [user_id, user_id]
+            if org_sql:
+                base_where = org_sql
+                base_params = org_params
+            else:
+                base_where = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
+                base_params = [user_id, user_id]
 
             cursor.execute(f'''
                 SELECT i.status, COUNT(DISTINCT i.id) as count
