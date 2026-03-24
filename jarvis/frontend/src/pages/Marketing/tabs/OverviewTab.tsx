@@ -22,7 +22,7 @@ const DONUT_COLORS = [
   '#06b6d4', '#ec4899', '#f97316', '#14b8a6', '#6366f1',
 ]
 
-function BudgetDonutChart({ lines, currency }: { lines: { channel: string; planned: number; spent: number }[]; currency: string }) {
+function BudgetDonutChart({ lines, currency }: { lines: { channel: string; planned: number; spent: number; gross: number; credits: number }[]; currency: string }) {
   if (lines.length === 0) return null
   const total = lines.reduce((s, l) => s + l.planned, 0)
   if (total <= 0) return null
@@ -73,7 +73,9 @@ function BudgetDonutChart({ lines, currency }: { lines: { channel: string; plann
                 <TooltipContent side="top" className="text-xs">
                   <div className="font-medium">{s.channel.replace('_', ' ')}</div>
                   <div>Planned: {fmt(s.planned, currency)}</div>
-                  <div>Spent: {fmt(s.spent, currency)}</div>
+                  <div>Gross Spent: {fmt(s.gross, currency)}</div>
+                  {s.credits > 0 && <div className="text-green-600">Credits: {fmt(s.credits, currency)}</div>}
+                  <div>Net: {fmt(s.spent, currency)}</div>
                   <div>{Math.round(s.pct * 100)}% of budget</div>
                 </TooltipContent>
               </Tooltip>
@@ -84,32 +86,35 @@ function BudgetDonutChart({ lines, currency }: { lines: { channel: string; plann
         </TooltipProvider>
         <div className="flex-1 space-y-1.5 min-w-0">
           {slices.map((s, i) => {
-            const util = s.planned > 0 ? Math.round((s.spent / s.planned) * 100) : 0
+            const exec = s.planned > 0 ? Math.max(0, Math.round((s.spent / s.planned) * 100)) : 0
             return (
               <div key={i} className="flex items-center gap-2 text-xs">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
                 <span className="truncate flex-1">{s.channel.replace('_', ' ')}</span>
                 <span className="tabular-nums text-muted-foreground shrink-0">{fmt(s.planned, currency)}</span>
-                <span className="tabular-nums text-muted-foreground shrink-0 w-8 text-right">{util}%</span>
+                <span className="tabular-nums text-muted-foreground shrink-0 w-8 text-right">{exec}%</span>
               </div>
             )
           })}
         </div>
       </div>
-      {/* Stacked bar: planned vs spent */}
+      {/* Stacked bar: execution by channel */}
       <div className="space-y-1.5">
         <div className="flex justify-between text-[10px] text-muted-foreground">
-          <span>Spent vs Planned by Channel</span>
+          <span>Execution by Channel</span>
         </div>
         {slices.map((s, i) => {
-          const util = s.planned > 0 ? Math.min(100, Math.round((s.spent / s.planned) * 100)) : 0
+          const exec = s.planned > 0 ? Math.min(100, Math.max(0, Math.round((s.spent / s.planned) * 100))) : 0
           return (
             <div key={i} className="flex items-center gap-2">
               <span className="text-[10px] w-20 truncate text-muted-foreground">{s.channel.replace('_', ' ')}</span>
               <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${util}%`, backgroundColor: s.color, opacity: 0.8 }} />
+                <div className="h-full rounded-full" style={{ width: `${exec}%`, backgroundColor: s.color, opacity: 0.8 }} />
               </div>
-              <span className="text-[10px] tabular-nums text-muted-foreground w-10 text-right">{fmt(s.spent, currency)}</span>
+              <span className="text-[10px] tabular-nums text-muted-foreground w-16 text-right">
+                {fmt(s.spent, currency)}
+                {s.credits > 0 && <span className="text-green-600 ml-1">(-{fmt(s.credits, currency)})</span>}
+              </span>
             </div>
           )
         })}
@@ -146,8 +151,11 @@ export function OverviewTab({ project }: { project: MktProject }) {
   const spent = typeof project.total_spent === 'string' ? parseFloat(project.total_spent as string) : (project.total_spent ?? 0)
   const eventCost = typeof project.event_cost === 'string' ? parseFloat(project.event_cost as string) : (project.event_cost ?? 0)
   const totalCredits = typeof project.total_credits === 'string' ? parseFloat(project.total_credits as string) : (project.total_credits ?? 0)
-  const budgetSpent = spent - eventCost
-  const burn = budget ? Math.round((spent / budget) * 100) : 0
+  const budgetSpent = spent - eventCost               // net from budget lines (debits - credits)
+  const grossSpent = budgetSpent + totalCredits         // actual outflows (debits only, for breakdown)
+  const netCost = spent                                 // real net = debits - credits + events
+  const remaining = budget - netCost                    // how much budget is left
+  const execution = budget ? Math.max(0, Math.round((netCost / budget) * 100)) : 0  // net cost efficiency
 
   const [editingDesc, setEditingDesc] = useState(false)
   const [descDraft, setDescDraft] = useState(project.description ?? '')
@@ -167,11 +175,17 @@ export function OverviewTab({ project }: { project: MktProject }) {
     queryKey: ['mkt-budget-lines', project.id],
     queryFn: () => marketingApi.getBudgetLines(project.id),
   })
-  const budgetLines = (budgetLinesData?.budget_lines ?? []).map((l) => ({
-    channel: l.channel,
-    planned: Number(l.planned_amount) || 0,
-    spent: Number(l.spent_amount) || 0,
-  })).filter((l) => l.planned > 0)
+  const budgetLines = (budgetLinesData?.budget_lines ?? []).map((l) => {
+    const net = Number(l.spent_amount) || 0
+    const credits = Number(l.credit_amount) || 0
+    return {
+      channel: l.channel,
+      planned: Number(l.planned_amount) || 0,
+      spent: net,
+      credits,
+      gross: net + credits, // actual debits (outflows)
+    }
+  }).filter((l) => l.planned > 0)
   const overviewKpis = (kpisData?.kpis ?? []).filter((k) => k.show_on_overview)
 
   const saveMut = useMutation({
@@ -207,14 +221,15 @@ export function OverviewTab({ project }: { project: MktProject }) {
         {/* Budget summary */}
         <div className="rounded-lg border p-4 space-y-3">
           <h3 className="font-semibold text-sm">Budget</h3>
+          {/* Top-level KPIs */}
           <div className={`grid gap-4 text-center ${(eventCost > 0 && totalCredits > 0) ? 'grid-cols-5' : (eventCost > 0 || totalCredits > 0) ? 'grid-cols-4' : 'grid-cols-3'}`}>
             <div>
               <div className="text-lg font-bold">{fmt(budget, project.currency)}</div>
               <div className="text-xs text-muted-foreground">Total Budget</div>
             </div>
             <div>
-              <div className="text-lg font-bold">{fmt(eventCost > 0 ? budgetSpent : spent, project.currency)}</div>
-              <div className="text-xs text-muted-foreground">{eventCost > 0 ? 'Budget Spent' : 'Spent'}</div>
+              <div className={`text-lg font-bold ${netCost < 0 ? 'text-green-600' : ''}`}>{fmt(netCost, project.currency)}</div>
+              <div className="text-xs text-muted-foreground">Net Cost</div>
             </div>
             {totalCredits > 0 && (
               <div>
@@ -229,51 +244,78 @@ export function OverviewTab({ project }: { project: MktProject }) {
               </div>
             )}
             <div>
-              <div className={`text-lg font-bold ${burn > 90 ? 'text-red-500' : burn > 70 ? 'text-yellow-500' : ''}`}>{burn}%</div>
-              <div className="text-xs text-muted-foreground">Burn Rate</div>
+              <div className={`text-lg font-bold ${execution > 90 ? 'text-red-500' : execution > 70 ? 'text-yellow-500' : ''}`}>{execution}%</div>
+              <div className="text-xs text-muted-foreground">Execution</div>
             </div>
           </div>
+          {/* Execution progress bar */}
           <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
             <div
-              className={`h-full rounded-full ${burn > 90 ? 'bg-red-500' : burn > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
-              style={{ width: `${Math.min(burn, 100)}%` }}
+              className={`h-full rounded-full ${execution > 90 ? 'bg-red-500' : execution > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
+              style={{ width: `${Math.min(execution, 100)}%` }}
             />
           </div>
 
-          {/* Budget Alerts */}
-          {budget > 0 && burn >= 100 && (
+          {/* Budget Execution breakdown */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-md bg-muted/40 p-3">
+            <div className="space-y-0.5">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Gross Spending</div>
+              <div className="text-sm font-semibold tabular-nums">{fmt(grossSpent, project.currency)}</div>
+            </div>
+            {totalCredits > 0 && (
+              <div className="space-y-0.5">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Credits / Sponsorships</div>
+                <div className="text-sm font-semibold tabular-nums text-green-600">{fmt(totalCredits, project.currency)}</div>
+              </div>
+            )}
+            <div className="space-y-0.5">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Net Cost</div>
+              <div className={`text-sm font-semibold tabular-nums ${netCost < 0 ? 'text-green-600' : ''}`}>
+                {netCost < 0 ? `${fmt(Math.abs(netCost), project.currency)} surplus` : fmt(netCost, project.currency)}
+              </div>
+            </div>
+            <div className="space-y-0.5">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Remaining</div>
+              <div className={`text-sm font-semibold tabular-nums ${remaining > budget ? 'text-green-600' : remaining < 0 ? 'text-red-600' : ''}`}>
+                {fmt(remaining, project.currency)}
+              </div>
+            </div>
+          </div>
+
+          {/* Budget Alerts — based on net cost (after credits) */}
+          {budget > 0 && execution >= 100 && (
             <div className="flex items-center gap-2 rounded-md border border-red-300 bg-red-50 dark:bg-red-950/20 dark:border-red-700 p-2.5 text-sm">
               <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
-              <span className="text-red-800 dark:text-red-200 font-medium">Budget exceeded by {fmt(spent - budget, project.currency)} ({burn}% spent)</span>
+              <span className="text-red-800 dark:text-red-200 font-medium">Budget exceeded — net cost {fmt(netCost, project.currency)} of {fmt(budget, project.currency)} ({execution}%)</span>
             </div>
           )}
-          {budget > 0 && burn >= 90 && burn < 100 && (
+          {budget > 0 && execution >= 90 && execution < 100 && (
             <div className="flex items-center gap-2 rounded-md border border-orange-300 bg-orange-50 dark:bg-orange-950/20 dark:border-orange-700 p-2.5 text-sm">
               <AlertTriangle className="h-4 w-4 text-orange-600 shrink-0" />
-              <span className="text-orange-800 dark:text-orange-200">Budget nearly exhausted — {fmt(budget - spent, project.currency)} remaining ({burn}% spent)</span>
+              <span className="text-orange-800 dark:text-orange-200">Budget nearly exhausted — {fmt(remaining, project.currency)} remaining ({execution}%)</span>
             </div>
           )}
-          {budget > 0 && burn >= 70 && burn < 90 && (
+          {budget > 0 && execution >= 70 && execution < 90 && (
             <div className="flex items-center gap-2 rounded-md border border-yellow-300 bg-yellow-50 dark:bg-yellow-950/20 dark:border-yellow-700 p-2.5 text-sm">
               <TrendingUp className="h-4 w-4 text-yellow-600 shrink-0" />
-              <span className="text-yellow-800 dark:text-yellow-200">High spend rate — {fmt(budget - spent, project.currency)} remaining ({burn}% spent)</span>
+              <span className="text-yellow-800 dark:text-yellow-200">High spend rate — {fmt(remaining, project.currency)} remaining ({execution}%)</span>
             </div>
           )}
 
-          {/* Per-channel alerts */}
+          {/* Per-channel alerts — based on net cost per channel */}
           {budgetLines.filter((l) => l.planned > 0 && (l.spent / l.planned) >= 0.9).length > 0 && (
             <div className="space-y-1.5">
               {budgetLines.filter((l) => l.planned > 0 && (l.spent / l.planned) >= 0.9).map((l) => {
-                const chBurn = Math.round((l.spent / l.planned) * 100)
+                const chExec = Math.round((l.spent / l.planned) * 100)
                 return (
                   <div key={l.channel} className="flex items-center gap-2 text-xs text-muted-foreground">
-                    {chBurn >= 100 ? (
+                    {chExec >= 100 ? (
                       <AlertCircle className="h-3 w-3 text-red-500 shrink-0" />
                     ) : (
                       <AlertTriangle className="h-3 w-3 text-orange-500 shrink-0" />
                     )}
                     <span>
-                      <span className="font-medium capitalize">{l.channel.replace('_', ' ')}</span>: {chBurn}% spent
+                      <span className="font-medium capitalize">{l.channel.replace('_', ' ')}</span>: {chExec}% net cost
                       ({fmt(l.spent, project.currency)} / {fmt(l.planned, project.currency)})
                     </span>
                   </div>

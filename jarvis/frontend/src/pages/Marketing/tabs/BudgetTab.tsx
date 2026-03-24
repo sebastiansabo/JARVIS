@@ -279,16 +279,20 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
 
   const totalPlanned = lines.reduce((s, l) => s + (Number(l.planned_amount) || 0), 0)
   const totalApproved = lines.reduce((s, l) => s + (Number(l.approved_amount) || 0), 0)
-  const totalSpent = lines.reduce((s, l) => s + (Number(l.spent_amount) || 0), 0)
+  const totalCredits = lines.reduce((s, l) => s + (Number(l.credit_amount) || 0), 0)
+  const totalNet = lines.reduce((s, l) => s + (Number(l.spent_amount) || 0), 0)
+  const totalGross = totalNet + totalCredits
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex gap-4 text-sm">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
           <span>Total Planned: <strong>{fmt(totalBudget, currency)}</strong></span>
           <span>Channel Split: <strong className={totalPlanned !== totalBudget ? 'text-red-500' : ''}>{fmt(totalPlanned, currency)}</strong></span>
           <span>Approved: <strong>{fmt(totalApproved, currency)}</strong></span>
-          <span>Spent: <strong>{fmt(totalSpent, currency)}</strong></span>
+          <span>Net Cost: <strong>{fmt(totalNet, currency)}</strong></span>
+          {totalCredits > 0 && <span>Credits: <strong className="text-green-600">{fmt(totalCredits, currency)}</strong></span>}
+          {totalGross !== totalNet && <span>Gross: <strong className="text-muted-foreground">{fmt(totalGross, currency)}</strong></span>}
         </div>
         <Button size="sm" onClick={() => setShowAdd(true)}>
           <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Line
@@ -312,16 +316,18 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                 <TableHead>Period</TableHead>
                 <TableHead className="text-right">Planned</TableHead>
                 <TableHead className="text-right">Approved</TableHead>
-                <TableHead className="text-right">Spent</TableHead>
-                <TableHead>Utilization</TableHead>
+                <TableHead className="text-right">Net Cost</TableHead>
+                <TableHead className="text-right">Credits</TableHead>
+                <TableHead>Execution</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {lines.map((l) => {
                 const planned = Number(l.planned_amount) || 0
-                const spent = Number(l.spent_amount) || 0
-                const util = planned ? Math.round((spent / planned) * 100) : 0
+                const net = Number(l.spent_amount) || 0
+                const credits = Number(l.credit_amount) || 0
+                const exec = planned ? Math.max(0, Math.round((net / planned) * 100)) : 0
                 const isExpanded = expandedLineId === l.id
                 return (
                   <>
@@ -352,16 +358,19 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                           onSave={(v) => updateLineMut.mutate({ lineId: l.id, data: { approved_amount: v } })}
                         />
                       </TableCell>
-                      <TableCell className="text-right text-sm tabular-nums">{fmt(l.spent_amount, currency)}</TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">{fmt(net, currency)}</TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">
+                        {credits > 0 ? <span className="text-green-600">{fmt(credits, currency)}</span> : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
                             <div
-                              className={`h-full rounded-full ${util > 90 ? 'bg-red-500' : util > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
-                              style={{ width: `${Math.min(util, 100)}%` }}
+                              className={`h-full rounded-full ${exec > 90 ? 'bg-red-500' : exec > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
+                              style={{ width: `${Math.min(exec, 100)}%` }}
                             />
                           </div>
-                          <span className="text-xs text-muted-foreground">{util}%</span>
+                          <span className="text-xs text-muted-foreground">{exec}%</span>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -386,7 +395,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                     </TableRow>
                     {isExpanded && (
                       <TableRow key={`${l.id}-expand`} className="bg-muted/30 hover:bg-muted/30">
-                        <TableCell colSpan={10} className="p-0">
+                        <TableCell colSpan={11} className="p-0">
                           <div className="px-6 py-3 space-y-3">
                             <div className="flex items-center justify-between">
                               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Transactions</span>
