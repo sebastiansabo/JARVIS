@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn, useDebounce } from '@/lib/utils'
 import {
   Plus, Trash2, DollarSign, Link2, Search, Pencil, Check,
-  ChevronDown, ChevronRight, CalendarDays,
+  ChevronDown, ChevronRight, CalendarDays, ArrowDownLeft,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { settingsApi } from '@/api/settings'
@@ -72,7 +72,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
   const debouncedInvoiceSearch = useDebounce(invoiceSearch, 300)
   const [linkedInvoiceIds, setLinkedInvoiceIds] = useState<Set<number>>(new Set())
   const [spendLineId, setSpendLineId] = useState<number | null>(null)
-  const [spendForm, setSpendForm] = useState({ amount: '', transaction_date: '', description: '' })
+  const [spendForm, setSpendForm] = useState({ amount: '', transaction_date: '', description: '', direction: 'debit' as 'debit' | 'credit' })
   const [expandedLineId, setExpandedLineId] = useState<number | null>(null)
   const [linkTxId, setLinkTxId] = useState<number | null>(null)
   const [txInvoiceSearch, setTxInvoiceSearch] = useState('')
@@ -127,7 +127,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
     mutationFn: () => marketingApi.createTransaction(spendLineId!, {
       amount: Number(spendForm.amount),
       transaction_date: spendForm.transaction_date,
-      direction: 'debit',
+      direction: spendForm.direction,
       source: 'manual',
       description: spendForm.description || undefined,
     } as Record<string, unknown>),
@@ -136,7 +136,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
       queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-transactions'] })
       setSpendLineId(null)
-      setSpendForm({ amount: '', transaction_date: '', description: '' })
+      setSpendForm({ amount: '', transaction_date: '', description: '', direction: 'debit' })
     },
   })
 
@@ -350,7 +350,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                       <TableCell>
                         <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                           <Button variant="ghost" size="icon" className="h-7 w-7" title="Record Spend"
-                            onClick={() => { setSpendLineId(l.id); setSpendForm({ amount: '', transaction_date: new Date().toISOString().slice(0, 10), description: '' }) }}>
+                            onClick={() => { setSpendLineId(l.id); setSpendForm({ amount: '', transaction_date: new Date().toISOString().slice(0, 10), description: '', direction: 'debit' }) }}>
                             <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
                           </Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7" title="Link Invoice"
@@ -375,8 +375,12 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Transactions</span>
                               <div className="flex gap-1.5">
                                 <Button variant="outline" size="sm" className="h-7 text-xs"
-                                  onClick={(e) => { e.stopPropagation(); setSpendLineId(l.id); setSpendForm({ amount: '', transaction_date: new Date().toISOString().slice(0, 10), description: '' }) }}>
+                                  onClick={(e) => { e.stopPropagation(); setSpendLineId(l.id); setSpendForm({ amount: '', transaction_date: new Date().toISOString().slice(0, 10), description: '', direction: 'debit' }) }}>
                                   <DollarSign className="h-3 w-3 mr-1" /> Record Spend
+                                </Button>
+                                <Button variant="outline" size="sm" className="h-7 text-xs border-green-300 text-green-700 hover:bg-green-50"
+                                  onClick={(e) => { e.stopPropagation(); setSpendLineId(l.id); setSpendForm({ amount: '', transaction_date: new Date().toISOString().slice(0, 10), description: '', direction: 'credit' }) }}>
+                                  <ArrowDownLeft className="h-3 w-3 mr-1" /> Record Credit
                                 </Button>
                                 <Button variant="outline" size="sm" className="h-7 text-xs"
                                   onClick={(e) => { e.stopPropagation(); openLinkDialog(l.id) }}>
@@ -651,11 +655,28 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
         </DialogContent>
       </Dialog>
 
-      {/* Record Spend Dialog */}
+      {/* Record Spend / Credit Dialog */}
       <Dialog open={!!spendLineId} onOpenChange={(open) => { if (!open) setSpendLineId(null) }}>
         <DialogContent className="max-w-sm" aria-describedby={undefined}>
-          <DialogHeader><DialogTitle>Record Spend</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{spendForm.direction === 'credit' ? 'Record Credit / Sponsorship' : 'Record Spend'}</DialogTitle>
+          </DialogHeader>
           <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Type</Label>
+              <Select value={spendForm.direction} onValueChange={(v) => setSpendForm((f) => ({ ...f, direction: v as 'debit' | 'credit' }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="debit">Spend (cost)</SelectItem>
+                  <SelectItem value="credit">Credit / Sponsorship</SelectItem>
+                </SelectContent>
+              </Select>
+              {spendForm.direction === 'credit' && (
+                <p className="text-xs text-muted-foreground">Credits reduce the spent amount (e.g., sponsorships, refunds).</p>
+              )}
+            </div>
             <div className="space-y-1.5">
               <Label>Amount *</Label>
               <Input type="number" value={spendForm.amount} onChange={(e) => setSpendForm((f) => ({ ...f, amount: e.target.value }))} autoFocus placeholder="0" />
@@ -666,13 +687,15 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
             </div>
             <div className="space-y-1.5">
               <Label>Description</Label>
-              <Input value={spendForm.description} onChange={(e) => setSpendForm((f) => ({ ...f, description: e.target.value }))} placeholder="e.g., Agency fee Q1" />
+              <Input value={spendForm.description} onChange={(e) => setSpendForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder={spendForm.direction === 'credit' ? 'e.g., Sponsor: BMW Romania' : 'e.g., Agency fee Q1'} />
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setSpendLineId(null)}>Cancel</Button>
               <Button
                 disabled={!spendForm.amount || !spendForm.transaction_date || spendMut.isPending}
                 onClick={() => spendMut.mutate()}
+                className={spendForm.direction === 'credit' ? 'bg-green-600 hover:bg-green-700' : ''}
               >
                 {spendMut.isPending ? 'Saving...' : 'Record'}
               </Button>
