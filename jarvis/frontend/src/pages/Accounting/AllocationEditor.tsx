@@ -224,7 +224,7 @@ export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditor
             <SelectValue placeholder="Select company..." />
           </SelectTrigger>
           <SelectContent>
-            {(companies as string[]).map((c) => (
+            {(companies as string[]).filter(Boolean).map((c) => (
               <SelectItem key={c} value={c}>{c}</SelectItem>
             ))}
           </SelectContent>
@@ -431,7 +431,7 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
                 <SelectValue placeholder="Select brand..." />
               </SelectTrigger>
               <SelectContent>
-                {brands.map((b) => (
+                {brands.filter(Boolean).map((b) => (
                   <SelectItem key={b} value={b}>{b}</SelectItem>
                 ))}
               </SelectContent>
@@ -449,7 +449,7 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">Select...</SelectItem>
-                {departments.map((d) => (
+                {departments.filter(Boolean).map((d) => (
                   <SelectItem key={d} value={d}>{d}</SelectItem>
                 ))}
               </SelectContent>
@@ -467,7 +467,7 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">Select...</SelectItem>
-                {subdepartments.map((sd) => (
+                {subdepartments.filter(Boolean).map((sd) => (
                   <SelectItem key={sd} value={sd}>{sd}</SelectItem>
                 ))}
               </SelectContent>
@@ -640,7 +640,7 @@ function ReinvoiceDestRow({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="__none__">Company...</SelectItem>
-          {targetCompanies.map((c) => (
+          {targetCompanies.filter(Boolean).map((c) => (
             <SelectItem key={c} value={c}>{c}</SelectItem>
           ))}
         </SelectContent>
@@ -655,7 +655,7 @@ function ReinvoiceDestRow({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__none__">Select...</SelectItem>
-            {targetBrands.map((b) => (
+            {targetBrands.filter(Boolean).map((b) => (
               <SelectItem key={b} value={b}>{b}</SelectItem>
             ))}
           </SelectContent>
@@ -671,7 +671,7 @@ function ReinvoiceDestRow({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__none__">Department...</SelectItem>
-            {targetDepts.map((d) => (
+            {targetDepts.filter(Boolean).map((d) => (
               <SelectItem key={d} value={d}>{d}</SelectItem>
             ))}
           </SelectContent>
@@ -687,7 +687,7 @@ function ReinvoiceDestRow({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__none__">Select...</SelectItem>
-            {targetSubdepts.map((sd) => (
+            {targetSubdepts.filter(Boolean).map((sd) => (
               <SelectItem key={sd} value={sd}>{sd}</SelectItem>
             ))}
           </SelectContent>

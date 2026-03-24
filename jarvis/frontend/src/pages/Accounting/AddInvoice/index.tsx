@@ -965,7 +965,7 @@ export default function AddInvoice() {
                     <SelectValue placeholder="Select company..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {(companies as string[]).map((c) => (
+                    {(companies as string[]).filter(Boolean).map((c) => (
                       <SelectItem key={c} value={c}>
                         {c}
                       </SelectItem>

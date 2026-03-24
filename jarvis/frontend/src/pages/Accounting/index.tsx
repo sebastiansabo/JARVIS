@@ -174,23 +174,23 @@ export default function Accounting() {
   })
 
   const statusOptions = useMemo(
-    () => dropdownOptions.filter((d) => d.dropdown_type === 'invoice_status').map((d) => ({ value: d.value, label: d.label, color: d.color })),
+    () => dropdownOptions.filter((d) => d.dropdown_type === 'invoice_status' && d.value).map((d) => ({ value: d.value, label: d.label, color: d.color })),
     [dropdownOptions],
   )
 
   const paymentOptions = useMemo(
     () =>
-      dropdownOptions.filter((d) => d.dropdown_type === 'payment_status').map((d) => ({ value: d.value, label: d.label, color: d.color })),
+      dropdownOptions.filter((d) => d.dropdown_type === 'payment_status' && d.value).map((d) => ({ value: d.value, label: d.label, color: d.color })),
     [dropdownOptions],
   )
 
   const companyOptions = useMemo(
-    () => (companies as string[]).map((c) => ({ value: c, label: c })),
+    () => (companies as string[]).filter(Boolean).map((c) => ({ value: c, label: c })),
     [companies],
   )
 
   const departmentOptions = useMemo(() => {
-    const depts = new Set(invoices.flatMap((inv) => inv.allocations?.map((a) => a.department) ?? []))
+    const depts = new Set(invoices.flatMap((inv) => inv.allocations?.map((a) => a.department).filter(Boolean) ?? []))
     return Array.from(depts)
       .sort()
       .map((d) => ({ value: d, label: d }))
@@ -297,7 +297,7 @@ export default function Accounting() {
             </span>
           </SelectTrigger>
           <SelectContent>
-            {options.map((o) => (
+            {options.filter((o) => o.value).map((o) => (
               <SelectItem key={o.value} value={o.value}>
                 <span className="flex items-center gap-1.5">
                   {o.color && (

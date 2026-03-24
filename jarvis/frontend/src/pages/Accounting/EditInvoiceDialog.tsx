@@ -201,7 +201,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {statusOptions.map((opt) => (
+                  {statusOptions.filter((opt) => opt.value).map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
                     </SelectItem>
@@ -216,7 +216,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {paymentOptions.map((opt) => (
+                  {paymentOptions.filter((opt) => opt.value).map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
                     </SelectItem>

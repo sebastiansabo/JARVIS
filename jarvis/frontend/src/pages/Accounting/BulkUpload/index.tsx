@@ -483,7 +483,7 @@ function InvoiceRow({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__none__">Select...</SelectItem>
-              {companies.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              {companies.filter(Boolean).map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -569,7 +569,7 @@ function InvoiceRow({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">Select...</SelectItem>
-                        {brands.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                        {brands.filter(Boolean).map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -583,7 +583,7 @@ function InvoiceRow({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">Select...</SelectItem>
-                        {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                        {departments.filter(Boolean).map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -597,7 +597,7 @@ function InvoiceRow({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">Select...</SelectItem>
-                        {subdepartments.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                        {subdepartments.filter(Boolean).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>

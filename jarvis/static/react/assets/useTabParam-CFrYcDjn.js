@@ -1,1 +1,0 @@
-import{at as b,r as c}from"./index-B6L4MZm4.js";function l(t,s="tab"){const[o,a]=b(),n=o.get(s)||t,[u,i]=c.useState(n),P=c.useCallback(e=>{i(e),a(S=>{const r=new URLSearchParams(S);return e===t?r.delete(s):r.set(s,e),r},{replace:!0})},[t,s,a]);return[u,P]}export{l as u};
