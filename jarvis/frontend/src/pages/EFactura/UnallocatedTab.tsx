@@ -117,21 +117,21 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
     ? companies.find((c) => c.id === editInvoice.company_id)?.name
     : undefined
 
-  const { data: departments = [] } = useQuery({
-    queryKey: ['departments', editCompanyName],
-    queryFn: () => organizationApi.getDepartments(editCompanyName!),
+  const { data: brands = [] } = useQuery({
+    queryKey: ['brands', editCompanyName],
+    queryFn: () => organizationApi.getBrands(editCompanyName!),
     enabled: !!editCompanyName,
   })
 
-  const { data: subdepartments1 = [] } = useQuery({
-    queryKey: ['subdepartments', editCompanyName, overrides.department_override],
-    queryFn: () => organizationApi.getSubdepartments(editCompanyName!, overrides.department_override),
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments', editCompanyName, overrides.department_override],
+    queryFn: () => organizationApi.getDepartments(editCompanyName!, overrides.department_override),
     enabled: !!editCompanyName && !!overrides.department_override,
   })
 
-  const { data: subdepartments2 = [] } = useQuery({
-    queryKey: ['subdepartments', editCompanyName, overrides.department_override_2],
-    queryFn: () => organizationApi.getSubdepartments(editCompanyName!, overrides.department_override_2),
+  const { data: departments2 = [] } = useQuery({
+    queryKey: ['departments', editCompanyName, overrides.department_override_2],
+    queryFn: () => organizationApi.getDepartments(editCompanyName!, overrides.department_override_2),
     enabled: !!editCompanyName && !!overrides.department_override_2,
   })
 
@@ -948,10 +948,10 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                 <p className="text-[11px] text-muted-foreground">Leave empty to use the supplier mapping default</p>
               </div>
 
-              {/* Subdivision Override */}
+              {/* Department Override (L1) */}
               <div className="space-y-1">
-                <Label className="text-xs">Subdivision Override</Label>
-                {departments.length > 0 ? (
+                <Label className="text-xs">Department Override</Label>
+                {brands.length > 0 ? (
                   <Select
                     value={overrides.department_override || '__default__'}
                     onValueChange={(v) => setOverrides((o) => ({
@@ -965,8 +965,8 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__default__">-- Use Mapping Default --</SelectItem>
-                      {departments.map((d) => (
-                        <SelectItem key={d} value={d}>{d}</SelectItem>
+                      {brands.filter(Boolean).map((b) => (
+                        <SelectItem key={b} value={b}>{b}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -980,9 +980,10 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                 <p className="text-[11px] text-muted-foreground">Leave empty to use the supplier mapping default</p>
               </div>
 
-              {subdepartments1.length > 0 && (
+              {/* Subdivision Override (L2) */}
+              {departments.length > 0 && (
               <div className="space-y-1">
-                <Label className="text-xs">Detail Override</Label>
+                <Label className="text-xs">Subdivision Override</Label>
                 <Select
                   value={overrides.subdepartment_override || '__default__'}
                   onValueChange={(v) => setOverrides((o) => ({
@@ -996,8 +997,8 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__default__">-- Use Mapping Default --</SelectItem>
-                    {subdepartments1.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    {departments.filter(Boolean).map((d) => (
+                      <SelectItem key={d} value={d}>{d}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1031,12 +1032,12 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                 </div>
               </div>
 
-              {/* Subdivision (split — conditional) */}
+              {/* Department (split — conditional) */}
               {splitDept && (
                 <>
                   <div className="space-y-1">
-                    <Label className="text-xs">Subdivision (split)</Label>
-                    {departments.length > 0 ? (
+                    <Label className="text-xs">Department (split)</Label>
+                    {brands.length > 0 ? (
                       <Select
                         value={overrides.department_override_2 || '__default__'}
                         onValueChange={(v) => setOverrides((o) => ({
@@ -1050,8 +1051,8 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__default__">-- Select --</SelectItem>
-                          {departments.map((d) => (
-                            <SelectItem key={d} value={d}>{d}</SelectItem>
+                          {brands.filter(Boolean).map((b) => (
+                            <SelectItem key={b} value={b}>{b}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -1059,13 +1060,13 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                       <Input
                         value={overrides.department_override_2}
                         onChange={(e) => setOverrides((o) => ({ ...o, department_override_2: e.target.value }))}
-                        placeholder="Subdivision..."
+                        placeholder="Department..."
                       />
                     )}
                   </div>
-                  {subdepartments2.length > 0 && (
+                  {departments2.length > 0 && (
                   <div className="space-y-1">
-                    <Label className="text-xs">Detail (split)</Label>
+                    <Label className="text-xs">Subdivision (split)</Label>
                     <Select
                       value={overrides.subdepartment_override_2 || '__default__'}
                       onValueChange={(v) => setOverrides((o) => ({
@@ -1079,8 +1080,8 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__default__">-- Select --</SelectItem>
-                        {subdepartments2.map((s) => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        {departments2.filter(Boolean).map((d) => (
+                          <SelectItem key={d} value={d}>{d}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
