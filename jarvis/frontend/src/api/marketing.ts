@@ -135,6 +135,9 @@ export const marketingApi = {
   linkTransactionInvoice: (txId: number, invoiceId: number | null) =>
     api.put<{ success: boolean }>(`${BASE}/budget-transactions/${txId}/link-invoice`, { invoice_id: invoiceId }),
 
+  linkTransactionFile: (txId: number, fileId: number | null) =>
+    api.put<{ success: boolean }>(`${BASE}/budget-transactions/${txId}/link-file`, { file_id: fileId }),
+
   updateTransaction: (txId: number, data: { amount?: number; transaction_date?: string; description?: string }) =>
     api.put<{ success: boolean }>(`${BASE}/budget-transactions/${txId}`, data),
 

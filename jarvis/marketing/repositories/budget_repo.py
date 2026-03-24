@@ -16,7 +16,11 @@ class BudgetRepository(BaseRepository):
                    COALESCE(
                        (SELECT SUM(CASE WHEN t.direction = 'debit' THEN t.amount ELSE -t.amount END)
                         FROM mkt_budget_transactions t WHERE t.budget_line_id = bl.id), 0
-                   ) as computed_spent
+                   ) as computed_spent,
+                   COALESCE(
+                       (SELECT SUM(t.amount)
+                        FROM mkt_budget_transactions t WHERE t.budget_line_id = bl.id AND t.direction = 'credit'), 0
+                   ) as credit_amount
             FROM mkt_budget_lines bl
             WHERE bl.project_id = %s
             ORDER BY bl.created_at
@@ -98,10 +102,13 @@ class BudgetRepository(BaseRepository):
         return self.query_all('''
             SELECT t.*, u.name as recorded_by_name,
                    i.supplier as invoice_supplier,
-                   i.invoice_number as invoice_number_ref
+                   i.invoice_number as invoice_number_ref,
+                   f.file_name as file_name_ref,
+                   f.storage_uri as file_storage_uri
             FROM mkt_budget_transactions t
             JOIN users u ON u.id = t.recorded_by
             LEFT JOIN invoices i ON i.id = t.invoice_id
+            LEFT JOIN mkt_project_files f ON f.id = t.file_id
             WHERE t.budget_line_id = %s
             ORDER BY t.transaction_date DESC, t.created_at DESC
         ''', (budget_line_id,))
@@ -131,13 +138,14 @@ class BudgetRepository(BaseRepository):
             cursor.execute('''
                 INSERT INTO mkt_budget_transactions
                     (budget_line_id, amount, direction, source, reference_id, invoice_id,
-                     transaction_date, description, recorded_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     file_id, transaction_date, description, recorded_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             ''', (
                 budget_line_id, amount,
                 kwargs.get('direction', 'debit'), kwargs.get('source', 'manual'),
                 kwargs.get('reference_id'), kwargs.get('invoice_id'),
+                kwargs.get('file_id'),
                 transaction_date, kwargs.get('description'), recorded_by,
             ))
             tx_id = cursor.fetchone()['id']
@@ -176,6 +184,12 @@ class BudgetRepository(BaseRepository):
         return self.execute('''
             UPDATE mkt_budget_transactions SET invoice_id = %s WHERE id = %s
         ''', (invoice_id, tx_id)) > 0
+
+    def link_transaction_file(self, tx_id, file_id):
+        """Set or clear file_id on a transaction."""
+        return self.execute('''
+            UPDATE mkt_budget_transactions SET file_id = %s WHERE id = %s
+        ''', (file_id, tx_id)) > 0
 
     def delete_transaction(self, tx_id):
         def _work(cursor):

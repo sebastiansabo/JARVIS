@@ -18,59 +18,81 @@ class ProfileRepository(BaseRepository):
 
     @staticmethod
     def _build_org_filter(cursor, user_id: int) -> tuple[str, list]:
-        """Build SQL clause restricting invoices to departments the user
-        is responsible for in the organigram.
+        """Build SQL clause for invoices visible via L0-L5 organigram.
 
-        Returns (sql_fragment, params) to AND into a WHERE clause.
-        For C-Level (L0 company responsable): all departments for that company.
-        For node-level: only the specific department name.
+        Returns (sql_fragment, params) — an OR clause for department scope.
+        L0 (company_responsables): all invoices for that company.
+        L1+ (structure_node responsable): invoices matching the node name
+             or any descendant node name (department/subdepartment).
         If user has NO organigram assignments, returns empty (no filter).
         """
-        # Get structure_node assignments with ancestor paths
+        # L0: company responsable assignments
         cursor.execute('''
-            WITH user_nodes AS (
-                SELECT sn.id, sn.name, sn.level, sn.company_id, c.company
-                FROM structure_node_members snm
-                JOIN structure_nodes sn ON snm.node_id = sn.id
-                JOIN companies c ON sn.company_id = c.id
-                WHERE snm.user_id = %s
-            )
-            SELECT name, level, company FROM user_nodes
-        ''', (user_id,))
-        node_rows = cursor.fetchall()
-
-        # Get L0 company responsable assignments
-        cursor.execute('''
-            SELECT c.company FROM company_responsables cr
+            SELECT c.id as company_id, c.company
+            FROM company_responsables cr
             JOIN companies c ON cr.company_id = c.id
             WHERE cr.user_id = %s
         ''', (user_id,))
         l0_rows = cursor.fetchall()
+        l0_company_ids = {r['company_id'] for r in l0_rows}
+
+        # L1-L5: nodes where user is responsable + all descendants (recursive)
+        cursor.execute('''
+            WITH RECURSIVE resp_nodes AS (
+                SELECT sn.id, sn.name, sn.level, sn.company_id
+                FROM structure_node_members snm
+                JOIN structure_nodes sn ON snm.node_id = sn.id
+                WHERE snm.user_id = %s AND snm.role = 'responsable'
+            ),
+            descendants AS (
+                SELECT id, name, level, company_id FROM resp_nodes
+                UNION ALL
+                SELECT sn.id, sn.name, sn.level, sn.company_id
+                FROM structure_nodes sn
+                JOIN descendants d ON sn.parent_id = d.id
+            )
+            SELECT DISTINCT d.name, d.level, d.company_id, c.company
+            FROM descendants d
+            JOIN companies c ON d.company_id = c.id
+        ''', (user_id,))
+        node_rows = cursor.fetchall()
 
         if not node_rows and not l0_rows:
-            return '', []  # No organigram assignments — no filter
+            return '', []
 
         conditions = []
         params = []
 
-        # L0 companies: all departments for that company
+        # L0: all invoices for the company
         l0_companies = {r['company'] for r in l0_rows}
         for comp in l0_companies:
             conditions.append('a.company = %s')
             params.append(comp)
 
-        # Node-level: specific departments (L2 nodes = department name)
+        # Group descendant node names by company (skip L0-covered companies)
+        from collections import defaultdict
+        company_names = defaultdict(set)
         for nr in node_rows:
-            if nr['company'] in l0_companies:
-                continue  # Already covered by L0
-            # Match by company + department name
-            conditions.append('(a.company = %s AND LOWER(a.department) = LOWER(%s))')
-            params.extend([nr['company'], nr['name']])
+            if nr['company_id'] in l0_company_ids:
+                continue
+            company_names[nr['company']].add(nr['name'].lower())
+
+        for comp, names in company_names.items():
+            name_list = list(names)
+            placeholders = ','.join(['%s'] * len(name_list))
+            # Match department OR subdepartment against any node in the tree
+            conditions.append(
+                f'(a.company = %s AND (LOWER(a.department) IN ({placeholders})'
+                f' OR LOWER(COALESCE(a.subdepartment, \'\')) IN ({placeholders})))'
+            )
+            params.append(comp)
+            params.extend(name_list)
+            params.extend(name_list)
 
         if not conditions:
             return '', []
 
-        return ' AND (' + ' OR '.join(conditions) + ')', params
+        return '(' + ' OR '.join(conditions) + ')', params
 
     # ------------------------------------------------------------------
     # User invoices (by responsible + organigram departments)
@@ -87,7 +109,7 @@ class ProfileRepository(BaseRepository):
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
-        """Get invoices where the user is responsible AND department matches organigram."""
+        """Get invoices where user is responsible OR in their L0-L5 org scope."""
         def _work(cursor):
             cursor.execute('SELECT id FROM users WHERE LOWER(email) = LOWER(%s)', [user_email])
             user_row = cursor.fetchone()
@@ -97,7 +119,19 @@ class ProfileRepository(BaseRepository):
             user_id = user_row['id']
             org_sql, org_params = self._build_org_filter(cursor, user_id)
 
-            query = '''
+            # Responsible clause
+            resp = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
+            resp_params = [user_id, user_id]
+
+            # Combine: responsible OR org scope
+            if org_sql:
+                scope = f'({resp} OR {org_sql})'
+                scope_params = resp_params + org_params
+            else:
+                scope = resp
+                scope_params = resp_params
+
+            query = f'''
                 SELECT
                     i.id, i.invoice_number, i.invoice_date, i.invoice_value,
                     i.currency, i.supplier, i.status, i.drive_link, i.comment,
@@ -106,15 +140,10 @@ class ProfileRepository(BaseRepository):
                     a.allocation_percent, a.allocation_value
                 FROM invoices i
                 INNER JOIN allocations a ON i.id = a.invoice_id
-                WHERE (a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))
+                WHERE {scope}
                 AND i.deleted_at IS NULL
             '''
-            params = [user_id, user_id]
-
-            # Apply organigram department filter
-            if org_sql:
-                query += org_sql
-                params.extend(org_params)
+            params = list(scope_params)
 
             if status:
                 query += ' AND i.status = %s'
@@ -149,7 +178,7 @@ class ProfileRepository(BaseRepository):
         search: Optional[str] = None,
         department: Optional[str] = None,
     ) -> int:
-        """Count invoices where the user is responsible AND department matches organigram."""
+        """Count invoices where user is responsible OR in their L0-L5 org scope."""
         def _work(cursor):
             cursor.execute('SELECT id FROM users WHERE LOWER(email) = LOWER(%s)', [user_email])
             user_row = cursor.fetchone()
@@ -159,18 +188,24 @@ class ProfileRepository(BaseRepository):
             user_id = user_row['id']
             org_sql, org_params = self._build_org_filter(cursor, user_id)
 
-            query = '''
+            resp = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
+            resp_params = [user_id, user_id]
+
+            if org_sql:
+                scope = f'({resp} OR {org_sql})'
+                scope_params = resp_params + org_params
+            else:
+                scope = resp
+                scope_params = resp_params
+
+            query = f'''
                 SELECT COUNT(DISTINCT i.id) as count
                 FROM invoices i
                 INNER JOIN allocations a ON i.id = a.invoice_id
-                WHERE (a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))
+                WHERE {scope}
                 AND i.deleted_at IS NULL
             '''
-            params = [user_id, user_id]
-
-            if org_sql:
-                query += org_sql
-                params.extend(org_params)
+            params = list(scope_params)
 
             if status:
                 query += ' AND i.status = %s'
@@ -195,7 +230,7 @@ class ProfileRepository(BaseRepository):
         return self.execute_many(_work)
 
     def get_user_invoices_summary(self, user_email: str) -> dict:
-        """Get invoice summary stats filtered by organigram departments."""
+        """Get invoice summary stats: responsible OR L0-L5 org scope."""
         def _work(cursor):
             cursor.execute('SELECT id FROM users WHERE LOWER(email) = LOWER(%s)', [user_email])
             user_row = cursor.fetchone()
@@ -205,19 +240,21 @@ class ProfileRepository(BaseRepository):
             user_id = user_row['id']
             org_sql, org_params = self._build_org_filter(cursor, user_id)
 
-            base_where = '''
-                (a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))
-            '''
-            base_params = [user_id, user_id]
+            resp = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
+            resp_params = [user_id, user_id]
+
             if org_sql:
-                base_where += org_sql
-                base_params.extend(org_params)
+                base_where = f'({resp} OR {org_sql})'
+                base_params = resp_params + org_params
+            else:
+                base_where = resp
+                base_params = list(resp_params)
 
             cursor.execute(f'''
                 SELECT i.status, COUNT(DISTINCT i.id) as count
                 FROM invoices i
                 INNER JOIN allocations a ON i.id = a.invoice_id
-                WHERE {base_where}
+                WHERE {base_where} AND i.deleted_at IS NULL
                 GROUP BY i.status
             ''', base_params)
 
@@ -229,7 +266,7 @@ class ProfileRepository(BaseRepository):
                 SELECT COUNT(DISTINCT i.id) as total, COALESCE(SUM(DISTINCT i.invoice_value), 0) as total_value
                 FROM invoices i
                 INNER JOIN allocations a ON i.id = a.invoice_id
-                WHERE {base_where}
+                WHERE {base_where} AND i.deleted_at IS NULL
             ''', base_params)
 
             totals = cursor.fetchone()

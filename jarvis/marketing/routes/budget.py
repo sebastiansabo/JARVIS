@@ -155,6 +155,20 @@ def api_link_transaction_invoice(tx_id):
     return jsonify({'success': False, 'error': 'Transaction not found'}), 404
 
 
+@marketing_bp.route('/api/budget-transactions/<int:tx_id>/link-file', methods=['PUT'])
+@login_required
+@mkt_permission_required('budget', 'edit')
+def api_link_transaction_file(tx_id):
+    """Link or unlink a project file to a budget transaction."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+    file_id = data.get('file_id')  # null to unlink
+    if _budget_repo.link_transaction_file(tx_id, file_id):
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Transaction not found'}), 404
+
+
 @marketing_bp.route('/api/budget-transactions/<int:tx_id>', methods=['PUT'])
 @login_required
 @mkt_permission_required('budget', 'edit')

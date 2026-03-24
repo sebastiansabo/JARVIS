@@ -20,7 +20,8 @@ class ProjectRepository(BaseRepository):
                    (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id)
                      + (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id)
                      as total_spent,
-                   (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id) as event_cost
+                   (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id) as event_cost,
+                   (SELECT COALESCE(SUM(t.amount), 0) FROM mkt_budget_transactions t JOIN mkt_budget_lines bl ON bl.id = t.budget_line_id WHERE bl.project_id = p.id AND t.direction = 'credit') as total_credits
             FROM mkt_projects p
             JOIN companies c ON c.id = p.company_id
             LEFT JOIN brands b ON b.id = p.brand_id
@@ -93,7 +94,8 @@ class ProjectRepository(BaseRepository):
                        (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id)
                          + (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id)
                          as total_spent,
-                       (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id) as event_cost
+                       (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id) as event_cost,
+                       (SELECT COALESCE(SUM(t.amount), 0) FROM mkt_budget_transactions t JOIN mkt_budget_lines bl ON bl.id = t.budget_line_id WHERE bl.project_id = p.id AND t.direction = 'credit') as total_credits
                 FROM mkt_projects p
                 JOIN companies c ON c.id = p.company_id
                 LEFT JOIN brands b ON b.id = p.brand_id

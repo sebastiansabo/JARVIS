@@ -145,6 +145,7 @@ export function OverviewTab({ project }: { project: MktProject }) {
   const budget = typeof project.total_budget === 'string' ? parseFloat(project.total_budget as string) : (project.total_budget ?? 0)
   const spent = typeof project.total_spent === 'string' ? parseFloat(project.total_spent as string) : (project.total_spent ?? 0)
   const eventCost = typeof project.event_cost === 'string' ? parseFloat(project.event_cost as string) : (project.event_cost ?? 0)
+  const totalCredits = typeof project.total_credits === 'string' ? parseFloat(project.total_credits as string) : (project.total_credits ?? 0)
   const budgetSpent = spent - eventCost
   const burn = budget ? Math.round((spent / budget) * 100) : 0
 
@@ -206,7 +207,7 @@ export function OverviewTab({ project }: { project: MktProject }) {
         {/* Budget summary */}
         <div className="rounded-lg border p-4 space-y-3">
           <h3 className="font-semibold text-sm">Budget</h3>
-          <div className={`grid gap-4 text-center ${eventCost > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
+          <div className={`grid gap-4 text-center ${(eventCost > 0 && totalCredits > 0) ? 'grid-cols-5' : (eventCost > 0 || totalCredits > 0) ? 'grid-cols-4' : 'grid-cols-3'}`}>
             <div>
               <div className="text-lg font-bold">{fmt(budget, project.currency)}</div>
               <div className="text-xs text-muted-foreground">Total Budget</div>
@@ -215,6 +216,12 @@ export function OverviewTab({ project }: { project: MktProject }) {
               <div className="text-lg font-bold">{fmt(eventCost > 0 ? budgetSpent : spent, project.currency)}</div>
               <div className="text-xs text-muted-foreground">{eventCost > 0 ? 'Budget Spent' : 'Spent'}</div>
             </div>
+            {totalCredits > 0 && (
+              <div>
+                <div className="text-lg font-bold text-green-600">{fmt(totalCredits, project.currency)}</div>
+                <div className="text-xs text-muted-foreground">Credits / Sponsorships</div>
+              </div>
+            )}
             {eventCost > 0 && (
               <div>
                 <div className="text-lg font-bold">{fmt(eventCost, project.currency)}</div>

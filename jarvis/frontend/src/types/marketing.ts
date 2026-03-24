@@ -37,6 +37,7 @@ export interface MktProject {
   // Computed
   total_spent?: number
   event_cost?: number
+  total_credits?: number
   // Nested (from detail endpoint)
   members?: MktMember[]
   budget_lines?: MktBudgetLine[]
@@ -87,6 +88,7 @@ export interface MktBudgetLine {
   updated_at: string | null
   // Computed
   computed_spent?: number
+  credit_amount?: number
 }
 
 export interface MktBudgetTransaction {
@@ -99,6 +101,9 @@ export interface MktBudgetTransaction {
   invoice_id: number | null
   invoice_supplier: string | null
   invoice_number_ref: string | null
+  file_id: number | null
+  file_name_ref: string | null
+  file_storage_uri: string | null
   transaction_date: string
   description: string | null
   recorded_by: number

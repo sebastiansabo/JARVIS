@@ -104,6 +104,7 @@ def create_schema_marketing(conn, cursor):
             source TEXT NOT NULL DEFAULT 'manual',
             reference_id TEXT,
             invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+            file_id INTEGER REFERENCES mkt_project_files(id) ON DELETE SET NULL,
             transaction_date DATE NOT NULL,
             description TEXT,
             recorded_by INTEGER NOT NULL REFERENCES users(id),
@@ -113,6 +114,13 @@ def create_schema_marketing(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_budget_tx_line ON mkt_budget_transactions(budget_line_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_budget_tx_date ON mkt_budget_transactions(transaction_date)')
+    # Migration: add file_id column if missing
+    cursor.execute("""
+        DO $$ BEGIN
+            ALTER TABLE mkt_budget_transactions ADD COLUMN file_id INTEGER REFERENCES mkt_project_files(id) ON DELETE SET NULL;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$
+    """)
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS mkt_kpi_definitions (

@@ -11,11 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn, useDebounce } from '@/lib/utils'
 import {
   Plus, Trash2, DollarSign, Link2, Search, Pencil, Check,
-  ChevronDown, ChevronRight, CalendarDays, ArrowDownLeft,
+  ChevronDown, ChevronRight, CalendarDays, ArrowDownLeft, FileText, ExternalLink,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { settingsApi } from '@/api/settings'
-import type { MktBudgetLine, InvoiceSearchResult, MktProjectEvent } from '@/types/marketing'
+import type { MktBudgetLine, InvoiceSearchResult, MktProjectEvent, MktFile } from '@/types/marketing'
 import { fmt, fmtDate } from './utils'
 
 // ── Inline Editable Cell ──
@@ -84,6 +84,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
   const [linkedEventIds, setLinkedEventIds] = useState<Set<number>>(new Set())
   const [confirmEvent, setConfirmEvent] = useState<MktProjectEvent | null>(null)
   const [confirmAmount, setConfirmAmount] = useState('')
+  const [linkFileTxId, setLinkFileTxId] = useState<number | null>(null)
 
   const { data } = useQuery({
     queryKey: ['mkt-budget-lines', projectId],
@@ -236,6 +237,22 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
     },
   })
 
+  const { data: projectFilesData } = useQuery({
+    queryKey: ['mkt-project-files', projectId],
+    queryFn: () => marketingApi.getFiles(projectId),
+    enabled: linkFileTxId !== null,
+  })
+  const projectFiles: MktFile[] = projectFilesData?.files ?? []
+
+  const linkTxFileMut = useMutation({
+    mutationFn: ({ txId, fileId }: { txId: number; fileId: number | null }) =>
+      marketingApi.linkTransactionFile(txId, fileId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mkt-transactions', expandedLineId] })
+      setLinkFileTxId(null)
+    },
+  })
+
   const { data: invoiceSearchData, isLoading: isSearching } = useQuery({
     queryKey: ['mkt-invoice-search', debouncedInvoiceSearch],
     queryFn: () => marketingApi.searchInvoices(debouncedInvoiceSearch),
@@ -369,7 +386,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                     </TableRow>
                     {isExpanded && (
                       <TableRow key={`${l.id}-expand`} className="bg-muted/30 hover:bg-muted/30">
-                        <TableCell colSpan={9} className="p-0">
+                        <TableCell colSpan={10} className="p-0">
                           <div className="px-6 py-3 space-y-3">
                             <div className="flex items-center justify-between">
                               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Transactions</span>
@@ -405,6 +422,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                                       <TableHead className="text-xs">Source</TableHead>
                                       <TableHead className="text-xs">Description</TableHead>
                                       <TableHead className="text-xs">Invoice</TableHead>
+                                      <TableHead className="text-xs">Document</TableHead>
                                       <TableHead className="text-xs">Recorded By</TableHead>
                                       <TableHead className="w-14" />
                                     </TableRow>
@@ -445,6 +463,30 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                                             <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5 text-muted-foreground"
                                               onClick={(e) => { e.stopPropagation(); setLinkTxId(tx.id); setTxInvoiceSearch('') }}>
                                               <Link2 className="h-3 w-3 mr-0.5" /> Link
+                                            </Button>
+                                          )}
+                                        </TableCell>
+                                        <TableCell className="text-xs">
+                                          {tx.file_id ? (
+                                            <div className="flex items-center gap-1">
+                                              <Badge variant="secondary" className="text-[10px] gap-0.5 max-w-[160px]">
+                                                <a href={tx.file_storage_uri ?? '#'} target="_blank" rel="noopener noreferrer" className="truncate hover:underline flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                                                  <FileText className="h-2.5 w-2.5 shrink-0" />
+                                                  <span className="truncate">{tx.file_name_ref || 'File'}</span>
+                                                  <ExternalLink className="h-2 w-2 shrink-0 opacity-60" />
+                                                </a>
+                                                <button
+                                                  className="ml-0.5 hover:text-destructive"
+                                                  onClick={(e) => { e.stopPropagation(); linkTxFileMut.mutate({ txId: tx.id, fileId: null }) }}
+                                                >
+                                                  <Trash2 className="h-2.5 w-2.5" />
+                                                </button>
+                                              </Badge>
+                                            </div>
+                                          ) : (
+                                            <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5 text-muted-foreground"
+                                              onClick={(e) => { e.stopPropagation(); setLinkFileTxId(tx.id) }}>
+                                              <FileText className="h-3 w-3 mr-0.5" /> Link
                                             </Button>
                                           )}
                                         </TableCell>
@@ -797,6 +839,61 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
           </div>
           <div className="flex justify-end">
             <Button variant="outline" size="sm" onClick={() => setEventLineId(null)}>Done</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Link Document to Transaction Dialog */}
+      <Dialog open={!!linkFileTxId} onOpenChange={(open) => { if (!open) setLinkFileTxId(null) }}>
+        <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Link Document to Transaction</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {projectFiles.length === 0 ? (
+              <div className="text-center text-sm text-muted-foreground py-6">
+                <FileText className="mx-auto h-6 w-6 mb-2 opacity-40" />
+                <div>No files in this project.</div>
+                <div className="text-xs mt-1">Upload files in the Files tab first.</div>
+              </div>
+            ) : (
+              <div className="rounded-md border max-h-72 overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      <TableHead className="text-xs">File Name</TableHead>
+                      <TableHead className="text-xs">Type</TableHead>
+                      <TableHead className="text-xs">Uploaded By</TableHead>
+                      <TableHead className="w-16" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {projectFiles.map((f) => (
+                      <TableRow key={f.id}>
+                        <TableCell className="text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <span className="truncate max-w-[200px]">{f.file_name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{f.file_type || '—'}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{f.uploaded_by_name || '—'}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" className="h-6 text-xs px-2"
+                            disabled={linkTxFileMut.isPending}
+                            onClick={() => linkTxFileMut.mutate({ txId: linkFileTxId!, fileId: f.id })}>
+                            Link
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => setLinkFileTxId(null)}>Cancel</Button>
           </div>
         </DialogContent>
       </Dialog>
