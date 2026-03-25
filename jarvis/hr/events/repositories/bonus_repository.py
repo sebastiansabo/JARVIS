@@ -225,34 +225,46 @@ class BonusRepository(BaseRepository):
     # ============== Bonus Types ==============
 
     def get_all_types(self, active_only: bool = True) -> List[Dict[str, Any]]:
-        """Get all bonus types."""
-        query = 'SELECT * FROM hr.bonus_types'
+        """Get all bonus types, including restricted employee name."""
+        query = '''
+            SELECT bt.*, u.name AS restricted_to_user_name
+            FROM hr.bonus_types bt
+            LEFT JOIN public.users u ON u.id = bt.restricted_to_user_id
+        '''
         if active_only:
-            query += ' WHERE is_active = TRUE'
-        query += ' ORDER BY name'
+            query += ' WHERE bt.is_active = TRUE'
+        query += ' ORDER BY bt.name'
         return self.query_all(query)
 
     def get_type_by_id(self, bonus_type_id: int) -> Optional[Dict[str, Any]]:
         """Get a single bonus type by ID."""
-        return self.query_one('SELECT * FROM hr.bonus_types WHERE id = %s', (bonus_type_id,))
+        return self.query_one('''
+            SELECT bt.*, u.name AS restricted_to_user_name
+            FROM hr.bonus_types bt
+            LEFT JOIN public.users u ON u.id = bt.restricted_to_user_id
+            WHERE bt.id = %s
+        ''', (bonus_type_id,))
 
-    def create_type(self, name: str, amount: float, days_per_amount: int = 1, description: str = None) -> int:
+    def create_type(self, name: str, amount: float, days_per_amount: int = 1,
+                    description: str = None, restricted_to_user_id: int = None) -> int:
         """Create a new bonus type. Returns the new bonus type ID."""
         result = self.execute('''
-            INSERT INTO hr.bonus_types (name, amount, days_per_amount, description)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO hr.bonus_types (name, amount, days_per_amount, description, restricted_to_user_id)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING id
-        ''', (name, amount, days_per_amount, description), returning=True)
+        ''', (name, amount, days_per_amount, description, restricted_to_user_id), returning=True)
         return result['id']
 
     def update_type(self, bonus_type_id: int, name: str, amount: float,
-                    days_per_amount: int = 1, description: str = None, is_active: bool = True) -> bool:
+                    days_per_amount: int = 1, description: str = None, is_active: bool = True,
+                    restricted_to_user_id: int = None) -> bool:
         """Update a bonus type."""
         self.execute('''
             UPDATE hr.bonus_types
-            SET name = %s, amount = %s, days_per_amount = %s, description = %s, is_active = %s
+            SET name = %s, amount = %s, days_per_amount = %s, description = %s,
+                is_active = %s, restricted_to_user_id = %s
             WHERE id = %s
-        ''', (name, amount, days_per_amount, description, is_active, bonus_type_id))
+        ''', (name, amount, days_per_amount, description, is_active, restricted_to_user_id, bonus_type_id))
         return True
 
     def delete_type(self, bonus_type_id: int) -> bool:

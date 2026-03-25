@@ -626,30 +626,32 @@ def get_bonus_type(bonus_type_id):
     return dict_from_row(row)
 
 
-def save_bonus_type(name, amount, days_per_amount=1, description=None):
+def save_bonus_type(name, amount, days_per_amount=1, description=None, restricted_to_user_id=None):
     """Create a new bonus type."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
-        INSERT INTO hr.bonus_types (name, amount, days_per_amount, description)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO hr.bonus_types (name, amount, days_per_amount, description, restricted_to_user_id)
+        VALUES (%s, %s, %s, %s, %s)
         RETURNING id
-    ''', (name, amount, days_per_amount, description))
+    ''', (name, amount, days_per_amount, description, restricted_to_user_id))
     bonus_type_id = cursor.fetchone()['id']
     conn.commit()
     release_db(conn)
     return bonus_type_id
 
 
-def update_bonus_type(bonus_type_id, name, amount, days_per_amount=1, description=None, is_active=True):
+def update_bonus_type(bonus_type_id, name, amount, days_per_amount=1, description=None,
+                      is_active=True, restricted_to_user_id=None):
     """Update a bonus type."""
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
         UPDATE hr.bonus_types
-        SET name = %s, amount = %s, days_per_amount = %s, description = %s, is_active = %s
+        SET name = %s, amount = %s, days_per_amount = %s, description = %s,
+            is_active = %s, restricted_to_user_id = %s
         WHERE id = %s
-    ''', (name, amount, days_per_amount, description, is_active, bonus_type_id))
+    ''', (name, amount, days_per_amount, description, is_active, restricted_to_user_id, bonus_type_id))
     conn.commit()
     release_db(conn)
 

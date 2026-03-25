@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Pencil, Save } from 'lucide-react'
+import { Plus, Trash2, Pencil, Save, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -170,6 +171,7 @@ function BonusTypesSection() {
                 <TableHead>Amount (RON)</TableHead>
                 <TableHead>Days/Amount</TableHead>
                 <TableHead>Description</TableHead>
+                <TableHead>Restricted To</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-24">Actions</TableHead>
               </TableRow>
@@ -182,6 +184,11 @@ function BonusTypesSection() {
                   <TableCell>{bt.days_per_amount || '-'}</TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground text-sm">
                     {bt.description || '-'}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {bt.restricted_to_user_name
+                      ? <span className="font-medium text-orange-600">{bt.restricted_to_user_name}</span>
+                      : <span className="text-muted-foreground">—</span>}
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={bt.is_active ? 'active' : 'archived'} />
@@ -233,7 +240,16 @@ function BonusTypeFormDialog({ open, bonusType, onClose, onSave, isPending }: {
   open: boolean; bonusType: BonusType | null; onClose: () => void
   onSave: (data: Partial<BonusType>) => void; isPending: boolean
 }) {
-  const [form, setForm] = useState({ name: '', amount: '', days_per_amount: '', description: '' })
+  const [form, setForm] = useState({
+    name: '', amount: '', days_per_amount: '', description: '',
+    restricted_to_user_id: null as number | null,
+  })
+
+  const { data: employees = [] } = useQuery({
+    queryKey: ['hr', 'employees'],
+    queryFn: () => hrApi.getEmployees(true),
+    staleTime: 5 * 60_000,
+  })
 
   const resetForm = () => {
     if (bonusType) {
@@ -242,9 +258,10 @@ function BonusTypeFormDialog({ open, bonusType, onClose, onSave, isPending }: {
         amount: String(bonusType.amount),
         days_per_amount: bonusType.days_per_amount ? String(bonusType.days_per_amount) : '',
         description: bonusType.description || '',
+        restricted_to_user_id: bonusType.restricted_to_user_id ?? null,
       })
     } else {
-      setForm({ name: '', amount: '', days_per_amount: '', description: '' })
+      setForm({ name: '', amount: '', days_per_amount: '', description: '', restricted_to_user_id: null })
     }
   }
 
@@ -277,6 +294,30 @@ function BonusTypeFormDialog({ open, bonusType, onClose, onSave, isPending }: {
             <Label>Description</Label>
             <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
+          <div className="grid gap-2">
+            <Label>Restrict to Employee <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <div className="flex gap-2">
+              <Select
+                value={form.restricted_to_user_id ? String(form.restricted_to_user_id) : '__none__'}
+                onValueChange={(v) => setForm({ ...form, restricted_to_user_id: v === '__none__' ? null : Number(v) })}
+              >
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="No restriction" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No restriction</SelectItem>
+                  {employees.map((e) => (
+                    <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.restricted_to_user_id && (
+                <Button variant="ghost" size="sm" onClick={() => setForm({ ...form, restricted_to_user_id: null })}>
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -289,6 +330,7 @@ function BonusTypeFormDialog({ open, bonusType, onClose, onSave, isPending }: {
                 days_per_amount: form.days_per_amount ? Number(form.days_per_amount) : undefined,
                 description: form.description || undefined,
                 is_active: bonusType?.is_active ?? true,
+                restricted_to_user_id: form.restricted_to_user_id ?? null,
               })
             }
           >

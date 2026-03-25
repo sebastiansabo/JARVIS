@@ -93,6 +93,12 @@ def create_schema_hr(conn, cursor):
                           AND column_name = 'days_per_amount') THEN
                 ALTER TABLE hr.bonus_types ADD COLUMN days_per_amount NUMERIC(5,2) DEFAULT 1;
             END IF;
+            -- Add restricted_to_user_id column if not exists
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_schema = 'hr' AND table_name = 'bonus_types'
+                          AND column_name = 'restricted_to_user_id') THEN
+                ALTER TABLE hr.bonus_types ADD COLUMN restricted_to_user_id INTEGER REFERENCES public.users(id) ON DELETE SET NULL;
+            END IF;
         END $$
     ''')
 
