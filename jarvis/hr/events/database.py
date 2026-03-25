@@ -601,14 +601,18 @@ def get_bonuses_by_event(year=None, month=None):
 # ============== HR Bonus Types ==============
 
 def get_all_bonus_types(active_only=True):
-    """Get all bonus types."""
+    """Get all bonus types, including restricted employee name."""
     conn = get_db()
     cursor = get_cursor(conn)
 
-    query = 'SELECT * FROM hr.bonus_types'
+    query = '''
+        SELECT bt.*, u.name AS restricted_to_user_name
+        FROM hr.bonus_types bt
+        LEFT JOIN public.users u ON u.id = bt.restricted_to_user_id
+    '''
     if active_only:
-        query += ' WHERE is_active = TRUE'
-    query += ' ORDER BY name'
+        query += ' WHERE bt.is_active = TRUE'
+    query += ' ORDER BY bt.name'
 
     cursor.execute(query)
     rows = cursor.fetchall()
@@ -620,7 +624,12 @@ def get_bonus_type(bonus_type_id):
     """Get a single bonus type by ID."""
     conn = get_db()
     cursor = get_cursor(conn)
-    cursor.execute('SELECT * FROM hr.bonus_types WHERE id = %s', (bonus_type_id,))
+    cursor.execute('''
+        SELECT bt.*, u.name AS restricted_to_user_name
+        FROM hr.bonus_types bt
+        LEFT JOIN public.users u ON u.id = bt.restricted_to_user_id
+        WHERE bt.id = %s
+    ''', (bonus_type_id,))
     row = cursor.fetchone()
     release_db(conn)
     return dict_from_row(row)
