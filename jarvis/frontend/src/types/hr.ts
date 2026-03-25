@@ -56,6 +56,7 @@ export interface BonusType {
 
 export interface HrSettings {
   hr_bonus_lock_day: number
+  hr_bonus_max_hours_per_day: number
 }
 
 export interface HrPermissions {

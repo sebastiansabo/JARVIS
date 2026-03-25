@@ -840,6 +840,14 @@ function BonusDialog({
     enabled: open,
   })
 
+  const { data: hrSettings } = useQuery({
+    queryKey: ['settings', 'hrSettings'],
+    queryFn: hrApi.getSettings,
+    staleTime: 10 * 60_000,
+    enabled: open,
+  })
+  const maxHoursPerDay = hrSettings?.hr_bonus_max_hours_per_day ?? 8
+
   const [employeeId, setEmployeeId] = useState('')
   const [eventId, setEventId] = useState('')
   const [year, setYear] = useState(String(new Date().getFullYear()))
@@ -912,7 +920,7 @@ function BonusDialog({
   const handleSave = () => {
     if (!employeeId || !eventId) return toast.error('Employee and event are required')
     if ((parseFloat(bonusDays) || 0) > maxBonusDays) return toast.error(`Bonus days cannot exceed ${maxBonusDays}`)
-    if ((parseFloat(hoursFree) || 0) > maxBonusDays * 8) return toast.error(`Hours free cannot exceed ${maxBonusDays * 8}`)
+    if ((parseFloat(hoursFree) || 0) > maxBonusDays * maxHoursPerDay) return toast.error(`Hours free cannot exceed ${maxBonusDays * maxHoursPerDay}`)
     // Auto-compute bonus_net from type + days, or use manual input
     const type = bonusTypes.find((t) => String(t.id) === bonusTypeId)
     const d = parseFloat(bonusDays) || 0
@@ -1029,14 +1037,14 @@ function BonusDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Hours Free{selectedEvent ? ` (max ${maxBonusDays * 8})` : ''}</Label>
+              <Label className="text-xs">Hours Free{selectedEvent ? ` (max ${maxBonusDays * maxHoursPerDay})` : ''}</Label>
               <Input
                 type="number"
                 min={0}
-                max={maxBonusDays * 8}
+                max={maxBonusDays * maxHoursPerDay}
                 value={hoursFree}
                 onChange={(e) => setHoursFree(e.target.value)}
-                className={cn((parseFloat(hoursFree) || 0) > maxBonusDays * 8 && 'border-destructive ring-destructive')}
+                className={cn((parseFloat(hoursFree) || 0) > maxBonusDays * maxHoursPerDay && 'border-destructive ring-destructive')}
               />
             </div>
           </div>

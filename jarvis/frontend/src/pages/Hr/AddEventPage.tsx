@@ -91,6 +91,13 @@ export default function AddEventPage() {
     staleTime: 5 * 60_000,
   })
 
+  const { data: hrSettings } = useQuery({
+    queryKey: ['settings', 'hrSettings'],
+    queryFn: hrApi.getSettings,
+    staleTime: 10 * 60_000,
+  })
+  const maxHoursPerDay = hrSettings?.hr_bonus_max_hours_per_day ?? 8
+
   // Employee search
   const handleSearch = async (q: string) => {
     setSearchQuery(q)
@@ -209,8 +216,8 @@ export default function AddEventPage() {
     if (rows.length === 0) return toast.error('Add at least one employee')
     if (rows.some((r) => (parseFloat(r.bonusDays) || 0) > maxBonusDays))
       return toast.error(`Bonus days cannot exceed ${maxBonusDays} (event duration)`)
-    if (rows.some((r) => (parseFloat(r.hoursFree) || 0) > maxBonusDays * 8))
-      return toast.error(`Hours free cannot exceed ${maxBonusDays * 8} (${maxBonusDays} days x 8h)`)
+    if (rows.some((r) => (parseFloat(r.hoursFree) || 0) > maxBonusDays * maxHoursPerDay))
+      return toast.error(`Hours free cannot exceed ${maxBonusDays * maxHoursPerDay} (${maxBonusDays} days x ${maxHoursPerDay}h)`)
     createEventMutation.mutate()
   }
 
@@ -386,8 +393,8 @@ export default function AddEventPage() {
                         <Input
                           type="number"
                           min={0}
-                          max={maxBonusDays * 8}
-                          className={cn('h-7 text-xs text-right', (parseFloat(row.hoursFree) || 0) > maxBonusDays * 8 && 'border-destructive ring-destructive')}
+                          max={maxBonusDays * maxHoursPerDay}
+                          className={cn('h-7 text-xs text-right', (parseFloat(row.hoursFree) || 0) > maxBonusDays * maxHoursPerDay && 'border-destructive ring-destructive')}
                           value={row.hoursFree}
                           onChange={(e) => updateRow(idx, { hoursFree: e.target.value })}
                         />

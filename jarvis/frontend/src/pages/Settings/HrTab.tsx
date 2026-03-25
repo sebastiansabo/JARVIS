@@ -33,10 +33,14 @@ function BonusLockSection() {
   })
 
   const [lockDay, setLockDay] = useState(15)
+  const [maxHoursPerDay, setMaxHoursPerDay] = useState(8)
 
   useEffect(() => {
     if (settings?.hr_bonus_lock_day) {
       setLockDay(settings.hr_bonus_lock_day)
+    }
+    if (settings?.hr_bonus_max_hours_per_day) {
+      setMaxHoursPerDay(settings.hr_bonus_max_hours_per_day)
     }
   }, [settings])
 
@@ -68,10 +72,21 @@ function BonusLockSection() {
               className="w-24"
             />
           </div>
+          <div className="grid gap-2">
+            <Label>Max Free Hours / Day</Label>
+            <Input
+              type="number"
+              min={1}
+              max={24}
+              value={maxHoursPerDay}
+              onChange={(e) => setMaxHoursPerDay(Number(e.target.value))}
+              className="w-24"
+            />
+          </div>
           <Button
             size="sm"
             disabled={saveMutation.isPending}
-            onClick={() => saveMutation.mutate({ hr_bonus_lock_day: lockDay } as HrSettings)}
+            onClick={() => saveMutation.mutate({ hr_bonus_lock_day: lockDay, hr_bonus_max_hours_per_day: maxHoursPerDay })}
           >
             <Save className="mr-1.5 h-4 w-4" />
             {saveMutation.isPending ? 'Saving...' : 'Save'}

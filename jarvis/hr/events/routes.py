@@ -472,11 +472,13 @@ def api_get_hr_settings():
 
     settings = NotificationRepository().get_settings()
     lock_day = settings.get('hr_bonus_lock_day')
+    max_hours = settings.get('hr_bonus_max_hours_per_day')
 
     return jsonify({
         'success': True,
         'settings': {
-            'hr_bonus_lock_day': int(lock_day) if lock_day else DEFAULT_LOCK_DAY
+            'hr_bonus_lock_day': int(lock_day) if lock_day else DEFAULT_LOCK_DAY,
+            'hr_bonus_max_hours_per_day': int(max_hours) if max_hours else 8
         }
     })
 
@@ -508,6 +510,13 @@ def api_update_hr_settings():
         if not isinstance(lock_day, int) or lock_day < 1 or lock_day > 28:
             return jsonify({'success': False, 'error': 'Lock day must be between 1 and 28'}), 400
         NotificationRepository().save_setting('hr_bonus_lock_day', str(lock_day))
+
+    # Update max hours per day if provided
+    if 'hr_bonus_max_hours_per_day' in data:
+        max_hours = data['hr_bonus_max_hours_per_day']
+        if not isinstance(max_hours, int) or max_hours < 1 or max_hours > 24:
+            return jsonify({'success': False, 'error': 'Max hours per day must be between 1 and 24'}), 400
+        NotificationRepository().save_setting('hr_bonus_max_hours_per_day', str(max_hours))
 
     return jsonify({'success': True})
 
