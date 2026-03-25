@@ -328,7 +328,8 @@ class HREventsService:
         name: str,
         amount: float,
         days_per_amount: int = 1,
-        description: str = None
+        description: str = None,
+        restricted_to_user_id: int = None
     ) -> ServiceResult:
         """Create a new bonus type."""
         try:
@@ -336,7 +337,8 @@ class HREventsService:
                 name=name,
                 amount=amount,
                 days_per_amount=days_per_amount,
-                description=description
+                description=description,
+                restricted_to_user_id=restricted_to_user_id
             )
             return ServiceResult(success=True, data={'id': bonus_type_id})
         except Exception as e:
@@ -349,7 +351,8 @@ class HREventsService:
         amount: float,
         days_per_amount: int = 1,
         description: str = None,
-        is_active: bool = True
+        is_active: bool = True,
+        restricted_to_user_id: int = None
     ) -> ServiceResult:
         """Update a bonus type."""
         try:
@@ -359,7 +362,8 @@ class HREventsService:
                 amount=amount,
                 days_per_amount=days_per_amount,
                 description=description,
-                is_active=is_active
+                is_active=is_active,
+                restricted_to_user_id=restricted_to_user_id
             )
             return ServiceResult(success=True)
         except Exception as e:

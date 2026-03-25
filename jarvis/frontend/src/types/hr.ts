@@ -52,6 +52,8 @@ export interface BonusType {
   days_per_amount: number | null
   description: string | null
   is_active: boolean
+  restricted_to_user_id: number | null
+  restricted_to_user_name: string | null
 }
 
 export interface HrSettings {

@@ -1250,7 +1250,8 @@ def api_create_bonus_type():
         name=data['name'],
         amount=data['amount'],
         days_per_amount=data.get('days_per_amount', 1),
-        description=data.get('description')
+        description=data.get('description'),
+        restricted_to_user_id=data.get('restricted_to_user_id') or None
     )
 
     return jsonify({'success': True, 'id': bonus_type_id})
@@ -1291,7 +1292,8 @@ def api_update_bonus_type(bonus_type_id):
         amount=data['amount'],
         days_per_amount=data.get('days_per_amount', 1),
         description=data.get('description'),
-        is_active=data.get('is_active', True)
+        is_active=data.get('is_active', True),
+        restricted_to_user_id=data.get('restricted_to_user_id') or None
     )
 
     return jsonify({'success': True})
