@@ -124,7 +124,8 @@ def get_all_hr_events():
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
-        SELECT e.*, u.name as created_by_name
+        SELECT e.*, u.name as created_by_name,
+               (SELECT COUNT(*) FROM hr.event_bonuses eb WHERE eb.event_id = e.id) AS participants_count
         FROM hr.events e
         LEFT JOIN public.users u ON e.created_by = u.id
         ORDER BY e.start_date DESC
