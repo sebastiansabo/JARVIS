@@ -321,10 +321,9 @@ def api_mobile_dashboard():
             # Pending approvals count for this user
             try:
                 cur.execute("""
-                    SELECT COUNT(*) FROM approval_step_decisions asd
-                    JOIN approval_request_steps ars ON ars.id = asd.step_id
-                    JOIN approval_requests ar ON ar.id = ars.request_id
-                    WHERE asd.approver_id = %s AND asd.decision = 'pending'
+                    SELECT COUNT(*) FROM approval_decisions ad
+                    JOIN approval_requests ar ON ar.id = ad.request_id
+                    WHERE ad.decided_by = %s AND ad.decision = 'pending'
                     AND ar.status = 'pending'
                 """, (user.id,))
                 row = cur.fetchone()
@@ -377,7 +376,8 @@ def api_mobile_dashboard():
             # Recent clients (last 5)
             try:
                 cur.execute("""
-                    SELECT id, name, cui, contact_person, phone, email, city, client_type as status
+                    SELECT id, display_name as name, company_name as cui,
+                           '' as contact_person, phone, email, city, client_type as status
                     FROM crm_clients WHERE is_blacklisted = false
                     ORDER BY created_at DESC LIMIT 5
                 """)
@@ -387,23 +387,33 @@ def api_mobile_dashboard():
                 conn.rollback()
                 result['recent_clients'] = []
 
-            # Upcoming events (next 3)
+            # Upcoming events (next 3) — try hr_events first, fall back gracefully
             try:
                 cur.execute("""
-                    SELECT he.id, he.title, he.event_date as date, he.end_date,
-                           he.location, he.event_type as type, he.status,
-                           (SELECT COUNT(*) FROM hr_event_participants WHERE event_id = he.id) as participants_count
-                    FROM hr_events he
-                    WHERE he.event_date >= CURRENT_DATE
-                    ORDER BY he.event_date ASC LIMIT 3
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables
+                        WHERE table_schema = 'public' AND table_name = 'hr_events'
+                    )
                 """)
-                cols = [d[0] for d in cur.description]
-                result['upcoming_events'] = [dict(zip(cols, r)) for r in cur.fetchall()]
-                for ev in result['upcoming_events']:
-                    if ev.get('date'):
-                        ev['date'] = str(ev['date'])
-                    if ev.get('end_date'):
-                        ev['end_date'] = str(ev['end_date'])
+                has_hr_events = cur.fetchone()[0]
+                if has_hr_events:
+                    cur.execute("""
+                        SELECT he.id, he.title, he.event_date as date, he.end_date,
+                               he.location, he.event_type as type, he.status,
+                               (SELECT COUNT(*) FROM hr_event_participants WHERE event_id = he.id) as participants_count
+                        FROM hr_events he
+                        WHERE he.event_date >= CURRENT_DATE
+                        ORDER BY he.event_date ASC LIMIT 3
+                    """)
+                    cols = [d[0] for d in cur.description]
+                    result['upcoming_events'] = [dict(zip(cols, r)) for r in cur.fetchall()]
+                    for ev in result['upcoming_events']:
+                        if ev.get('date'):
+                            ev['date'] = str(ev['date'])
+                        if ev.get('end_date'):
+                            ev['end_date'] = str(ev['end_date'])
+                else:
+                    result['upcoming_events'] = []
             except Exception:
                 conn.rollback()
                 result['upcoming_events'] = []
