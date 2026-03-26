@@ -249,8 +249,7 @@ def api_register_device():
         return jsonify({'error': 'push_token is required'}), 400
 
     user = _current_mobile_user()
-    conn = get_db_connection()
-    try:
+    with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO mobile_devices (user_id, push_token, platform, device_id, updated_at)
@@ -260,8 +259,6 @@ def api_register_device():
                     device_id = EXCLUDED.device_id, updated_at = NOW()
             """, (user.id, push_token, platform, device_id))
         conn.commit()
-    finally:
-        conn.close()
 
     return jsonify({'success': True})
 
@@ -276,14 +273,11 @@ def api_unregister_device():
     if not push_token:
         return jsonify({'error': 'push_token required'}), 400
 
-    conn = get_db_connection()
-    try:
+    with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM mobile_devices WHERE push_token = %s AND user_id = %s",
                         (push_token, _current_mobile_user().id))
         conn.commit()
-    finally:
-        conn.close()
 
     return jsonify({'success': True})
 
@@ -313,90 +307,88 @@ def api_mobile_dashboard():
             logger.warning('Dashboard query failed: %s — %s', sql[:80], e)
             return [], []
 
-    conn = get_db_connection()
-    try:
-        # Stat cards — invoices
-        rows, _ = _safe_query(conn, """
-            SELECT COUNT(*), COALESCE(SUM(invoice_value), 0),
-                   COUNT(*) FILTER (WHERE status = 'pending')
-            FROM invoices WHERE deleted_at IS NULL
-        """)
-        if rows:
-            result['stats']['invoices'] = rows[0][0]
-            result['stats']['revenue'] = float(rows[0][1])
-            result['stats']['pending_invoices'] = rows[0][2]
-
-        # Pending approvals
-        rows, _ = _safe_query(conn, """
-            SELECT COUNT(*) FROM approval_decisions ad
-            JOIN approval_requests ar ON ar.id = ad.request_id
-            WHERE ad.decided_by = %s AND ad.decision = 'pending' AND ar.status = 'pending'
-        """, (user.id,))
-        if rows:
-            result['stats']['pending_approvals'] = rows[0][0]
-
-        # Pending signatures
-        rows, _ = _safe_query(conn, """
-            SELECT COUNT(*) FROM document_signatures
-            WHERE signed_by = %s AND status = 'pending'
-        """, (user.id,))
-        if rows:
-            result['stats']['pending_signatures'] = rows[0][0]
-
-        # Client count
-        rows, _ = _safe_query(conn, "SELECT COUNT(*) FROM crm_clients WHERE is_blacklisted = false")
-        if rows:
-            result['stats']['clients'] = rows[0][0]
-
-        # Recent invoices (last 5)
-        rows, cols = _safe_query(conn, """
-            SELECT id, invoice_number, supplier, invoice_value as amount,
-                   currency, invoice_date as date, status
-            FROM invoices WHERE deleted_at IS NULL
-            ORDER BY created_at DESC LIMIT 5
-        """)
-        result['recent_invoices'] = [dict(zip(cols, r)) for r in rows]
-        for inv in result['recent_invoices']:
-            if inv.get('date'):
-                inv['date'] = str(inv['date'])
-            if inv.get('amount'):
-                inv['amount'] = float(inv['amount'])
-
-        # Recent clients (last 5)
-        rows, cols = _safe_query(conn, """
-            SELECT id, display_name as name, company_name as cui,
-                   '' as contact_person, phone, email, city, client_type as status
-            FROM crm_clients WHERE is_blacklisted = false
-            ORDER BY created_at DESC LIMIT 5
-        """)
-        result['recent_clients'] = [dict(zip(cols, r)) for r in rows]
-
-        # Upcoming events — check table exists first
-        rows, _ = _safe_query(conn, """
-            SELECT EXISTS (SELECT 1 FROM information_schema.tables
-                           WHERE table_schema = 'public' AND table_name = 'hr_events')
-        """)
-        if rows and rows[0][0]:
-            rows, cols = _safe_query(conn, """
-                SELECT he.id, he.title, he.event_date as date, he.end_date,
-                       he.location, he.event_type as type, he.status,
-                       (SELECT COUNT(*) FROM hr_event_participants WHERE event_id = he.id) as participants_count
-                FROM hr_events he WHERE he.event_date >= CURRENT_DATE
-                ORDER BY he.event_date ASC LIMIT 3
+    with get_db_connection() as conn:
+        try:
+            # Stat cards — invoices
+            rows, _ = _safe_query(conn, """
+                SELECT COUNT(*), COALESCE(SUM(invoice_value), 0),
+                       COUNT(*) FILTER (WHERE status = 'pending')
+                FROM invoices WHERE deleted_at IS NULL
             """)
-            result['upcoming_events'] = [dict(zip(cols, r)) for r in rows]
-            for ev in result['upcoming_events']:
-                if ev.get('date'):
-                    ev['date'] = str(ev['date'])
-                if ev.get('end_date'):
-                    ev['end_date'] = str(ev['end_date'])
+            if rows:
+                result['stats']['invoices'] = rows[0][0]
+                result['stats']['revenue'] = float(rows[0][1])
+                result['stats']['pending_invoices'] = rows[0][2]
 
-        return jsonify(result)
-    except Exception as e:
-        logger.error('Dashboard endpoint error: %s', e)
-        return jsonify({'error': 'An internal error occurred', 'success': False}), 500
-    finally:
-        conn.close()
+            # Pending approvals
+            rows, _ = _safe_query(conn, """
+                SELECT COUNT(*) FROM approval_decisions ad
+                JOIN approval_requests ar ON ar.id = ad.request_id
+                WHERE ad.decided_by = %s AND ad.decision = 'pending' AND ar.status = 'pending'
+            """, (user.id,))
+            if rows:
+                result['stats']['pending_approvals'] = rows[0][0]
+
+            # Pending signatures
+            rows, _ = _safe_query(conn, """
+                SELECT COUNT(*) FROM document_signatures
+                WHERE signed_by = %s AND status = 'pending'
+            """, (user.id,))
+            if rows:
+                result['stats']['pending_signatures'] = rows[0][0]
+
+            # Client count
+            rows, _ = _safe_query(conn, "SELECT COUNT(*) FROM crm_clients WHERE is_blacklisted = false")
+            if rows:
+                result['stats']['clients'] = rows[0][0]
+
+            # Recent invoices (last 5)
+            rows, cols = _safe_query(conn, """
+                SELECT id, invoice_number, supplier, invoice_value as amount,
+                       currency, invoice_date as date, status
+                FROM invoices WHERE deleted_at IS NULL
+                ORDER BY created_at DESC LIMIT 5
+            """)
+            result['recent_invoices'] = [dict(zip(cols, r)) for r in rows]
+            for inv in result['recent_invoices']:
+                if inv.get('date'):
+                    inv['date'] = str(inv['date'])
+                if inv.get('amount'):
+                    inv['amount'] = float(inv['amount'])
+
+            # Recent clients (last 5)
+            rows, cols = _safe_query(conn, """
+                SELECT id, display_name as name, company_name as cui,
+                       '' as contact_person, phone, email, city, client_type as status
+                FROM crm_clients WHERE is_blacklisted = false
+                ORDER BY created_at DESC LIMIT 5
+            """)
+            result['recent_clients'] = [dict(zip(cols, r)) for r in rows]
+
+            # Upcoming events — check table exists first
+            rows, _ = _safe_query(conn, """
+                SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                               WHERE table_schema = 'public' AND table_name = 'hr_events')
+            """)
+            if rows and rows[0][0]:
+                rows, cols = _safe_query(conn, """
+                    SELECT he.id, he.title, he.event_date as date, he.end_date,
+                           he.location, he.event_type as type, he.status,
+                           (SELECT COUNT(*) FROM hr_event_participants WHERE event_id = he.id) as participants_count
+                    FROM hr_events he WHERE he.event_date >= CURRENT_DATE
+                    ORDER BY he.event_date ASC LIMIT 3
+                """)
+                result['upcoming_events'] = [dict(zip(cols, r)) for r in rows]
+                for ev in result['upcoming_events']:
+                    if ev.get('date'):
+                        ev['date'] = str(ev['date'])
+                    if ev.get('end_date'):
+                        ev['end_date'] = str(ev['end_date'])
+
+            return jsonify(result)
+        except Exception as e:
+            logger.error('Dashboard endpoint error: %s', e)
+            return jsonify({'error': 'An internal error occurred', 'success': False}), 500
 
 
 # ============== WIDGET DATA (lightweight) ==============
@@ -424,8 +416,7 @@ def api_widget_data():
     next_event = None
     next_event_date = None
 
-    conn = get_db_connection()
-    try:
+    with get_db_connection() as conn:
         with conn.cursor() as cur:
             try:
                 cur.execute("""
@@ -451,8 +442,6 @@ def api_widget_data():
                     next_event_date = str(ev[1])
             except Exception:
                 conn.rollback()
-    finally:
-        conn.close()
 
     return jsonify({
         'checked_in': checked_in,
@@ -479,8 +468,7 @@ def api_nfc_punch():
         return jsonify({'error': 'nfc_tag_id is required'}), 400
 
     user = _current_mobile_user()
-    conn = get_db_connection()
-    try:
+    with get_db_connection() as conn:
         with conn.cursor() as cur:
             # Look up NFC tag → location_id
             cur.execute("""
@@ -491,8 +479,6 @@ def api_nfc_punch():
             tag = cur.fetchone()
             if not tag:
                 return jsonify({'error': 'Unknown NFC tag'}), 404
-    finally:
-        conn.close()
 
     # Reuse existing punch logic via QR token format "checkin:<location_id>"
     from core.checkin.service import CheckinService
@@ -511,8 +497,7 @@ def api_nfc_punch():
 def api_nfc_tags():
     """List registered NFC tag-location mappings."""
     from database import get_db_connection
-    conn = get_db_connection()
-    try:
+    with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT nt.id, nt.tag_id, cl.id as location_id, cl.name as location_name
@@ -524,8 +509,6 @@ def api_nfc_tags():
             cols = [d[0] for d in cur.description]
             tags = [dict(zip(cols, r)) for r in cur.fetchall()]
             return jsonify({'success': True, 'tags': tags})
-    finally:
-        conn.close()
 
 
 # ============== MOBILE SIGNATURE ==============
@@ -546,8 +529,7 @@ def api_sign_mobile():
         return jsonify({'error': 'signature_id and signature_image are required'}), 400
 
     user = _current_mobile_user()
-    conn = get_db_connection()
-    try:
+    with get_db_connection() as conn:
         with conn.cursor() as cur:
             # Verify ownership
             cur.execute("""
@@ -569,5 +551,3 @@ def api_sign_mobile():
             conn.commit()
 
             return jsonify({'success': True, 'message': 'Document signed successfully'})
-    finally:
-        conn.close()
