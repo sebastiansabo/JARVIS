@@ -279,6 +279,7 @@ function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkSo
       <div className="flex items-start justify-between">
         <div>
           <div className="font-medium text-sm">{k.kpi_name}</div>
+          {k.kpi_slug && <div className="font-mono text-[10px] text-muted-foreground/60 select-all">{k.kpi_slug}</div>}
           {formula && <div className="font-mono text-[10px] text-muted-foreground">{formula}</div>}
           {k.channel && <div className="text-xs text-muted-foreground">{k.channel}</div>}
         </div>
