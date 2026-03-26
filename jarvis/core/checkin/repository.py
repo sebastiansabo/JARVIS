@@ -84,7 +84,7 @@ class CheckinRepository(BaseRepository):
                    (biostar_event_id, biostar_user_id, event_datetime,
                     event_type, direction, device_name, raw_data)
                VALUES (%s, %s, %s, 'GPS_CHECKIN', %s, 'GPS Mobile', %s)
-               ON CONFLICT (biostar_event_id) DO NOTHING
+               ON CONFLICT (biostar_event_id, (event_datetime::date)) DO NOTHING
                RETURNING id, biostar_event_id""",
             (biostar_event_id, biostar_user_id, event_datetime,
              direction, raw_data_json),
