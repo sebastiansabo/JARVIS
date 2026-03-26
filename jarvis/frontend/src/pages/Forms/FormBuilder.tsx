@@ -1,22 +1,28 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { formsApi } from '@/api/forms'
+import { usersApi } from '@/api/users'
+import { approvalsApi } from '@/api/approvals'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   Plus, Trash2, GripVertical, ArrowLeft, Save, Eye, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { FormRenderer } from '@/components/forms/FormRenderer'
-import type { FormField, FieldType } from '@/types/forms'
+import type { FormField, FieldType, ApprovalConfig } from '@/types/forms'
 
 const FIELD_TYPES: { value: FieldType; label: string; group: string }[] = [
   { value: 'short_text', label: 'Short Text', group: 'Input' },
@@ -29,6 +35,7 @@ const FIELD_TYPES: { value: FieldType; label: string; group: string }[] = [
   { value: 'radio', label: 'Radio', group: 'Selection' },
   { value: 'checkbox', label: 'Checkbox', group: 'Selection' },
   { value: 'file_upload', label: 'File Upload', group: 'Special' },
+  { value: 'signature', label: 'Signature', group: 'Special' },
   { value: 'heading', label: 'Heading', group: 'Display' },
   { value: 'paragraph', label: 'Paragraph', group: 'Display' },
   { value: 'hidden', label: 'Hidden Field', group: 'Special' },
@@ -56,24 +63,41 @@ export default function FormBuilder() {
     track: ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'],
     defaults: {},
   })
+  const [approvalConfig, setApprovalConfig] = useState<ApprovalConfig>({})
 
-  // Load existing form
-  useQuery({
+  // Load existing form — use useEffect instead of onSuccess (RQ v5)
+  const { data: formData } = useQuery({
     queryKey: ['form', formId],
     queryFn: () => formsApi.getForm(Number(formId)),
     enabled: isEditing,
     staleTime: 0,
-    // @ts-ignore
-    onSuccess: (data: any) => {
-      setName(data.name || '')
-      setDescription(data.description || '')
-      setCompanyId(data.company_id)
-      setFields(data.schema || [])
-      setRequiresApproval(data.requires_approval || false)
-      setSettings(data.settings || {})
-      setUtmConfig(data.utm_config || { track: [], defaults: {} })
-    },
   })
+
+  useEffect(() => {
+    if (formData) {
+      setName(formData.name || '')
+      setDescription(formData.description || '')
+      setCompanyId(formData.company_id)
+      setFields(formData.schema || [])
+      setRequiresApproval(formData.requires_approval || false)
+      setSettings(formData.settings || {})
+      setUtmConfig(formData.utm_config || { track: [], defaults: {} })
+      setApprovalConfig(formData.approval_config || {})
+    }
+  }, [formData])
+
+  // Fetch company users for notification pickers
+  const { data: companyUsers = [] } = useQuery({
+    queryKey: ['company-users'],
+    queryFn: () => usersApi.getUsers(),
+  })
+
+  // Fetch approval flows
+  const { data: flowsData } = useQuery({
+    queryKey: ['approval-flows'],
+    queryFn: () => approvalsApi.getFlows(true),
+  })
+  const approvalFlows = flowsData?.flows || []
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -85,6 +109,7 @@ export default function FormBuilder() {
         settings,
         utm_config: utmConfig,
         requires_approval: requiresApproval,
+        approval_config: requiresApproval ? approvalConfig : {},
       }
       if (isEditing) {
         await formsApi.updateForm(Number(formId), payload)
@@ -136,6 +161,15 @@ export default function FormBuilder() {
     setSelectedFieldIdx(newIdx)
   }, [fields.length])
 
+  // Approval config helpers
+  const toggleUserInList = (key: 'notify_on_submit' | 'notify_on_approve' | 'notify_on_reject', userId: number) => {
+    setApprovalConfig((prev) => {
+      const list = prev[key] || []
+      const next = list.includes(userId) ? list.filter((id) => id !== userId) : [...list, userId]
+      return { ...prev, [key]: next }
+    })
+  }
+
   const selectedField = selectedFieldIdx !== null ? fields[selectedFieldIdx] : null
 
   return (
@@ -170,10 +204,6 @@ export default function FormBuilder() {
             <div>
               <Label>Description</Label>
               <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional description..." rows={2} />
-            </div>
-            <div className="flex items-center gap-3">
-              <Switch checked={requiresApproval} onCheckedChange={setRequiresApproval} />
-              <Label>Requires approval for submissions</Label>
             </div>
           </div>
 
@@ -221,7 +251,7 @@ export default function FormBuilder() {
           </div>
         </div>
 
-        {/* Right: Add Field + Field Properties */}
+        {/* Right: Add Field + Field Properties + Config Tabs */}
         <div className="space-y-4">
           {/* Add Field */}
           <div className="rounded-lg border p-4 space-y-2">
@@ -253,7 +283,7 @@ export default function FormBuilder() {
                   onChange={(e) => updateField(selectedFieldIdx, { label: e.target.value })}
                 />
               </div>
-              {!['heading', 'paragraph', 'hidden'].includes(selectedField.type) && (
+              {!['heading', 'paragraph', 'hidden', 'signature'].includes(selectedField.type) && (
                 <>
                   <div>
                     <Label className="text-xs">Placeholder</Label>
@@ -262,14 +292,16 @@ export default function FormBuilder() {
                       onChange={(e) => updateField(selectedFieldIdx, { placeholder: e.target.value })}
                     />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={selectedField.required || false}
-                      onCheckedChange={(v) => updateField(selectedFieldIdx, { required: v })}
-                    />
-                    <Label className="text-xs">Required</Label>
-                  </div>
                 </>
+              )}
+              {!['heading', 'paragraph'].includes(selectedField.type) && (
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={selectedField.required || false}
+                    onCheckedChange={(v) => updateField(selectedFieldIdx, { required: v })}
+                  />
+                  <Label className="text-xs">Required</Label>
+                </div>
               )}
               {/* Options for select types */}
               {['dropdown', 'radio', 'checkbox'].includes(selectedField.type) && (
@@ -312,36 +344,165 @@ export default function FormBuilder() {
             </div>
           )}
 
-          {/* UTM Config */}
-          <Tabs defaultValue="utm">
+          {/* Config Tabs */}
+          <Tabs defaultValue="approval">
             <TabsList className="w-full">
+              <TabsTrigger value="approval" className="flex-1 text-xs">Approval</TabsTrigger>
               <TabsTrigger value="utm" className="flex-1 text-xs">UTM</TabsTrigger>
               <TabsTrigger value="submission" className="flex-1 text-xs">Submission</TabsTrigger>
             </TabsList>
-            <TabsContent value="utm" className="rounded-lg border p-3 space-y-2 mt-2">
-              <Label className="text-xs">Tracked UTM Parameters</Label>
-              <div className="flex flex-wrap gap-1">
-                {['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].map((param) => {
-                  const isTracked = (utmConfig.track || []).includes(param)
-                  return (
-                    <Button
-                      key={param}
-                      variant={isTracked ? 'default' : 'outline'}
-                      size="sm"
-                      className="h-6 text-xs"
-                      onClick={() => {
-                        const track = isTracked
-                          ? (utmConfig.track || []).filter((t: string) => t !== param)
-                          : [...(utmConfig.track || []), param]
-                        setUtmConfig({ ...utmConfig, track })
-                      }}
+
+            {/* Approval Tab */}
+            <TabsContent value="approval" className="rounded-lg border p-3 space-y-3 mt-2">
+              <div className="flex items-center gap-2">
+                <Switch checked={requiresApproval} onCheckedChange={setRequiresApproval} />
+                <Label className="text-xs font-medium">Requires approval</Label>
+              </div>
+
+              {requiresApproval && (
+                <>
+                  {/* Approval Flow picker */}
+                  <div>
+                    <Label className="text-xs">Approval Flow</Label>
+                    <Select
+                      value={approvalConfig.flow_id ? String(approvalConfig.flow_id) : ''}
+                      onValueChange={(v) => setApprovalConfig({ ...approvalConfig, flow_id: v ? Number(v) : undefined })}
                     >
-                      {param.replace('utm_', '')}
-                    </Button>
-                  )
-                })}
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Auto-match by entity type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {approvalFlows.map((flow: any) => (
+                          <SelectItem key={flow.id} value={String(flow.id)}>
+                            {flow.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Notify on Submit */}
+                  <UserPickerSection
+                    label="Notify on submission"
+                    users={companyUsers}
+                    selectedIds={approvalConfig.notify_on_submit || []}
+                    onToggle={(id) => toggleUserInList('notify_on_submit', id)}
+                  />
+
+                  {/* Notify on Approve */}
+                  <UserPickerSection
+                    label="Notify on approval"
+                    users={companyUsers}
+                    selectedIds={approvalConfig.notify_on_approve || []}
+                    onToggle={(id) => toggleUserInList('notify_on_approve', id)}
+                  />
+
+                  {/* Notify on Reject */}
+                  <UserPickerSection
+                    label="Notify on rejection"
+                    users={companyUsers}
+                    selectedIds={approvalConfig.notify_on_reject || []}
+                    onToggle={(id) => toggleUserInList('notify_on_reject', id)}
+                  />
+
+                  {/* Notify respondent */}
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={approvalConfig.notify_respondent || false}
+                      onCheckedChange={(v) => setApprovalConfig({ ...approvalConfig, notify_respondent: v })}
+                    />
+                    <Label className="text-xs">Notify respondent by email</Label>
+                  </div>
+
+                  {/* Requires signature */}
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={approvalConfig.requires_signature || false}
+                      onCheckedChange={(v) => setApprovalConfig({ ...approvalConfig, requires_signature: v })}
+                    />
+                    <Label className="text-xs">Require signature on approval</Label>
+                  </div>
+
+                  {approvalConfig.requires_signature && (
+                    <div>
+                      <Label className="text-xs">Who signs</Label>
+                      <Select
+                        value={approvalConfig.signature_signer || 'respondent'}
+                        onValueChange={(v: 'respondent' | 'approver' | 'owner') =>
+                          setApprovalConfig({ ...approvalConfig, signature_signer: v })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="respondent">Respondent</SelectItem>
+                          <SelectItem value="approver">Approver</SelectItem>
+                          <SelectItem value="owner">Form Owner</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </>
+              )}
+            </TabsContent>
+
+            {/* UTM Tab */}
+            <TabsContent value="utm" className="rounded-lg border p-3 space-y-3 mt-2">
+              <div className="space-y-2">
+                <Label className="text-xs">Tracked UTM Parameters</Label>
+                <div className="flex flex-wrap gap-1">
+                  {['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].map((param) => {
+                    const isTracked = (utmConfig.track || []).includes(param)
+                    return (
+                      <Button
+                        key={param}
+                        variant={isTracked ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={() => {
+                          const track = isTracked
+                            ? (utmConfig.track || []).filter((t: string) => t !== param)
+                            : [...(utmConfig.track || []), param]
+                          setUtmConfig({ ...utmConfig, track })
+                        }}
+                      >
+                        {param.replace('utm_', '')}
+                      </Button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* UTM Defaults */}
+              <div className="space-y-2">
+                <Label className="text-xs">Default Values</Label>
+                <p className="text-xs text-muted-foreground">
+                  Set fallback values for UTM parameters when not provided in the URL.
+                </p>
+                {(utmConfig.track || []).map((param: string) => (
+                  <div key={param} className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-20 shrink-0 truncate">{param.replace('utm_', '')}</span>
+                    <Input
+                      value={(utmConfig.defaults || {})[param] || ''}
+                      onChange={(e) => {
+                        const defaults = { ...(utmConfig.defaults || {}) }
+                        if (e.target.value) {
+                          defaults[param] = e.target.value
+                        } else {
+                          delete defaults[param]
+                        }
+                        setUtmConfig({ ...utmConfig, defaults })
+                      }}
+                      placeholder="No default"
+                      className="h-7 text-xs"
+                    />
+                  </div>
+                ))}
               </div>
             </TabsContent>
+
+            {/* Submission Tab */}
             <TabsContent value="submission" className="rounded-lg border p-3 space-y-2 mt-2">
               <div>
                 <Label className="text-xs">Thank-you Message</Label>
@@ -382,6 +543,45 @@ export default function FormBuilder() {
           <FormRenderer schema={fields} onSubmit={(answers) => { toast.info('Preview submit: ' + JSON.stringify(answers).slice(0, 100)) }} />
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+/** Collapsible user picker with checkboxes */
+function UserPickerSection({ label, users, selectedIds, onToggle }: {
+  label: string
+  users: any[]
+  selectedIds: number[]
+  onToggle: (id: number) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        className="flex items-center justify-between w-full text-xs font-medium text-left"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span>{label} {selectedIds.length > 0 && `(${selectedIds.length})`}</span>
+        <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+      {expanded && (
+        <div className="max-h-32 overflow-y-auto rounded border p-1 space-y-0.5">
+          {users.map((u: any) => (
+            <label key={u.id} className="flex items-center gap-2 px-1.5 py-0.5 rounded hover:bg-accent/50 cursor-pointer">
+              <Checkbox
+                checked={selectedIds.includes(u.id)}
+                onCheckedChange={() => onToggle(u.id)}
+              />
+              <span className="text-xs truncate">{u.name || u.email}</span>
+            </label>
+          ))}
+          {users.length === 0 && (
+            <p className="text-xs text-muted-foreground px-1.5 py-1">No users found</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

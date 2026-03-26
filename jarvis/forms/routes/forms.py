@@ -16,7 +16,7 @@ _form_repo = FormRepository()
 _service = FormService()
 
 # Whitelist of fields allowed in update (no status, owner_id, or requires_approval)
-_UPDATABLE_FIELDS = {'name', 'description', 'schema', 'settings', 'utm_config', 'branding'}
+_UPDATABLE_FIELDS = {'name', 'description', 'schema', 'settings', 'utm_config', 'branding', 'approval_config'}
 
 
 def form_permission_required(entity, action):

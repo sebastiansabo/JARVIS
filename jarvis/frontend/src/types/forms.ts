@@ -16,6 +16,17 @@ export type FieldType =
   | 'heading'
   | 'paragraph'
   | 'hidden'
+  | 'signature'
+
+export interface ApprovalConfig {
+  flow_id?: number
+  notify_on_submit?: number[]
+  notify_on_approve?: number[]
+  notify_on_reject?: number[]
+  notify_respondent?: boolean
+  requires_signature?: boolean
+  signature_signer?: 'respondent' | 'approver' | 'owner'
+}
 
 export interface FormField {
   id: string
@@ -48,6 +59,7 @@ export interface Form {
   version: number
   published_at: string | null
   requires_approval: boolean
+  approval_config?: ApprovalConfig
   submission_count?: number
   created_at: string
   updated_at: string | null

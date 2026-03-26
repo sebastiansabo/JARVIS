@@ -32,7 +32,7 @@ class ServiceResult:
 FIELD_TYPES = {
     'short_text', 'long_text', 'email', 'phone', 'number',
     'dropdown', 'radio', 'checkbox', 'date', 'file_upload',
-    'heading', 'paragraph', 'hidden',
+    'heading', 'paragraph', 'hidden', 'signature',
 }
 # Display-only fields that don't produce answers
 DISPLAY_ONLY_TYPES = {'heading', 'paragraph'}
@@ -192,6 +192,9 @@ class FormService:
         # Trigger approval if required
         if form.get('requires_approval'):
             self._trigger_approval(form, submission_id, sanitized_respondent)
+        else:
+            # Even without approval, send submit notifications
+            self._send_submit_notifications(form, submission_id, sanitized_respondent)
 
         thank_you = settings.get('thank_you_message', 'Thank you for your submission!')
         redirect_url = settings.get('redirect_url')
@@ -310,7 +313,52 @@ class FormService:
                             if v not in options:
                                 return f'Field "{field.get("label", field_id)}" has an invalid selection'
 
+                # Signature — must be base64 image, max 500KB
+                if field_type == 'signature' and isinstance(value, str):
+                    if not value.startswith('data:image/'):
+                        return f'Field "{field.get("label", field_id)}" must be a valid signature image'
+                    if len(value) > 512_000:
+                        return f'Field "{field.get("label", field_id)}" signature is too large'
+
         return None
+
+    def _send_submit_notifications(self, form: Dict, submission_id: int,
+                                    respondent_info: Dict):
+        """Send email notifications for new submission (no approval flow)."""
+        try:
+            approval_config = form.get('approval_config', {})
+            notify_ids = approval_config.get('notify_on_submit', [])
+            if not notify_ids:
+                return
+
+            from core.services.notification_service import send_email, is_smtp_configured
+            if not is_smtp_configured():
+                return
+
+            # Resolve user emails
+            from database import get_db, get_cursor, release_db
+            conn = get_db()
+            try:
+                cur = get_cursor(conn)
+                placeholders = ','.join(['%s'] * len(notify_ids))
+                cur.execute(f'SELECT email, name FROM users WHERE id IN ({placeholders})', notify_ids)
+                users = cur.fetchall()
+            finally:
+                release_db(conn)
+
+            form_name = form.get('name', 'Unknown Form')
+            respondent = respondent_info.get('name') or respondent_info.get('email') or 'Anonymous'
+
+            for user in users:
+                subject = f'New submission: {form_name}'
+                html = f'''<h3>New Form Submission</h3>
+                <p><strong>Form:</strong> {form_name}</p>
+                <p><strong>Respondent:</strong> {respondent}</p>
+                <p><strong>Submission ID:</strong> {submission_id}</p>
+                <p><a href="/app/forms/{form["id"]}">View Submission</a></p>'''
+                send_email(user['email'], subject, html, skip_global_cc=True)
+        except Exception as e:
+            logger.error(f'Submit notification failed for submission {submission_id}: {e}')
 
     def _trigger_approval(self, form: Dict, submission_id: int,
                           respondent_info: Dict) -> ServiceResult:
@@ -319,12 +367,20 @@ class FormService:
             from core.approvals.engine import ApprovalEngine
             engine = ApprovalEngine()
 
+            approval_config = form.get('approval_config', {})
+
             context = {
                 'form_id': form['id'],
                 'form_name': form.get('name', ''),
                 'submission_id': submission_id,
                 'respondent_email': respondent_info.get('email', ''),
+                'respondent_name': respondent_info.get('name', ''),
                 'company_id': form.get('company_id'),
+                'notify_on_submit': approval_config.get('notify_on_submit', []),
+                'notify_on_approve': approval_config.get('notify_on_approve', []),
+                'notify_on_reject': approval_config.get('notify_on_reject', []),
+                'notify_respondent': approval_config.get('notify_respondent', False),
+                'requires_signature': approval_config.get('requires_signature', False),
             }
 
             requested_by = respondent_info.get('user_id', form.get('owner_id'))
@@ -340,6 +396,9 @@ class FormService:
             if request_id:
                 self.submission_repo.set_approval_request(submission_id, request_id)
                 self.submission_repo.update_status(submission_id, 'flagged')
+
+            # Send submit notifications
+            self._send_submit_notifications(form, submission_id, respondent_info)
 
             return ServiceResult(success=True, data={'approval_request_id': request_id})
         except Exception as e:

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,6 +9,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import type { FormField } from '@/types/forms'
+
+const SignatureCanvas = lazy(() => import('@/components/shared/SignatureCanvas'))
 
 interface FormRendererProps {
   schema: FormField[]
@@ -224,6 +226,29 @@ function FieldComponent({ field, value, error, onChange }: FieldProps) {
               onChange(file?.name ?? '')
             }}
           />
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+      )
+
+    case 'signature':
+      return (
+        <div className="space-y-1">
+          <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+          {value ? (
+            <div className="space-y-2">
+              <img src={value as string} alt="Signature" className="border rounded-lg max-h-24 bg-white" />
+              <Button type="button" variant="outline" size="sm" onClick={() => onChange('')}>
+                Clear & Re-sign
+              </Button>
+            </div>
+          ) : (
+            <Suspense fallback={<div className="h-[200px] border rounded-lg animate-pulse bg-muted" />}>
+              <SignatureCanvas
+                onSave={(base64) => onChange(base64)}
+                onClear={() => onChange('')}
+              />
+            </Suspense>
+          )}
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
       )

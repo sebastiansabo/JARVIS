@@ -32,6 +32,11 @@ def create_schema_forms(conn, cursor):
             ))
         )
     ''')
+    # Add approval_config column (idempotent)
+    cursor.execute('''
+        ALTER TABLE forms ADD COLUMN IF NOT EXISTS approval_config JSONB NOT NULL DEFAULT '{}'::jsonb
+    ''')
+
     cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_forms_slug ON forms(slug) WHERE deleted_at IS NULL')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_forms_company ON forms(company_id) WHERE deleted_at IS NULL')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_forms_status ON forms(status) WHERE deleted_at IS NULL')

@@ -175,6 +175,10 @@ def _on_submitted(payload):
                 ),
             )
 
+    # Form submission: email users in notify_on_submit from approval_config
+    if entity_type == 'form_submission':
+        _notify_form_submission_users(ctx, 'notify_on_submit', project_title, 'submitted')
+
 
 def _on_approved(payload):
     """Notify requester their request was approved. Update entity status."""
@@ -226,6 +230,19 @@ def _on_approved(payload):
             logger.info(f'Form submission #{entity_id} status set to approved via approval hook')
         except Exception as e:
             logger.error(f'Failed to update form_submission status on approval: {e}')
+        # Email users in notify_on_approve + optionally respondent
+        _notify_form_submission_users(ctx, 'notify_on_approve', project_title, 'approved')
+        if ctx.get('notify_respondent') and ctx.get('respondent_email'):
+            _send_approval_email(
+                ctx['respondent_email'],
+                f'Your submission has been approved: {project_title}',
+                _approval_email_base(
+                    'Submission Approved',
+                    f'<p>Your submission to <strong>{ctx.get("form_name", "")}</strong> has been approved.</p>',
+                    f'{_APP_BASE_URL}/f/{ctx.get("form_name", "")}',
+                    'View Form',
+                ),
+            )
 
     # Auto-update invoice status to 'approved'
     if entity_type == 'invoice' and entity_id:
@@ -331,6 +348,20 @@ def _on_rejected(payload):
             logger.info(f'Form submission #{entity_id} status set to rejected via approval hook')
         except Exception as e:
             logger.error(f'Failed to update form_submission status on rejection: {e}')
+        # Email users in notify_on_reject + optionally respondent
+        _notify_form_submission_users(ctx, 'notify_on_reject', project_title, 'rejected')
+        if ctx.get('notify_respondent') and ctx.get('respondent_email'):
+            note_text = f'<p><strong>Reason:</strong> {note}</p>' if note else ''
+            _send_approval_email(
+                ctx['respondent_email'],
+                f'Your submission has been rejected: {project_title}',
+                _approval_email_base(
+                    'Submission Rejected',
+                    f'<p>Your submission to <strong>{ctx.get("form_name", "")}</strong> has been rejected.</p>{note_text}',
+                    f'{_APP_BASE_URL}/f/{ctx.get("form_name", "")}',
+                    'View Form',
+                ),
+            )
 
     # Revert marketing project to draft on rejection
     if entity_type == 'mkt_project' and entity_id:
@@ -451,6 +482,50 @@ def _on_reminder(payload):
             link='/app/approvals',
             type='approval',
         )
+
+
+# ── Form submission notification helper ──
+
+def _notify_form_submission_users(ctx: dict, config_key: str, title: str, event: str):
+    """Email users listed in approval_config for form_submission events.
+
+    config_key: one of 'notify_on_submit', 'notify_on_approve', 'notify_on_reject'
+    event: 'submitted', 'approved', 'rejected' — used for email copy
+    """
+    user_ids = ctx.get(config_key, [])
+    if not user_ids:
+        return
+    try:
+        form_name = ctx.get('form_name', title)
+        link = f'/app/forms'
+        event_labels = {
+            'submitted': ('Trimitere nouă', 'a fost trimis', '#2563eb'),
+            'approved': ('Aprobat', 'a fost aprobat', '#16a34a'),
+            'rejected': ('Respins', 'a fost respins', '#dc2626'),
+        }
+        label, verb, color = event_labels.get(event, ('Notificare', '', '#555'))
+
+        for name, email in _get_users_email(user_ids):
+            body = f"""
+            <p>Buna ziua {name},</p>
+            <p>Formularul <strong>{form_name}</strong> {verb}.</p>
+            <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+              <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:bold;border:1px solid #ddd;width:40%;">Formular</td>
+                  <td style="padding:8px 12px;border:1px solid #ddd;">{form_name}</td></tr>
+              <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:bold;border:1px solid #ddd;">Respondent</td>
+                  <td style="padding:8px 12px;border:1px solid #ddd;">{ctx.get('respondent_name') or ctx.get('respondent_email') or 'Anonim'}</td></tr>
+              <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:bold;border:1px solid #ddd;">Status</td>
+                  <td style="padding:8px 12px;border:1px solid #ddd;color:{color};font-weight:bold;">{label}</td></tr>
+            </table>
+            """
+            _send_approval_email(
+                email,
+                f'{label}: {form_name}',
+                _approval_email_base(f'{label} — {form_name}', body,
+                    f'{_APP_BASE_URL}{link}', 'Vezi în JARVIS'),
+            )
+    except Exception as e:
+        logger.error(f'Failed to send form_submission {event} notifications: {e}')
 
 
 # ── Helpers ──
