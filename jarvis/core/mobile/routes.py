@@ -147,6 +147,12 @@ def _user_json(user) -> dict:
         'contract_work_date': getattr(user, 'contract_work_date', None),
         'cnp': getattr(user, 'cnp', None),
         'birthdate': getattr(user, 'birthdate', None),
+        'permissions': {
+            'is_admin': bool(getattr(user, 'can_access_settings', False)),
+            'is_hr_manager': bool(getattr(user, 'is_hr_manager', False)),
+            'can_access_marketing': bool(getattr(user, 'can_access_marketing', False)),
+            'can_access_hr': bool(getattr(user, 'can_access_hr', False)),
+        },
     }
 
 
