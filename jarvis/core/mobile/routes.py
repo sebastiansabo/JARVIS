@@ -294,131 +294,107 @@ def api_unregister_device():
 @jwt_required
 def api_mobile_dashboard():
     """Aggregated dashboard data for mobile home screen — single request."""
+    import logging
+    logger = logging.getLogger(__name__)
     from database import get_db_connection
     user = _current_mobile_user()
+    result = {'stats': {'invoices': 0, 'revenue': 0, 'pending_invoices': 0,
+                        'pending_approvals': 0, 'pending_signatures': 0, 'clients': 0},
+              'recent_invoices': [], 'recent_clients': [], 'upcoming_events': []}
+
+    def _safe_query(conn, sql, params=None):
+        """Run a query with savepoint so failures don't poison the transaction."""
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                return cur.fetchall(), [d[0] for d in cur.description] if cur.description else []
+        except Exception as e:
+            conn.rollback()
+            logger.warning('Dashboard query failed: %s — %s', sql[:80], e)
+            return [], []
+
     conn = get_db_connection()
     try:
-        with conn.cursor() as cur:
-            result = {'stats': {}}
+        # Stat cards — invoices
+        rows, _ = _safe_query(conn, """
+            SELECT COUNT(*), COALESCE(SUM(invoice_value), 0),
+                   COUNT(*) FILTER (WHERE status = 'pending')
+            FROM invoices WHERE deleted_at IS NULL
+        """)
+        if rows:
+            result['stats']['invoices'] = rows[0][0]
+            result['stats']['revenue'] = float(rows[0][1])
+            result['stats']['pending_invoices'] = rows[0][2]
 
-            # Stat cards — invoices
-            try:
-                cur.execute("""
-                    SELECT
-                        COUNT(*) as total_invoices,
-                        COALESCE(SUM(invoice_value), 0) as total_amount,
-                        COUNT(*) FILTER (WHERE status = 'pending') as pending_invoices
-                    FROM invoices WHERE deleted_at IS NULL
-                """)
-                inv = cur.fetchone()
-                result['stats']['invoices'] = inv[0] if inv else 0
-                result['stats']['revenue'] = float(inv[1]) if inv else 0
-                result['stats']['pending_invoices'] = inv[2] if inv else 0
-            except Exception:
-                conn.rollback()
-                result['stats'].update({'invoices': 0, 'revenue': 0, 'pending_invoices': 0})
+        # Pending approvals
+        rows, _ = _safe_query(conn, """
+            SELECT COUNT(*) FROM approval_decisions ad
+            JOIN approval_requests ar ON ar.id = ad.request_id
+            WHERE ad.decided_by = %s AND ad.decision = 'pending' AND ar.status = 'pending'
+        """, (user.id,))
+        if rows:
+            result['stats']['pending_approvals'] = rows[0][0]
 
-            # Pending approvals count for this user
-            try:
-                cur.execute("""
-                    SELECT COUNT(*) FROM approval_decisions ad
-                    JOIN approval_requests ar ON ar.id = ad.request_id
-                    WHERE ad.decided_by = %s AND ad.decision = 'pending'
-                    AND ar.status = 'pending'
-                """, (user.id,))
-                row = cur.fetchone()
-                result['stats']['pending_approvals'] = row[0] if row else 0
-            except Exception:
-                conn.rollback()
-                result['stats']['pending_approvals'] = 0
+        # Pending signatures
+        rows, _ = _safe_query(conn, """
+            SELECT COUNT(*) FROM document_signatures
+            WHERE signed_by = %s AND status = 'pending'
+        """, (user.id,))
+        if rows:
+            result['stats']['pending_signatures'] = rows[0][0]
 
-            # Pending signatures count
-            try:
-                cur.execute("""
-                    SELECT COUNT(*) FROM document_signatures
-                    WHERE signed_by = %s AND status = 'pending'
-                """, (user.id,))
-                row = cur.fetchone()
-                result['stats']['pending_signatures'] = row[0] if row else 0
-            except Exception:
-                conn.rollback()
-                result['stats']['pending_signatures'] = 0
+        # Client count
+        rows, _ = _safe_query(conn, "SELECT COUNT(*) FROM crm_clients WHERE is_blacklisted = false")
+        if rows:
+            result['stats']['clients'] = rows[0][0]
 
-            # Client count
-            try:
-                cur.execute("SELECT COUNT(*) FROM crm_clients WHERE is_blacklisted = false")
-                row = cur.fetchone()
-                result['stats']['clients'] = row[0] if row else 0
-            except Exception:
-                conn.rollback()
-                result['stats']['clients'] = 0
+        # Recent invoices (last 5)
+        rows, cols = _safe_query(conn, """
+            SELECT id, invoice_number, supplier, invoice_value as amount,
+                   currency, invoice_date as date, status
+            FROM invoices WHERE deleted_at IS NULL
+            ORDER BY created_at DESC LIMIT 5
+        """)
+        result['recent_invoices'] = [dict(zip(cols, r)) for r in rows]
+        for inv in result['recent_invoices']:
+            if inv.get('date'):
+                inv['date'] = str(inv['date'])
+            if inv.get('amount'):
+                inv['amount'] = float(inv['amount'])
 
-            # Recent invoices (last 5)
-            try:
-                cur.execute("""
-                    SELECT id, invoice_number, supplier,
-                           invoice_value as amount, currency, invoice_date as date,
-                           status
-                    FROM invoices WHERE deleted_at IS NULL
-                    ORDER BY created_at DESC LIMIT 5
-                """)
-                cols = [d[0] for d in cur.description]
-                result['recent_invoices'] = [dict(zip(cols, r)) for r in cur.fetchall()]
-                for inv in result['recent_invoices']:
-                    if inv.get('date'):
-                        inv['date'] = str(inv['date'])
-                    if inv.get('amount'):
-                        inv['amount'] = float(inv['amount'])
-            except Exception:
-                conn.rollback()
-                result['recent_invoices'] = []
+        # Recent clients (last 5)
+        rows, cols = _safe_query(conn, """
+            SELECT id, display_name as name, company_name as cui,
+                   '' as contact_person, phone, email, city, client_type as status
+            FROM crm_clients WHERE is_blacklisted = false
+            ORDER BY created_at DESC LIMIT 5
+        """)
+        result['recent_clients'] = [dict(zip(cols, r)) for r in rows]
 
-            # Recent clients (last 5)
-            try:
-                cur.execute("""
-                    SELECT id, display_name as name, company_name as cui,
-                           '' as contact_person, phone, email, city, client_type as status
-                    FROM crm_clients WHERE is_blacklisted = false
-                    ORDER BY created_at DESC LIMIT 5
-                """)
-                cols = [d[0] for d in cur.description]
-                result['recent_clients'] = [dict(zip(cols, r)) for r in cur.fetchall()]
-            except Exception:
-                conn.rollback()
-                result['recent_clients'] = []
+        # Upcoming events — check table exists first
+        rows, _ = _safe_query(conn, """
+            SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'public' AND table_name = 'hr_events')
+        """)
+        if rows and rows[0][0]:
+            rows, cols = _safe_query(conn, """
+                SELECT he.id, he.title, he.event_date as date, he.end_date,
+                       he.location, he.event_type as type, he.status,
+                       (SELECT COUNT(*) FROM hr_event_participants WHERE event_id = he.id) as participants_count
+                FROM hr_events he WHERE he.event_date >= CURRENT_DATE
+                ORDER BY he.event_date ASC LIMIT 3
+            """)
+            result['upcoming_events'] = [dict(zip(cols, r)) for r in rows]
+            for ev in result['upcoming_events']:
+                if ev.get('date'):
+                    ev['date'] = str(ev['date'])
+                if ev.get('end_date'):
+                    ev['end_date'] = str(ev['end_date'])
 
-            # Upcoming events (next 3) — try hr_events first, fall back gracefully
-            try:
-                cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM information_schema.tables
-                        WHERE table_schema = 'public' AND table_name = 'hr_events'
-                    )
-                """)
-                has_hr_events = cur.fetchone()[0]
-                if has_hr_events:
-                    cur.execute("""
-                        SELECT he.id, he.title, he.event_date as date, he.end_date,
-                               he.location, he.event_type as type, he.status,
-                               (SELECT COUNT(*) FROM hr_event_participants WHERE event_id = he.id) as participants_count
-                        FROM hr_events he
-                        WHERE he.event_date >= CURRENT_DATE
-                        ORDER BY he.event_date ASC LIMIT 3
-                    """)
-                    cols = [d[0] for d in cur.description]
-                    result['upcoming_events'] = [dict(zip(cols, r)) for r in cur.fetchall()]
-                    for ev in result['upcoming_events']:
-                        if ev.get('date'):
-                            ev['date'] = str(ev['date'])
-                        if ev.get('end_date'):
-                            ev['end_date'] = str(ev['end_date'])
-                else:
-                    result['upcoming_events'] = []
-            except Exception:
-                conn.rollback()
-                result['upcoming_events'] = []
-
-            return jsonify(result)
+        return jsonify(result)
+    except Exception as e:
+        logger.error('Dashboard endpoint error: %s', e)
+        return jsonify({'error': 'An internal error occurred', 'success': False}), 500
     finally:
         conn.close()
 
