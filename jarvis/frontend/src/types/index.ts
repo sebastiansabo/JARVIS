@@ -26,6 +26,7 @@ export interface User {
   can_access_marketing: boolean
   can_access_approvals: boolean
   can_access_dms: boolean
+  can_access_forms: boolean
   can_access_ai_agent: boolean
   can_edit_crm: boolean
   can_delete_crm: boolean

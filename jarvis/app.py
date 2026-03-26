@@ -196,6 +196,9 @@ def _register_blueprints(flask_app: Flask):
     from dms import dms_bp
     flask_app.register_blueprint(dms_bp, url_prefix='/dms')
 
+    from forms import forms_bp
+    flask_app.register_blueprint(forms_bp, url_prefix='/forms')
+
     from core.mobile import mobile_bp
     flask_app.register_blueprint(mobile_bp)
 

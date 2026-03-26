@@ -26,6 +26,10 @@ const BilantDetail = lazy(() => import('./pages/Accounting/Bilant/BilantDetail')
 const TemplateEditor = lazy(() => import('./pages/Accounting/Bilant/TemplateEditor'))
 const AiAgent = lazy(() => import('./pages/AiAgent/AiAgent'))
 const Crm = lazy(() => import('./pages/Crm'))
+const Forms = lazy(() => import('./pages/Forms'))
+const FormDetail = lazy(() => import('./pages/Forms/FormDetail'))
+const FormBuilder = lazy(() => import('./pages/Forms/FormBuilder'))
+const PublicForm = lazy(() => import('./pages/Public/PublicForm'))
 const Dms = lazy(() => import('./pages/Dms'))
 const DmsDocumentDetail = lazy(() => import('./pages/Dms/DocumentDetail'))
 const SuppliersPage = lazy(() => import('./pages/Dms/SuppliersPage'))
@@ -96,6 +100,9 @@ function V2Guard({ permKey, children }: { permKey: string; children: React.React
 export default function App() {
   return (
     <Routes>
+      {/* Public form — no auth, no layout */}
+      <Route path="/f/:slug" element={<SuspensePage><PublicForm /></SuspensePage>} />
+
       <Route path="/app" element={<Layout />}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<SuspensePage><Dashboard /></SuspensePage>} />
@@ -134,6 +141,12 @@ export default function App() {
         <Route path="marketing/simulator" element={<Guard flag="can_access_marketing"><V2Guard permKey="marketing.simulator.view"><SuspensePage><MarketingSimulator /></SuspensePage></V2Guard></Guard>} />
         <Route path="marketing/events/*" element={<Guard flag="can_access_marketing"><SuspensePage><MarketingEvents /></SuspensePage></Guard>} />
         <Route path="marketing/projects/:projectId" element={<Guard flag="can_access_marketing"><SuspensePage><ProjectDetail /></SuspensePage></Guard>} />
+
+        {/* Forms — requires can_access_forms */}
+        <Route path="forms" element={<Guard flag="can_access_forms"><SuspensePage><Forms /></SuspensePage></Guard>} />
+        <Route path="forms/:formId" element={<Guard flag="can_access_forms"><SuspensePage><FormDetail /></SuspensePage></Guard>} />
+        <Route path="forms/builder" element={<Guard flag="can_access_forms"><SuspensePage><FormBuilder /></SuspensePage></Guard>} />
+        <Route path="forms/builder/:formId" element={<Guard flag="can_access_forms"><SuspensePage><FormBuilder /></SuspensePage></Guard>} />
 
         {/* DMS — requires can_access_dms */}
         <Route path="dms" element={<Guard flag="can_access_dms"><SuspensePage><Dms /></SuspensePage></Guard>} />

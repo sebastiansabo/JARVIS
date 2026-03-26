@@ -123,6 +123,14 @@ def _on_submitted(payload):
     ctx = req.get('context_snapshot') or {}
     project_title = ctx.get('title') or f'{entity_type} #{entity_id}'
 
+    # Set form_submission status to pending_approval
+    if entity_type == 'form_submission' and entity_id:
+        try:
+            from forms.repositories import SubmissionRepository
+            SubmissionRepository().update_status(entity_id, 'pending_approval')
+        except Exception as e:
+            logger.error(f'Failed to set form_submission pending_approval on submit: {e}')
+
     # Ensure mkt_project status is pending_approval (covers resubmit path)
     if entity_type == 'mkt_project' and entity_id:
         try:
@@ -209,6 +217,15 @@ def _on_approved(payload):
                 _approval_email_base('Cererea a fost aprobată ✓', body,
                     f'{_APP_BASE_URL}{link}', 'Vezi proiectul'),
             )
+
+    # Auto-update form_submission status to 'approved'
+    if entity_type == 'form_submission' and entity_id:
+        try:
+            from forms.repositories import SubmissionRepository
+            SubmissionRepository().update_status(entity_id, 'approved')
+            logger.info(f'Form submission #{entity_id} status set to approved via approval hook')
+        except Exception as e:
+            logger.error(f'Failed to update form_submission status on approval: {e}')
 
     # Auto-update invoice status to 'approved'
     if entity_type == 'invoice' and entity_id:
@@ -305,6 +322,15 @@ def _on_rejected(payload):
                 _approval_email_base('Cererea a fost respinsă', body,
                     f'{_APP_BASE_URL}{link}', 'Vezi proiectul'),
             )
+
+    # Update form_submission status to rejected
+    if entity_type == 'form_submission' and entity_id:
+        try:
+            from forms.repositories import SubmissionRepository
+            SubmissionRepository().update_status(entity_id, 'rejected')
+            logger.info(f'Form submission #{entity_id} status set to rejected via approval hook')
+        except Exception as e:
+            logger.error(f'Failed to update form_submission status on rejection: {e}')
 
     # Revert marketing project to draft on rejection
     if entity_type == 'mkt_project' and entity_id:
@@ -436,6 +462,8 @@ def _entity_link(entity_type, entity_id):
         return f'/app/marketing/projects/{entity_id}'
     if entity_type == 'invoice':
         return '/app/accounting'
+    if entity_type == 'form_submission' and entity_id:
+        return '/app/forms'
     return '/app/approvals'
 
 
