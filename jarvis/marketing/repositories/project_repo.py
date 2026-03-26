@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from core.base_repository import BaseRepository
+from database import dict_from_row
 
 logger = logging.getLogger('jarvis.marketing.project_repo')
 
@@ -113,7 +114,7 @@ class ProjectRepository(BaseRepository):
             ''', params)
             total = cursor.fetchone()['total']
 
-            return {'projects': [dict(r) for r in rows], 'total': total}
+            return {'projects': [dict_from_row(r) for r in rows], 'total': total}
         return self.execute_many(_work)
 
     def create(self, name, company_id, owner_id, created_by, **kwargs):
