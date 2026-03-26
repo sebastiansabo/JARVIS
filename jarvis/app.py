@@ -417,6 +417,16 @@ def _register_routes(flask_app: Flask):
             return resp
         return redirect('/apps')
 
+    @flask_app.route('/f/<path:slug>')
+    def public_form_page(slug):
+        """Serve React SPA for public form pages — NO auth required."""
+        index_file = os.path.join(_react_dir, 'index.html')
+        if os.path.exists(index_file):
+            resp = send_from_directory(_react_dir, 'index.html')
+            resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            return resp
+        return 'Not found', 404
+
     @flask_app.route('/assets/<path:filename>')
     def react_assets(filename):
         return send_from_directory(os.path.join(_react_dir, 'assets'), filename)
