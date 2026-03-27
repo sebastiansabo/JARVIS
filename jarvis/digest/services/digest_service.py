@@ -187,6 +187,23 @@ class DigestService:
                     entity_type='digest_mention', entity_id=post['id'],
                     push_data=push_data,
                 )
+                notified_ids.update(targets)
+
+        # 4. Replies → notify the original post author
+        parent_id = post.get('parent_id')
+        if parent_id:
+            parent_post = _repo.get_post(parent_id)
+            if parent_post and parent_post['user_id'] != user_id:
+                reply_target = {parent_post['user_id']} - notified_ids
+                if reply_target:
+                    notify_with_push(
+                        list(reply_target),
+                        f'{author_name} replied to your post in #{channel_name}',
+                        message=content[:120],
+                        link=f'/app/digest?channel={channel_id}&parent={parent_id}',
+                        entity_type='digest_reply', entity_id=post['id'],
+                        push_data=push_data,
+                    )
 
     @staticmethod
     def _extract_mention_ids(content):

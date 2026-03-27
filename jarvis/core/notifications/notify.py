@@ -24,32 +24,50 @@ _repo = InAppNotificationRepository()
 
 def notify_user(user_id, title, message=None, link=None,
                 entity_type=None, entity_id=None, type='info'):
-    """Send an in-app notification to a single user."""
+    """Send an in-app notification + push to a single user."""
     try:
-        return _repo.create(
+        result = _repo.create(
             user_id=user_id, title=title, type=type,
             message=message, link=link,
             entity_type=entity_type, entity_id=entity_id,
         )
     except Exception as e:
         logger.error(f'Failed to create notification for user {user_id}: {e}')
-        return None
+        result = None
+
+    # Also send push notification
+    try:
+        from .push_service import send_push_to_users
+        send_push_to_users([user_id], title, message or title)
+    except Exception as e:
+        logger.debug(f'Push notification skipped for user {user_id}: {e}')
+
+    return result
 
 
 def notify_users(user_ids, title, message=None, link=None,
                  entity_type=None, entity_id=None, type='info'):
-    """Send the same in-app notification to multiple users."""
+    """Send the same in-app notification + push to multiple users."""
     if not user_ids:
         return []
     try:
-        return _repo.create_bulk(
+        results = _repo.create_bulk(
             user_ids=user_ids, title=title, type=type,
             message=message, link=link,
             entity_type=entity_type, entity_id=entity_id,
         )
     except Exception as e:
         logger.error(f'Failed to create notifications for {len(user_ids)} users: {e}')
-        return []
+        results = []
+
+    # Also send push notification
+    try:
+        from .push_service import send_push_to_users
+        send_push_to_users(list(user_ids), title, message or title)
+    except Exception as e:
+        logger.debug(f'Push notifications skipped for {len(user_ids)} users: {e}')
+
+    return results
 
 
 def notify_with_push(user_ids, title, message=None, link=None,
