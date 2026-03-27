@@ -748,6 +748,203 @@ function BioStarCronJobs() {
 }
 
 // ════════════════════════════════════════════════
+// Push Notifications (Firebase) Section
+// ════════════════════════════════════════════════
+
+const pushApi = {
+  getConfig: () => fetch('/push/api/config', { credentials: 'include' }).then(r => r.json()),
+  saveConfig: (data: { service_account_json: string }) =>
+    fetch('/push/api/config', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()),
+  testPush: () =>
+    fetch('/push/api/test', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' } }).then(r => r.json()),
+  getDevices: () =>
+    fetch('/push/api/devices', { credentials: 'include' }).then(r => r.json()),
+  deleteDevice: (id: number) =>
+    fetch(`/push/api/devices/${id}`, { method: 'DELETE', credentials: 'include' }).then(r => r.json()),
+}
+
+function PushNotificationSection() {
+  const qc = useQueryClient()
+  const [saJson, setSaJson] = useState('')
+  const [showUpload, setShowUpload] = useState(false)
+
+  const { data: configData } = useQuery({
+    queryKey: ['push-config'],
+    queryFn: pushApi.getConfig,
+  })
+  const config = configData?.data
+
+  const { data: devicesData } = useQuery({
+    queryKey: ['push-devices'],
+    queryFn: pushApi.getDevices,
+  })
+  const devices = devicesData?.data ?? []
+
+  const saveConfig = useMutation({
+    mutationFn: pushApi.saveConfig,
+    onSuccess: (res) => {
+      if (res.success) {
+        toast.success('Firebase config saved')
+        setSaJson('')
+        setShowUpload(false)
+        qc.invalidateQueries({ queryKey: ['push-config'] })
+      } else {
+        toast.error(res.error || 'Failed to save config')
+      }
+    },
+  })
+
+  const testPush = useMutation({
+    mutationFn: pushApi.testPush,
+    onSuccess: (res) => {
+      if (res.success) toast.success(res.message)
+      else toast.error(res.error || 'Test failed')
+    },
+  })
+
+  const deleteDevice = useMutation({
+    mutationFn: pushApi.deleteDevice,
+    onSuccess: () => {
+      toast.success('Device removed')
+      qc.invalidateQueries({ queryKey: ['push-devices'] })
+    },
+  })
+
+  const isConnected = config?.status === 'connected'
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            {isConnected ? <PlugZap className="h-5 w-5 text-green-500" /> : <Plug className="h-5 w-5 text-muted-foreground" />}
+            Push Notifications (Firebase)
+          </h2>
+          <p className="text-sm text-muted-foreground">Send push notifications to mobile devices via Firebase Cloud Messaging</p>
+        </div>
+        <StatusBadge status={config?.status || 'disconnected'} />
+      </div>
+
+      {/* Connection info */}
+      {isConnected && config?.project_id && (
+        <div className="rounded-lg border p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="h-4 w-4 text-green-500" />
+            <span className="text-sm font-medium">Connected</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <span className="text-muted-foreground">Project ID:</span>{' '}
+              <span className="font-mono">{config.project_id}</span>
+            </div>
+            {config.config?.client_email && (
+              <div>
+                <span className="text-muted-foreground">Service Account:</span>{' '}
+                <span className="font-mono text-xs">{config.config.client_email}</span>
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button size="sm" variant="outline" onClick={() => setShowUpload(true)}>
+              <RefreshCw className="h-3.5 w-3.5 mr-1" /> Update Credentials
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => testPush.mutate()} disabled={testPush.isPending}>
+              {testPush.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <PlugZap className="h-3.5 w-3.5 mr-1" />}
+              Send Test Push
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Setup / Upload form */}
+      {(!isConnected || showUpload) && (
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-yellow-500" />
+            <span className="text-sm font-medium">
+              {isConnected ? 'Update Service Account' : 'Setup Required'}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Paste your Firebase service account JSON below. Get it from{' '}
+            <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer"
+               className="text-primary underline">Firebase Console</a>
+            {' → Project Settings → Service Accounts → Generate New Private Key.'}
+          </p>
+          <textarea
+            value={saJson}
+            onChange={(e) => setSaJson(e.target.value)}
+            placeholder='{"type": "service_account", "project_id": "...", ...}'
+            rows={6}
+            className="w-full rounded-lg border bg-muted px-3 py-2 text-xs font-mono outline-none resize-y"
+          />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => saveConfig.mutate({ service_account_json: saJson })}
+              disabled={!saJson.trim() || saveConfig.isPending}
+            >
+              {saveConfig.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+              Save Configuration
+            </Button>
+            {showUpload && (
+              <Button size="sm" variant="ghost" onClick={() => { setShowUpload(false); setSaJson('') }}>
+                Cancel
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Error display */}
+      {config?.last_error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950 p-3 flex items-start gap-2">
+          <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+          <p className="text-sm text-red-700 dark:text-red-300">{config.last_error}</p>
+        </div>
+      )}
+
+      {/* Registered Devices */}
+      {devices.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold flex items-center gap-1.5">
+            <Users className="h-4 w-4" /> Registered Devices ({devices.length})
+          </h3>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>User</TableHead>
+                <TableHead>Platform</TableHead>
+                <TableHead>Token</TableHead>
+                <TableHead>Last Updated</TableHead>
+                <TableHead className="w-10"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {devices.map((d: any) => (
+                <TableRow key={d.id}>
+                  <TableCell className="font-medium">{d.user_name}</TableCell>
+                  <TableCell className="capitalize">{d.platform}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{d.token_preview}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {d.updated_at ? new Date(d.updated_at).toLocaleString() : '—'}
+                  </TableCell>
+                  <TableCell>
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => deleteDevice.mutate(d.id)}>
+                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════
 // Main Export
 // ════════════════════════════════════════════════
 
@@ -757,6 +954,8 @@ export default function ConnectorsTab() {
       <EFacturaSection />
       <hr className="border-border" />
       <BioStarConnectionSection />
+      <hr className="border-border" />
+      <PushNotificationSection />
     </div>
   )
 }

@@ -139,6 +139,9 @@ def _register_blueprints(flask_app: Flask):
     from core.connectors.biostar import biostar_bp
     flask_app.register_blueprint(biostar_bp)
 
+    from core.connectors.push import push_bp
+    flask_app.register_blueprint(push_bp)
+
     from core.checkin import checkin_bp
     flask_app.register_blueprint(checkin_bp)
 
