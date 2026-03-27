@@ -1,11 +1,15 @@
 """Digest module API routes."""
 
-from flask import request, jsonify
+import os
+import uuid
+from flask import request, jsonify, current_app
 from flask_login import login_required, current_user
+from werkzeug.utils import secure_filename
 from digest import digest_bp
 from digest.services.digest_service import DigestService
 
 _svc = DigestService()
+ALLOWED_IMAGE_EXT = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
 
 
 # ── Channels ─────────────────────────────────────────────
@@ -40,6 +44,7 @@ def create_channel():
         channel_type=data.get('type', 'general'),
         is_private=data.get('is_private', False),
         created_by=current_user.id,
+        targets=data.get('targets'),
     )
     return jsonify({'success': True, 'data': channel}), 201
 
@@ -58,6 +63,48 @@ def update_channel(channel_id):
 @login_required
 def delete_channel(channel_id):
     _svc.delete_channel(channel_id)
+    return jsonify({'success': True})
+
+
+# ── Channel Targets ──────────────────────────────────────
+
+@digest_bp.route('/api/digest/channels/<int:channel_id>/targets', methods=['GET'])
+@login_required
+def get_channel_targets(channel_id):
+    targets = _svc.get_channel_targets(channel_id)
+    return jsonify({'success': True, 'data': targets})
+
+
+@digest_bp.route('/api/digest/channels/<int:channel_id>/targets', methods=['PUT'])
+@login_required
+def update_channel_targets(channel_id):
+    data = request.get_json()
+    if not data or 'targets' not in data:
+        return jsonify({'success': False, 'error': 'targets required'}), 400
+    _svc.update_channel_targets(channel_id, data['targets'])
+    return jsonify({'success': True})
+
+
+# ── Channel Settings ─────────────────────────────────────
+
+@digest_bp.route('/api/digest/channels/<int:channel_id>/settings', methods=['PUT'])
+@login_required
+def update_channel_settings(channel_id):
+    if not _svc.is_admin_or_moderator(channel_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'No data'}), 400
+    channel = _svc.update_channel_settings(channel_id, data)
+    return jsonify({'success': True, 'data': channel})
+
+
+@digest_bp.route('/api/digest/channels/<int:channel_id>/clear-history', methods=['POST'])
+@login_required
+def clear_channel_history(channel_id):
+    if not _svc.is_admin_or_moderator(channel_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
+    _svc.clear_channel_history(channel_id)
     return jsonify({'success': True})
 
 
@@ -85,6 +132,30 @@ def add_member(channel_id):
 def remove_member(channel_id, user_id):
     _svc.remove_member(channel_id, user_id)
     return jsonify({'success': True})
+
+
+@digest_bp.route('/api/digest/channels/<int:channel_id>/members/<int:user_id>/role', methods=['PUT'])
+@login_required
+def set_member_role(channel_id, user_id):
+    if not _svc.is_admin_or_moderator(channel_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
+    data = request.get_json()
+    if not data or not data.get('role'):
+        return jsonify({'success': False, 'error': 'role required'}), 400
+    _svc.set_member_role(channel_id, user_id, data['role'])
+    return jsonify({'success': True})
+
+
+# ── User Search ──────────────────────────────────────────
+
+@digest_bp.route('/api/digest/users/search', methods=['GET'])
+@login_required
+def search_users():
+    q = request.args.get('q', '').strip()
+    if len(q) < 2:
+        return jsonify({'success': True, 'data': []})
+    users = _svc.search_users(q)
+    return jsonify({'success': True, 'data': users})
 
 
 # ── Posts ────────────────────────────────────────────────
@@ -221,3 +292,26 @@ def mark_read(channel_id):
 def unread_counts():
     counts = _svc.get_unread_counts(current_user.id)
     return jsonify({'success': True, 'data': counts})
+
+
+# ── File Upload ──────────────────────────────────────────
+
+@digest_bp.route('/api/digest/upload', methods=['POST'])
+@login_required
+def upload_image():
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'No file'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'success': False, 'error': 'No filename'}), 400
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in ALLOWED_IMAGE_EXT:
+        return jsonify({'success': False, 'error': 'Unsupported file type'}), 400
+    # Save to static/uploads/digest/
+    upload_dir = os.path.join(current_app.static_folder, 'uploads', 'digest')
+    os.makedirs(upload_dir, exist_ok=True)
+    filename = f'{uuid.uuid4().hex}{ext}'
+    filepath = os.path.join(upload_dir, filename)
+    f.save(filepath)
+    url = f'/static/uploads/digest/{filename}'
+    return jsonify({'success': True, 'data': {'url': url, 'filename': filename}})

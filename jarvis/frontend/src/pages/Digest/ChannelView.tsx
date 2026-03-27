@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Send, Reply, BarChart3, X, Users } from 'lucide-react'
+import { ArrowLeft, Send, Reply, BarChart3, X, Users, Settings, ImagePlus } from 'lucide-react'
 import { digestApi } from '@/api/digest'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,6 +9,7 @@ import type { DigestChannel, DigestPost } from '@/types/digest'
 import PostItem from './PostItem'
 import PollCreator from './PollCreator'
 import ThreadView from './ThreadView'
+import ChannelSettings from './ChannelSettings'
 
 interface Props {
   channel: DigestChannel
@@ -21,6 +22,10 @@ export default function ChannelView({ channel, onBack }: Props) {
   const [replyTo, setReplyTo] = useState<DigestPost | null>(null)
   const [showPollCreator, setShowPollCreator] = useState(false)
   const [activeThread, setActiveThread] = useState<DigestPost | null>(null)
+  const [showSettings, setShowSettings] = useState(false)
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const { data: postsRes, isLoading } = useQuery({
@@ -40,24 +45,38 @@ export default function ChannelView({ channel, onBack }: Props) {
   }, [posts.length, channel.id])
 
   const createPost = useMutation({
-    mutationFn: (data: { content: string; type?: string; reply_to_id?: number; poll?: { question: string; options: string[]; is_multiple_choice?: boolean } }) =>
-      digestApi.createPost(channel.id, data),
+    mutationFn: async (data: { content: string; type?: string; reply_to_id?: number; poll?: { question: string; options: string[]; is_multiple_choice?: boolean } }) => {
+      let finalContent = data.content
+      // Upload image if attached
+      if (imageFile) {
+        const formData = new FormData()
+        formData.append('file', imageFile)
+        const uploadRes = await fetch('/api/digest/upload', { method: 'POST', body: formData })
+        const uploadJson = await uploadRes.json()
+        if (uploadJson.success && uploadJson.data?.url) {
+          finalContent = finalContent ? `${finalContent}\n![image](${uploadJson.data.url})` : `![image](${uploadJson.data.url})`
+        }
+      }
+      return digestApi.createPost(channel.id, { ...data, content: finalContent })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['digest-posts', channel.id] })
       setContent('')
       setReplyTo(null)
       setShowPollCreator(false)
+      setImageFile(null)
+      setImagePreview(null)
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
     },
   })
 
   const handleSubmit = useCallback(() => {
-    if (!content.trim()) return
+    if (!content.trim() && !imageFile) return
     createPost.mutate({
       content: content.trim(),
       reply_to_id: replyTo?.id,
     })
-  }, [content, replyTo])
+  }, [content, replyTo, imageFile])
 
   const handlePollSubmit = (question: string, options: string[], isMultiple: boolean) => {
     createPost.mutate({
@@ -72,6 +91,20 @@ export default function ChannelView({ channel, onBack }: Props) {
       e.preventDefault()
       handleSubmit()
     }
+  }
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setImageFile(file)
+      const reader = new FileReader()
+      reader.onload = () => setImagePreview(reader.result as string)
+      reader.readAsDataURL(file)
+    }
+  }
+
+  if (showSettings) {
+    return <ChannelSettings channel={channel} onBack={() => setShowSettings(false)} />
   }
 
   if (activeThread) {
@@ -100,6 +133,9 @@ export default function ChannelView({ channel, onBack }: Props) {
         <Badge variant="outline" className="shrink-0">
           <Users className="h-3 w-3 mr-1" /> {channel.member_count}
         </Badge>
+        <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} title="Channel settings">
+          <Settings className="h-4 w-4" />
+        </Button>
       </div>
 
       {/* Posts */}
@@ -138,6 +174,17 @@ export default function ChannelView({ channel, onBack }: Props) {
         </div>
       )}
 
+      {/* Image preview */}
+      {imagePreview && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-accent/30 rounded-t-lg">
+          <img src={imagePreview} alt="preview" className="h-16 w-16 object-cover rounded-md" />
+          <span className="text-xs text-muted-foreground truncate">{imageFile?.name}</span>
+          <Button variant="ghost" size="icon" className="ml-auto h-5 w-5" onClick={() => { setImageFile(null); setImagePreview(null) }}>
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
+
       {/* Poll Creator */}
       {showPollCreator && (
         <PollCreator
@@ -153,6 +200,16 @@ export default function ChannelView({ channel, onBack }: Props) {
           <Button variant="ghost" size="icon" className="shrink-0 mb-0.5" onClick={() => setShowPollCreator(true)} title="Create poll">
             <BarChart3 className="h-4 w-4" />
           </Button>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageSelect}
+          />
+          <Button variant="ghost" size="icon" className="shrink-0 mb-0.5" onClick={() => imageInputRef.current?.click()} title="Attach image">
+            <ImagePlus className="h-4 w-4" />
+          </Button>
           <Textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -164,7 +221,7 @@ export default function ChannelView({ channel, onBack }: Props) {
           <Button
             size="icon"
             className="shrink-0 mb-0.5"
-            disabled={!content.trim() || createPost.isPending}
+            disabled={(!content.trim() && !imageFile) || createPost.isPending}
             onClick={handleSubmit}
           >
             <Send className="h-4 w-4" />

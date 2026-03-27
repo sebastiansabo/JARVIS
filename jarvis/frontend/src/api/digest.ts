@@ -1,6 +1,6 @@
 import { api } from './client'
 import type { ApiResponse } from '@/types'
-import type { DigestChannel, DigestPost, DigestPoll, DigestMember, DigestUnreadCount } from '@/types/digest'
+import type { DigestChannel, DigestPost, DigestPoll, DigestMember, DigestUnreadCount, DigestChannelTarget, DigestUserSearchResult } from '@/types/digest'
 
 export const digestApi = {
   // Channels
@@ -10,7 +10,13 @@ export const digestApi = {
   getChannel: (channelId: number) =>
     api.get<ApiResponse<DigestChannel>>(`/api/digest/channels/${channelId}`),
 
-  createChannel: (data: { name: string; description?: string; type?: string; is_private?: boolean }) =>
+  createChannel: (data: {
+    name: string
+    description?: string
+    type?: string
+    is_private?: boolean
+    targets?: { target_type: string; company_id?: number; node_id?: number }[]
+  }) =>
     api.post<ApiResponse<DigestChannel>>('/api/digest/channels', data),
 
   updateChannel: (channelId: number, data: { name: string; description?: string }) =>
@@ -18,6 +24,29 @@ export const digestApi = {
 
   deleteChannel: (channelId: number) =>
     api.delete<ApiResponse>(`/api/digest/channels/${channelId}`),
+
+  // Channel Targets
+  getChannelTargets: (channelId: number) =>
+    api.get<ApiResponse<DigestChannelTarget[]>>(`/api/digest/channels/${channelId}/targets`),
+
+  updateChannelTargets: (channelId: number, targets: { target_type: string; company_id?: number; node_id?: number }[]) =>
+    api.put<ApiResponse>(`/api/digest/channels/${channelId}/targets`, { targets }),
+
+  // Channel Settings
+  updateChannelSettings: (channelId: number, settings: Partial<{
+    name: string
+    description: string
+    type: string
+    is_private: boolean
+    allow_member_posts: boolean
+    allow_reactions: boolean
+    allow_images: boolean
+    auto_delete_days: number | null
+  }>) =>
+    api.put<ApiResponse<DigestChannel>>(`/api/digest/channels/${channelId}/settings`, settings),
+
+  clearChannelHistory: (channelId: number) =>
+    api.post<ApiResponse>(`/api/digest/channels/${channelId}/clear-history`),
 
   // Members
   getMembers: (channelId: number) =>
@@ -28,6 +57,13 @@ export const digestApi = {
 
   removeMember: (channelId: number, userId: number) =>
     api.delete<ApiResponse>(`/api/digest/channels/${channelId}/members/${userId}`),
+
+  setMemberRole: (channelId: number, userId: number, role: string) =>
+    api.put<ApiResponse>(`/api/digest/channels/${channelId}/members/${userId}/role`, { role }),
+
+  // User Search
+  searchUsers: (q: string) =>
+    api.get<ApiResponse<DigestUserSearchResult[]>>(`/api/digest/users/search`, { q }),
 
   // Posts
   getPosts: (channelId: number, params?: { limit?: number; offset?: number; parent_id?: number }) => {

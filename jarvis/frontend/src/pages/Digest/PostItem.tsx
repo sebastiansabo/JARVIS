@@ -1,3 +1,4 @@
+import type React from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Pin, Reply, MessageSquare, MoreVertical, Trash2, Smile } from 'lucide-react'
 import { digestApi } from '@/api/digest'
@@ -19,6 +20,30 @@ interface Props {
   onReply: (post: DigestPost) => void
   onThread: (post: DigestPost) => void
   isThreadReply?: boolean
+}
+
+const IMG_RE = /!\[([^\]]*)\]\(([^)]+)\)/g
+
+function renderContent(content: string) {
+  const parts: (string | React.ReactElement)[] = []
+  let last = 0
+  let match: RegExpExecArray | null
+  const re = new RegExp(IMG_RE)
+  while ((match = re.exec(content)) !== null) {
+    if (match.index > last) parts.push(content.slice(last, match.index))
+    parts.push(
+      <img
+        key={match.index}
+        src={match[2]}
+        alt={match[1] || 'image'}
+        className="mt-1 max-w-xs max-h-64 rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+        onClick={() => window.open(match![2], '_blank')}
+      />
+    )
+    last = re.lastIndex
+  }
+  if (last < content.length) parts.push(content.slice(last))
+  return parts.length > 0 ? parts : content
 }
 
 function formatTime(iso: string) {
@@ -157,7 +182,9 @@ export default function PostItem({ post, channelId, onReply, onThread, isThreadR
           </div>
 
           {/* Content */}
-          <div className="mt-0.5 text-sm whitespace-pre-wrap break-words">{post.content}</div>
+          <div className="mt-0.5 text-sm whitespace-pre-wrap break-words">
+            {renderContent(post.content)}
+          </div>
 
           {/* Poll */}
           {post.type === 'poll' && post.poll && (

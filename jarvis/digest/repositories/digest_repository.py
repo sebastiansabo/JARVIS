@@ -94,6 +94,122 @@ class DigestRepository(BaseRepository):
             ON CONFLICT (channel_id, user_id) DO NOTHING
         ''', (channel_id,))
 
+    def set_member_role(self, channel_id, user_id, role):
+        return self.execute('''
+            UPDATE digest_channel_members SET role = %s
+            WHERE channel_id = %s AND user_id = %s
+        ''', (role, channel_id, user_id))
+
+    def search_users(self, query, limit=20):
+        """Search active users by name or email for invite."""
+        like = f'%{query}%'
+        return self.query_all('''
+            SELECT id, name, email, department, company
+            FROM users WHERE is_active = TRUE
+              AND (name ILIKE %s OR email ILIKE %s)
+            ORDER BY name LIMIT %s
+        ''', (like, like, limit))
+
+    # ── Channel Targets (Level-based audience) ────────────
+
+    def get_channel_targets(self, channel_id):
+        return self.query_all('''
+            SELECT t.*,
+                   sn.name AS node_name, sn.level AS node_level, sn.company_id AS node_company_id,
+                   c.company AS company_name
+            FROM digest_channel_targets t
+            LEFT JOIN structure_nodes sn ON sn.id = t.node_id
+            LEFT JOIN companies c ON c.id = COALESCE(t.company_id, sn.company_id)
+            WHERE t.channel_id = %s
+            ORDER BY t.id
+        ''', (channel_id,))
+
+    def set_channel_targets(self, channel_id, targets):
+        """Replace all targets for a channel. targets = list of {target_type, company_id?, node_id?}"""
+        def _work(cursor):
+            cursor.execute('DELETE FROM digest_channel_targets WHERE channel_id = %s', (channel_id,))
+            for t in targets:
+                cursor.execute('''
+                    INSERT INTO digest_channel_targets (channel_id, target_type, company_id, node_id)
+                    VALUES (%s, %s, %s, %s)
+                ''', (channel_id, t['target_type'], t.get('company_id'), t.get('node_id')))
+        self.execute_many(_work)
+
+    def sync_members_from_targets(self, channel_id):
+        """Resolve target nodes/companies into users and sync channel members.
+        Keeps existing admins/moderators. Adds new members, removes old non-admin ones."""
+        targets = self.get_channel_targets(channel_id)
+        if not targets:
+            return
+
+        user_ids = set()
+        for t in targets:
+            if t['target_type'] == 'all':
+                # All active users
+                rows = self.query_all('SELECT id FROM users WHERE is_active = TRUE')
+                user_ids.update(r['id'] for r in rows)
+            elif t['target_type'] == 'company':
+                # L0: company responsables + all structure node members under this company
+                rows = self.query_all('''
+                    SELECT user_id FROM company_responsables WHERE company_id = %s
+                    UNION
+                    SELECT snm.user_id FROM structure_node_members snm
+                    JOIN structure_nodes sn ON sn.id = snm.node_id
+                    WHERE sn.company_id = %s
+                ''', (t['company_id'], t['company_id']))
+                user_ids.update(r['user_id'] for r in rows)
+            elif t['target_type'] == 'node':
+                # All members of this node + all descendant nodes
+                rows = self.query_all('''
+                    WITH RECURSIVE descendants AS (
+                        SELECT id FROM structure_nodes WHERE id = %s
+                        UNION ALL
+                        SELECT sn.id FROM structure_nodes sn
+                        JOIN descendants d ON sn.parent_id = d.id
+                    )
+                    SELECT DISTINCT snm.user_id
+                    FROM descendants d
+                    JOIN structure_node_members snm ON snm.node_id = d.id
+                ''', (t['node_id'],))
+                user_ids.update(r['user_id'] for r in rows)
+
+        if not user_ids:
+            return
+
+        # Add new members (preserving existing roles)
+        for uid in user_ids:
+            self.execute('''
+                INSERT INTO digest_channel_members (channel_id, user_id, role)
+                VALUES (%s, %s, 'member')
+                ON CONFLICT (channel_id, user_id) DO NOTHING
+            ''', (channel_id, uid))
+
+    # ── Channel Settings ──────────────────────────────────
+
+    def update_channel_settings(self, channel_id, settings):
+        """Update channel settings columns."""
+        sets = []
+        params = []
+        for key in ('allow_member_posts', 'allow_reactions', 'allow_images', 'auto_delete_days', 'name', 'description', 'type', 'is_private'):
+            if key in settings:
+                sets.append(f'{key} = %s')
+                params.append(settings[key])
+        if not sets:
+            return None
+        sets.append('updated_at = CURRENT_TIMESTAMP')
+        params.append(channel_id)
+        return self.execute(f'''
+            UPDATE digest_channels SET {', '.join(sets)}
+            WHERE id = %s AND deleted_at IS NULL RETURNING *
+        ''', tuple(params), returning=True)
+
+    def clear_channel_history(self, channel_id):
+        """Soft-delete all posts in a channel."""
+        return self.execute('''
+            UPDATE digest_posts SET deleted_at = CURRENT_TIMESTAMP
+            WHERE channel_id = %s AND deleted_at IS NULL
+        ''', (channel_id,))
+
     # ── Posts ────────────────────────────────────────────────
 
     def get_posts(self, channel_id, limit=50, offset=0, parent_id=None):
@@ -193,7 +309,7 @@ class DigestRepository(BaseRepository):
                 VALUES (%s, %s, %s, %s) RETURNING *
             ''', (post_id, question, is_multiple_choice, closes_at))
             poll = cursor.fetchone()
-            poll_id = poll[0]
+            poll_id = poll['id']
             for i, opt in enumerate(options):
                 cursor.execute('''
                     INSERT INTO digest_poll_options (poll_id, option_text, sort_order)

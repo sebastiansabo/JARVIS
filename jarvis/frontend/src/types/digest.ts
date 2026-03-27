@@ -4,6 +4,10 @@ export interface DigestChannel {
   description: string
   type: 'general' | 'announcement' | 'department'
   is_private: boolean
+  allow_member_posts: boolean
+  allow_reactions: boolean
+  allow_images: boolean
+  auto_delete_days: number | null
   created_by: number
   created_by_name: string
   member_count: number
@@ -11,6 +15,17 @@ export interface DigestChannel {
   unread_count: number
   created_at: string
   updated_at: string
+}
+
+export interface DigestChannelTarget {
+  id: number
+  channel_id: number
+  target_type: 'all' | 'company' | 'node'
+  company_id: number | null
+  node_id: number | null
+  node_name: string | null
+  node_level: number | null
+  company_name: string | null
 }
 
 export interface DigestPost {
@@ -65,7 +80,7 @@ export interface DigestMember {
   user_id: number
   user_name: string
   user_email: string
-  role: 'admin' | 'member'
+  role: 'admin' | 'moderator' | 'member'
   joined_at: string
 }
 
@@ -73,4 +88,12 @@ export interface DigestUnreadCount {
   channel_id: number
   name: string
   unread_count: number
+}
+
+export interface DigestUserSearchResult {
+  id: number
+  name: string
+  email: string
+  department: string | null
+  company: string | null
 }

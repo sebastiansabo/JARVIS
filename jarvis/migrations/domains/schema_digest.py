@@ -110,6 +110,38 @@ def create_schema_digest(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_digest_poll_votes_poll ON digest_poll_votes(poll_id)')
 
+    # ============== Channel Targets (Level-based audience) ==============
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS digest_channel_targets (
+            id SERIAL PRIMARY KEY,
+            channel_id INTEGER NOT NULL REFERENCES digest_channels(id) ON DELETE CASCADE,
+            target_type TEXT NOT NULL DEFAULT 'node',
+            company_id INTEGER,
+            node_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT digest_channel_targets_type_check CHECK (
+                (target_type = 'company' AND company_id IS NOT NULL) OR
+                (target_type = 'node' AND node_id IS NOT NULL) OR
+                (target_type = 'all')
+            )
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_digest_channel_targets_channel ON digest_channel_targets(channel_id)')
+
+    # Add settings columns to channels
+    for col_sql in [
+        "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS allow_member_posts BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS allow_reactions BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS allow_images BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS auto_delete_days INTEGER",
+    ]:
+        cursor.execute(col_sql)
+
+    # Update member role constraint to allow moderator
+    cursor.execute("ALTER TABLE digest_channel_members DROP CONSTRAINT IF EXISTS digest_channel_members_role_check")
+    cursor.execute("ALTER TABLE digest_channel_members ADD CONSTRAINT digest_channel_members_role_check CHECK (role IN ('admin', 'moderator', 'member'))")
+
     # ============== Read Status ==============
 
     cursor.execute('''

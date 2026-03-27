@@ -17,12 +17,13 @@ class DigestService:
     def get_channel(self, channel_id):
         return _repo.get_channel(channel_id)
 
-    def create_channel(self, name, description, channel_type, is_private, created_by):
+    def create_channel(self, name, description, channel_type, is_private, created_by, targets=None):
         channel = _repo.create_channel(name, description, channel_type, is_private, created_by)
         if channel:
             _repo.add_member(channel['id'], created_by, 'admin')
-            if not is_private:
-                _repo.add_all_active_users(channel['id'])
+            if targets:
+                _repo.set_channel_targets(channel['id'], targets)
+                _repo.sync_members_from_targets(channel['id'])
             logger.info(f'Channel created: {channel["id"]} by user {created_by}')
         return channel
 
@@ -43,6 +44,12 @@ class DigestService:
     def remove_member(self, channel_id, user_id):
         return _repo.remove_member(channel_id, user_id)
 
+    def set_member_role(self, channel_id, user_id, role):
+        return _repo.set_member_role(channel_id, user_id, role)
+
+    def search_users(self, query):
+        return _repo.search_users(query)
+
     def can_access_channel(self, channel_id, user_id):
         channel = _repo.get_channel(channel_id)
         if not channel:
@@ -50,6 +57,30 @@ class DigestService:
         if not channel['is_private']:
             return True
         return _repo.is_member(channel_id, user_id)
+
+    def is_admin_or_moderator(self, channel_id, user_id):
+        members = _repo.get_channel_members(channel_id)
+        for m in members:
+            if m['user_id'] == user_id and m['role'] in ('admin', 'moderator'):
+                return True
+        return False
+
+    # ── Channel Targets ──────────────────────────────────────
+
+    def get_channel_targets(self, channel_id):
+        return _repo.get_channel_targets(channel_id)
+
+    def update_channel_targets(self, channel_id, targets):
+        _repo.set_channel_targets(channel_id, targets)
+        _repo.sync_members_from_targets(channel_id)
+
+    # ── Channel Settings ─────────────────────────────────────
+
+    def update_channel_settings(self, channel_id, settings):
+        return _repo.update_channel_settings(channel_id, settings)
+
+    def clear_channel_history(self, channel_id):
+        return _repo.clear_channel_history(channel_id)
 
     # ── Posts ────────────────────────────────────────────────
 
