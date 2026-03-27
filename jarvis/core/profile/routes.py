@@ -260,6 +260,9 @@ def api_profile_pontaje():
 def api_profile_team_pontaje():
     """Get team pontaje (attendance) data for employees managed by current user.
 
+    Primary source: organigram (users table via get_managed_employee_ids).
+    Pontaje data is LEFT-JOINed — users without BioStar mapping or punches still appear.
+
     mode=daily (default): today's per-employee punch summary
     mode=range: aggregated summary over start..end
     node_id: optional — filter to a specific organigram node and its descendants
@@ -267,7 +270,7 @@ def api_profile_team_pontaje():
     try:
         from datetime import datetime, timedelta
         from hr.events.database import get_managed_employee_ids, is_manager, get_visible_tree
-        from core.connectors.biostar.services import BioStarSyncService
+        from database import get_db, get_cursor, release_db, dict_from_row
 
         if not is_manager(current_user.id):
             return jsonify({'success': True, 'is_manager': False, 'mode': 'daily',
@@ -292,10 +295,11 @@ def api_profile_team_pontaje():
                 base['date'] = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
             return jsonify(base)
 
-        service = BioStarSyncService()
         mode = request.args.get('mode', 'daily')
 
         if mode == 'range':
+            from core.connectors.biostar.services import BioStarSyncService
+            service = BioStarSyncService()
             start = request.args.get('start', '')
             end = request.args.get('end', '')
             if not start or not end:
@@ -312,8 +316,65 @@ def api_profile_team_pontaje():
                 'end': end,
             })
         else:
+            # Daily mode: start from users table, LEFT JOIN BioStar punches
             date_str = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
-            summary = service.repo.get_daily_summary(date_str, jarvis_user_ids=managed_ids)
+
+            conn = get_db()
+            cursor = get_cursor(conn)
+            cursor.execute('''
+                WITH team_users AS (
+                    SELECT u.id, u.name, u.company, u.department, u.position
+                    FROM users u
+                    WHERE u.id = ANY(%s) AND u.is_active = TRUE
+                ),
+                daily_punches AS (
+                    SELECT
+                        be.mapped_jarvis_user_id AS user_id,
+                        MIN(pl.event_datetime) AS first_punch,
+                        MAX(pl.event_datetime) AS last_punch,
+                        COUNT(*) AS punches,
+                        EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) / 3600.0 AS hours_worked
+                    FROM biostar_punch_logs pl
+                    JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
+                    WHERE pl.event_datetime::date = %s::date
+                      AND be.mapped_jarvis_user_id = ANY(%s)
+                      AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
+                    GROUP BY be.mapped_jarvis_user_id
+                )
+                SELECT
+                    tu.id AS user_id,
+                    tu.name,
+                    tu.company,
+                    tu.department,
+                    tu.position,
+                    dp.first_punch,
+                    dp.last_punch,
+                    COALESCE(dp.punches, 0) AS punches,
+                    COALESCE(dp.hours_worked, 0) AS hours_worked
+                FROM team_users tu
+                LEFT JOIN daily_punches dp ON dp.user_id = tu.id
+                ORDER BY tu.name
+            ''', (managed_ids, date_str, managed_ids))
+            rows = cursor.fetchall()
+            release_db(conn)
+
+            summary = []
+            for r in rows:
+                row = dict_from_row(r)
+                fp = row.get('first_punch')
+                lp = row.get('last_punch')
+                summary.append({
+                    'user_id': row['user_id'],
+                    'name': row['name'],
+                    'company': row.get('company'),
+                    'department': row.get('department'),
+                    'position': row.get('position'),
+                    'first_punch': fp.isoformat() if fp else None,
+                    'last_punch': lp.isoformat() if lp else None,
+                    'punches': row.get('punches', 0),
+                    'hours_worked': round(row.get('hours_worked', 0), 2),
+                })
+
             return jsonify({
                 'success': True,
                 'is_manager': True,
