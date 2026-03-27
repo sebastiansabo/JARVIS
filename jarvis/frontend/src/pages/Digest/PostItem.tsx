@@ -22,24 +22,35 @@ interface Props {
   isThreadReply?: boolean
 }
 
-const IMG_RE = /!\[([^\]]*)\]\(([^)]+)\)/g
+// Matches images: ![alt](url) and mentions: @[Name](id)
+const TOKEN_RE = /!\[([^\]]*)\]\(([^)]+)\)|@\[([^\]]+)\]\((\d+)\)/g
 
 function renderContent(content: string) {
   const parts: (string | React.ReactElement)[] = []
   let last = 0
   let match: RegExpExecArray | null
-  const re = new RegExp(IMG_RE)
+  const re = new RegExp(TOKEN_RE)
   while ((match = re.exec(content)) !== null) {
     if (match.index > last) parts.push(content.slice(last, match.index))
-    parts.push(
-      <img
-        key={match.index}
-        src={match[2]}
-        alt={match[1] || 'image'}
-        className="mt-1 max-w-xs max-h-64 rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
-        onClick={() => window.open(match![2], '_blank')}
-      />
-    )
+    if (match[1] !== undefined || match[2] !== undefined) {
+      // Image: ![alt](url)
+      parts.push(
+        <img
+          key={`img-${match.index}`}
+          src={match[2]}
+          alt={match[1] || 'image'}
+          className="mt-1 max-w-xs max-h-64 rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+          onClick={() => window.open(match![2], '_blank')}
+        />
+      )
+    } else {
+      // Mention: @[Name](id)
+      parts.push(
+        <span key={`mention-${match.index}`} className="inline-flex items-center rounded bg-primary/15 text-primary font-medium px-1 text-[13px]">
+          @{match[3]}
+        </span>
+      )
+    }
     last = re.lastIndex
   }
   if (last < content.length) parts.push(content.slice(last))

@@ -197,6 +197,7 @@ def create_post(channel_id):
         parent_id=data.get('parent_id'),
         reply_to_id=data.get('reply_to_id'),
         poll_data=data.get('poll'),
+        author_name=current_user.name,
     )
     return jsonify({'success': True, 'data': post}), 201
 

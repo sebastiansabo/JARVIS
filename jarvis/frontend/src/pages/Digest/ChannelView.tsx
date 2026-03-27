@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Send, Reply, BarChart3, X, Users, Settings, ImagePlus } from 'lucide-react'
+import { ArrowLeft, Send, Reply, BarChart3, X, Users, Settings, ImagePlus, AtSign } from 'lucide-react'
 import { digestApi } from '@/api/digest'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Input } from '@/components/ui/input'
 import type { DigestChannel, DigestPost } from '@/types/digest'
 import PostItem from './PostItem'
 import PollCreator from './PollCreator'
@@ -25,8 +27,25 @@ export default function ChannelView({ channel, onBack }: Props) {
   const [showSettings, setShowSettings] = useState(false)
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [mentionOpen, setMentionOpen] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  const { data: mentionResults } = useQuery({
+    queryKey: ['digest-user-search', mentionQuery],
+    queryFn: () => digestApi.searchUsers(mentionQuery),
+    enabled: mentionOpen && mentionQuery.length >= 2,
+  })
+
+  const insertMention = (userId: number, name: string) => {
+    const mention = `@[${name}](${userId}) `
+    setContent(prev => prev + mention)
+    setMentionOpen(false)
+    setMentionQuery('')
+    setTimeout(() => textareaRef.current?.focus(), 50)
+  }
 
   const { data: postsRes, isLoading } = useQuery({
     queryKey: ['digest-posts', channel.id],
@@ -210,7 +229,39 @@ export default function ChannelView({ channel, onBack }: Props) {
           <Button variant="ghost" size="icon" className="shrink-0 mb-0.5" onClick={() => imageInputRef.current?.click()} title="Attach image">
             <ImagePlus className="h-4 w-4" />
           </Button>
+          <Popover open={mentionOpen} onOpenChange={setMentionOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="icon" className="shrink-0 mb-0.5" title="Mention someone">
+                <AtSign className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-2" side="top" align="start">
+              <Input
+                placeholder="Search users..."
+                value={mentionQuery}
+                onChange={(e) => setMentionQuery(e.target.value)}
+                className="mb-2 h-8 text-sm"
+                autoFocus
+              />
+              <div className="max-h-40 overflow-y-auto space-y-0.5">
+                {(mentionResults?.data ?? []).map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => insertMention(u.id, u.name)}
+                    className="w-full text-left px-2 py-1.5 rounded text-sm hover:bg-accent transition-colors"
+                  >
+                    <div className="font-medium">{u.name}</div>
+                    <div className="text-xs text-muted-foreground">{u.email}</div>
+                  </button>
+                ))}
+                {mentionQuery.length >= 2 && (mentionResults?.data ?? []).length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">No users found</p>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
           <Textarea
+            ref={textareaRef}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}

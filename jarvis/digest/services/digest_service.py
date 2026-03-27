@@ -1,10 +1,14 @@
 """Service layer for the Digest module."""
 
+import re
 import logging
 from digest.repositories.digest_repository import DigestRepository
 
 logger = logging.getLogger(__name__)
 _repo = DigestRepository()
+
+# Matches @[Display Name](user_id)
+_MENTION_RE = re.compile(r'@\[([^\]]+)\]\((\d+)\)')
 
 
 class DigestService:
@@ -101,7 +105,8 @@ class DigestService:
         return post
 
     def create_post(self, channel_id, user_id, content, post_type='post',
-                    parent_id=None, reply_to_id=None, poll_data=None):
+                    parent_id=None, reply_to_id=None, poll_data=None,
+                    author_name=None):
         post = _repo.create_post(channel_id, user_id, content, post_type, parent_id, reply_to_id)
         if post and post_type == 'poll' and poll_data:
             _repo.create_poll(
@@ -112,7 +117,83 @@ class DigestService:
                 poll_data.get('closes_at'),
             )
         logger.info(f'Post created: {post["id"]} in channel {channel_id} by user {user_id}')
+
+        # Send notifications (non-blocking)
+        if post:
+            try:
+                self._notify_post(post, channel_id, user_id, content, post_type,
+                                  author_name or 'Someone', poll_data)
+            except Exception as e:
+                logger.error(f'Post notification failed: {e}')
+
         return post
+
+    def _notify_post(self, post, channel_id, user_id, content, post_type,
+                     author_name, poll_data):
+        """Send push + in-app notifications for a new post."""
+        from core.notifications.notify import notify_with_push
+
+        channel = _repo.get_channel(channel_id)
+        if not channel:
+            return
+
+        channel_name = channel['name']
+        members = _repo.get_channel_members(channel_id)
+        member_ids = {m['user_id'] for m in members}
+        push_data = {'channel_id': str(channel_id), 'type': 'digest'}
+
+        notified_ids = set()
+
+        # 1. Announcement channels → notify all members
+        if channel['type'] == 'announcement':
+            targets = member_ids - {user_id}
+            if targets:
+                notify_with_push(
+                    list(targets),
+                    f'📢 {channel_name}',
+                    message=f'{author_name}: {content[:120]}',
+                    link=f'/app/digest?channel={channel_id}',
+                    entity_type='digest_post', entity_id=post['id'],
+                    push_data=push_data,
+                )
+                notified_ids.update(targets)
+
+        # 2. Polls → notify all members
+        if post_type == 'poll':
+            question = poll_data['question'] if poll_data else content
+            targets = member_ids - {user_id} - notified_ids
+            if targets:
+                notify_with_push(
+                    list(targets),
+                    f'📊 New poll in #{channel_name}',
+                    message=f'{author_name}: {question[:120]}',
+                    link=f'/app/digest?channel={channel_id}',
+                    entity_type='digest_poll', entity_id=post['id'],
+                    push_data=push_data,
+                )
+                notified_ids.update(targets)
+
+        # 3. @mentions → notify mentioned users
+        mentioned_ids = self._extract_mention_ids(content)
+        if mentioned_ids:
+            # Only notify channel members who haven't been notified yet
+            targets = (set(mentioned_ids) & member_ids) - {user_id} - notified_ids
+            if targets:
+                notify_with_push(
+                    list(targets),
+                    f'{author_name} mentioned you in #{channel_name}',
+                    message=content[:120],
+                    link=f'/app/digest?channel={channel_id}',
+                    entity_type='digest_mention', entity_id=post['id'],
+                    push_data=push_data,
+                )
+
+    @staticmethod
+    def _extract_mention_ids(content):
+        """Extract user IDs from @[Name](id) patterns in content."""
+        if not content:
+            return []
+        return [int(m.group(2)) for m in _MENTION_RE.finditer(content)]
 
     def update_post(self, post_id, content, user_id):
         post = _repo.get_post(post_id)

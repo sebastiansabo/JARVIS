@@ -6,6 +6,12 @@ Simple API for any module to send in-app notifications:
 
     notify_user(user_id, 'Invoice #123 approved', link='/app/accounting')
     notify_users([1, 2, 3], 'New approval request', type='approval')
+
+For in-app + push:
+
+    from core.notifications.notify import notify_with_push
+
+    notify_with_push([1, 2, 3], 'New announcement', message='...', push_data={'channel_id': '5'})
 """
 
 import logging
@@ -44,6 +50,32 @@ def notify_users(user_ids, title, message=None, link=None,
     except Exception as e:
         logger.error(f'Failed to create notifications for {len(user_ids)} users: {e}')
         return []
+
+
+def notify_with_push(user_ids, title, message=None, link=None,
+                     entity_type=None, entity_id=None, type='info',
+                     push_data=None):
+    """Send in-app notifications AND FCM push to multiple users.
+
+    Args:
+        push_data: optional dict of string key-value pairs sent as FCM data payload
+                   (e.g. {'channel_id': '5', 'type': 'announcement'})
+    """
+    if not user_ids:
+        return []
+
+    # In-app notifications
+    results = notify_users(user_ids, title, message, link, entity_type, entity_id, type)
+
+    # Push notifications (fire-and-forget, never block the request)
+    try:
+        from .push_service import send_push_to_users
+        push_body = message or title
+        send_push_to_users(list(user_ids), title, push_body, data=push_data)
+    except Exception as e:
+        logger.error(f'Failed to send push notifications: {e}')
+
+    return results
 
 
 def notify_node_cascade(node_id, title, message=None, link=None,
