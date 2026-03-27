@@ -361,16 +361,14 @@ def api_profile_team_pontaje():
             summary = []
             for r in rows:
                 row = dict_from_row(r)
-                fp = row.get('first_punch')
-                lp = row.get('last_punch')
                 summary.append({
                     'user_id': row['user_id'],
                     'name': row['name'],
                     'company': row.get('company'),
                     'department': row.get('department'),
                     'position': row.get('position'),
-                    'first_punch': fp.isoformat() if fp else None,
-                    'last_punch': lp.isoformat() if lp else None,
+                    'first_punch': row.get('first_punch'),
+                    'last_punch': row.get('last_punch'),
                     'punches': row.get('punches', 0),
                     'hours_worked': round(row.get('hours_worked', 0), 2),
                 })
