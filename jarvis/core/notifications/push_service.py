@@ -13,6 +13,28 @@ logger = logging.getLogger('jarvis.core.notifications.push_service')
 _firebase_app = None
 
 
+def _restore_service_account(cred_path):
+    """Restore service-account.json from DB credentials if file is missing."""
+    try:
+        from core.connectors.repositories.connector_repository import ConnectorRepository
+        connector = ConnectorRepository().get_by_type('firebase')
+        if not connector:
+            return False
+        creds = connector.get('credentials', {})
+        if isinstance(creds, str):
+            import json
+            creds = json.loads(creds)
+        if creds and creds.get('private_key'):
+            import json
+            with open(cred_path, 'w') as f:
+                json.dump(creds, f, indent=2)
+            logger.info('Restored service-account.json from database')
+            return True
+    except Exception as e:
+        logger.warning('Could not restore service-account.json from DB: %s', e)
+    return False
+
+
 def _init_firebase():
     """Lazily initialise Firebase Admin SDK."""
     global _firebase_app
@@ -27,9 +49,12 @@ def _init_firebase():
             '..', '..', '..', 'service-account.json',
         )
         cred_path = os.path.normpath(cred_path)
+
+        # If file missing, try to restore from DB
         if not os.path.exists(cred_path):
-            logger.warning('Firebase service-account.json not found at %s', cred_path)
-            return False
+            if not _restore_service_account(cred_path):
+                logger.warning('Firebase service-account.json not found at %s', cred_path)
+                return False
 
         cred = credentials.Certificate(cred_path)
         _firebase_app = firebase_admin.initialize_app(cred)

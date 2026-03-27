@@ -104,7 +104,7 @@ def save_config():
     except Exception as e:
         return jsonify({'success': False, 'error': f'Failed to write file: {e}'}), 500
 
-    # Store metadata in connectors table (not the full key)
+    # Store metadata + full credentials in connectors table
     config = {
         'project_id': sa['project_id'],
         'client_email': sa['client_email'],
@@ -117,6 +117,7 @@ def save_config():
             name='Firebase Cloud Messaging',
             status='connected',
             config=config,
+            credentials=sa,
         )
         connector_id = existing['id']
     else:
@@ -125,7 +126,7 @@ def save_config():
             name='Firebase Cloud Messaging',
             status='connected',
             config=config,
-            credentials={},
+            credentials=sa,
         )
 
     # Reset Firebase SDK so it re-initializes with new credentials
