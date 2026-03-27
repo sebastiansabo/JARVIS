@@ -36,6 +36,7 @@ const SuppliersPage = lazy(() => import('./pages/Dms/SuppliersPage'))
 const SupplierProfile = lazy(() => import('./pages/Dms/SupplierProfile'))
 const MobileCheckin = lazy(() => import('./pages/MobileCheckin'))
 const DownloadApp = lazy(() => import('./pages/DownloadApp'))
+const Digest = lazy(() => import('./pages/Digest'))
 
 function PageLoader() {
   return (
@@ -156,6 +157,9 @@ export default function App() {
 
         {/* AI Agent — requires can_access_ai_agent */}
         <Route path="ai-agent" element={<Guard flag="can_access_ai_agent"><SuspensePage><AiAgent /></SuspensePage></Guard>} />
+
+        {/* Digest — open to all authenticated users */}
+        <Route path="digest" element={<SuspensePage><Digest /></SuspensePage>} />
 
         {/* Open-access modules — all authenticated users */}
         <Route path="mobile-checkin" element={<SuspensePage><MobileCheckin /></SuspensePage>} />

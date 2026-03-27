@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, LifeBuoy, ClipboardList } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, LifeBuoy, ClipboardList, Newspaper } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -69,6 +69,7 @@ const navItemsDef: NavItem[] = [
       { path: '/app/marketing/simulator', label: 'Simulator', icon: Calculator, moduleKey: 'marketing_simulator', v2Permission: 'marketing.simulator.view' },
     ],
   },
+  { path: '/app/digest', label: 'Digest', icon: Newspaper, moduleKey: 'digest' },
   { path: '/app/forms', label: 'Forms', icon: ClipboardList, moduleKey: 'forms', permission: 'can_access_forms' },
   { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms', permission: 'can_access_dms' },
   { path: '/app/dms/suppliers', label: 'Suppliers', icon: Building2, moduleKey: 'dms_suppliers', permission: 'can_access_dms' },

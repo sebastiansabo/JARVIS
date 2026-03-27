@@ -202,6 +202,9 @@ def _register_blueprints(flask_app: Flask):
     from core.mobile import mobile_bp
     flask_app.register_blueprint(mobile_bp)
 
+    from digest import digest_bp
+    flask_app.register_blueprint(digest_bp)
+
 
 def _register_hooks(flask_app: Flask):
     """Register before/after request hooks and approval notification handlers."""
