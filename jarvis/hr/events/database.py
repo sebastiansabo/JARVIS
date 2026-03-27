@@ -987,7 +987,7 @@ def get_managed_employee_ids(manager_user_id, node_id=None):
     l0_ids = []
     try:
         cursor.execute("""
-            WITH l0_companies AS (
+            WITH RECURSIVE l0_companies AS (
                 SELECT cr.company_id
                 FROM company_responsables cr
                 WHERE cr.user_id = %s
