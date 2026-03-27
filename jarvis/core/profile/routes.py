@@ -345,6 +345,14 @@ def api_profile_team_pontaje():
                       AND be.mapped_jarvis_user_id = ANY(%s)
                       AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
                     GROUP BY be.mapped_jarvis_user_id
+                ),
+                manager_info AS (
+                    SELECT DISTINCT snm.user_id, MIN(sn.level) AS mgr_level
+                    FROM structure_node_members snm
+                    JOIN structure_nodes sn ON sn.id = snm.node_id
+                    WHERE snm.role = 'responsable'
+                      AND snm.user_id = ANY(%s)
+                    GROUP BY snm.user_id
                 )
                 SELECT
                     tu.id AS user_id,
@@ -355,11 +363,13 @@ def api_profile_team_pontaje():
                     dp.first_punch,
                     dp.last_punch,
                     COALESCE(dp.punches, 0) AS punches,
-                    COALESCE(dp.hours_worked, 0) AS hours_worked
+                    COALESCE(dp.hours_worked, 0) AS hours_worked,
+                    mi.mgr_level
                 FROM team_users tu
                 LEFT JOIN daily_punches dp ON dp.user_id = tu.id
+                LEFT JOIN manager_info mi ON mi.user_id = tu.id
                 ORDER BY tu.name
-            ''', (managed_ids, date_str, managed_ids))
+            ''', (managed_ids, date_str, managed_ids, managed_ids))
             rows = cursor.fetchall()
             release_db(conn)
 
@@ -376,6 +386,7 @@ def api_profile_team_pontaje():
                     'last_punch': row.get('last_punch'),
                     'punches': row.get('punches', 0),
                     'hours_worked': round(row.get('hours_worked', 0), 2),
+                    'mgr_level': row.get('mgr_level'),
                 })
 
             return jsonify({
