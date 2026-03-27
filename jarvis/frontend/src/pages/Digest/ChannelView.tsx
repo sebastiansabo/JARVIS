@@ -1,12 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Send, Reply, BarChart3, X, Users, Settings, ImagePlus, AtSign } from 'lucide-react'
+import { ArrowLeft, Send, Reply, BarChart3, X, Users, Settings, ImagePlus, Plus } from 'lucide-react'
 import { digestApi } from '@/api/digest'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Input } from '@/components/ui/input'
 import type { DigestChannel, DigestPost } from '@/types/digest'
 import PostItem from './PostItem'
 import PollCreator from './PollCreator'
@@ -27,24 +26,51 @@ export default function ChannelView({ channel, onBack }: Props) {
   const [showSettings, setShowSettings] = useState(false)
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [mentionOpen, setMentionOpen] = useState(false)
-  const [mentionQuery, setMentionQuery] = useState('')
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false)
+  const [mentionState, setMentionState] = useState<{ query: string; startPos: number } | null>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const cursorPosRef = useRef(0)
 
   const { data: mentionResults } = useQuery({
-    queryKey: ['digest-user-search', mentionQuery],
-    queryFn: () => digestApi.searchUsers(mentionQuery),
-    enabled: mentionOpen && mentionQuery.length >= 2,
+    queryKey: ['digest-user-search', mentionState?.query],
+    queryFn: () => digestApi.searchUsers(mentionState!.query),
+    enabled: !!mentionState && mentionState.query.length >= 2,
   })
 
   const insertMention = (userId: number, name: string) => {
-    const mention = `@[${name}](${userId}) `
-    setContent(prev => prev + mention)
-    setMentionOpen(false)
-    setMentionQuery('')
+    if (!mentionState) return
+    const before = content.slice(0, mentionState.startPos)
+    const after = content.slice(cursorPosRef.current)
+    const newContent = `${before}@[${name}](${userId}) ${after}`
+    setContent(newContent)
+    setMentionState(null)
     setTimeout(() => textareaRef.current?.focus(), 50)
+  }
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value
+    const cursorPos = e.target.selectionStart ?? value.length
+    cursorPosRef.current = cursorPos
+    setContent(value)
+
+    // @poll shortcut
+    if (value.trim().toLowerCase() === '@poll') {
+      setContent('')
+      setShowPollCreator(true)
+      setMentionState(null)
+      return
+    }
+
+    // Detect @mention while typing
+    const textBeforeCursor = value.slice(0, cursorPos)
+    const mentionMatch = textBeforeCursor.match(/@([\w\s]*)$/)
+    if (mentionMatch && mentionMatch.index !== undefined) {
+      setMentionState({ query: mentionMatch[1].trim(), startPos: mentionMatch.index })
+    } else {
+      setMentionState(null)
+    }
   }
 
   const { data: postsRes, isLoading } = useQuery({
@@ -106,8 +132,14 @@ export default function ChannelView({ channel, onBack }: Props) {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && mentionState) {
+      e.preventDefault()
+      setMentionState(null)
+      return
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
+      setMentionState(null)
       handleSubmit()
     }
   }
@@ -215,68 +247,78 @@ export default function ChannelView({ channel, onBack }: Props) {
 
       {/* Composer */}
       {!showPollCreator && (
-        <div className="flex items-end gap-2 pt-3 border-t">
-          <Button variant="ghost" size="icon" className="shrink-0 mb-0.5" onClick={() => setShowPollCreator(true)} title="Create poll">
-            <BarChart3 className="h-4 w-4" />
-          </Button>
-          <input
-            ref={imageInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleImageSelect}
-          />
-          <Button variant="ghost" size="icon" className="shrink-0 mb-0.5" onClick={() => imageInputRef.current?.click()} title="Attach image">
-            <ImagePlus className="h-4 w-4" />
-          </Button>
-          <Popover open={mentionOpen} onOpenChange={setMentionOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="shrink-0 mb-0.5" title="Mention someone">
-                <AtSign className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-2" side="top" align="start">
-              <Input
-                placeholder="Search users..."
-                value={mentionQuery}
-                onChange={(e) => setMentionQuery(e.target.value)}
-                className="mb-2 h-8 text-sm"
-                autoFocus
-              />
-              <div className="max-h-40 overflow-y-auto space-y-0.5">
-                {(mentionResults?.data ?? []).map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => insertMention(u.id, u.name)}
-                    className="w-full text-left px-2 py-1.5 rounded text-sm hover:bg-accent transition-colors"
-                  >
-                    <div className="font-medium">{u.name}</div>
-                    <div className="text-xs text-muted-foreground">{u.email}</div>
-                  </button>
-                ))}
-                {mentionQuery.length >= 2 && (mentionResults?.data ?? []).length === 0 && (
-                  <p className="text-xs text-muted-foreground text-center py-2">No users found</p>
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
-          <Textarea
-            ref={textareaRef}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Write a message..."
-            rows={1}
-            className="min-h-[40px] max-h-32 resize-none"
-          />
-          <Button
-            size="icon"
-            className="shrink-0 mb-0.5"
-            disabled={(!content.trim() && !imageFile) || createPost.isPending}
-            onClick={handleSubmit}
-          >
-            <Send className="h-4 w-4" />
-          </Button>
+        <div className="relative pt-3 border-t">
+          {/* @mention suggestions */}
+          {mentionState && mentionState.query.length >= 2 && (mentionResults?.data ?? []).length > 0 && (
+            <div className="absolute bottom-full mb-1 left-0 right-0 z-10 rounded-lg border bg-popover p-1 shadow-md max-h-48 overflow-y-auto">
+              {(mentionResults?.data ?? []).map((u) => (
+                <button
+                  key={u.id}
+                  onClick={() => insertMention(u.id, u.name)}
+                  className="w-full text-left px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors flex items-center gap-3"
+                >
+                  <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium text-primary shrink-0">
+                    {u.name.charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{u.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{u.email}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-end gap-2">
+            {/* + menu */}
+            <Popover open={plusMenuOpen} onOpenChange={setPlusMenuOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="shrink-0 mb-0.5">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-44 p-1" side="top" align="start">
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageSelect}
+                />
+                <button
+                  onClick={() => { imageInputRef.current?.click(); setPlusMenuOpen(false) }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors"
+                >
+                  <ImagePlus className="h-4 w-4" /> Picture
+                </button>
+                <button
+                  onClick={() => { setShowPollCreator(true); setPlusMenuOpen(false) }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors"
+                >
+                  <BarChart3 className="h-4 w-4" /> Poll
+                </button>
+              </PopoverContent>
+            </Popover>
+
+            <Textarea
+              ref={textareaRef}
+              value={content}
+              onChange={handleContentChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Write a message... (@ to mention, @poll for poll)"
+              rows={1}
+              className="min-h-[40px] max-h-32 resize-none"
+            />
+
+            <Button
+              size="icon"
+              className="shrink-0 mb-0.5"
+              disabled={(!content.trim() && !imageFile) || createPost.isPending}
+              onClick={handleSubmit}
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )}
     </div>
