@@ -189,7 +189,21 @@ class DigestService:
                 )
                 notified_ids.update(targets)
 
-        # 4. Replies → notify the original post author
+        # 4. Regular posts → notify all members (if nobody was notified yet)
+        if channel['type'] != 'announcement' and post_type != 'poll' and not notified_ids:
+            targets = member_ids - {user_id}
+            if targets:
+                notify_with_push(
+                    list(targets),
+                    f'#{channel_name}',
+                    message=f'{author_name}: {content[:120]}',
+                    link=f'/app/digest?channel={channel_id}',
+                    entity_type='digest_post', entity_id=post['id'],
+                    push_data=push_data,
+                )
+                notified_ids.update(targets)
+
+        # 5. Replies → notify the original post author
         parent_id = post.get('parent_id')
         if parent_id:
             parent_post = _repo.get_post(parent_id)
