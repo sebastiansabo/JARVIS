@@ -333,7 +333,12 @@ def api_profile_team_pontaje():
                         MIN(pl.event_datetime) AS first_punch,
                         MAX(pl.event_datetime) AS last_punch,
                         COUNT(*) AS punches,
-                        EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) / 3600.0 AS hours_worked
+                        CASE
+                            WHEN COUNT(*) %% 2 = 1 THEN
+                                EXTRACT(EPOCH FROM (NOW() - MIN(pl.event_datetime))) / 3600.0
+                            ELSE
+                                EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) / 3600.0
+                        END AS hours_worked
                     FROM biostar_punch_logs pl
                     JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
                     WHERE pl.event_datetime::date = %s::date
