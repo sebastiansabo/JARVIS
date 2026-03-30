@@ -16,6 +16,7 @@ logger = get_logger('jarvis.tasks.cleanup')
 
 scheduler = BackgroundScheduler(daemon=True)
 _lock_file = None
+_scheduler_deferred = False  # True when another worker holds the lock
 
 
 def cleanup_old_unallocated_invoices():
@@ -257,7 +258,9 @@ def start_scheduler():
     if scheduler.running:
         return
 
+    global _scheduler_deferred
     if not _acquire_scheduler_lock():
+        _scheduler_deferred = True
         logger.debug(f"Scheduler lock held by another worker, skipping (pid={os.getpid()})")
         return
 
@@ -404,6 +407,19 @@ def start_scheduler():
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown(wait=False))
     logger.info(f"Background scheduler started (pid={os.getpid()})")
+
+
+def is_scheduler_ok():
+    """Check if the scheduler is healthy across all workers.
+
+    Returns True if this worker runs the scheduler OR another worker holds the lock.
+    Returns False only if start_scheduler() was never called or genuinely failed.
+    """
+    if scheduler.running:
+        return True
+    if _scheduler_deferred:
+        return True  # another worker has it — that's fine
+    return False
 
 
 def stop_scheduler():

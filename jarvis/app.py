@@ -357,8 +357,8 @@ def _register_routes(flask_app: Flask):
             checks['database'] = False
             app_logger.error(f'Health check - database failed: {e}')
         try:
-            from tasks.cleanup import scheduler
-            checks['scheduler'] = scheduler.running
+            from tasks.cleanup import is_scheduler_ok
+            checks['scheduler'] = is_scheduler_ok()
         except Exception:
             checks['scheduler'] = False
         status = 'healthy' if checks.get('database') else 'unhealthy'

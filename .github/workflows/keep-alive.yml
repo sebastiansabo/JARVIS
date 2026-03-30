@@ -25,7 +25,7 @@ jobs:
     steps:
       - name: Ping Production Health
         run: |
-          response=$(curl -s -w "%{http_code}" -o /tmp/health.json "https://mkt-app-922ou.ondigitalocean.app/health")
+          response=$(curl -s -w "%{http_code}" -o /tmp/health.json "https://jarvis.autoworld.ro/health")
           echo "Production: HTTP $response"
           cat /tmp/health.json
           if [ "$response" != "200" ]; then
