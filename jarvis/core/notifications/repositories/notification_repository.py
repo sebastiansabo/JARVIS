@@ -1,6 +1,7 @@
 """Notification repository.
 
-Handles all database operations for notification settings, logs, and user notifications.
+Handles all database operations for notification settings, logs, user notifications,
+push notification categories, and rate limiting.
 """
 
 import logging
@@ -8,6 +9,115 @@ import logging
 from core.base_repository import BaseRepository
 
 logger = logging.getLogger('jarvis.core.notifications.repository')
+
+
+# ============== Push Notification Categories ==============
+
+class PushCategoryRepository(BaseRepository):
+    """CRUD for push_notification_categories table."""
+
+    def get_all(self):
+        return self.query_all(
+            'SELECT * FROM push_notification_categories ORDER BY id'
+        )
+
+    def get_by_slug(self, slug):
+        return self.query_one(
+            'SELECT * FROM push_notification_categories WHERE slug = %s', (slug,)
+        )
+
+    def create(self, slug, name, description=None, priority='normal',
+               max_per_hour=None, ttl_seconds=None, android_channel_id='default_notifications'):
+        return self.execute(
+            '''INSERT INTO push_notification_categories
+               (slug, name, description, priority, max_per_hour, ttl_seconds, android_channel_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *''',
+            (slug, name, description, priority, max_per_hour, ttl_seconds, android_channel_id),
+            returning=True,
+        )
+
+    def update(self, category_id, **fields):
+        if not fields:
+            return None
+        sets = ', '.join(f'{k} = %s' for k in fields)
+        vals = list(fields.values()) + [category_id]
+        return self.execute(
+            f'UPDATE push_notification_categories SET {sets}, updated_at = NOW() WHERE id = %s RETURNING *',
+            tuple(vals), returning=True,
+        )
+
+    def delete(self, category_id):
+        return self.execute(
+            'DELETE FROM push_notification_categories WHERE id = %s AND is_builtin = FALSE',
+            (category_id,),
+        )
+
+    def get_all_with_stats(self):
+        """Get all categories with 24h usage counts."""
+        return self.query_all('''
+            SELECT c.*,
+                   COALESCE(r.cnt, 0) AS sends_24h
+            FROM push_notification_categories c
+            LEFT JOIN (
+                SELECT category_slug, COUNT(*) AS cnt
+                FROM push_rate_limit_log
+                WHERE sent_at > NOW() - INTERVAL '24 hours'
+                GROUP BY category_slug
+            ) r ON r.category_slug = c.slug
+            ORDER BY c.id
+        ''')
+
+
+# ============== Push Rate Limit Log ==============
+
+class PushRateLimitRepository(BaseRepository):
+    """Rate limit tracking for push notifications."""
+
+    def count_recent(self, user_id, category_slug, window_seconds=3600):
+        """Count pushes sent to a user in a category within the time window."""
+        row = self.query_one(
+            '''SELECT COUNT(*) AS cnt FROM push_rate_limit_log
+               WHERE user_id = %s AND category_slug = %s
+                 AND sent_at > NOW() - INTERVAL '%s seconds' ''',
+            (user_id, category_slug, window_seconds),
+        )
+        return row['cnt'] if row else 0
+
+    def record(self, user_id, category_slug):
+        """Record a push send for rate limiting."""
+        self.execute(
+            'INSERT INTO push_rate_limit_log (user_id, category_slug) VALUES (%s, %s)',
+            (user_id, category_slug),
+        )
+
+    def record_bulk(self, user_ids, category_slug):
+        """Record push sends for multiple users."""
+        if not user_ids:
+            return
+        def _work(cursor):
+            for uid in user_ids:
+                cursor.execute(
+                    'INSERT INTO push_rate_limit_log (user_id, category_slug) VALUES (%s, %s)',
+                    (uid, category_slug),
+                )
+        self.execute_many(_work)
+
+    def cleanup_old(self, days=7):
+        """Delete rate limit log entries older than N days."""
+        return self.execute(
+            "DELETE FROM push_rate_limit_log WHERE sent_at < NOW() - INTERVAL '%s days'",
+            (days,),
+        )
+
+    def get_stats(self):
+        """Get push notification stats for admin dashboard."""
+        return self.query_one('''
+            SELECT
+                COUNT(*) FILTER (WHERE sent_at > NOW() - INTERVAL '24 hours') AS sends_24h,
+                COUNT(*) FILTER (WHERE sent_at > NOW() - INTERVAL '7 days') AS sends_7d,
+                COUNT(*) FILTER (WHERE sent_at > NOW() - INTERVAL '30 days') AS sends_30d
+            FROM push_rate_limit_log
+        ''')
 
 
 class NotificationRepository(BaseRepository):

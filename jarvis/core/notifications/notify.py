@@ -23,7 +23,8 @@ _repo = InAppNotificationRepository()
 
 
 def notify_user(user_id, title, message=None, link=None,
-                entity_type=None, entity_id=None, type='info'):
+                entity_type=None, entity_id=None, type='info',
+                category='system'):
     """Send an in-app notification + push to a single user."""
     try:
         result = _repo.create(
@@ -38,7 +39,7 @@ def notify_user(user_id, title, message=None, link=None,
     # Also send push notification
     try:
         from .push_service import send_push_to_users
-        send_push_to_users([user_id], title, message or title)
+        send_push_to_users([user_id], title, message or title, category=category)
     except Exception as e:
         logger.debug(f'Push notification skipped for user {user_id}: {e}')
 
@@ -46,7 +47,8 @@ def notify_user(user_id, title, message=None, link=None,
 
 
 def notify_users(user_ids, title, message=None, link=None,
-                 entity_type=None, entity_id=None, type='info'):
+                 entity_type=None, entity_id=None, type='info',
+                 category='system'):
     """Send the same in-app notification + push to multiple users."""
     if not user_ids:
         return []
@@ -63,7 +65,7 @@ def notify_users(user_ids, title, message=None, link=None,
     # Also send push notification
     try:
         from .push_service import send_push_to_users
-        send_push_to_users(list(user_ids), title, message or title)
+        send_push_to_users(list(user_ids), title, message or title, category=category)
     except Exception as e:
         logger.debug(f'Push notifications skipped for {len(user_ids)} users: {e}')
 
@@ -72,24 +74,26 @@ def notify_users(user_ids, title, message=None, link=None,
 
 def notify_with_push(user_ids, title, message=None, link=None,
                      entity_type=None, entity_id=None, type='info',
-                     push_data=None):
+                     push_data=None, category='system'):
     """Send in-app notifications AND FCM push to multiple users.
 
     Args:
         push_data: optional dict of string key-value pairs sent as FCM data payload
                    (e.g. {'channel_id': '5', 'type': 'announcement'})
+        category: notification category slug for push pipeline (default 'system')
     """
     if not user_ids:
         return []
 
     # In-app notifications
-    results = notify_users(user_ids, title, message, link, entity_type, entity_id, type)
+    results = notify_users(user_ids, title, message, link, entity_type, entity_id, type,
+                           category=category)
 
     # Push notifications (fire-and-forget, never block the request)
     try:
         from .push_service import send_push_to_users
         push_body = message or title
-        send_push_to_users(list(user_ids), title, push_body, data=push_data)
+        send_push_to_users(list(user_ids), title, push_body, data=push_data, category=category)
     except Exception as e:
         logger.error(f'Failed to send push notifications: {e}')
 
@@ -97,7 +101,8 @@ def notify_with_push(user_ids, title, message=None, link=None,
 
 
 def notify_node_cascade(node_id, title, message=None, link=None,
-                        entity_type=None, entity_id=None, type='info'):
+                        entity_type=None, entity_id=None, type='info',
+                        category='system'):
     """Notify all responsables at a node AND all parent nodes up the chain.
 
     Walks the structure_nodes parent hierarchy collecting responsable user IDs,
@@ -108,7 +113,7 @@ def notify_node_cascade(node_id, title, message=None, link=None,
         user_ids = StructureNodeRepository().get_cascade_responsable_ids(node_id)
         if user_ids:
             return notify_users(user_ids, title, message, link,
-                                entity_type, entity_id, type)
+                                entity_type, entity_id, type, category=category)
     except Exception as e:
         logger.error(f'Failed cascade notification for node {node_id}: {e}')
     return []

@@ -1,17 +1,20 @@
 """Notification routes.
 
 Notification settings, logs, test email, default column configuration,
-and in-app notification center (universal — used by all modules).
+in-app notification center (universal — used by all modules),
+and push notification manager admin API.
 """
 from flask import jsonify, request
 from flask_login import login_required, current_user
 
 from . import notifications_bp
-from .repositories import NotificationRepository, InAppNotificationRepository
+from .repositories import NotificationRepository, InAppNotificationRepository, PushCategoryRepository, PushRateLimitRepository
 from core.utils.api_helpers import safe_error_response
 
 _notif_repo = NotificationRepository()
 _in_app_repo = InAppNotificationRepository()
+_cat_repo = PushCategoryRepository()
+_rate_repo = PushRateLimitRepository()
 
 
 @notifications_bp.route('/api/notification-settings', methods=['GET'])
@@ -167,3 +170,179 @@ def api_mark_all_read():
     """Mark all notifications as read for current user."""
     count = _in_app_repo.mark_all_read(current_user.id)
     return jsonify({'success': True, 'count': count})
+
+
+# ============== Push Notification Manager (Admin) ==============
+
+def _require_admin():
+    """Return error response if current user is not admin, else None."""
+    if not getattr(current_user, 'can_access_settings', False):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    return None
+
+
+@notifications_bp.route('/api/push-manager/settings', methods=['GET'])
+@login_required
+def api_get_push_settings():
+    """Get all push manager settings + categories + stats."""
+    err = _require_admin()
+    if err:
+        return err
+    try:
+        all_settings = _notif_repo.get_settings()
+        push_settings = {k: v for k, v in all_settings.items() if k.startswith('push_')}
+        categories = _cat_repo.get_all_with_stats()
+        stats = _rate_repo.get_stats() or {}
+
+        from .push_service import _device_repo
+        stats['active_devices'] = _device_repo.get_active_device_count()
+
+        return jsonify({
+            'settings': push_settings,
+            'categories': categories,
+            'stats': stats,
+        })
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@notifications_bp.route('/api/push-manager/settings', methods=['POST'])
+@login_required
+def api_save_push_settings():
+    """Save push manager settings (key-value pairs)."""
+    err = _require_admin()
+    if err:
+        return err
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'No data provided'}), 400
+    try:
+        # Only allow push_* keys
+        filtered = {k: v for k, v in data.items() if k.startswith('push_')}
+        if filtered:
+            _notif_repo.save_settings_bulk(filtered)
+            # Invalidate cache so changes take effect immediately
+            from .push_service import get_push_settings_cache
+            get_push_settings_cache().invalidate()
+        return jsonify({'success': True})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@notifications_bp.route('/api/push-manager/categories', methods=['GET'])
+@login_required
+def api_get_push_categories():
+    """List all push notification categories with 24h usage counts."""
+    err = _require_admin()
+    if err:
+        return err
+    try:
+        categories = _cat_repo.get_all_with_stats()
+        return jsonify({'categories': categories})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@notifications_bp.route('/api/push-manager/categories', methods=['POST'])
+@login_required
+def api_create_push_category():
+    """Create a new push notification category."""
+    err = _require_admin()
+    if err:
+        return err
+    data = request.get_json()
+    slug = data.get('slug', '').strip().lower()
+    name = data.get('name', '').strip()
+    if not slug or not name:
+        return jsonify({'success': False, 'error': 'slug and name are required'}), 400
+    try:
+        cat = _cat_repo.create(
+            slug=slug, name=name,
+            description=data.get('description'),
+            priority=data.get('priority', 'normal'),
+            max_per_hour=data.get('max_per_hour'),
+            ttl_seconds=data.get('ttl_seconds'),
+            android_channel_id=data.get('android_channel_id', 'default_notifications'),
+        )
+        from .push_service import get_push_settings_cache
+        get_push_settings_cache().invalidate()
+        return jsonify({'success': True, 'category': cat})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@notifications_bp.route('/api/push-manager/categories/<int:category_id>', methods=['PUT'])
+@login_required
+def api_update_push_category(category_id):
+    """Update a push notification category."""
+    err = _require_admin()
+    if err:
+        return err
+    data = request.get_json()
+    allowed_fields = {'name', 'description', 'priority', 'is_active', 'max_per_hour',
+                      'ttl_seconds', 'android_channel_id'}
+    fields = {k: v for k, v in data.items() if k in allowed_fields}
+    if not fields:
+        return jsonify({'success': False, 'error': 'No valid fields to update'}), 400
+    try:
+        cat = _cat_repo.update(category_id, **fields)
+        from .push_service import get_push_settings_cache
+        get_push_settings_cache().invalidate()
+        return jsonify({'success': True, 'category': cat})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@notifications_bp.route('/api/push-manager/categories/<int:category_id>', methods=['DELETE'])
+@login_required
+def api_delete_push_category(category_id):
+    """Delete a non-builtin push notification category."""
+    err = _require_admin()
+    if err:
+        return err
+    try:
+        count = _cat_repo.delete(category_id)
+        if count == 0:
+            return jsonify({'success': False, 'error': 'Category not found or is builtin'}), 404
+        from .push_service import get_push_settings_cache
+        get_push_settings_cache().invalidate()
+        return jsonify({'success': True})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@notifications_bp.route('/api/push-manager/stats', methods=['GET'])
+@login_required
+def api_get_push_stats():
+    """Get push notification statistics for admin dashboard."""
+    err = _require_admin()
+    if err:
+        return err
+    try:
+        stats = _rate_repo.get_stats() or {}
+        from .push_service import _device_repo
+        stats['active_devices'] = _device_repo.get_active_device_count()
+        return jsonify(stats)
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@notifications_bp.route('/api/push-manager/test', methods=['POST'])
+@login_required
+def api_test_push():
+    """Send a test push notification to the current admin user."""
+    err = _require_admin()
+    if err:
+        return err
+    try:
+        from .push_service import send_push_to_users
+        send_push_to_users(
+            [current_user.id], 'JARVIS Test',
+            'Push notifications are working!',
+            data={'type': 'test'},
+            category='system',
+            bypass_rules=True,
+        )
+        return jsonify({'success': True, 'message': 'Test notification sent'})
+    except Exception as e:
+        return safe_error_response(e)

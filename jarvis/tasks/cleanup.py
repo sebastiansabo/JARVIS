@@ -69,6 +69,18 @@ def cleanup_old_notifications():
         logger.error(f"Notification cleanup task failed: {e}")
 
 
+def cleanup_push_rate_limit_log():
+    """Delete push rate limit log entries older than 7 days."""
+    try:
+        from core.notifications.repositories import PushRateLimitRepository
+        repo = PushRateLimitRepository()
+        count = repo.cleanup_old(days=7)
+        if count > 0:
+            logger.info(f"Cleanup: deleted {count} old push rate limit log entries (>7 days)")
+    except Exception as e:
+        logger.error(f"Push rate limit cleanup failed: {e}")
+
+
 def run_smart_notifications():
     """Run smart notification checks (KPI thresholds, budget utilization, invoice anomalies, e-Factura backlog)."""
     try:
@@ -305,6 +317,17 @@ def start_scheduler():
         'interval',
         hours=4,
         id='smart_notifications',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        cleanup_push_rate_limit_log,
+        'cron',
+        hour=2,
+        minute=0,
+        id='cleanup_push_rate_limit_log',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,

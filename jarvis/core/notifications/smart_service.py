@@ -110,6 +110,7 @@ class SmartNotificationService:
                         entity_type='mkt_project',
                         entity_id=row['project_id'],
                         type='warning' if breach == 'warning' else 'error',
+                        category='smart_alert',
                     )
                     self._record_alert(cursor, alert_type, 'project_kpi', row['id'], current)
                     count += 1
@@ -197,6 +198,7 @@ class SmartNotificationService:
                         entity_type='mkt_project',
                         entity_id=row['project_id'],
                         type='warning' if utilization < 1.0 else 'error',
+                        category='smart_alert',
                     )
                     self._record_alert(cursor, alert_type, 'budget_line', row['id'], spent)
                     count += 1
@@ -278,6 +280,7 @@ class SmartNotificationService:
                         entity_type='invoice',
                         entity_id=row['id'],
                         type='warning',
+                        category='smart_alert',
                     )
                     self._record_alert(cursor, 'invoice_anomaly', 'invoice',
                                        row['id'], float(row['invoice_value']))
@@ -337,6 +340,7 @@ class SmartNotificationService:
                 link='/app/efactura',
                 entity_type='efactura',
                 type='warning',
+                category='smart_alert',
             )
             self._record_alert(cursor, 'efactura_backlog', 'efactura', 0, float(backlog))
             conn.commit()

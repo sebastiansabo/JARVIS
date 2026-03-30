@@ -89,4 +89,49 @@ export const settingsApi = {
     api.get<{ total_documents: number; by_source_type: Record<string, number>; has_pgvector: boolean; has_embeddings: boolean; embedding_provider: string | null; embedding_dimensions: number | null }>('/ai-agent/api/rag/stats'),
   getRagSourcePermissions: () =>
     api.get<{ allowed_sources: string[] }>('/ai-agent/api/rag-source-permissions'),
+
+  // Push Notification Manager
+  getPushManagerSettings: () =>
+    api.get<{
+      settings: Record<string, string>
+      categories: PushCategory[]
+      stats: PushStats
+    }>('/api/push-manager/settings'),
+  savePushManagerSettings: (data: Record<string, string>) =>
+    api.post<{ success: boolean }>('/api/push-manager/settings', data),
+  getPushCategories: () =>
+    api.get<{ categories: PushCategory[] }>('/api/push-manager/categories'),
+  createPushCategory: (data: Partial<PushCategory>) =>
+    api.post<{ success: boolean; category: PushCategory }>('/api/push-manager/categories', data),
+  updatePushCategory: (id: number, data: Partial<PushCategory>) =>
+    api.put<{ success: boolean; category: PushCategory }>(`/api/push-manager/categories/${id}`, data),
+  deletePushCategory: (id: number) =>
+    api.delete<{ success: boolean }>(`/api/push-manager/categories/${id}`),
+  getPushStats: () =>
+    api.get<PushStats>('/api/push-manager/stats'),
+  testPush: () =>
+    api.post<{ success: boolean; message: string }>('/api/push-manager/test', {}),
+}
+
+export interface PushCategory {
+  id: number
+  slug: string
+  name: string
+  description: string | null
+  priority: 'critical' | 'high' | 'normal' | 'low'
+  is_active: boolean
+  max_per_hour: number | null
+  ttl_seconds: number | null
+  android_channel_id: string
+  is_builtin: boolean
+  sends_24h?: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PushStats {
+  sends_24h: number
+  sends_7d: number
+  sends_30d: number
+  active_devices: number
 }

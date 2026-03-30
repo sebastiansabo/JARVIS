@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Send, Bell, Newspaper } from 'lucide-react'
+import { Save, Send, Bell, Newspaper, Smartphone, Trash2, Plus } from 'lucide-react'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { settingsApi } from '@/api/settings'
+import type { PushCategory } from '@/api/settings'
 import { toast } from 'sonner'
 
 export default function NotificationsTab() {
@@ -349,6 +351,9 @@ export default function NotificationsTab() {
         </CardContent>
       </Card>
 
+      {/* Push Notifications */}
+      <PushNotificationsSection />
+
       {/* Actions */}
       <div className="flex items-center gap-3">
         <Button onClick={handleSave} disabled={saveMutation.isPending}>
@@ -373,5 +378,408 @@ export default function NotificationsTab() {
         </div>
       </div>
     </div>
+  )
+}
+
+
+// ============== Push Notification Manager Section ==============
+
+function PushNotificationsSection() {
+  const queryClient = useQueryClient()
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['settings', 'push-manager'],
+    queryFn: settingsApi.getPushManagerSettings,
+    staleTime: 30_000,
+  })
+
+  const pushSettings = data?.settings ?? {}
+  const categories = data?.categories ?? []
+  const stats = data?.stats
+
+  const [form, setForm] = useState({
+    push_global_enabled: true,
+    push_quiet_hours_enabled: false,
+    push_quiet_hours_start: '22:00',
+    push_quiet_hours_end: '07:00',
+    push_quiet_hours_allow_critical: true,
+    push_global_rate_limit: '20',
+    push_retry_count: '1',
+    push_default_ttl: '86400',
+  })
+
+  const [newCat, setNewCat] = useState<{ slug: string; name: string; priority: PushCategory['priority'] }>({ slug: '', name: '', priority: 'normal' })
+  const [showNewCat, setShowNewCat] = useState(false)
+
+  useEffect(() => {
+    if (pushSettings && Object.keys(pushSettings).length > 0) {
+      setForm({
+        push_global_enabled: pushSettings.push_global_enabled !== 'false',
+        push_quiet_hours_enabled: pushSettings.push_quiet_hours_enabled === 'true',
+        push_quiet_hours_start: pushSettings.push_quiet_hours_start || '22:00',
+        push_quiet_hours_end: pushSettings.push_quiet_hours_end || '07:00',
+        push_quiet_hours_allow_critical: pushSettings.push_quiet_hours_allow_critical !== 'false',
+        push_global_rate_limit: pushSettings.push_global_rate_limit || '20',
+        push_retry_count: pushSettings.push_retry_count || '1',
+        push_default_ttl: pushSettings.push_default_ttl || '86400',
+      })
+    }
+  }, [pushSettings])
+
+  const saveMutation = useMutation({
+    mutationFn: (d: Record<string, string>) => settingsApi.savePushManagerSettings(d),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'push-manager'] })
+      toast.success('Push settings saved')
+    },
+    onError: () => toast.error('Failed to save push settings'),
+  })
+
+  const updateCatMutation = useMutation({
+    mutationFn: ({ id, ...d }: { id: number } & Partial<PushCategory>) =>
+      settingsApi.updatePushCategory(id, d),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'push-manager'] }),
+    onError: () => toast.error('Failed to update category'),
+  })
+
+  const createCatMutation = useMutation({
+    mutationFn: (d: Partial<PushCategory>) => settingsApi.createPushCategory(d),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'push-manager'] })
+      setShowNewCat(false)
+      setNewCat({ slug: '', name: '', priority: 'normal' })
+      toast.success('Category created')
+    },
+    onError: () => toast.error('Failed to create category'),
+  })
+
+  const deleteCatMutation = useMutation({
+    mutationFn: (id: number) => settingsApi.deletePushCategory(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'push-manager'] })
+      toast.success('Category deleted')
+    },
+    onError: () => toast.error('Failed to delete category'),
+  })
+
+  const testPushMutation = useMutation({
+    mutationFn: () => settingsApi.testPush(),
+    onSuccess: () => toast.success('Test push notification sent'),
+    onError: () => toast.error('Failed to send test push'),
+  })
+
+  const handleSavePush = () => {
+    saveMutation.mutate({
+      push_global_enabled: String(form.push_global_enabled),
+      push_quiet_hours_enabled: String(form.push_quiet_hours_enabled),
+      push_quiet_hours_start: form.push_quiet_hours_start,
+      push_quiet_hours_end: form.push_quiet_hours_end,
+      push_quiet_hours_allow_critical: String(form.push_quiet_hours_allow_critical),
+      push_global_rate_limit: form.push_global_rate_limit,
+      push_retry_count: form.push_retry_count,
+      push_default_ttl: form.push_default_ttl,
+    })
+  }
+
+  const ttlHours = Math.round(Number(form.push_default_ttl) / 3600) || 24
+
+  if (isLoading) {
+    return <div className="h-32 animate-pulse rounded bg-muted" />
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Smartphone className="h-5 w-5" />
+          Push Notifications
+        </CardTitle>
+        <CardDescription>
+          Manage mobile push notification delivery: quiet hours, rate limits, categories, and TTL.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Master toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Push Notifications Enabled</p>
+            <p className="text-xs text-muted-foreground">Master switch — disables all mobile push notifications</p>
+          </div>
+          <Switch
+            checked={form.push_global_enabled}
+            onCheckedChange={(v) => setForm({ ...form, push_global_enabled: v })}
+          />
+        </div>
+
+        {form.push_global_enabled && (
+          <>
+            {/* Quiet Hours */}
+            <div className="space-y-3 border-l-2 border-muted pl-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Quiet Hours</p>
+                  <p className="text-xs text-muted-foreground">Block non-critical pushes during off-hours (Europe/Bucharest)</p>
+                </div>
+                <Switch
+                  checked={form.push_quiet_hours_enabled}
+                  onCheckedChange={(v) => setForm({ ...form, push_quiet_hours_enabled: v })}
+                />
+              </div>
+              {form.push_quiet_hours_enabled && (
+                <div className="space-y-3 pl-4">
+                  <div className="flex items-center gap-3">
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Start</Label>
+                      <Input
+                        type="time"
+                        className="h-8 w-28 text-sm"
+                        value={form.push_quiet_hours_start}
+                        onChange={(e) => setForm({ ...form, push_quiet_hours_start: e.target.value })}
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label className="text-xs">End</Label>
+                      <Input
+                        type="time"
+                        className="h-8 w-28 text-sm"
+                        value={form.push_quiet_hours_end}
+                        onChange={(e) => setForm({ ...form, push_quiet_hours_end: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={form.push_quiet_hours_allow_critical}
+                      onCheckedChange={(v) => setForm({ ...form, push_quiet_hours_allow_critical: v })}
+                    />
+                    <Label className="text-xs">Allow critical notifications during quiet hours</Label>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Rate Limits */}
+            <div className="space-y-3 border-l-2 border-muted pl-4">
+              <p className="text-sm font-medium">Rate Limits & Delivery</p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="grid gap-1">
+                  <Label className="text-xs">Max per user/hour</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="100"
+                    className="h-8 w-24 text-sm"
+                    value={form.push_global_rate_limit}
+                    onChange={(e) => setForm({ ...form, push_global_rate_limit: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-xs">Default TTL (hours)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="672"
+                    className="h-8 w-24 text-sm"
+                    value={ttlHours}
+                    onChange={(e) => setForm({ ...form, push_default_ttl: String(Number(e.target.value) * 3600) })}
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-xs">Retry count</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="3"
+                    className="h-8 w-24 text-sm"
+                    value={form.push_retry_count}
+                    onChange={(e) => setForm({ ...form, push_retry_count: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Categories */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Categories</p>
+                <Button size="sm" variant="outline" onClick={() => setShowNewCat(!showNewCat)}>
+                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  Add
+                </Button>
+              </div>
+
+              {showNewCat && (
+                <div className="flex items-end gap-2 rounded border p-3">
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Slug</Label>
+                    <Input
+                      className="h-8 w-32 text-sm"
+                      placeholder="my_category"
+                      value={newCat.slug}
+                      onChange={(e) => setNewCat({ ...newCat, slug: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Name</Label>
+                    <Input
+                      className="h-8 w-36 text-sm"
+                      placeholder="My Category"
+                      value={newCat.name}
+                      onChange={(e) => setNewCat({ ...newCat, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Priority</Label>
+                    <Select value={newCat.priority} onValueChange={(v) => setNewCat({ ...newCat, priority: v as PushCategory['priority'] })}>
+                      <SelectTrigger className="h-8 w-28 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="critical">Critical</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="normal">Normal</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    size="sm"
+                    disabled={!newCat.slug || !newCat.name || createCatMutation.isPending}
+                    onClick={() => createCatMutation.mutate(newCat)}
+                  >
+                    {createCatMutation.isPending ? '...' : 'Create'}
+                  </Button>
+                </div>
+              )}
+
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[140px]">Name</TableHead>
+                      <TableHead className="w-[100px]">Priority</TableHead>
+                      <TableHead className="w-[90px]">Limit/hr</TableHead>
+                      <TableHead className="w-[80px]">TTL (h)</TableHead>
+                      <TableHead className="w-[70px]">24h</TableHead>
+                      <TableHead className="w-[60px]">Active</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {categories.map((cat) => (
+                      <TableRow key={cat.id}>
+                        <TableCell>
+                          <div>
+                            <p className="text-sm font-medium">{cat.name}</p>
+                            <p className="text-xs text-muted-foreground">{cat.slug}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={cat.priority}
+                            onValueChange={(v) => updateCatMutation.mutate({ id: cat.id, priority: v as PushCategory['priority'] })}
+                          >
+                            <SelectTrigger className="h-7 w-24 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="critical">Critical</SelectItem>
+                              <SelectItem value="high">High</SelectItem>
+                              <SelectItem value="normal">Normal</SelectItem>
+                              <SelectItem value="low">Low</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min="0"
+                            className="h-7 w-16 text-xs"
+                            placeholder="--"
+                            value={cat.max_per_hour ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value ? Number(e.target.value) : null
+                              updateCatMutation.mutate({ id: cat.id, max_per_hour: val })
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min="0"
+                            className="h-7 w-16 text-xs"
+                            placeholder="--"
+                            value={cat.ttl_seconds ? Math.round(cat.ttl_seconds / 3600) : ''}
+                            onChange={(e) => {
+                              const val = e.target.value ? Number(e.target.value) * 3600 : null
+                              updateCatMutation.mutate({ id: cat.id, ttl_seconds: val })
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-xs text-muted-foreground">{cat.sends_24h ?? 0}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Switch
+                            checked={cat.is_active}
+                            onCheckedChange={(v) => updateCatMutation.mutate({ id: cat.id, is_active: v })}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {!cat.is_builtin && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => deleteCatMutation.mutate(cat.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            {/* Stats */}
+            {stats && (
+              <div className="flex gap-6 rounded-md border p-3">
+                <div>
+                  <p className="text-lg font-bold">{stats.sends_24h ?? 0}</p>
+                  <p className="text-xs text-muted-foreground">Pushes (24h)</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold">{stats.sends_7d ?? 0}</p>
+                  <p className="text-xs text-muted-foreground">Pushes (7d)</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold">{stats.active_devices ?? 0}</p>
+                  <p className="text-xs text-muted-foreground">Active devices</p>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Save + Test */}
+        <div className="flex items-center gap-3 border-t pt-4">
+          <Button onClick={handleSavePush} disabled={saveMutation.isPending}>
+            <Save className="mr-1.5 h-4 w-4" />
+            {saveMutation.isPending ? 'Saving...' : 'Save Push Settings'}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={testPushMutation.isPending}
+            onClick={() => testPushMutation.mutate()}
+          >
+            <Smartphone className="mr-1.5 h-4 w-4" />
+            {testPushMutation.isPending ? 'Sending...' : 'Send Test Push'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
