@@ -24,12 +24,20 @@ interface SelectOption {
   label: string
 }
 
+export interface EditInvoiceApiOverrides {
+  updateInvoice?: (id: number, data: Partial<Invoice>) => Promise<unknown>
+  updateAllocations?: (id: number, data: { allocations: Record<string, unknown>[] }) => Promise<unknown>
+}
+
 interface EditInvoiceDialogProps {
   invoice: Invoice
   open: boolean
   onClose: () => void
   statusOptions: SelectOption[]
   paymentOptions: SelectOption[]
+  mode?: 'full' | 'profile'
+  apiOverrides?: EditInvoiceApiOverrides
+  invalidateQueryKeys?: string[][]
 }
 
 function buildInitialLineAllocations(invoice: Invoice, effectiveValue: number): Map<number, AllocationRow[]> {
@@ -55,7 +63,8 @@ function buildInitialLineAllocations(invoice: Invoice, effectiveValue: number): 
   return map
 }
 
-export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, paymentOptions }: EditInvoiceDialogProps) {
+export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, paymentOptions, mode = 'full', apiOverrides, invalidateQueryKeys }: EditInvoiceDialogProps) {
+  const isProfile = mode === 'profile'
   const queryClient = useQueryClient()
   const allocRef = useRef<AllocationEditorRef>(null)
   const [supplier, setSupplier] = useState(invoice.supplier)
@@ -111,24 +120,38 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
     staleTime: 5 * 60_000,
   })
 
+  const updateInvoiceFn = apiOverrides?.updateInvoice ?? invoicesApi.updateInvoice
+  const updateAllocationsFn = apiOverrides?.updateAllocations ?? invoicesApi.updateAllocations
+
   const handleSave = useCallback(async () => {
     setSaving(true)
     try {
-      // Save metadata
-      await invoicesApi.updateInvoice(invoice.id, {
-        supplier,
-        invoice_number: invoiceNumber,
-        invoice_date: invoiceDate,
-        invoice_value: parseFloat(invoiceValue),
-        currency,
-        status,
-        payment_status: paymentStatus,
-        subtract_vat: subtractVat,
-        vat_rate: vatRate ? parseFloat(vatRate) : null,
-        net_value: netValue ? parseFloat(netValue) : null,
-        comment: comment || null,
-        drive_link: driveLink || null,
-      })
+      // Save metadata — profile mode sends only allowed fields
+      const metadataPayload = isProfile
+        ? {
+            status,
+            payment_status: paymentStatus,
+            subtract_vat: subtractVat,
+            vat_rate: vatRate ? parseFloat(vatRate) : null,
+            net_value: netValue ? parseFloat(netValue) : null,
+            comment: comment || null,
+            drive_link: driveLink || null,
+          }
+        : {
+            supplier,
+            invoice_number: invoiceNumber,
+            invoice_date: invoiceDate,
+            invoice_value: parseFloat(invoiceValue),
+            currency,
+            status,
+            payment_status: paymentStatus,
+            subtract_vat: subtractVat,
+            vat_rate: vatRate ? parseFloat(vatRate) : null,
+            net_value: netValue ? parseFloat(netValue) : null,
+            comment: comment || null,
+            drive_link: driveLink || null,
+          }
+      await updateInvoiceFn(invoice.id, metadataPayload)
 
       if (isPerLine) {
         // Per-line mode: flatten line allocations into payload
@@ -136,14 +159,14 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
           rowsToApiPayload(perLineCompany, lineRows, lineIdx),
         )
         if (allAllocations.length > 0) {
-          await invoicesApi.updateAllocations(invoice.id, { allocations: allAllocations })
+          await updateAllocationsFn(invoice.id, { allocations: allAllocations })
         }
       } else if (allocRef.current) {
         // Classic mode: use AllocationEditor ref
         if (allocRef.current.isValid()) {
           const company = allocRef.current.getCompany()
           const rows = allocRef.current.getRows()
-          await invoicesApi.updateAllocations(invoice.id, {
+          await updateAllocationsFn(invoice.id, {
             allocations: rowsToApiPayload(company, rows),
           })
         } else if (allocRef.current.getRows().some((r) => r.department || r.reinvoiceDestinations.length > 0)) {
@@ -152,7 +175,14 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
         }
       }
 
-      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      // Invalidate relevant query keys
+      if (invalidateQueryKeys) {
+        for (const key of invalidateQueryKeys) {
+          queryClient.invalidateQueries({ queryKey: key })
+        }
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      }
       toast.success('Invoice updated')
       onClose()
     } catch {
@@ -160,7 +190,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
     } finally {
       setSaving(false)
     }
-  }, [invoice.id, supplier, invoiceNumber, invoiceDate, invoiceValue, currency, status, paymentStatus, subtractVat, vatRate, netValue, comment, driveLink, isPerLine, lineAllocations, perLineCompany, queryClient, onClose])
+  }, [invoice.id, supplier, invoiceNumber, invoiceDate, invoiceValue, currency, status, paymentStatus, subtractVat, vatRate, netValue, comment, driveLink, isPerLine, isProfile, lineAllocations, perLineCompany, queryClient, onClose, updateInvoiceFn, updateAllocationsFn, invalidateQueryKeys])
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -172,30 +202,34 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Supplier</Label>
-              <Input value={supplier} onChange={(e) => setSupplier(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Invoice #</Label>
-              <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Date</Label>
-              <DateField value={invoiceDate} onChange={setInvoiceDate} className="w-full" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Value</Label>
-              <Input type="number" step="0.01" value={invoiceValue} onChange={(e) => setInvoiceValue(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Currency</Label>
-              <Input value={currency} onChange={(e) => setCurrency(e.target.value)} />
-            </div>
-          </div>
+          {!isProfile && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Supplier</Label>
+                  <Input value={supplier} onChange={(e) => setSupplier(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Invoice #</Label>
+                  <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Date</Label>
+                  <DateField value={invoiceDate} onChange={setInvoiceDate} className="w-full" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Value</Label>
+                  <Input type="number" step="0.01" value={invoiceValue} onChange={(e) => setInvoiceValue(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Currency</Label>
+                  <Input value={currency} onChange={(e) => setCurrency(e.target.value)} />
+                </div>
+              </div>
+            </>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Status</Label>
@@ -256,26 +290,28 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
           </div>
 
           {/* Tags */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">Tags</Label>
-            <TagPicker
-              entityType="invoice"
-              entityId={invoice.id}
-              currentTags={invoiceTags}
-              onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
-            >
-              <div className="flex flex-wrap items-center gap-1 min-h-[32px] rounded-md border px-3 py-1.5 cursor-pointer hover:bg-accent/50">
-                {invoiceTags.length > 0 ? (
-                  invoiceTags.map((t) => <TagBadge key={t.id} tag={t} />)
-                ) : (
-                  <span className="text-xs text-muted-foreground">Click to add tags...</span>
-                )}
-              </div>
-            </TagPicker>
-          </div>
+          {!isProfile && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Tags</Label>
+              <TagPicker
+                entityType="invoice"
+                entityId={invoice.id}
+                currentTags={invoiceTags}
+                onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ['entity-tags'] })}
+              >
+                <div className="flex flex-wrap items-center gap-1 min-h-[32px] rounded-md border px-3 py-1.5 cursor-pointer hover:bg-accent/50">
+                  {invoiceTags.length > 0 ? (
+                    invoiceTags.map((t) => <TagBadge key={t.id} tag={t} />)
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Click to add tags...</span>
+                  )}
+                </div>
+              </TagPicker>
+            </div>
+          )}
 
           {/* Approval */}
-          <ApprovalWidget entityType="invoice" entityId={invoice.id} />
+          {!isProfile && <ApprovalWidget entityType="invoice" entityId={invoice.id} />}
 
           {/* Allocations */}
           <div className="border-t pt-4">

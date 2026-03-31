@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Invoice } from '@/types/invoices'
+import type { Invoice, InvoiceDmsLink, DmsDocSearchResult } from '@/types/invoices'
 import type { ProfileSummary, ProfileInvoice, ProfileActivity, ProfileBonus, ProfilePontajeResponse, ProfileTeamPontajeResponse } from '@/types/profile'
 
 export interface ProfileUpdatePayload {
@@ -34,6 +34,23 @@ export const profileApi = {
 
   updateAllocations: (invoiceId: number, data: { allocations: Record<string, unknown>[] }) =>
     api.put<{ success: boolean }>(`/profile/api/invoices/${invoiceId}/allocations`, data),
+
+  updateInvoiceMetadata: (invoiceId: number, data: Partial<Invoice>) =>
+    api.put<{ success: boolean }>(`/profile/api/invoices/${invoiceId}/metadata`, data),
+
+  getInvoiceDmsDocuments: (invoiceId: number) =>
+    api.get<{ documents: InvoiceDmsLink[] }>(`/profile/api/invoices/${invoiceId}/dms-documents`),
+
+  linkDmsDocument: (invoiceId: number, documentId: number) =>
+    api.post<{ success: boolean; id: number }>(`/profile/api/invoices/${invoiceId}/dms-documents`, { document_id: documentId }),
+
+  unlinkDmsDocument: (invoiceId: number, documentId: number) =>
+    api.delete<{ success: boolean }>(`/profile/api/invoices/${invoiceId}/dms-documents/${documentId}`),
+
+  searchDmsDocuments: (q?: string, limit = 20) =>
+    api.get<{ documents: DmsDocSearchResult[] }>(
+      `/profile/api/invoices/dms-search${q ? `?q=${encodeURIComponent(q)}&limit=${limit}` : `?limit=${limit}`}`,
+    ),
 
   getHrEvents: (params?: { year?: number; month?: number; search?: string; page?: number; per_page?: number }) => {
     const sp = new URLSearchParams()

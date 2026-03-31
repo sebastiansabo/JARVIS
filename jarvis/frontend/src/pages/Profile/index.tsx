@@ -55,12 +55,16 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { profileApi, type ProfileUpdatePayload } from '@/api/profile'
+import { settingsApi } from '@/api/settings'
 import { checkinApi } from '@/api/checkin'
 import { usersApi } from '@/api/users'
 import { useAuth } from '@/hooks/useAuth'
 import { AllocationEditor, allocationsToRows, rowsToApiPayload } from '@/pages/Accounting/AllocationEditor'
+import { EditInvoiceDialog } from '@/pages/Accounting/EditInvoiceDialog'
+import { InvoiceLinkedDocs } from '@/components/shared/InvoiceLinkedDocs'
 import { toast } from 'sonner'
 import { cn, usePersistedState } from '@/lib/utils'
+import type { Invoice } from '@/types/invoices'
 import type { ProfileInvoice, ProfileActivity, ProfileBonus, OrgTreeNode } from '@/types/profile'
 import type { BioStarDayHistory, BioStarPunchLog, BioStarDailySummary, BioStarRangeSummary } from '@/types/biostar'
 
@@ -1628,8 +1632,24 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
   const [perPage, setPerPage] = usePersistedState('profile-invoices-page-size', 25)
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
 
   const canEdit = user?.can_edit_invoices || (user?.permissions?.['invoices.records.edit'] ?? false) || isOrgResponsable
+
+  const { data: dropdownOptions = [] } = useQuery({
+    queryKey: ['settings', 'dropdowns'],
+    queryFn: () => settingsApi.getDropdownOptions(),
+    staleTime: 10 * 60_000,
+    enabled: canEdit,
+  })
+  const statusOptions = useMemo(
+    () => dropdownOptions.filter((d) => d.dropdown_type === 'invoice_status' && d.value).map((d) => ({ value: d.value, label: d.label })),
+    [dropdownOptions],
+  )
+  const paymentOptions = useMemo(
+    () => dropdownOptions.filter((d) => d.dropdown_type === 'payment_status' && d.value).map((d) => ({ value: d.value, label: d.label })),
+    [dropdownOptions],
+  )
 
   const uniqueDepts = useMemo(() => [...new Set(orgDepartments)], [orgDepartments])
 
@@ -1804,6 +1824,7 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                             <TableRow>
                               <TableCell colSpan={10} className="p-0">
                                 <ProfileInvoiceExpansion
+                                  invoiceId={inv.id}
                                   invoice={expandedInvoice}
                                   isEditing={editingId === inv.id}
                                   canEdit={canEdit}
@@ -1811,6 +1832,7 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                                   onCancelEdit={() => setEditingId(null)}
                                   onSave={(company, rows) => saveMutation.mutate({ invoiceId: inv.id, company, rows })}
                                   isSaving={saveMutation.isPending}
+                                  onEditInvoice={(fullInv) => setEditInvoice(fullInv)}
                                 />
                               </TableCell>
                             </TableRow>
@@ -1827,11 +1849,28 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
           </>
         )}
       </CardContent>
+
+      {editInvoice && (
+        <EditInvoiceDialog
+          invoice={editInvoice}
+          open={!!editInvoice}
+          onClose={() => setEditInvoice(null)}
+          statusOptions={statusOptions}
+          paymentOptions={paymentOptions}
+          mode="profile"
+          apiOverrides={{
+            updateInvoice: profileApi.updateInvoiceMetadata,
+            updateAllocations: profileApi.updateAllocations,
+          }}
+          invalidateQueryKeys={[['profile', 'invoices'], ['profile', 'invoice-detail'], ['invoices']]}
+        />
+      )}
     </Card>
   )
 }
 
 function ProfileInvoiceExpansion({
+  invoiceId,
   invoice,
   isEditing,
   canEdit,
@@ -1839,7 +1878,9 @@ function ProfileInvoiceExpansion({
   onCancelEdit,
   onSave,
   isSaving,
+  onEditInvoice,
 }: {
+  invoiceId: number
   invoice: unknown
   isEditing: boolean
   canEdit: boolean
@@ -1847,6 +1888,7 @@ function ProfileInvoiceExpansion({
   onCancelEdit: () => void
   onSave: (company: string, rows: import('@/pages/Accounting/AllocationEditor').AllocationRow[]) => void
   isSaving: boolean
+  onEditInvoice: (inv: Invoice) => void
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const inv = invoice as any
@@ -1885,13 +1927,31 @@ function ProfileInvoiceExpansion({
 
   if (allocations.length === 0) {
     return (
-      <div className="px-8 py-4 bg-muted/30 flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">No allocations</span>
-        {canEdit && (
-          <Button variant="outline" size="sm" onClick={onEdit}>
-            <Pencil className="h-3 w-3 mr-1" /> Add Allocation
-          </Button>
-        )}
+      <div className="px-8 py-4 bg-muted/30">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">No allocations</span>
+          {canEdit && (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => onEditInvoice(inv as Invoice)}>
+                <Pencil className="h-3 w-3 mr-1" /> Edit Invoice
+              </Button>
+              <Button variant="outline" size="sm" onClick={onEdit}>
+                <Pencil className="h-3 w-3 mr-1" /> Add Allocation
+              </Button>
+            </div>
+          )}
+        </div>
+        <InvoiceLinkedDocs
+          invoiceId={invoiceId}
+          isBin={false}
+          canEdit={canEdit}
+          api={{
+            getDocs: profileApi.getInvoiceDmsDocuments,
+            unlinkDoc: profileApi.unlinkDmsDocument,
+            searchDocs: profileApi.searchDmsDocuments,
+            linkDoc: profileApi.linkDmsDocument,
+          }}
+        />
       </div>
     )
   }
@@ -1959,6 +2019,26 @@ function ProfileInvoiceExpansion({
           })}
         </tbody>
       </table>
+
+      {canEdit && (
+        <div className="mt-2 flex justify-end">
+          <Button variant="outline" size="sm" onClick={() => onEditInvoice(inv as Invoice)}>
+            <Pencil className="h-3 w-3 mr-1" /> Edit Invoice
+          </Button>
+        </div>
+      )}
+
+      <InvoiceLinkedDocs
+        invoiceId={invoiceId}
+        isBin={false}
+        canEdit={canEdit}
+        api={{
+          getDocs: profileApi.getInvoiceDmsDocuments,
+          unlinkDoc: profileApi.unlinkDmsDocument,
+          searchDocs: profileApi.searchDmsDocuments,
+          linkDoc: profileApi.linkDmsDocument,
+        }}
+      />
     </div>
   )
 }

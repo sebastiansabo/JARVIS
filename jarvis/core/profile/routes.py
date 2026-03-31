@@ -217,6 +217,132 @@ def api_profile_update_allocations(invoice_id):
         return safe_error_response(e)
 
 
+# ------------------------------------------------------------------
+# Profile-scoped invoice metadata update
+# ------------------------------------------------------------------
+
+PROFILE_EDITABLE_FIELDS = {'status', 'payment_status', 'comment', 'drive_link',
+                           'subtract_vat', 'vat_rate', 'net_value'}
+
+
+@profile_bp.route('/api/invoices/<int:invoice_id>/metadata', methods=['PUT'])
+@login_required
+def api_profile_update_invoice_metadata(invoice_id):
+    """Update restricted invoice fields — allowed for org responsables within their scope."""
+    try:
+        from hr.events.database import is_manager
+        if not is_manager(current_user.id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+        if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+        data = request.get_json() or {}
+        filtered = {k: v for k, v in data.items() if k in PROFILE_EDITABLE_FIELDS}
+        if not filtered:
+            return jsonify({'success': False, 'error': 'No editable fields provided'}), 400
+
+        from accounting.invoices.services import InvoiceService
+        from accounting.invoices.services.invoice_service import UserContext
+        service = InvoiceService()
+        user_ctx = UserContext(
+            user_id=current_user.id,
+            user_email=current_user.email,
+            role_name=current_user.role_name,
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent', '')[:500],
+        )
+        result = service.update_invoice(invoice_id, filtered, user_ctx)
+        if result.success:
+            return jsonify(result.data)
+        return jsonify({'success': False, 'error': result.error}), result.status_code
+    except Exception as e:
+        return safe_error_response(e)
+
+
+# ------------------------------------------------------------------
+# Profile-scoped DMS document linking (org-scope instead of accounting perms)
+# ------------------------------------------------------------------
+
+@profile_bp.route('/api/invoices/<int:invoice_id>/dms-documents')
+@login_required
+def api_profile_get_invoice_dms_docs(invoice_id):
+    """List DMS documents linked to an invoice — org-scope check."""
+    try:
+        from hr.events.database import is_manager
+        if not is_manager(current_user.id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+        if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+        from accounting.invoices.repositories import InvoiceDmsLinkRepository
+        docs = InvoiceDmsLinkRepository().get_by_invoice(invoice_id)
+        return jsonify({'documents': docs})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@profile_bp.route('/api/invoices/<int:invoice_id>/dms-documents', methods=['POST'])
+@login_required
+def api_profile_link_invoice_dms_doc(invoice_id):
+    """Link a DMS document to an invoice — org-scope check."""
+    try:
+        from hr.events.database import is_manager
+        if not is_manager(current_user.id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+        if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+        data = request.get_json(silent=True) or {}
+        document_id = data.get('document_id')
+        if not document_id:
+            return jsonify({'success': False, 'error': 'document_id is required'}), 400
+
+        from accounting.invoices.repositories import InvoiceDmsLinkRepository
+        link_id = InvoiceDmsLinkRepository().link(invoice_id, document_id, current_user.id)
+        if link_id is None:
+            return jsonify({'success': False, 'error': 'Document already linked'}), 409
+        return jsonify({'success': True, 'id': link_id}), 201
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@profile_bp.route('/api/invoices/<int:invoice_id>/dms-documents/<int:document_id>', methods=['DELETE'])
+@login_required
+def api_profile_unlink_invoice_dms_doc(invoice_id, document_id):
+    """Unlink a DMS document from an invoice — org-scope check."""
+    try:
+        from hr.events.database import is_manager
+        if not is_manager(current_user.id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+        if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+        from accounting.invoices.repositories import InvoiceDmsLinkRepository
+        if InvoiceDmsLinkRepository().unlink(invoice_id, document_id):
+            return jsonify({'success': True})
+        return jsonify({'success': False, 'error': 'Link not found'}), 404
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@profile_bp.route('/api/invoices/dms-search')
+@login_required
+def api_profile_search_dms_docs():
+    """Search DMS documents for the linking picker — org manager check only."""
+    try:
+        from hr.events.database import is_manager
+        if not is_manager(current_user.id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+        q = request.args.get('q', '').strip()
+        limit = min(int(request.args.get('limit', 20)), 50)
+        from accounting.invoices.repositories import InvoiceDmsLinkRepository
+        docs = InvoiceDmsLinkRepository().search_documents(query=q if q else None, limit=limit)
+        return jsonify({'documents': docs})
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @profile_bp.route('/api/hr-events')
 @login_required
 def api_profile_hr_events():
