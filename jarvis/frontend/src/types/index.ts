@@ -14,6 +14,7 @@ export interface User {
   can_edit_invoices: boolean
   can_delete_invoices: boolean
   can_view_invoices: boolean
+  can_access_dashboard: boolean
   can_access_accounting: boolean
   can_access_settings: boolean
   can_access_connectors: boolean

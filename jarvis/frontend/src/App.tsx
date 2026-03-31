@@ -103,9 +103,7 @@ function DefaultRedirect() {
   const user = useAuthStore((s) => s.user)
   const isLoading = useAuthStore((s) => s.isLoading)
   if (isLoading) return <PageLoader />
-  // Users without any major module access → profile instead of dashboard
-  const hasDashboardModules = user?.can_access_accounting || user?.can_access_marketing || user?.can_access_settings || user?.can_access_crm
-  if (user && !hasDashboardModules) {
+  if (user && !user.can_access_dashboard) {
     return <Navigate to="profile" replace />
   }
   return <Navigate to="dashboard" replace />
@@ -119,7 +117,7 @@ export default function App() {
 
       <Route path="/app" element={<Layout />}>
         <Route index element={<DefaultRedirect />} />
-        <Route path="dashboard" element={<SuspensePage><Dashboard /></SuspensePage>} />
+        <Route path="dashboard" element={<Guard flag="can_access_dashboard"><SuspensePage><Dashboard /></SuspensePage></Guard>} />
         <Route path="profile" element={<SuspensePage><Profile /></SuspensePage>} />
 
         {/* Accounting — requires can_access_accounting */}
@@ -178,7 +176,7 @@ export default function App() {
         <Route path="mobile-checkin" element={<SuspensePage><MobileCheckin /></SuspensePage>} />
         <Route path="download" element={<SuspensePage><DownloadApp /></SuspensePage>} />
 
-        <Route path="*" element={<Navigate to="dashboard" replace />} />
+        <Route path="*" element={<DefaultRedirect />} />
       </Route>
     </Routes>
   )

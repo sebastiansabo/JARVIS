@@ -164,9 +164,20 @@ def api_profile_invoice_detail(invoice_id):
             return jsonify({'error': 'Invoice not found'}), 404
 
         # Verify current user is responsible on at least one allocation
+        # Check both responsible_user_id AND name-based matching (same logic as profile list)
         allocations = invoice.get('allocations', [])
-        user_ids = {a.get('responsible_user_id') for a in allocations if a}
-        if current_user.id not in user_ids:
+        user_name_lower = (current_user.name or '').lower()
+        is_responsible = False
+        for a in allocations:
+            if not a:
+                continue
+            if a.get('responsible_user_id') == current_user.id:
+                is_responsible = True
+                break
+            if a.get('responsible_user_id') is None and (a.get('responsible') or '').lower() == user_name_lower:
+                is_responsible = True
+                break
+        if not is_responsible:
             return jsonify({'error': 'Invoice not found'}), 404
 
         return jsonify(invoice)

@@ -201,6 +201,7 @@ def api_current_user():
                 'can_delete_invoices': current_user.can_delete_invoices,
                 'can_view_invoices': current_user.can_view_invoices,
                 # Module access — driven by v2 permission matrix
+                'can_access_dashboard':  _access('dashboard',  'can_access_accounting'),
                 'can_access_accounting': _access('accounting', 'can_access_accounting'),
                 'can_access_settings':   _access('settings',   'can_access_settings'),
                 'can_access_hr':         _access('hr',         'can_access_hr'),

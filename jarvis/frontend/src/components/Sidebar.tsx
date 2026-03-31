@@ -27,7 +27,7 @@ interface NavItem {
 }
 
 const navItemsDef: NavItem[] = [
-  { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'can_access_dashboard' },
   { path: '/app/ai-agent', label: 'AI Agent', icon: Bot, moduleKey: 'ai_agent', permission: 'can_access_ai_agent' },
   {
     path: '/app/accounting',

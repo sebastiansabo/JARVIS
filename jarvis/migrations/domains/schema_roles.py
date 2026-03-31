@@ -915,6 +915,7 @@ def _seed_mobile_permissions_v2(cursor, conn):
     """
     new_perms = [
         # ── Missing module.access entries ──
+        ('dashboard', 'Dashboard',  'LayoutDashboard',   'module', 'Dashboard Module', 'access', 'Access', 'Access the Dashboard module', False, 0),
         ('digest',    'Digest',     'bi-newspaper',      'module', 'Digest Module',    'access', 'Access', 'Access Digest channels',    False, 1),
         ('approvals', 'Approvals',  'bi-check2-square',  'module', 'Approvals Module', 'access', 'Access', 'Access Approvals module',   False, 1),
         ('forms',     'Forms',      'bi-ui-checks-grid', 'module', 'Forms Module',     'access', 'Access', 'Access Forms module',       False, 1),
@@ -926,6 +927,7 @@ def _seed_mobile_permissions_v2(cursor, conn):
         ('marketing',  'Marketing',  'bi-megaphone',      'mobile', 'Mobile', 'access', 'Mobile Access', 'Show Calendar in mobile app',   False, 50),
         ('digest',     'Digest',     'bi-newspaper',      'mobile', 'Mobile', 'access', 'Mobile Access', 'Show Digest in mobile app',     False, 50),
         ('accounting', 'Accounting', 'bi-calculator',     'mobile', 'Mobile', 'access', 'Mobile Access', 'Show Invoices in mobile app',   False, 50),
+        ('hr',         'HR',         'bi-people',         'mobile', 'Mobile', 'access', 'Mobile Access', 'Show HR Events in mobile app',  False, 50),
     ]
 
     for p in new_perms:
@@ -947,7 +949,7 @@ def _seed_mobile_permissions_v2(cursor, conn):
             SELECT 1 FROM role_permissions_v2 rp WHERE rp.permission_id = p.id
         )
           AND ((p.entity_key = 'module' AND p.action_key = 'access'
-                AND p.module_key IN ('digest', 'approvals', 'forms'))
+                AND p.module_key IN ('dashboard', 'digest', 'approvals', 'forms'))
                OR (p.entity_key = 'mobile' AND p.action_key = 'access'))
     ''')
     new_perm_rows = cursor.fetchall()
