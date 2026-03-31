@@ -109,6 +109,17 @@ function DefaultRedirect() {
   return <Navigate to="dashboard" replace />
 }
 
+/** Show Dashboard if user has access, otherwise redirect to profile (not Access Denied). */
+function DashboardOrRedirect() {
+  const user = useAuthStore((s) => s.user)
+  const isLoading = useAuthStore((s) => s.isLoading)
+  if (isLoading) return <PageLoader />
+  if (user && !user.can_access_dashboard) {
+    return <Navigate to="/app/profile" replace />
+  }
+  return <SuspensePage><Dashboard /></SuspensePage>
+}
+
 export default function App() {
   return (
     <Routes>
@@ -117,7 +128,7 @@ export default function App() {
 
       <Route path="/app" element={<Layout />}>
         <Route index element={<DefaultRedirect />} />
-        <Route path="dashboard" element={<Guard flag="can_access_dashboard"><SuspensePage><Dashboard /></SuspensePage></Guard>} />
+        <Route path="dashboard" element={<DashboardOrRedirect />} />
         <Route path="profile" element={<SuspensePage><Profile /></SuspensePage>} />
 
         {/* Accounting — requires can_access_accounting */}
