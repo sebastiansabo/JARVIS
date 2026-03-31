@@ -157,6 +157,25 @@ export default function ChannelSettings({ channel, onBack }: Props) {
             </SelectContent>
           </Select>
         </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-sm">Notification mode</Label>
+            <p className="text-xs text-muted-foreground">What triggers push notifications for members</p>
+          </div>
+          <Select
+            value={channel.notify_mode ?? 'all'}
+            onValueChange={(v) => updateSettings.mutate({ notify_mode: v })}
+          >
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All messages</SelectItem>
+              <SelectItem value="mentions_polls">Mentions & Polls</SelectItem>
+              <SelectItem value="mute">Mute</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Members */}

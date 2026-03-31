@@ -135,6 +135,7 @@ def create_schema_digest(conn, cursor):
         "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS allow_reactions BOOLEAN DEFAULT TRUE",
         "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS allow_images BOOLEAN DEFAULT TRUE",
         "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS auto_delete_days INTEGER",
+        "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS notify_mode TEXT DEFAULT 'all'",
     ]:
         cursor.execute(col_sql)
 

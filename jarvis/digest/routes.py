@@ -45,6 +45,7 @@ def create_channel():
         is_private=data.get('is_private', False),
         created_by=current_user.id,
         targets=data.get('targets'),
+        notify_mode=data.get('notify_mode', 'all'),
     )
     return jsonify({'success': True, 'data': channel}), 201
 

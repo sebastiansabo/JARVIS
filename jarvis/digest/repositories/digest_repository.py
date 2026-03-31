@@ -39,11 +39,11 @@ class DigestRepository(BaseRepository):
             WHERE c.id = %s AND c.deleted_at IS NULL
         ''', (channel_id,))
 
-    def create_channel(self, name, description, channel_type, is_private, created_by):
+    def create_channel(self, name, description, channel_type, is_private, created_by, notify_mode='all'):
         return self.execute('''
-            INSERT INTO digest_channels (name, description, type, is_private, created_by)
-            VALUES (%s, %s, %s, %s, %s) RETURNING *
-        ''', (name, description, channel_type, is_private, created_by), returning=True)
+            INSERT INTO digest_channels (name, description, type, is_private, created_by, notify_mode)
+            VALUES (%s, %s, %s, %s, %s, %s) RETURNING *
+        ''', (name, description, channel_type, is_private, created_by, notify_mode), returning=True)
 
     def update_channel(self, channel_id, name, description):
         return self.execute('''
@@ -190,7 +190,7 @@ class DigestRepository(BaseRepository):
         """Update channel settings columns."""
         sets = []
         params = []
-        for key in ('allow_member_posts', 'allow_reactions', 'allow_images', 'auto_delete_days', 'name', 'description', 'type', 'is_private'):
+        for key in ('allow_member_posts', 'allow_reactions', 'allow_images', 'auto_delete_days', 'notify_mode', 'name', 'description', 'type', 'is_private'):
             if key in settings:
                 sets.append(f'{key} = %s')
                 params.append(settings[key])

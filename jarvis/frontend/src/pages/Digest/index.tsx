@@ -27,7 +27,7 @@ export default function Digest() {
   const queryClient = useQueryClient()
   const [selectedChannel, setSelectedChannel] = useState<DigestChannel | null>(null)
   const [showCreate, setShowCreate] = useState(false)
-  const [newChannel, setNewChannel] = useState({ name: '', description: '', type: 'general', is_private: false })
+  const [newChannel, setNewChannel] = useState({ name: '', description: '', type: 'general', is_private: false, notify_mode: 'all' })
   const [audienceMode, setAudienceMode] = useState<AudienceMode>('everyone')
   const [targets, setTargets] = useState<TargetItem[]>([])
   const [inviteSearch, setInviteSearch] = useState('')
@@ -108,7 +108,7 @@ export default function Digest() {
   })
 
   const resetForm = () => {
-    setNewChannel({ name: '', description: '', type: 'general', is_private: false })
+    setNewChannel({ name: '', description: '', type: 'general', is_private: false, notify_mode: 'all' })
     setAudienceMode('everyone')
     setTargets([])
     setInviteSearch('')
@@ -229,6 +229,17 @@ export default function Digest() {
                   <SelectItem value="general">General</SelectItem>
                   <SelectItem value="announcement">Announcement</SelectItem>
                   <SelectItem value="department">Department</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Notifications</Label>
+              <Select value={newChannel.notify_mode} onValueChange={(v) => setNewChannel({ ...newChannel, notify_mode: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All messages</SelectItem>
+                  <SelectItem value="mentions_polls">Mentions & Polls only</SelectItem>
+                  <SelectItem value="mute">Mute</SelectItem>
                 </SelectContent>
               </Select>
             </div>

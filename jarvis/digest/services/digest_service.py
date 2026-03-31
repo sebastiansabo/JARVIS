@@ -21,8 +21,8 @@ class DigestService:
     def get_channel(self, channel_id):
         return _repo.get_channel(channel_id)
 
-    def create_channel(self, name, description, channel_type, is_private, created_by, targets=None):
-        channel = _repo.create_channel(name, description, channel_type, is_private, created_by)
+    def create_channel(self, name, description, channel_type, is_private, created_by, targets=None, notify_mode='all'):
+        channel = _repo.create_channel(name, description, channel_type, is_private, created_by, notify_mode=notify_mode)
         if channel:
             _repo.add_member(channel['id'], created_by, 'admin')
             if targets:
@@ -137,6 +137,10 @@ class DigestService:
         if not channel:
             return
 
+        notify_mode = channel.get('notify_mode', 'all')
+        if notify_mode == 'mute':
+            return
+
         channel_name = channel['name']
         members = _repo.get_channel_members(channel_id)
         member_ids = {m['user_id'] for m in members}
@@ -144,8 +148,8 @@ class DigestService:
 
         notified_ids = set()
 
-        # 1. Announcement channels → notify all members
-        if channel['type'] == 'announcement':
+        # 1. Announcement channels → notify all members (only in 'all' mode)
+        if notify_mode == 'all' and channel['type'] == 'announcement':
             targets = member_ids - {user_id}
             if targets:
                 notify_with_push(
@@ -158,7 +162,7 @@ class DigestService:
                 )
                 notified_ids.update(targets)
 
-        # 2. Polls → notify all members
+        # 2. Polls → notify all members (always, except mute which is handled above)
         if post_type == 'poll':
             question = poll_data['question'] if poll_data else content
             targets = member_ids - {user_id} - notified_ids
@@ -189,8 +193,8 @@ class DigestService:
                 )
                 notified_ids.update(targets)
 
-        # 4. Regular posts → notify all members (if nobody was notified yet)
-        if channel['type'] != 'announcement' and post_type != 'poll' and not notified_ids:
+        # 4. Regular posts → notify all members (only in 'all' mode, if nobody was notified yet)
+        if notify_mode == 'all' and channel['type'] != 'announcement' and post_type != 'poll' and not notified_ids:
             targets = member_ids - {user_id}
             if targets:
                 notify_with_push(

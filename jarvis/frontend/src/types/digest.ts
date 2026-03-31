@@ -8,6 +8,7 @@ export interface DigestChannel {
   allow_reactions: boolean
   allow_images: boolean
   auto_delete_days: number | null
+  notify_mode: 'all' | 'mentions_polls' | 'mute'
   created_by: number
   created_by_name: string
   member_count: number
