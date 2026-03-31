@@ -103,8 +103,9 @@ function DefaultRedirect() {
   const user = useAuthStore((s) => s.user)
   const isLoading = useAuthStore((s) => s.isLoading)
   if (isLoading) return <PageLoader />
-  // Users without accounting+hr+settings access → profile (Viewer-like roles)
-  if (user && !user.can_access_accounting && !user.can_access_hr && !user.can_access_settings) {
+  // Users without any major module access → profile instead of dashboard
+  const hasDashboardModules = user?.can_access_accounting || user?.can_access_marketing || user?.can_access_settings || user?.can_access_crm
+  if (user && !hasDashboardModules) {
     return <Navigate to="profile" replace />
   }
   return <Navigate to="dashboard" replace />
