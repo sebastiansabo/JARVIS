@@ -200,8 +200,15 @@ def api_profile_update_allocations(invoice_id):
             return jsonify({'success': False, 'error': 'At least one allocation is required'}), 400
 
         from accounting.invoices.services import InvoiceService
+        from accounting.invoices.services.invoice_service import UserContext
         service = InvoiceService()
-        user_ctx = {'user_id': current_user.id, 'user_name': current_user.name, 'user_email': current_user.email}
+        user_ctx = UserContext(
+            user_id=current_user.id,
+            user_email=current_user.email,
+            role_name=current_user.role_name,
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent', '')[:500],
+        )
         result = service.update_allocations(invoice_id, allocations, False, user_ctx)
         if result.success:
             return jsonify(result.data)
