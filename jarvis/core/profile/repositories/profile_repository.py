@@ -95,6 +95,31 @@ class ProfileRepository(BaseRepository):
         return '(' + ' OR '.join(conditions) + ')', params
 
     # ------------------------------------------------------------------
+    # Invoice visibility check (same org-scope as list)
+    # ------------------------------------------------------------------
+
+    def is_invoice_visible_to_user(self, user_id: int, invoice_id: int) -> bool:
+        """Check if a given invoice is visible to the user via org-scope or direct responsibility."""
+        def _work(cursor):
+            org_sql, org_params = self._build_org_filter(cursor, user_id)
+
+            if org_sql:
+                scope = org_sql
+                scope_params = org_params
+            else:
+                scope = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
+                scope_params = [user_id, user_id]
+
+            cursor.execute(f'''
+                SELECT 1 FROM invoices i
+                INNER JOIN allocations a ON i.id = a.invoice_id
+                WHERE i.id = %s AND {scope} AND i.deleted_at IS NULL
+                LIMIT 1
+            ''', [invoice_id] + list(scope_params))
+            return cursor.fetchone() is not None
+        return self.execute_many(_work)
+
+    # ------------------------------------------------------------------
     # User invoices (org-scope based: L0>L1>L2>L3>L4, fallback to own)
     # ------------------------------------------------------------------
 

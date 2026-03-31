@@ -157,27 +157,16 @@ def api_profile_invoices():
 @profile_bp.route('/api/invoices/<int:invoice_id>')
 @login_required
 def api_profile_invoice_detail(invoice_id):
-    """Get full invoice with allocations — only if current user is responsible."""
+    """Get full invoice with allocations — uses same org-scope logic as the list."""
     try:
         invoice = _invoice_repo.get_with_allocations(invoice_id)
         if not invoice:
             return jsonify({'error': 'Invoice not found'}), 404
 
-        # Verify current user is responsible on at least one allocation
-        # Check both responsible_user_id AND name-based matching (same logic as profile list)
-        allocations = invoice.get('allocations', [])
-        user_name_lower = (current_user.name or '').lower()
-        is_responsible = False
-        for a in allocations:
-            if not a:
-                continue
-            if a.get('responsible_user_id') == current_user.id:
-                is_responsible = True
-                break
-            if a.get('responsible_user_id') is None and (a.get('responsible') or '').lower() == user_name_lower:
-                is_responsible = True
-                break
-        if not is_responsible:
+        # Use the same org-scope check as the profile invoice list:
+        # verify this invoice would appear in the user's profile list.
+        visible = _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id)
+        if not visible:
             return jsonify({'error': 'Invoice not found'}), 404
 
         return jsonify(invoice)
