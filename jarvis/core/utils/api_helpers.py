@@ -33,6 +33,10 @@ def v2_permission_required(module: str, entity: str, action: str):
         def decorated(*args, **kwargs):
             if not current_user.is_authenticated:
                 return jsonify({'success': False, 'error': 'Authentication required'}), 401
+            # Admin bypass — admins always get full scope
+            if getattr(current_user, 'is_admin', False) or getattr(current_user, 'can_access_settings', False):
+                g.permission_scope = 'all'
+                return f(*args, **kwargs)
             role_id = getattr(current_user, 'role_id', None)
             if role_id:
                 from core.roles.repositories import PermissionRepository
