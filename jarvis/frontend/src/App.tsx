@@ -98,6 +98,18 @@ function V2Guard({ permKey, children }: { permKey: string; children: React.React
   return <>{children}</>
 }
 
+/** Redirect /app to profile for users without dashboard access (e.g. Viewer role). */
+function DefaultRedirect() {
+  const user = useAuthStore((s) => s.user)
+  const isLoading = useAuthStore((s) => s.isLoading)
+  if (isLoading) return <PageLoader />
+  // Users without accounting+hr+settings access → profile (Viewer-like roles)
+  if (user && !user.can_access_accounting && !user.can_access_hr && !user.can_access_settings) {
+    return <Navigate to="profile" replace />
+  }
+  return <Navigate to="dashboard" replace />
+}
+
 export default function App() {
   return (
     <Routes>
@@ -105,7 +117,7 @@ export default function App() {
       <Route path="/f/:slug" element={<SuspensePage><PublicForm /></SuspensePage>} />
 
       <Route path="/app" element={<Layout />}>
-        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route index element={<DefaultRedirect />} />
         <Route path="dashboard" element={<SuspensePage><Dashboard /></SuspensePage>} />
         <Route path="profile" element={<SuspensePage><Profile /></SuspensePage>} />
 

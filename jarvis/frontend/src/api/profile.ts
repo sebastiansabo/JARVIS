@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { Invoice } from '@/types/invoices'
 import type { ProfileSummary, ProfileInvoice, ProfileActivity, ProfileBonus, ProfilePontajeResponse, ProfileTeamPontajeResponse } from '@/types/profile'
 
 export interface ProfileUpdatePayload {
@@ -28,6 +29,8 @@ export const profileApi = {
       `/profile/api/invoices${qs ? `?${qs}` : ''}`,
     )
   },
+
+  getInvoiceDetail: (id: number) => api.get<Invoice>(`/profile/api/invoices/${id}`),
 
   getHrEvents: (params?: { year?: number; month?: number; search?: string; page?: number; per_page?: number }) => {
     const sp = new URLSearchParams()

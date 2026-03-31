@@ -9,10 +9,12 @@ from flask_login import login_required, current_user
 from . import profile_bp
 from core.profile.repositories import ProfileRepository
 from core.auth.repositories.user_repository import UserRepository
+from accounting.invoices.repositories import InvoiceRepository
 from core.utils.api_helpers import safe_error_response
 
 _profile_repo = ProfileRepository()
 _user_repo = UserRepository()
+_invoice_repo = InvoiceRepository()
 
 
 # ============== Page Route ==============
@@ -148,6 +150,26 @@ def api_profile_invoices():
             'page': page,
             'per_page': per_page,
         })
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@profile_bp.route('/api/invoices/<int:invoice_id>')
+@login_required
+def api_profile_invoice_detail(invoice_id):
+    """Get full invoice with allocations — only if current user is responsible."""
+    try:
+        invoice = _invoice_repo.get_with_allocations(invoice_id)
+        if not invoice:
+            return jsonify({'error': 'Invoice not found'}), 404
+
+        # Verify current user is responsible on at least one allocation
+        allocations = invoice.get('allocations', [])
+        user_ids = {a.get('responsible_user_id') for a in allocations if a}
+        if current_user.id not in user_ids:
+            return jsonify({'error': 'Invoice not found'}), 404
+
+        return jsonify(invoice)
     except Exception as e:
         return safe_error_response(e)
 

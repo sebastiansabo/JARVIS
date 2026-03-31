@@ -55,6 +55,7 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { profileApi, type ProfileUpdatePayload } from '@/api/profile'
+// invoicesApi used only for updateAllocations (edit)
 import { invoicesApi } from '@/api/invoices'
 import { checkinApi } from '@/api/checkin'
 import { usersApi } from '@/api/users'
@@ -1639,12 +1640,14 @@ function InvoicesPanel({ orgDepartments }: { orgDepartments: string[] }) {
     queryFn: () => profileApi.getInvoices({ search: search || undefined, department: department || undefined, page, per_page: perPage }),
   })
 
-  // Fetch full invoice data when a row is expanded
+  // Fetch full invoice data when a row is expanded (via profile endpoint — no accounting perm needed)
   const { data: expandedInvoice } = useQuery({
-    queryKey: ['invoices', expandedId],
-    queryFn: () => invoicesApi.getInvoice(expandedId!),
+    queryKey: ['profile', 'invoice-detail', expandedId],
+    queryFn: () => profileApi.getInvoiceDetail(expandedId!),
     enabled: expandedId !== null,
   })
+
+  const canAccessAccounting = user?.can_access_accounting ?? false
 
   const saveMutation = useMutation({
     mutationFn: (payload: { invoiceId: number; company: string; rows: import('@/pages/Accounting/AllocationEditor').AllocationRow[] }) =>
@@ -1729,7 +1732,7 @@ function InvoicesPanel({ orgDepartments }: { orgDepartments: string[] }) {
                   { key: 'percent', label: 'Allocation %', expandOnly: true, render: (inv) => `${inv.allocation_percent}%` },
                 ] satisfies MobileCardField<ProfileInvoice>[]}
                 getRowId={(inv) => inv.id}
-                actions={(inv) => inv.drive_link ? (
+                actions={(inv) => (canAccessAccounting && inv.drive_link) ? (
                   <a href={inv.drive_link} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
@@ -1787,7 +1790,7 @@ function InvoicesPanel({ orgDepartments }: { orgDepartments: string[] }) {
                               <StatusBadge status={inv.status} />
                             </TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()}>
-                              {inv.drive_link && (
+                              {canAccessAccounting && inv.drive_link && (
                                 <a
                                   href={inv.drive_link}
                                   target="_blank"
