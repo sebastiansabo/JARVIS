@@ -564,8 +564,8 @@ def api_sign_mobile():
 # ============== APP VERSION CHECK ==============
 
 # Bump this on each release to trigger update prompts
-_CURRENT_VERSION = '1.1.0'
-_CURRENT_VERSION_CODE = 2
+_CURRENT_VERSION = '1.2.0'
+_CURRENT_VERSION_CODE = 3
 _DOWNLOAD_URL = 'https://jarvis.autoworld.ro/download/jarvis.apk'
 
 
