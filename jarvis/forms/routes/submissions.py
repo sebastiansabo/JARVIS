@@ -27,18 +27,18 @@ def form_permission_required(entity, action):
     return v2_permission_required('forms', entity, action)
 
 
-def _check_form_company_access(form):
-    """Return True if current_user can access this form's company."""
-    if not form:
+def _check_scope_access(record):
+    """Return True if current_user can access this record based on V2 scope."""
+    if not record:
         return False
-    return form.get('company_id') == getattr(current_user, 'company_id', None)
-
-
-def _check_submission_company_access(submission):
-    """Return True if current_user can access this submission's company."""
-    if not submission:
-        return False
-    return submission.get('company_id') == getattr(current_user, 'company_id', None)
+    scope = getattr(g, 'permission_scope', 'all')
+    if scope == 'all':
+        return True
+    if scope == 'department':
+        return record.get('company_id') == getattr(current_user, 'company_id', None)
+    if scope == 'own':
+        return record.get('owner_id') == current_user.id or record.get('created_by') == current_user.id
+    return False
 
 
 def _sanitize_csv_value(value):
@@ -59,7 +59,7 @@ def _sanitize_csv_value(value):
 def api_list_submissions(form_id):
     """List submissions for a form with filters."""
     form = _form_repo.get_by_id(form_id)
-    if not form or not _check_form_company_access(form):
+    if not form or not _check_scope_access(form):
         return jsonify({'success': False, 'error': 'Form not found'}), 404
 
     filters = {
@@ -85,7 +85,7 @@ def api_list_submissions(form_id):
 def api_get_submission(submission_id):
     """Get submission detail."""
     submission = _submission_repo.get_by_id(submission_id)
-    if not submission or not _check_submission_company_access(submission):
+    if not submission or not _check_scope_access(submission):
         return jsonify({'success': False, 'error': 'Submission not found'}), 404
     return jsonify(submission)
 
@@ -99,7 +99,7 @@ def api_get_submission(submission_id):
 def api_update_submission_status(submission_id):
     """Update submission status (read, flagged, etc.)."""
     submission = _submission_repo.get_by_id(submission_id)
-    if not submission or not _check_submission_company_access(submission):
+    if not submission or not _check_scope_access(submission):
         return jsonify({'success': False, 'error': 'Submission not found'}), 404
 
     data, error = get_json_or_error()
@@ -123,7 +123,7 @@ def api_update_submission_status(submission_id):
 def api_trigger_approval(submission_id):
     """Submit a form response for approval."""
     submission = _submission_repo.get_by_id(submission_id)
-    if not submission or not _check_submission_company_access(submission):
+    if not submission or not _check_scope_access(submission):
         return jsonify({'success': False, 'error': 'Submission not found'}), 404
 
     result = _service.trigger_approval(submission_id, current_user.id)
@@ -141,7 +141,7 @@ def api_trigger_approval(submission_id):
 def api_submit_internal(form_id):
     """Submit a form as a logged-in user."""
     form = _form_repo.get_by_id(form_id)
-    if not form or not _check_form_company_access(form):
+    if not form or not _check_scope_access(form):
         return jsonify({'success': False, 'error': 'Form not found'}), 404
 
     data, error = get_json_or_error()
@@ -167,7 +167,7 @@ def api_submit_internal(form_id):
 def api_export_submissions(form_id):
     """Export form submissions as CSV."""
     form = _form_repo.get_by_id(form_id)
-    if not form or not _check_form_company_access(form):
+    if not form or not _check_scope_access(form):
         return jsonify({'success': False, 'error': 'Form not found'}), 404
 
     submissions = _submission_repo.export_by_form(form_id, limit=_EXPORT_LIMIT)

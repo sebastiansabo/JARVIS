@@ -24,11 +24,18 @@ def form_permission_required(entity, action):
     return v2_permission_required('forms', entity, action)
 
 
-def _check_company_access(form):
-    """Return True if current_user can access this form's company."""
+def _check_scope_access(form):
+    """Return True if current_user can access this form based on V2 scope."""
     if not form:
         return False
-    return form.get('company_id') == getattr(current_user, 'company_id', None)
+    scope = getattr(g, 'permission_scope', 'all')
+    if scope == 'all':
+        return True
+    if scope == 'department':
+        return form.get('company_id') == getattr(current_user, 'company_id', None)
+    if scope == 'own':
+        return form.get('owner_id') == current_user.id
+    return False
 
 
 # ---- List / Get ----
@@ -40,7 +47,6 @@ def api_list_forms():
     """List forms with optional filters."""
     filters = {
         'status': request.args.get('status'),
-        'company_id': getattr(current_user, 'company_id', None),
         'owner_id': request.args.get('owner_id'),
         'search': request.args.get('search'),
         'limit': request.args.get('limit', 100),
@@ -51,6 +57,9 @@ def api_list_forms():
     scope = getattr(g, 'permission_scope', 'all')
     if scope == 'own':
         filters['owner_id'] = current_user.id
+    elif scope == 'department':
+        filters['company_id'] = getattr(current_user, 'company_id', None)
+    # scope == 'all' → no company filter
 
     result = _form_repo.list_forms(filters)
     return jsonify(result)
@@ -62,7 +71,7 @@ def api_list_forms():
 def api_get_form(form_id):
     """Get form detail."""
     form = _form_repo.get_by_id(form_id)
-    if not form or not _check_company_access(form):
+    if not form or not _check_scope_access(form):
         return jsonify({'success': False, 'error': 'Form not found'}), 404
     return jsonify(form)
 
@@ -101,7 +110,7 @@ def api_update_form(form_id):
         return error
 
     form = _form_repo.get_by_id(form_id)
-    if not form or not _check_company_access(form):
+    if not form or not _check_scope_access(form):
         return jsonify({'success': False, 'error': 'Form not found'}), 404
 
     # Whitelist safe fields only
@@ -122,7 +131,7 @@ def api_update_form(form_id):
 def api_publish_form(form_id):
     """Publish form (makes it publicly accessible)."""
     form = _form_repo.get_by_id(form_id)
-    if not form or not _check_company_access(form):
+    if not form or not _check_scope_access(form):
         return jsonify({'success': False, 'error': 'Form not found'}), 404
 
     user = UserContext(user_id=current_user.id)
@@ -138,7 +147,7 @@ def api_publish_form(form_id):
 def api_disable_form(form_id):
     """Disable a published form."""
     form = _form_repo.get_by_id(form_id)
-    if not form or not _check_company_access(form):
+    if not form or not _check_scope_access(form):
         return jsonify({'success': False, 'error': 'Form not found'}), 404
 
     _form_repo.disable(form_id)
@@ -154,7 +163,7 @@ def api_disable_form(form_id):
 def api_duplicate_form(form_id):
     """Clone a form."""
     form = _form_repo.get_by_id(form_id)
-    if not form or not _check_company_access(form):
+    if not form or not _check_scope_access(form):
         return jsonify({'success': False, 'error': 'Form not found'}), 404
 
     new_id = _form_repo.duplicate(form_id, current_user.id)
@@ -171,7 +180,7 @@ def api_duplicate_form(form_id):
 def api_delete_form(form_id):
     """Soft-delete a form."""
     form = _form_repo.get_by_id(form_id)
-    if not form or not _check_company_access(form):
+    if not form or not _check_scope_access(form):
         return jsonify({'success': False, 'error': 'Form not found'}), 404
 
     deleted = _form_repo.soft_delete(form_id)
