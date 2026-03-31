@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useImperativeHandle, forwardRef, memo } from 'react'
+import { useState, useMemo, useCallback, useImperativeHandle, forwardRef, memo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2, Lock, Unlock, MessageSquare, ArrowRightLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -324,12 +324,19 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
   const [showComment, setShowComment] = useState(!!row.comment)
   const hasReinvoice = row.reinvoiceDestinations.length > 0
 
-  const { data: departments = [] } = useQuery({
+  const { data: departments = [], isSuccess: deptsFetched } = useQuery({
     queryKey: ['departments', company, row.brand || null],
     queryFn: () => organizationApi.getDepartments(company, row.brand || undefined),
     enabled: !!company,
     staleTime: 5 * 60_000,
   })
+
+  // Auto-set department to brand when brand is selected but has no L2 departments
+  useEffect(() => {
+    if (hasBrands && row.brand && deptsFetched && departments.length === 0 && row.department !== row.brand) {
+      onUpdate({ department: row.brand })
+    }
+  }, [hasBrands, row.brand, deptsFetched, departments.length, row.department, row.brand, onUpdate])
 
   const { data: subdepartments = [] } = useQuery({
     queryKey: ['subdepartments', company, row.department],
@@ -610,7 +617,7 @@ function ReinvoiceDestRow({
   })
 
   // Cascade: pass brand to filter departments (same as main allocation row)
-  const { data: targetDepts = [] } = useQuery({
+  const { data: targetDepts = [], isSuccess: targetDeptsFetched } = useQuery({
     queryKey: ['departments', dest.company, dest.brand || null],
     queryFn: () => organizationApi.getDepartments(dest.company, dest.brand || undefined),
     enabled: !!dest.company,
@@ -625,6 +632,14 @@ function ReinvoiceDestRow({
   })
 
   const hasBrands = targetBrands.length > 0
+
+  // Auto-set department to brand when brand is selected but has no L2 departments
+  useEffect(() => {
+    if (hasBrands && dest.brand && targetDeptsFetched && targetDepts.length === 0 && dest.department !== dest.brand) {
+      onUpdate({ department: dest.brand })
+    }
+  }, [hasBrands, dest.brand, targetDeptsFetched, targetDepts.length, dest.department, dest.brand, onUpdate])
+
   // Cascade: L2 requires L1 selected (if brands exist); L3 requires L2 selected
   const showL2 = hasBrands ? (!!dest.brand && targetDepts.length > 0) : (!!dest.company && targetDepts.length > 0)
   const showL3 = showL2 && !!dest.department && targetSubdepts.length > 0
