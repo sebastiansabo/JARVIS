@@ -63,12 +63,17 @@ def api_profile_summary():
         # Get HR events summary for this user
         hr_events_summary = _profile_repo.get_user_event_bonuses_summary(current_user.id)
 
+        # Check if user is an org responsable (L0-L5) for edit permissions
+        from hr.events.database import is_manager
+        is_org_responsable = is_manager(current_user.id)
+
         return jsonify({
             'user': user_info,
             'invoices': invoices_summary,
             'hr_events': hr_events_summary,
             'notifications': {'total': 0, 'sent': 0, 'failed': 0},
             'activity': {'total_events': activity_count},
+            'is_org_responsable': is_org_responsable,
         })
     except Exception as e:
         return safe_error_response(e)
@@ -170,6 +175,37 @@ def api_profile_invoice_detail(invoice_id):
             return jsonify({'error': 'Invoice not found'}), 404
 
         return jsonify(invoice)
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@profile_bp.route('/api/invoices/<int:invoice_id>/allocations', methods=['PUT'])
+@login_required
+def api_profile_update_allocations(invoice_id):
+    """Update allocations for an invoice — allowed for org responsables within their scope."""
+    try:
+        from hr.events.database import is_manager
+
+        # Must be an org responsable (L0-L5)
+        if not is_manager(current_user.id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+        # Invoice must be in the user's org scope
+        if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+        data = request.get_json()
+        allocations = data.get('allocations', [])
+        if not allocations:
+            return jsonify({'success': False, 'error': 'At least one allocation is required'}), 400
+
+        from accounting.invoices.services import InvoiceService
+        service = InvoiceService()
+        user_ctx = {'user_id': current_user.id, 'user_name': current_user.name, 'user_email': current_user.email}
+        result = service.update_allocations(invoice_id, allocations, False, user_ctx)
+        if result.success:
+            return jsonify(result.data)
+        return jsonify({'success': False, 'error': result.error}), result.status_code
     except Exception as e:
         return safe_error_response(e)
 

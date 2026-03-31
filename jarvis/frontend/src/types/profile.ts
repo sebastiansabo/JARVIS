@@ -16,6 +16,7 @@ export interface ProfileUser {
 
 export interface ProfileSummary {
   user: ProfileUser
+  is_org_responsable: boolean
   invoices: {
     total: number
     total_value: number

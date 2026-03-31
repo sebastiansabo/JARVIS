@@ -55,8 +55,6 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { profileApi, type ProfileUpdatePayload } from '@/api/profile'
-// invoicesApi used only for updateAllocations (edit)
-import { invoicesApi } from '@/api/invoices'
 import { checkinApi } from '@/api/checkin'
 import { usersApi } from '@/api/users'
 import { useAuth } from '@/hooks/useAuth'
@@ -254,7 +252,7 @@ export default function Profile() {
       </Tabs>
 
       {/* Tab Content */}
-      {activeTab === 'invoices' && <InvoicesPanel orgDepartments={orgPaths.map(o => o.department).filter(Boolean)} />}
+      {activeTab === 'invoices' && <InvoicesPanel orgDepartments={orgPaths.map(o => o.department).filter(Boolean)} isOrgResponsable={summary?.is_org_responsable ?? false} />}
       {activeTab === 'hr-events' && <HrEventsPanel />}
       {activeTab === 'pontaje' && <PontajePanel />}
       {activeTab === 'team-pontaje' && <TeamPontajePanel />}
@@ -1620,7 +1618,7 @@ function PunchLine({ punch, isFirst, isLast }: { punch: BioStarPunchLog; isFirst
 
 // ─── Invoices Panel ─────────────────────────────────────────────────
 
-function InvoicesPanel({ orgDepartments }: { orgDepartments: string[] }) {
+function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: string[]; isOrgResponsable: boolean }) {
   const isMobile = useIsMobile()
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -1631,7 +1629,7 @@ function InvoicesPanel({ orgDepartments }: { orgDepartments: string[] }) {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
 
-  const canEdit = user?.can_edit_invoices || (user?.permissions?.['invoices.records.edit'] ?? false)
+  const canEdit = user?.can_edit_invoices || (user?.permissions?.['invoices.records.edit'] ?? false) || isOrgResponsable
 
   const uniqueDepts = useMemo(() => [...new Set(orgDepartments)], [orgDepartments])
 
@@ -1651,7 +1649,7 @@ function InvoicesPanel({ orgDepartments }: { orgDepartments: string[] }) {
 
   const saveMutation = useMutation({
     mutationFn: (payload: { invoiceId: number; company: string; rows: import('@/pages/Accounting/AllocationEditor').AllocationRow[] }) =>
-      invoicesApi.updateAllocations(payload.invoiceId, {
+      profileApi.updateAllocations(payload.invoiceId, {
         allocations: rowsToApiPayload(payload.company, payload.rows),
       }),
     onSuccess: () => {

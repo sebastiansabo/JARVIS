@@ -6,7 +6,7 @@ from flask_login import login_required, current_user
 
 from . import events_bp
 from .utils import can_edit_bonus, get_lock_status
-from core.utils.api_helpers import error_response, handle_api_errors
+from core.utils.api_helpers import error_response, handle_api_errors, v2_permission_required
 
 from core.roles.repositories import PermissionRepository
 check_permission_v2 = PermissionRepository().check_permission_v2
@@ -546,8 +546,9 @@ def add_bonus():
 
 @events_bp.route('/api/events', methods=['GET'])
 @login_required
+@v2_permission_required('hr', 'events', 'view')
 def api_get_events():
-    """API: Get all events. Read-only listing is open to all authenticated users."""
+    """API: Get all events. Requires hr.events.view permission."""
     from datetime import date
     events = get_all_hr_events()
     upcoming_param = request.args.get('upcoming')

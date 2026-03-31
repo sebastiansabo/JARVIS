@@ -32,6 +32,9 @@ export const profileApi = {
 
   getInvoiceDetail: (id: number) => api.get<Invoice>(`/profile/api/invoices/${id}`),
 
+  updateAllocations: (invoiceId: number, data: { allocations: Record<string, unknown>[] }) =>
+    api.put<{ success: boolean }>(`/profile/api/invoices/${invoiceId}/allocations`, data),
+
   getHrEvents: (params?: { year?: number; month?: number; search?: string; page?: number; per_page?: number }) => {
     const sp = new URLSearchParams()
     if (params?.year) sp.set('year', String(params.year))

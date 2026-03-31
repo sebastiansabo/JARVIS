@@ -178,6 +178,7 @@ def _user_json(user) -> dict:
         'can_access_forms_mobile':      _mobile('forms'),
         'can_access_ai_agent_mobile':   _mobile('ai_agent'),
         'can_access_marketing_mobile':  _mobile('marketing'),
+        'can_access_hr_mobile':         _mobile('hr'),
         'can_access_digest_mobile':     _mobile('digest'),
         'can_access_accounting_mobile': _mobile('accounting'),
     }
