@@ -78,9 +78,15 @@ def api_companies():
 @org_bp.route('/api/brands/<company>')
 @login_required
 def api_brands(company):
-    """Get brands (L1 nodes) for a company."""
+    """Get brands (L1 nodes) for a company.
+
+    Only returns L1 as brands when L2 nodes exist (multi-level hierarchy).
+    If the company has only L1 nodes, returns [] so L1 is treated as departments.
+    """
     if _node_repo.has_nodes_for_company(company):
-        return jsonify(_node_repo.get_l1_names(company))
+        if _node_repo.has_l2_nodes(company):
+            return jsonify(_node_repo.get_l1_names(company))
+        return jsonify([])
     from models import get_brands_for_company
     return jsonify(get_brands_for_company(company))
 
@@ -88,11 +94,17 @@ def api_brands(company):
 @org_bp.route('/api/departments/<company>')
 @login_required
 def api_departments(company):
-    """Get departments (L2 nodes) for a company, optionally filtered by ?level1=."""
+    """Get departments (L2 nodes) for a company, optionally filtered by ?level1=.
+
+    If the company has only L1 nodes (no L2), returns L1 names as departments.
+    """
     from flask import request as _req
     level1 = _req.args.get('level1') or _req.args.get('brand')
     if _node_repo.has_nodes_for_company(company):
-        return jsonify(_node_repo.get_l2_names(company, level1_name=level1))
+        if _node_repo.has_l2_nodes(company):
+            return jsonify(_node_repo.get_l2_names(company, level1_name=level1))
+        # L1-only company: L1 names ARE the departments
+        return jsonify(_node_repo.get_l1_names(company))
     from models import get_departments_for_company
     return jsonify(get_departments_for_company(company))
 

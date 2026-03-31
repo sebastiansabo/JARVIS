@@ -36,6 +36,15 @@ class StructureNodeRepository(BaseRepository):
         ''', (company_name,))
         return row is not None
 
+    def has_l2_nodes(self, company_name: str) -> bool:
+        """Check if a company has any L2 structure nodes (multi-level hierarchy)."""
+        row = self.query_one('''
+            SELECT 1 FROM structure_nodes sn
+            JOIN companies c ON sn.company_id = c.id
+            WHERE c.company = %s AND sn.level = 2 LIMIT 1
+        ''', (company_name,))
+        return row is not None
+
     def get_company_names(self) -> list[str]:
         """Get all company names that have structure nodes defined."""
         rows = self.query_all('''

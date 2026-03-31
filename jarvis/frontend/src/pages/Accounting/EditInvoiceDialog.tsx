@@ -138,14 +138,17 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
         if (allAllocations.length > 0) {
           await invoicesApi.updateAllocations(invoice.id, { allocations: allAllocations })
         }
-      } else {
+      } else if (allocRef.current) {
         // Classic mode: use AllocationEditor ref
-        if (allocRef.current?.isValid()) {
+        if (allocRef.current.isValid()) {
           const company = allocRef.current.getCompany()
           const rows = allocRef.current.getRows()
           await invoicesApi.updateAllocations(invoice.id, {
             allocations: rowsToApiPayload(company, rows),
           })
+        } else if (allocRef.current.getRows().some((r) => r.department || r.reinvoiceDestinations.length > 0)) {
+          // User has partially filled allocations but they're invalid
+          toast.warning('Allocations not saved — please fill in all required fields (company, department, 100% total)')
         }
       }
 
