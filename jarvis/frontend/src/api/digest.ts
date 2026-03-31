@@ -42,6 +42,7 @@ export const digestApi = {
     allow_reactions: boolean
     allow_images: boolean
     auto_delete_days: number | null
+    notify_mode: string
   }>) =>
     api.put<ApiResponse<DigestChannel>>(`/api/digest/channels/${channelId}/settings`, settings),
 
