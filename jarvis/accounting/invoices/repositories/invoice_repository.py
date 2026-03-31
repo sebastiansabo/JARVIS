@@ -152,13 +152,14 @@ class InvoiceRepository(BaseRepository):
     def get_all(self, limit=100, offset=0, company=None, start_date=None,
                 end_date=None, department=None, subdepartment=None,
                 brand=None, status=None, payment_status=None,
-                include_deleted=False):
+                include_deleted=False, responsible_user_id=None):
         """Get all invoices with pagination and optional filtering."""
+        needs_alloc_join = bool(company or department or subdepartment or brand or responsible_user_id)
         query = 'SELECT DISTINCT i.* FROM invoices i'
         params = []
         conditions = []
 
-        if company or department or subdepartment or brand:
+        if needs_alloc_join:
             query = 'SELECT DISTINCT i.* FROM invoices i JOIN allocations a ON a.invoice_id = i.id'
             if company:
                 conditions.append('a.company = %s')
@@ -172,6 +173,9 @@ class InvoiceRepository(BaseRepository):
             if brand:
                 conditions.append('a.brand = %s')
                 params.append(brand)
+            if responsible_user_id:
+                conditions.append('a.responsible_user_id = %s')
+                params.append(responsible_user_id)
 
         if include_deleted:
             conditions.append('i.deleted_at IS NOT NULL')
@@ -241,11 +245,12 @@ class InvoiceRepository(BaseRepository):
                                   start_date=None, end_date=None,
                                   department=None, subdepartment=None,
                                   brand=None, status=None,
-                                  payment_status=None, include_deleted=False):
+                                  payment_status=None, include_deleted=False,
+                                  responsible_user_id=None):
         """Get all invoices with their allocations in a single optimized query."""
         global _invoices_cache
 
-        cache_key = f"{limit}:{offset}:{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{status}:{payment_status}:{include_deleted}"
+        cache_key = f"{limit}:{offset}:{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{status}:{payment_status}:{include_deleted}:{responsible_user_id}"
 
         if _is_cache_valid(_invoices_cache) and _invoices_cache.get('key') == cache_key:
             return _invoices_cache['data']
@@ -284,6 +289,9 @@ class InvoiceRepository(BaseRepository):
         if brand:
             allocation_filters.append('a.brand = %s')
             params.append(brand)
+        if responsible_user_id:
+            allocation_filters.append('a.responsible_user_id = %s')
+            params.append(responsible_user_id)
 
         where_clause = ' AND '.join(conditions) if conditions else '1=1'
 
@@ -604,7 +612,7 @@ class InvoiceRepository(BaseRepository):
             return {'exists': True, 'invoice': row}
         return {'exists': False, 'invoice': None}
 
-    def search(self, query, filters=None):
+    def search(self, query, filters=None, responsible_user_id=None):
         """Search invoices by supplier, invoice number, or value."""
         filters = filters or {}
 
@@ -636,7 +644,8 @@ class InvoiceRepository(BaseRepository):
         subdepartment = filters.get('subdepartment')
         brand = filters.get('brand')
 
-        if company or department or subdepartment or brand:
+        needs_alloc_join = bool(company or department or subdepartment or brand or responsible_user_id)
+        if needs_alloc_join:
             base_query = 'SELECT DISTINCT i.* FROM invoices i JOIN allocations a ON a.invoice_id = i.id'
         else:
             base_query = 'SELECT DISTINCT i.* FROM invoices i'
@@ -655,6 +664,9 @@ class InvoiceRepository(BaseRepository):
         if brand:
             filter_conditions.append('a.brand = %s')
             params.append(brand)
+        if responsible_user_id:
+            filter_conditions.append('a.responsible_user_id = %s')
+            params.append(responsible_user_id)
 
         start_date = filters.get('start_date')
         end_date = filters.get('end_date')

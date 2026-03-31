@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTabParam } from '@/hooks/useTabParam'
 import {
@@ -55,8 +55,12 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { profileApi, type ProfileUpdatePayload } from '@/api/profile'
+import { invoicesApi } from '@/api/invoices'
 import { checkinApi } from '@/api/checkin'
 import { usersApi } from '@/api/users'
+import { useAuth } from '@/hooks/useAuth'
+import { AllocationEditor, allocationsToRows, rowsToApiPayload } from '@/pages/Accounting/AllocationEditor'
+import { toast } from 'sonner'
 import { cn, usePersistedState } from '@/lib/utils'
 import type { ProfileInvoice, ProfileActivity, ProfileBonus, OrgTreeNode } from '@/types/profile'
 import type { BioStarDayHistory, BioStarPunchLog, BioStarDailySummary, BioStarRangeSummary } from '@/types/biostar'
@@ -1617,10 +1621,16 @@ function PunchLine({ punch, isFirst, isLast }: { punch: BioStarPunchLog; isFirst
 
 function InvoicesPanel({ orgDepartments }: { orgDepartments: string[] }) {
   const isMobile = useIsMobile()
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [department, setDepartment] = useState('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = usePersistedState('profile-invoices-page-size', 25)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [editingId, setEditingId] = useState<number | null>(null)
+
+  const canEdit = user?.can_edit_invoices || (user?.permissions?.['invoices.records.edit'] ?? false)
 
   const uniqueDepts = useMemo(() => [...new Set(orgDepartments)], [orgDepartments])
 
@@ -1629,9 +1639,39 @@ function InvoicesPanel({ orgDepartments }: { orgDepartments: string[] }) {
     queryFn: () => profileApi.getInvoices({ search: search || undefined, department: department || undefined, page, per_page: perPage }),
   })
 
+  // Fetch full invoice data when a row is expanded
+  const { data: expandedInvoice } = useQuery({
+    queryKey: ['invoices', expandedId],
+    queryFn: () => invoicesApi.getInvoice(expandedId!),
+    enabled: expandedId !== null,
+  })
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: { invoiceId: number; company: string; rows: import('@/pages/Accounting/AllocationEditor').AllocationRow[] }) =>
+      invoicesApi.updateAllocations(payload.invoiceId, {
+        allocations: rowsToApiPayload(payload.company, payload.rows),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['profile', 'invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      setEditingId(null)
+      toast.success('Allocations updated')
+    },
+    onError: () => toast.error('Failed to update allocations'),
+  })
+
   const invoices = data?.invoices ?? []
   const total = data?.total ?? 0
   const totalPages = Math.ceil(total / perPage)
+
+  const toggleExpand = (id: number) => {
+    setExpandedId(expandedId === id ? null : id)
+    if (expandedId === id) setEditingId(null)
+  }
+
+  // Deduplicate: multiple allocations rows can share the same invoice_id.
+  // We only render expand row after the LAST row for that invoice_id.
+  const seenExpanded = new Set<number>()
 
   return (
     <Card>
@@ -1700,6 +1740,7 @@ function InvoicesPanel({ orgDepartments }: { orgDepartments: string[] }) {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-6" />
                       <TableHead>Date</TableHead>
                       <TableHead>Invoice #</TableHead>
                       <TableHead>Supplier</TableHead>
@@ -1712,38 +1753,70 @@ function InvoicesPanel({ orgDepartments }: { orgDepartments: string[] }) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {invoices.map((inv: ProfileInvoice) => (
-                      <TableRow key={inv.id}>
-                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                          {new Date(inv.invoice_date).toLocaleDateString('ro-RO')}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">{inv.invoice_number}</TableCell>
-                        <TableCell className="max-w-[200px] truncate font-medium">{inv.supplier}</TableCell>
-                        <TableCell className="text-sm">{inv.company}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{inv.department || '-'}</TableCell>
-                        <TableCell className="text-right">
-                          <CurrencyDisplay value={inv.allocation_value} currency={inv.currency} className="text-sm" />
-                        </TableCell>
-                        <TableCell className="text-right text-sm text-muted-foreground">
-                          {inv.allocation_percent}%
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge status={inv.status} />
-                        </TableCell>
-                        <TableCell>
-                          {inv.drive_link && (
-                            <a
-                              href={inv.drive_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-muted-foreground hover:text-foreground"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </a>
+                    {invoices.map((inv: ProfileInvoice, idx: number) => {
+                      const isExpanded = expandedId === inv.id
+                      // Show expansion row only once per invoice_id (after first occurrence)
+                      const showExpansion = isExpanded && !seenExpanded.has(inv.id)
+                      if (isExpanded) seenExpanded.add(inv.id)
+
+                      return (
+                        <React.Fragment key={`${inv.id}-${idx}`}>
+                          <TableRow
+                            className="cursor-pointer hover:bg-muted/40"
+                            onClick={() => toggleExpand(inv.id)}
+                          >
+                            <TableCell className="px-1">
+                              {isExpanded
+                                ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                                : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                              {new Date(inv.invoice_date).toLocaleDateString('ro-RO')}
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">{inv.invoice_number}</TableCell>
+                            <TableCell className="max-w-[200px] truncate font-medium">{inv.supplier}</TableCell>
+                            <TableCell className="text-sm">{inv.company}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{inv.department || '-'}</TableCell>
+                            <TableCell className="text-right">
+                              <CurrencyDisplay value={inv.allocation_value} currency={inv.currency} className="text-sm" />
+                            </TableCell>
+                            <TableCell className="text-right text-sm text-muted-foreground">
+                              {inv.allocation_percent}%
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge status={inv.status} />
+                            </TableCell>
+                            <TableCell onClick={(e) => e.stopPropagation()}>
+                              {inv.drive_link && (
+                                <a
+                                  href={inv.drive_link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-muted-foreground hover:text-foreground"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </a>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                          {showExpansion && (
+                            <TableRow>
+                              <TableCell colSpan={10} className="p-0">
+                                <ProfileInvoiceExpansion
+                                  invoice={expandedInvoice}
+                                  isEditing={editingId === inv.id}
+                                  canEdit={canEdit}
+                                  onEdit={() => setEditingId(inv.id)}
+                                  onCancelEdit={() => setEditingId(null)}
+                                  onSave={(company, rows) => saveMutation.mutate({ invoiceId: inv.id, company, rows })}
+                                  isSaving={saveMutation.isPending}
+                                />
+                              </TableCell>
+                            </TableRow>
                           )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                        </React.Fragment>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -1754,6 +1827,138 @@ function InvoicesPanel({ orgDepartments }: { orgDepartments: string[] }) {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function ProfileInvoiceExpansion({
+  invoice,
+  isEditing,
+  canEdit,
+  onEdit,
+  onCancelEdit,
+  onSave,
+  isSaving,
+}: {
+  invoice: unknown
+  isEditing: boolean
+  canEdit: boolean
+  onEdit: () => void
+  onCancelEdit: () => void
+  onSave: (company: string, rows: import('@/pages/Accounting/AllocationEditor').AllocationRow[]) => void
+  isSaving: boolean
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const inv = invoice as any
+
+  if (!inv) {
+    return (
+      <div className="px-8 py-4 bg-muted/30">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          Loading allocations...
+        </div>
+      </div>
+    )
+  }
+
+  const allocations = (inv.allocations ?? []) as Array<Record<string, unknown>>
+  const effectiveValue = (inv.net_value ?? inv.invoice_value) as number
+  const currency = inv.currency as string
+
+  if (isEditing) {
+    return (
+      <div className="px-8 py-3 bg-muted/30 border-l-2 border-l-primary/50">
+        <AllocationEditor
+          initialCompany={allocations[0]?.company as string}
+          initialRows={allocations.length > 0 ? allocationsToRows(allocations as never, effectiveValue) : undefined}
+          effectiveValue={effectiveValue}
+          currency={currency}
+          onSave={onSave}
+          onCancel={onCancelEdit}
+          isSaving={isSaving}
+          compact
+        />
+      </div>
+    )
+  }
+
+  if (allocations.length === 0) {
+    return (
+      <div className="px-8 py-4 bg-muted/30 flex items-center justify-between">
+        <span className="text-sm text-muted-foreground">No allocations</span>
+        {canEdit && (
+          <Button variant="outline" size="sm" onClick={onEdit}>
+            <Pencil className="h-3 w-3 mr-1" /> Add Allocation
+          </Button>
+        )}
+      </div>
+    )
+  }
+
+  const hasBrand = allocations.some(a => a.brand) || allocations.some(a => (a.reinvoice_destinations as Array<Record<string, unknown>> | undefined)?.some(rd => rd.brand))
+  const hasSubdept = allocations.some(a => a.subdepartment) || allocations.some(a => (a.reinvoice_destinations as Array<Record<string, unknown>> | undefined)?.some(rd => rd.subdepartment))
+
+  return (
+    <div className="px-8 py-3 bg-muted/30 border-l-2 border-l-primary/50">
+      <table className="text-xs w-full">
+        <thead>
+          <tr className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
+            <th className="py-1 pr-4 text-left font-medium">Company</th>
+            {hasBrand && <th className="py-1 pr-4 text-left font-medium">Brand</th>}
+            <th className="py-1 pr-4 text-left font-medium">Department</th>
+            {hasSubdept && <th className="py-1 pr-4 text-left font-medium">Sub-dept</th>}
+            <th className="py-1 pr-4 text-left font-medium">Responsible</th>
+            <th className="py-1 pr-4 text-right font-medium">Amount</th>
+            <th className="py-1 pr-4 text-right font-medium w-14">%</th>
+            <th className="w-7" />
+          </tr>
+        </thead>
+        <tbody>
+          {allocations.map((alloc, idx) => {
+            const reinvoiceDests = (alloc.reinvoice_destinations ?? []) as Array<Record<string, unknown>>
+            const hasReinvoice = reinvoiceDests.length > 0
+            const totalTableRows = allocations.reduce(
+              (sum, a) => sum + 1 + ((a.reinvoice_destinations as Array<unknown> | undefined)?.length ?? 0), 0
+            )
+            return (
+              <React.Fragment key={alloc.id as number}>
+                <tr className={cn('border-t border-border/50', hasReinvoice && 'text-muted-foreground/50')}>
+                  <td className="py-1 pr-4">{alloc.company as string}</td>
+                  {hasBrand && <td className="py-1 pr-4">{(alloc.brand as string) || '-'}</td>}
+                  <td className="py-1 pr-4">{alloc.department as string}</td>
+                  {hasSubdept && <td className="py-1 pr-4">{(alloc.subdepartment as string) || '-'}</td>}
+                  <td className="py-1 pr-4 text-muted-foreground">{(alloc.responsible as string) || '-'}</td>
+                  <td className={cn('py-1 pr-4 text-right tabular-nums', hasReinvoice && 'opacity-40')}>
+                    <CurrencyDisplay value={alloc.allocation_value as number} currency={currency} />
+                  </td>
+                  <td className="py-1 pr-4 text-right tabular-nums">{alloc.allocation_percent as number}%</td>
+                  {idx === 0 && canEdit && (
+                    <td rowSpan={totalTableRows} className="py-1 pl-1 align-middle w-7">
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onEdit}>
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    </td>
+                  )}
+                </tr>
+                {hasReinvoice && reinvoiceDests.map((rd) => (
+                  <tr key={rd.id as number} className="text-[11px]">
+                    <td className="py-0.5 pl-6 pr-4 text-foreground">{rd.company as string}</td>
+                    {hasBrand && <td className="py-0.5 pr-4 text-foreground">{(rd.brand as string) || '-'}</td>}
+                    <td className="py-0.5 pr-4 text-foreground">{rd.department as string}</td>
+                    {hasSubdept && <td className="py-0.5 pr-4 text-foreground">{(rd.subdepartment as string) || '-'}</td>}
+                    <td className="py-0.5 pr-4 text-muted-foreground italic">reinvoiced</td>
+                    <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">
+                      <CurrencyDisplay value={rd.value as number} currency={currency} />
+                    </td>
+                    <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">{rd.percentage as number}%</td>
+                  </tr>
+                ))}
+              </React.Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }
 

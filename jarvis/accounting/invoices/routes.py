@@ -44,6 +44,20 @@ def _check_invoice_perm(action: str) -> bool:
     return bool(getattr(current_user, legacy, False)) if legacy else False
 
 
+def _get_invoice_scope(action: str) -> str:
+    """Return the V2 scope for invoices.records.<action> ('own', 'department', 'all').
+
+    Falls back to 'all' when no explicit v2 entry exists (legacy behaviour).
+    """
+    role_id = getattr(current_user, 'role_id', None)
+    if not role_id:
+        return 'deny'
+    perm = _perm_repo.check_permission_v2(role_id, 'invoices', 'records', action)
+    if perm.get('has_explicit_entry'):
+        return perm.get('scope', 'deny')
+    return 'all'  # legacy roles without v2 entries see everything
+
+
 def _get_user_context() -> UserContext:
     """Build UserContext from Flask globals."""
     return UserContext(
@@ -294,19 +308,25 @@ def api_db_invoices():
     end_date = request.args.get('end_date')
     include_allocations = request.args.get('include_allocations', 'false').lower() == 'true'
 
+    # Scope-based filtering: 'own' = only invoices where user is responsible
+    scope = _get_invoice_scope('view')
+    responsible_user_id = current_user.id if scope == 'own' else None
+
     if include_allocations:
         invoices = _invoice_repo.get_all_with_allocations(
             limit=limit, offset=offset, company=company,
             start_date=start_date, end_date=end_date,
             department=department, subdepartment=subdepartment, brand=brand,
-            status=status, payment_status=payment_status
+            status=status, payment_status=payment_status,
+            responsible_user_id=responsible_user_id
         )
     else:
         invoices = _invoice_repo.get_all(
             limit=limit, offset=offset, company=company,
             start_date=start_date, end_date=end_date,
             department=department, subdepartment=subdepartment, brand=brand,
-            status=status, payment_status=payment_status
+            status=status, payment_status=payment_status,
+            responsible_user_id=responsible_user_id
         )
     return jsonify(invoices)
 
@@ -319,9 +339,18 @@ def api_db_invoice_detail(invoice_id):
         return error_response('You do not have permission to view invoices', 403)
 
     invoice = _invoice_repo.get_with_allocations(invoice_id)
-    if invoice:
-        return jsonify(invoice)
-    return error_response('Invoice not found', 404)
+    if not invoice:
+        return error_response('Invoice not found', 404)
+
+    # Scope check: 'own' users can only view invoices they're responsible for
+    scope = _get_invoice_scope('view')
+    if scope == 'own':
+        allocations = invoice.get('allocations', [])
+        user_ids = {a.get('responsible_user_id') for a in allocations if a}
+        if current_user.id not in user_ids:
+            return error_response('Invoice not found', 404)
+
+    return jsonify(invoice)
 
 
 @invoices_bp.route('/api/db/invoices/<int:invoice_id>', methods=['DELETE'])
@@ -426,6 +455,16 @@ def api_db_update_invoice(invoice_id):
     if not _check_invoice_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
+    # Scope check: 'own' users can only edit their own invoices
+    scope = _get_invoice_scope('edit')
+    if scope == 'own':
+        row = _invoice_repo.query_one(
+            'SELECT 1 FROM allocations WHERE invoice_id = %s AND responsible_user_id = %s LIMIT 1',
+            (invoice_id, current_user.id)
+        )
+        if not row:
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
     data = request.get_json()
     result = _service.update_invoice(invoice_id, data, _get_user_context())
     if result.success:
@@ -441,6 +480,16 @@ def api_db_update_allocations(invoice_id):
     """Update all allocations for an invoice."""
     if not _check_invoice_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+    # Scope check: 'own' users can only edit allocations on their own invoices
+    scope = _get_invoice_scope('edit')
+    if scope == 'own':
+        row = _invoice_repo.query_one(
+            'SELECT 1 FROM allocations WHERE invoice_id = %s AND responsible_user_id = %s LIMIT 1',
+            (invoice_id, current_user.id)
+        )
+        if not row:
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json()
     allocations = data.get('allocations', [])
@@ -515,7 +564,9 @@ def api_db_search():
     }
     filters = {k: v for k, v in filters.items() if v}
 
-    results = _invoice_repo.search(query, filters)
+    scope = _get_invoice_scope('view')
+    responsible_user_id = current_user.id if scope == 'own' else None
+    results = _invoice_repo.search(query, filters, responsible_user_id=responsible_user_id)
     return jsonify(results)
 
 
@@ -568,7 +619,10 @@ def api_db_summary_company():
     department = request.args.get('department')
     subdepartment = request.args.get('subdepartment')
     brand = request.args.get('brand')
-    summary = _summary_repo.by_company(start_date, end_date, department, subdepartment, brand)
+    scope = _get_invoice_scope('view')
+    responsible_user_id = current_user.id if scope == 'own' else None
+    summary = _summary_repo.by_company(start_date, end_date, department, subdepartment, brand,
+                                       responsible_user_id=responsible_user_id)
     return jsonify(summary)
 
 
@@ -584,7 +638,10 @@ def api_db_summary_department():
     department = request.args.get('department')
     subdepartment = request.args.get('subdepartment')
     brand = request.args.get('brand')
-    summary = _summary_repo.by_department(company, start_date, end_date, department, subdepartment, brand)
+    scope = _get_invoice_scope('view')
+    responsible_user_id = current_user.id if scope == 'own' else None
+    summary = _summary_repo.by_department(company, start_date, end_date, department, subdepartment, brand,
+                                          responsible_user_id=responsible_user_id)
     return jsonify(summary)
 
 
@@ -600,7 +657,10 @@ def api_db_summary_brand():
     department = request.args.get('department')
     subdepartment = request.args.get('subdepartment')
     brand = request.args.get('brand')
-    summary = _summary_repo.by_brand(company, start_date, end_date, department, subdepartment, brand)
+    scope = _get_invoice_scope('view')
+    responsible_user_id = current_user.id if scope == 'own' else None
+    summary = _summary_repo.by_brand(company, start_date, end_date, department, subdepartment, brand,
+                                     responsible_user_id=responsible_user_id)
     return jsonify(summary)
 
 
@@ -616,7 +676,10 @@ def api_db_summary_supplier():
     department = request.args.get('department')
     subdepartment = request.args.get('subdepartment')
     brand = request.args.get('brand')
-    summary = _summary_repo.by_supplier(company, start_date, end_date, department, subdepartment, brand)
+    scope = _get_invoice_scope('view')
+    responsible_user_id = current_user.id if scope == 'own' else None
+    summary = _summary_repo.by_supplier(company, start_date, end_date, department, subdepartment, brand,
+                                        responsible_user_id=responsible_user_id)
     return jsonify(summary)
 
 
