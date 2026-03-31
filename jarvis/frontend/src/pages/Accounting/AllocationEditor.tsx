@@ -331,13 +331,6 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
     staleTime: 5 * 60_000,
   })
 
-  // Auto-set department to brand when brand is selected but has no L2 departments
-  useEffect(() => {
-    if (hasBrands && row.brand && deptsFetched && departments.length === 0 && row.department !== row.brand) {
-      onUpdate({ department: row.brand })
-    }
-  }, [hasBrands, row.brand, deptsFetched, departments.length, row.department, row.brand, onUpdate])
-
   const { data: subdepartments = [] } = useQuery({
     queryKey: ['subdepartments', company, row.department],
     queryFn: () => organizationApi.getSubdepartments(company, row.department),
@@ -402,6 +395,14 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
   }
 
   const hasBrands = brands.length > 0
+
+  // Auto-set department to brand when brand is selected but has no L2 departments
+  useEffect(() => {
+    if (hasBrands && row.brand && deptsFetched && departments.length === 0 && row.department !== row.brand) {
+      onUpdate({ department: row.brand })
+    }
+  }, [hasBrands, row.brand, deptsFetched, departments.length, row.department, row.brand, onUpdate])
+
   // Cascade: L2 requires L1 selected; L3 requires L2 selected
   const showL2 = hasBrands ? (!!row.brand && departments.length > 0) : departments.length > 0
   const showL3 = showL2 && !!row.department && subdepartments.length > 0
