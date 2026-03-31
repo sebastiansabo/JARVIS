@@ -1499,7 +1499,7 @@ function InvoiceLinkDocumentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg" aria-describedby={undefined}>
+      <DialogContent className="max-w-[1080px]" aria-describedby={undefined}>
         <DialogHeader><DialogTitle>Link DMS Document</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="relative">
@@ -1513,7 +1513,7 @@ function InvoiceLinkDocumentDialog({
             />
           </div>
 
-          <div className="max-h-[300px] overflow-y-auto space-y-1">
+          <div className="max-h-[500px] overflow-y-auto space-y-1">
             {results.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No documents found</p>
             ) : results.map((doc) => {
@@ -1522,29 +1522,29 @@ function InvoiceLinkDocumentDialog({
                 <div
                   key={doc.id}
                   className={cn(
-                    'flex items-center gap-3 rounded-md border p-2.5',
+                    'grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-4 rounded-md border px-3 py-2',
                     isLinked ? 'opacity-50' : 'hover:bg-muted/50 cursor-pointer',
                   )}
                   onClick={() => !isLinked && linkMut.mutate(doc.id)}
                 >
-                  <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{doc.title}</div>
-                    <div className="text-xs text-muted-foreground flex items-center gap-2">
-                      {doc.doc_number && <span>{doc.doc_number}</span>}
-                      {doc.category_name && (
-                        <Badge variant="outline" className="text-[10px] px-1 py-0" style={{ borderColor: doc.category_color || undefined, color: doc.category_color || undefined }}>
-                          {doc.category_name}
-                        </Badge>
-                      )}
-                      <Badge className={cn('text-[10px] px-1 py-0', DMS_STATUS_COLORS[doc.status])}>{doc.status}</Badge>
-                      {doc.file_count > 0 && (
-                        <span className="inline-flex items-center gap-0.5"><Paperclip className="h-3 w-3" />{doc.file_count}</span>
-                      )}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{doc.title}</div>
+                      {doc.doc_number && <div className="text-xs text-muted-foreground">{doc.doc_number}</div>}
                     </div>
                   </div>
+                  {doc.category_name ? (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0" style={{ borderColor: doc.category_color || undefined, color: doc.category_color || undefined }}>
+                      {doc.category_name}
+                    </Badge>
+                  ) : <span />}
+                  <Badge className={cn('text-[10px] px-1.5 py-0 shrink-0', DMS_STATUS_COLORS[doc.status])}>{doc.status}</Badge>
+                  {doc.file_count > 0 ? (
+                    <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground shrink-0"><Paperclip className="h-3 w-3" />{doc.file_count}</span>
+                  ) : <span />}
                   {isLinked ? (
-                    <span className="text-xs text-muted-foreground">Linked</span>
+                    <span className="text-xs text-muted-foreground shrink-0">Linked</span>
                   ) : (
                     <Button variant="ghost" size="sm" className="h-7 shrink-0" disabled={linkMut.isPending}>
                       <Link2 className="h-3.5 w-3.5 mr-1" />Link
