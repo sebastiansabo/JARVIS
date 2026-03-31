@@ -133,6 +133,21 @@ def _current_mobile_user():
 
 def _user_json(user) -> dict:
     """Serialize user for mobile API response."""
+    from core.roles.repositories.permission_repository import PermissionRepository as _PermRepo
+    _perm_repo = _PermRepo()
+    mod_access = _perm_repo.get_module_access_map(user.role_id) if user.role_id else {}
+    mob_access = _perm_repo.get_mobile_access_map(user.role_id) if user.role_id else {}
+
+    def _mod(module_key, fallback_attr=None):
+        if module_key in mod_access:
+            return mod_access[module_key]
+        if fallback_attr:
+            return bool(getattr(user, fallback_attr, False))
+        return False
+
+    def _mobile(module_key):
+        return mob_access.get(module_key, True)
+
     return {
         'id': user.id,
         'name': user.name,
@@ -149,12 +164,22 @@ def _user_json(user) -> dict:
         'contract_work_date': getattr(user, 'contract_work_date', None),
         'cnp': getattr(user, 'cnp', None),
         'birthdate': getattr(user, 'birthdate', None),
-        'permissions': {
-            'is_admin': bool(getattr(user, 'can_access_settings', False)),
-            'is_hr_manager': bool(getattr(user, 'is_hr_manager', False)),
-            'can_access_marketing': bool(getattr(user, 'can_access_marketing', False)),
-            'can_access_hr': bool(getattr(user, 'can_access_hr', False)),
-        },
+        # Flat permission flags (no wrapper — extractPermissions reads top-level)
+        'is_hr_manager': bool(getattr(user, 'is_hr_manager', False)),
+        'can_access_marketing':  _mod('marketing',  'can_access_marketing'),
+        'can_access_hr':         _mod('hr',         'can_access_hr'),
+        'can_access_approvals':  _mod('approvals',  'can_access_approvals'),
+        'can_access_forms':      _mod('forms',      'can_access_forms'),
+        'can_access_ai_agent':   _mod('ai_agent',   'can_access_ai_agent'),
+        'can_access_digest':     _mod('digest',     'can_access_digest'),
+        'can_access_accounting': _mod('accounting', 'can_access_accounting'),
+        # Mobile-specific toggles
+        'can_access_approvals_mobile':  _mobile('approvals'),
+        'can_access_forms_mobile':      _mobile('forms'),
+        'can_access_ai_agent_mobile':   _mobile('ai_agent'),
+        'can_access_marketing_mobile':  _mobile('marketing'),
+        'can_access_digest_mobile':     _mobile('digest'),
+        'can_access_accounting_mobile': _mobile('accounting'),
     }
 
 

@@ -344,6 +344,7 @@ class PermissionRepository(BaseRepository):
             'can_view_original_punches': perms.get('hr.pontaje.view_original', False),
             'can_view_adjusted_punches': perms.get('hr.pontaje.view_adjusted', False),
             'can_adjust_punches': perms.get('hr.pontaje.adjust_punches', False),
+            'can_access_digest': perms.get('digest.module.access', False),
         }
         updates = ', '.join([f"{col} = %s" for col in bool_updates.keys()])
         values = list(bool_updates.values()) + [role_id]
@@ -357,6 +358,20 @@ class PermissionRepository(BaseRepository):
             FROM permissions_v2 p
             LEFT JOIN role_permissions_v2 rp ON rp.permission_id = p.id AND rp.role_id = %s
             WHERE p.entity_key = 'module' AND p.action_key = 'access'
+        ''', (role_id,))
+        return {r['module_key']: r['scope'] != 'deny' for r in rows} if rows else {}
+
+    def get_mobile_access_map(self, role_id: int) -> dict:
+        """Return {module_key: bool} for all mobile.access v2 permissions for a role.
+
+        Modules without a mobile.access entry are assumed visible (True).
+        """
+        rows = self.query_all('''
+            SELECT p.module_key,
+                   COALESCE(rp.scope, 'deny') AS scope
+            FROM permissions_v2 p
+            LEFT JOIN role_permissions_v2 rp ON rp.permission_id = p.id AND rp.role_id = %s
+            WHERE p.entity_key = 'mobile' AND p.action_key = 'access'
         ''', (role_id,))
         return {r['module_key']: r['scope'] != 'deny' for r in rows} if rows else {}
 

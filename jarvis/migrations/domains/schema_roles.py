@@ -32,7 +32,8 @@ def create_schema_roles(conn, cursor):
         ('can_access_hr', 'FALSE'),
         ('is_hr_manager', 'FALSE'),
         ('can_access_efactura', 'FALSE'),
-        ('can_access_statements', 'FALSE')
+        ('can_access_statements', 'FALSE'),
+        ('can_access_digest', 'FALSE'),
     ]:
         cursor.execute(f'''
             DO $$
@@ -893,6 +894,82 @@ def _seed_missing_permissions_v2(cursor, conn):
                     scope = 'own'
                 else:
                     scope = 'deny'
+
+            granted = scope != 'deny'
+            cursor.execute('''
+                INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (role_id, permission_id) DO NOTHING
+            ''', (role_id, perm_id, scope, granted))
+
+    conn.commit()
+
+
+def _seed_mobile_permissions_v2(cursor, conn):
+    """Add mobile.access and missing module.access v2 permissions.
+
+    Adds:
+    - module.access entries for digest, approvals, forms (missing from initial seed)
+    - mobile.access entries for all mobile-eligible modules
+    Uses ON CONFLICT DO NOTHING so it's safe to run repeatedly.
+    """
+    new_perms = [
+        # ── Missing module.access entries ──
+        ('digest',    'Digest',     'bi-newspaper',      'module', 'Digest Module',    'access', 'Access', 'Access Digest channels',    False, 1),
+        ('approvals', 'Approvals',  'bi-check2-square',  'module', 'Approvals Module', 'access', 'Access', 'Access Approvals module',   False, 1),
+        ('forms',     'Forms',      'bi-ui-checks-grid', 'module', 'Forms Module',     'access', 'Access', 'Access Forms module',       False, 1),
+
+        # ── Mobile access entries (entity_key='mobile') ──
+        ('approvals',  'Approvals',  'bi-check2-square',  'mobile', 'Mobile', 'access', 'Mobile Access', 'Show Approvals in mobile app',  False, 50),
+        ('forms',      'Forms',      'bi-ui-checks-grid', 'mobile', 'Mobile', 'access', 'Mobile Access', 'Show Forms in mobile app',      False, 50),
+        ('ai_agent',   'AI Agent',   'bi-robot',          'mobile', 'Mobile', 'access', 'Mobile Access', 'Show AI Agent in mobile app',   False, 50),
+        ('marketing',  'Marketing',  'bi-megaphone',      'mobile', 'Mobile', 'access', 'Mobile Access', 'Show Calendar in mobile app',   False, 50),
+        ('digest',     'Digest',     'bi-newspaper',      'mobile', 'Mobile', 'access', 'Mobile Access', 'Show Digest in mobile app',     False, 50),
+        ('accounting', 'Accounting', 'bi-calculator',     'mobile', 'Mobile', 'access', 'Mobile Access', 'Show Invoices in mobile app',   False, 50),
+    ]
+
+    for p in new_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label,
+                                        action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+
+    # Seed role_permissions_v2 for new permissions that don't have entries yet
+    cursor.execute('SELECT id, name FROM roles')
+    roles_list = cursor.fetchall()
+
+    cursor.execute('''
+        SELECT p.id, p.module_key, p.entity_key, p.action_key
+        FROM permissions_v2 p
+        WHERE NOT EXISTS (
+            SELECT 1 FROM role_permissions_v2 rp WHERE rp.permission_id = p.id
+        )
+          AND ((p.entity_key = 'module' AND p.action_key = 'access'
+                AND p.module_key IN ('digest', 'approvals', 'forms'))
+               OR (p.entity_key = 'mobile' AND p.action_key = 'access'))
+    ''')
+    new_perm_rows = cursor.fetchall()
+
+    for role in roles_list:
+        role_id = role['id']
+        role_name = role['name']
+
+        for perm in new_perm_rows:
+            perm_id = perm['id']
+            entity = perm['entity_key']
+
+            if role_name == 'Admin':
+                scope = 'all'
+            elif entity == 'mobile':
+                # Mobile access defaults to 'all' for all roles (backward compat)
+                scope = 'all'
+            elif role_name in ('Manager', 'User'):
+                # Module access for approvals/forms/digest — all roles currently see these
+                scope = 'all'
+            else:  # Viewer
+                scope = 'deny'
 
             granted = scope != 'deny'
             cursor.execute('''
