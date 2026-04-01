@@ -391,6 +391,12 @@ class ClientRepository(BaseRepository):
         def _work(cursor):
             cursor.execute('UPDATE crm_deals SET client_id = %s WHERE client_id = %s', (keep_id, remove_id))
             cursor.execute('UPDATE client_fleet SET client_id = %s WHERE client_id = %s', (keep_id, remove_id))
+            # Merge client_profiles (field sales)
+            cursor.execute('UPDATE client_profiles SET client_id = %s WHERE client_id = %s AND client_id NOT IN (SELECT client_id FROM client_profiles WHERE client_id = %s)',
+                           (keep_id, remove_id, keep_id))
+            cursor.execute('DELETE FROM client_profiles WHERE client_id = %s', (remove_id,))
+            # Merge visit notes
+            cursor.execute('UPDATE kam_visit_notes SET client_id = %s WHERE client_id = %s', (keep_id, remove_id))
             # Merge phones (skip conflicts on duplicate phone numbers)
             cursor.execute('''
                 INSERT INTO client_phones (client_id, phone, phone_raw, label, source)
@@ -398,14 +404,29 @@ class ClientRepository(BaseRepository):
                 ON CONFLICT (client_id, phone) DO NOTHING
             ''', (keep_id, remove_id))
             cursor.execute('DELETE FROM client_phones WHERE client_id = %s', (remove_id,))
-            cursor.execute('UPDATE crm_clients SET merged_into_id = %s, updated_at = NOW() WHERE id = %s',
-                           (keep_id, remove_id))
-            # Merge source_flags
+            # Merge source_flags (handle NULL safely)
             cursor.execute('''
-                UPDATE crm_clients SET source_flags = source_flags || (
+                UPDATE crm_clients SET source_flags = COALESCE(source_flags, '{}'::jsonb) || COALESCE((
                     SELECT source_flags FROM crm_clients WHERE id = %s
-                ), updated_at = NOW()
+                ), '{}'::jsonb), updated_at = NOW()
                 WHERE id = %s
             ''', (remove_id, keep_id))
+            # Merge nr_reg / phone / email from removed client if keep is missing them
+            cursor.execute('''
+                UPDATE crm_clients k SET
+                    nr_reg = COALESCE(k.nr_reg, r.nr_reg),
+                    phone = COALESCE(k.phone, r.phone),
+                    email = COALESCE(k.email, r.email),
+                    responsible = COALESCE(k.responsible, r.responsible),
+                    city = COALESCE(k.city, r.city),
+                    region = COALESCE(k.region, r.region),
+                    street = COALESCE(k.street, r.street),
+                    updated_at = NOW()
+                FROM crm_clients r
+                WHERE k.id = %s AND r.id = %s
+            ''', (keep_id, remove_id))
+            # Mark removed client
+            cursor.execute('UPDATE crm_clients SET merged_into_id = %s, updated_at = NOW() WHERE id = %s',
+                           (keep_id, remove_id))
             return True
         return self.execute_many(_work)

@@ -1010,6 +1010,26 @@ def api_client_enrich(client_id):
             nr_reg = parsed_nr_reg
         search_name = clean_name or company_name
 
+        # Step 0: Local DB lookup — check if we already have a CUI for a similar company
+        if not cui and search_name:
+            try:
+                local_match = _client_repo.query_one('''
+                    SELECT cp.cui, c.display_name
+                    FROM client_profiles cp
+                    JOIN crm_clients c ON c.id = cp.client_id
+                    WHERE cp.cui IS NOT NULL AND cp.cui != ''
+                      AND c.name_normalized % %s
+                    ORDER BY similarity(c.name_normalized, %s) DESC
+                    LIMIT 1
+                ''', (search_name.lower(), search_name.lower()))
+                if local_match and local_match.get('cui'):
+                    cui = str(local_match['cui']).strip()
+                    logger.info('Local DB found CUI %s for "%s" (matched: %s)',
+                                cui, search_name, local_match.get('display_name'))
+                    _fs_repo.update_profile(client_id, {'cui': cui})
+            except Exception:
+                pass  # trigram extension might not be available, skip
+
         # Step 1: Search connectors by company name to find/verify CUI
         if search_name:
             matches = search_company_by_name(search_name)
@@ -1206,6 +1226,28 @@ def api_client_lookup_cui(client_id):
         nr_reg = parsed_nr_reg or client.get('nr_reg', '')
         results = search_company_by_name(nr_reg)
 
+    # Fallback: local DB lookup for CUI from already-enriched companies
+    if not results:
+        try:
+            local_match = _client_repo.query_one('''
+                SELECT cp.cui, c.display_name, c.nr_reg
+                FROM client_profiles cp
+                JOIN crm_clients c ON c.id = cp.client_id
+                WHERE cp.cui IS NOT NULL AND cp.cui != ''
+                  AND c.name_normalized % %s
+                ORDER BY similarity(c.name_normalized, %s) DESC
+                LIMIT 1
+            ''', (query.lower(), query.lower()))
+            if local_match and local_match.get('cui'):
+                results = [{
+                    'cui': str(local_match['cui']),
+                    'name': local_match.get('display_name', ''),
+                    'nr_reg': local_match.get('nr_reg', ''),
+                    'source': 'local_db',
+                }]
+        except Exception:
+            pass
+
     # Also auto-detect company type
     detected_type = detect_company_type(client.get('display_name', ''))
 
@@ -1374,8 +1416,12 @@ def api_merge_clients():
     remove_id = data.get('remove_id')
     if not keep_id or not remove_id:
         return jsonify({'success': False, 'error': 'keep_id and remove_id required'}), 400
-    _client_repo.merge(keep_id, remove_id)
-    return jsonify({'success': True})
+    try:
+        _client_repo.merge(keep_id, remove_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.exception('Merge failed: keep=%s remove=%s', keep_id, remove_id)
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
 
 @crm_bp.route('/api/crm/clients/batch-blacklist', methods=['POST'])
