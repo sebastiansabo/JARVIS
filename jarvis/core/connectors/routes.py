@@ -19,6 +19,45 @@ _repo = ConnectorRepository()
 # Business-data connector types (shown in Settings → Connectors)
 BUSINESS_CONNECTOR_TYPES = {'anaf', 'termene', 'risco', 'listafirme', 'openapi_ro', 'firmeapi'}
 
+_BUSINESS_SEEDS = [
+    ('anaf', 'ANAF Public API', 'connected',
+     {"api_endpoint": "https://webservicesp.anaf.ro/PlatitorTvaRest/api/v8/ws/tva", "timeout_seconds": 5, "cache_hours": 24, "description": "Free government API. VAT status, company identification, fiscal activity. No auth needed. Max 500 CUIs/request."},
+     {}),
+    ('termene', 'Termene.ro', 'disconnected',
+     {"api_endpoint": "https://termene.ro/api/dateFirmaSumar.php", "timeout_seconds": 10, "cache_hours": 24, "description": "Most comprehensive Romanian business data. Financial indicators, court cases, insolvency risk, shareholders, beneficial owners, public contracts. Subscription required."},
+     {"username": "", "password": ""}),
+    ('risco', 'RisCo.ro', 'disconnected',
+     {"api_endpoint": "https://www.risco.ro/v3/api/external", "timeout_seconds": 10, "cache_hours": 24, "description": "Risk assessment & credit scoring. 20+ endpoints: financial rating (RAT), insolvency probability (PIM), company valuation (VAL), court cases (JST), tax debts (RES). Pay-per-query from 0.2 RON."},
+     {"api_key": ""}),
+    ('listafirme', 'ListaFirme.eu', 'disconnected',
+     {"api_endpoint": "https://listafirme.ro/api/info-v1.asp", "search_endpoint": "https://listafirme.ro/api/search-v1.asp", "timeout_seconds": 10, "cache_hours": 24, "description": "Granular company data with view-based pricing. Balance sheets, shareholders, beneficial owners, trademarks, connected companies. Pay only for fields requested."},
+     {"api_key": ""}),
+    ('openapi_ro', 'OpenAPI.ro', 'disconnected',
+     {"api_endpoint": "https://api.openapi.ro/api/companies", "timeout_seconds": 10, "cache_hours": 24, "description": "Developer-friendly Romanian company API. Identification, address, VAT status, financial data. Free tier: 100 req/month."},
+     {"api_key": ""}),
+    ('firmeapi', 'FirmeAPI.ro', 'disconnected',
+     {"api_endpoint": "https://www.firmeapi.ro/api/v1", "timeout_seconds": 10, "cache_hours": 24, "description": "Fast REST API (<100ms). Company details, financial statements (/bilant), tax debts (/restante), Official Gazette (/mof). Free tier: 100/day."},
+     {"api_key": ""}),
+]
+
+_seeded = False
+
+
+def _ensure_business_seeds():
+    """Seed business connectors if they don't exist yet (runs once per process)."""
+    global _seeded
+    if _seeded:
+        return
+    _seeded = True
+    try:
+        existing = {r['connector_type'] for r in _repo.get_all() if r.get('connector_type') in BUSINESS_CONNECTOR_TYPES}
+        for ct, name, status, config, creds in _BUSINESS_SEEDS:
+            if ct not in existing:
+                _repo.save(ct, name, status=status, config=config, credentials=creds)
+                logger.info('Seeded business connector: %s', ct)
+    except Exception:
+        logger.exception('Failed to seed business connectors')
+
 
 @connectors_bp.route('/buffer')
 @login_required
@@ -49,6 +88,7 @@ def _safe_row(r):
 @login_required
 def api_get_connectors():
     """Get all connectors, optionally filtered by category."""
+    _ensure_business_seeds()
     category = request.args.get('category')
     rows = _repo.get_all()
 
