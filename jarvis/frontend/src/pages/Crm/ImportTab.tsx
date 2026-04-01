@@ -12,10 +12,20 @@ import { crmApi } from '@/api/crm'
 const SOURCE_TYPES = [
   { value: 'deals', label: 'Deals (NW + GW)', desc: 'Unified template — DB column names' },
   { value: 'clients', label: 'Clients', desc: 'Unified template — DB column names' },
-  { value: 'nw', label: 'NW Legacy (DMS)', desc: 'Romanian DMS dossier export' },
-  { value: 'gw', label: 'GW Legacy (DMS)', desc: 'Romanian DMS dossier export' },
+  { value: 'nw', label: 'NW (DMS Export)', desc: 'Dosare NW — Romanian DMS headers' },
+  { value: 'gw', label: 'GW (DMS Export)', desc: 'Dosare GW — Romanian DMS headers' },
+  { value: 'clienti', label: 'Clienti (DMS)', desc: 'DMS client-vehicle lists' },
   { value: 'crm_clients', label: 'Clients Legacy', desc: 'Workleto CRM export' },
 ]
+
+/** Auto-detect source type from filename patterns. */
+function detectSourceType(filename: string): string | null {
+  const f = filename.toLowerCase()
+  if (/dosare?\s*nw/i.test(f) || /\bnw\b.*\.xls/i.test(f)) return 'nw'
+  if (/dosare?\s*gw/i.test(f) || /\bgw\b.*\.xls/i.test(f)) return 'gw'
+  if (/client[ei]/i.test(f) && !/crm/i.test(f)) return 'clienti'
+  return null
+}
 
 export default function ImportTab() {
   const [sourceType, setSourceType] = useState('deals')
@@ -48,14 +58,24 @@ export default function ImportTab() {
     },
   })
 
+  const handleFile = (f: File) => {
+    if (!(f.name.endsWith('.xlsx') || f.name.endsWith('.xls') || f.name.endsWith('.csv'))) {
+      toast.error('Only .xlsx, .xls, .csv files supported')
+      return
+    }
+    setFile(f)
+    const detected = detectSourceType(f.name)
+    if (detected && detected !== sourceType) {
+      setSourceType(detected)
+      const label = SOURCE_TYPES.find(t => t.value === detected)?.label || detected
+      toast.info(`Auto-detected source type: ${label}`)
+    }
+  }
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     const f = e.dataTransfer.files[0]
-    if (f && (f.name.endsWith('.xlsx') || f.name.endsWith('.xls') || f.name.endsWith('.csv'))) {
-      setFile(f)
-    } else {
-      toast.error('Only .xlsx, .xls, .csv files supported')
-    }
+    if (f) handleFile(f)
   }
 
   const batches = batchesData?.batches || []
@@ -96,7 +116,7 @@ export default function ImportTab() {
               type="file"
               accept=".xlsx,.xls,.csv"
               className="hidden"
-              onChange={e => { if (e.target.files?.[0]) setFile(e.target.files[0]) }}
+              onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]) }}
             />
             {file ? (
               <div className="flex items-center justify-center gap-3">
@@ -141,21 +161,27 @@ export default function ImportTab() {
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Rows</TableHead>
                 <TableHead className="text-right">New</TableHead>
+                <TableHead className="text-right">Updated</TableHead>
+                <TableHead className="text-right">Skipped</TableHead>
                 <TableHead className="text-right">Clients</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {batches.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No imports yet</TableCell></TableRow>
-              ) : batches.map(b => (
+                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No imports yet</TableCell></TableRow>
+              ) : batches.map(b => {
+                const hasErrors = b.skipped_rows > 0 || b.status === 'failed'
+                return (
                 <TableRow key={b.id}>
                   <TableCell className="text-xs">{new Date(b.created_at).toLocaleString()}</TableCell>
                   <TableCell><Badge variant="outline">{b.source_type.toUpperCase()}</Badge></TableCell>
                   <TableCell className="text-xs max-w-[160px] truncate">{b.filename}</TableCell>
                   <TableCell className="text-xs">{b.uploaded_by_name || '-'}</TableCell>
                   <TableCell>
-                    {b.status === 'completed' ? (
+                    {b.status === 'completed' && !hasErrors ? (
                       <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : b.status === 'completed' && hasErrors ? (
+                      <AlertCircle className="h-4 w-4 text-yellow-500" />
                     ) : b.status === 'failed' ? (
                       <AlertCircle className="h-4 w-4 text-red-500" />
                     ) : (
@@ -163,10 +189,13 @@ export default function ImportTab() {
                     )}
                   </TableCell>
                   <TableCell className="text-right font-mono text-xs">{b.total_rows}</TableCell>
-                  <TableCell className="text-right font-mono text-xs">{b.new_rows}</TableCell>
+                  <TableCell className={`text-right font-mono text-xs ${b.new_rows > 0 ? 'text-green-600 font-semibold' : ''}`}>{b.new_rows}</TableCell>
+                  <TableCell className={`text-right font-mono text-xs ${b.updated_rows > 0 ? 'text-blue-600' : ''}`}>{b.updated_rows || 0}</TableCell>
+                  <TableCell className={`text-right font-mono text-xs ${b.skipped_rows > 0 ? 'text-red-600' : ''}`}>{b.skipped_rows || 0}</TableCell>
                   <TableCell className="text-right font-mono text-xs">{b.new_clients} new / {b.matched_clients} matched</TableCell>
                 </TableRow>
-              ))}
+                )
+              })}
             </TableBody>
           </Table>
         </CardContent>
