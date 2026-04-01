@@ -81,6 +81,7 @@ const navItemsDef: NavItem[] = [
     permission: 'can_access_crm',
     children: [
       { path: '/app/sales/crm', label: 'CRM Database', icon: Contact, moduleKey: 'crm_database' },
+      { path: '/app/sales/field-sales', label: 'Field Sales', icon: MapPin, moduleKey: 'field_sales' },
     ],
   },
   { path: '/app/settings', label: 'Settings', icon: Settings, moduleKey: 'settings', permission: 'can_access_settings' },

@@ -90,6 +90,7 @@ MODULES = [
         'sort_order': 6,
         'children': [
             {'module_key': 'crm_database', 'name': 'CRM Database', 'description': 'Client & deal management', 'icon': 'bi-person-lines-fill', 'url': '/sales/crm', 'sort_order': 1},
+            {'module_key': 'field_sales', 'name': 'Field Sales', 'description': 'KAM visits, client enrichment & fleet', 'icon': 'bi-geo-alt', 'url': '/field-sales', 'sort_order': 2},
         ],
     },
     {

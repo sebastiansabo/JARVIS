@@ -24,6 +24,7 @@ export interface User {
   can_access_statements: boolean
   is_hr_manager: boolean
   can_access_crm: boolean
+  can_access_field_sales: boolean
   can_access_marketing: boolean
   can_access_approvals: boolean
   can_access_dms: boolean
