@@ -298,6 +298,79 @@ class ClientRepository(BaseRepository):
             tuple(client_ids)
         )
 
+    def find_duplicates(self, name=None, limit=50):
+        """Find potential duplicate clients by similar names using trigram similarity.
+
+        Returns groups of similar clients for merge suggestions.
+        """
+        if name:
+            # Find duplicates for a specific name
+            return self.query_all('''
+                SELECT a.id as id_a, a.display_name as name_a, a.client_type as type_a,
+                       a.phone as phone_a, a.email as email_a, a.nr_reg as nr_reg_a,
+                       a.city as city_a,
+                       b.id as id_b, b.display_name as name_b, b.client_type as type_b,
+                       b.phone as phone_b, b.email as email_b, b.nr_reg as nr_reg_b,
+                       b.city as city_b,
+                       similarity(a.name_normalized, b.name_normalized) as sim
+                FROM crm_clients a
+                JOIN crm_clients b ON a.id < b.id
+                    AND similarity(a.name_normalized, b.name_normalized) >= 0.5
+                WHERE a.merged_into_id IS NULL AND b.merged_into_id IS NULL
+                    AND (a.is_blacklisted = FALSE OR a.is_blacklisted IS NULL)
+                    AND (b.is_blacklisted = FALSE OR b.is_blacklisted IS NULL)
+                    AND a.name_normalized ILIKE %s
+                ORDER BY sim DESC
+                LIMIT %s
+            ''', (f'%{name.lower()}%', limit))
+        else:
+            # Find all duplicate groups
+            return self.query_all('''
+                SELECT a.id as id_a, a.display_name as name_a, a.client_type as type_a,
+                       a.phone as phone_a, a.email as email_a, a.nr_reg as nr_reg_a,
+                       a.city as city_a,
+                       b.id as id_b, b.display_name as name_b, b.client_type as type_b,
+                       b.phone as phone_b, b.email as email_b, b.nr_reg as nr_reg_b,
+                       b.city as city_b,
+                       similarity(a.name_normalized, b.name_normalized) as sim
+                FROM crm_clients a
+                JOIN crm_clients b ON a.id < b.id
+                    AND similarity(a.name_normalized, b.name_normalized) >= 0.6
+                WHERE a.merged_into_id IS NULL AND b.merged_into_id IS NULL
+                    AND (a.is_blacklisted = FALSE OR a.is_blacklisted IS NULL)
+                    AND (b.is_blacklisted = FALSE OR b.is_blacklisted IS NULL)
+                ORDER BY sim DESC
+                LIMIT %s
+            ''', (limit,))
+
+    def find_wrong_types(self, limit=200):
+        """Find clients whose client_type doesn't match their name pattern.
+
+        For example SRL/SA in the name but type = 'person'.
+        """
+        return self.query_all('''
+            SELECT id, display_name, client_type, phone, email, nr_reg, city
+            FROM crm_clients
+            WHERE merged_into_id IS NULL
+                AND (is_blacklisted = FALSE OR is_blacklisted IS NULL)
+                AND client_type != 'company'
+                AND (
+                    name_normalized ~* '\\m(srl|s\\.r\\.l\\.|sa|s\\.a\\.|scs|s\\.c\\.s\\.|snc|s\\.n\\.c\\.|sca|s\\.c\\.a\\.|ra|r\\.a\\.|pfa|p\\.f\\.a\\.|ong|fundatia|asociatia|sc)\\M'
+                )
+            ORDER BY display_name
+            LIMIT %s
+        ''', (limit,))
+
+    def batch_update_type(self, client_ids, client_type):
+        """Batch update client_type for multiple clients."""
+        if not client_ids:
+            return 0
+        placeholders = ','.join(['%s'] * len(client_ids))
+        return self.execute(
+            f'UPDATE crm_clients SET client_type = %s, updated_at = NOW() WHERE id IN ({placeholders})',
+            (client_type, *client_ids)
+        )
+
     def merge(self, keep_id, remove_id):
         """Merge remove_id into keep_id. Updates all FKs."""
         def _work(cursor):

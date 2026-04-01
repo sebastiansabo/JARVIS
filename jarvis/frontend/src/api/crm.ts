@@ -212,6 +212,19 @@ export const crmApi = {
   lookupCui: (id: number, query?: string) => api.post<{ success: boolean; results: { cui: string; name: string; address: string; nr_reg: string; source: string }[]; detected_type: string | null }>(`/api/crm/clients/${id}/lookup-cui`, { query }),
   aiResearch: (id: number) => api.post<{ success: boolean; research: Record<string, unknown> }>(`/api/crm/clients/${id}/ai-research`, {}),
   mergeClients: (keepId: number, removeId: number) => api.post<{ success: boolean }>('/api/crm/clients/merge', { keep_id: keepId, remove_id: removeId }),
+  sanitizeScan: (name?: string) => api.get<{
+    wrong_types: { id: number; display_name: string; client_type: string; phone: string; email: string; nr_reg: string; city: string }[];
+    wrong_types_count: number;
+    merge_suggestions: {
+      client_a: { id: number; display_name: string; client_type: string; phone: string; email: string; nr_reg: string; city: string };
+      client_b: { id: number; display_name: string; client_type: string; phone: string; email: string; nr_reg: string; city: string };
+      similarity: number;
+      suggested_keep_id: number;
+      suggested_remove_id: number;
+    }[];
+    merge_suggestions_count: number;
+  }>('/api/crm/clients/sanitize', name ? { name } : undefined),
+  sanitizeFixTypes: (ids: number[]) => api.post<{ success: boolean; affected: number }>('/api/crm/clients/sanitize/fix-types', { ids }),
   getDeals: (params?: Record<string, string>) => api.get<{ deals: CrmDeal[]; total: number }>('/api/crm/deals', params),
   getDeal: (id: number) => api.get<{ deal: CrmDeal }>(`/api/crm/deals/${id}`),
   getBrands: () => api.get<{ brands: string[] }>('/api/crm/deals/brands'),

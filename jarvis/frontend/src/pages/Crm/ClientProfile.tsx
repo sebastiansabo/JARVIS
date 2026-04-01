@@ -5,7 +5,8 @@ import {
   ArrowLeft, Building2, Pencil, Save, X, Car, MapPin, Truck, MessageSquare,
   Star, RefreshCw, Search, Loader2, Phone, Mail, Hash, Globe, User,
   Shield, Database, ChevronDown, ChevronUp, Sparkles, Lightbulb,
-  AlertTriangle, TrendingUp, Target, Brain,
+  AlertTriangle, TrendingUp, Target, Brain, CreditCard, BarChart3,
+  ShieldCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -328,7 +329,7 @@ export default function ClientProfile() {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm flex items-center gap-1.5">
-              <Brain className="h-4 w-4 text-primary" />AI Company Intelligence
+              <Brain className="h-4 w-4 text-primary" />Analiza Financiara AI
             </CardTitle>
             <Button
               size="sm" className="h-8"
@@ -336,9 +337,9 @@ export default function ClientProfile() {
               disabled={aiResearchMutation.isPending}
             >
               {aiResearchMutation.isPending ? (
-                <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />Researching...</>
+                <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />Se analizeaza...</>
               ) : (
-                <><Sparkles className="h-3.5 w-3.5 mr-1" />{aiResearch ? 'Re-analyze' : 'Research Company'}</>
+                <><Sparkles className="h-3.5 w-3.5 mr-1" />{aiResearch ? 'Re-analizeaza' : 'Analizeaza Compania'}</>
               )}
             </Button>
           </div>
@@ -348,8 +349,8 @@ export default function ClientProfile() {
             <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50 animate-pulse">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
               <div>
-                <p className="text-sm font-medium">AI is researching {client.display_name}...</p>
-                <p className="text-xs text-muted-foreground">Analyzing company data, industry context, and business potential</p>
+                <p className="text-sm font-medium">Analiza financiara pentru {client.display_name}...</p>
+                <p className="text-xs text-muted-foreground">Se evalueaza profilul financiar, riscuri, oportunitati si potentialul de flota</p>
               </div>
             </div>
           )}
@@ -364,9 +365,12 @@ export default function ClientProfile() {
                     {aiResearch.company_type && <Badge variant="outline" className="text-[10px]">{String(aiResearch.company_type)}</Badge>}
                     {aiResearch.estimated_size && <Badge variant="outline" className="text-[10px]">{String(aiResearch.estimated_size)}</Badge>}
                     {aiResearch.risk_level && (
-                      <Badge variant={aiResearch.risk_level === 'high' ? 'destructive' : aiResearch.risk_level === 'medium' ? 'secondary' : 'default'} className="text-[10px]">
-                        Risk: {String(aiResearch.risk_level)}
+                      <Badge variant={aiResearch.risk_level === 'ridicat' ? 'destructive' : aiResearch.risk_level === 'mediu' ? 'secondary' : 'default'} className="text-[10px]">
+                        Risc: {String(aiResearch.risk_level)}
                       </Badge>
+                    )}
+                    {aiResearch.competitive_position && (
+                      <Badge variant="outline" className="text-[10px]">{String(aiResearch.competitive_position)}</Badge>
                     )}
                   </div>
                 </div>
@@ -378,16 +382,82 @@ export default function ClientProfile() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Lightbulb className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-medium">AI found CUI: <span className="font-mono">{String(aiResearch.suggested_cui)}</span></span>
+                      <span className="text-sm font-medium">CUI identificat: <span className="font-mono">{String(aiResearch.suggested_cui)}</span></span>
                     </div>
                     <Button size="sm" className="h-7 text-xs" onClick={() => {
                       setCuiInput(String(aiResearch.suggested_cui))
                       enrichMutation.mutate(String(aiResearch.suggested_cui))
                     }} disabled={enrichMutation.isPending}>
                       {enrichMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Search className="h-3 w-3 mr-1" />}
-                      Use this CUI
+                      Foloseste CUI
                     </Button>
                   </div>
+                </div>
+              )}
+
+              {/* Financial Profile */}
+              {aiResearch.financial_profile && typeof aiResearch.financial_profile === 'object' && (
+                <div className="rounded-lg border border-blue-200 dark:border-blue-900 p-3 bg-blue-50/30 dark:bg-blue-950/20">
+                  <p className="text-xs font-medium text-blue-700 dark:text-blue-400 mb-2 flex items-center gap-1">
+                    <BarChart3 className="h-3 w-3" /> Profil Financiar
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5">
+                    {(aiResearch.financial_profile as Record<string, string>).estimated_revenue_range && (
+                      <div className="flex items-start gap-2">
+                        <CreditCard className="h-3.5 w-3.5 mt-0.5 text-blue-500 shrink-0" />
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Cifra de afaceri estimata</p>
+                          <p className="text-xs font-medium">{String((aiResearch.financial_profile as Record<string, string>).estimated_revenue_range)}</p>
+                        </div>
+                      </div>
+                    )}
+                    {(aiResearch.financial_profile as Record<string, string>).profitability_assessment && (
+                      <div className="flex items-start gap-2">
+                        <TrendingUp className="h-3.5 w-3.5 mt-0.5 text-blue-500 shrink-0" />
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Profitabilitate</p>
+                          <p className="text-xs font-medium">{String((aiResearch.financial_profile as Record<string, string>).profitability_assessment)}</p>
+                        </div>
+                      </div>
+                    )}
+                    {(aiResearch.financial_profile as Record<string, string>).debt_indicators && (
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="h-3.5 w-3.5 mt-0.5 text-blue-500 shrink-0" />
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Indicatori de indatorare</p>
+                          <p className="text-xs font-medium">{String((aiResearch.financial_profile as Record<string, string>).debt_indicators)}</p>
+                        </div>
+                      </div>
+                    )}
+                    {(aiResearch.financial_profile as Record<string, string>).payment_behavior && (
+                      <div className="flex items-start gap-2">
+                        <ShieldCheck className="h-3.5 w-3.5 mt-0.5 text-blue-500 shrink-0" />
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Comportament de plata</p>
+                          <p className="text-xs font-medium">{String((aiResearch.financial_profile as Record<string, string>).payment_behavior)}</p>
+                        </div>
+                      </div>
+                    )}
+                    {(aiResearch.financial_profile as Record<string, string>).growth_trend && (
+                      <div className="flex items-start gap-2 col-span-full">
+                        <BarChart3 className="h-3.5 w-3.5 mt-0.5 text-blue-500 shrink-0" />
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Trend de crestere</p>
+                          <p className="text-xs font-medium">{String((aiResearch.financial_profile as Record<string, string>).growth_trend)}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Credit Assessment */}
+              {aiResearch.credit_assessment && (
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                    <ShieldCheck className="h-3 w-3" /> Evaluare Risc de Credit
+                  </p>
+                  <p className="text-sm">{String(aiResearch.credit_assessment)}</p>
                 </div>
               )}
 
@@ -395,12 +465,12 @@ export default function ClientProfile() {
               {Array.isArray(aiResearch.key_insights) && (aiResearch.key_insights as string[]).length > 0 && (
                 <div className="rounded-lg border p-3">
                   <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
-                    <Lightbulb className="h-3 w-3" /> Key Insights
+                    <Lightbulb className="h-3 w-3" /> Informatii Cheie
                   </p>
                   <ul className="space-y-1">
                     {(aiResearch.key_insights as string[]).map((insight, i) => (
                       <li key={i} className="text-sm flex items-start gap-2">
-                        <span className="text-primary mt-0.5">•</span>{String(insight)}
+                        <span className="text-primary mt-0.5">{'\u2022'}</span>{String(insight)}
                       </li>
                     ))}
                   </ul>
@@ -412,12 +482,12 @@ export default function ClientProfile() {
                 {Array.isArray(aiResearch.opportunities) && (aiResearch.opportunities as string[]).length > 0 && (
                   <div className="rounded-lg border border-green-200 dark:border-green-900 p-3 bg-green-50/50 dark:bg-green-950/20">
                     <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-1.5 flex items-center gap-1">
-                      <TrendingUp className="h-3 w-3" /> Opportunities
+                      <TrendingUp className="h-3 w-3" /> Oportunitati
                     </p>
                     <ul className="space-y-1">
                       {(aiResearch.opportunities as string[]).map((opp, i) => (
                         <li key={i} className="text-xs flex items-start gap-2">
-                          <span className="text-green-600 mt-0.5">•</span>{String(opp)}
+                          <span className="text-green-600 mt-0.5">{'\u2022'}</span>{String(opp)}
                         </li>
                       ))}
                     </ul>
@@ -426,12 +496,12 @@ export default function ClientProfile() {
                 {Array.isArray(aiResearch.risks) && (aiResearch.risks as string[]).length > 0 && (
                   <div className="rounded-lg border border-amber-200 dark:border-amber-900 p-3 bg-amber-50/50 dark:bg-amber-950/20">
                     <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1.5 flex items-center gap-1">
-                      <AlertTriangle className="h-3 w-3" /> Risks
+                      <AlertTriangle className="h-3 w-3" /> Riscuri
                     </p>
                     <ul className="space-y-1">
                       {(aiResearch.risks as string[]).map((risk, i) => (
                         <li key={i} className="text-xs flex items-start gap-2">
-                          <span className="text-amber-600 mt-0.5">•</span>{String(risk)}
+                          <span className="text-amber-600 mt-0.5">{'\u2022'}</span>{String(risk)}
                         </li>
                       ))}
                     </ul>
@@ -443,7 +513,7 @@ export default function ClientProfile() {
               {Array.isArray(aiResearch.recommended_actions) && (aiResearch.recommended_actions as string[]).length > 0 && (
                 <div className="rounded-lg border p-3">
                   <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
-                    <Target className="h-3 w-3" /> Recommended Actions
+                    <Target className="h-3 w-3" /> Actiuni Recomandate
                   </p>
                   <ul className="space-y-1">
                     {(aiResearch.recommended_actions as string[]).map((action, i) => (
@@ -455,12 +525,100 @@ export default function ClientProfile() {
                 </div>
               )}
 
+              {/* Car Sale Opportunity */}
+              {aiResearch.car_sale_opportunity && typeof aiResearch.car_sale_opportunity === 'object' && (
+                <div className="rounded-lg border border-emerald-200 dark:border-emerald-900 p-3 bg-emerald-50/30 dark:bg-emerald-950/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                      <Car className="h-3 w-3" /> Oportunitate Vanzare Auto
+                    </p>
+                    {(aiResearch.car_sale_opportunity as Record<string, string>).score ? (
+                      <Badge variant="default" className="text-[10px] bg-emerald-600">
+                        Scor: {String((aiResearch.car_sale_opportunity as Record<string, string>).score)}/10
+                      </Badge>
+                    ) : null}
+                  </div>
+                  {(aiResearch.car_sale_opportunity as Record<string, string>).assessment && (
+                    <p className="text-xs mb-2">{String((aiResearch.car_sale_opportunity as Record<string, string>).assessment)}</p>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    {Array.isArray((aiResearch.car_sale_opportunity as Record<string, unknown>).vehicle_types) && (
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Tipuri vehicule</p>
+                        <p className="text-xs font-medium">{((aiResearch.car_sale_opportunity as Record<string, string[]>).vehicle_types).join(', ')}</p>
+                      </div>
+                    )}
+                    {(aiResearch.car_sale_opportunity as Record<string, string>).estimated_units_year && (
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Unitati estimate/an</p>
+                        <p className="text-xs font-medium">{String((aiResearch.car_sale_opportunity as Record<string, string>).estimated_units_year)}</p>
+                      </div>
+                    )}
+                    {(aiResearch.car_sale_opportunity as Record<string, string>).budget_range && (
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Buget estimat/an</p>
+                        <p className="text-xs font-medium">{String((aiResearch.car_sale_opportunity as Record<string, string>).budget_range)}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Market Position + Mobility Needs */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {aiResearch.market_position && typeof aiResearch.market_position === 'object' && (
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                      <BarChart3 className="h-3 w-3" /> Pozitie pe Piata & Expansiune
+                    </p>
+                    <div className="space-y-1.5">
+                      {(aiResearch.market_position as Record<string, string>).market_share && (
+                        <div><p className="text-[10px] text-muted-foreground">Cota de piata</p><p className="text-xs">{String((aiResearch.market_position as Record<string, string>).market_share)}</p></div>
+                      )}
+                      {(aiResearch.market_position as Record<string, string>).representation && (
+                        <div><p className="text-[10px] text-muted-foreground">Prezenta geografica</p><p className="text-xs">{String((aiResearch.market_position as Record<string, string>).representation)}</p></div>
+                      )}
+                      {(aiResearch.market_position as Record<string, string>).brand_strength && (
+                        <div><p className="text-[10px] text-muted-foreground">Forta brand</p><p className="text-xs">{String((aiResearch.market_position as Record<string, string>).brand_strength)}</p></div>
+                      )}
+                      {(aiResearch.market_position as Record<string, string>).expansion_plans && (
+                        <div><p className="text-[10px] text-muted-foreground">Potential expansiune</p><p className="text-xs">{String((aiResearch.market_position as Record<string, string>).expansion_plans)}</p></div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {aiResearch.mobility_needs && typeof aiResearch.mobility_needs === 'object' && (
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                      <Car className="h-3 w-3" /> Nevoi de Mobilitate
+                    </p>
+                    <div className="space-y-1.5">
+                      {(aiResearch.mobility_needs as Record<string, string>).current_assessment && (
+                        <div><p className="text-[10px] text-muted-foreground">Evaluare curenta</p><p className="text-xs">{String((aiResearch.mobility_needs as Record<string, string>).current_assessment)}</p></div>
+                      )}
+                      {(aiResearch.mobility_needs as Record<string, string>).sales_force_mobility && (
+                        <div><p className="text-[10px] text-muted-foreground">Mobilitate echipa vanzari</p><p className="text-xs">{String((aiResearch.mobility_needs as Record<string, string>).sales_force_mobility)}</p></div>
+                      )}
+                      {(aiResearch.mobility_needs as Record<string, string>).logistics_needs && (
+                        <div><p className="text-[10px] text-muted-foreground">Nevoi logistice</p><p className="text-xs">{String((aiResearch.mobility_needs as Record<string, string>).logistics_needs)}</p></div>
+                      )}
+                      {(aiResearch.mobility_needs as Record<string, string>).executive_mobility && (
+                        <div><p className="text-[10px] text-muted-foreground">Mobilitate management</p><p className="text-xs">{String((aiResearch.mobility_needs as Record<string, string>).executive_mobility)}</p></div>
+                      )}
+                      {(aiResearch.mobility_needs as Record<string, string>).service_vehicles && (
+                        <div><p className="text-[10px] text-muted-foreground">Vehicule serviciu</p><p className="text-xs">{String((aiResearch.mobility_needs as Record<string, string>).service_vehicles)}</p></div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Fleet Potential + News */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {aiResearch.fleet_potential && (
                   <div className="rounded-lg border p-3">
                     <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                      <Truck className="h-3 w-3" /> Fleet Potential
+                      <Truck className="h-3 w-3" /> Potential Flota
                     </p>
                     <p className="text-sm">{String(aiResearch.fleet_potential)}</p>
                   </div>
@@ -468,7 +626,7 @@ export default function ClientProfile() {
                 {aiResearch.news_summary && (
                   <div className="rounded-lg border p-3">
                     <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                      <MessageSquare className="h-3 w-3" /> News & Developments
+                      <MessageSquare className="h-3 w-3" /> Stiri si Dezvoltari
                     </p>
                     <p className="text-sm">{String(aiResearch.news_summary)}</p>
                   </div>
@@ -478,7 +636,7 @@ export default function ClientProfile() {
               {/* Timestamp */}
               {aiResearch._generated_at && (
                 <p className="text-[10px] text-muted-foreground text-right">
-                  Generated {new Date(String(aiResearch._generated_at)).toLocaleString('ro-RO')} • {String(aiResearch._model || 'Claude AI')}
+                  Generat {new Date(String(aiResearch._generated_at)).toLocaleString('ro-RO')} {'\u2022'} {String(aiResearch._model || 'Claude AI')}
                 </p>
               )}
             </div>
@@ -489,7 +647,7 @@ export default function ClientProfile() {
             </div>
           )}
           {!aiResearch && !aiResearchMutation.isPending && (
-            <p className="text-sm text-muted-foreground">Click "Research Company" to generate AI-powered intelligence about this client.</p>
+            <p className="text-sm text-muted-foreground">Apasa "Analizeaza Compania" pentru a genera un raport de analiza financiara AI.</p>
           )}
         </CardContent>
       </Card>

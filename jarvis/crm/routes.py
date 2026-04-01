@@ -505,6 +505,74 @@ def api_client_ai_research(client_id):
     })
 
 
+@crm_bp.route('/api/crm/clients/sanitize', methods=['GET'])
+@login_required
+@crm_required
+def api_sanitize_scan():
+    """Scan for data quality issues: wrong types and duplicates."""
+    name = request.args.get('name')
+    limit = request.args.get('limit', 50, type=int)
+
+    wrong_types = _client_repo.find_wrong_types(limit=limit)
+    duplicates = _client_repo.find_duplicates(name=name, limit=limit)
+
+    # Group duplicates into merge suggestions
+    merge_groups = []
+    seen = set()
+    for dup in duplicates:
+        key = tuple(sorted([dup['id_a'], dup['id_b']]))
+        if key in seen:
+            continue
+        seen.add(key)
+
+        # Determine which to keep: prefer the one with more data
+        a_score = sum(1 for f in ['phone_a', 'email_a', 'nr_reg_a', 'city_a'] if dup.get(f))
+        b_score = sum(1 for f in ['phone_b', 'email_b', 'nr_reg_b', 'city_b'] if dup.get(f))
+        keep_id = dup['id_a'] if a_score >= b_score else dup['id_b']
+        remove_id = dup['id_b'] if keep_id == dup['id_a'] else dup['id_a']
+
+        merge_groups.append({
+            'client_a': {
+                'id': dup['id_a'], 'display_name': dup['name_a'],
+                'client_type': dup['type_a'], 'phone': dup['phone_a'],
+                'email': dup['email_a'], 'nr_reg': dup['nr_reg_a'],
+                'city': dup['city_a'],
+            },
+            'client_b': {
+                'id': dup['id_b'], 'display_name': dup['name_b'],
+                'client_type': dup['type_b'], 'phone': dup['phone_b'],
+                'email': dup['email_b'], 'nr_reg': dup['nr_reg_b'],
+                'city': dup['city_b'],
+            },
+            'similarity': float(dup['sim']),
+            'suggested_keep_id': keep_id,
+            'suggested_remove_id': remove_id,
+        })
+
+    return jsonify({
+        'wrong_types': wrong_types,
+        'wrong_types_count': len(wrong_types),
+        'merge_suggestions': merge_groups,
+        'merge_suggestions_count': len(merge_groups),
+    })
+
+
+@crm_bp.route('/api/crm/clients/sanitize/fix-types', methods=['POST'])
+@login_required
+@crm_required
+def api_sanitize_fix_types():
+    """Bulk fix client_type for detected wrong types."""
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids', [])
+    if not ids or not isinstance(ids, list):
+        return jsonify({'success': False, 'error': 'ids required'}), 400
+    if len(ids) > 500:
+        return jsonify({'success': False, 'error': 'Max 500 clients per batch'}), 400
+
+    count = _client_repo.batch_update_type(ids, 'company')
+    return jsonify({'success': True, 'affected': count})
+
+
 @crm_bp.route('/api/crm/clients/<int:client_id>', methods=['DELETE'])
 @login_required
 @crm_required

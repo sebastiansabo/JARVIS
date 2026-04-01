@@ -468,32 +468,62 @@ def ai_research_company(client_data, profile_data=None, fiscal_data=None, enrich
 
     context = '\n'.join(context_parts)
 
-    prompt = f"""You are a business intelligence analyst for a Romanian automotive dealership group (Autoworld Holding).
-Analyze the following company and provide actionable intelligence.
+    prompt = f"""Esti un analist financiar senior la KPMG Romania, specializat in due diligence si analiza de companii.
+Analizezi compania de mai jos pentru un client din industria auto (Autoworld Holding — dealer auto multibrand).
+Raspunde EXCLUSIV in limba romana.
 
 {context}
 
-Provide your analysis in the following JSON structure (respond ONLY with valid JSON, no markdown):
+Furnizeaza analiza ta in urmatoarea structura JSON (raspunde DOAR cu JSON valid, fara markdown):
 {{
-  "company_overview": "Brief 2-3 sentence overview of the company",
-  "suggested_cui": "The CUI/CIF fiscal code if you can determine it from the Nr. Reg or name (null if unknown)",
-  "industry": "Primary industry/sector",
-  "company_type": "SRL/SA/PFA/etc or the legal form",
-  "estimated_size": "micro/small/medium/large based on available info",
-  "risk_level": "low/medium/high",
-  "key_insights": ["insight 1", "insight 2", "insight 3"],
-  "opportunities": ["opportunity for automotive sales/service 1", "opportunity 2"],
-  "risks": ["risk 1", "risk 2"],
-  "recommended_actions": ["action 1", "action 2"],
-  "fleet_potential": "Assessment of potential fleet vehicle needs",
-  "news_summary": "Any known recent developments or news (or 'No recent news available')"
+  "company_overview": "Prezentare generala a companiei in 3-4 propozitii — profil, istoric, pozitionare pe piata",
+  "suggested_cui": "Codul CUI/CIF daca il poti determina din Nr. Reg sau denumire (null daca nu se cunoaste)",
+  "industry": "Sectorul principal de activitate (ex: Industria farmaceutica, Constructii, IT&C)",
+  "company_type": "Forma juridica: SRL/SA/PFA/SCS/RA etc.",
+  "estimated_size": "micro/mica/medie/mare — conform criteriilor EU (nr. angajati, cifra de afaceri)",
+  "risk_level": "scazut/mediu/ridicat",
+  "financial_profile": {{
+    "estimated_revenue_range": "Interval estimat cifra de afaceri anuala (ex: 10-50 mil EUR)",
+    "profitability_assessment": "Evaluare a profitabilitatii — margini, tendinte",
+    "debt_indicators": "Indicatori de indatorare si solvabilitate estimati",
+    "payment_behavior": "Comportament de plata estimat — bun platnic / riscuri de intarziere",
+    "growth_trend": "Trend de crestere: ascendent/stabil/descendent"
+  }},
+  "key_insights": ["insight financiar 1", "insight operational 2", "insight strategic 3"],
+  "opportunities": ["oportunitate de vanzare/servicii auto 1", "oportunitate 2"],
+  "risks": ["risc financiar/operational 1", "risc 2"],
+  "recommended_actions": ["actiune recomandata 1", "actiune 2"],
+  "fleet_potential": "Evaluare detaliata a potentialului de flota — nr. vehicule estimate, tipuri necesare, buget estimat",
+  "car_sale_opportunity": {{
+    "score": "1-10 (scor de oportunitate vanzare auto)",
+    "assessment": "Evaluare detaliata a oportunitatii de vanzare vehicule noi/SH catre aceasta companie",
+    "vehicle_types": ["tipuri de vehicule relevante: sedan executiv, SUV, utilitare, camioane usoare etc."],
+    "estimated_units_year": "Numar estimat de vehicule necesare pe an",
+    "budget_range": "Buget estimat anual pentru achizitie flota"
+  }},
+  "market_position": {{
+    "market_share": "Cota de piata estimata in industria lor",
+    "representation": "Prezenta geografica — nr. sedii, filiale, puncte de lucru",
+    "brand_strength": "Puterea brandului pe piata romaneasca",
+    "expansion_plans": "Evaluare potential de expansiune — noi filiale, piete noi, crestere personal"
+  }},
+  "mobility_needs": {{
+    "current_assessment": "Evaluare nevoilor curente de mobilitate ale companiei",
+    "sales_force_mobility": "Nevoi de mobilitate pentru echipa de vanzari/reprezentanti",
+    "logistics_needs": "Nevoi logistice si de transport",
+    "executive_mobility": "Nevoi de mobilitate pentru management/directori",
+    "service_vehicles": "Nevoi de vehicule de serviciu/interventie"
+  }},
+  "credit_assessment": "Evaluare de risc de credit — recomandat/cu precautie/nerecomandat pentru vanzari in rate sau leasing",
+  "competitive_position": "Pozitia competitiva pe piata — lider/challenger/niche/urmaritor",
+  "news_summary": "Ultimele dezvoltari sau stiri cunoscute (sau 'Nu sunt disponibile stiri recente')"
 }}"""
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model='claude-sonnet-4-20250514',
-            max_tokens=1500,
+            max_tokens=3000,
             temperature=0.3,
             messages=[{'role': 'user', 'content': prompt}],
         )

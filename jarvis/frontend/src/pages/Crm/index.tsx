@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Users, Car, Upload, BarChart3, PieChart, UserCheck, Ban } from 'lucide-react'
+import { Users, Car, Upload, BarChart3, PieChart, UserCheck, Ban, Sparkles } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { StatCard } from '@/components/shared/StatCard'
@@ -14,6 +14,7 @@ import DealsTab from './DealsTab'
 import StatisticsTab from './StatisticsTab'
 import ClientStatsTab from './ClientStatsTab'
 import ImportTab from './ImportTab'
+import SanitizeTab from './SanitizeTab'
 
 export default function Crm() {
   const isMobile = useIsMobile()
@@ -29,9 +30,9 @@ export default function Crm() {
           title="Samsaru"
           breadcrumbs={[
             { label: 'Samsaru' },
-            { label: tab === 'dashboard' ? 'Dashboard' : tab === 'deals' ? 'Sales' : tab === 'clients' ? 'Clients' : tab === 'statistics' ? 'Statistics' : tab === 'import' ? 'Import' : 'Blacklist' },
+            { label: tab === 'dashboard' ? 'Dashboard' : tab === 'deals' ? 'Sales' : tab === 'clients' ? 'Clients' : tab === 'statistics' ? 'Statistics' : tab === 'import' ? 'Import' : tab === 'sanitize' ? 'Sanitize' : 'Blacklist' },
           ]}
-          search={(tab === 'deals' || tab === 'clients' || tab === 'blacklist') ? (
+          search={(tab === 'deals' || tab === 'clients' || tab === 'blacklist' || tab === 'sanitize') ? (
             <SearchInput
               value={search}
               onChange={setSearch}
@@ -48,6 +49,7 @@ export default function Crm() {
                   <TabsTrigger value="clients"><UserCheck className="h-4 w-4" />Clients</TabsTrigger>
                   <TabsTrigger value="statistics"><PieChart className="h-4 w-4" />Statistics</TabsTrigger>
                   <TabsTrigger value="import"><Upload className="h-4 w-4" />Import</TabsTrigger>
+                  <TabsTrigger value="sanitize"><Sparkles className="h-4 w-4" />Sanitize</TabsTrigger>
                   <TabsTrigger value="blacklist"><Ban className="h-4 w-4" />Blacklist</TabsTrigger>
                 </TabsList>
               )}
@@ -76,6 +78,7 @@ export default function Crm() {
         <TabsContent value="clients"><ClientStatsTab search={search} /></TabsContent>
         <TabsContent value="statistics"><StatisticsTab showFilters={statsShowFilters} setShowFilters={setStatsShowFilters} showStats /></TabsContent>
         <TabsContent value="import"><ImportTab /></TabsContent>
+        <TabsContent value="sanitize"><SanitizeTab /></TabsContent>
         <TabsContent value="blacklist"><ClientStatsTab blacklistOnly search={search} /></TabsContent>
       </div>
     </Tabs>
