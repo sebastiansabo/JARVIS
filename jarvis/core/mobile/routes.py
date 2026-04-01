@@ -173,14 +173,20 @@ def _user_json(user) -> dict:
         'can_access_ai_agent':   _mod('ai_agent',   'can_access_ai_agent'),
         'can_access_digest':     _mod('digest',     'can_access_digest'),
         'can_access_accounting': _mod('accounting', 'can_access_accounting'),
+        'can_access_field_sales': _mod('field_sales', None),
         # Mobile-specific toggles
-        'can_access_approvals_mobile':  _mobile('approvals'),
-        'can_access_forms_mobile':      _mobile('forms'),
-        'can_access_ai_agent_mobile':   _mobile('ai_agent'),
-        'can_access_marketing_mobile':  _mobile('marketing'),
-        'can_access_hr_mobile':         _mobile('hr'),
-        'can_access_digest_mobile':     _mobile('digest'),
-        'can_access_accounting_mobile': _mobile('accounting'),
+        'can_access_approvals_mobile':    _mobile('approvals'),
+        'can_access_forms_mobile':        _mobile('forms'),
+        'can_access_ai_agent_mobile':     _mobile('ai_agent'),
+        'can_access_marketing_mobile':    _mobile('marketing'),
+        'can_access_hr_mobile':           _mobile('hr'),
+        'can_access_digest_mobile':       _mobile('digest'),
+        'can_access_accounting_mobile':   _mobile('accounting'),
+        'can_access_field_sales_mobile':  _mobile('field_sales'),
+        # Field sales granular flags for mobile
+        'can_view_field_sales_team': bool(
+            _perm_repo.check_permission_v2(user.role_id, 'field_sales', 'team', 'view').get('has_permission')
+        ) if user.role_id else False,
     }
 
 

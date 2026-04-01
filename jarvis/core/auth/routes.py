@@ -214,6 +214,7 @@ def api_current_user():
                 'can_access_ai_agent':   _access('ai_agent',   'can_access_ai_agent'),
                 'can_access_forms':      _access('forms',      'can_access_forms'),
                 'can_access_digest':     _access('digest',     'can_access_digest'),
+                'can_access_field_sales': _access('field_sales', None),
                 # Legacy / granular flags still read from role
                 'can_access_connectors': current_user.can_access_connectors,
                 'can_access_templates': current_user.can_access_templates,

@@ -196,6 +196,9 @@ def _register_blueprints(flask_app: Flask):
     from crm import crm_bp
     flask_app.register_blueprint(crm_bp)
 
+    from field_sales import field_sales_bp
+    flask_app.register_blueprint(field_sales_bp)
+
     from dms import dms_bp
     flask_app.register_blueprint(dms_bp, url_prefix='/dms')
 

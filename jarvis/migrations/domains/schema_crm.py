@@ -156,6 +156,26 @@ def create_schema_crm(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_leads_phone ON crm_leads(phone)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_leads_added ON crm_leads(added_date DESC)')
 
+    # -- Clienti import extensions --
+    cursor.execute("ALTER TABLE crm_clients ADD COLUMN IF NOT EXISTS contact_person TEXT")
+    cursor.execute("ALTER TABLE crm_clients ADD COLUMN IF NOT EXISTS dealer_codes TEXT[]")
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS client_phones (
+            id SERIAL PRIMARY KEY,
+            client_id INTEGER NOT NULL REFERENCES crm_clients(id) ON DELETE CASCADE,
+            phone TEXT NOT NULL,
+            phone_raw TEXT,
+            label TEXT DEFAULT 'main',
+            is_primary BOOLEAN DEFAULT FALSE,
+            source TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_client_phones_client ON client_phones(client_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_client_phones_phone ON client_phones(phone)')
+    cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_client_phones_uniq ON client_phones(client_id, phone)')
+
     # Enable pg_trgm for fuzzy name matching (ignore if not available)
     cursor.execute("""
         DO $$ BEGIN
