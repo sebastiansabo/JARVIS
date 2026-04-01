@@ -20,6 +20,11 @@ import {
   Save,
   History,
   Timer,
+  Database,
+  Key,
+  Globe,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -49,6 +54,7 @@ import { biostarApi } from '@/api/biostar'
 import type { BioStarSyncRun } from '@/types/biostar'
 import type { CompanyConnection } from '@/types/efactura'
 import { FetchMessagesDialog } from './FetchMessagesDialog'
+import { api } from '@/api/client'
 import { toast } from 'sonner'
 
 // ════════════════════════════════════════════════
@@ -945,6 +951,199 @@ function PushNotificationSection() {
 }
 
 // ════════════════════════════════════════════════
+// Business Data APIs Section
+// ════════════════════════════════════════════════
+
+interface BusinessConnector {
+  id: number
+  connector_type: string
+  name: string
+  status: string
+  config: Record<string, unknown>
+  credential_fields: Record<string, string>
+  last_sync?: string
+  last_error?: string
+}
+
+const CONNECTOR_META: Record<string, { icon: string; color: string; url: string }> = {
+  anaf: { icon: '🏛️', color: 'text-blue-600', url: 'https://www.anaf.ro' },
+  termene: { icon: '⚖️', color: 'text-purple-600', url: 'https://termene.ro' },
+  risco: { icon: '📊', color: 'text-orange-600', url: 'https://risco.ro' },
+  listafirme: { icon: '📋', color: 'text-green-600', url: 'https://listafirme.eu' },
+  openapi_ro: { icon: '🔌', color: 'text-cyan-600', url: 'https://openapi.ro' },
+  firmeapi: { icon: '⚡', color: 'text-yellow-600', url: 'https://firmeapi.ro' },
+}
+
+function BusinessConnectorCard({ connector, onSaved }: { connector: BusinessConnector; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [creds, setCreds] = useState<Record<string, string>>({})
+  const [showValues, setShowValues] = useState(false)
+
+  const meta = CONNECTOR_META[connector.connector_type] || { icon: '🔗', color: 'text-gray-600', url: '#' }
+  const description = (connector.config as Record<string, string>)?.description || ''
+  const endpoint = (connector.config as Record<string, string>)?.api_endpoint || ''
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      api.put<{ success: boolean; connector: BusinessConnector }>(`/api/connectors/${connector.id}`, {
+        credentials: creds,
+        status: Object.values(creds).some(v => v.trim()) ? 'connected' : connector.status,
+      }),
+    onSuccess: (res) => {
+      if (res.success) {
+        toast.success(`${connector.name} updated`)
+        setEditing(false)
+        setCreds({})
+        onSaved()
+      }
+    },
+    onError: () => toast.error('Failed to save'),
+  })
+
+  const hasCredentials = Object.values(connector.credential_fields).some(v => v === '••••••')
+  const needsCredentials = Object.keys(connector.credential_fields).length > 0 && !hasCredentials
+
+  return (
+    <div className="rounded-lg border p-4 space-y-3">
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-3">
+          <span className="text-2xl">{meta.icon}</span>
+          <div>
+            <h4 className="font-semibold">{connector.name}</h4>
+            {endpoint && (
+              <p className="text-xs text-muted-foreground font-mono truncate max-w-[300px]">{endpoint}</p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <StatusBadge status={connector.status === 'connected' ? 'active' : connector.status === 'error' ? 'error' : 'inactive'} />
+          <a href={meta.url} target="_blank" rel="noreferrer">
+            <Globe className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+          </a>
+        </div>
+      </div>
+
+      {description && (
+        <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
+      )}
+
+      {/* Credential fields display */}
+      {Object.keys(connector.credential_fields).length > 0 && !editing && (
+        <div className="flex items-center gap-2 text-sm">
+          <Key className="h-3.5 w-3.5 text-muted-foreground" />
+          {Object.entries(connector.credential_fields).map(([key, val]) => (
+            <span key={key} className="flex items-center gap-1">
+              <span className="text-muted-foreground">{key}:</span>
+              <span className={val ? 'text-green-600' : 'text-red-500'}>{val || 'not set'}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Edit credentials form */}
+      {editing && (
+        <div className="rounded border p-3 space-y-3 bg-muted/30">
+          {Object.keys(connector.credential_fields).map((key) => (
+            <div key={key} className="space-y-1">
+              <Label className="text-xs">{key}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type={showValues ? 'text' : 'password'}
+                  placeholder={connector.credential_fields[key] ? '••••••  (leave blank to keep)' : `Enter ${key}`}
+                  value={creds[key] || ''}
+                  onChange={(e) => setCreds({ ...creds, [key]: e.target.value })}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+          ))}
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowValues(!showValues)}
+              className="text-xs"
+            >
+              {showValues ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
+              {showValues ? 'Hide' : 'Show'}
+            </Button>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
+              {saveMut.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+              Save
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setCreds({}) }}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      {!editing && Object.keys(connector.credential_fields).length > 0 && (
+        <Button size="sm" variant={needsCredentials ? 'default' : 'outline'} onClick={() => setEditing(true)}>
+          <Key className="h-3.5 w-3.5 mr-1" />
+          {needsCredentials ? 'Configure API Key' : 'Edit Credentials'}
+        </Button>
+      )}
+
+      {connector.status === 'connected' && !Object.keys(connector.credential_fields).length && (
+        <div className="flex items-center gap-1.5 text-xs text-green-600">
+          <CheckCircle className="h-3.5 w-3.5" />
+          No authentication required — free public API
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BusinessDataSection() {
+  const qc = useQueryClient()
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['connectors', 'business'],
+    queryFn: () => api.get<{ connectors: BusinessConnector[] }>('/api/connectors', { category: 'business' }),
+  })
+
+  const connectors = data?.connectors ?? []
+
+  if (isLoading) {
+    return <div className="h-48 animate-pulse rounded-lg border bg-muted/50" />
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-base font-semibold flex items-center gap-2">
+          <Database className="h-5 w-5" />
+          Business Data APIs
+        </h3>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Romanian business data providers for client enrichment (fiscal data, risk scores, court cases, shareholders)
+        </p>
+      </div>
+
+      {connectors.length === 0 ? (
+        <EmptyState
+          icon={<Database className="h-10 w-10" />}
+          title="No business data connectors"
+          description="Run database migration to seed business data connectors"
+        />
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {connectors.map((c) => (
+            <BusinessConnectorCard
+              key={c.id}
+              connector={c}
+              onSaved={() => qc.invalidateQueries({ queryKey: ['connectors', 'business'] })}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════
 // Main Export
 // ════════════════════════════════════════════════
 
@@ -956,6 +1155,8 @@ export default function ConnectorsTab() {
       <BioStarConnectionSection />
       <hr className="border-border" />
       <PushNotificationSection />
+      <hr className="border-border" />
+      <BusinessDataSection />
     </div>
   )
 }
