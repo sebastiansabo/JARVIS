@@ -188,7 +188,11 @@ def api_client_detail(client_id):
     if not client:
         return jsonify({'success': False, 'error': 'Not found'}), 404
     deals, _ = _deal_repo.search(client_id=client_id, limit=100)
-    phones = _client_repo.get_phones(client_id)
+    phones = []
+    try:
+        phones = _client_repo.get_phones(client_id)
+    except Exception:
+        pass  # client_phones table may not exist yet
     # Field Sales visits for this client
     visits = []
     try:
