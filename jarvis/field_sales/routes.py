@@ -6,7 +6,7 @@ from datetime import date, datetime
 from functools import wraps
 
 from flask import jsonify, request, g, current_app
-from flask_login import login_required, current_user
+from flask_login import current_user
 
 from . import field_sales_bp
 from .repositories.visit_repository import VisitRepository
@@ -24,6 +24,44 @@ logger = logging.getLogger('jarvis.field_sales.routes')
 _visit_repo = VisitRepository()
 _client_repo = ClientFSRepository()
 _perm_repo = PermissionRepository()
+
+
+def _get_current_user():
+    """Return the authenticated user from JWT (mobile) or Flask-Login (web)."""
+    jwt_user = getattr(request, '_jwt_user', None)
+    if jwt_user:
+        return jwt_user
+    if current_user and current_user.is_authenticated:
+        return current_user
+    return None
+
+
+def jwt_or_login_required(f):
+    """Accept either JWT Bearer token (mobile) or Flask-Login session (web)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # Try JWT first (mobile app sends Authorization: Bearer ...)
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            from core.mobile.routes import _decode_token, _JWT_SECRET
+            from core.auth.repositories import UserRepository
+            from core.auth.models import User
+            token = auth_header[7:]
+            payload = _decode_token(token, _JWT_SECRET)
+            if not payload or payload.get('type') != 'access':
+                return jsonify({'success': False, 'error': 'Invalid or expired token'}), 401
+            _user_repo = UserRepository()
+            user_data = _user_repo.get_by_id(payload['sub'])
+            if not user_data or not user_data.get('is_active', True):
+                return jsonify({'success': False, 'error': 'User not found or inactive'}), 401
+            request._jwt_user = User(user_data)
+            return f(*args, **kwargs)
+        # Fall back to Flask-Login session
+        if current_user and current_user.is_authenticated:
+            return f(*args, **kwargs)
+        return jsonify({'success': False, 'error': 'Authentication required'}), 401
+    return decorated
+
 
 ALLOWED_VISIT_TYPES = frozenset({
     'fleet_review', 'renewal_discussion', 'test_drive_followup',
@@ -43,8 +81,9 @@ def _safe_error(e):
 
 
 def _has_permission(module, entity, action):
-    """Check if current_user has a specific V2 permission. Returns False if no role_id."""
-    role_id = getattr(current_user, 'role_id', None)
+    """Check if current user has a specific V2 permission. Returns False if no role_id."""
+    user = _get_current_user()
+    role_id = getattr(user, 'role_id', None) if user else None
     if not role_id:
         return False
     perm = _perm_repo.check_permission_v2(role_id, module, entity, action)
@@ -52,7 +91,7 @@ def _has_permission(module, entity, action):
 
 
 def _is_manager():
-    """Check if current_user has field_sales.team.view permission."""
+    """Check if current user has field_sales.team.view permission."""
     return _has_permission('field_sales', 'team', 'view')
 
 
@@ -64,9 +103,10 @@ def field_sales_required(f):
     """Require field_sales.module.access V2 permission. Sets g.permission_scope."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not current_user.is_authenticated:
+        user = _get_current_user()
+        if not user:
             return jsonify({'success': False, 'error': 'Authentication required'}), 401
-        role_id = getattr(current_user, 'role_id', None)
+        role_id = getattr(user, 'role_id', None)
         if not role_id:
             return jsonify({'success': False, 'error': 'Field Sales access denied'}), 403
         perm = _perm_repo.check_permission_v2(role_id, 'field_sales', 'module', 'access')
@@ -81,9 +121,10 @@ def field_sales_manager_required(f):
     """Require field_sales.team.view V2 permission for manager endpoints."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not current_user.is_authenticated:
+        user = _get_current_user()
+        if not user:
             return jsonify({'success': False, 'error': 'Authentication required'}), 401
-        role_id = getattr(current_user, 'role_id', None)
+        role_id = getattr(user, 'role_id', None)
         if not role_id:
             return jsonify({'success': False, 'error': 'Manager access denied'}), 403
         perm = _perm_repo.check_permission_v2(role_id, 'field_sales', 'team', 'view')
@@ -121,7 +162,7 @@ def _run_background(app, fn):
 # ════════════════════════════════════════════════════════════════
 
 @field_sales_bp.route('/api/field-sales/visits/today', methods=['GET'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_visits_today():
     """Get visits for the current KAM for a given date (default: today)."""
@@ -135,7 +176,7 @@ def api_visits_today():
         else:
             date_str = date.today().isoformat()
 
-        visits = _visit_repo.get_by_kam_and_date(current_user.id, date_str)
+        visits = _visit_repo.get_by_kam_and_date(_get_current_user().id, date_str)
         return jsonify({'success': True, 'visits': visits, 'date': date_str})
     except Exception as e:
         logger.exception('Error fetching visits for today')
@@ -143,7 +184,7 @@ def api_visits_today():
 
 
 @field_sales_bp.route('/api/field-sales/visits', methods=['POST'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_create_visit():
     """Create a new visit plan."""
@@ -180,7 +221,7 @@ def api_create_visit():
             return jsonify({'success': False, 'error': 'Client not found'}), 404
 
         visit_data = {
-            'kam_id': current_user.id,
+            'kam_id': _get_current_user().id,
             'client_id': client_id,
             'planned_date': planned_date,
             'planned_time': data.get('planned_time'),
@@ -212,7 +253,7 @@ def api_create_visit():
 
         # Notify manager about planned visit (fire-and-forget in background)
         _visit_notification = dict(visit)
-        _visit_notification['kam_id'] = current_user.id
+        _visit_notification['kam_id'] = _get_current_user().id
 
         def _send_planned_notification():
             notify_visit_planned(_visit_notification, kam_name=kam_name)
@@ -226,7 +267,7 @@ def api_create_visit():
 
 
 @field_sales_bp.route('/api/field-sales/visits/<int:visit_id>', methods=['GET'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_visit_detail(visit_id):
     """Get full visit details including notes."""
@@ -236,7 +277,7 @@ def api_visit_detail(visit_id):
             return jsonify({'success': False, 'error': 'Visit not found'}), 404
 
         # IDOR check: KAM sees own visits, managers see all
-        if visit['kam_id'] != current_user.id and not _is_manager():
+        if visit['kam_id'] != _get_current_user().id and not _is_manager():
             return jsonify({'success': False, 'error': 'Access denied'}), 403
 
         return jsonify({'success': True, 'visit': visit})
@@ -246,7 +287,7 @@ def api_visit_detail(visit_id):
 
 
 @field_sales_bp.route('/api/field-sales/visits/<int:visit_id>/checkin', methods=['PUT', 'POST'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_visit_checkin(visit_id):
     """Check in to a visit with optional GPS coordinates."""
@@ -256,7 +297,7 @@ def api_visit_checkin(visit_id):
             return jsonify({'success': False, 'error': 'Visit not found'}), 404
 
         # IDOR: only own visits
-        if visit['kam_id'] != current_user.id:
+        if visit['kam_id'] != _get_current_user().id:
             return jsonify({'success': False, 'error': 'Can only check in to your own visits'}), 403
 
         if visit['status'] not in ('planned', 'in_progress'):
@@ -290,7 +331,7 @@ def api_visit_checkin(visit_id):
 
 
 @field_sales_bp.route('/api/field-sales/visits/<int:visit_id>/checkout', methods=['POST'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_visit_checkout(visit_id):
     """Check out from a visit (complete without note)."""
@@ -299,7 +340,7 @@ def api_visit_checkout(visit_id):
         if not visit:
             return jsonify({'success': False, 'error': 'Visit not found'}), 404
 
-        if visit['kam_id'] != current_user.id:
+        if visit['kam_id'] != _get_current_user().id:
             return jsonify({'success': False, 'error': 'Can only check out from your own visits'}), 403
 
         if visit['status'] != 'in_progress':
@@ -318,7 +359,7 @@ def api_visit_checkout(visit_id):
 
 
 @field_sales_bp.route('/api/field-sales/visits/<int:visit_id>/note', methods=['POST'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_visit_note(visit_id):
     """Submit a visit note. Structures via AI and completes the visit."""
@@ -328,7 +369,7 @@ def api_visit_note(visit_id):
             return jsonify({'success': False, 'error': 'Visit not found'}), 404
 
         # IDOR: only own visits
-        if visit['kam_id'] != current_user.id:
+        if visit['kam_id'] != _get_current_user().id:
             return jsonify({'success': False, 'error': 'Can only add notes to your own visits'}), 403
 
         data = request.get_json(silent=True) or {}
@@ -403,7 +444,7 @@ def api_visit_note(visit_id):
 
 
 @field_sales_bp.route('/api/field-sales/visits/<int:visit_id>/brief', methods=['GET'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_visit_brief(visit_id):
     """Get or regenerate the AI brief for a visit."""
@@ -413,7 +454,7 @@ def api_visit_brief(visit_id):
             return jsonify({'success': False, 'error': 'Visit not found'}), 404
 
         # IDOR: own visits or manager
-        if visit['kam_id'] != current_user.id and not _is_manager():
+        if visit['kam_id'] != _get_current_user().id and not _is_manager():
             return jsonify({'success': False, 'error': 'Access denied'}), 403
 
         refresh = request.args.get('refresh', '').lower() in ('1', 'true')
@@ -449,7 +490,7 @@ def api_visit_brief(visit_id):
 # ════════════════════════════════════════════════════════════════
 
 @field_sales_bp.route('/api/field-sales/clients/<int:client_id>/360', methods=['GET'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_client_360(client_id):
     """Get comprehensive 360-degree client view."""
@@ -464,7 +505,7 @@ def api_client_360(client_id):
 
 
 @field_sales_bp.route('/api/field-sales/clients/<int:client_id>/fiscal', methods=['GET'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_client_fiscal(client_id):
     """Get ANAF fiscal data for a client. Requires field_sales.fiscal.view."""
@@ -491,7 +532,7 @@ def api_client_fiscal(client_id):
 
 
 @field_sales_bp.route('/api/field-sales/clients/<int:client_id>/refresh-fiscal', methods=['POST'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_client_refresh_fiscal(client_id):
     """Force-refresh ANAF fiscal data for a client. Requires field_sales.fiscal.view."""
@@ -519,7 +560,7 @@ def api_client_refresh_fiscal(client_id):
 
 
 @field_sales_bp.route('/api/field-sales/clients/<int:client_id>/enrich', methods=['POST'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_client_enrich(client_id):
     """Trigger full client profile enrichment."""
@@ -557,7 +598,7 @@ def api_client_enrich(client_id):
                     client_id,
                     client.get('display_name') or client.get('company_name') or 'Client',
                     updated,
-                    triggered_by_user_id=current_user.id,
+                    triggered_by_user_id=_get_current_user().id,
                 )
 
             _run_background(app, _send_business_notification)
@@ -569,7 +610,7 @@ def api_client_enrich(client_id):
 
 
 @field_sales_bp.route('/api/field-sales/clients/search', methods=['GET'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_client_search():
     """Search clients by name, company, nr_reg, or CUI."""
@@ -593,7 +634,7 @@ def api_client_search():
 # ════════════════════════════════════════════════════════════════
 
 @field_sales_bp.route('/api/field-sales/clients/<int:client_id>/fleet', methods=['GET'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_client_fleet(client_id):
     """Get fleet vehicles for a client."""
@@ -606,7 +647,7 @@ def api_client_fleet(client_id):
 
 
 @field_sales_bp.route('/api/field-sales/clients/<int:client_id>/fleet', methods=['POST'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_add_fleet_vehicle(client_id):
     """Add a vehicle to a client's fleet. Requires field_sales.fleet.manage."""
@@ -642,7 +683,7 @@ def api_add_fleet_vehicle(client_id):
 
 
 @field_sales_bp.route('/api/field-sales/fleet/<int:vehicle_id>', methods=['PUT'])
-@login_required
+@jwt_or_login_required
 @field_sales_required
 def api_update_fleet_vehicle(vehicle_id):
     """Update a fleet vehicle. Requires field_sales.fleet.manage."""
@@ -680,7 +721,7 @@ def api_update_fleet_vehicle(vehicle_id):
 # ════════════════════════════════════════════════════════════════
 
 @field_sales_bp.route('/api/field-sales/manager/overview', methods=['GET'])
-@login_required
+@jwt_or_login_required
 @field_sales_manager_required
 def api_manager_overview():
     """Get manager overview of all KAM visits in a date range."""
@@ -731,7 +772,7 @@ def api_manager_overview():
 
 
 @field_sales_bp.route('/api/field-sales/manager/clients', methods=['GET'])
-@login_required
+@jwt_or_login_required
 @field_sales_manager_required
 def api_manager_clients():
     """Get clients with profiles for manager view, with filtering."""
