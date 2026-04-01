@@ -224,9 +224,23 @@ export default function ClientProfile() {
         {/* Contact Info */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-1.5">
-              <User className="h-4 w-4" />Contact Information
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm flex items-center gap-1.5">
+                <User className="h-4 w-4" />Contact Information
+              </CardTitle>
+              {profile?.cui && !editing && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs gap-1 text-muted-foreground"
+                  disabled={enrichMutation.isPending}
+                  onClick={() => enrichMutation.mutate(profile.cui!)}
+                >
+                  <RefreshCw className={`h-3 w-3 ${enrichMutation.isPending ? 'animate-spin' : ''}`} />
+                  ANAF
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {editing ? (

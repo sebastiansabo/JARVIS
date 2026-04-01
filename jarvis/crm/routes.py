@@ -58,6 +58,13 @@ def _extract_profile_from_connector(connector_type, data):
     profile = {}
     client = {}
 
+    # ANAF wraps data in date_generale sub-object — flatten it
+    if 'date_generale' in data and isinstance(data['date_generale'], dict):
+        flat = {**data}
+        for k, v in data['date_generale'].items():
+            flat.setdefault(k, v)
+        data = flat
+
     # Normalize: try common field names across connectors
     # --- Industry / CAEN ---
     for key in ('cod_caen', 'cod_CAEN', 'caen', 'caen_code'):
@@ -88,7 +95,7 @@ def _extract_profile_from_connector(connector_type, data):
             break
 
     # --- Address / street ---
-    for key in ('adresa', 'address', 'sediu', 'sediu_social'):
+    for key in ('adresa', 'adresa_domiciliu_fiscal', 'address', 'sediu', 'sediu_social'):
         val = data.get(key)
         if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
             client['street'] = str(val).strip()
@@ -431,6 +438,9 @@ def api_client_enrich(client_id):
     # Fetch ANAF data
     try:
         anaf_data = get_or_refresh_anaf(client_id, cui, _fs_repo)
+        # Auto-fill client/profile fields from ANAF response
+        if anaf_data and isinstance(anaf_data, dict):
+            _apply_connector_to_profile(client_id, 'anaf', anaf_data)
         profile = _fs_repo.get_or_create_profile(client_id)
         return jsonify({
             'success': True,
