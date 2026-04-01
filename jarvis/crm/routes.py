@@ -281,6 +281,97 @@ def _extract_profile_from_connector(connector_type, data):
     # --- Country ---
     profile['country_code'] = 'RO'
 
+    # --- ANAF-specific extended fields (stored in profile as JSON-friendly dict) ---
+    if connector_type == 'anaf':
+        extra = {}
+        # Registration date
+        for key in ('data_inregistrare', 'registration_date'):
+            val = data.get(key)
+            if val and str(val).strip():
+                extra['data_inregistrare'] = str(val).strip()
+                break
+        # Ownership form
+        for key in ('forma_de_proprietate',):
+            val = data.get(key)
+            if val and str(val).strip():
+                extra['forma_de_proprietate'] = str(val).strip()
+                break
+        # Organization form
+        for key in ('forma_organizare',):
+            val = data.get(key)
+            if val and str(val).strip():
+                extra['forma_organizare'] = str(val).strip()
+                break
+        # Tax office
+        for key in ('organFiscalCompetent',):
+            val = data.get(key)
+            if val and str(val).strip():
+                extra['organ_fiscal'] = str(val).strip()
+                break
+        # Fax
+        for key in ('fax',):
+            val = data.get(key)
+            if val and str(val).strip():
+                extra['fax'] = str(val).strip()
+                break
+        # Postal code
+        for key in ('codPostal', 'scod_Postal', 'dcod_Postal'):
+            val = data.get(key)
+            if val and str(val).strip():
+                extra['cod_postal'] = str(val).strip()
+                break
+        # IBAN
+        for key in ('iban',):
+            val = data.get(key)
+            if val and str(val).strip():
+                extra['iban'] = str(val).strip()
+                break
+        # e-Factura
+        extra['e_factura'] = bool(data.get('statusRO_e_Factura', False))
+        if data.get('data_inreg_Reg_RO_e_Factura'):
+            extra['e_factura_date'] = str(data['data_inreg_Reg_RO_e_Factura'])
+        # Stare inregistrare
+        for key in ('stare_inregistrare',):
+            val = data.get(key)
+            if val and str(val).strip():
+                extra['stare_inregistrare'] = str(val).strip()
+                break
+        # VAT details
+        tva_section = data.get('inregistrare_scop_Tva') or {}
+        if isinstance(tva_section, dict):
+            extra['scp_tva'] = bool(tva_section.get('scpTVA', False))
+            periods = tva_section.get('perioade_TVA', [])
+            if periods and isinstance(periods, list):
+                latest = periods[0]
+                extra['tva_start'] = latest.get('data_inceput_ScpTVA', '')
+                extra['tva_end'] = latest.get('data_sfarsit_ScpTVA', '')
+        # Inactive status
+        inactive_section = data.get('stare_inactiv') or {}
+        if isinstance(inactive_section, dict):
+            extra['is_inactive'] = bool(inactive_section.get('statusInactivi', False))
+            if inactive_section.get('dataRadiere'):
+                extra['data_radiere'] = str(inactive_section['dataRadiere'])
+        # TVA la incasare
+        rtvai = data.get('inregistrare_RTVAI') or {}
+        if isinstance(rtvai, dict):
+            extra['tva_incasare'] = bool(rtvai.get('statusTvaIncasare', False))
+        # Split TVA
+        split = data.get('inregistrare_SplitTVA') or {}
+        if isinstance(split, dict):
+            extra['split_tva'] = bool(split.get('statusSplitTVA', False))
+        # County auto code
+        addr = data.get('adresa_sediu_social') or {}
+        if isinstance(addr, dict):
+            if addr.get('scod_JudetAuto'):
+                extra['cod_judet_auto'] = str(addr['scod_JudetAuto'])
+        # Store CAEN activity description (if we add lookup later)
+        caen = data.get('cod_CAEN') or data.get('cod_caen') or ''
+        if caen:
+            extra['cod_caen'] = str(caen).strip()
+
+        if extra:
+            profile['_anaf_extra'] = extra
+
     return profile, client
 
 
@@ -292,6 +383,23 @@ def _apply_connector_to_profile(client_id, connector_type, data):
     """
     profile_updates, client_updates = _extract_profile_from_connector(connector_type, data)
     is_gold = connector_type == 'anaf'
+
+    # Handle _anaf_extra: store as JSON in enrichment_data.anaf_extra
+    anaf_extra = profile_updates.pop('_anaf_extra', None)
+    if anaf_extra:
+        try:
+            import json as _json
+            prof = _fs_repo.get_or_create_profile(client_id)
+            existing = prof.get('enrichment_data') or {}
+            if isinstance(existing, str):
+                try:
+                    existing = _json.loads(existing)
+                except (ValueError, TypeError):
+                    existing = {}
+            existing['anaf_extra'] = anaf_extra
+            _fs_repo.update_profile(client_id, {'enrichment_data': _json.dumps(existing)})
+        except Exception:
+            logger.exception('Failed to store anaf_extra for client %s', client_id)
 
     if profile_updates:
         try:

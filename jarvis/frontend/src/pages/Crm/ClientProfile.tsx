@@ -818,18 +818,50 @@ export default function ClientProfile() {
               )}
             </div>
             {fiscal ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-sm">
-                <InfoRow label="Company Name" value={fiscal.denumire as string} />
-                <InfoRow label="CUI" value={fiscal.cui as string} />
-                <InfoRow label="Nr. Reg" value={fiscal.nrRegCom as string} />
-                <InfoRow label="Address" value={fiscal.adresa as string} />
-                <InfoRow label="CAEN Code" value={fiscal.cod_CAEN as string} />
-                <InfoRow label="CAEN Activity" value={fiscal.aut as string} />
-                <InfoRow label="VAT Registered" value={(fiscal.scpTVA === true || fiscal.tva === true) ? 'Yes' : 'No'} />
-                <InfoRow label="Active" value={fiscal.statusInactivi === true ? 'Inactive' : 'Active'} />
-                <InfoRow label="Split TVA" value={fiscal.splitTVA === true ? 'Yes' : 'No'} />
-                {profile?.anaf_fetched_at && <InfoRow label="Last Fetched" value={new Date(profile.anaf_fetched_at).toLocaleString('ro-RO')} />}
-              </div>
+              (() => {
+                const dg = (fiscal.date_generale || fiscal) as Record<string, unknown>
+                const ax = (enrichmentData?.anaf_extra || {}) as Record<string, unknown>
+                const tva = (fiscal.inregistrare_scop_Tva || {}) as Record<string, unknown>
+                const inact = (fiscal.stare_inactiv || {}) as Record<string, unknown>
+                const split = (fiscal.inregistrare_SplitTVA || {}) as Record<string, unknown>
+                return (
+                  <div className="space-y-2 text-sm">
+                    {/* Row 1: Identity */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1">
+                      <InfoRow label="Denumire" value={String(dg.denumire || '')} />
+                      <InfoRow label="CUI" value={String(dg.cui || ax.cui || '')} />
+                      <InfoRow label="Nr. Reg. Com." value={String(dg.nrRegCom || ax.nr_reg_com || '')} />
+                      <InfoRow label="Data Inregistrare" value={String(dg.data_inregistrare || ax.data_inregistrare || '')} />
+                    </div>
+                    {/* Row 2: Legal & Fiscal */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1">
+                      <InfoRow label="Forma Juridica" value={String(dg.forma_juridica || ax.forma_juridica || '')} />
+                      <InfoRow label="Forma Proprietate" value={String(dg.forma_de_proprietate || ax.forma_de_proprietate || '')} />
+                      <InfoRow label="Cod CAEN" value={String(dg.cod_CAEN || dg.cod_caen || ax.cod_caen || '')} />
+                      <InfoRow label="Organ Fiscal" value={String(dg.organFiscalCompetent || ax.organ_fiscal || '')} />
+                    </div>
+                    {/* Row 3: Address */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1">
+                      <InfoRow label="Adresa" value={String(dg.adresa || '')} />
+                      <InfoRow label="Cod Postal" value={String(dg.codPostal || ax.cod_postal || '')} />
+                      <InfoRow label="Telefon" value={String(dg.telefon || '')} />
+                      <InfoRow label="Fax" value={String(dg.fax || ax.fax || '')} />
+                    </div>
+                    {/* Row 4: Status indicators */}
+                    <div className="grid grid-cols-3 md:grid-cols-6 gap-x-3 gap-y-1">
+                      <div><span className="text-[10px] text-muted-foreground block">Platitor TVA</span><span className={`text-xs font-medium ${(tva.scpTVA || ax.scp_tva || dg.scpTVA) ? 'text-green-600' : 'text-muted-foreground'}`}>{(tva.scpTVA || ax.scp_tva || dg.scpTVA) ? 'Da' : 'Nu'}</span></div>
+                      <div><span className="text-[10px] text-muted-foreground block">Activ</span><span className={`text-xs font-medium ${(inact.statusInactivi || ax.is_inactive) ? 'text-red-600' : 'text-green-600'}`}>{(inact.statusInactivi || ax.is_inactive) ? 'Inactiv' : 'Activ'}</span></div>
+                      <div><span className="text-[10px] text-muted-foreground block">Split TVA</span><span className="text-xs font-medium">{(split.statusSplitTVA || ax.split_tva) ? 'Da' : 'Nu'}</span></div>
+                      <div><span className="text-[10px] text-muted-foreground block">TVA Incasare</span><span className="text-xs font-medium">{ax.tva_incasare ? 'Da' : 'Nu'}</span></div>
+                      <div><span className="text-[10px] text-muted-foreground block">e-Factura</span><span className={`text-xs font-medium ${(dg.statusRO_e_Factura || ax.e_factura) ? 'text-green-600' : 'text-muted-foreground'}`}>{(dg.statusRO_e_Factura || ax.e_factura) ? 'Da' : 'Nu'}</span></div>
+                      <div><span className="text-[10px] text-muted-foreground block">Stare</span><span className="text-xs font-medium">{String(dg.stare_inregistrare || ax.stare_inregistrare || '—')}</span></div>
+                    </div>
+                    {/* IBAN if available */}
+                    {!!(dg.iban || ax.iban) && <InfoRow label="IBAN" value={String(dg.iban || ax.iban || '')} />}
+                    {profile?.anaf_fetched_at && <div className="text-[10px] text-muted-foreground pt-1 border-t">Ultima actualizare: {new Date(profile.anaf_fetched_at).toLocaleString('ro-RO')}</div>}
+                  </div>
+                )
+              })()
             ) : (
               <p className="text-xs text-muted-foreground">{profile?.cui ? 'No ANAF data yet. Click Fetch to retrieve.' : 'Set a CUI first to fetch ANAF data.'}</p>
             )}
