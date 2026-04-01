@@ -224,6 +224,16 @@ def create_schema_core(conn, cursor):
         )
     ''')
 
+    # Seed ANAF connector if not exists
+    cursor.execute("SELECT id FROM connectors WHERE connector_type = 'anaf'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            INSERT INTO connectors (connector_type, name, status, config, credentials)
+            VALUES ('anaf', 'ANAF Public API', 'connected',
+                    '{"api_endpoint": "https://webservicesp.anaf.ro/PlatitorTvaRest/api/v8/ws/tva", "timeout_seconds": 5, "cache_hours": 24}'::jsonb,
+                    '{}'::jsonb)
+        ''')
+
     # Seed initial data if tables are empty
     cursor.execute('SELECT COUNT(*) FROM department_structure')
     result = cursor.fetchone()

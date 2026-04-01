@@ -191,8 +191,34 @@ def compute_renewal_score(client_id, repo):
     return min(100, score)
 
 
+_ANAF_DEFAULT_ENDPOINT = 'https://webservicesp.anaf.ro/PlatitorTvaRest/api/v8/ws/tva'
+_ANAF_DEFAULT_TIMEOUT = 5
+
+
+def _get_anaf_config():
+    """Read ANAF connector config from the connectors table.
+
+    Returns:
+        tuple: (api_endpoint, timeout_seconds)
+    """
+    try:
+        from core.connectors.repositories.connector_repository import ConnectorRepository
+        connector = ConnectorRepository().get_by_type('anaf')
+        if connector and connector.get('config'):
+            cfg = connector['config']
+            return (
+                cfg.get('api_endpoint', _ANAF_DEFAULT_ENDPOINT),
+                cfg.get('timeout_seconds', _ANAF_DEFAULT_TIMEOUT),
+            )
+    except Exception:
+        pass
+    return (_ANAF_DEFAULT_ENDPOINT, _ANAF_DEFAULT_TIMEOUT)
+
+
 def fetch_anaf_data(cui):
     """Fetch company data from ANAF public API (OPENAPI).
+
+    Reads the API endpoint from the 'anaf' connector in the connectors table.
 
     Args:
         cui: Romanian CUI (fiscal code), digits only.
@@ -213,12 +239,13 @@ def fetch_anaf_data(cui):
         return None
 
     today_str = datetime.now().strftime('%Y-%m-%d')
+    api_endpoint, timeout = _get_anaf_config()
 
     try:
         resp = requests.post(
-            'https://webservicesp.anaf.ro/PlatitorTvaRest/api/v8/ws/tva',
+            api_endpoint,
             json=[{'cui': int(cui_clean), 'data': today_str}],
-            timeout=5,
+            timeout=timeout,
             headers={'Content-Type': 'application/json'},
         )
         resp.raise_for_status()
