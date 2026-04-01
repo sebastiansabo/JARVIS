@@ -252,5 +252,34 @@ class DealRepository(BaseRepository):
         )
         return self.get_by_id(deal_id)
 
+    def search_by_buyer_name(self, buyer_name, limit=200):
+        """Find deals by buyer_name similarity (fallback when client_id yields 0).
+
+        Returns list of deal rows.
+        """
+        if not buyer_name:
+            return []
+        return self.query_all(
+            '''SELECT d.*, c.display_name as client_display_name
+               FROM crm_deals d
+               LEFT JOIN crm_clients c ON c.id = d.client_id
+               WHERE d.buyer_name ILIKE %s
+               ORDER BY d.contract_date DESC NULLS LAST, d.id DESC
+               LIMIT %s''',
+            (f'%{buyer_name}%', limit)
+        )
+
+    def relink_to_client(self, buyer_name_pattern, new_client_id):
+        """Re-link orphan deals (NULL or wrong client_id) to the correct client."""
+        if not buyer_name_pattern or not new_client_id:
+            return 0
+        return self.execute(
+            '''UPDATE crm_deals
+               SET client_id = %s, updated_at = NOW()
+               WHERE buyer_name ILIKE %s
+                 AND (client_id IS NULL OR client_id != %s)''',
+            (new_client_id, f'%{buyer_name_pattern}%', new_client_id)
+        )
+
     def delete(self, deal_id):
         return self.execute('DELETE FROM crm_deals WHERE id = %s', (deal_id,)) > 0

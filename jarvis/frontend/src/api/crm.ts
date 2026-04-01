@@ -206,7 +206,7 @@ export const crmApi = {
     enrichment_data: Record<string, { data: Record<string, unknown>; fetched_at?: string; error?: string }>;
     connectors: { connector_type: string; name: string; status: string; id: number }[];
   }>(`/api/crm/clients/${id}`),
-  enrichClient: (id: number, cui: string) => api.post<{ success: boolean; profile: ClientProfile; fiscal: Record<string, unknown> | null }>(`/api/crm/clients/${id}/enrich`, { cui }),
+  enrichClient: (id: number, cui?: string) => api.post<{ success: boolean; profile: ClientProfile; fiscal: Record<string, unknown> | null }>(`/api/crm/clients/${id}/enrich`, { cui: cui || '' }),
   enrichFromConnector: (id: number, cui: string, connectorType: string) => api.post<{ success: boolean; connector_type: string; data: Record<string, unknown>; profile: ClientProfile }>(`/api/crm/clients/${id}/enrich/${connectorType}`, { cui }),
   enrichFromAll: (id: number, cui: string) => api.post<{ success: boolean; results: Record<string, unknown>; profile: ClientProfile }>(`/api/crm/clients/${id}/enrich-all`, { cui }),
   lookupCui: (id: number, query?: string) => api.post<{ success: boolean; results: { cui: string; name: string; address: string; nr_reg: string; source: string }[]; detected_type: string | null }>(`/api/crm/clients/${id}/lookup-cui`, { query }),

@@ -93,6 +93,56 @@ def _ensure_enrichment_column():
         logger.debug('enrichment_data column already exists or migration skipped')
 
 
+def _parse_name_nr_reg(display_name):
+    """Extract Nr. Reg. Com. (e.g. J40/1716/2000) from company display name.
+
+    Returns (clean_name, nr_reg) tuple.
+    """
+    import re
+    if not display_name:
+        return display_name, ''
+    # Pattern: J followed by 1-2 digits, then /digits/4-digit year
+    m = re.search(r'\b(J\d{1,2}/\d+/\d{4})\b', display_name)
+    if m:
+        nr_reg = m.group(1)
+        clean = display_name[:m.start()].strip().rstrip(',').rstrip('-').strip()
+        return clean, nr_reg
+    return display_name, ''
+
+
+def _auto_fix_client_on_load(client_id, client):
+    """Auto-fix client data on detail load: parse nr_reg from name, detect company type.
+
+    Returns updated client dict (may write to DB).
+    """
+    updates = {}
+    display_name = client.get('display_name') or ''
+
+    # 1. Parse Nr. Reg. Com. from display_name if present
+    clean_name, parsed_nr_reg = _parse_name_nr_reg(display_name)
+    if parsed_nr_reg and clean_name != display_name:
+        updates['display_name'] = clean_name
+        if not client.get('nr_reg'):
+            updates['nr_reg'] = parsed_nr_reg
+
+    # 2. Auto-detect client_type from name
+    effective_name = updates.get('display_name', display_name)
+    detected = detect_company_type(effective_name)
+    if detected == 'company' and client.get('client_type') != 'company':
+        updates['client_type'] = 'company'
+
+    # Apply updates if any
+    if updates:
+        try:
+            result = _client_repo.update(client_id, updates)
+            if result:
+                client = result
+        except Exception:
+            logger.exception('Auto-fix failed for client %s', client_id)
+
+    return client
+
+
 def _parse_anaf_address(adresa):
     """Parse ANAF compound address like 'JUD. CLUJ, MUN. CLUJ-NAPOCA, STR. FABRICII, NR.124'.
 
@@ -519,12 +569,29 @@ def _compute_business_value(client, profile, deals, fleet, visits, interactions)
     expected_years = 5 if tier in ('Platinum', 'Gold') else 3 if tier == 'Silver' else 2
     clv = annual_revenue * expected_years
 
+    # Years per purchase (inverse of deals_per_year — more intuitive)
+    years_per_purchase = max(years_as_client, 1) / deal_count if deal_count > 0 else 0
+
+    # EUR equivalents (approximate RON→EUR rate)
+    eur_rate = 4.97  # NBR reference rate
+    total_sales_eur = total_sales / eur_rate if total_sales else 0
+    total_margin_eur = total_margin / eur_rate if total_margin else 0
+    avg_deal_value_eur = avg_deal_value / eur_rate if avg_deal_value else 0
+    clv_eur = clv / eur_rate if clv else 0
+    annual_revenue_eur = annual_revenue / eur_rate if annual_revenue else 0
+
     return {
         'score': total,
         'grade': grade,
         'tier': tier,
         'clv': round(clv, 2),
+        'clv_eur': round(clv_eur, 2),
         'annual_revenue': round(annual_revenue, 2),
+        'annual_revenue_eur': round(annual_revenue_eur, 2),
+        'total_sales_eur': round(total_sales_eur, 2),
+        'total_margin_eur': round(total_margin_eur, 2),
+        'avg_deal_value_eur': round(avg_deal_value_eur, 2),
+        'years_per_purchase': round(years_per_purchase, 1),
         'breakdown': breakdown,
     }
 
@@ -695,7 +762,28 @@ def api_client_detail(client_id):
     client = _client_repo.get_by_id(client_id)
     if not client:
         return jsonify({'success': False, 'error': 'Not found'}), 404
-    deals, _ = _deal_repo.search(client_id=client_id, limit=100)
+
+    # Auto-fix: parse nr_reg from name, detect company type
+    client = _auto_fix_client_on_load(client_id, client)
+
+    deals, _ = _deal_repo.search(client_id=client_id, limit=200)
+
+    # Fallback: if 0 deals by client_id, search by buyer_name and auto-relink
+    if not deals:
+        display_name = client.get('display_name') or ''
+        if display_name:
+            # Try clean name (without nr_reg) for broader match
+            clean_name, _ = _parse_name_nr_reg(display_name)
+            fallback = _deal_repo.search_by_buyer_name(clean_name, limit=200)
+            if fallback:
+                logger.info('Found %d orphan deals for "%s" by buyer_name, relinking to client %s',
+                            len(fallback), clean_name, client_id)
+                try:
+                    _deal_repo.relink_to_client(clean_name, client_id)
+                except Exception:
+                    logger.exception('Failed to relink deals for client %s', client_id)
+                deals = fallback
+
     phones = []
     try:
         phones = _client_repo.get_phones(client_id)
@@ -785,16 +873,16 @@ def api_client_enrich(client_id):
 
     data = request.get_json(silent=True) or {}
     cui = data.get('cui', '').strip()
-    if not cui:
-        return jsonify({'success': False, 'error': 'CUI is required'}), 400
 
-    # Ensure profile exists and set CUI
+    # Ensure profile exists
     try:
-        _fs_repo.get_or_create_profile(client_id)
-        _fs_repo.update_profile(client_id, {'cui': cui})
+        profile = _fs_repo.get_or_create_profile(client_id)
+        if cui:
+            _fs_repo.update_profile(client_id, {'cui': cui})
+        elif profile.get('cui'):
+            cui = str(profile['cui']).strip()
     except Exception:
         logger.exception('Error setting CUI for client %s', client_id)
-        return jsonify({'success': False, 'error': 'Failed to update profile'}), 500
 
     # Enrichment chain: connectors by name → ANAF by CUI → AI fallback
     try:
@@ -805,34 +893,58 @@ def api_client_enrich(client_id):
         source = 'anaf'
         cui_correction = None
         company_name = client.get('display_name') or client.get('company_name') or ''
+        # Also try nr_reg as search hint
+        nr_reg = client.get('nr_reg') or ''
+
+        # Clean name (strip nr_reg if embedded)
+        clean_name, parsed_nr_reg = _parse_name_nr_reg(company_name)
+        if parsed_nr_reg and not nr_reg:
+            nr_reg = parsed_nr_reg
+        search_name = clean_name or company_name
 
         # Step 1: Search connectors by company name to find/verify CUI
-        if company_name:
-            matches = search_company_by_name(company_name)
+        if search_name:
+            matches = search_company_by_name(search_name)
+            if not matches and nr_reg:
+                # Fallback: search by Nr. Reg. Com.
+                matches = search_company_by_name(nr_reg)
             if matches:
                 best = matches[0]
                 found_cui = str(best.get('cui', '')).strip()
                 if found_cui and found_cui != cui:
                     cui_correction = {
-                        'old_cui': cui,
+                        'old_cui': cui or '(none)',
                         'new_cui': found_cui,
                         'found_name': best.get('name', ''),
                         'source': best.get('source', ''),
                     }
-                    logger.info('CUI mismatch for %s: saved=%s, found=%s from %s',
-                                company_name, cui, found_cui, best.get('source'))
-                    # Use the correct CUI
+                    logger.info('CUI correction for %s: saved=%s, found=%s from %s',
+                                search_name, cui, found_cui, best.get('source'))
                     cui = found_cui
                     _fs_repo.update_profile(client_id, {'cui': cui})
+                elif found_cui and not cui:
+                    cui = found_cui
+                    _fs_repo.update_profile(client_id, {'cui': cui})
+                # Also store nr_reg if found
+                found_nr_reg = best.get('nr_reg', '')
+                if found_nr_reg and not nr_reg:
+                    _client_repo.update(client_id, {'nr_reg': found_nr_reg})
 
-        # Step 2: Fetch ANAF with (potentially corrected) CUI
-        anaf_data = get_or_refresh_anaf(client_id, cui, _fs_repo)
+        # Step 2: Fetch ANAF with (potentially found/corrected) CUI
+        if cui:
+            anaf_data = get_or_refresh_anaf(client_id, cui, _fs_repo)
 
         # Step 3: AI fallback if still nothing
         if not anaf_data:
-            logger.info('ANAF empty for %s (CUI %s), trying AI fallback', company_name, cui)
-            anaf_data = _ai_company_lookup(company_name, cui)
+            logger.info('ANAF empty for %s (CUI %s), trying AI fallback', search_name, cui)
+            anaf_data = _ai_company_lookup(search_name, cui)
             source = 'ai'
+            # If AI found a CUI and we didn't have one, set it
+            if anaf_data and isinstance(anaf_data, dict):
+                ai_cui = str(anaf_data.get('cui') or anaf_data.get('cod_fiscal') or '').strip()
+                if ai_cui and not cui:
+                    cui = ai_cui
+                    _fs_repo.update_profile(client_id, {'cui': cui})
 
         # Auto-fill client/profile fields from response
         if anaf_data and isinstance(anaf_data, dict):
@@ -971,11 +1083,20 @@ def api_client_lookup_cui(client_id):
         return jsonify({'success': False, 'error': 'Not found'}), 404
 
     data = request.get_json(silent=True) or {}
-    query = data.get('query', '').strip() or client.get('display_name', '')
-    if not query:
+    raw_query = data.get('query', '').strip() or client.get('display_name', '')
+    if not raw_query:
         return jsonify({'success': False, 'error': 'No search query'}), 400
 
+    # Clean name (strip nr_reg like J40/1716/2000 which pollutes search)
+    clean_query, parsed_nr_reg = _parse_name_nr_reg(raw_query)
+    query = clean_query or raw_query
+
     results = search_company_by_name(query)
+
+    # Fallback: search by Nr. Reg. Com. if name search returned nothing
+    if not results and (parsed_nr_reg or client.get('nr_reg')):
+        nr_reg = parsed_nr_reg or client.get('nr_reg', '')
+        results = search_company_by_name(nr_reg)
 
     # Also auto-detect company type
     detected_type = detect_company_type(client.get('display_name', ''))

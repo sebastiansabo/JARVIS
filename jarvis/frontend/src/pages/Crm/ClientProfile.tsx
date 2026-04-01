@@ -33,9 +33,13 @@ function InfoRow({ icon: Icon, label, value, className }: { icon?: React.Element
 
 
 
-function _fmtCurrency(val: number | undefined | null): string {
+function _fmtCurrency(val: number | undefined | null, currency = 'RON'): string {
   if (!val && val !== 0) return '—'
-  return new Intl.NumberFormat('ro-RO', { style: 'decimal', maximumFractionDigits: 0 }).format(val) + ' RON'
+  return new Intl.NumberFormat('ro-RO', { style: 'decimal', maximumFractionDigits: 0 }).format(val) + ` ${currency}`
+}
+function _fmtEur(val: number | undefined | null): string {
+  if (!val && val !== 0) return ''
+  return '~' + new Intl.NumberFormat('ro-RO', { style: 'decimal', maximumFractionDigits: 0 }).format(val) + ' EUR'
 }
 
 const CONNECTOR_META: Record<string, { icon: string; label: string }> = {
@@ -95,9 +99,9 @@ export default function ClientProfile() {
     onError: () => toast.error('Failed to update client'),
   })
 
-  // ANAF enrich mutation
+  // ANAF enrich mutation (CUI optional — server auto-detects from name)
   const enrichMutation = useMutation({
-    mutationFn: (cui: string) => crmApi.enrichClient(id, cui),
+    mutationFn: (cui?: string) => crmApi.enrichClient(id, cui),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['crm-client', id] })
       const correction = (res as Record<string, unknown>).cui_correction as { old_cui: string; new_cui: string; found_name: string; source: string } | undefined
@@ -268,15 +272,15 @@ export default function ClientProfile() {
             const pv = bv.breakdown.purchase_value || {} as Record<string, unknown>
             const ret = bv.breakdown.retention || {} as Record<string, unknown>
             const fv = bv.breakdown.fleet_volume || {} as Record<string, unknown>
-            const bvExt = bv as unknown as { clv: number; annual_revenue: number; tier: string }
+            const bvExt = bv as unknown as { clv: number; clv_eur: number; annual_revenue: number; annual_revenue_eur: number; total_sales_eur: number; total_margin_eur: number; avg_deal_value_eur: number; years_per_purchase: number; tier: string }
             const kpis = [
-              { label: 'Total Sales', value: _fmtCurrency(pv.total_sales as number), sub: `${pv.deal_count || 0} deals` },
-              { label: 'Total Margin', value: _fmtCurrency(pv.total_margin as number), sub: `${pv.margin_pct || 0}% margin` },
-              { label: 'Avg Deal Value', value: _fmtCurrency(pv.avg_deal_value as number) },
-              { label: 'Client Since', value: String(ret.first_deal_date || '—'), sub: `${ret.years_as_client || 0} yrs` },
-              { label: 'Return Rate', value: `${ret.deals_per_year || 0}/yr`, sub: ret.avg_return_months ? `~${ret.avg_return_months}mo interval` : undefined },
+              { label: 'Total Sales', value: _fmtCurrency(pv.total_sales as number), sub: _fmtEur(bvExt.total_sales_eur) || `${pv.deal_count || 0} deals` },
+              { label: 'Total Margin', value: _fmtCurrency(pv.total_margin as number), sub: `${_fmtEur(bvExt.total_margin_eur)} · ${pv.margin_pct || 0}%` },
+              { label: 'Avg Deal Value', value: _fmtCurrency(pv.avg_deal_value as number), sub: _fmtEur(bvExt.avg_deal_value_eur) },
+              { label: 'Client Since', value: String(ret.first_deal_date || '—'), sub: `${ret.years_as_client || 0} yrs · ${pv.deal_count || 0} deals` },
+              { label: 'Return Rate', value: bvExt.years_per_purchase ? `${bvExt.years_per_purchase} yrs/purchase` : '—', sub: ret.avg_return_months ? `~${ret.avg_return_months}mo interval` : undefined },
               { label: 'Fleet Size', value: String(fv.effective_fleet || 0), sub: 'vehicles' },
-              { label: 'Est. CLV', value: _fmtCurrency(bvExt.clv), sub: `${_fmtCurrency(bvExt.annual_revenue)}/yr` },
+              { label: 'Est. CLV', value: _fmtCurrency(bvExt.clv), sub: _fmtEur(bvExt.clv_eur) || `${_fmtCurrency(bvExt.annual_revenue)}/yr` },
             ]
             return kpis.map((kpi) => (
               <div key={kpi.label} className="rounded-lg border bg-card p-2.5 text-center">
@@ -298,16 +302,16 @@ export default function ClientProfile() {
               <CardTitle className="text-sm flex items-center gap-1.5">
                 <User className="h-4 w-4" />Contact Information
               </CardTitle>
-              {profile?.cui && !editing && (
+              {!editing && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-7 text-xs gap-1 text-muted-foreground"
                   disabled={enrichMutation.isPending}
-                  onClick={() => enrichMutation.mutate(profile.cui!)}
+                  onClick={() => enrichMutation.mutate(profile?.cui || undefined)}
                 >
                   <RefreshCw className={`h-3 w-3 ${enrichMutation.isPending ? 'animate-spin' : ''}`} />
-                  ANAF
+                  {profile?.cui ? 'ANAF' : 'Auto-detect'}
                 </Button>
               )}
             </div>
