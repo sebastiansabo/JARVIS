@@ -99,15 +99,22 @@ export default function ClientProfile() {
     onError: () => toast.error('Enrichment failed'),
   })
 
-  // Connector-specific enrich mutation
+  // Connector-specific enrich mutation (track which connector is loading)
+  const [fetchingConnector, setFetchingConnector] = useState<string | null>(null)
   const connectorEnrichMutation = useMutation({
-    mutationFn: ({ cui, connectorType }: { cui: string; connectorType: string }) =>
-      crmApi.enrichFromConnector(id, cui, connectorType),
+    mutationFn: ({ cui, connectorType }: { cui: string; connectorType: string }) => {
+      setFetchingConnector(connectorType)
+      return crmApi.enrichFromConnector(id, cui, connectorType)
+    },
     onSuccess: (_, vars) => {
+      setFetchingConnector(null)
       queryClient.invalidateQueries({ queryKey: ['crm-client', id] })
       toast.success(`${CONNECTOR_META[vars.connectorType]?.label || vars.connectorType} data fetched`)
     },
-    onError: (_, vars) => toast.error(`${CONNECTOR_META[vars.connectorType]?.label || vars.connectorType} fetch failed`),
+    onError: (_, vars) => {
+      setFetchingConnector(null)
+      toast.error(`${CONNECTOR_META[vars.connectorType]?.label || vars.connectorType} fetch failed`)
+    },
   })
 
   // CUI lookup mutation
@@ -793,9 +800,9 @@ export default function ClientProfile() {
                       <Button
                         size="sm" variant="ghost" className="h-7 text-xs"
                         onClick={() => connectorEnrichMutation.mutate({ cui, connectorType: connector.connector_type })}
-                        disabled={connectorEnrichMutation.isPending}
+                        disabled={fetchingConnector === connector.connector_type}
                       >
-                        <RefreshCw className={`h-3 w-3 mr-1 ${connectorEnrichMutation.isPending ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`h-3 w-3 mr-1 ${fetchingConnector === connector.connector_type ? 'animate-spin' : ''}`} />
                         {hasData ? 'Refresh' : 'Fetch'}
                       </Button>
                     )}

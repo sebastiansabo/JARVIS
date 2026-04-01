@@ -93,6 +93,36 @@ def _ensure_enrichment_column():
         logger.debug('enrichment_data column already exists or migration skipped')
 
 
+def _parse_anaf_address(adresa):
+    """Parse ANAF compound address like 'JUD. CLUJ, MUN. CLUJ-NAPOCA, STR. FABRICII, NR.124'.
+
+    Returns (street, city, region) tuple.
+    """
+    import re
+    street, city, region = '', '', ''
+    if not adresa:
+        return street, city, region
+
+    parts = [p.strip() for p in adresa.split(',')]
+    for part in parts:
+        p = part.upper()
+        if p.startswith('JUD.') or p.startswith('JUD '):
+            region = part.replace('JUD.', '').replace('JUD ', '').strip().title()
+        elif any(p.startswith(x) for x in ('MUN.', 'MUN ', 'ORA', 'COM.', 'COM ', 'SAT ', 'LOC.')):
+            city = re.sub(r'^(MUN\.|MUN |ORAS|ORA[SȘŞ]UL?|COM\.|COM |SAT |LOC\.)\s*', '', part, flags=re.IGNORECASE).strip().title()
+        elif any(p.startswith(x) for x in ('STR.', 'STR ', 'BD.', 'B-DUL', 'CAL.', 'ȘOS.', 'SOS.', 'ŞOS.', 'AL.', 'SPL.', 'P-TA', 'NR.', 'NR ')):
+            street = (street + ', ' + part.strip()) if street else part.strip()
+        elif not region and not city:
+            # Fallback: might be county if first
+            region = part.strip().title()
+
+    # Combine street parts
+    if street:
+        street = street.strip(', ')
+
+    return street, city, region
+
+
 def _extract_profile_from_connector(connector_type, data):
     """Extract structured profile + client fields from raw connector API response.
 
@@ -104,14 +134,16 @@ def _extract_profile_from_connector(connector_type, data):
     profile = {}
     client = {}
 
-    # ANAF wraps data in date_generale sub-object — flatten it
+    # ANAF wraps data in date_generale + adresa_sediu_social sub-objects
     if 'date_generale' in data and isinstance(data['date_generale'], dict):
         flat = {**data}
         for k, v in data['date_generale'].items():
             flat.setdefault(k, v)
         data = flat
+    if 'adresa_sediu_social' in data and isinstance(data['adresa_sediu_social'], dict):
+        for k, v in data['adresa_sediu_social'].items():
+            data.setdefault(k, v)
 
-    # Normalize: try common field names across connectors
     # --- Industry / CAEN ---
     for key in ('cod_caen', 'cod_CAEN', 'caen', 'caen_code'):
         val = data.get(key)
@@ -123,42 +155,63 @@ def _extract_profile_from_connector(connector_type, data):
     for key in ('forma_juridica', 'forma_organizare', 'forma_legala', 'legal_form'):
         val = data.get(key)
         if val and str(val).strip():
-            profile['legal_form'] = str(val).strip()
+            lf = str(val).strip()
+            profile['legal_form'] = lf
+            # Detect client_type from legal form
+            lf_upper = lf.upper()
+            if any(x in lf_upper for x in ('SRL', 'SA', 'SCS', 'SNC', 'RA', 'SOCIETA',
+                                            'ASOCIAT', 'FUNDATI', 'COOPERATIV', 'JURIDIC')):
+                profile['client_type'] = 'company'
             break
+
+    # ANAF only has companies — force client_type
+    if connector_type == 'anaf':
+        profile['client_type'] = 'company'
 
     # --- Phone ---
     for key in ('telefon', 'phone', 'tel'):
         val = data.get(key)
-        if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
+        if val and str(val).strip() and str(val).strip() not in ('null', 'None', ''):
             client['phone'] = str(val).strip()
             break
 
     # --- Email ---
     for key in ('email', 'email_address'):
         val = data.get(key)
-        if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
+        if val and str(val).strip() and str(val).strip() not in ('null', 'None', ''):
             client['email'] = str(val).strip()
             break
 
-    # --- Address / street ---
+    # --- Address: parse ANAF compound address into street/city/region ---
+    anaf_adresa = None
     for key in ('adresa', 'adresa_domiciliu_fiscal', 'address', 'sediu', 'sediu_social'):
         val = data.get(key)
         if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
-            client['street'] = str(val).strip()
+            anaf_adresa = str(val).strip()
             break
 
-    # --- City ---
-    for key in ('localitate', 'oras', 'city', 'loc'):
+    if anaf_adresa:
+        parsed_street, parsed_city, parsed_region = _parse_anaf_address(anaf_adresa)
+        if parsed_street:
+            client['street'] = parsed_street
+        elif anaf_adresa:
+            client['street'] = anaf_adresa  # Fallback: full address as street
+        if parsed_city:
+            client['city'] = parsed_city
+        if parsed_region:
+            client['region'] = parsed_region
+
+    # Separate city/region fields (override parsed if explicit fields exist)
+    for key in ('localitate', 'oras', 'city', 'loc', 'sdenumire_Localitate'):
         val = data.get(key)
         if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
-            client['city'] = str(val).strip()
+            client['city'] = str(val).strip().title()
             break
 
-    # --- Region / judet ---
-    for key in ('judet', 'county', 'region', 'jud'):
+    for key in ('judet', 'county', 'region', 'jud', 'sdenumire_Judet'):
         val = data.get(key)
         if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
-            client['region'] = str(val).strip()
+            client['region'] = str(val).strip().title()
             break
 
     # --- Nr Reg Com ---
@@ -176,28 +229,19 @@ def _extract_profile_from_connector(connector_type, data):
             break
 
     # --- Country ---
-    profile['country_code'] = 'RO'  # All Romanian connectors
-
-    # --- Stare (active/inactive status) ---
-    for key in ('stare', 'status', 'radiata'):
-        val = data.get(key)
-        if val is not None:
-            if key == 'radiata':
-                if val is True or str(val).lower() == 'true':
-                    profile.setdefault('_status', 'radiat')
-            elif isinstance(val, str) and 'radiat' in val.lower():
-                profile.setdefault('_status', 'radiat')
-            break
-
-    # Clean out internal keys
-    profile.pop('_status', None)
+    profile['country_code'] = 'RO'
 
     return profile, client
 
 
 def _apply_connector_to_profile(client_id, connector_type, data):
-    """Extract fields from connector data and save to profile + client."""
+    """Extract fields from connector data and save to profile + client.
+
+    ANAF is gold standard — overwrites all fields.
+    Other connectors only fill empty fields.
+    """
     profile_updates, client_updates = _extract_profile_from_connector(connector_type, data)
+    is_gold = connector_type == 'anaf'
 
     if profile_updates:
         try:
@@ -206,14 +250,18 @@ def _apply_connector_to_profile(client_id, connector_type, data):
             logger.exception('Failed to update profile from %s for client %s', connector_type, client_id)
 
     if client_updates:
-        # Only update empty fields on the client (don't overwrite existing data)
         try:
             client = _client_repo.get_by_id(client_id)
             if client:
-                filtered = {k: v for k, v in client_updates.items()
-                            if not client.get(k) or client.get(k) == '—'}
-                if filtered:
-                    _client_repo.update(client_id, filtered)
+                if is_gold:
+                    # ANAF = gold standard: overwrite all fields
+                    _client_repo.update(client_id, client_updates)
+                else:
+                    # Other connectors: only fill empty fields
+                    filtered = {k: v for k, v in client_updates.items()
+                                if not client.get(k) or client.get(k) == '—'}
+                    if filtered:
+                        _client_repo.update(client_id, filtered)
         except Exception:
             logger.exception('Failed to update client from %s for client %s', connector_type, client_id)
 
