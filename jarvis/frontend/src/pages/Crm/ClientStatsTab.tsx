@@ -9,8 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck, SlidersHorizontal, MapPin } from 'lucide-react'
-import { crmApi, type CrmClient, type CrmDeal, type CrmVisit } from '@/api/crm'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck, SlidersHorizontal, MapPin, Building2, RefreshCw, Search, Truck, MessageSquare, Star, Loader2 } from 'lucide-react'
+import { crmApi, type CrmClient, type CrmDeal, type CrmVisit, type FleetVehicle, type ClientInteraction } from '@/api/crm'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { usePersistedState } from '@/lib/utils'
@@ -552,26 +552,144 @@ export default function ClientStatsTab({ blacklistOnly, search = '' }: { blackli
 }
 
 function ClientExpandedDetails({ client, onEdit, onDelete, onToggleBlacklist }: { client: CrmClient; onEdit: () => void; onDelete: () => void; onToggleBlacklist: () => void }) {
+  const queryClient = useQueryClient()
+  const [cuiInput, setCuiInput] = useState('')
+
   const { data, isLoading } = useQuery({
     queryKey: ['crm-client', client.id],
     queryFn: () => crmApi.getClient(client.id),
   })
 
+  const enrichMutation = useMutation({
+    mutationFn: (cui: string) => crmApi.enrichClient(client.id, cui),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['crm-client', client.id] })
+      toast.success('ANAF data fetched successfully')
+      setCuiInput('')
+    },
+    onError: () => toast.error('Failed to fetch ANAF data'),
+  })
+
   const deals = data?.deals ?? []
   const visits = data?.visits ?? []
+  const profile = data?.profile
+  const fleet = data?.fleet ?? []
+  const interactions = data?.interactions ?? []
+  const renewalCandidates = data?.renewal_candidates ?? []
+  const fiscal = data?.fiscal as Record<string, unknown> | null
+
+  const InfoItem = ({ label, value }: { label: string; value: string | number | null | undefined }) => (
+    <div className="text-sm">
+      <span className="text-muted-foreground">{label}:</span>{' '}
+      <span className="font-medium">{value || '—'}</span>
+    </div>
+  )
 
   return (
-    <div className="space-y-3">
-      {/* Client info */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-        <div><span className="text-muted-foreground">Company:</span> {client.company_name || '—'}</div>
-        <div><span className="text-muted-foreground">Street:</span> {client.street || '—'}</div>
-        <div><span className="text-muted-foreground">Country:</span> {client.country || '—'}</div>
-        <div><span className="text-muted-foreground">Created:</span> {client.created_at ? new Date(client.created_at).toLocaleDateString() : '—'}</div>
-        <div><span className="text-muted-foreground">Sources:</span> {Object.keys(client.source_flags || {}).filter(k => client.source_flags[k]).join(', ') || '—'}</div>
+    <div className="space-y-4">
+      {/* ── 360 Client Header ── */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold flex items-center gap-1.5">
+          <Building2 className="h-4 w-4 text-primary" />
+          360 Client
+        </h3>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); onEdit() }}>
+            <Pencil className="h-3.5 w-3.5 mr-1" />Edit
+          </Button>
+          <Button size="sm" variant={client.is_blacklisted ? 'outline' : 'secondary'} onClick={e => { e.stopPropagation(); onToggleBlacklist() }}>
+            {client.is_blacklisted ? <><ShieldCheck className="h-3.5 w-3.5 mr-1" />Unblock</> : <><Ban className="h-3.5 w-3.5 mr-1" />Blacklist</>}
+          </Button>
+          <Button size="sm" variant="destructive" onClick={e => { e.stopPropagation(); onDelete() }}>
+            <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+          </Button>
+        </div>
       </div>
 
-      {/* Linked deals */}
+      {/* ── Client Info + Profile ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="rounded-lg border p-3 space-y-1.5">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Contact Info</p>
+          <InfoItem label="Company" value={client.company_name} />
+          <InfoItem label="Phone" value={client.phone} />
+          <InfoItem label="Email" value={client.email} />
+          <InfoItem label="Street" value={client.street} />
+          <InfoItem label="City" value={client.city} />
+          <InfoItem label="Region" value={client.region} />
+          <InfoItem label="Country" value={client.country} />
+          <InfoItem label="Nr. Reg" value={client.nr_reg} />
+          <InfoItem label="Responsible" value={client.responsible} />
+          <InfoItem label="Client Since" value={client.client_since ? new Date(client.client_since).toLocaleDateString() : undefined} />
+          <InfoItem label="Sources" value={Object.keys(client.source_flags || {}).filter(k => client.source_flags[k]).join(', ')} />
+        </div>
+
+        <div className="rounded-lg border p-3 space-y-1.5">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Profile & Scoring</p>
+          {isLoading ? (
+            <p className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />Loading...</p>
+          ) : profile ? (
+            <>
+              <InfoItem label="CUI" value={profile.cui} />
+              <InfoItem label="Client Type" value={profile.client_type} />
+              <InfoItem label="Country Code" value={profile.country_code} />
+              <InfoItem label="Industry" value={profile.industry} />
+              <InfoItem label="Priority" value={profile.priority} />
+              <InfoItem label="Renewal Score" value={profile.renewal_score != null ? `${profile.renewal_score}/100` : undefined} />
+              <InfoItem label="Fleet Size" value={profile.fleet_size} />
+              <InfoItem label="Est. Annual Value" value={profile.estimated_annual_value != null ? `${Number(profile.estimated_annual_value).toLocaleString('ro-RO')} EUR` : undefined} />
+              <InfoItem label="Legal Form" value={profile.legal_form} />
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">No profile data yet</p>
+          )}
+        </div>
+      </div>
+
+      {/* ── ANAF Fiscal Data ── */}
+      <div className="rounded-lg border p-3">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+            <Building2 className="h-3.5 w-3.5" />ANAF Fiscal Data
+          </p>
+          {profile?.cui && (
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => enrichMutation.mutate(profile.cui!)} disabled={enrichMutation.isPending}>
+              <RefreshCw className={`h-3 w-3 mr-1 ${enrichMutation.isPending ? 'animate-spin' : ''}`} />Refresh
+            </Button>
+          )}
+        </div>
+        {fiscal ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1.5 text-sm">
+            <InfoItem label="Company Name" value={fiscal.denumire as string} />
+            <InfoItem label="CUI" value={fiscal.cui as string} />
+            <InfoItem label="Nr. Reg" value={fiscal.nrRegCom as string} />
+            <InfoItem label="Address" value={fiscal.adresa as string} />
+            <InfoItem label="CAEN Code" value={fiscal.cod_CAEN as string} />
+            <InfoItem label="CAEN Activity" value={fiscal.aut as string} />
+            <InfoItem label="VAT Registered" value={(fiscal.scpTVA === true || fiscal.tva === true) ? 'Yes' : 'No'} />
+            <InfoItem label="Active" value={fiscal.statusInactivi === true ? 'Inactive' : 'Active'} />
+            <InfoItem label="Split TVA" value={fiscal.splitTVA === true ? 'Yes' : 'No'} />
+            {profile?.anaf_fetched_at && (
+              <InfoItem label="Last Fetched" value={new Date(profile.anaf_fetched_at).toLocaleString('ro-RO')} />
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="Enter CUI (e.g. 12345678)"
+              value={cuiInput}
+              onChange={e => setCuiInput(e.target.value)}
+              className="w-48 h-8 text-sm"
+              onKeyDown={e => e.key === 'Enter' && cuiInput.trim() && enrichMutation.mutate(cuiInput.trim())}
+            />
+            <Button size="sm" className="h-8" onClick={() => enrichMutation.mutate(cuiInput.trim())} disabled={!cuiInput.trim() || enrichMutation.isPending}>
+              {enrichMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Search className="h-3.5 w-3.5 mr-1" />}
+              Fetch ANAF
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Cars Purchased (Deals) ── */}
       <div>
         <p className="text-sm font-medium flex items-center gap-1.5 mb-2">
           <Car className="h-4 w-4" />
@@ -619,11 +737,60 @@ function ClientExpandedDetails({ client, onEdit, onDelete, onToggleBlacklist }: 
         )}
       </div>
 
-      {/* Field Sales Visits */}
+      {/* ── Fleet Vehicles ── */}
+      {fleet.length > 0 && (
+        <div>
+          <p className="text-sm font-medium flex items-center gap-1.5 mb-2">
+            <Truck className="h-4 w-4" />
+            Fleet ({fleet.length})
+            {renewalCandidates.length > 0 && (
+              <Badge variant="secondary" className="text-[10px] ml-1"><Star className="h-2.5 w-2.5 mr-0.5" />{renewalCandidates.length} renewal</Badge>
+            )}
+          </p>
+          <div className="rounded border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="text-xs py-1.5">Make</TableHead>
+                  <TableHead className="text-xs py-1.5">Model</TableHead>
+                  <TableHead className="text-xs py-1.5">Year</TableHead>
+                  <TableHead className="text-xs py-1.5">VIN</TableHead>
+                  <TableHead className="text-xs py-1.5">Plate</TableHead>
+                  <TableHead className="text-xs py-1.5">Status</TableHead>
+                  <TableHead className="text-xs py-1.5">Renewal</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {fleet.map((v: FleetVehicle) => (
+                  <TableRow key={v.id}>
+                    <TableCell className="text-xs py-1.5 font-medium">{v.vehicle_make || '—'}</TableCell>
+                    <TableCell className="text-xs py-1.5">{v.vehicle_model || '—'}</TableCell>
+                    <TableCell className="text-xs py-1.5">{v.vehicle_year || '—'}</TableCell>
+                    <TableCell className="text-xs font-mono py-1.5">{v.vin || '—'}</TableCell>
+                    <TableCell className="text-xs font-mono py-1.5">{v.license_plate || '—'}</TableCell>
+                    <TableCell className="py-1.5">
+                      <Badge variant={v.status === 'active' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">{v.status || '—'}</Badge>
+                    </TableCell>
+                    <TableCell className="py-1.5">
+                      {v.renewal_candidate ? (
+                        <Badge className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+                          <Star className="h-2.5 w-2.5 mr-0.5" />Yes
+                        </Badge>
+                      ) : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Field Sales Visits ── */}
       <div>
         <p className="text-sm font-medium flex items-center gap-1.5 mb-2">
           <MapPin className="h-4 w-4" />
-          Vizite Field Sales ({isLoading ? '...' : visits.length})
+          Field Sales Visits ({isLoading ? '...' : visits.length})
         </p>
         {isLoading ? (
           <p className="text-xs text-muted-foreground">Loading visits...</p>
@@ -669,26 +836,29 @@ function ClientExpandedDetails({ client, onEdit, onDelete, onToggleBlacklist }: 
         )}
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-2">
-        <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); onEdit() }}>
-          <Pencil className="h-3.5 w-3.5 mr-1" />Edit
-        </Button>
-        <Button
-          size="sm"
-          variant={client.is_blacklisted ? 'outline' : 'secondary'}
-          onClick={e => { e.stopPropagation(); onToggleBlacklist() }}
-        >
-          {client.is_blacklisted ? (
-            <><ShieldCheck className="h-3.5 w-3.5 mr-1" />Remove from Blacklist</>
-          ) : (
-            <><Ban className="h-3.5 w-3.5 mr-1" />Blacklist</>
-          )}
-        </Button>
-        <Button size="sm" variant="destructive" onClick={e => { e.stopPropagation(); onDelete() }}>
-          <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
-        </Button>
-      </div>
+      {/* ── Interactions (Visit Notes) ── */}
+      {interactions.length > 0 && (
+        <div>
+          <p className="text-sm font-medium flex items-center gap-1.5 mb-2">
+            <MessageSquare className="h-4 w-4" />
+            Recent Interactions ({interactions.length})
+          </p>
+          <div className="space-y-2">
+            {interactions.slice(0, 5).map((i: ClientInteraction) => (
+              <div key={i.id} className="rounded border p-2.5 text-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{i.kam_name || 'Unknown'}</span>
+                  <span className="text-muted-foreground">{i.created_at ? new Date(i.created_at).toLocaleDateString() : ''}</span>
+                </div>
+                {i.visit_type && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{i.visit_type.replace(/_/g, ' ')}</Badge>}
+                <p className="text-muted-foreground line-clamp-2">
+                  {(i.structured_note as Record<string, string>)?.visit_summary || i.raw_note || '—'}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

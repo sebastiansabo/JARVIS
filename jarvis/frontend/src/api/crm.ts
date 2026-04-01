@@ -88,6 +88,57 @@ export interface CrmVisit {
   visit_summary?: string
 }
 
+export interface ClientProfile {
+  id: number
+  client_id: number
+  client_type?: string
+  industry?: string
+  country_code?: string
+  legal_form?: string
+  cui?: string
+  anaf_data?: Record<string, unknown>
+  anaf_fetched_at?: string
+  fleet_size?: number
+  renewal_score?: number
+  last_scored_at?: string
+  estimated_annual_value?: number
+  priority?: string
+  assigned_kam_id?: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface FleetVehicle {
+  id: number
+  client_id: number
+  vehicle_make?: string
+  vehicle_model?: string
+  vehicle_year?: number
+  vin?: string
+  license_plate?: string
+  purchase_date?: string
+  purchase_price?: number
+  purchase_currency?: string
+  status?: string
+  renewal_candidate?: boolean
+  renewal_reason?: string
+  financing_type?: string
+  financing_expiry?: string
+  warranty_expiry?: string
+}
+
+export interface ClientInteraction {
+  id: number
+  raw_note?: string
+  structured_note?: Record<string, unknown>
+  created_at: string
+  planned_date?: string
+  visit_type?: string
+  visit_status?: string
+  outcome?: string
+  kam_name?: string
+}
+
 export interface ImportBatch {
   id: number
   source_type: string
@@ -147,7 +198,13 @@ export interface ClientDetailedStats {
 export const crmApi = {
   getStats: () => api.get<CrmStats>('/api/crm/stats'),
   getClients: (params?: Record<string, string>) => api.get<{ clients: CrmClient[]; total: number }>('/api/crm/clients', params),
-  getClient: (id: number) => api.get<{ client: CrmClient; deals: CrmDeal[]; visits: CrmVisit[] }>(`/api/crm/clients/${id}`),
+  getClient: (id: number) => api.get<{
+    client: CrmClient; deals: CrmDeal[]; visits: CrmVisit[];
+    profile: ClientProfile | null; fleet: FleetVehicle[];
+    interactions: ClientInteraction[]; renewal_candidates: FleetVehicle[];
+    fiscal: Record<string, unknown> | null; phones: { phone: string }[];
+  }>(`/api/crm/clients/${id}`),
+  enrichClient: (id: number, cui: string) => api.post<{ success: boolean; profile: ClientProfile; fiscal: Record<string, unknown> | null }>(`/api/crm/clients/${id}/enrich`, { cui }),
   mergeClients: (keepId: number, removeId: number) => api.post<{ success: boolean }>('/api/crm/clients/merge', { keep_id: keepId, remove_id: removeId }),
   getDeals: (params?: Record<string, string>) => api.get<{ deals: CrmDeal[]; total: number }>('/api/crm/deals', params),
   getDeal: (id: number) => api.get<{ deal: CrmDeal }>(`/api/crm/deals/${id}`),

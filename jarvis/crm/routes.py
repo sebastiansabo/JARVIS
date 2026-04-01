@@ -14,6 +14,8 @@ from . import crm_bp
 from .repositories import ClientRepository, DealRepository, ImportRepository
 from .services.import_service import IMPORT_HANDLERS
 from core.roles.repositories import PermissionRepository
+from field_sales.repositories.client_fs_repository import ClientFSRepository
+from field_sales.services.segmentation_service import fetch_anaf_data, get_or_refresh_anaf
 
 logger = logging.getLogger('jarvis.crm.routes')
 
@@ -21,6 +23,7 @@ _client_repo = ClientRepository()
 _deal_repo = DealRepository()
 _import_repo = ImportRepository()
 _perm_repo = PermissionRepository()
+_fs_repo = ClientFSRepository()
 
 
 def crm_required(f):
@@ -184,6 +187,7 @@ def api_clients_export():
 @login_required
 @crm_required
 def api_client_detail(client_id):
+    """360 Client — full ecosystem data for a single client."""
     client = _client_repo.get_by_id(client_id)
     if not client:
         return jsonify({'success': False, 'error': 'Not found'}), 404
@@ -193,27 +197,32 @@ def api_client_detail(client_id):
         phones = _client_repo.get_phones(client_id)
     except Exception:
         pass  # client_phones table may not exist yet
-    # Field Sales visits for this client
-    visits = []
+
+    # Full 360 ecosystem data
+    view_360 = {}
     try:
-        visits = _client_repo.query_all('''
-            SELECT vp.id, vp.planned_date, vp.planned_time, vp.visit_type,
-                   vp.status, vp.outcome, vp.goals, vp.checkin_at, vp.checkout_at,
-                   u.name AS kam_name,
-                   (SELECT raw_note FROM kam_visit_notes n
-                    WHERE n.visit_id = vp.id ORDER BY n.created_at DESC LIMIT 1) AS last_note,
-                   (SELECT structured_note->>\'visit_summary\' FROM kam_visit_notes n
-                    WHERE n.visit_id = vp.id AND n.structured_note IS NOT NULL
-                    ORDER BY n.created_at DESC LIMIT 1) AS visit_summary
-            FROM kam_visit_plans vp
-            JOIN users u ON u.id = vp.kam_id
-            WHERE vp.client_id = %s
-            ORDER BY vp.planned_date DESC
-            LIMIT 20
-        ''', (client_id,))
+        view_360 = _fs_repo.get_360(client_id)
     except Exception:
-        logger.exception('Error fetching visits for client %s', client_id)
-    return jsonify({'client': client, 'deals': deals, 'phones': phones, 'visits': visits})
+        logger.exception('Error fetching 360 view for client %s', client_id)
+
+    profile = view_360.get('profile')
+    fleet = view_360.get('fleet') or []
+    visits = view_360.get('visit_history') or []
+    interactions = view_360.get('interactions') or []
+    renewal_candidates = view_360.get('renewal_candidates') or []
+    fiscal = view_360.get('fiscal')
+
+    return jsonify({
+        'client': client,
+        'deals': deals,
+        'phones': phones,
+        'profile': profile,
+        'fleet': fleet,
+        'visits': visits,
+        'interactions': interactions,
+        'renewal_candidates': renewal_candidates,
+        'fiscal': fiscal,
+    })
 
 
 @crm_bp.route('/api/crm/clients/<int:client_id>', methods=['PUT'])
@@ -227,6 +236,42 @@ def api_client_update(client_id):
     if not result:
         return jsonify({'success': False, 'error': 'Not found or no editable fields'}), 404
     return jsonify({'success': True, 'client': result})
+
+
+@crm_bp.route('/api/crm/clients/<int:client_id>/enrich', methods=['POST'])
+@login_required
+@crm_required
+def api_client_enrich(client_id):
+    """Enrich client with ANAF fiscal data by CUI."""
+    client = _client_repo.get_by_id(client_id)
+    if not client:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    cui = data.get('cui', '').strip()
+    if not cui:
+        return jsonify({'success': False, 'error': 'CUI is required'}), 400
+
+    # Ensure profile exists and set CUI
+    try:
+        _fs_repo.get_or_create_profile(client_id)
+        _fs_repo.update_profile(client_id, {'cui': cui})
+    except Exception:
+        logger.exception('Error setting CUI for client %s', client_id)
+        return jsonify({'success': False, 'error': 'Failed to update profile'}), 500
+
+    # Fetch ANAF data
+    try:
+        anaf_data = get_or_refresh_anaf(client_id, cui, _fs_repo)
+        profile = _fs_repo.get_or_create_profile(client_id)
+        return jsonify({
+            'success': True,
+            'profile': profile,
+            'fiscal': anaf_data,
+        })
+    except Exception:
+        logger.exception('ANAF enrichment failed for client %s', client_id)
+        return jsonify({'success': False, 'error': 'ANAF fetch failed'}), 500
 
 
 @crm_bp.route('/api/crm/clients/<int:client_id>', methods=['DELETE'])
