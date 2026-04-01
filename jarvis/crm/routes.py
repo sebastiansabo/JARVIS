@@ -124,7 +124,7 @@ def api_stats():
     client_stats = _client_repo.get_stats()
     deal_stats = _deal_repo.get_stats()
     last_imports = {}
-    for st in ('nw', 'gw', 'crm_clients'):
+    for st in ('nw', 'gw', 'crm_clients', 'clienti'):
         last = _import_repo.get_last_import(st)
         last_imports[st] = last
     return jsonify({
@@ -188,7 +188,28 @@ def api_client_detail(client_id):
     if not client:
         return jsonify({'success': False, 'error': 'Not found'}), 404
     deals, _ = _deal_repo.search(client_id=client_id, limit=100)
-    return jsonify({'client': client, 'deals': deals})
+    phones = _client_repo.get_phones(client_id)
+    # Field Sales visits for this client
+    visits = []
+    try:
+        visits = _client_repo.query_all('''
+            SELECT vp.id, vp.planned_date, vp.planned_time, vp.visit_type,
+                   vp.status, vp.outcome, vp.goals, vp.checkin_at, vp.checkout_at,
+                   u.name AS kam_name,
+                   (SELECT raw_note FROM kam_visit_notes n
+                    WHERE n.visit_id = vp.id ORDER BY n.created_at DESC LIMIT 1) AS last_note,
+                   (SELECT structured_note->>\'visit_summary\' FROM kam_visit_notes n
+                    WHERE n.visit_id = vp.id AND n.structured_note IS NOT NULL
+                    ORDER BY n.created_at DESC LIMIT 1) AS visit_summary
+            FROM kam_visit_plans vp
+            JOIN users u ON u.id = vp.kam_id
+            WHERE vp.client_id = %s
+            ORDER BY vp.planned_date DESC
+            LIMIT 20
+        ''', (client_id,))
+    except Exception:
+        logger.exception('Error fetching visits for client %s', client_id)
+    return jsonify({'client': client, 'deals': deals, 'phones': phones, 'visits': visits})
 
 
 @crm_bp.route('/api/crm/clients/<int:client_id>', methods=['PUT'])

@@ -9,8 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck, SlidersHorizontal } from 'lucide-react'
-import { crmApi, type CrmClient, type CrmDeal } from '@/api/crm'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck, SlidersHorizontal, MapPin } from 'lucide-react'
+import { crmApi, type CrmClient, type CrmDeal, type CrmVisit } from '@/api/crm'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { usePersistedState } from '@/lib/utils'
@@ -558,6 +558,7 @@ function ClientExpandedDetails({ client, onEdit, onDelete, onToggleBlacklist }: 
   })
 
   const deals = data?.deals ?? []
+  const visits = data?.visits ?? []
 
   return (
     <div className="space-y-3">
@@ -609,6 +610,56 @@ function ClientExpandedDetails({ client, onEdit, onDelete, onToggleBlacklist }: 
                     <TableCell className="text-xs py-1.5">{d.dossier_status || '—'}</TableCell>
                     <TableCell className="text-xs font-mono py-1.5 text-right">
                       {d.sale_price_net ? Number(d.sale_price_net).toLocaleString('ro-RO') : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
+
+      {/* Field Sales Visits */}
+      <div>
+        <p className="text-sm font-medium flex items-center gap-1.5 mb-2">
+          <MapPin className="h-4 w-4" />
+          Vizite Field Sales ({isLoading ? '...' : visits.length})
+        </p>
+        {isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading visits...</p>
+        ) : visits.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No field sales visits for this client</p>
+        ) : (
+          <div className="rounded border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="text-xs py-1.5">Date</TableHead>
+                  <TableHead className="text-xs py-1.5">KAM</TableHead>
+                  <TableHead className="text-xs py-1.5">Type</TableHead>
+                  <TableHead className="text-xs py-1.5">Status</TableHead>
+                  <TableHead className="text-xs py-1.5">Summary</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visits.map((v: CrmVisit) => (
+                  <TableRow key={v.id}>
+                    <TableCell className="text-xs py-1.5">
+                      {v.planned_date ? new Date(v.planned_date).toLocaleDateString() : '—'}
+                    </TableCell>
+                    <TableCell className="text-xs py-1.5 font-medium">{v.kam_name || '—'}</TableCell>
+                    <TableCell className="py-1.5">
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        {v.visit_type?.replace(/_/g, ' ') || '—'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-1.5">
+                      <Badge variant={v.status === 'completed' ? 'default' : v.status === 'in_progress' ? 'secondary' : 'outline'} className="text-[10px] px-1.5 py-0">
+                        {v.status || '—'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs py-1.5 max-w-[300px] truncate">
+                      {v.visit_summary || v.goals || '—'}
                     </TableCell>
                   </TableRow>
                 ))}

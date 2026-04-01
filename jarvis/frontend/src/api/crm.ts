@@ -73,6 +73,21 @@ export interface CrmDeal {
   created_at: string
 }
 
+export interface CrmVisit {
+  id: number
+  planned_date: string
+  planned_time?: string
+  visit_type: string
+  status: string
+  outcome?: string
+  goals?: string
+  checkin_at?: string
+  checkout_at?: string
+  kam_name: string
+  last_note?: string
+  visit_summary?: string
+}
+
 export interface ImportBatch {
   id: number
   source_type: string
@@ -132,7 +147,7 @@ export interface ClientDetailedStats {
 export const crmApi = {
   getStats: () => api.get<CrmStats>('/api/crm/stats'),
   getClients: (params?: Record<string, string>) => api.get<{ clients: CrmClient[]; total: number }>('/api/crm/clients', params),
-  getClient: (id: number) => api.get<{ client: CrmClient; deals: CrmDeal[] }>(`/api/crm/clients/${id}`),
+  getClient: (id: number) => api.get<{ client: CrmClient; deals: CrmDeal[]; visits: CrmVisit[] }>(`/api/crm/clients/${id}`),
   mergeClients: (keepId: number, removeId: number) => api.post<{ success: boolean }>('/api/crm/clients/merge', { keep_id: keepId, remove_id: removeId }),
   getDeals: (params?: Record<string, string>) => api.get<{ deals: CrmDeal[]; total: number }>('/api/crm/deals', params),
   getDeal: (id: number) => api.get<{ deal: CrmDeal }>(`/api/crm/deals/${id}`),
