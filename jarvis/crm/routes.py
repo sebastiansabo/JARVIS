@@ -47,6 +47,124 @@ def _ensure_enrichment_column():
         logger.debug('enrichment_data column already exists or migration skipped')
 
 
+def _extract_profile_from_connector(connector_type, data):
+    """Extract structured profile + client fields from raw connector API response.
+
+    Returns (profile_updates, client_updates) dicts.
+    """
+    if not data or not isinstance(data, dict):
+        return {}, {}
+
+    profile = {}
+    client = {}
+
+    # Normalize: try common field names across connectors
+    # --- Industry / CAEN ---
+    for key in ('cod_caen', 'cod_CAEN', 'caen', 'caen_code'):
+        val = data.get(key)
+        if val and str(val).strip():
+            profile['industry'] = str(val).strip()
+            break
+
+    # --- Legal form ---
+    for key in ('forma_juridica', 'forma_organizare', 'forma_legala', 'legal_form'):
+        val = data.get(key)
+        if val and str(val).strip():
+            profile['legal_form'] = str(val).strip()
+            break
+
+    # --- Phone ---
+    for key in ('telefon', 'phone', 'tel'):
+        val = data.get(key)
+        if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
+            client['phone'] = str(val).strip()
+            break
+
+    # --- Email ---
+    for key in ('email', 'email_address'):
+        val = data.get(key)
+        if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
+            client['email'] = str(val).strip()
+            break
+
+    # --- Address / street ---
+    for key in ('adresa', 'address', 'sediu', 'sediu_social'):
+        val = data.get(key)
+        if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
+            client['street'] = str(val).strip()
+            break
+
+    # --- City ---
+    for key in ('localitate', 'oras', 'city', 'loc'):
+        val = data.get(key)
+        if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
+            client['city'] = str(val).strip()
+            break
+
+    # --- Region / judet ---
+    for key in ('judet', 'county', 'region', 'jud'):
+        val = data.get(key)
+        if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
+            client['region'] = str(val).strip()
+            break
+
+    # --- Nr Reg Com ---
+    for key in ('numar_reg_com', 'nrRegCom', 'nr_reg_com', 'numar_registru_comertului', 'nr_registru'):
+        val = data.get(key)
+        if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
+            client['nr_reg'] = str(val).strip()
+            break
+
+    # --- Company name / denumire ---
+    for key in ('denumire', 'name', 'company_name', 'den'):
+        val = data.get(key)
+        if val and str(val).strip() and str(val).strip() not in ('null', 'None'):
+            client['company_name'] = str(val).strip()
+            break
+
+    # --- Country ---
+    profile['country_code'] = 'RO'  # All Romanian connectors
+
+    # --- Stare (active/inactive status) ---
+    for key in ('stare', 'status', 'radiata'):
+        val = data.get(key)
+        if val is not None:
+            if key == 'radiata':
+                if val is True or str(val).lower() == 'true':
+                    profile.setdefault('_status', 'radiat')
+            elif isinstance(val, str) and 'radiat' in val.lower():
+                profile.setdefault('_status', 'radiat')
+            break
+
+    # Clean out internal keys
+    profile.pop('_status', None)
+
+    return profile, client
+
+
+def _apply_connector_to_profile(client_id, connector_type, data):
+    """Extract fields from connector data and save to profile + client."""
+    profile_updates, client_updates = _extract_profile_from_connector(connector_type, data)
+
+    if profile_updates:
+        try:
+            _fs_repo.update_profile(client_id, profile_updates)
+        except Exception:
+            logger.exception('Failed to update profile from %s for client %s', connector_type, client_id)
+
+    if client_updates:
+        # Only update empty fields on the client (don't overwrite existing data)
+        try:
+            client = _client_repo.get_by_id(client_id)
+            if client:
+                filtered = {k: v for k, v in client_updates.items()
+                            if not client.get(k) or client.get(k) == '—'}
+                if filtered:
+                    _client_repo.update(client_id, filtered)
+        except Exception:
+            logger.exception('Failed to update client from %s for client %s', connector_type, client_id)
+
+
 def crm_required(f):
     """Require sales.module.access V2 permission. Sets g.permission_scope."""
     @wraps(f)
@@ -234,6 +352,16 @@ def api_client_detail(client_id):
     renewal_candidates = view_360.get('renewal_candidates') or []
     fiscal = view_360.get('fiscal')
 
+    # Auto-compute fleet_size from deals if no fleet vehicles
+    if profile and not fleet and deals:
+        current_fleet_size = profile.get('fleet_size') or 0
+        if current_fleet_size == 0:
+            try:
+                _fs_repo.update_profile(client_id, {'fleet_size': len(deals)})
+                profile = _fs_repo.get_or_create_profile(client_id)
+            except Exception:
+                pass
+
     # Parse enrichment_data from profile
     enrichment_data = {}
     if profile:
@@ -348,6 +476,9 @@ def api_client_enrich_connector(client_id, connector_type):
         }
         _fs_repo.update_profile(client_id, {'enrichment_data': _json.dumps(existing)})
 
+        # Auto-extract structured fields from connector data
+        _apply_connector_to_profile(client_id, connector_type, result)
+
         updated_profile = _fs_repo.get_or_create_profile(client_id)
         return jsonify({
             'success': True,
@@ -397,6 +528,12 @@ def api_client_enrich_all(client_id):
                 existing = {}
         existing.update(results)
         _fs_repo.update_profile(client_id, {'enrichment_data': _json.dumps(existing)})
+
+        # Auto-extract structured fields from each connector's data
+        for conn_type, conn_result in results.items():
+            conn_data = conn_result.get('data') if isinstance(conn_result, dict) else conn_result
+            if conn_data:
+                _apply_connector_to_profile(client_id, conn_type, conn_data)
 
         updated_profile = _fs_repo.get_or_create_profile(client_id)
         return jsonify({

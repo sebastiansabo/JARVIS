@@ -456,15 +456,32 @@ def ai_research_company(client_data, profile_data=None, fiscal_data=None, enrich
         if profile_data.get('cui'):
             context_parts.append(f"CUI (fiscal code): {profile_data['cui']}")
         if profile_data.get('industry'):
-            context_parts.append(f"Industry: {profile_data['industry']}")
+            context_parts.append(f"Industry/CAEN: {profile_data['industry']}")
+        if profile_data.get('legal_form'):
+            context_parts.append(f"Legal Form: {profile_data['legal_form']}")
+        if profile_data.get('fleet_size'):
+            context_parts.append(f"Fleet Size (vehicles purchased): {profile_data['fleet_size']}")
+        if profile_data.get('renewal_score') is not None:
+            context_parts.append(f"Renewal Score: {profile_data['renewal_score']}/100")
+        if profile_data.get('estimated_annual_value'):
+            context_parts.append(f"Estimated Annual Value: {profile_data['estimated_annual_value']} EUR")
+        if profile_data.get('priority'):
+            context_parts.append(f"Priority: {profile_data['priority']}")
+        if profile_data.get('country_code'):
+            context_parts.append(f"Country: {profile_data['country_code']}")
+        if profile_data.get('client_type'):
+            context_parts.append(f"Client Type: {profile_data['client_type']}")
 
     if fiscal_data:
-        context_parts.append(f"ANAF data: {json.dumps(fiscal_data, ensure_ascii=False, default=str)[:1000]}")
+        context_parts.append(f"ANAF Fiscal Data: {json.dumps(fiscal_data, ensure_ascii=False, default=str)[:1500]}")
 
     if enrichment_data:
         for ct, ed in enrichment_data.items():
+            if ct == 'ai_research':
+                continue  # Skip previous AI research
             if isinstance(ed, dict) and ed.get('data'):
-                context_parts.append(f"{ct} data: {json.dumps(ed['data'], ensure_ascii=False, default=str)[:500]}")
+                data_str = json.dumps(ed['data'], ensure_ascii=False, default=str)
+                context_parts.append(f"Date {ct}: {data_str[:1500]}")
 
     context = '\n'.join(context_parts)
 
