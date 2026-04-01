@@ -302,9 +302,11 @@ class ClientRepository(BaseRepository):
         """Find potential duplicate clients by similar names using trigram similarity.
 
         Returns groups of similar clients for merge suggestions.
+        When no name is given, uses the GIN index via % operator (trigram match)
+        to avoid a full O(n²) cross-join.
         """
         if name:
-            # Find duplicates for a specific name
+            # Find duplicates for a specific name — fast with ILIKE + GIN index
             return self.query_all('''
                 SELECT a.id as id_a, a.display_name as name_a, a.client_type as type_a,
                        a.phone as phone_a, a.email as email_a, a.nr_reg as nr_reg_a,
@@ -315,16 +317,20 @@ class ClientRepository(BaseRepository):
                        similarity(a.name_normalized, b.name_normalized) as sim
                 FROM crm_clients a
                 JOIN crm_clients b ON a.id < b.id
-                    AND similarity(a.name_normalized, b.name_normalized) >= 0.5
+                    AND b.name_normalized %% a.name_normalized
                 WHERE a.merged_into_id IS NULL AND b.merged_into_id IS NULL
                     AND (a.is_blacklisted = FALSE OR a.is_blacklisted IS NULL)
                     AND (b.is_blacklisted = FALSE OR b.is_blacklisted IS NULL)
                     AND a.name_normalized ILIKE %s
+                    AND similarity(a.name_normalized, b.name_normalized) >= 0.5
                 ORDER BY sim DESC
                 LIMIT %s
             ''', (f'%{name.lower()}%', limit))
         else:
-            # Find all duplicate groups
+            # No name filter — use GIN-accelerated %% operator (trigram match)
+            # instead of computing similarity() for every pair. The %% operator
+            # leverages the GIN index to find candidate pairs quickly (default
+            # threshold 0.3), then we filter to >= 0.6 explicitly.
             return self.query_all('''
                 SELECT a.id as id_a, a.display_name as name_a, a.client_type as type_a,
                        a.phone as phone_a, a.email as email_a, a.nr_reg as nr_reg_a,
@@ -335,20 +341,28 @@ class ClientRepository(BaseRepository):
                        similarity(a.name_normalized, b.name_normalized) as sim
                 FROM crm_clients a
                 JOIN crm_clients b ON a.id < b.id
-                    AND similarity(a.name_normalized, b.name_normalized) >= 0.6
+                    AND b.name_normalized %% a.name_normalized
                 WHERE a.merged_into_id IS NULL AND b.merged_into_id IS NULL
                     AND (a.is_blacklisted = FALSE OR a.is_blacklisted IS NULL)
                     AND (b.is_blacklisted = FALSE OR b.is_blacklisted IS NULL)
+                    AND similarity(a.name_normalized, b.name_normalized) >= 0.6
                 ORDER BY sim DESC
                 LIMIT %s
             ''', (limit,))
 
-    def find_wrong_types(self, limit=200):
+    def find_wrong_types(self, name=None, limit=200):
         """Find clients whose client_type doesn't match their name pattern.
 
         For example SRL/SA in the name but type = 'person'.
         """
-        return self.query_all('''
+        name_filter = ''
+        params: list = []
+        if name:
+            name_filter = 'AND name_normalized ILIKE %s'
+            params.append(f'%{name.lower()}%')
+        params.append(limit)
+
+        return self.query_all(f'''
             SELECT id, display_name, client_type, phone, email, nr_reg, city
             FROM crm_clients
             WHERE merged_into_id IS NULL
@@ -357,9 +371,10 @@ class ClientRepository(BaseRepository):
                 AND (
                     name_normalized ~* '\\m(srl|s\\.r\\.l\\.|sa|s\\.a\\.|scs|s\\.c\\.s\\.|snc|s\\.n\\.c\\.|sca|s\\.c\\.a\\.|ra|r\\.a\\.|pfa|p\\.f\\.a\\.|ong|fundatia|asociatia|sc)\\M'
                 )
+                {name_filter}
             ORDER BY display_name
             LIMIT %s
-        ''', (limit,))
+        ''', tuple(params))
 
     def batch_update_type(self, client_ids, client_type):
         """Batch update client_type for multiple clients."""

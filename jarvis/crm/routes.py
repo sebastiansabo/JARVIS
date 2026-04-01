@@ -513,7 +513,7 @@ def api_sanitize_scan():
     name = request.args.get('name')
     limit = request.args.get('limit', 50, type=int)
 
-    wrong_types = _client_repo.find_wrong_types(limit=limit)
+    wrong_types = _client_repo.find_wrong_types(name=name, limit=limit)
     duplicates = _client_repo.find_duplicates(name=name, limit=limit)
 
     # Group duplicates into merge suggestions

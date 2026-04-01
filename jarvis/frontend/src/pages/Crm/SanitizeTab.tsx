@@ -12,14 +12,14 @@ import {
 import { crmApi } from '@/api/crm'
 import { toast } from 'sonner'
 
-export default function SanitizeTab() {
+export default function SanitizeTab({ search = '' }: { search?: string } = {}) {
   const queryClient = useQueryClient()
   const [selectedTypes, setSelectedTypes] = useState<Set<number>>(new Set())
   const [mergedPairs, setMergedPairs] = useState<Set<string>>(new Set())
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['crm-sanitize'],
-    queryFn: () => crmApi.sanitizeScan(),
+    queryKey: ['crm-sanitize', search],
+    queryFn: () => crmApi.sanitizeScan(search || undefined),
   })
 
   const fixTypesMutation = useMutation({

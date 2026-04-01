@@ -78,7 +78,7 @@ export default function Crm() {
         <TabsContent value="clients"><ClientStatsTab search={search} /></TabsContent>
         <TabsContent value="statistics"><StatisticsTab showFilters={statsShowFilters} setShowFilters={setStatsShowFilters} showStats /></TabsContent>
         <TabsContent value="import"><ImportTab /></TabsContent>
-        <TabsContent value="sanitize"><SanitizeTab /></TabsContent>
+        <TabsContent value="sanitize"><SanitizeTab search={search} /></TabsContent>
         <TabsContent value="blacklist"><ClientStatsTab blacklistOnly search={search} /></TabsContent>
       </div>
     </Tabs>
