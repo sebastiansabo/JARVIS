@@ -31,27 +31,12 @@ function InfoRow({ icon: Icon, label, value, className }: { icon?: React.Element
   )
 }
 
-// --- Score Ring: SVG circular progress indicator ---
-function ScoreRing({ label, value, max, size: ringSize }: { label: string; value: number; max: number; size?: number }) {
-  const pct = max > 0 ? Math.min(Math.round((value / max) * 100), 100) : 0
-  const r = ringSize || 20, stroke = 4, size = (r + stroke) * 2
-  const circ = 2 * Math.PI * r
-  const offset = circ - (pct / 100) * circ
-  const color = pct >= 70 ? '#22c55e' : pct >= 40 ? '#eab308' : '#ef4444'
 
-  return (
-    <div className="flex flex-col items-center gap-0.5">
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={r + stroke} cy={r + stroke} r={r} fill="none" stroke="currentColor" strokeWidth={stroke} className="text-muted/20" />
-        <circle cx={r + stroke} cy={r + stroke} r={r} fill="none" stroke={color} strokeWidth={stroke}
-          strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" className="transition-all duration-500" />
-      </svg>
-      <span className={`font-bold ${r >= 28 ? 'text-sm -mt-[42px] mb-[20px]' : 'text-xs -mt-[34px] mb-[14px]'}`} style={{ color }}>{pct}</span>
-      <span className="text-[10px] text-muted-foreground">{label}</span>
-    </div>
-  )
+
+function _fmtCurrency(val: number | undefined | null): string {
+  if (!val && val !== 0) return '—'
+  return new Intl.NumberFormat('ro-RO', { style: 'decimal', maximumFractionDigits: 0 }).format(val) + ' RON'
 }
-
 
 const CONNECTOR_META: Record<string, { icon: string; label: string }> = {
   anaf: { icon: '🏛️', label: 'ANAF' },
@@ -93,7 +78,10 @@ export default function ClientProfile() {
   const enrichmentData = data?.enrichment_data ?? {}
   const connectors = data?.connectors ?? []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bv = (data as any)?.business_value as { score: number; grade: string; breakdown: Record<string, { score: number; max: number }> } | undefined
+  const bv = (data as any)?.business_value as {
+    score: number; grade: string;
+    breakdown: Record<string, { score: number; max: number; [k: string]: unknown }>
+  } | undefined
 
   // Edit mutation
   const editMutation = useMutation({
@@ -237,28 +225,24 @@ export default function ClientProfile() {
             {client.is_blacklisted && <Badge variant="destructive">Blacklisted</Badge>}
           </div>
         </div>
-        {/* Business Value Score */}
-        {bv && (
-          <div className="flex items-center gap-3">
-            <ScoreRing label={`Grade ${bv.grade}`} value={bv.score} max={100} size={28} />
-            <div className="hidden md:flex flex-col gap-0.5">
-              {Object.entries(bv.breakdown as Record<string, { score: number; max: number }>).map(([key, v]) => (
-                <div key={key} className="flex items-center gap-1.5">
-                  <div className="w-16 text-[10px] text-muted-foreground truncate">
-                    {key === 'purchase_value' ? 'Revenue' : key === 'fleet_volume' ? 'Fleet' : key === 'profile_quality' ? 'Profile' : key === 'renewal_potential' ? 'Renewal' : 'Retention'}
-                  </div>
-                  <div className="w-20 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all" style={{
-                      width: `${(v.score / v.max) * 100}%`,
-                      backgroundColor: (v.score / v.max) >= 0.7 ? '#22c55e' : (v.score / v.max) >= 0.4 ? '#eab308' : '#ef4444',
-                    }} />
-                  </div>
-                  <span className="text-[10px] font-mono text-muted-foreground w-7">{v.score}/{v.max}</span>
-                </div>
-              ))}
+        {/* Client tier + score near title */}
+        {bv && (() => {
+          const tier = (bv as unknown as { tier: string }).tier
+          return (
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                tier === 'Platinum' ? 'bg-violet-100 text-violet-700' :
+                tier === 'Gold' ? 'bg-yellow-100 text-yellow-700' :
+                tier === 'Silver' ? 'bg-gray-200 text-gray-700' :
+                tier === 'Bronze' ? 'bg-orange-100 text-orange-700' :
+                'bg-muted text-muted-foreground'
+              }`}>
+                {tier}
+              </span>
+              <span className="text-sm font-mono text-muted-foreground">{bv.score}/100</span>
             </div>
-          </div>
-        )}
+          )
+        })()}
         <div className="flex gap-2">
           {editing ? (
             <>
@@ -276,6 +260,34 @@ export default function ClientProfile() {
           )}
         </div>
       </div>
+
+      {/* Business KPIs strip */}
+      {bv && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          {(() => {
+            const pv = bv.breakdown.purchase_value || {} as Record<string, unknown>
+            const ret = bv.breakdown.retention || {} as Record<string, unknown>
+            const fv = bv.breakdown.fleet_volume || {} as Record<string, unknown>
+            const bvExt = bv as unknown as { clv: number; annual_revenue: number; tier: string }
+            const kpis = [
+              { label: 'Total Sales', value: _fmtCurrency(pv.total_sales as number), sub: `${pv.deal_count || 0} deals` },
+              { label: 'Total Margin', value: _fmtCurrency(pv.total_margin as number), sub: `${pv.margin_pct || 0}% margin` },
+              { label: 'Avg Deal Value', value: _fmtCurrency(pv.avg_deal_value as number) },
+              { label: 'Client Since', value: String(ret.first_deal_date || '—'), sub: `${ret.years_as_client || 0} yrs` },
+              { label: 'Return Rate', value: `${ret.deals_per_year || 0}/yr`, sub: ret.avg_return_months ? `~${ret.avg_return_months}mo interval` : undefined },
+              { label: 'Fleet Size', value: String(fv.effective_fleet || 0), sub: 'vehicles' },
+              { label: 'Est. CLV', value: _fmtCurrency(bvExt.clv), sub: `${_fmtCurrency(bvExt.annual_revenue)}/yr` },
+            ]
+            return kpis.map((kpi) => (
+              <div key={kpi.label} className="rounded-lg border bg-card p-2.5 text-center">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{kpi.label}</div>
+                <div className="text-sm font-bold mt-0.5">{kpi.value}</div>
+                {kpi.sub && <div className="text-[10px] text-muted-foreground">{kpi.sub}</div>}
+              </div>
+            ))
+          })()}
+        </div>
+      )}
 
       {/* Contact Info + Profile side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

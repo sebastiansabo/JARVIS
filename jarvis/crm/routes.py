@@ -282,81 +282,105 @@ def _compute_business_value(client, profile, deals, fleet, visits, interactions)
     now = datetime.now()
 
     # ── 1. Purchase Value (0-30) ──
+    # Uses actual sale_price_net (your total sales) and gross_profit (your margin)
     pv_score = 0
-    total_revenue = 0.0
+    total_sales = 0.0
+    total_margin = 0.0
     deal_count = len(deals) if deals else 0
     avg_deal_value = 0.0
+    avg_margin_per_deal = 0.0
+    margin_pct = 0.0
     last_deal_date = None
+    first_deal_date = None
+    deal_dates = []
 
     if deals:
         for d in deals:
+            # Total sales (sale_price_net = your invoice to client)
             price = d.get('sale_price_net') or 0
             try:
-                total_revenue += float(price)
+                total_sales += float(price)
             except (ValueError, TypeError):
                 pass
+            # Total margin (gross_profit = your profit)
+            profit = d.get('gross_profit') or 0
+            try:
+                total_margin += float(profit)
+            except (ValueError, TypeError):
+                pass
+            # Track dates
             cd = d.get('contract_date')
             if cd:
                 try:
                     dt = datetime.fromisoformat(str(cd)[:10]) if isinstance(cd, str) else cd
+                    deal_dates.append(dt)
                     if not last_deal_date or dt > last_deal_date:
                         last_deal_date = dt
-                except Exception:
-                    pass
-        avg_deal_value = total_revenue / deal_count if deal_count > 0 else 0
-
-        # Revenue tiers (automotive context: EUR)
-        if total_revenue >= 500_000:
-            pv_score += 15
-        elif total_revenue >= 200_000:
-            pv_score += 12
-        elif total_revenue >= 100_000:
-            pv_score += 9
-        elif total_revenue >= 50_000:
-            pv_score += 6
-        elif total_revenue > 0:
-            pv_score += 3
-
-        # Deal count
-        if deal_count >= 10:
-            pv_score += 8
-        elif deal_count >= 5:
-            pv_score += 6
-        elif deal_count >= 3:
-            pv_score += 4
-        elif deal_count >= 1:
-            pv_score += 2
-
-        # Recency bonus (deal in last 2 years)
-        if last_deal_date:
-            days_since = (now - last_deal_date).days if hasattr(last_deal_date, 'days') else (now.date() - last_deal_date.date()).days if hasattr(last_deal_date, 'date') else 999
-            if days_since <= 365:
-                pv_score += 7
-            elif days_since <= 730:
-                pv_score += 4
-            elif days_since <= 1095:
-                pv_score += 2
-
-    breakdown['purchase_value'] = {'score': min(pv_score, 30), 'max': 30,
-                                    'total_revenue': round(total_revenue, 2),
-                                    'deal_count': deal_count,
-                                    'avg_deal_value': round(avg_deal_value, 2),
-                                    'last_deal_date': str(last_deal_date)[:10] if last_deal_date else None}
-
-    # ── 2. Retention (0-25) ──
-    ret_score = 0
-    first_deal_date = None
-    if deals:
-        for d in deals:
-            cd = d.get('contract_date')
-            if cd:
-                try:
-                    dt = datetime.fromisoformat(str(cd)[:10]) if isinstance(cd, str) else cd
                     if not first_deal_date or dt < first_deal_date:
                         first_deal_date = dt
                 except Exception:
                     pass
 
+        avg_deal_value = total_sales / deal_count if deal_count > 0 else 0
+        avg_margin_per_deal = total_margin / deal_count if deal_count > 0 else 0
+        margin_pct = (total_margin / total_sales * 100) if total_sales > 0 else 0
+
+        # Revenue tiers (automotive: RON net)
+        if total_sales >= 500_000:
+            pv_score += 12
+        elif total_sales >= 200_000:
+            pv_score += 9
+        elif total_sales >= 100_000:
+            pv_score += 7
+        elif total_sales >= 50_000:
+            pv_score += 4
+        elif total_sales > 0:
+            pv_score += 2
+
+        # Margin tiers
+        if total_margin >= 50_000:
+            pv_score += 6
+        elif total_margin >= 20_000:
+            pv_score += 4
+        elif total_margin >= 5_000:
+            pv_score += 2
+        elif total_margin > 0:
+            pv_score += 1
+
+        # Deal volume
+        if deal_count >= 10:
+            pv_score += 6
+        elif deal_count >= 5:
+            pv_score += 5
+        elif deal_count >= 3:
+            pv_score += 3
+        elif deal_count >= 1:
+            pv_score += 1
+
+        # Recency bonus
+        if last_deal_date:
+            try:
+                days_since = (now.date() - (last_deal_date.date() if hasattr(last_deal_date, 'date') else last_deal_date)).days
+            except Exception:
+                days_since = 999
+            if days_since <= 365:
+                pv_score += 6
+            elif days_since <= 730:
+                pv_score += 3
+            elif days_since <= 1095:
+                pv_score += 1
+
+    breakdown['purchase_value'] = {'score': min(pv_score, 30), 'max': 30,
+                                    'total_sales': round(total_sales, 2),
+                                    'total_margin': round(total_margin, 2),
+                                    'margin_pct': round(margin_pct, 1),
+                                    'deal_count': deal_count,
+                                    'avg_deal_value': round(avg_deal_value, 2),
+                                    'avg_margin_per_deal': round(avg_margin_per_deal, 2),
+                                    'last_deal_date': str(last_deal_date)[:10] if last_deal_date else None}
+
+    # ── 2. Retention (0-25) ──
+    ret_score = 0
     years_as_client = 0
     if first_deal_date:
         try:
@@ -372,7 +396,7 @@ def _compute_business_value(client, profile, deals, fleet, visits, interactions)
         elif years_as_client > 0:
             ret_score += 2
 
-    # Purchase frequency (deals per year)
+    # Purchase frequency = avg deals per year (return rate)
     freq = deal_count / max(years_as_client, 1)
     if freq >= 3:
         ret_score += 8
@@ -393,9 +417,25 @@ def _compute_business_value(client, profile, deals, fleet, visits, interactions)
     elif visit_count >= 1 or interaction_count >= 1:
         ret_score += 2
 
+    # Average return interval (months between deals)
+    avg_return_months = 0
+    if len(deal_dates) >= 2:
+        sorted_dates = sorted(deal_dates)
+        intervals = []
+        for i in range(1, len(sorted_dates)):
+            try:
+                d1 = sorted_dates[i-1].date() if hasattr(sorted_dates[i-1], 'date') else sorted_dates[i-1]
+                d2 = sorted_dates[i].date() if hasattr(sorted_dates[i], 'date') else sorted_dates[i]
+                intervals.append((d2 - d1).days / 30.44)
+            except Exception:
+                pass
+        if intervals:
+            avg_return_months = sum(intervals) / len(intervals)
+
     breakdown['retention'] = {'score': min(ret_score, 25), 'max': 25,
                                'years_as_client': round(years_as_client, 1),
-                               'purchase_frequency': round(freq, 2),
+                               'deals_per_year': round(freq, 2),
+                               'avg_return_months': round(avg_return_months, 1),
                                'visit_count': visit_count,
                                'first_deal_date': str(first_deal_date)[:10] if first_deal_date else None}
 
@@ -462,9 +502,29 @@ def _compute_business_value(client, profile, deals, fleet, visits, interactions)
     total = sum(v['score'] for v in breakdown.values())
     grade = 'A' if total >= 80 else 'B' if total >= 60 else 'C' if total >= 40 else 'D' if total >= 20 else 'E'
 
+    # Client tier (loyalty program categorization)
+    if total >= 80:
+        tier = 'Platinum'
+    elif total >= 65:
+        tier = 'Gold'
+    elif total >= 45:
+        tier = 'Silver'
+    elif total >= 25:
+        tier = 'Bronze'
+    else:
+        tier = 'Prospect'
+
+    # Client Lifetime Value (CLV) estimate: avg annual revenue * expected remaining years
+    annual_revenue = total_sales / max(years_as_client, 1) if total_sales > 0 else 0
+    expected_years = 5 if tier in ('Platinum', 'Gold') else 3 if tier == 'Silver' else 2
+    clv = annual_revenue * expected_years
+
     return {
         'score': total,
         'grade': grade,
+        'tier': tier,
+        'clv': round(clv, 2),
+        'annual_revenue': round(annual_revenue, 2),
         'breakdown': breakdown,
     }
 
