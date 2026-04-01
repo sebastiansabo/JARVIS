@@ -266,6 +266,209 @@ def _apply_connector_to_profile(client_id, connector_type, data):
             logger.exception('Failed to update client from %s for client %s', connector_type, client_id)
 
 
+def _compute_business_value(client, profile, deals, fleet, visits, interactions):
+    """Compute a composite Business Value Score (0-100) with breakdown.
+
+    Weights:
+      - Purchase Value  (30%): total revenue, avg deal value, recency
+      - Retention        (25%): years as client, purchase frequency, visit engagement
+      - Fleet / Volume   (20%): fleet size, number of vehicles
+      - Profile Quality  (15%): data completeness, enrichment
+      - Renewal Potential (10%): renewal score, renewal candidates
+    """
+    from datetime import datetime, timedelta
+
+    breakdown = {}
+    now = datetime.now()
+
+    # ── 1. Purchase Value (0-30) ──
+    pv_score = 0
+    total_revenue = 0.0
+    deal_count = len(deals) if deals else 0
+    avg_deal_value = 0.0
+    last_deal_date = None
+
+    if deals:
+        for d in deals:
+            price = d.get('sale_price_net') or 0
+            try:
+                total_revenue += float(price)
+            except (ValueError, TypeError):
+                pass
+            cd = d.get('contract_date')
+            if cd:
+                try:
+                    dt = datetime.fromisoformat(str(cd)[:10]) if isinstance(cd, str) else cd
+                    if not last_deal_date or dt > last_deal_date:
+                        last_deal_date = dt
+                except Exception:
+                    pass
+        avg_deal_value = total_revenue / deal_count if deal_count > 0 else 0
+
+        # Revenue tiers (automotive context: EUR)
+        if total_revenue >= 500_000:
+            pv_score += 15
+        elif total_revenue >= 200_000:
+            pv_score += 12
+        elif total_revenue >= 100_000:
+            pv_score += 9
+        elif total_revenue >= 50_000:
+            pv_score += 6
+        elif total_revenue > 0:
+            pv_score += 3
+
+        # Deal count
+        if deal_count >= 10:
+            pv_score += 8
+        elif deal_count >= 5:
+            pv_score += 6
+        elif deal_count >= 3:
+            pv_score += 4
+        elif deal_count >= 1:
+            pv_score += 2
+
+        # Recency bonus (deal in last 2 years)
+        if last_deal_date:
+            days_since = (now - last_deal_date).days if hasattr(last_deal_date, 'days') else (now.date() - last_deal_date.date()).days if hasattr(last_deal_date, 'date') else 999
+            if days_since <= 365:
+                pv_score += 7
+            elif days_since <= 730:
+                pv_score += 4
+            elif days_since <= 1095:
+                pv_score += 2
+
+    breakdown['purchase_value'] = {'score': min(pv_score, 30), 'max': 30,
+                                    'total_revenue': round(total_revenue, 2),
+                                    'deal_count': deal_count,
+                                    'avg_deal_value': round(avg_deal_value, 2),
+                                    'last_deal_date': str(last_deal_date)[:10] if last_deal_date else None}
+
+    # ── 2. Retention (0-25) ──
+    ret_score = 0
+    first_deal_date = None
+    if deals:
+        for d in deals:
+            cd = d.get('contract_date')
+            if cd:
+                try:
+                    dt = datetime.fromisoformat(str(cd)[:10]) if isinstance(cd, str) else cd
+                    if not first_deal_date or dt < first_deal_date:
+                        first_deal_date = dt
+                except Exception:
+                    pass
+
+    years_as_client = 0
+    if first_deal_date:
+        try:
+            years_as_client = (now.date() - (first_deal_date.date() if hasattr(first_deal_date, 'date') else first_deal_date)).days / 365.25
+        except Exception:
+            pass
+        if years_as_client >= 5:
+            ret_score += 10
+        elif years_as_client >= 3:
+            ret_score += 7
+        elif years_as_client >= 1:
+            ret_score += 4
+        elif years_as_client > 0:
+            ret_score += 2
+
+    # Purchase frequency (deals per year)
+    freq = deal_count / max(years_as_client, 1)
+    if freq >= 3:
+        ret_score += 8
+    elif freq >= 1.5:
+        ret_score += 6
+    elif freq >= 0.5:
+        ret_score += 3
+    elif deal_count > 0:
+        ret_score += 1
+
+    # Visit engagement
+    visit_count = len(visits) if visits else 0
+    interaction_count = len(interactions) if interactions else 0
+    if visit_count >= 5 or interaction_count >= 5:
+        ret_score += 7
+    elif visit_count >= 2 or interaction_count >= 2:
+        ret_score += 4
+    elif visit_count >= 1 or interaction_count >= 1:
+        ret_score += 2
+
+    breakdown['retention'] = {'score': min(ret_score, 25), 'max': 25,
+                               'years_as_client': round(years_as_client, 1),
+                               'purchase_frequency': round(freq, 2),
+                               'visit_count': visit_count,
+                               'first_deal_date': str(first_deal_date)[:10] if first_deal_date else None}
+
+    # ── 3. Fleet / Volume (0-20) ──
+    fleet_score = 0
+    fleet_size = len(fleet) if fleet else 0
+    profile_fleet = (profile or {}).get('fleet_size') or 0
+    effective_fleet = max(fleet_size, int(profile_fleet or 0), deal_count)
+
+    if effective_fleet >= 20:
+        fleet_score = 20
+    elif effective_fleet >= 10:
+        fleet_score = 16
+    elif effective_fleet >= 5:
+        fleet_score = 12
+    elif effective_fleet >= 3:
+        fleet_score = 8
+    elif effective_fleet >= 1:
+        fleet_score = 4
+
+    breakdown['fleet_volume'] = {'score': min(fleet_score, 20), 'max': 20,
+                                  'fleet_vehicles': fleet_size,
+                                  'effective_fleet': effective_fleet}
+
+    # ── 4. Profile Quality (0-15) ──
+    pq_score = 0
+    checks = 0
+    filled = 0
+    for k in ['display_name', 'company_name', 'phone', 'email', 'city', 'region', 'street', 'nr_reg']:
+        checks += 1
+        if client.get(k) and client.get(k) != '—':
+            filled += 1
+    for k in ['cui', 'industry', 'legal_form', 'priority', 'client_type']:
+        checks += 1
+        if (profile or {}).get(k):
+            filled += 1
+    checks += 1
+    if (profile or {}).get('anaf_data'):
+        filled += 1
+    checks += 1
+    ed = (profile or {}).get('enrichment_data')
+    if ed and isinstance(ed, (dict, str)) and (isinstance(ed, dict) and len(ed) > 0 or isinstance(ed, str) and len(ed) > 5):
+        filled += 1
+
+    completeness = filled / checks if checks > 0 else 0
+    pq_score = round(completeness * 15)
+
+    breakdown['profile_quality'] = {'score': min(pq_score, 15), 'max': 15,
+                                     'completeness_pct': round(completeness * 100)}
+
+    # ── 5. Renewal Potential (0-10) ──
+    rn_score = 0
+    renewal_score = (profile or {}).get('renewal_score') or 0
+    try:
+        renewal_score = int(renewal_score)
+    except (ValueError, TypeError):
+        renewal_score = 0
+    rn_score = round(renewal_score / 100 * 10)
+
+    breakdown['renewal_potential'] = {'score': min(rn_score, 10), 'max': 10,
+                                       'renewal_score': renewal_score}
+
+    # ── Composite ──
+    total = sum(v['score'] for v in breakdown.values())
+    grade = 'A' if total >= 80 else 'B' if total >= 60 else 'C' if total >= 40 else 'D' if total >= 20 else 'E'
+
+    return {
+        'score': total,
+        'grade': grade,
+        'breakdown': breakdown,
+    }
+
+
 def crm_required(f):
     """Require sales.module.access V2 permission. Sets g.permission_scope."""
     @wraps(f)
@@ -479,6 +682,9 @@ def api_client_detail(client_id):
     # Get available connectors for this client
     connectors = get_connected_business_connectors()
 
+    # ── Compute Business Value Score ──
+    bv = _compute_business_value(client, profile, deals, fleet, visits, interactions)
+
     return jsonify({
         'client': client,
         'deals': deals,
@@ -491,6 +697,7 @@ def api_client_detail(client_id):
         'fiscal': fiscal,
         'enrichment_data': enrichment_data,
         'connectors': connectors,
+        'business_value': bv,
     })
 
 
