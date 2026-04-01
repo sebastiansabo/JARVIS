@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck, SlidersHorizontal, MapPin, Building2, RefreshCw, Search, Truck, MessageSquare, Star, Loader2, ExternalLink } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck, SlidersHorizontal, MapPin, Building2, RefreshCw, Search, Truck, MessageSquare, Star, Loader2, ExternalLink, GitMerge, CheckCircle2, ArrowRight } from 'lucide-react'
 import { crmApi, type CrmClient, type CrmDeal, type CrmVisit, type FleetVehicle, type ClientInteraction } from '@/api/crm'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
@@ -104,6 +104,89 @@ function EditClientDialog({ client, open, onOpenChange }: { client: CrmClient | 
   )
 }
 
+function MergeDialog({ open, onOpenChange, clients, onMerge, isPending }: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  clients: CrmClient[]
+  onMerge: (keepId: number, removeId: number) => void
+  isPending: boolean
+}) {
+  const [keepId, setKeepId] = useState<number | null>(null)
+
+  // Auto-select first when opening
+  if (open && clients.length === 2 && keepId === null) {
+    setTimeout(() => setKeepId(clients[0].id), 0)
+  }
+
+  const handleClose = (o: boolean) => {
+    if (!o) setKeepId(null)
+    onOpenChange(o)
+  }
+
+  const removeId = clients.find(c => c.id !== keepId)?.id
+
+  const renderClient = (c: CrmClient, isKeep: boolean) => (
+    <div
+      className={`rounded-lg border-2 p-3 cursor-pointer transition-all ${
+        isKeep
+          ? 'border-green-500 bg-green-50/50 dark:bg-green-950/20'
+          : 'border-red-300 bg-red-50/50 dark:bg-red-950/20'
+      }`}
+      onClick={() => setKeepId(c.id)}
+    >
+      <p className={`text-[10px] font-semibold uppercase mb-1.5 flex items-center gap-1 ${
+        isKeep ? 'text-green-600' : 'text-red-500'
+      }`}>
+        {isKeep ? <CheckCircle2 className="h-3 w-3" /> : <ArrowRight className="h-3 w-3" />}
+        {isKeep ? 'Pastreaza (master)' : 'Se unifica in master'}
+      </p>
+      <p className="text-sm font-semibold">{c.display_name}</p>
+      <p className="text-[11px] text-muted-foreground">ID: {c.id}</p>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-2 text-xs text-muted-foreground">
+        <span>Tip: <Badge variant={c.client_type === 'company' ? 'default' : 'secondary'} className="text-[9px] px-1 py-0">{c.client_type}</Badge></span>
+        <span>Nr.Reg: {c.nr_reg || '—'}</span>
+        <span>Tel: {c.phone || '—'}</span>
+        <span>Email: {c.email || '—'}</span>
+        <span>Oras: {c.city || '—'}</span>
+        <span>Region: {c.region || '—'}</span>
+        <span>Responsabil: {c.responsible || '—'}</span>
+        <span>Creat: {c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</span>
+      </div>
+    </div>
+  )
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <GitMerge className="h-5 w-5 text-blue-500" />
+            Unificare Manuala Clienti
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Selecteaza clientul pe care vrei sa-l pastrezi (master). Celalalt va fi unificat — toate deal-urile si datele asociate vor fi mutate.
+        </p>
+        {clients.length === 2 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {clients.map(c => renderClient(c, c.id === keepId))}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => handleClose(false)}>Anuleaza</Button>
+          <Button
+            onClick={() => keepId && removeId && onMerge(keepId, removeId)}
+            disabled={!keepId || !removeId || isPending}
+          >
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <GitMerge className="h-4 w-4 mr-1" />}
+            Unifica
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /* ── Column definitions ── */
 
 const ALL_COLUMNS: ColumnDef<CrmClient>[] = [
@@ -169,7 +252,7 @@ export default function ClientStatsTab({ blacklistOnly, search = '' }: { blackli
   const isMobile = useIsMobile()
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [massAction, setMassAction] = useState<'blacklist' | 'unblacklist' | 'delete' | null>(null)
+  const [massAction, setMassAction] = useState<'blacklist' | 'unblacklist' | 'delete' | 'merge' | null>(null)
 
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
   const [editClient, setEditClient] = useState<CrmClient | null>(null)
@@ -241,6 +324,20 @@ export default function ClientStatsTab({ blacklistOnly, search = '' }: { blackli
       setSelected(new Set())
       setMassAction(null)
     },
+  })
+
+  const mergeMutation = useMutation({
+    mutationFn: ({ keepId, removeId }: { keepId: number; removeId: number }) =>
+      crmApi.mergeClients(keepId, removeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['crm-clients'] })
+      queryClient.invalidateQueries({ queryKey: ['crm-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['crm-sanitize'] })
+      toast.success('Clienti unificati cu succes')
+      setSelected(new Set())
+      setMassAction(null)
+    },
+    onError: () => toast.error('Eroare la unificare'),
   })
 
   const toggleSelect = (id: number) => {
@@ -398,6 +495,11 @@ export default function ClientStatsTab({ blacklistOnly, search = '' }: { blackli
           <div className="flex items-center gap-2 mb-3 rounded-md border bg-muted/50 px-3 py-2">
             <span className="text-sm font-medium">{selected.size} selected</span>
             <div className="flex-1" />
+            {selected.size === 2 && (
+              <Button size="sm" variant="default" onClick={() => setMassAction('merge')}>
+                <GitMerge className="h-3.5 w-3.5 mr-1" />Merge
+              </Button>
+            )}
             {!blacklistOnly && (
               <Button size="sm" variant="secondary" onClick={() => setMassAction('blacklist')}>
                 <Ban className="h-3.5 w-3.5 mr-1" />Blacklist
@@ -547,6 +649,13 @@ export default function ClientStatsTab({ blacklistOnly, search = '' }: { blackli
         confirmLabel="Delete All"
         variant="destructive"
         onConfirm={() => batchDeleteMutation.mutate([...selected])}
+      />
+      <MergeDialog
+        open={massAction === 'merge'}
+        onOpenChange={o => { if (!o) setMassAction(null) }}
+        clients={clients.filter(c => selected.has(c.id))}
+        onMerge={(keepId, removeId) => mergeMutation.mutate({ keepId, removeId })}
+        isPending={mergeMutation.isPending}
       />
     </Card>
   )
