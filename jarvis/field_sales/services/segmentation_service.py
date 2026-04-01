@@ -191,7 +191,7 @@ def compute_renewal_score(client_id, repo):
     return min(100, score)
 
 
-_ANAF_DEFAULT_ENDPOINT = 'https://webservicesp.anaf.ro/PlatitorTvaRest/api/v8/ws/tva'
+_ANAF_DEFAULT_ENDPOINT = 'https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva'
 _ANAF_DEFAULT_TIMEOUT = 5
 
 
@@ -254,7 +254,9 @@ def fetch_anaf_data(cui):
         if data.get('found') and isinstance(data['found'], list) and len(data['found']) > 0:
             return data['found'][0]
 
-        return data
+        # CUI not found in ANAF
+        logger.info('CUI %s not found in ANAF', cui_clean)
+        return None
     except requests.exceptions.Timeout:
         logger.warning('ANAF API timeout for CUI %s', cui_clean)
         return None

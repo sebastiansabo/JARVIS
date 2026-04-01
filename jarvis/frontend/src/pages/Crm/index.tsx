@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -18,8 +19,17 @@ import SanitizeTab from './SanitizeTab'
 
 export default function Crm() {
   const isMobile = useIsMobile()
-  const [tab, setTab] = useState('dashboard')
-  const [search, setSearch] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [tab, setTab] = useState(searchParams.get('tab') || 'dashboard')
+  const [search, setSearch] = useState(searchParams.get('q') || '')
+
+  // Sync tab & search to URL params
+  useEffect(() => {
+    const params: Record<string, string> = {}
+    if (tab !== 'dashboard') params.tab = tab
+    if (search) params.q = search
+    setSearchParams(params, { replace: true })
+  }, [tab, search]) // eslint-disable-line react-hooks/exhaustive-deps
   const [statsShowFilters, setStatsShowFilters] = useState(false)
   const { data: stats } = useQuery({ queryKey: ['crm-stats'], queryFn: crmApi.getStats })
 

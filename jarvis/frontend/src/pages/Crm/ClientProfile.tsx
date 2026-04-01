@@ -86,12 +86,17 @@ export default function ClientProfile() {
   // ANAF enrich mutation
   const enrichMutation = useMutation({
     mutationFn: (cui: string) => crmApi.enrichClient(id, cui),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['crm-client', id] })
-      toast.success('ANAF data fetched')
+      const correction = (res as Record<string, unknown>).cui_correction as { old_cui: string; new_cui: string; found_name: string; source: string } | undefined
+      if (correction) {
+        toast.warning(`CUI corectat: ${correction.old_cui} → ${correction.new_cui} (${correction.found_name}, via ${correction.source})`, { duration: 8000 })
+      }
+      const source = (res as Record<string, unknown>).source as string
+      toast.success(source === 'ai' ? 'Date completate via AI (ANAF indisponibil)' : 'Date ANAF actualizate')
       setCuiInput('')
     },
-    onError: () => toast.error('ANAF fetch failed'),
+    onError: () => toast.error('Enrichment failed'),
   })
 
   // Connector-specific enrich mutation
@@ -183,7 +188,7 @@ export default function ClientProfile() {
         <div>
           <nav className="flex items-center gap-1.5 text-sm mb-1">
             <button
-              onClick={() => navigate('/app/sales/crm')}
+              onClick={() => navigate('/app/sales/crm?tab=clients')}
               className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             >
               Clienți

@@ -32,6 +32,52 @@ _fs_repo = ClientFSRepository()
 _enrichment_col_added = False
 
 
+def _ai_company_lookup(company_name, cui=None):
+    """Use AI to look up basic company data when ANAF returns nothing.
+
+    Returns dict with company fields or None.
+    """
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        prompt = f"""Find basic company information for the Romanian company: "{company_name}"{f' (CUI: {cui})' if cui else ''}.
+
+Return ONLY a JSON object with these fields (use null if unknown):
+{{
+  "denumire": "official company name",
+  "adresa": "full address",
+  "localitate": "city",
+  "judet": "county",
+  "cod_CAEN": "CAEN code",
+  "forma_juridica": "legal form (SRL, SA, etc.)",
+  "nrRegCom": "trade register number",
+  "telefon": "phone number",
+  "stare_inregistrare": "active/inactive/radiat"
+}}
+
+Return ONLY valid JSON, no explanation."""
+
+        resp = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=300,
+            messages=[{'role': 'user', 'content': prompt}],
+        )
+        import json
+        text = resp.content[0].text.strip()
+        # Extract JSON from possible markdown
+        if '```' in text:
+            text = text.split('```')[1]
+            if text.startswith('json'):
+                text = text[4:]
+            text = text.strip()
+        result = json.loads(text)
+        result['_source'] = 'ai_lookup'
+        return result
+    except Exception:
+        logger.exception('AI company lookup failed for %s', company_name)
+        return None
+
+
 def _ensure_enrichment_column():
     """Add enrichment_data JSONB column to client_profiles if missing."""
     global _enrichment_col_added
@@ -435,21 +481,65 @@ def api_client_enrich(client_id):
         logger.exception('Error setting CUI for client %s', client_id)
         return jsonify({'success': False, 'error': 'Failed to update profile'}), 500
 
-    # Fetch ANAF data
+    # Enrichment chain: connectors by name → ANAF by CUI → AI fallback
     try:
+        import json
+        from datetime import datetime as _dt
+
+        anaf_data = None
+        source = 'anaf'
+        cui_correction = None
+        company_name = client.get('display_name') or client.get('company_name') or ''
+
+        # Step 1: Search connectors by company name to find/verify CUI
+        if company_name:
+            matches = search_company_by_name(company_name)
+            if matches:
+                best = matches[0]
+                found_cui = str(best.get('cui', '')).strip()
+                if found_cui and found_cui != cui:
+                    cui_correction = {
+                        'old_cui': cui,
+                        'new_cui': found_cui,
+                        'found_name': best.get('name', ''),
+                        'source': best.get('source', ''),
+                    }
+                    logger.info('CUI mismatch for %s: saved=%s, found=%s from %s',
+                                company_name, cui, found_cui, best.get('source'))
+                    # Use the correct CUI
+                    cui = found_cui
+                    _fs_repo.update_profile(client_id, {'cui': cui})
+
+        # Step 2: Fetch ANAF with (potentially corrected) CUI
         anaf_data = get_or_refresh_anaf(client_id, cui, _fs_repo)
-        # Auto-fill client/profile fields from ANAF response
+
+        # Step 3: AI fallback if still nothing
+        if not anaf_data:
+            logger.info('ANAF empty for %s (CUI %s), trying AI fallback', company_name, cui)
+            anaf_data = _ai_company_lookup(company_name, cui)
+            source = 'ai'
+
+        # Auto-fill client/profile fields from response
         if anaf_data and isinstance(anaf_data, dict):
             _apply_connector_to_profile(client_id, 'anaf', anaf_data)
+            _fs_repo.update_profile(client_id, {
+                'anaf_data': json.dumps(anaf_data) if isinstance(anaf_data, dict) else anaf_data,
+                'anaf_fetched_at': _dt.now().isoformat(),
+            })
+
         profile = _fs_repo.get_or_create_profile(client_id)
-        return jsonify({
+        resp = {
             'success': True,
             'profile': profile,
             'fiscal': anaf_data,
-        })
+            'source': source,
+        }
+        if cui_correction:
+            resp['cui_correction'] = cui_correction
+        return jsonify(resp)
     except Exception:
         logger.exception('ANAF enrichment failed for client %s', client_id)
-        return jsonify({'success': False, 'error': 'ANAF fetch failed'}), 500
+        return jsonify({'success': False, 'error': 'Enrichment failed'}), 500
 
 
 @crm_bp.route('/api/crm/clients/<int:client_id>/enrich/<connector_type>', methods=['POST'])
