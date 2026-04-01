@@ -31,6 +31,63 @@ function InfoRow({ icon: Icon, label, value, className }: { icon?: React.Element
   )
 }
 
+// --- Score Ring: SVG circular progress indicator ---
+function ScoreRing({ label, value, max }: { label: string; value: number; max: number }) {
+  const pct = max > 0 ? Math.min(Math.round((value / max) * 100), 100) : 0
+  const r = 20, stroke = 4, size = (r + stroke) * 2
+  const circ = 2 * Math.PI * r
+  const offset = circ - (pct / 100) * circ
+  const color = pct >= 70 ? '#22c55e' : pct >= 40 ? '#eab308' : '#ef4444'
+
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={r + stroke} cy={r + stroke} r={r} fill="none" stroke="currentColor" strokeWidth={stroke} className="text-muted/20" />
+        <circle cx={r + stroke} cy={r + stroke} r={r} fill="none" stroke={color} strokeWidth={stroke}
+          strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" className="transition-all duration-500" />
+      </svg>
+      <span className="text-xs font-bold -mt-[34px] mb-[14px]" style={{ color }}>{pct}</span>
+      <span className="text-[10px] text-muted-foreground">{label}</span>
+    </div>
+  )
+}
+
+// --- Completeness score: how complete is the client profile ---
+function _completeness(
+  client: Record<string, unknown>,
+  profile: Record<string, unknown> | null | undefined,
+  deals: unknown[],
+  fleet: unknown[],
+): number {
+  let score = 0, total = 0
+  // Client fields
+  const clientChecks = ['display_name', 'company_name', 'phone', 'email', 'city', 'region', 'street', 'nr_reg']
+  for (const k of clientChecks) {
+    total += 1
+    if (client[k] && client[k] !== '—') score += 1
+  }
+  // Profile fields
+  const profileChecks = ['cui', 'industry', 'legal_form', 'priority', 'client_type', 'country_code']
+  for (const k of profileChecks) {
+    total += 1
+    if (profile?.[k]) score += 1
+  }
+  // Has deals
+  total += 1
+  if (deals.length > 0) score += 1
+  // Has fleet or fleet_size
+  total += 1
+  if (fleet.length > 0 || (profile?.fleet_size && Number(profile.fleet_size) > 0)) score += 1
+  // Has enrichment data
+  total += 1
+  if (profile?.enrichment_data && typeof profile.enrichment_data === 'object' && Object.keys(profile.enrichment_data as object).length > 0) score += 1
+  // Has ANAF data
+  total += 1
+  if (profile?.anaf_data) score += 1
+
+  return total > 0 ? Math.round((score / total) * 100) : 0
+}
+
 const CONNECTOR_META: Record<string, { icon: string; label: string }> = {
   anaf: { icon: '🏛️', label: 'ANAF' },
   termene: { icon: '⚖️', label: 'Termene.ro' },
@@ -212,6 +269,11 @@ export default function ClientProfile() {
             {profile?.priority && <Badge variant="secondary">{profile.priority}</Badge>}
             {client.is_blacklisted && <Badge variant="destructive">Blacklisted</Badge>}
           </div>
+        </div>
+        {/* Scoring indicators */}
+        <div className="flex items-center gap-4">
+          <ScoreRing label="Renewal" value={profile?.renewal_score ?? 0} max={100} />
+          <ScoreRing label="Completeness" value={_completeness(client as never, profile as never, deals, fleet)} max={100} />
         </div>
         <div className="flex gap-2">
           {editing ? (
