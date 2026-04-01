@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Building2, Pencil, Save, X, Car, MapPin, Truck, MessageSquare,
   Star, RefreshCw, Search, Loader2, Phone, Mail, Hash, Globe, User,
-  Shield, Database, ChevronDown, ChevronUp,
+  Shield, Database, ChevronDown, ChevronUp, Sparkles, Lightbulb,
+  AlertTriangle, TrendingUp, Target, Brain,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -48,6 +49,9 @@ export default function ClientProfile() {
   const [form, setForm] = useState<Record<string, string>>({})
   const [cuiInput, setCuiInput] = useState('')
   const [expandedConnector, setExpandedConnector] = useState<string | null>(null)
+  const [cuiResults, setCuiResults] = useState<{ cui: string; name: string; address: string; nr_reg: string; source: string }[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [aiResearch, setAiResearch] = useState<Record<string, any> | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['crm-client', id],
@@ -99,6 +103,41 @@ export default function ClientProfile() {
     },
     onError: (_, vars) => toast.error(`${CONNECTOR_META[vars.connectorType]?.label || vars.connectorType} fetch failed`),
   })
+
+  // CUI lookup mutation
+  const lookupCuiMutation = useMutation({
+    mutationFn: () => crmApi.lookupCui(id),
+    onSuccess: (res) => {
+      if (res.results && res.results.length > 0) {
+        setCuiResults(res.results)
+        toast.success(`Found ${res.results.length} matching companies`)
+      } else {
+        toast.info('No companies found. Try entering CUI manually.')
+      }
+    },
+    onError: () => toast.error('CUI lookup failed'),
+  })
+
+  // AI research mutation
+  const aiResearchMutation = useMutation({
+    mutationFn: () => crmApi.aiResearch(id),
+    onSuccess: (res) => {
+      if (res.research) {
+        setAiResearch(res.research)
+        queryClient.invalidateQueries({ queryKey: ['crm-client', id] })
+        toast.success('AI research complete')
+      }
+    },
+    onError: () => toast.error('AI research failed'),
+  })
+
+  // Load existing AI research from enrichment data on first load
+  useEffect(() => {
+    const existing = enrichmentData?.ai_research as { data?: Record<string, unknown> } | undefined
+    if (existing?.data && !aiResearch) {
+      setAiResearch(existing.data)
+    }
+  }, [enrichmentData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Start editing
   const startEdit = () => {
@@ -284,6 +323,177 @@ export default function ClientProfile() {
         </Card>
       </div>
 
+      {/* AI Company Intelligence */}
+      <Card className="border-primary/20 bg-gradient-to-br from-primary/[0.02] to-transparent">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-1.5">
+              <Brain className="h-4 w-4 text-primary" />AI Company Intelligence
+            </CardTitle>
+            <Button
+              size="sm" className="h-8"
+              onClick={() => aiResearchMutation.mutate()}
+              disabled={aiResearchMutation.isPending}
+            >
+              {aiResearchMutation.isPending ? (
+                <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />Researching...</>
+              ) : (
+                <><Sparkles className="h-3.5 w-3.5 mr-1" />{aiResearch ? 'Re-analyze' : 'Research Company'}</>
+              )}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {aiResearchMutation.isPending && (
+            <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50 animate-pulse">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <div>
+                <p className="text-sm font-medium">AI is researching {client.display_name}...</p>
+                <p className="text-xs text-muted-foreground">Analyzing company data, industry context, and business potential</p>
+              </div>
+            </div>
+          )}
+          {aiResearch && !aiResearch._raw && (
+            <div className="space-y-3">
+              {/* Overview */}
+              {aiResearch.company_overview && (
+                <div className="rounded-lg border p-3 bg-background">
+                  <p className="text-sm">{String(aiResearch.company_overview)}</p>
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    {aiResearch.industry && <Badge variant="secondary" className="text-[10px]">{String(aiResearch.industry)}</Badge>}
+                    {aiResearch.company_type && <Badge variant="outline" className="text-[10px]">{String(aiResearch.company_type)}</Badge>}
+                    {aiResearch.estimated_size && <Badge variant="outline" className="text-[10px]">{String(aiResearch.estimated_size)}</Badge>}
+                    {aiResearch.risk_level && (
+                      <Badge variant={aiResearch.risk_level === 'high' ? 'destructive' : aiResearch.risk_level === 'medium' ? 'secondary' : 'default'} className="text-[10px]">
+                        Risk: {String(aiResearch.risk_level)}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Suggested CUI */}
+              {aiResearch.suggested_cui && !profile?.cui && (
+                <div className="rounded-lg border border-primary/30 p-3 bg-primary/5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Lightbulb className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium">AI found CUI: <span className="font-mono">{String(aiResearch.suggested_cui)}</span></span>
+                    </div>
+                    <Button size="sm" className="h-7 text-xs" onClick={() => {
+                      setCuiInput(String(aiResearch.suggested_cui))
+                      enrichMutation.mutate(String(aiResearch.suggested_cui))
+                    }} disabled={enrichMutation.isPending}>
+                      {enrichMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Search className="h-3 w-3 mr-1" />}
+                      Use this CUI
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Key Insights */}
+              {Array.isArray(aiResearch.key_insights) && (aiResearch.key_insights as string[]).length > 0 && (
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
+                    <Lightbulb className="h-3 w-3" /> Key Insights
+                  </p>
+                  <ul className="space-y-1">
+                    {(aiResearch.key_insights as string[]).map((insight, i) => (
+                      <li key={i} className="text-sm flex items-start gap-2">
+                        <span className="text-primary mt-0.5">•</span>{String(insight)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Opportunities + Risks side by side */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {Array.isArray(aiResearch.opportunities) && (aiResearch.opportunities as string[]).length > 0 && (
+                  <div className="rounded-lg border border-green-200 dark:border-green-900 p-3 bg-green-50/50 dark:bg-green-950/20">
+                    <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-1.5 flex items-center gap-1">
+                      <TrendingUp className="h-3 w-3" /> Opportunities
+                    </p>
+                    <ul className="space-y-1">
+                      {(aiResearch.opportunities as string[]).map((opp, i) => (
+                        <li key={i} className="text-xs flex items-start gap-2">
+                          <span className="text-green-600 mt-0.5">•</span>{String(opp)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {Array.isArray(aiResearch.risks) && (aiResearch.risks as string[]).length > 0 && (
+                  <div className="rounded-lg border border-amber-200 dark:border-amber-900 p-3 bg-amber-50/50 dark:bg-amber-950/20">
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1.5 flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" /> Risks
+                    </p>
+                    <ul className="space-y-1">
+                      {(aiResearch.risks as string[]).map((risk, i) => (
+                        <li key={i} className="text-xs flex items-start gap-2">
+                          <span className="text-amber-600 mt-0.5">•</span>{String(risk)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* Recommended Actions */}
+              {Array.isArray(aiResearch.recommended_actions) && (aiResearch.recommended_actions as string[]).length > 0 && (
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
+                    <Target className="h-3 w-3" /> Recommended Actions
+                  </p>
+                  <ul className="space-y-1">
+                    {(aiResearch.recommended_actions as string[]).map((action, i) => (
+                      <li key={i} className="text-sm flex items-start gap-2">
+                        <span className="text-blue-500 mt-0.5">{i + 1}.</span>{String(action)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Fleet Potential + News */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {aiResearch.fleet_potential && (
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                      <Truck className="h-3 w-3" /> Fleet Potential
+                    </p>
+                    <p className="text-sm">{String(aiResearch.fleet_potential)}</p>
+                  </div>
+                )}
+                {aiResearch.news_summary && (
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                      <MessageSquare className="h-3 w-3" /> News & Developments
+                    </p>
+                    <p className="text-sm">{String(aiResearch.news_summary)}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Timestamp */}
+              {aiResearch._generated_at && (
+                <p className="text-[10px] text-muted-foreground text-right">
+                  Generated {new Date(String(aiResearch._generated_at)).toLocaleString('ro-RO')} • {String(aiResearch._model || 'Claude AI')}
+                </p>
+              )}
+            </div>
+          )}
+          {aiResearch?._raw && (
+            <div className="rounded-lg border p-3">
+              <p className="text-sm whitespace-pre-wrap">{String(aiResearch.summary)}</p>
+            </div>
+          )}
+          {!aiResearch && !aiResearchMutation.isPending && (
+            <p className="text-sm text-muted-foreground">Click "Research Company" to generate AI-powered intelligence about this client.</p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Business Data Enrichment — Multi-connector */}
       <Card>
         <CardHeader className="pb-2">
@@ -291,24 +501,59 @@ export default function ClientProfile() {
             <CardTitle className="text-sm flex items-center gap-1.5">
               <Database className="h-4 w-4" />Business Data Enrichment
             </CardTitle>
-            {!profile?.cui && (
-              <div className="flex items-center gap-2">
-                <Input
-                  placeholder="Enter CUI (e.g. 12345678)"
-                  value={cuiInput}
-                  onChange={e => setCuiInput(e.target.value)}
-                  className="w-48 h-8 text-sm"
-                  onKeyDown={e => e.key === 'Enter' && cuiInput.trim() && enrichMutation.mutate(cuiInput.trim())}
-                />
-                <Button size="sm" className="h-8" onClick={() => enrichMutation.mutate(cuiInput.trim())} disabled={!cuiInput.trim() || enrichMutation.isPending}>
-                  {enrichMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Search className="h-3.5 w-3.5 mr-1" />}
-                  Set CUI
-                </Button>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              {!profile?.cui && (
+                <>
+                  <Input
+                    placeholder="Enter CUI (e.g. 12345678)"
+                    value={cuiInput}
+                    onChange={e => setCuiInput(e.target.value)}
+                    className="w-48 h-8 text-sm"
+                    onKeyDown={e => e.key === 'Enter' && cuiInput.trim() && enrichMutation.mutate(cuiInput.trim())}
+                  />
+                  <Button size="sm" className="h-8" onClick={() => enrichMutation.mutate(cuiInput.trim())} disabled={!cuiInput.trim() || enrichMutation.isPending}>
+                    {enrichMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Search className="h-3.5 w-3.5 mr-1" />}
+                    Set CUI
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8" onClick={() => lookupCuiMutation.mutate()} disabled={lookupCuiMutation.isPending}>
+                    {lookupCuiMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
+                    Auto-detect
+                  </Button>
+                </>
+              )}
+              {profile?.cui && (
+                <Badge variant="outline" className="font-mono text-xs">CUI: {profile.cui}</Badge>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
+          {/* CUI Lookup Results */}
+          {cuiResults.length > 0 && !profile?.cui && (
+            <div className="rounded-lg border border-primary/30 p-3 mb-3 bg-primary/5">
+              <p className="text-xs font-medium mb-2 flex items-center gap-1.5">
+                <Search className="h-3 w-3" /> Found {cuiResults.length} matching {cuiResults.length === 1 ? 'company' : 'companies'}:
+              </p>
+              <div className="space-y-1.5">
+                {cuiResults.map((r, i) => (
+                  <div key={i} className="flex items-center justify-between rounded border p-2 bg-background hover:bg-muted/50 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{r.name}</p>
+                      <p className="text-xs text-muted-foreground">CUI: <span className="font-mono">{r.cui}</span>{r.nr_reg ? ` • Nr. Reg: ${r.nr_reg}` : ''}{r.address ? ` • ${r.address}` : ''}</p>
+                    </div>
+                    <Button size="sm" className="h-7 text-xs ml-2 shrink-0" onClick={() => {
+                      setCuiInput(r.cui)
+                      enrichMutation.mutate(r.cui)
+                      setCuiResults([])
+                    }}>
+                      Use CUI
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* ANAF Section */}
           <div className="rounded-lg border p-3 mb-3">
             <div className="flex items-center justify-between mb-2">

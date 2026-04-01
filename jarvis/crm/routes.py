@@ -18,6 +18,7 @@ from field_sales.repositories.client_fs_repository import ClientFSRepository
 from field_sales.services.segmentation_service import fetch_anaf_data, get_or_refresh_anaf
 from field_sales.services.business_data_service import (
     get_connected_business_connectors, enrich_from_connector, enrich_from_all_connected,
+    detect_company_type, search_company_by_name, ai_research_company,
 )
 
 logger = logging.getLogger('jarvis.crm.routes')
@@ -406,6 +407,102 @@ def api_client_enrich_all(client_id):
     except Exception:
         logger.exception('Enrich-all failed for client %s', client_id)
         return jsonify({'success': False, 'error': 'Enrichment failed'}), 500
+
+
+@crm_bp.route('/api/crm/clients/<int:client_id>/lookup-cui', methods=['POST'])
+@login_required
+@crm_required
+def api_client_lookup_cui(client_id):
+    """Search for CUI by company name or Nr. Reg using connected business APIs."""
+    client = _client_repo.get_by_id(client_id)
+    if not client:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    query = data.get('query', '').strip() or client.get('display_name', '')
+    if not query:
+        return jsonify({'success': False, 'error': 'No search query'}), 400
+
+    results = search_company_by_name(query)
+
+    # Also auto-detect company type
+    detected_type = detect_company_type(client.get('display_name', ''))
+
+    return jsonify({
+        'success': True,
+        'results': results,
+        'detected_type': detected_type,
+        'query': query,
+    })
+
+
+@crm_bp.route('/api/crm/clients/<int:client_id>/ai-research', methods=['POST'])
+@login_required
+@crm_required
+def api_client_ai_research(client_id):
+    """AI-powered company research — generates intelligence report."""
+    _ensure_enrichment_column()
+    client = _client_repo.get_by_id(client_id)
+    if not client:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+
+    # Gather all available context
+    view_360 = {}
+    try:
+        view_360 = _fs_repo.get_360(client_id)
+    except Exception:
+        pass
+
+    profile = view_360.get('profile')
+    fiscal = view_360.get('fiscal')
+    enrichment_data = {}
+    if profile:
+        ed = profile.get('enrichment_data')
+        if isinstance(ed, str):
+            try:
+                import json as _json
+                enrichment_data = _json.loads(ed)
+            except (ValueError, TypeError):
+                pass
+        elif isinstance(ed, dict):
+            enrichment_data = ed
+
+    # Run AI research
+    research = ai_research_company(client, profile, fiscal, enrichment_data)
+
+    # Store research in enrichment_data
+    if research and 'error' not in research:
+        try:
+            import json as _json
+            profile_obj = _fs_repo.get_or_create_profile(client_id)
+            existing = profile_obj.get('enrichment_data') or {}
+            if isinstance(existing, str):
+                try:
+                    existing = _json.loads(existing)
+                except (ValueError, TypeError):
+                    existing = {}
+            existing['ai_research'] = {
+                'data': research,
+                'fetched_at': __import__('datetime').datetime.now().isoformat(),
+            }
+            _fs_repo.update_profile(client_id, {'enrichment_data': _json.dumps(existing)})
+
+            # Auto-update client_type if detected as company
+            detected_type = detect_company_type(client.get('display_name', ''))
+            if detected_type == 'company' and client.get('client_type') != 'company':
+                _client_repo.update(client_id, {'client_type': 'company'})
+
+            # If AI suggested a CUI and profile has none, set it
+            suggested_cui = research.get('suggested_cui')
+            if suggested_cui and not profile_obj.get('cui'):
+                _fs_repo.update_profile(client_id, {'cui': str(suggested_cui)})
+        except Exception:
+            logger.exception('Failed to store AI research for client %s', client_id)
+
+    return jsonify({
+        'success': True,
+        'research': research,
+    })
 
 
 @crm_bp.route('/api/crm/clients/<int:client_id>', methods=['DELETE'])
