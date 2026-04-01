@@ -203,8 +203,12 @@ export const crmApi = {
     profile: ClientProfile | null; fleet: FleetVehicle[];
     interactions: ClientInteraction[]; renewal_candidates: FleetVehicle[];
     fiscal: Record<string, unknown> | null; phones: { phone: string }[];
+    enrichment_data: Record<string, { data: Record<string, unknown>; fetched_at?: string; error?: string }>;
+    connectors: { connector_type: string; name: string; status: string; id: number }[];
   }>(`/api/crm/clients/${id}`),
   enrichClient: (id: number, cui: string) => api.post<{ success: boolean; profile: ClientProfile; fiscal: Record<string, unknown> | null }>(`/api/crm/clients/${id}/enrich`, { cui }),
+  enrichFromConnector: (id: number, cui: string, connectorType: string) => api.post<{ success: boolean; connector_type: string; data: Record<string, unknown>; profile: ClientProfile }>(`/api/crm/clients/${id}/enrich/${connectorType}`, { cui }),
+  enrichFromAll: (id: number, cui: string) => api.post<{ success: boolean; results: Record<string, unknown>; profile: ClientProfile }>(`/api/crm/clients/${id}/enrich-all`, { cui }),
   mergeClients: (keepId: number, removeId: number) => api.post<{ success: boolean }>('/api/crm/clients/merge', { keep_id: keepId, remove_id: removeId }),
   getDeals: (params?: Record<string, string>) => api.get<{ deals: CrmDeal[]; total: number }>('/api/crm/deals', params),
   getDeal: (id: number) => api.get<{ deal: CrmDeal }>(`/api/crm/deals/${id}`),

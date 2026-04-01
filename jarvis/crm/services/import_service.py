@@ -309,6 +309,201 @@ def import_crm_clients(file_path, user_id, original_filename=None):
     return stats
 
 
+# ── Clienti importer (DMS client-vehicle lists) ──
+
+def _update_client_extra(client_id, client_data):
+    """Update contact_person, dealer_codes, phones, revenue, and service history."""
+    import json
+
+    # 1. contact_person + dealer_codes on crm_clients
+    contact_person = client_data.get('contact_person')
+    dealer_codes = client_data.get('dealer_codes')
+    salesperson = client_data.get('salesperson')
+    city = client_data.get('city')
+    street = client_data.get('street')
+    region = client_data.get('region')
+
+    updates, params = [], []
+    if contact_person:
+        updates.append('contact_person = COALESCE(%s, contact_person)')
+        params.append(contact_person)
+    if dealer_codes:
+        updates.append('dealer_codes = COALESCE(%s, dealer_codes)')
+        params.append(dealer_codes)
+    if salesperson:
+        updates.append('responsible = COALESCE(%s, responsible)')
+        params.append(salesperson)
+    if city:
+        updates.append('city = COALESCE(%s, city)')
+        params.append(city)
+    if street:
+        updates.append('street = COALESCE(%s, street)')
+        params.append(street)
+    if region:
+        updates.append('region = COALESCE(%s, region)')
+        params.append(region)
+    if updates:
+        updates.append('updated_at = NOW()')
+        params.append(client_id)
+        _client_repo.execute(
+            f"UPDATE crm_clients SET {', '.join(updates)} WHERE id = %s",
+            tuple(params)
+        )
+
+    # 2. Phones → client_phones table (ON CONFLICT skip)
+    for phone_entry in client_data.get('phones', []):
+        try:
+            _client_repo.execute(
+                '''INSERT INTO client_phones (client_id, phone, phone_raw, source)
+                   VALUES (%s, %s, %s, 'clienti')
+                   ON CONFLICT (client_id, phone) DO NOTHING''',
+                (client_id, phone_entry['phone'], phone_entry.get('phone_raw'))
+            )
+        except Exception:
+            pass  # skip individual phone errors
+
+    # 3. Revenue + service history → client_profiles (upsert)
+    revenue_nw = client_data.get('revenue_nw')
+    revenue_gw = client_data.get('revenue_gw')
+    last_service_date = client_data.get('last_service_date')
+    last_service_advisor = client_data.get('last_service_advisor')
+    last_advisor_date = client_data.get('last_advisor_date')
+
+    if any(v is not None for v in [revenue_nw, revenue_gw, last_service_date,
+                                    last_service_advisor, last_advisor_date]):
+        _client_repo.execute(
+            '''INSERT INTO client_profiles (client_id, revenue_nw, revenue_gw,
+                   last_service_date, last_service_advisor, last_advisor_date)
+               VALUES (%s, %s, %s, %s, %s, %s)
+               ON CONFLICT (client_id) DO UPDATE SET
+                   revenue_nw = COALESCE(EXCLUDED.revenue_nw, client_profiles.revenue_nw),
+                   revenue_gw = COALESCE(EXCLUDED.revenue_gw, client_profiles.revenue_gw),
+                   last_service_date = GREATEST(EXCLUDED.last_service_date, client_profiles.last_service_date),
+                   last_service_advisor = COALESCE(EXCLUDED.last_service_advisor, client_profiles.last_service_advisor),
+                   last_advisor_date = GREATEST(EXCLUDED.last_advisor_date, client_profiles.last_advisor_date),
+                   updated_at = NOW()''',
+            (client_id, revenue_nw, revenue_gw,
+             last_service_date, last_service_advisor, last_advisor_date)
+        )
+
+
+def _upsert_fleet_vehicle(client_id, vehicle_data, batch_id):
+    """Insert or update a client_fleet vehicle, deduplicating by VIN or license plate."""
+    vin = vehicle_data.get('vin')
+    plate = vehicle_data.get('license_plate')
+
+    if not vin and not plate:
+        return  # no way to identify the vehicle
+
+    # Try to find existing by VIN first, then by plate
+    existing = None
+    if vin:
+        existing = _client_repo.query_one(
+            'SELECT id FROM client_fleet WHERE client_id = %s AND vin = %s',
+            (client_id, vin)
+        )
+    if not existing and plate:
+        existing = _client_repo.query_one(
+            'SELECT id FROM client_fleet WHERE client_id = %s AND license_plate = %s',
+            (client_id, plate)
+        )
+
+    if existing:
+        _client_repo.execute(
+            '''UPDATE client_fleet
+               SET vehicle_model = COALESCE(%s, vehicle_model),
+                   vehicle_year = COALESCE(%s, vehicle_year),
+                   vin = COALESCE(%s, vin),
+                   license_plate = COALESCE(%s, license_plate),
+                   purchase_date = COALESCE(%s, purchase_date),
+                   estimated_mileage = COALESCE(%s, estimated_mileage),
+                   import_batch_id = %s,
+                   updated_at = NOW()
+               WHERE id = %s''',
+            (vehicle_data.get('vehicle_model'), vehicle_data.get('vehicle_year'),
+             vin, plate, vehicle_data.get('purchase_date'),
+             vehicle_data.get('estimated_mileage'),
+             batch_id, existing['id'])
+        )
+    else:
+        _client_repo.execute(
+            '''INSERT INTO client_fleet
+               (client_id, vehicle_model, vehicle_year, vin, license_plate,
+                purchase_date, estimated_mileage, import_batch_id, status)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'active')''',
+            (client_id, vehicle_data.get('vehicle_model'), vehicle_data.get('vehicle_year'),
+             vin, plate, vehicle_data.get('purchase_date'),
+             vehicle_data.get('estimated_mileage'), batch_id)
+        )
+
+
+def import_clienti(file_path, user_id, original_filename=None):
+    """Import Clienti Excel (DMS client-vehicle lists). One row = one vehicle per client."""
+    from ..parsers import parse_clienti
+    batch = _import_repo.create('clienti', original_filename or file_path.split('/')[-1], user_id)
+    batch_id = batch['id']
+    stats = {'total': 0, 'new': 0, 'updated': 0, 'skipped': 0,
+             'new_clients': 0, 'matched_clients': 0,
+             'fleet_created': 0, 'fleet_updated': 0, 'errors': []}
+
+    # Dedup cache: normalized_name → client_id (avoids redundant DB lookups)
+    client_cache = {}
+
+    try:
+        for client_key, row_hash, client_data, vehicle_data in parse_clienti(file_path):
+            stats['total'] += 1
+            try:
+                # 1. Resolve client (dedup via in-memory cache)
+                if client_key in client_cache:
+                    client_id = client_cache[client_key]
+                else:
+                    # Use primary phone for matching
+                    phone_raw = client_data.get('phone_primary_raw')
+                    if not phone_raw:
+                        phones = client_data.get('phones', [])
+                        phone_raw = phones[0]['phone_raw'] if phones else None
+
+                    cid, is_new = _match_or_create_client(
+                        display_name=client_data['display_name'],
+                        phone_raw=phone_raw,
+                        street=client_data.get('street'),
+                        city=client_data.get('city'),
+                        region=client_data.get('region'),
+                        responsible=client_data.get('salesperson'),
+                        source_key='clienti',
+                    )
+                    client_id = cid
+                    client_cache[client_key] = client_id
+                    stats['new_clients' if is_new else 'matched_clients'] += 1
+
+                    # 2. Update client-level extra fields (once per unique client)
+                    try:
+                        _update_client_extra(client_id, client_data)
+                    except Exception as e:
+                        stats['errors'].append(f"Row {stats['total']}: client extra update: {str(e)[:150]}")
+
+                # 3. Create/update fleet vehicle
+                try:
+                    _upsert_fleet_vehicle(client_id, vehicle_data, batch_id)
+                    stats['new'] += 1
+                except Exception as e:
+                    stats['errors'].append(f"Row {stats['total']}: fleet upsert: {str(e)[:150]}")
+                    stats['skipped'] += 1
+
+            except Exception as e:
+                stats['errors'].append(f"Row {stats['total']}: {str(e)[:200]}")
+                stats['skipped'] += 1
+
+        _import_repo.update_stats(batch_id, total_rows=stats['total'], new_rows=stats['new'],
+                                  updated_rows=stats['updated'], skipped_rows=stats['skipped'],
+                                  new_clients=stats['new_clients'], matched_clients=stats['matched_clients'],
+                                  status='completed', error_log=stats['errors'][:100])
+    except Exception as e:
+        _import_repo.update_stats(batch_id, status='failed', error_log=[str(e)[:500]])
+        stats['errors'].append(str(e))
+    return stats
+
+
 # Dispatch map
 IMPORT_HANDLERS = {
     # Direct (unified template — DB column names)
@@ -318,4 +513,6 @@ IMPORT_HANDLERS = {
     'nw': import_nw,
     'gw': import_gw,
     'crm_clients': import_crm_clients,
+    # Clienti (DMS client-vehicle lists)
+    'clienti': import_clienti,
 }

@@ -16,6 +16,9 @@ from .services.import_service import IMPORT_HANDLERS
 from core.roles.repositories import PermissionRepository
 from field_sales.repositories.client_fs_repository import ClientFSRepository
 from field_sales.services.segmentation_service import fetch_anaf_data, get_or_refresh_anaf
+from field_sales.services.business_data_service import (
+    get_connected_business_connectors, enrich_from_connector, enrich_from_all_connected,
+)
 
 logger = logging.getLogger('jarvis.crm.routes')
 
@@ -24,6 +27,23 @@ _deal_repo = DealRepository()
 _import_repo = ImportRepository()
 _perm_repo = PermissionRepository()
 _fs_repo = ClientFSRepository()
+
+_enrichment_col_added = False
+
+
+def _ensure_enrichment_column():
+    """Add enrichment_data JSONB column to client_profiles if missing."""
+    global _enrichment_col_added
+    if _enrichment_col_added:
+        return
+    _enrichment_col_added = True
+    try:
+        _fs_repo.execute('''
+            ALTER TABLE client_profiles
+            ADD COLUMN IF NOT EXISTS enrichment_data JSONB DEFAULT '{}'
+        ''', ())
+    except Exception:
+        logger.debug('enrichment_data column already exists or migration skipped')
 
 
 def crm_required(f):
@@ -188,6 +208,7 @@ def api_clients_export():
 @crm_required
 def api_client_detail(client_id):
     """360 Client — full ecosystem data for a single client."""
+    _ensure_enrichment_column()
     client = _client_repo.get_by_id(client_id)
     if not client:
         return jsonify({'success': False, 'error': 'Not found'}), 404
@@ -212,6 +233,22 @@ def api_client_detail(client_id):
     renewal_candidates = view_360.get('renewal_candidates') or []
     fiscal = view_360.get('fiscal')
 
+    # Parse enrichment_data from profile
+    enrichment_data = {}
+    if profile:
+        ed = profile.get('enrichment_data')
+        if isinstance(ed, str):
+            try:
+                import json as _json
+                enrichment_data = _json.loads(ed)
+            except (ValueError, TypeError):
+                pass
+        elif isinstance(ed, dict):
+            enrichment_data = ed
+
+    # Get available connectors for this client
+    connectors = get_connected_business_connectors()
+
     return jsonify({
         'client': client,
         'deals': deals,
@@ -222,6 +259,8 @@ def api_client_detail(client_id):
         'interactions': interactions,
         'renewal_candidates': renewal_candidates,
         'fiscal': fiscal,
+        'enrichment_data': enrichment_data,
+        'connectors': connectors,
     })
 
 
@@ -272,6 +311,101 @@ def api_client_enrich(client_id):
     except Exception:
         logger.exception('ANAF enrichment failed for client %s', client_id)
         return jsonify({'success': False, 'error': 'ANAF fetch failed'}), 500
+
+
+@crm_bp.route('/api/crm/clients/<int:client_id>/enrich/<connector_type>', methods=['POST'])
+@login_required
+@crm_required
+def api_client_enrich_connector(client_id, connector_type):
+    """Enrich client from a specific business data connector."""
+    client = _client_repo.get_by_id(client_id)
+    if not client:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    cui = data.get('cui', '').strip()
+    if not cui:
+        return jsonify({'success': False, 'error': 'CUI is required'}), 400
+
+    try:
+        result = enrich_from_connector(cui, connector_type)
+        if result is None:
+            return jsonify({'success': False, 'error': f'Connector {connector_type} not connected or fetch failed'}), 400
+
+        # Store enrichment data on profile
+        import json as _json
+        profile = _fs_repo.get_or_create_profile(client_id)
+        existing = profile.get('enrichment_data') or {}
+        if isinstance(existing, str):
+            try:
+                existing = _json.loads(existing)
+            except (ValueError, TypeError):
+                existing = {}
+        existing[connector_type] = {
+            'data': result,
+            'fetched_at': __import__('datetime').datetime.now().isoformat(),
+        }
+        _fs_repo.update_profile(client_id, {'enrichment_data': _json.dumps(existing)})
+
+        updated_profile = _fs_repo.get_or_create_profile(client_id)
+        return jsonify({
+            'success': True,
+            'connector_type': connector_type,
+            'data': result,
+            'profile': updated_profile,
+        })
+    except Exception:
+        logger.exception('Enrichment from %s failed for client %s', connector_type, client_id)
+        return jsonify({'success': False, 'error': f'{connector_type} enrichment failed'}), 500
+
+
+@crm_bp.route('/api/crm/clients/<int:client_id>/connectors', methods=['GET'])
+@login_required
+@crm_required
+def api_client_connectors(client_id):
+    """Get available business data connectors for enrichment."""
+    connectors = get_connected_business_connectors()
+    return jsonify({'connectors': connectors})
+
+
+@crm_bp.route('/api/crm/clients/<int:client_id>/enrich-all', methods=['POST'])
+@login_required
+@crm_required
+def api_client_enrich_all(client_id):
+    """Enrich client from all connected business data connectors."""
+    client = _client_repo.get_by_id(client_id)
+    if not client:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    cui = data.get('cui', '').strip()
+    if not cui:
+        return jsonify({'success': False, 'error': 'CUI is required'}), 400
+
+    try:
+        results = enrich_from_all_connected(cui)
+
+        # Store all enrichment data on profile
+        import json as _json
+        profile = _fs_repo.get_or_create_profile(client_id)
+        existing = profile.get('enrichment_data') or {}
+        if isinstance(existing, str):
+            try:
+                existing = _json.loads(existing)
+            except (ValueError, TypeError):
+                existing = {}
+        existing.update(results)
+        _fs_repo.update_profile(client_id, {'enrichment_data': _json.dumps(existing)})
+
+        updated_profile = _fs_repo.get_or_create_profile(client_id)
+        return jsonify({
+            'success': True,
+            'results': results,
+            'profile': updated_profile,
+        })
+    except Exception:
+        logger.exception('Enrich-all failed for client %s', client_id)
+        return jsonify({'success': False, 'error': 'Enrichment failed'}), 500
 
 
 @crm_bp.route('/api/crm/clients/<int:client_id>', methods=['DELETE'])

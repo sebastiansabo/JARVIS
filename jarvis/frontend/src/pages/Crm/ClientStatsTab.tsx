@@ -1,4 +1,5 @@
 import { useState, Fragment } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -9,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck, SlidersHorizontal, MapPin, Building2, RefreshCw, Search, Truck, MessageSquare, Star, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Download, Pencil, Trash2, Car, FilterX, Ban, ShieldCheck, SlidersHorizontal, MapPin, Building2, RefreshCw, Search, Truck, MessageSquare, Star, Loader2, ExternalLink } from 'lucide-react'
 import { crmApi, type CrmClient, type CrmDeal, type CrmVisit, type FleetVehicle, type ClientInteraction } from '@/api/crm'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
@@ -552,6 +553,7 @@ export default function ClientStatsTab({ blacklistOnly, search = '' }: { blackli
 }
 
 function ClientExpandedDetails({ client, onEdit, onDelete, onToggleBlacklist }: { client: CrmClient; onEdit: () => void; onDelete: () => void; onToggleBlacklist: () => void }) {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [cuiInput, setCuiInput] = useState('')
 
@@ -594,6 +596,9 @@ function ClientExpandedDetails({ client, onEdit, onDelete, onToggleBlacklist }: 
           360 Client
         </h3>
         <div className="flex gap-2">
+          <Button size="sm" variant="default" onClick={e => { e.stopPropagation(); navigate(`/app/sales/crm/clients/${client.id}`) }}>
+            <ExternalLink className="h-3.5 w-3.5 mr-1" />Full Profile
+          </Button>
           <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); onEdit() }}>
             <Pencil className="h-3.5 w-3.5 mr-1" />Edit
           </Button>

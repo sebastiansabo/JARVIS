@@ -26,6 +26,7 @@ const BilantDetail = lazy(() => import('./pages/Accounting/Bilant/BilantDetail')
 const TemplateEditor = lazy(() => import('./pages/Accounting/Bilant/TemplateEditor'))
 const AiAgent = lazy(() => import('./pages/AiAgent/AiAgent'))
 const Crm = lazy(() => import('./pages/Crm'))
+const CrmClientProfile = lazy(() => import('./pages/Crm/ClientProfile'))
 const FieldSales = lazy(() => import('./pages/FieldSales'))
 const Forms = lazy(() => import('./pages/Forms'))
 const FormDetail = lazy(() => import('./pages/Forms/FormDetail'))
@@ -154,6 +155,7 @@ export default function App() {
 
         {/* CRM — requires can_access_crm */}
         <Route path="sales/crm" element={<Guard flag="can_access_crm"><SuspensePage><Crm /></SuspensePage></Guard>} />
+        <Route path="sales/crm/clients/:clientId" element={<Guard flag="can_access_crm"><SuspensePage><CrmClientProfile /></SuspensePage></Guard>} />
         <Route path="sales/field-sales" element={<Guard flag="can_access_field_sales"><SuspensePage><FieldSales /></SuspensePage></Guard>} />
 
         {/* Approvals — requires can_access_approvals */}

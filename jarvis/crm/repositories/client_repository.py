@@ -72,9 +72,25 @@ class ClientRepository(BaseRepository):
     def find_by_phone(self, phone):
         if not phone:
             return None
-        return self.query_one(
+        result = self.query_one(
             'SELECT * FROM crm_clients WHERE phone = %s AND merged_into_id IS NULL LIMIT 1',
             (phone,)
+        )
+        if result:
+            return result
+        # Fall back to client_phones table
+        return self.query_one(
+            '''SELECT c.* FROM crm_clients c
+               JOIN client_phones cp ON cp.client_id = c.id
+               WHERE cp.phone = %s AND c.merged_into_id IS NULL
+               LIMIT 1''',
+            (phone,)
+        )
+
+    def get_phones(self, client_id):
+        return self.query_all(
+            'SELECT * FROM client_phones WHERE client_id = %s ORDER BY is_primary DESC, id',
+            (client_id,)
         )
 
     def find_by_name_trigram(self, name_normalized, threshold=0.7):
@@ -236,7 +252,7 @@ class ClientRepository(BaseRepository):
     _EDITABLE = {
         'display_name', 'client_type', 'phone', 'email', 'street',
         'city', 'region', 'company_name', 'responsible', 'nr_reg',
-        'is_blacklisted',
+        'is_blacklisted', 'contact_person',
     }
 
     def update(self, client_id, data):
@@ -286,6 +302,14 @@ class ClientRepository(BaseRepository):
         """Merge remove_id into keep_id. Updates all FKs."""
         def _work(cursor):
             cursor.execute('UPDATE crm_deals SET client_id = %s WHERE client_id = %s', (keep_id, remove_id))
+            cursor.execute('UPDATE client_fleet SET client_id = %s WHERE client_id = %s', (keep_id, remove_id))
+            # Merge phones (skip conflicts on duplicate phone numbers)
+            cursor.execute('''
+                INSERT INTO client_phones (client_id, phone, phone_raw, label, source)
+                SELECT %s, phone, phone_raw, label, source FROM client_phones WHERE client_id = %s
+                ON CONFLICT (client_id, phone) DO NOTHING
+            ''', (keep_id, remove_id))
+            cursor.execute('DELETE FROM client_phones WHERE client_id = %s', (remove_id,))
             cursor.execute('UPDATE crm_clients SET merged_into_id = %s, updated_at = NOW() WHERE id = %s',
                            (keep_id, remove_id))
             # Merge source_flags

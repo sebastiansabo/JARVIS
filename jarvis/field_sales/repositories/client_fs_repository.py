@@ -55,6 +55,7 @@ class ClientFSRepository(BaseRepository):
             'country_detected_from', 'assigned_kam_id', 'fleet_size',
             'renewal_score', 'last_scored_at', 'cui', 'anaf_data',
             'anaf_fetched_at', 'estimated_annual_value', 'priority',
+            'enrichment_data',
         }
 
         fields = {k: v for k, v in data.items() if k in allowed}
