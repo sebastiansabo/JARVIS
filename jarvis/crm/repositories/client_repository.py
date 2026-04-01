@@ -105,6 +105,41 @@ class ClientRepository(BaseRepository):
             (name_normalized, name_normalized, threshold)
         )
 
+    def find_by_nr_reg(self, nr_reg):
+        """Find client by nr_reg (Nr. Registru Comertului)."""
+        if not nr_reg:
+            return None
+        return self.query_one(
+            '''SELECT * FROM crm_clients
+               WHERE nr_reg = %s AND merged_into_id IS NULL
+               LIMIT 1''',
+            (nr_reg,)
+        )
+
+    def find_by_fleet_vin(self, vin):
+        """Find client that owns a vehicle with this VIN (via client_fleet)."""
+        if not vin:
+            return None
+        return self.query_one(
+            '''SELECT c.* FROM crm_clients c
+               JOIN client_fleet cf ON cf.client_id = c.id
+               WHERE cf.vin = %s AND c.merged_into_id IS NULL
+               LIMIT 1''',
+            (vin,)
+        )
+
+    def find_by_fleet_plate(self, license_plate):
+        """Find client that owns a vehicle with this license plate."""
+        if not license_plate:
+            return None
+        return self.query_one(
+            '''SELECT c.* FROM crm_clients c
+               JOIN client_fleet cf ON cf.client_id = c.id
+               WHERE cf.license_plate = %s AND c.merged_into_id IS NULL
+               LIMIT 1''',
+            (license_plate,)
+        )
+
     def create(self, display_name, name_normalized, client_type='person',
                phone=None, phone_raw=None, email=None, street=None, city=None,
                region=None, company_name=None, responsible=None, source_flags=None):

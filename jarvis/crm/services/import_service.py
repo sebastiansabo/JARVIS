@@ -55,17 +55,50 @@ def _coerce_row(row, allowed_cols, date_cols, decimal_cols, int_cols=None):
 def _match_or_create_client(display_name, phone_raw=None, email=None,
                             client_type='person', responsible=None,
                             street=None, city=None, region=None,
-                            company_name=None, source_key='crm'):
-    """Find existing client by phone or name, or create new. Returns (client_id, is_new)."""
+                            company_name=None, source_key='crm',
+                            vin=None, license_plate=None, nr_reg=None):
+    """Find existing client by phone, VIN, plate, nr_reg, or name. Returns (client_id, is_new)."""
     phone, phone_raw_out = normalize_phone(phone_raw)
     name_norm = normalize_name(display_name)
 
+    # 1. Phone match (exact)
     if phone:
         existing = _client_repo.find_by_phone(phone)
         if existing:
             _client_repo.update_source_flags(existing['id'], source_key)
             return existing['id'], False
 
+    # 2. VIN match (vehicle already belongs to a known client)
+    if vin:
+        try:
+            existing = _client_repo.find_by_fleet_vin(vin)
+            if existing:
+                _client_repo.update_source_flags(existing['id'], source_key)
+                return existing['id'], False
+        except Exception:
+            pass
+
+    # 3. License plate match
+    if license_plate:
+        try:
+            existing = _client_repo.find_by_fleet_plate(license_plate)
+            if existing:
+                _client_repo.update_source_flags(existing['id'], source_key)
+                return existing['id'], False
+        except Exception:
+            pass
+
+    # 4. Nr. Reg. match (company registration number)
+    if nr_reg:
+        try:
+            existing = _client_repo.find_by_nr_reg(nr_reg)
+            if existing:
+                _client_repo.update_source_flags(existing['id'], source_key)
+                return existing['id'], False
+        except Exception:
+            pass
+
+    # 5. Name trigram match
     if name_norm:
         try:
             existing = _client_repo.find_by_name_trigram(name_norm, threshold=0.7)
@@ -139,7 +172,11 @@ def import_deals(file_path, user_id, original_filename=None):
 
                 buyer_name = data.get('buyer_name')
                 if buyer_name:
-                    cid, is_new = _match_or_create_client(display_name=buyer_name, source_key=source)
+                    cid, is_new = _match_or_create_client(
+                        display_name=buyer_name, source_key=source,
+                        vin=data.get('vin'),
+                        license_plate=data.get('registration_number'),
+                    )
                     data['client_id'] = cid
                     stats['new_clients' if is_new else 'matched_clients'] += 1
 
@@ -228,7 +265,11 @@ def import_nw(file_path, user_id, original_filename=None):
             try:
                 buyer = data.get('buyer_name')
                 if buyer:
-                    cid, is_new = _match_or_create_client(display_name=buyer, source_key='nw')
+                    cid, is_new = _match_or_create_client(
+                        display_name=buyer, source_key='nw',
+                        vin=data.get('vin'),
+                        license_plate=data.get('registration_number'),
+                    )
                     data['client_id'] = cid
                     stats['new_clients' if is_new else 'matched_clients'] += 1
                 _, is_new = _deal_repo.upsert('nw', dossier_number, row_hash, data, batch_id)
@@ -258,7 +299,11 @@ def import_gw(file_path, user_id, original_filename=None):
             try:
                 buyer = data.get('buyer_name')
                 if buyer:
-                    cid, is_new = _match_or_create_client(display_name=buyer, source_key='gw')
+                    cid, is_new = _match_or_create_client(
+                        display_name=buyer, source_key='gw',
+                        vin=data.get('vin'),
+                        license_plate=data.get('registration_number'),
+                    )
                     data['client_id'] = cid
                     stats['new_clients' if is_new else 'matched_clients'] += 1
                 _, is_new = _deal_repo.upsert('gw', dossier_number, row_hash, data, batch_id)
@@ -471,6 +516,8 @@ def import_clienti(file_path, user_id, original_filename=None):
                         region=client_data.get('region'),
                         responsible=client_data.get('salesperson'),
                         source_key='clienti',
+                        vin=vehicle_data.get('vin'),
+                        license_plate=vehicle_data.get('license_plate'),
                     )
                     client_id = cid
                     client_cache[client_key] = client_id
