@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, Building2, Pencil, Save, X, Car, MapPin, Truck, MessageSquare,
+  Building2, Pencil, Save, X, Car, MapPin, Truck, MessageSquare,
   Star, RefreshCw, Search, Loader2, Phone, Mail, Hash, Globe, User,
   Shield, Database, ChevronDown, ChevronUp, Sparkles, Lightbulb,
   AlertTriangle, TrendingUp, Target, Brain, CreditCard, BarChart3,
-  ShieldCheck,
+  ShieldCheck, ChevronRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -178,23 +178,27 @@ export default function ClientProfile() {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Header */}
+      {/* Breadcrumb Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
+        <div>
+          <nav className="flex items-center gap-1.5 text-sm mb-1">
+            <button
+              onClick={() => navigate('/app/sales/crm')}
+              className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            >
+              Clienți
+            </button>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
             <h1 className="text-xl font-bold flex items-center gap-2">
               <Building2 className="h-5 w-5 text-primary" />
               {client.display_name}
             </h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              <Badge variant={client.client_type === 'company' ? 'default' : 'secondary'}>{client.client_type}</Badge>
-              {profile?.cui && <Badge variant="outline" className="font-mono text-xs">CUI: {profile.cui}</Badge>}
-              {profile?.priority && <Badge variant="secondary">{profile.priority}</Badge>}
-              {client.is_blacklisted && <Badge variant="destructive">Blacklisted</Badge>}
-            </div>
+          </nav>
+          <div className="flex items-center gap-2 ml-[4.5rem]">
+            <Badge variant={client.client_type === 'company' ? 'default' : 'secondary'}>{client.client_type}</Badge>
+            {profile?.cui && <Badge variant="outline" className="font-mono text-xs">CUI: {profile.cui}</Badge>}
+            {profile?.priority && <Badge variant="secondary">{profile.priority}</Badge>}
+            {client.is_blacklisted && <Badge variant="destructive">Blacklisted</Badge>}
           </div>
         </div>
         <div className="flex gap-2">
