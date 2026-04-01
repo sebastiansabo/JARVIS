@@ -1,6 +1,8 @@
 """Bank Statement Parser for UniCredit PDF statements.
 
 Extracts transactions from UniCredit bank statement PDFs.
+Falls back to OCR (tesseract) for vector-path PDFs where PyPDF2 returns empty text.
+OCR text has a column-based layout that requires separate parsing logic.
 """
 import re
 import logging
@@ -12,7 +14,7 @@ import PyPDF2
 
 logger = logging.getLogger('jarvis.statements.parser')
 
-# Header extraction patterns
+# Header extraction patterns (for PyPDF2 inline text)
 COMPANY_PATTERN = re.compile(r'Titular de cont\s+(.+?)(?:\n|CUI)', re.IGNORECASE)
 CUI_PATTERN = re.compile(r'CUI/CNP\s+(\d+)')
 ACCOUNT_PATTERN = re.compile(r'Cont ales\s+(RO\d{2}\s*[A-Z]{4}\s*[\d\s]+)')
@@ -64,14 +66,42 @@ def parse_date(date_str: str) -> Optional[str]:
         return None
 
 
-def extract_text_from_pdf(pdf_bytes: bytes) -> str:
-    """Extract all text from a PDF file."""
+def extract_text_from_pdf(pdf_bytes: bytes) -> tuple[str, bool]:
+    """Extract all text from a PDF file.
+
+    Tries PyPDF2 first; falls back to OCR (pdf2image + tesseract)
+    for vector-path PDFs that contain no extractable text.
+
+    Returns:
+        (text, used_ocr) tuple
+    """
     reader = PyPDF2.PdfReader(BytesIO(pdf_bytes))
     text_parts = []
     for page in reader.pages:
         text_parts.append(page.extract_text() or '')
-    return '\n'.join(text_parts)
+    text = '\n'.join(text_parts)
 
+    # If PyPDF2 got meaningful text, use it
+    if text.strip():
+        return text, False
+
+    # Fall back to OCR for vector-path PDFs
+    logger.info('PyPDF2 returned empty text, falling back to OCR')
+    try:
+        from pdf2image import convert_from_bytes
+        import pytesseract
+
+        images = convert_from_bytes(pdf_bytes, dpi=300)
+        ocr_parts = []
+        for img in images:
+            ocr_parts.append(pytesseract.image_to_string(img, lang='eng'))
+        return '\n'.join(ocr_parts), True
+    except Exception as e:
+        logger.error(f'OCR fallback failed: {e}')
+        return '', True
+
+
+# ============== PyPDF2 (inline) parsing ==============
 
 def extract_header_info(text: str) -> dict:
     """Extract company and account information from statement header."""
@@ -272,6 +302,209 @@ def extract_transactions(text: str, header_info: dict, filename: str = None) -> 
     return transactions
 
 
+# ============== OCR (column-based) parsing ==============
+# OCR via tesseract extracts table columns separately:
+#   - Left side: dates + descriptions
+#   - Right columns: amounts, then currencies
+# Header labels and values are also on separate lines.
+
+def _extract_header_ocr(text: str) -> dict:
+    """Extract header info from OCR text where labels and values are separated."""
+    info = {
+        'company_name': None,
+        'company_cui': None,
+        'account_number': None,
+        'period_from': None,
+        'period_to': None,
+    }
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+
+    for i, line in enumerate(lines):
+        # IBAN line (RO + 4-letter bank code + digits)
+        iban_match = re.match(r'(RO\d{2}\s*[A-Z]{4}[\d\s]+)', line)
+        if iban_match and not info['account_number']:
+            iban = iban_match.group(1).split('|')[0].strip()
+            info['account_number'] = re.sub(r'\s+', '', iban)
+            # Company name is the next non-empty, non-numeric, non-address line
+            for j in range(i + 1, min(i + 5, len(lines))):
+                candidate = lines[j]
+                if (candidate and not re.match(r'^\d+$', candidate)
+                        and not candidate.startswith('STR')):
+                    info['company_name'] = candidate
+                    break
+
+        # CUI - standalone 5-10 digit line
+        if re.match(r'^\d{5,10}$', line) and not info['company_cui']:
+            info['company_cui'] = line
+
+        # Period - two dates on one line (OCR may prefix with © or O)
+        period_match = re.search(r'(\d{2}\.\d{2}\.\d{4})\s+(\d{2}\.\d{2}\.\d{4})', line)
+        if period_match and not info['period_from']:
+            info['period_from'] = parse_date(period_match.group(1))
+            info['period_to'] = parse_date(period_match.group(2))
+
+    return info
+
+
+def _extract_transactions_ocr(text: str, header_info: dict, filename: str = None) -> list[dict]:
+    """Extract transactions from OCR text with column-based layout.
+
+    OCR layout sections (in order):
+      1. Transaction descriptions (between date lines, ends at "Sold deschidere")
+      2. "Valoare Tranz." header, then standalone amounts
+      3. "Valuta" header, then standalone currencies (RON/EUR/USD)
+    Amounts and currencies match transactions by position (index).
+    """
+    lines = text.split('\n')
+    date_pattern = re.compile(r'^(\d{2}\.\d{2}\.\d{4})\s+(\d{2}\.\d{2}\.\d{4})\s*(.*)')
+    amount_pattern = re.compile(r'^-?[\d.,]+$')
+    currency_pattern = re.compile(r'^(RON|EUR|USD)$')
+
+    # --- Phase 1: Extract transaction descriptions ---
+    transactions = []
+    current_txn = None
+    desc_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        # Stop collecting transactions at summary section
+        if 'Sold deschidere' in stripped:
+            break
+
+        date_match = date_pattern.match(stripped)
+        if date_match:
+            # Save previous transaction
+            if current_txn is not None:
+                current_txn['description'] = ' '.join(desc_lines)
+                transactions.append(current_txn)
+
+            current_txn = {
+                'transaction_date': parse_date(date_match.group(1)),
+                'value_date': parse_date(date_match.group(2)),
+                'amount': None,
+                'currency': 'RON',
+                'original_amount': None,
+                'original_currency': None,
+                'exchange_rate': None,
+                'card_number': None,
+                'auth_code': None,
+            }
+            desc_lines = [date_match.group(3).strip()] if date_match.group(3).strip() else []
+        elif current_txn is not None:
+            desc_lines.append(stripped)
+
+    # Last transaction
+    if current_txn is not None:
+        current_txn['description'] = ' '.join(desc_lines)
+        transactions.append(current_txn)
+
+    # --- Phase 2: Extract amounts (standalone numbers after "Valoare Tranz.") ---
+    amounts = []
+    in_amounts = False
+    for line in lines:
+        stripped = line.strip()
+        if 'Valoare Tranz' in stripped:
+            in_amounts = True
+            continue
+        if in_amounts:
+            if stripped == 'Valuta':
+                break
+            if amount_pattern.match(stripped):
+                amounts.append(stripped)
+
+    # --- Phase 3: Extract currencies (after "Valuta") ---
+    currencies = []
+    in_currencies = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == 'Valuta':
+            in_currencies = True
+            continue
+        if in_currencies:
+            if currency_pattern.match(stripped):
+                currencies.append(stripped)
+            elif stripped:
+                break  # Non-currency line ends the section
+
+    # --- Phase 4: Pair amounts/currencies to transactions by index ---
+    for i, txn in enumerate(transactions):
+        if i < len(amounts):
+            val = amounts[i]
+            if val.startswith('-'):
+                txn['amount'] = -parse_value(val[1:])
+            else:
+                txn['amount'] = parse_value(val)
+        if i < len(currencies):
+            txn['currency'] = currencies[i]
+
+        # Check for forex info in description
+        forex_match = FOREX_PATTERN.search(txn.get('description', ''))
+        if forex_match:
+            txn['original_amount'] = parse_value(forex_match.group(1))
+            txn['original_currency'] = forex_match.group(2)
+            txn['exchange_rate'] = parse_value(forex_match.group(3))
+
+        _finalize_transaction(txn, header_info, filename)
+
+    return transactions
+
+
+def _extract_summary_ocr(text: str) -> dict:
+    """Extract balance summary from OCR text.
+
+    In OCR layout, summary labels and their amounts are in separate columns.
+    Labels: "Sold deschidere", "Credit total (N)", "Debit total (N)", "Sold inchidere"
+    Amounts: "X.XXX,XX RON" lines at the end of the text.
+    """
+    summary = {
+        'opening_balance': None,
+        'closing_balance': None,
+        'credit_count': 0,
+        'credit_total': None,
+        'debit_count': 0,
+        'debit_total': None,
+    }
+
+    lines = [l.strip() for l in text.split('\n')]
+
+    # Extract counts from summary labels
+    for line in lines:
+        credit_match = re.search(r'Credit total.*?\((\d+)\)', line)
+        if credit_match:
+            summary['credit_count'] = int(credit_match.group(1))
+        debit_match = re.search(r'Debit total.*?\((\d+)\)', line)
+        if debit_match:
+            summary['debit_count'] = int(debit_match.group(1))
+
+    # Summary amounts are the "X.XXX,XX RON" lines at the bottom of the text.
+    # Order: opening_balance, credit_total, debit_total, net_total, closing_balance
+    amount_ron_pattern = re.compile(r'^(-?[\d.,]+)\s*RON$')
+    summary_amounts = []
+    for line in reversed(lines):
+        match = amount_ron_pattern.match(line)
+        if match:
+            summary_amounts.insert(0, match.group(1))
+        elif line and summary_amounts:
+            break  # Non-amount line after collecting some = done
+
+    if len(summary_amounts) >= 5:
+        summary['opening_balance'] = parse_value(summary_amounts[0])
+        summary['credit_total'] = parse_value(summary_amounts[1])
+        summary['debit_total'] = parse_value(summary_amounts[2].lstrip('-'))
+        # summary_amounts[3] is net total (skip)
+        summary['closing_balance'] = parse_value(summary_amounts[4])
+    elif len(summary_amounts) >= 2:
+        summary['opening_balance'] = parse_value(summary_amounts[0])
+        summary['closing_balance'] = parse_value(summary_amounts[-1])
+
+    return summary
+
+
+# ============== Shared helpers ==============
+
 def _is_valid_amount(amount: float) -> bool:
     """Check if amount is within reasonable bounds for a transaction."""
     if amount is None:
@@ -327,9 +560,14 @@ def classify_transaction(description: str) -> str:
         return 'other'
 
 
+# ============== Main entry point ==============
+
 def parse_statement(pdf_bytes: bytes, filename: str = None) -> dict:
     """
     Parse a complete bank statement PDF.
+
+    Automatically detects whether to use inline parsing (PyPDF2) or
+    column-based parsing (OCR) based on text extraction results.
 
     Args:
         pdf_bytes: Raw PDF file content
@@ -354,16 +592,18 @@ def parse_statement(pdf_bytes: bytes, filename: str = None) -> dict:
         }
     """
     # Extract text
-    text = extract_text_from_pdf(pdf_bytes)
+    text, used_ocr = extract_text_from_pdf(pdf_bytes)
 
-    # Extract header info
-    header = extract_header_info(text)
-
-    # Extract transactions
-    transactions = extract_transactions(text, header, filename)
-
-    # Extract summary
-    summary = extract_summary(text)
+    if used_ocr:
+        # OCR text has column-based layout — use dedicated parsers
+        header = _extract_header_ocr(text)
+        transactions = _extract_transactions_ocr(text, header, filename)
+        summary = _extract_summary_ocr(text)
+    else:
+        # PyPDF2 text has inline layout — use original parsers
+        header = extract_header_info(text)
+        transactions = extract_transactions(text, header, filename)
+        summary = extract_summary(text)
 
     return {
         'company_name': header.get('company_name'),

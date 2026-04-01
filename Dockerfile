@@ -14,9 +14,10 @@ RUN npm run build
 # Stage 2: Python application
 FROM python:3.11-slim
 
-# Install poppler for PDF processing
+# Install poppler for PDF processing and tesseract for OCR
 RUN apt-get update && apt-get install -y \
     poppler-utils \
+    tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
