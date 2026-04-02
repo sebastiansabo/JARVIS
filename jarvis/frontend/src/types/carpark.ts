@@ -580,6 +580,102 @@ export const CATEGORY_LABELS: Record<VehicleCategory, string> = {
   TI: 'Trade-In',
 }
 
+// ── Analytics / Dashboard types ─────────────────────────────
+
+export interface InventorySummary {
+  total_vehicles: number
+  in_stock: number
+  sold_delivered: number
+  ready_for_sale: number
+  listed: number
+  reserved: number
+  in_preparation: number
+  total_stock_value: number
+  total_acquisition_value: number
+}
+
+export interface DashboardKpis {
+  avg_days_on_lot: number
+  aged_count: number
+  aged_percent: number
+  current_stock: number
+  sold_last_30d: number
+  sold_last_365d: number
+  inventory_turn_rate: number
+  stocking_efficiency: number
+  groi: number
+}
+
+export interface AgingBucket {
+  bucket: string
+  count: number
+  total_value: number
+}
+
+export interface ProfitabilityOverview {
+  vehicles_sold: number
+  total_revenue: number
+  total_acquisition: number
+  total_costs: number
+  total_gross_profit: number
+  avg_margin_percent: number
+  avg_profit_per_unit: number
+  avg_days_to_sell: number
+}
+
+export interface BrandBreakdown {
+  brand: string
+  count: number
+  total_value: number
+  avg_days: number
+}
+
+export interface MonthlySales {
+  month: string
+  sold: number
+  revenue: number
+  gross_profit: number
+}
+
+export interface PublishingStats {
+  vehicles_published: number
+  total_listings: number
+  total_views: number
+  total_inquiries: number
+  inquiry_rate: number
+}
+
+export interface CostOverviewItem {
+  cost_type: string
+  entries: number
+  vehicles: number
+  total_amount: number
+}
+
+export interface RecentActivity {
+  id: number
+  vehicle_id: number
+  old_status: string | null
+  new_status: string
+  changed_at: string
+  notes: string | null
+  brand: string
+  model: string
+  vin: string
+}
+
+export interface DashboardData {
+  summary: InventorySummary
+  kpis: DashboardKpis
+  aging_distribution: AgingBucket[]
+  profitability: ProfitabilityOverview
+  brand_breakdown: BrandBreakdown[]
+  monthly_sales: MonthlySales[]
+  publishing: PublishingStats
+  cost_overview: CostOverviewItem[]
+  recent_activity: RecentActivity[]
+}
+
 // Catalog tab order
 export const CATALOG_TABS = [
   { key: '', label: 'Toate' },

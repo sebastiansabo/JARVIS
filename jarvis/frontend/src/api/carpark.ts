@@ -25,6 +25,7 @@ import type {
   PublishingPlatform,
   VehicleListing,
   SyncLogEntry,
+  DashboardData,
 } from '../types/carpark'
 
 export const carparkApi = {
@@ -246,4 +247,8 @@ export const carparkApi = {
   // ── Sync Log ─────────────────────────────────────────
   getSyncLog: (vehicleId: number) =>
     api.get<{ log: SyncLogEntry[] }>(`/api/carpark/vehicles/${vehicleId}/sync-log`),
+
+  // ── Analytics / Dashboard ──────────────────────────────
+  getDashboard: (period = 90) =>
+    api.get<DashboardData>('/api/carpark/analytics/dashboard', { period: String(period) }),
 }
