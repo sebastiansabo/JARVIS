@@ -67,10 +67,26 @@ def api_profile_summary():
         from hr.events.database import is_manager
         is_org_responsable = is_manager(current_user.id)
 
+        # Sincron timesheet mapping status
+        sincron_info = {'mapped': False}
+        try:
+            from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+            sincron_emp = SincronRepository().get_employee_by_jarvis_id(current_user.id)
+            if sincron_emp:
+                sincron_info = {
+                    'mapped': True,
+                    'company_name': sincron_emp.get('company_name'),
+                    'nr_contract': sincron_emp.get('nr_contract'),
+                    'data_incepere_contract': str(sincron_emp['data_incepere_contract']) if sincron_emp.get('data_incepere_contract') else None,
+                }
+        except Exception:
+            pass
+
         return jsonify({
             'user': user_info,
             'invoices': invoices_summary,
             'hr_events': hr_events_summary,
+            'sincron': sincron_info,
             'notifications': {'total': 0, 'sent': 0, 'failed': 0},
             'activity': {'total_events': activity_count},
             'is_org_responsable': is_org_responsable,
@@ -646,6 +662,38 @@ def api_profile_activity():
             'total': total,
             'page': page,
             'per_page': per_page,
+        })
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@profile_bp.route('/api/sincron-timesheet')
+@login_required
+def api_profile_sincron_timesheet():
+    """Get Sincron official timesheet data for the current user."""
+    try:
+        from core.connectors.sincron.services import SincronSyncService
+        service = SincronSyncService()
+
+        year = request.args.get('year', type=int)
+        month = request.args.get('month', type=int)
+        if not year or not month:
+            from datetime import datetime
+            now = datetime.now()
+            year = year or now.year
+            month = month or now.month
+
+        data = service.get_employee_timesheet(current_user.id, year, month)
+
+        # Get employee mapping info
+        employee = service.repo.get_employee_by_jarvis_id(current_user.id)
+
+        return jsonify({
+            'success': True,
+            'mapped': employee is not None,
+            'year': year,
+            'month': month,
+            'timesheet': data,
         })
     except Exception as e:
         return safe_error_response(e)
