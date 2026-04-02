@@ -126,6 +126,21 @@ class AllocationRepository(BaseRepository):
 
                 responsible = alloc.get('responsible')
                 responsible_user_id = None
+
+                # Auto-populate responsible from org hierarchy if not provided
+                if not responsible:
+                    try:
+                        from core.organization.repositories.structure_node_repository import StructureNodeRepository
+                        _node_repo = StructureNodeRepository()
+                        responsible = _node_repo.find_responsable_by_path(
+                            alloc['company'],
+                            brand=alloc.get('brand'),
+                            department=alloc.get('department'),
+                            subdepartment=alloc.get('subdepartment'),
+                        )
+                    except Exception:
+                        pass
+
                 if responsible:
                     cursor.execute('SELECT id FROM users WHERE LOWER(name) = LOWER(%s) LIMIT 1', (responsible,))
                     user_row = cursor.fetchone()

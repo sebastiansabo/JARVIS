@@ -1287,6 +1287,7 @@ const InvoiceRow = memo(function InvoiceRow({
                         {hasBrand && <th className="py-1 pr-4 text-left font-medium">Brand</th>}
                         <th className="py-1 pr-4 text-left font-medium">Department</th>
                         {hasSubdept && <th className="py-1 pr-4 text-left font-medium">Sub-dept</th>}
+                        <th className="py-1 pr-4 text-left font-medium">Responsible</th>
                         <th className="py-1 pr-4 text-right font-medium">Amount</th>
                         <th className="py-1 pr-4 text-right font-medium w-14">%</th>
                         {hasComment && <th className="py-1 text-left font-medium">Comment</th>}
@@ -1306,6 +1307,7 @@ const InvoiceRow = memo(function InvoiceRow({
                             {hasBrand && <td className="py-1 pr-4">{alloc.brand || '-'}</td>}
                             <td className="py-1 pr-4">{alloc.department}</td>
                             {hasSubdept && <td className="py-1 pr-4">{alloc.subdepartment || '-'}</td>}
+                            <td className="py-1 pr-4 text-muted-foreground">{alloc.responsible || '-'}</td>
                             <td className={cn('py-1 pr-4 text-right tabular-nums', hasReinvoice && 'opacity-40')}>
                               <CurrencyDisplay value={alloc.allocation_value} currency={inv.currency} />
                             </td>
@@ -1340,6 +1342,7 @@ const InvoiceRow = memo(function InvoiceRow({
                               {hasBrand && <td className="py-0.5 pr-4 text-foreground">{rd.brand || '-'}</td>}
                               <td className="py-0.5 pr-4 text-foreground">{rd.department}</td>
                               {hasSubdept && <td className="py-0.5 pr-4 text-foreground">{rd.subdepartment || '-'}</td>}
+                              <td className="py-0.5 pr-4 text-muted-foreground italic">reinvoiced</td>
                               <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">
                                 <CurrencyDisplay value={rd.value} currency={inv.currency} />
                               </td>
