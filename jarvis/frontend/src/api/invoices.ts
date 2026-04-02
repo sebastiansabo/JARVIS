@@ -112,6 +112,14 @@ export const invoicesApi = {
       `/api/invoices/dms-search${q ? `?q=${encodeURIComponent(q)}&limit=${limit}` : `?limit=${limit}`}`,
     ),
 
+  uploadAndLinkDms: (invoiceId: number, files: File[]) => {
+    const form = new FormData()
+    files.forEach(f => form.append('files', f))
+    return api.post<{ success: boolean; documents: Array<{ document_id: number; title: string; file: string }>; errors: Array<{ file: string; error: string }> }>(
+      `/api/invoices/${invoiceId}/upload-and-link`, form,
+    )
+  },
+
   // ---- Store to DMS ----
   storeToDms: (invoiceIds: number[]) =>
     api.post<StoreToDmsResult>('/api/invoices/store-to-dms', { invoice_ids: invoiceIds }),

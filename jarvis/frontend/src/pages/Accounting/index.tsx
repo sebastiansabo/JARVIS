@@ -1366,6 +1366,7 @@ const InvoiceRow = memo(function InvoiceRow({
                     unlinkDoc: invoicesApi.unlinkDmsDocument,
                     searchDocs: invoicesApi.searchDmsDocuments,
                     linkDoc: invoicesApi.linkDmsDocument,
+                    uploadAndLink: invoicesApi.uploadAndLinkDms,
                   }} />
                 </>
               )}

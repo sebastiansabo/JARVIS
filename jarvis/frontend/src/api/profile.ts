@@ -52,6 +52,14 @@ export const profileApi = {
       `/profile/api/invoices/dms-search${q ? `?q=${encodeURIComponent(q)}&limit=${limit}` : `?limit=${limit}`}`,
     ),
 
+  uploadAndLinkDms: (invoiceId: number, files: File[]) => {
+    const form = new FormData()
+    files.forEach(f => form.append('files', f))
+    return api.post<{ success: boolean; documents: Array<{ document_id: number; title: string; file: string }>; errors: Array<{ file: string; error: string }> }>(
+      `/api/invoices/${invoiceId}/upload-and-link`, form,
+    )
+  },
+
   getHrEvents: (params?: { year?: number; month?: number; search?: string; page?: number; per_page?: number }) => {
     const sp = new URLSearchParams()
     if (params?.year) sp.set('year', String(params.year))

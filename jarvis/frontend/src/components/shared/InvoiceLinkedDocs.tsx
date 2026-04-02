@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { FileText, Link2, Paperclip, Search, X } from 'lucide-react'
+import { FileText, Link2, Paperclip, Search, X, Upload, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -15,6 +15,7 @@ export interface DmsApiCallbacks {
   unlinkDoc: (invoiceId: number, docId: number) => Promise<{ success: boolean }>
   searchDocs: (q?: string, limit?: number) => Promise<{ documents: DmsDocSearchResult[] }>
   linkDoc: (invoiceId: number, documentId: number) => Promise<{ success: boolean; id: number }>
+  uploadAndLink?: (invoiceId: number, files: File[]) => Promise<{ success: boolean; documents: Array<{ document_id: number; title: string; file: string }>; errors: Array<{ file: string; error: string }> }>
 }
 
 const DMS_STATUS_COLORS: Record<string, string> = {
@@ -22,6 +23,9 @@ const DMS_STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
   archived: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
 }
+
+const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'xlsx', 'jpg', 'jpeg', 'png', 'tiff', 'tif', 'gif']
+const MAX_FILE_SIZE = 25 * 1024 * 1024
 
 export function InvoiceLinkedDocs({ invoiceId, isBin, canEdit, api }: {
   invoiceId: number
@@ -125,6 +129,8 @@ function InvoiceLinkDocumentDialog({
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
 
   const { data } = useQuery({
     queryKey: ['invoice-dms-search', debouncedSearch],
@@ -143,11 +149,96 @@ function InvoiceLinkDocumentDialog({
     onError: () => toast.error('Failed to link document'),
   })
 
+  const uploadMut = useMutation({
+    mutationFn: (files: File[]) => {
+      if (!api.uploadAndLink) throw new Error('Upload not supported')
+      return api.uploadAndLink(invoiceId, files)
+    },
+    onSuccess: (res) => {
+      const count = res.documents?.length ?? 0
+      if (count > 0) toast.success(`${count} file${count > 1 ? 's' : ''} uploaded & linked to DMS`)
+      if (res.errors?.length) toast.error(`${res.errors.length} file${res.errors.length > 1 ? 's' : ''} failed`)
+      queryClient.invalidateQueries({ queryKey: ['invoice-dms-docs', invoiceId] })
+      queryClient.invalidateQueries({ queryKey: ['invoice-dms-search'] })
+      queryClient.invalidateQueries({ queryKey: ['dms-documents'] })
+    },
+    onError: (err: Error) => toast.error(`Upload failed: ${err.message}`),
+  })
+
+  const validateAndUpload = useCallback((fileList: FileList | File[]) => {
+    const files = Array.from(fileList)
+    const valid: File[] = []
+    for (const f of files) {
+      const ext = f.name.split('.').pop()?.toLowerCase() || ''
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        toast.error(`${f.name}: unsupported file type`)
+        continue
+      }
+      if (f.size > MAX_FILE_SIZE) {
+        toast.error(`${f.name}: exceeds 25MB limit`)
+        continue
+      }
+      valid.push(f)
+    }
+    if (valid.length > 0) uploadMut.mutate(valid)
+  }, [uploadMut])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    if (e.dataTransfer.files.length > 0) validateAndUpload(e.dataTransfer.files)
+  }, [validateAndUpload])
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[1080px]" aria-describedby={undefined}>
         <DialogHeader><DialogTitle>Link DMS Document</DialogTitle></DialogHeader>
         <div className="space-y-3">
+          {/* Quick Upload Zone */}
+          {api.uploadAndLink && (
+            <div
+              className={cn(
+                'border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer',
+                isDragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50',
+                uploadMut.isPending && 'opacity-60 pointer-events-none',
+              )}
+              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept={ALLOWED_EXTENSIONS.map(e => `.${e}`).join(',')}
+                className="hidden"
+                onChange={(e) => { if (e.target.files?.length) validateAndUpload(e.target.files); e.target.value = '' }}
+              />
+              {uploadMut.isPending ? (
+                <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Uploading & linking to DMS...
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                  <Upload className="h-4 w-4" />
+                  Drop files here or click to upload — creates DMS document & links to invoice
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Divider */}
+          {api.uploadAndLink && (
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="flex-1 border-t" />
+              or link existing document
+              <div className="flex-1 border-t" />
+            </div>
+          )}
+
+          {/* Search existing documents */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -155,11 +246,11 @@ function InvoiceLinkDocumentDialog({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
-              autoFocus
+              autoFocus={!api.uploadAndLink}
             />
           </div>
 
-          <div className="max-h-[500px] overflow-y-auto space-y-1">
+          <div className="max-h-[400px] overflow-y-auto space-y-1">
             {results.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No documents found</p>
             ) : results.map((doc) => {
