@@ -17,6 +17,7 @@ from .domains.schema_crm import create_schema_crm
 from .domains.schema_field_sales import create_schema_field_sales
 from .domains.schema_forms import create_schema_forms
 from .domains.schema_digest import create_schema_digest
+from .domains.schema_carpark import create_schema_carpark
 from .version_manager import run_pending_migrations
 
 
@@ -41,5 +42,6 @@ def create_schema(conn, cursor):
     create_schema_field_sales(conn, cursor)
     create_schema_forms(conn, cursor)
     create_schema_digest(conn, cursor)
+    create_schema_carpark(conn, cursor)
     run_pending_migrations(conn, cursor)
     conn.commit()

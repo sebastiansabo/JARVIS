@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, LifeBuoy, ClipboardList, Newspaper } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, LifeBuoy, ClipboardList, Newspaper, Car } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -84,6 +84,7 @@ const navItemsDef: NavItem[] = [
       { path: '/app/sales/field-sales', label: 'Field Sales', icon: MapPin, moduleKey: 'field_sales' },
     ],
   },
+  { path: '/app/carpark', label: 'CarPark', icon: Car, moduleKey: 'carpark', permission: 'can_access_carpark' },
   { path: '/app/settings', label: 'Settings', icon: Settings, moduleKey: 'settings', permission: 'can_access_settings' },
 ]
 

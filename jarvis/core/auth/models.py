@@ -59,6 +59,12 @@ class User(UserMixin):
         self.can_view_adjusted_punches = user_data.get('can_view_adjusted_punches', False)
         self.can_adjust_punches = user_data.get('can_adjust_punches', False)
 
+        # CarPark permissions
+        self.can_access_carpark = user_data.get('can_access_carpark', False)
+        self.can_edit_carpark = user_data.get('can_edit_carpark', False)
+        self.can_delete_carpark = user_data.get('can_delete_carpark', False)
+        self.can_access_carpark_mobile = user_data.get('can_access_carpark_mobile', False)
+
         # Permission mapping for has_permission method
         self._permission_map = {
             'system.settings': self.can_access_settings,
@@ -78,6 +84,9 @@ class User(UserMixin):
             'crm.edit': self.can_edit_crm,
             'crm.delete': self.can_delete_crm,
             'crm.export': self.can_export_crm,
+            'carpark.access': self.can_access_carpark,
+            'carpark.edit': self.can_edit_carpark,
+            'carpark.delete': self.can_delete_carpark,
         }
 
     @property
