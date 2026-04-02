@@ -75,7 +75,7 @@ type Tab = 'invoices' | 'hr-events' | 'pontaje' | 'team-pontaje' | 'activity'
 
 const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'invoices', label: 'My Invoices', icon: FileText },
-  { key: 'hr-events', label: 'HR Events', icon: Gift },
+  { key: 'hr-events', label: 'Bonuses', icon: Gift },
   { key: 'pontaje', label: 'Pontaje', icon: Fingerprint },
   { key: 'team-pontaje', label: 'Team Pontaje', icon: Users },
   { key: 'activity', label: 'Activity Log', icon: Activity },
@@ -2092,7 +2092,7 @@ function HrEventsPanel() {
       <CardHeader>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base">
-            HR Event Bonuses
+            Bonuses
             <span className="ml-2 text-sm font-normal text-muted-foreground">({total})</span>
           </CardTitle>
           <SearchInput
@@ -2111,7 +2111,7 @@ function HrEventsPanel() {
             ))}
           </div>
         ) : bonuses.length === 0 ? (
-          <EmptyState title="No HR events" description="No event bonuses assigned to you." />
+          <EmptyState title="No bonuses" description="No bonuses assigned to you." />
         ) : (
           <>
             {isMobile ? (
