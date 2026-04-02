@@ -233,6 +233,27 @@ class PricingService:
     # SIMULATE (dry-run)
     # ═══════════════════════════════════════════════
 
+    def _calculate_floor_price_from_data(self, vehicle: Dict[str, Any],
+                                         cost_totals: Dict[str, Any]) -> float:
+        """Calculate floor price using pre-fetched vehicle + cost data (no DB calls)."""
+        minimum_price = float(vehicle.get('minimum_price') or 0)
+        acquisition_price = float(vehicle.get('acquisition_price') or 0)
+        total_cost = acquisition_price + float(cost_totals.get('total_with_vat', 0))
+        cost_plus_margin = total_cost * (1 + MIN_MARGIN_PERCENT / 100)
+        purchase_net = float(vehicle.get('purchase_price_net') or 0)
+        return max(minimum_price, cost_plus_margin, purchase_net)
+
+    def _batch_floor_prices(self, vehicles: List[Dict[str, Any]]) -> Dict[int, float]:
+        """Compute floor prices for a batch of vehicles in 1 query instead of 2N."""
+        if not vehicles:
+            return {}
+        vids = [v['id'] for v in vehicles]
+        cost_map = self._cost_repo.get_totals_batch(vids)
+        return {
+            v['id']: self._calculate_floor_price_from_data(v, cost_map.get(v['id'], {}))
+            for v in vehicles
+        }
+
     def simulate_rules(self, vehicle_id: int = None,
                        rule_id: int = None,
                        company_id: int = None) -> List[Dict[str, Any]]:
@@ -266,13 +287,14 @@ class PricingService:
                 return []
             # Get vehicles that match the rule's conditions
             vehicles = self._get_eligible_vehicles(rule, company_id)
+            # Batch floor price calculation — 1 query instead of 2N
+            floor_map = self._batch_floor_prices(vehicles)
             for v in vehicles:
                 vid = v['id']
-                floor_data = self.calculate_floor_price(vid)
                 current_price = float(v.get('current_price') or v.get('list_price') or 0)
                 if current_price <= 0:
                     continue
-                result = self._apply_rule_action(current_price, rule, floor_data['floor_price'])
+                result = self._apply_rule_action(current_price, rule, floor_map.get(vid, 0))
                 result['rule_id'] = rule['id']
                 result['rule_name'] = rule['name']
                 result['vehicle_id'] = vid
@@ -325,6 +347,8 @@ class PricingService:
             raise ValueError('Rule is not active')
 
         vehicles = self._get_eligible_vehicles(rule, company_id)
+        # Batch floor price calculation — 1 query instead of 2N
+        floor_map = self._batch_floor_prices(vehicles)
         applied = []
         skipped = []
         alerts = []
@@ -336,8 +360,7 @@ class PricingService:
                 skipped.append({'vehicle_id': vid, 'reason': 'no_price'})
                 continue
 
-            floor_data = self.calculate_floor_price(vid)
-            result = self._apply_rule_action(current_price, rule, floor_data['floor_price'])
+            result = self._apply_rule_action(current_price, rule, floor_map.get(vid, 0))
 
             if result['action'] == 'alert_only':
                 alerts.append({

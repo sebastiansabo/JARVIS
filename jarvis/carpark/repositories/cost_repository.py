@@ -99,3 +99,35 @@ class CostRepository(BaseRepository):
             'total_vat': grand_vat,
             'total_with_vat': grand_total + grand_vat,
         }
+
+    def get_totals_batch(self, vehicle_ids: List[int]) -> Dict[int, Dict[str, Any]]:
+        """Get cost totals for multiple vehicles in a single query.
+
+        Returns dict keyed by vehicle_id → {total_amount, total_vat, total_with_vat}.
+        """
+        if not vehicle_ids:
+            return {}
+        placeholders = ','.join(['%s'] * len(vehicle_ids))
+        rows = self.query_all(f'''
+            SELECT vehicle_id,
+                   COALESCE(SUM(amount), 0) AS total_amount,
+                   COALESCE(SUM(vat_amount), 0) AS total_vat
+            FROM carpark_vehicle_costs
+            WHERE vehicle_id IN ({placeholders})
+            GROUP BY vehicle_id
+        ''', tuple(vehicle_ids))
+        result: Dict[int, Dict[str, Any]] = {}
+        for r in rows:
+            vid = r['vehicle_id']
+            amt = float(r['total_amount'] or 0)
+            vat = float(r['total_vat'] or 0)
+            result[vid] = {
+                'total_amount': amt,
+                'total_vat': vat,
+                'total_with_vat': amt + vat,
+            }
+        # Fill missing vehicles with zeros
+        for vid in vehicle_ids:
+            if vid not in result:
+                result[vid] = {'total_amount': 0, 'total_vat': 0, 'total_with_vat': 0}
+        return result

@@ -51,6 +51,8 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { efacturaApi } from '@/api/efactura'
 import { biostarApi } from '@/api/biostar'
+import { sincronApi } from '@/api/sincron'
+import type { SincronSyncRun, SincronEmployee } from '@/api/sincron'
 import type { BioStarSyncRun } from '@/types/biostar'
 import type { CompanyConnection } from '@/types/efactura'
 import { FetchMessagesDialog } from './FetchMessagesDialog'
@@ -1144,6 +1146,405 @@ function BusinessDataSection() {
 }
 
 // ════════════════════════════════════════════════
+// Sincron HR Section
+// ════════════════════════════════════════════════
+
+const SINCRON_COMPANIES = [
+  'AUTOWORLD S.R.L.',
+  'AUTOWORLD INSURANCE S.R.L.',
+  'AUTOWORLD INTERNATIONAL S.R.L.',
+  'AUTOWORLD NEXT S.R.L.',
+  'AUTOWORLD ONE S.R.L.',
+  'AUTOWORLD PLUS S.R.L.',
+  'AUTOWORLD PREMIUM S.R.L.',
+  'AUTOWORLD PRESTIGE S.R.L.',
+]
+
+function SincronSection() {
+  const qc = useQueryClient()
+  const [showForm, setShowForm] = useState(false)
+  const [tokens, setTokens] = useState<Record<string, string>>({})
+  const [showTokens, setShowTokens] = useState<Record<string, boolean>>({})
+  const [syncYear, setSyncYear] = useState(new Date().getFullYear())
+  const [syncMonth, setSyncMonth] = useState(new Date().getMonth() + 1)
+
+  const { data: status } = useQuery({
+    queryKey: ['sincron', 'status'],
+    queryFn: sincronApi.getStatus,
+    refetchInterval: 30_000,
+  })
+
+  const { data: config } = useQuery({
+    queryKey: ['sincron', 'config'],
+    queryFn: sincronApi.getConfig,
+  })
+
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const nonEmpty = Object.fromEntries(
+        Object.entries(tokens).filter(([, v]) => v.trim()),
+      )
+      return sincronApi.saveConfig(nonEmpty)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sincron'] })
+      setShowForm(false)
+      toast.success('Sincron configuration saved')
+    },
+    onError: () => toast.error('Failed to save configuration'),
+  })
+
+  const testMut = useMutation({
+    mutationFn: () => sincronApi.testConnection(),
+    onSuccess: (res) => {
+      const total = Object.keys(res.companies || {}).length
+      const ok = Object.values(res.companies || {}).filter(c => c.success).length
+      if (res.success) toast.success(`All ${total} companies connected`)
+      else toast.warning(`${ok}/${total} companies connected`)
+    },
+    onError: () => toast.error('Connection test failed'),
+  })
+
+  const syncMut = useMutation({
+    mutationFn: () => sincronApi.syncTimesheetsNow({ year: syncYear, month: syncMonth }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['sincron'] })
+      if (res.success) {
+        toast.success(`Synced ${res.total_employees} employees, ${res.total_records} records`)
+      } else {
+        toast.error('Sync had errors')
+      }
+    },
+    onError: () => toast.error('Sync failed'),
+  })
+
+  const autoMapMut = useMutation({
+    mutationFn: () => sincronApi.autoMap(),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['sincron'] })
+      if (res.total_mapped > 0) {
+        toast.success(`Mapped ${res.total_mapped} employees (${res.cnp_mapped} by CNP, ${res.name_mapped} by name)`)
+      } else {
+        toast.info('No new employees to map')
+      }
+    },
+    onError: () => toast.error('Auto-map failed'),
+  })
+
+  const handleEditClick = () => {
+    // Pre-fill with empty tokens for all companies
+    const t: Record<string, string> = {}
+    SINCRON_COMPANIES.forEach(c => { t[c] = '' })
+    setTokens(t)
+    setShowForm(true)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold">Sincron HR (Timesheets)</h3>
+        {status && (
+          <StatusBadge status={status.connected ? 'active' : 'inactive'} />
+        )}
+      </div>
+
+      {status?.connected && !showForm ? (
+        <div className="rounded-lg border p-4 space-y-4">
+          <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+            <div>
+              <span className="text-muted-foreground">Companies:</span>
+              <p className="font-medium">{status.companies_configured}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Employees:</span>
+              <p className="font-medium">{status.employee_count.total} active</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Mapped:</span>
+              <p className="font-medium">{status.employee_count.mapped} / {status.employee_count.total}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Last Sync:</span>
+              <p className="font-medium text-xs">
+                {status.last_sync
+                  ? new Date(status.last_sync).toLocaleString('ro-RO', { timeZone: 'Europe/Bucharest' })
+                  : 'Never'}
+              </p>
+            </div>
+          </div>
+
+          {/* Sync controls */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex items-center justify-between rounded border p-3">
+              <div>
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <Users className="h-3.5 w-3.5" /> Employee Mapping
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {status.employee_count.unmapped} unmapped
+                </p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => autoMapMut.mutate()} disabled={autoMapMut.isPending}>
+                {autoMapMut.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                Auto-Map
+              </Button>
+            </div>
+            <div className="rounded border p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5 text-sm font-medium">
+                    <Clock className="h-3.5 w-3.5" /> Timesheet Sync
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={String(syncMonth)} onValueChange={(v) => setSyncMonth(Number(v))}>
+                  <SelectTrigger className="h-8 w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <SelectItem key={i + 1} value={String(i + 1)}>
+                        {new Date(2024, i).toLocaleString('ro-RO', { month: 'short' })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  className="h-8 w-20"
+                  value={syncYear}
+                  onChange={(e) => setSyncYear(Number(e.target.value))}
+                  min={2000}
+                  max={2100}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => syncMut.mutate()}
+                  disabled={syncMut.isPending}
+                >
+                  {syncMut.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                  Sync
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={handleEditClick}>Edit Tokens</Button>
+            <Button size="sm" variant="outline" onClick={() => testMut.mutate()} disabled={testMut.isPending}>
+              {testMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Plug className="mr-1.5 h-4 w-4" />}
+              Test All
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border p-4 space-y-4">
+          {!config && !showForm ? (
+            <EmptyState
+              icon={<PlugZap className="h-10 w-10" />}
+              title="Not configured"
+              description="Set up Sincron HR API tokens to sync official timesheets."
+              action={<Button onClick={handleEditClick}>Configure</Button>}
+            />
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Enter Bearer tokens for each company. Leave blank to skip a company.
+              </p>
+              <div className="grid gap-3">
+                {SINCRON_COMPANIES.map((company) => (
+                  <div key={company} className="grid gap-1">
+                    <Label className="text-xs">{company}</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type={showTokens[company] ? 'text' : 'password'}
+                        placeholder={config?.companies_configured?.[company] ? '••••••• (configured)' : 'Bearer token'}
+                        value={tokens[company] || ''}
+                        onChange={(e) => setTokens({ ...tokens, [company]: e.target.value })}
+                        className="h-8 text-xs font-mono"
+                      />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0"
+                        onClick={() => setShowTokens({ ...showTokens, [company]: !showTokens[company] })}
+                      >
+                        {showTokens[company] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !Object.values(tokens).some(v => v.trim())}>
+                  {saveMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+                  Save
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => testMut.mutate()} disabled={testMut.isPending}>
+                  {testMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Plug className="mr-1.5 h-4 w-4" />}
+                  Test
+                </Button>
+                {showForm && <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      <SincronSyncHistory />
+      <SincronEmployeeMapping />
+    </div>
+  )
+}
+
+function SincronSyncHistory() {
+  const { data: status } = useQuery({ queryKey: ['sincron', 'status'], queryFn: sincronApi.getStatus })
+  const { data: runs = [] } = useQuery({
+    queryKey: ['sincron', 'syncHistory'],
+    queryFn: () => sincronApi.getSyncHistory({ limit: 10 }),
+    enabled: !!status?.connected,
+    refetchInterval: (query): number => {
+      const data = query.state.data as SincronSyncRun[] | undefined
+      return data?.some((r: SincronSyncRun) => !r.finished_at) ? 3_000 : 30_000
+    },
+  })
+
+  if (!status?.connected || runs.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      <h4 className="text-sm font-medium flex items-center gap-1.5">
+        <History className="h-3.5 w-3.5" /> Recent Syncs
+      </h4>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-32">Date</TableHead>
+            <TableHead>Company</TableHead>
+            <TableHead>Period</TableHead>
+            <TableHead className="text-right">Employees</TableHead>
+            <TableHead className="text-right">Records</TableHead>
+            <TableHead>Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {runs.map((run: SincronSyncRun) => (
+            <TableRow key={run.run_id}>
+              <TableCell className="text-xs">
+                {new Date(run.started_at).toLocaleString('ro-RO', { timeZone: 'Europe/Bucharest', dateStyle: 'short', timeStyle: 'short' })}
+              </TableCell>
+              <TableCell className="text-xs">{run.company_name || 'All'}</TableCell>
+              <TableCell className="text-xs">{run.month}/{run.year}</TableCell>
+              <TableCell className="text-right text-xs">{run.employees_synced}</TableCell>
+              <TableCell className="text-right text-xs">{run.records_created}</TableCell>
+              <TableCell>
+                {run.status === 'completed' ? (
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                ) : run.status === 'failed' ? (
+                  <XCircle className="h-4 w-4 text-red-500" />
+                ) : (
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function SincronEmployeeMapping() {
+  const qc = useQueryClient()
+  const { data: status } = useQuery({ queryKey: ['sincron', 'status'], queryFn: sincronApi.getStatus })
+  const [showMapping, setShowMapping] = useState(false)
+
+  const { data: unmapped = [] } = useQuery({
+    queryKey: ['sincron', 'unmapped'],
+    queryFn: sincronApi.getUnmapped,
+    enabled: !!status?.connected && showMapping,
+  })
+
+  const { data: jarvisUsers = [] } = useQuery({
+    queryKey: ['sincron', 'jarvisUsers'],
+    queryFn: sincronApi.getJarvisUsers,
+    enabled: !!status?.connected && showMapping,
+  })
+
+  const mapMut = useMutation({
+    mutationFn: (params: { sincronId: string; company: string; jarvisId: number }) =>
+      sincronApi.updateMapping(params.sincronId, params.company, params.jarvisId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sincron'] })
+      toast.success('Employee mapped')
+    },
+    onError: () => toast.error('Mapping failed'),
+  })
+
+  if (!status?.connected || status.employee_count.unmapped === 0) return null
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-medium flex items-center gap-1.5">
+          <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />
+          {status.employee_count.unmapped} Unmapped Employees
+        </h4>
+        <Button size="sm" variant="ghost" onClick={() => setShowMapping(!showMapping)}>
+          {showMapping ? 'Hide' : 'Show'}
+        </Button>
+      </div>
+
+      {showMapping && unmapped.length > 0 && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Company</TableHead>
+              <TableHead>Contract</TableHead>
+              <TableHead className="w-48">Map to JARVIS User</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {unmapped.map((emp: SincronEmployee) => (
+              <TableRow key={`${emp.sincron_employee_id}-${emp.company_name}`}>
+                <TableCell className="text-sm font-medium">{emp.nume} {emp.prenume}</TableCell>
+                <TableCell className="text-xs">{emp.company_name}</TableCell>
+                <TableCell className="text-xs">{emp.nr_contract}</TableCell>
+                <TableCell>
+                  <Select
+                    onValueChange={(val) => {
+                      mapMut.mutate({
+                        sincronId: emp.sincron_employee_id,
+                        company: emp.company_name,
+                        jarvisId: Number(val),
+                      })
+                    }}
+                  >
+                    <SelectTrigger className="h-7 text-xs">
+                      <SelectValue placeholder="Select user..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {jarvisUsers.map((u) => (
+                        <SelectItem key={u.id} value={String(u.id)}>
+                          {u.name} ({u.email})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════
 // Main Export
 // ════════════════════════════════════════════════
 
@@ -1153,6 +1554,8 @@ export default function ConnectorsTab() {
       <EFacturaSection />
       <hr className="border-border" />
       <BioStarConnectionSection />
+      <hr className="border-border" />
+      <SincronSection />
       <hr className="border-border" />
       <PushNotificationSection />
       <hr className="border-border" />

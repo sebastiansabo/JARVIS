@@ -4,6 +4,7 @@ from flask import request, jsonify
 from flask_login import login_required, current_user
 
 from carpark import carpark_bp
+from carpark.routes.vehicles import carpark_required
 from carpark.services.analytics_service import AnalyticsService
 
 logger = logging.getLogger('jarvis.carpark.analytics')
@@ -15,24 +16,11 @@ def _user_company_id():
     return getattr(current_user, 'company_id', None)
 
 
-def _require_carpark(f):
-    from functools import wraps
-
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not current_user.is_authenticated:
-            return jsonify({'success': False, 'error': 'Authentication required'}), 401
-        if not getattr(current_user, 'can_access_carpark', False):
-            return jsonify({'success': False, 'error': 'CarPark access denied'}), 403
-        return f(*args, **kwargs)
-    return decorated
-
-
 # ── Full dashboard ─────────────────────────────────────────
 
 @carpark_bp.route('/analytics/dashboard', methods=['GET'])
 @login_required
-@_require_carpark
+@carpark_required
 def analytics_dashboard():
     """Full dashboard payload — single endpoint for the frontend."""
     cid = _user_company_id()
@@ -51,7 +39,7 @@ def analytics_dashboard():
 
 @carpark_bp.route('/analytics/summary', methods=['GET'])
 @login_required
-@_require_carpark
+@carpark_required
 def analytics_summary():
     """Lightweight inventory summary."""
     cid = _user_company_id()
@@ -62,7 +50,7 @@ def analytics_summary():
 
 @carpark_bp.route('/analytics/kpis', methods=['GET'])
 @login_required
-@_require_carpark
+@carpark_required
 def analytics_kpis():
     """KPI metrics only."""
     cid = _user_company_id()
@@ -73,7 +61,7 @@ def analytics_kpis():
 
 @carpark_bp.route('/analytics/status-breakdown', methods=['GET'])
 @login_required
-@_require_carpark
+@carpark_required
 def analytics_status_breakdown():
     cid = _user_company_id()
     if not cid:
@@ -83,7 +71,7 @@ def analytics_status_breakdown():
 
 @carpark_bp.route('/analytics/category-breakdown', methods=['GET'])
 @login_required
-@_require_carpark
+@carpark_required
 def analytics_category_breakdown():
     cid = _user_company_id()
     if not cid:
@@ -93,7 +81,7 @@ def analytics_category_breakdown():
 
 @carpark_bp.route('/analytics/aging', methods=['GET'])
 @login_required
-@_require_carpark
+@carpark_required
 def analytics_aging():
     cid = _user_company_id()
     if not cid:
@@ -103,7 +91,7 @@ def analytics_aging():
 
 @carpark_bp.route('/analytics/brands', methods=['GET'])
 @login_required
-@_require_carpark
+@carpark_required
 def analytics_brands():
     cid = _user_company_id()
     if not cid:
@@ -113,7 +101,7 @@ def analytics_brands():
 
 @carpark_bp.route('/analytics/monthly-sales', methods=['GET'])
 @login_required
-@_require_carpark
+@carpark_required
 def analytics_monthly_sales():
     cid = _user_company_id()
     if not cid:
@@ -128,7 +116,7 @@ def analytics_monthly_sales():
 
 @carpark_bp.route('/analytics/costs', methods=['GET'])
 @login_required
-@_require_carpark
+@carpark_required
 def analytics_costs():
     cid = _user_company_id()
     if not cid:
@@ -138,7 +126,7 @@ def analytics_costs():
 
 @carpark_bp.route('/analytics/activity', methods=['GET'])
 @login_required
-@_require_carpark
+@carpark_required
 def analytics_activity():
     cid = _user_company_id()
     if not cid:
