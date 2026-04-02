@@ -33,6 +33,8 @@ import {
   EyeOff,
   CheckCircle2,
   MapPin,
+  SlidersHorizontal,
+  ChevronUp,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -52,6 +54,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { SearchInput } from '@/components/shared/SearchInput'
+import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { profileApi, type ProfileUpdatePayload } from '@/api/profile'
@@ -82,6 +85,7 @@ export default function Profile() {
   const isMobile = useIsMobile()
   const [activeTab, setActiveTab] = useTabParam<Tab>('invoices')
   const [showStats, setShowStats] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
 
@@ -147,6 +151,9 @@ export default function Profile() {
                   </div>
                 </div>
                 <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setDetailsOpen(d => !d)} title={detailsOpen ? 'Hide details' : 'Show details'}>
+                    {detailsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  </Button>
                   <Button variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
                     <Key className="h-3.5 w-3.5 mr-1.5" />
                     Password
@@ -158,17 +165,19 @@ export default function Profile() {
                 </div>
               </div>
 
-              {/* Info grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm border-t pt-4">
-                <InfoField icon={Mail} label="Email" value={user?.email} />
-                <InfoField icon={Phone} label="Phone" value={user?.phone} />
-                <InfoField icon={Building2} label="Department" value={(() => { const depts = orgPaths.map(o => o.department).filter(Boolean); return depts.length > 0 ? depts : user?.department; })()} />
-                <InfoField icon={Shield} label="Company" value={(() => { const comps = [...new Set(orgPaths.map(o => o.company).filter(Boolean))]; return comps.length > 0 ? comps : user?.company; })()} />
-                <InfoField icon={Hash} label="CNP" value={user?.cnp} />
-                <InfoField icon={Calendar} label="Birthdate" value={user?.birthdate ? new Date(user.birthdate).toLocaleDateString('ro-RO') : null} />
-                <InfoField icon={Briefcase} label="Position" value={user?.position} />
-                <InfoField icon={Calendar} label="Contract Start" value={user?.contract_work_date ? new Date(user.contract_work_date).toLocaleDateString('ro-RO') : null} />
-              </div>
+              {/* Info grid — collapsed by default */}
+              {detailsOpen && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm border-t pt-4">
+                  <InfoField icon={Mail} label="Email" value={user?.email} />
+                  <InfoField icon={Phone} label="Phone" value={user?.phone} />
+                  <InfoField icon={Building2} label="Department" value={(() => { const depts = orgPaths.map(o => o.department).filter(Boolean); return depts.length > 0 ? depts : user?.department; })()} />
+                  <InfoField icon={Shield} label="Company" value={(() => { const comps = [...new Set(orgPaths.map(o => o.company).filter(Boolean))]; return comps.length > 0 ? comps : user?.company; })()} />
+                  <InfoField icon={Hash} label="CNP" value={user?.cnp} />
+                  <InfoField icon={Calendar} label="Birthdate" value={user?.birthdate ? new Date(user.birthdate).toLocaleDateString('ro-RO') : null} />
+                  <InfoField icon={Briefcase} label="Position" value={user?.position} />
+                  <InfoField icon={Calendar} label="Contract Start" value={user?.contract_work_date ? new Date(user.contract_work_date).toLocaleDateString('ro-RO') : null} />
+                </div>
+              )}
 
               {/* Anniversary banners */}
               <AnniversaryBanners birthdate={user?.birthdate} contractDate={user?.contract_work_date} name={user?.name ?? ''} />
@@ -1628,6 +1637,10 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [department, setDepartment] = useState('')
+  const [status, setStatus] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = usePersistedState('profile-invoices-page-size', 25)
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -1640,10 +1653,9 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
     queryKey: ['settings', 'dropdowns'],
     queryFn: () => settingsApi.getDropdownOptions(),
     staleTime: 10 * 60_000,
-    enabled: canEdit,
   })
   const statusOptions = useMemo(
-    () => dropdownOptions.filter((d) => d.dropdown_type === 'invoice_status' && d.value).map((d) => ({ value: d.value, label: d.label })),
+    () => dropdownOptions.filter((d) => d.dropdown_type === 'invoice_status' && d.value).map((d) => ({ value: d.value, label: d.label, color: d.color })),
     [dropdownOptions],
   )
   const paymentOptions = useMemo(
@@ -1654,8 +1666,8 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
   const uniqueDepts = useMemo(() => [...new Set(orgDepartments)], [orgDepartments])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['profile', 'invoices', { search, department, page, perPage }],
-    queryFn: () => profileApi.getInvoices({ search: search || undefined, department: department || undefined, page, per_page: perPage }),
+    queryKey: ['profile', 'invoices', { search, department, status, startDate, endDate, page, perPage }],
+    queryFn: () => profileApi.getInvoices({ search: search || undefined, department: department || undefined, status: status || undefined, start_date: startDate || undefined, end_date: endDate || undefined, page, per_page: perPage }),
   })
 
   // Fetch full invoice data when a row is expanded (via profile endpoint — no accounting perm needed)
@@ -1685,6 +1697,26 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
   const total = data?.total ?? 0
   const totalPages = Math.ceil(total / perPage)
 
+  const filterFields: FilterField[] = useMemo(() => {
+    const fields: FilterField[] = [
+      { key: 'status', label: 'Status', type: 'select' as const, options: statusOptions },
+    ]
+    if (uniqueDepts.length > 1) {
+      fields.unshift({ key: 'department', label: 'Department', type: 'select' as const, options: uniqueDepts.map(d => ({ value: d, label: d })) })
+    }
+    return fields
+  }, [statusOptions, uniqueDepts])
+
+  const filterValues: Record<string, string> = useMemo(() => ({
+    department: department,
+    status: status,
+  }), [department, status])
+
+  const handleFilterChange = (values: Record<string, string>) => {
+    if ('department' in values) { setDepartment(values.department || ''); setPage(1) }
+    if ('status' in values) { setStatus(values.status || ''); setPage(1) }
+  }
+
   const toggleExpand = (id: number) => {
     setExpandedId(expandedId === id ? null : id)
     if (expandedId === id) setEditingId(null)
@@ -1699,19 +1731,9 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
             <span className="ml-2 text-sm font-normal text-muted-foreground">({total})</span>
           </CardTitle>
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            {uniqueDepts.length > 1 && (
-              <Select value={department} onValueChange={(v) => { setDepartment(v === 'all' ? '' : v); setPage(1) }}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="All departments" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All departments</SelectItem>
-                  {uniqueDepts.map((d) => (
-                    <SelectItem key={d} value={d}>{d}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+            <Button variant="ghost" size="icon" className={cn('h-8 w-8', showFilters && 'bg-muted')} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
             <SearchInput
               placeholder="Search invoices..."
               value={search}
@@ -1720,6 +1742,17 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
             />
           </div>
         </div>
+        {showFilters && (
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} iconOnly={isMobile} />
+            <DateField
+              mode="range"
+              startDate={startDate}
+              endDate={endDate}
+              onRangeChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1) }}
+            />
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         {isLoading ? (
