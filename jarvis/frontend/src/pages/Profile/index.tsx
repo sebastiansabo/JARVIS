@@ -118,24 +118,21 @@ export default function Profile() {
       />
 
       {/* User Info Card */}
-      <Card>
-        <CardContent className="p-6">
+      <Card className="cursor-pointer" onClick={() => setDetailsOpen(d => !d)}>
+        <CardContent className="px-4 py-3">
           {isLoading ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-4">
-                <Skeleton className="h-16 w-16 rounded-full shrink-0" />
-                <div className="space-y-2">
-                  <Skeleton className="h-6 w-48" />
-                  <Skeleton className="h-4 w-64" />
-                </div>
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-10 w-10 rounded-full shrink-0" />
+              <div className="space-y-1.5">
+                <Skeleton className="h-5 w-40" />
+                <Skeleton className="h-3.5 w-56" />
               </div>
-              <Skeleton className="h-20 w-full" />
             </div>
           ) : (
             <>
-              {/* Top row: avatar + name + edit */}
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-lg font-bold">
+              {/* Top row: avatar + name + chevron + actions */}
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
                   {user?.name
                     ?.split(' ')
                     .map((n) => n[0])
@@ -145,15 +142,13 @@ export default function Profile() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-xl font-semibold">{user?.name}</h2>
+                    <h2 className="text-base font-semibold">{user?.name}</h2>
                     {user?.role && <StatusBadge status={user.role} />}
-                    {user?.position && <Badge variant="outline">{user.position}</Badge>}
+                    {user?.position && <Badge variant="outline" className="text-xs">{user.position}</Badge>}
+                    {detailsOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setDetailsOpen(d => !d)} title={detailsOpen ? 'Hide details' : 'Show details'}>
-                    {detailsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                  </Button>
+                <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                   <Button variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
                     <Key className="h-3.5 w-3.5 mr-1.5" />
                     Password
@@ -167,7 +162,7 @@ export default function Profile() {
 
               {/* Info grid — collapsed by default */}
               {detailsOpen && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm border-t pt-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm border-t pt-3 mt-3">
                   <InfoField icon={Mail} label="Email" value={user?.email} />
                   <InfoField icon={Phone} label="Phone" value={user?.phone} />
                   <InfoField icon={Building2} label="Department" value={(() => { const depts = orgPaths.map(o => o.department).filter(Boolean); return depts.length > 0 ? depts : user?.department; })()} />
