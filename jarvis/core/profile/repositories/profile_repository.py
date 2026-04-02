@@ -155,42 +155,80 @@ class ProfileRepository(BaseRepository):
                 scope = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
                 scope_params = [user_id, user_id]
 
+            # Build optional filter clauses
+            extra_where = ''
+            params = list(scope_params)
+
+            if status:
+                extra_where += ' AND i.status = %s'
+                params.append(status)
+            if start_date:
+                extra_where += ' AND i.invoice_date >= %s'
+                params.append(start_date)
+            if end_date:
+                extra_where += ' AND i.invoice_date <= %s'
+                params.append(end_date)
+            if search:
+                extra_where += ' AND (i.invoice_number ILIKE %s OR i.supplier ILIKE %s)'
+                search_pattern = f'%{search}%'
+                params.extend([search_pattern, search_pattern])
+            if department:
+                extra_where += ' AND LOWER(a.department) = LOWER(%s)'
+                params.append(department)
+
+            # Use CTE to paginate distinct invoices, then aggregate allocations
             query = f'''
+                WITH filtered_invoices AS (
+                    SELECT DISTINCT i.id
+                    FROM invoices i
+                    INNER JOIN allocations a ON i.id = a.invoice_id
+                    WHERE {scope} AND i.deleted_at IS NULL {extra_where}
+                    ORDER BY i.id DESC
+                    LIMIT %s OFFSET %s
+                )
                 SELECT
                     i.id, i.invoice_number, i.invoice_date, i.invoice_value,
                     i.currency, i.supplier, i.status, i.drive_link, i.comment,
                     i.created_at, i.updated_at, i.payment_status,
-                    a.company, a.brand, a.department, a.subdepartment,
-                    a.allocation_percent, a.allocation_value
-                FROM invoices i
-                INNER JOIN allocations a ON i.id = a.invoice_id
-                WHERE {scope}
-                AND i.deleted_at IS NULL
+                    COALESCE(
+                        json_agg(
+                            json_build_object(
+                                'id', a.id,
+                                'company', a.company,
+                                'brand', a.brand,
+                                'department', a.department,
+                                'subdepartment', a.subdepartment,
+                                'allocation_percent', a.allocation_percent,
+                                'allocation_value', a.allocation_value,
+                                'responsible', a.responsible
+                            )
+                        ) FILTER (WHERE a.id IS NOT NULL),
+                        '[]'::json
+                    ) as allocations
+                FROM filtered_invoices fi
+                JOIN invoices i ON i.id = fi.id
+                LEFT JOIN allocations a ON a.invoice_id = i.id
+                GROUP BY i.id
+                ORDER BY i.invoice_date DESC
             '''
-            params = list(scope_params)
-
-            if status:
-                query += ' AND i.status = %s'
-                params.append(status)
-            if start_date:
-                query += ' AND i.invoice_date >= %s'
-                params.append(start_date)
-            if end_date:
-                query += ' AND i.invoice_date <= %s'
-                params.append(end_date)
-            if search:
-                query += ' AND (i.invoice_number ILIKE %s OR i.supplier ILIKE %s)'
-                search_pattern = f'%{search}%'
-                params.extend([search_pattern, search_pattern])
-            if department:
-                query += ' AND LOWER(a.department) = LOWER(%s)'
-                params.append(department)
-
-            query += ' ORDER BY i.invoice_date DESC LIMIT %s OFFSET %s'
             params.extend([limit, offset])
 
             cursor.execute(query, params)
-            return [dict_from_row(dict(row)) for row in cursor.fetchall()]
+            rows = []
+            for row in cursor.fetchall():
+                d = dict_from_row(dict(row))
+                # For backwards compat: set top-level fields from first allocation
+                allocs = d.get('allocations') or []
+                if allocs:
+                    first = allocs[0]
+                    d['company'] = first.get('company')
+                    d['brand'] = first.get('brand')
+                    d['department'] = first.get('department')
+                    d['subdepartment'] = first.get('subdepartment')
+                    d['allocation_percent'] = first.get('allocation_percent')
+                    d['allocation_value'] = first.get('allocation_value')
+                rows.append(d)
+            return rows
         return self.execute_many(_work)
 
     def get_user_invoices_count(

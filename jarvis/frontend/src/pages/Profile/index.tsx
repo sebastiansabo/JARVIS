@@ -1690,10 +1690,6 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
     if (expandedId === id) setEditingId(null)
   }
 
-  // Deduplicate: multiple allocations rows can share the same invoice_id.
-  // We only render expand row after the LAST row for that invoice_id.
-  const seenExpanded = new Set<number>()
-
   return (
     <Card>
       <CardHeader>
@@ -1743,11 +1739,11 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                   { key: 'supplier', label: 'Supplier', isPrimary: true, render: (inv) => inv.supplier },
                   { key: 'invoice_number', label: 'Invoice #', isSecondary: true, render: (inv) => <span className="font-mono">{inv.invoice_number}</span> },
                   { key: 'date', label: 'Date', isSecondary: true, render: (inv) => new Date(inv.invoice_date).toLocaleDateString('ro-RO') },
-                  { key: 'value', label: 'Value', render: (inv) => <CurrencyDisplay value={inv.allocation_value} currency={inv.currency} className="text-xs" /> },
+                  { key: 'value', label: 'Value', render: (inv) => <CurrencyDisplay value={inv.invoice_value} currency={inv.currency} className="text-xs" /> },
                   { key: 'status', label: 'Status', render: (inv) => <StatusBadge status={inv.status} /> },
                   { key: 'company', label: 'Company', expandOnly: true, render: (inv) => inv.company },
                   { key: 'department', label: 'Department', expandOnly: true, render: (inv) => inv.department || '-' },
-                  { key: 'percent', label: 'Allocation %', expandOnly: true, render: (inv) => `${inv.allocation_percent}%` },
+                  { key: 'percent', label: 'Allocation', expandOnly: true, render: (inv) => (inv.allocations?.length || 1) > 1 ? 'split' : `${inv.allocation_percent}%` },
                 ] satisfies MobileCardField<ProfileInvoice>[]}
                 getRowId={(inv) => inv.id}
                 actions={(inv) => (canAccessAccounting && inv.drive_link) ? (
@@ -1774,14 +1770,12 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {invoices.map((inv: ProfileInvoice, idx: number) => {
+                    {invoices.map((inv: ProfileInvoice) => {
                       const isExpanded = expandedId === inv.id
-                      // Show expansion row only once per invoice_id (after first occurrence)
-                      const showExpansion = isExpanded && !seenExpanded.has(inv.id)
-                      if (isExpanded) seenExpanded.add(inv.id)
+                      const allocCount = inv.allocations?.length || 1
 
                       return (
-                        <React.Fragment key={`${inv.id}-${idx}`}>
+                        <React.Fragment key={inv.id}>
                           <TableRow
                             className="cursor-pointer hover:bg-muted/40"
                             onClick={() => toggleExpand(inv.id)}
@@ -1797,12 +1791,15 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                             <TableCell className="font-mono text-xs">{inv.invoice_number}</TableCell>
                             <TableCell className="max-w-[200px] truncate font-medium">{inv.supplier}</TableCell>
                             <TableCell className="text-sm">{inv.company}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground">{inv.department || '-'}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {inv.department || '-'}
+                              {allocCount > 1 && <span className="ml-1 text-xs text-muted-foreground/60">+{allocCount - 1}</span>}
+                            </TableCell>
                             <TableCell className="text-right">
-                              <CurrencyDisplay value={inv.allocation_value} currency={inv.currency} className="text-sm" />
+                              <CurrencyDisplay value={inv.invoice_value} currency={inv.currency} className="text-sm" />
                             </TableCell>
                             <TableCell className="text-right text-sm text-muted-foreground">
-                              {inv.allocation_percent}%
+                              {allocCount > 1 ? 'split' : `${inv.allocation_percent}%`}
                             </TableCell>
                             <TableCell>
                               <StatusBadge status={inv.status} />
@@ -1820,7 +1817,7 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                               )}
                             </TableCell>
                           </TableRow>
-                          {showExpansion && (
+                          {isExpanded && (
                             <TableRow>
                               <TableCell colSpan={10} className="p-0">
                                 <ProfileInvoiceExpansion

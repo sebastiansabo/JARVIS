@@ -37,6 +37,17 @@ export interface ProfileSummary {
   }
 }
 
+export interface ProfileInvoiceAllocation {
+  id: number
+  company: string
+  brand: string | null
+  department: string | null
+  subdepartment: string | null
+  allocation_percent: number
+  allocation_value: number
+  responsible: string | null
+}
+
 export interface ProfileInvoice {
   id: number
   invoice_number: string
@@ -52,6 +63,7 @@ export interface ProfileInvoice {
   subdepartment: string | null
   allocation_percent: number
   allocation_value: number
+  allocations?: ProfileInvoiceAllocation[]
   drive_link: string | null
   comment: string | null
   created_at: string
