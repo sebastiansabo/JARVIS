@@ -3,6 +3,8 @@ import type {
   Vehicle,
   VehicleCatalogItem,
   VehiclePhoto,
+  VehicleCost,
+  VehicleRevenue,
   Location,
   StatusCount,
   FilterOptions,
@@ -10,6 +12,9 @@ import type {
   PaginatedResponse,
   StatusHistoryEntry,
   ModificationEntry,
+  CostTotals,
+  RevenueTotals,
+  Profitability,
 } from '../types/carpark'
 
 export const carparkApi = {
@@ -92,4 +97,40 @@ export const carparkApi = {
 
   updateLocation: (id: number, data: Partial<Location>) =>
     api.put<{ location: Location }>(`/api/carpark/locations/${id}`, data),
+
+  // ── Costs ──────────────────────────────────────────────
+  getCosts: (vehicleId: number) =>
+    api.get<{ costs: VehicleCost[] }>(`/api/carpark/vehicles/${vehicleId}/costs`),
+
+  createCost: (vehicleId: number, data: Partial<VehicleCost>) =>
+    api.post<{ cost: VehicleCost }>(`/api/carpark/vehicles/${vehicleId}/costs`, data),
+
+  updateCost: (costId: number, data: Partial<VehicleCost>) =>
+    api.put<{ cost: VehicleCost }>(`/api/carpark/costs/${costId}`, data),
+
+  deleteCost: (costId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/costs/${costId}`),
+
+  getCostTotals: (vehicleId: number) =>
+    api.get<CostTotals>(`/api/carpark/vehicles/${vehicleId}/costs/totals`),
+
+  // ── Revenues ───────────────────────────────────────────
+  getRevenues: (vehicleId: number) =>
+    api.get<{ revenues: VehicleRevenue[] }>(`/api/carpark/vehicles/${vehicleId}/revenues`),
+
+  createRevenue: (vehicleId: number, data: Partial<VehicleRevenue>) =>
+    api.post<{ revenue: VehicleRevenue }>(`/api/carpark/vehicles/${vehicleId}/revenues`, data),
+
+  updateRevenue: (revenueId: number, data: Partial<VehicleRevenue>) =>
+    api.put<{ revenue: VehicleRevenue }>(`/api/carpark/revenues/${revenueId}`, data),
+
+  deleteRevenue: (revenueId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/revenues/${revenueId}`),
+
+  getRevenueTotals: (vehicleId: number) =>
+    api.get<RevenueTotals>(`/api/carpark/vehicles/${vehicleId}/revenues/totals`),
+
+  // ── Profitability ──────────────────────────────────────
+  getProfitability: (vehicleId: number) =>
+    api.get<Profitability>(`/api/carpark/vehicles/${vehicleId}/profitability`),
 }

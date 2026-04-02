@@ -8,6 +8,8 @@ from typing import Optional, Dict, Any, List
 
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.photo_repository import PhotoRepository
+from carpark.repositories.cost_repository import CostRepository
+from carpark.repositories.revenue_repository import RevenueRepository
 
 logger = logging.getLogger('jarvis.carpark')
 
@@ -24,6 +26,8 @@ class VehicleService:
     def __init__(self):
         self._repo = VehicleRepository()
         self._photo_repo = PhotoRepository()
+        self._cost_repo = CostRepository()
+        self._revenue_repo = RevenueRepository()
 
     # ── CATALOG ──
 
@@ -187,3 +191,76 @@ class VehicleService:
     def update_location(self, location_id: int,
                         data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return self._repo.update_location(location_id, data)
+
+    # ── COSTS ──
+
+    def get_costs(self, vehicle_id: int,
+                  cost_type: str = None) -> List[Dict[str, Any]]:
+        return self._cost_repo.get_by_vehicle(vehicle_id, cost_type)
+
+    def get_cost(self, cost_id: int) -> Optional[Dict[str, Any]]:
+        return self._cost_repo.get_by_id(cost_id)
+
+    def create_cost(self, vehicle_id: int, data: Dict[str, Any],
+                    created_by: int = None) -> Dict[str, Any]:
+        cost = self._cost_repo.create(vehicle_id, data, created_by=created_by)
+        logger.info(f'Cost created: id={cost["id"]} vehicle={vehicle_id} '
+                     f'type={cost["cost_type"]} amount={cost["amount"]}')
+        return cost
+
+    def update_cost(self, cost_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        return self._cost_repo.update(cost_id, data)
+
+    def delete_cost(self, cost_id: int) -> bool:
+        return self._cost_repo.delete(cost_id)
+
+    def get_cost_totals(self, vehicle_id: int) -> Dict[str, Any]:
+        return self._cost_repo.get_totals_by_vehicle(vehicle_id)
+
+    # ── REVENUES ──
+
+    def get_revenues(self, vehicle_id: int,
+                     revenue_type: str = None) -> List[Dict[str, Any]]:
+        return self._revenue_repo.get_by_vehicle(vehicle_id, revenue_type)
+
+    def get_revenue(self, revenue_id: int) -> Optional[Dict[str, Any]]:
+        return self._revenue_repo.get_by_id(revenue_id)
+
+    def create_revenue(self, vehicle_id: int, data: Dict[str, Any],
+                       created_by: int = None) -> Dict[str, Any]:
+        rev = self._revenue_repo.create(vehicle_id, data, created_by=created_by)
+        logger.info(f'Revenue created: id={rev["id"]} vehicle={vehicle_id} '
+                     f'type={rev["revenue_type"]} amount={rev["amount"]}')
+        return rev
+
+    def update_revenue(self, revenue_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        return self._revenue_repo.update(revenue_id, data)
+
+    def delete_revenue(self, revenue_id: int) -> bool:
+        return self._revenue_repo.delete(revenue_id)
+
+    def get_revenue_totals(self, vehicle_id: int) -> Dict[str, Any]:
+        return self._revenue_repo.get_totals_by_vehicle(vehicle_id)
+
+    # ── PROFITABILITY ──
+
+    def get_profitability(self, vehicle_id: int) -> Dict[str, Any]:
+        """Calculate vehicle profitability: revenues - costs."""
+        costs = self._cost_repo.get_totals_by_vehicle(vehicle_id)
+        revenues = self._revenue_repo.get_totals_by_vehicle(vehicle_id)
+        vehicle = self._repo.get_by_id(vehicle_id)
+
+        acquisition_price = float(vehicle.get('acquisition_price') or 0) if vehicle else 0
+
+        total_costs = float(costs['total_with_vat'])
+        total_revenues = float(revenues['total_with_vat'])
+
+        return {
+            'acquisition_price': acquisition_price,
+            'total_costs': total_costs,
+            'total_revenues': total_revenues,
+            'total_invested': acquisition_price + total_costs,
+            'profit': total_revenues - acquisition_price - total_costs,
+            'costs_breakdown': costs['by_type'],
+            'revenues_breakdown': revenues['by_type'],
+        }

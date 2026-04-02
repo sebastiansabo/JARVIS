@@ -219,6 +219,101 @@ export interface ModificationEntry {
   created_at: string
 }
 
+// ── Cost & Revenue types ──
+
+export type CostType =
+  | 'repair' | 'maintenance' | 'insurance' | 'registration' | 'transport'
+  | 'inspection' | 'cleaning' | 'fuel' | 'parking' | 'tax' | 'other'
+
+export type RevenueType =
+  | 'sale' | 'rental' | 'lease' | 'commission' | 'refund' | 'other'
+
+export interface VehicleCost {
+  id: number
+  vehicle_id: number
+  cost_type: CostType
+  description: string | null
+  amount: number
+  currency: string
+  vat_rate: number
+  vat_amount: number
+  exchange_rate_eur: number | null
+  invoice_number: string | null
+  invoice_date: string | null
+  invoice_value: number | null
+  invoice_id: number | null
+  supplier_name: string | null
+  radio_cost_type: string | null
+  document_file: string | null
+  observation: string | null
+  date: string
+  created_by: number | null
+  created_at: string
+}
+
+export interface VehicleRevenue {
+  id: number
+  vehicle_id: number
+  revenue_type: RevenueType
+  description: string | null
+  amount: number
+  currency: string
+  vat_amount: number
+  invoice_number: string | null
+  invoice_id: number | null
+  client_name: string | null
+  date: string
+  created_by: number | null
+  created_at: string
+}
+
+export interface CostTotals {
+  by_type: { cost_type: string; count: number; total_amount: number; total_vat: number }[]
+  total_amount: number
+  total_vat: number
+  total_with_vat: number
+}
+
+export interface RevenueTotals {
+  by_type: { revenue_type: string; count: number; total_amount: number; total_vat: number }[]
+  total_amount: number
+  total_vat: number
+  total_with_vat: number
+}
+
+export interface Profitability {
+  acquisition_price: number
+  total_costs: number
+  total_revenues: number
+  total_invested: number
+  profit: number
+  costs_breakdown: { cost_type: string; count: number; total_amount: number; total_vat: number }[]
+  revenues_breakdown: { revenue_type: string; count: number; total_amount: number; total_vat: number }[]
+}
+
+export const COST_TYPE_LABELS: Record<CostType, string> = {
+  repair: 'Reparație',
+  maintenance: 'Mentenanță',
+  insurance: 'Asigurare',
+  registration: 'Înmatriculare',
+  transport: 'Transport',
+  inspection: 'Inspecție',
+  cleaning: 'Curățenie',
+  fuel: 'Combustibil',
+  parking: 'Parcare',
+  tax: 'Taxe',
+  other: 'Altele',
+}
+
+export const REVENUE_TYPE_LABELS: Record<RevenueType, string> = {
+  sale: 'Vânzare',
+  rental: 'Închiriere',
+  lease: 'Leasing',
+  commission: 'Comision',
+  refund: 'Ramburs',
+  other: 'Altele',
+}
+
 // Status display config
 export const STATUS_LABELS: Record<VehicleStatus, string> = {
   ACQUIRED: 'Achiziționat',

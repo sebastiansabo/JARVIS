@@ -12,6 +12,10 @@ import {
   Car,
   ImageIcon,
   X,
+  Plus,
+  DollarSign,
+  TrendingUp,
+  TrendingDown,
 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
@@ -37,6 +41,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/stores/authStore'
 import { carparkApi } from '@/api/carpark'
@@ -44,9 +50,16 @@ import { toast } from 'sonner'
 import {
   STATUS_LABELS,
   CATEGORY_LABELS,
+  COST_TYPE_LABELS,
+  REVENUE_TYPE_LABELS,
   type Vehicle,
   type VehiclePhoto,
+  type VehicleCost,
+  type VehicleRevenue,
   type VehicleStatus,
+  type CostType,
+  type RevenueType,
+  type Profitability,
 } from '@/types/carpark'
 
 // ── Status colors (shared with catalog) ────────────────────
@@ -138,9 +151,29 @@ export default function CarParkDetail() {
     enabled: !!id,
   })
 
+  const { data: costsData } = useQuery({
+    queryKey: ['carpark', 'costs', id],
+    queryFn: () => carparkApi.getCosts(id),
+    enabled: !!id,
+  })
+
+  const { data: revenuesData } = useQuery({
+    queryKey: ['carpark', 'revenues', id],
+    queryFn: () => carparkApi.getRevenues(id),
+    enabled: !!id,
+  })
+
+  const { data: profitData } = useQuery({
+    queryKey: ['carpark', 'profitability', id],
+    queryFn: () => carparkApi.getProfitability(id),
+    enabled: !!id,
+  })
+
   const vehicle = data?.vehicle
   const history = historyData?.history ?? []
   const modifications = modsData?.modifications ?? []
+  const costs = costsData?.costs ?? []
+  const revenues = revenuesData?.revenues ?? []
 
   // Status change dialog
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
@@ -312,10 +345,15 @@ export default function CarParkDetail() {
       </div>
 
       {/* Tabbed sections */}
+      {/* Profitability summary */}
+      {profitData && <ProfitabilitySummary data={profitData} currency={vehicle.price_currency || 'RON'} />}
+
       <Tabs defaultValue="details">
         <TabsList>
           <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="pricing">Pricing & Costs</TabsTrigger>
+          <TabsTrigger value="pricing">Pricing</TabsTrigger>
+          <TabsTrigger value="costs">Costs ({costs.length})</TabsTrigger>
+          <TabsTrigger value="revenues">Revenues ({revenues.length})</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="modifications">Changes</TabsTrigger>
         </TabsList>
@@ -326,6 +364,14 @@ export default function CarParkDetail() {
 
         <TabsContent value="pricing" className="mt-4">
           <PricingTab vehicle={vehicle} />
+        </TabsContent>
+
+        <TabsContent value="costs" className="mt-4">
+          <CostsTab vehicleId={id} costs={costs} canEdit={canEdit} currency={vehicle.price_currency || 'RON'} />
+        </TabsContent>
+
+        <TabsContent value="revenues" className="mt-4">
+          <RevenuesTab vehicleId={id} revenues={revenues} canEdit={canEdit} currency={vehicle.price_currency || 'RON'} />
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
@@ -758,6 +804,458 @@ function ModificationsTab({ modifications }: { modifications: Array<{ id: number
           </div>
         </Card>
       ))}
+    </div>
+  )
+}
+
+// ── Profitability Summary ──────────────────────────────────
+function ProfitabilitySummary({ data, currency }: { data: Profitability; currency: string }) {
+  const isProfit = data.profit >= 0
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <Card className="p-3">
+        <div className="text-xs text-muted-foreground mb-1">Acquisition</div>
+        <CurrencyDisplay value={data.acquisition_price} currency={currency} className="text-lg font-semibold" />
+      </Card>
+      <Card className="p-3">
+        <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+          <TrendingDown className="h-3 w-3" /> Total Costs
+        </div>
+        <CurrencyDisplay value={data.total_costs} currency={currency} className="text-lg font-semibold text-red-600 dark:text-red-400" />
+      </Card>
+      <Card className="p-3">
+        <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+          <TrendingUp className="h-3 w-3" /> Total Revenue
+        </div>
+        <CurrencyDisplay value={data.total_revenues} currency={currency} className="text-lg font-semibold text-green-600 dark:text-green-400" />
+      </Card>
+      <Card className={`p-3 ${isProfit ? 'bg-green-50 dark:bg-green-950' : 'bg-red-50 dark:bg-red-950'}`}>
+        <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+          <DollarSign className="h-3 w-3" /> Profit / Loss
+        </div>
+        <CurrencyDisplay
+          value={data.profit}
+          currency={currency}
+          showSign
+          className={`text-lg font-bold ${isProfit ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}
+        />
+      </Card>
+    </div>
+  )
+}
+
+// ── Costs Tab ─────────────────────────────────────────────
+function CostsTab({
+  vehicleId, costs, canEdit, currency,
+}: {
+  vehicleId: number; costs: VehicleCost[]; canEdit: boolean; currency: string
+}) {
+  const queryClient = useQueryClient()
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [form, setForm] = useState({
+    cost_type: 'other' as CostType,
+    amount: '',
+    description: '',
+    supplier_name: '',
+    invoice_number: '',
+    date: new Date().toISOString().slice(0, 10),
+    vat_rate: '19',
+    vat_amount: '',
+  })
+
+  const resetForm = () => {
+    setForm({
+      cost_type: 'other', amount: '', description: '', supplier_name: '',
+      invoice_number: '', date: new Date().toISOString().slice(0, 10),
+      vat_rate: '19', vat_amount: '',
+    })
+    setEditingId(null)
+    setShowForm(false)
+  }
+
+  const createMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => carparkApi.createCost(vehicleId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'costs', vehicleId] })
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
+      toast.success('Cost added')
+      resetForm()
+    },
+    onError: () => toast.error('Failed to add cost'),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
+      carparkApi.updateCost(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'costs', vehicleId] })
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
+      toast.success('Cost updated')
+      resetForm()
+    },
+    onError: () => toast.error('Failed to update cost'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => carparkApi.deleteCost(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'costs', vehicleId] })
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
+      toast.success('Cost deleted')
+    },
+    onError: () => toast.error('Failed to delete cost'),
+  })
+
+  const handleSubmit = () => {
+    const payload = {
+      cost_type: form.cost_type,
+      amount: Number(form.amount),
+      description: form.description || null,
+      supplier_name: form.supplier_name || null,
+      invoice_number: form.invoice_number || null,
+      date: form.date,
+      vat_rate: form.vat_rate ? Number(form.vat_rate) : 19,
+      vat_amount: form.vat_amount ? Number(form.vat_amount) : 0,
+    }
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, data: payload })
+    } else {
+      createMutation.mutate(payload)
+    }
+  }
+
+  const startEdit = (c: VehicleCost) => {
+    setForm({
+      cost_type: c.cost_type,
+      amount: String(c.amount),
+      description: c.description ?? '',
+      supplier_name: c.supplier_name ?? '',
+      invoice_number: c.invoice_number ?? '',
+      date: c.date,
+      vat_rate: String(c.vat_rate ?? 19),
+      vat_amount: String(c.vat_amount ?? 0),
+    })
+    setEditingId(c.id)
+    setShowForm(true)
+  }
+
+  const totalCosts = costs.reduce((s, c) => s + Number(c.amount), 0)
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-muted-foreground">
+          Total: <CurrencyDisplay value={totalCosts} currency={currency} className="font-semibold text-foreground" />
+        </div>
+        {canEdit && (
+          <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowForm(!showForm) }}>
+            <Plus className="h-4 w-4 mr-1" /> Add Cost
+          </Button>
+        )}
+      </div>
+
+      {showForm && (
+        <Card className="p-4 space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <Label>Type</Label>
+              <Select value={form.cost_type} onValueChange={(v) => setForm((p) => ({ ...p, cost_type: v as CostType }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(COST_TYPE_LABELS).map(([k, label]) => (
+                    <SelectItem key={k} value={k}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Amount</Label>
+              <Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} />
+            </div>
+            <div>
+              <Label>VAT Rate %</Label>
+              <Input type="number" step="0.01" value={form.vat_rate} onChange={(e) => setForm((p) => ({ ...p, vat_rate: e.target.value }))} />
+            </div>
+            <div>
+              <Label>VAT Amount</Label>
+              <Input type="number" step="0.01" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Date</Label>
+              <Input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Supplier</Label>
+              <Input value={form.supplier_name} onChange={(e) => setForm((p) => ({ ...p, supplier_name: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Invoice #</Label>
+              <Input value={form.invoice_number} onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="ghost" size="sm" onClick={resetForm}>Cancel</Button>
+            <Button size="sm" onClick={handleSubmit} disabled={!form.amount || Number(form.amount) <= 0}>
+              {editingId ? 'Update' : 'Add'}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {costs.length === 0 ? (
+        <EmptyState title="No costs recorded" icon={<DollarSign className="h-8 w-8" />} />
+      ) : (
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="text-left p-2 font-medium">Date</th>
+                <th className="text-left p-2 font-medium">Type</th>
+                <th className="text-left p-2 font-medium hidden sm:table-cell">Supplier</th>
+                <th className="text-left p-2 font-medium hidden md:table-cell">Description</th>
+                <th className="text-right p-2 font-medium">Amount</th>
+                {canEdit && <th className="p-2 w-20"></th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {costs.map((c) => (
+                <tr key={c.id} className="hover:bg-muted/30">
+                  <td className="p-2">{formatDate(c.date)}</td>
+                  <td className="p-2">
+                    <Badge variant="outline" className="text-[11px]">
+                      {COST_TYPE_LABELS[c.cost_type] ?? c.cost_type}
+                    </Badge>
+                  </td>
+                  <td className="p-2 hidden sm:table-cell text-muted-foreground">{c.supplier_name ?? '-'}</td>
+                  <td className="p-2 hidden md:table-cell text-muted-foreground truncate max-w-[200px]">{c.description ?? '-'}</td>
+                  <td className="p-2 text-right">
+                    <CurrencyDisplay value={c.amount} currency={c.currency} />
+                  </td>
+                  {canEdit && (
+                    <td className="p-2 text-right">
+                      <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => startEdit(c)}>
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-red-500" onClick={() => deleteMutation.mutate(c.id)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Revenues Tab ──────────────────────────────────────────
+function RevenuesTab({
+  vehicleId, revenues, canEdit, currency,
+}: {
+  vehicleId: number; revenues: VehicleRevenue[]; canEdit: boolean; currency: string
+}) {
+  const queryClient = useQueryClient()
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [form, setForm] = useState({
+    revenue_type: 'sale' as RevenueType,
+    amount: '',
+    description: '',
+    client_name: '',
+    invoice_number: '',
+    date: new Date().toISOString().slice(0, 10),
+    vat_amount: '',
+  })
+
+  const resetForm = () => {
+    setForm({
+      revenue_type: 'sale', amount: '', description: '', client_name: '',
+      invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_amount: '',
+    })
+    setEditingId(null)
+    setShowForm(false)
+  }
+
+  const createMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => carparkApi.createRevenue(vehicleId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'revenues', vehicleId] })
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
+      toast.success('Revenue added')
+      resetForm()
+    },
+    onError: () => toast.error('Failed to add revenue'),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
+      carparkApi.updateRevenue(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'revenues', vehicleId] })
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
+      toast.success('Revenue updated')
+      resetForm()
+    },
+    onError: () => toast.error('Failed to update revenue'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => carparkApi.deleteRevenue(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'revenues', vehicleId] })
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
+      toast.success('Revenue deleted')
+    },
+    onError: () => toast.error('Failed to delete revenue'),
+  })
+
+  const handleSubmit = () => {
+    const payload = {
+      revenue_type: form.revenue_type,
+      amount: Number(form.amount),
+      description: form.description || null,
+      client_name: form.client_name || null,
+      invoice_number: form.invoice_number || null,
+      date: form.date,
+      vat_amount: form.vat_amount ? Number(form.vat_amount) : 0,
+    }
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, data: payload })
+    } else {
+      createMutation.mutate(payload)
+    }
+  }
+
+  const startEdit = (r: VehicleRevenue) => {
+    setForm({
+      revenue_type: r.revenue_type,
+      amount: String(r.amount),
+      description: r.description ?? '',
+      client_name: r.client_name ?? '',
+      invoice_number: r.invoice_number ?? '',
+      date: r.date,
+      vat_amount: String(r.vat_amount ?? 0),
+    })
+    setEditingId(r.id)
+    setShowForm(true)
+  }
+
+  const totalRevenues = revenues.reduce((s, r) => s + Number(r.amount), 0)
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-muted-foreground">
+          Total: <CurrencyDisplay value={totalRevenues} currency={currency} className="font-semibold text-foreground" />
+        </div>
+        {canEdit && (
+          <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowForm(!showForm) }}>
+            <Plus className="h-4 w-4 mr-1" /> Add Revenue
+          </Button>
+        )}
+      </div>
+
+      {showForm && (
+        <Card className="p-4 space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <Label>Type</Label>
+              <Select value={form.revenue_type} onValueChange={(v) => setForm((p) => ({ ...p, revenue_type: v as RevenueType }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(REVENUE_TYPE_LABELS).map(([k, label]) => (
+                    <SelectItem key={k} value={k}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Amount</Label>
+              <Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} />
+            </div>
+            <div>
+              <Label>VAT Amount</Label>
+              <Input type="number" step="0.01" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Date</Label>
+              <Input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Client</Label>
+              <Input value={form.client_name} onChange={(e) => setForm((p) => ({ ...p, client_name: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Invoice #</Label>
+              <Input value={form.invoice_number} onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))} />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Description</Label>
+              <Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="ghost" size="sm" onClick={resetForm}>Cancel</Button>
+            <Button size="sm" onClick={handleSubmit} disabled={!form.amount || Number(form.amount) <= 0}>
+              {editingId ? 'Update' : 'Add'}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {revenues.length === 0 ? (
+        <EmptyState title="No revenues recorded" icon={<DollarSign className="h-8 w-8" />} />
+      ) : (
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="text-left p-2 font-medium">Date</th>
+                <th className="text-left p-2 font-medium">Type</th>
+                <th className="text-left p-2 font-medium hidden sm:table-cell">Client</th>
+                <th className="text-left p-2 font-medium hidden md:table-cell">Description</th>
+                <th className="text-right p-2 font-medium">Amount</th>
+                {canEdit && <th className="p-2 w-20"></th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {revenues.map((r) => (
+                <tr key={r.id} className="hover:bg-muted/30">
+                  <td className="p-2">{formatDate(r.date)}</td>
+                  <td className="p-2">
+                    <Badge variant="outline" className="text-[11px]">
+                      {REVENUE_TYPE_LABELS[r.revenue_type] ?? r.revenue_type}
+                    </Badge>
+                  </td>
+                  <td className="p-2 hidden sm:table-cell text-muted-foreground">{r.client_name ?? '-'}</td>
+                  <td className="p-2 hidden md:table-cell text-muted-foreground truncate max-w-[200px]">{r.description ?? '-'}</td>
+                  <td className="p-2 text-right">
+                    <CurrencyDisplay value={r.amount} currency={r.currency} />
+                  </td>
+                  {canEdit && (
+                    <td className="p-2 text-right">
+                      <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => startEdit(r)}>
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-red-500" onClick={() => deleteMutation.mutate(r.id)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
