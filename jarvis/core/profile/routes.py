@@ -507,78 +507,61 @@ def api_profile_team_pontaje():
                 'end': end,
             })
         else:
-            # Daily mode: start from users table, LEFT JOIN BioStar punches
+            # Daily mode: use same data source as HR Pontaje (biostar_repository)
+            from core.connectors.biostar.services import BioStarSyncService
             date_str = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
 
+            service = BioStarSyncService()
+            bio_rows = service.repo.get_daily_summary(date_str, jarvis_user_ids=managed_ids)
+
+            # Build lookup by mapped_jarvis_user_id for merging
+            bio_by_user = {}
+            for br in bio_rows:
+                uid = br.get('mapped_jarvis_user_id')
+                if uid:
+                    bio_by_user[uid] = br
+
+            # Get all managed users (including those without BioStar data)
             conn = get_db()
             cursor = get_cursor(conn)
             cursor.execute('''
-                WITH team_users AS (
-                    SELECT u.id, u.name, u.company, u.department, u.position
-                    FROM users u
-                    WHERE u.id = ANY(%s) AND u.is_active = TRUE
-                ),
-                daily_punches AS (
-                    SELECT
-                        be.mapped_jarvis_user_id AS user_id,
-                        MIN(pl.event_datetime) AS first_punch,
-                        MAX(pl.event_datetime) AS last_punch,
-                        COUNT(*) AS punches,
-                        CASE
-                            WHEN COUNT(*) %% 2 = 1 THEN
-                                EXTRACT(EPOCH FROM (NOW() - MIN(pl.event_datetime))) / 3600.0
-                            ELSE
-                                EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) / 3600.0
-                        END AS hours_worked
-                    FROM biostar_punch_logs pl
-                    JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
-                    WHERE pl.event_datetime::date = %s::date
-                      AND be.mapped_jarvis_user_id = ANY(%s)
-                      AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
-                    GROUP BY be.mapped_jarvis_user_id
-                ),
-                manager_info AS (
-                    SELECT DISTINCT snm.user_id, MIN(sn.level) AS mgr_level
-                    FROM structure_node_members snm
-                    JOIN structure_nodes sn ON sn.id = snm.node_id
-                    WHERE snm.role = 'responsable'
-                      AND snm.user_id = ANY(%s)
-                    GROUP BY snm.user_id
-                )
-                SELECT
-                    tu.id AS user_id,
-                    tu.name,
-                    tu.company,
-                    tu.department,
-                    tu.position,
-                    dp.first_punch,
-                    dp.last_punch,
-                    COALESCE(dp.punches, 0) AS punches,
-                    COALESCE(dp.hours_worked, 0) AS hours_worked,
-                    mi.mgr_level
-                FROM team_users tu
-                LEFT JOIN daily_punches dp ON dp.user_id = tu.id
-                LEFT JOIN manager_info mi ON mi.user_id = tu.id
-                ORDER BY tu.name
-            ''', (managed_ids, date_str, managed_ids, managed_ids))
-            rows = cursor.fetchall()
+                SELECT u.id, u.name, u.company, u.department, u.position
+                FROM users u
+                WHERE u.id = ANY(%s) AND u.is_active = TRUE
+                ORDER BY u.name
+            ''', (managed_ids,))
+            team_rows = cursor.fetchall()
             release_db(conn)
 
             summary = []
-            for r in rows:
+            for r in team_rows:
                 row = dict_from_row(r)
-                summary.append({
-                    'user_id': row['user_id'],
-                    'name': row['name'],
-                    'company': row.get('company'),
-                    'department': row.get('department'),
-                    'position': row.get('position'),
-                    'first_punch': row.get('first_punch'),
-                    'last_punch': row.get('last_punch'),
-                    'punches': row.get('punches', 0),
-                    'hours_worked': round(row.get('hours_worked', 0), 2),
-                    'mgr_level': row.get('mgr_level'),
-                })
+                uid = row['id']
+                bio = bio_by_user.get(uid)
+                if bio:
+                    # Use HR Pontaje format — same field names the frontend expects
+                    entry = dict(bio)
+                    entry['user_id'] = uid
+                    entry['company'] = row.get('company')
+                    entry['department'] = row.get('department')
+                    entry['position'] = row.get('position')
+                    summary.append(entry)
+                else:
+                    # Absent — no BioStar data
+                    summary.append({
+                        'user_id': uid,
+                        'name': row['name'],
+                        'biostar_user_id': None,
+                        'mapped_jarvis_user_name': row['name'],
+                        'user_group_name': None,
+                        'company': row.get('company'),
+                        'department': row.get('department'),
+                        'position': row.get('position'),
+                        'first_punch': None,
+                        'last_punch': None,
+                        'total_punches': 0,
+                        'duration_seconds': 0,
+                    })
 
             return jsonify({
                 'success': True,
