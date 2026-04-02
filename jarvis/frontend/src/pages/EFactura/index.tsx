@@ -3,7 +3,6 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { useQuery } from '@tanstack/react-query'
 import {
   FileStack,
-  Import,
   LayoutDashboard,
   Plus,
   RefreshCw,
@@ -47,7 +46,6 @@ export default function EFactura() {
   const [showHidden, setShowHidden] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [mappingAddTrigger, setMappingAddTrigger] = useState(0)
-  const [mappingImportTrigger, setMappingImportTrigger] = useState(0)
   const [search, setSearch] = useState('')
   const location = useLocation()
   const activeEfTab = tabs.find(t => location.pathname.startsWith(t.to))
@@ -87,11 +85,6 @@ export default function EFactura() {
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
             </Button>
-            {isOnMappingsTab && (
-              <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={() => setMappingImportTrigger(n => n + 1)} title="Import from Invoices">
-                <Import className="h-4 w-4" />
-              </Button>
-            )}
             {isOnMappingsTab && (
               <Button size="icon" className="hidden md:inline-flex" onClick={() => setMappingAddTrigger(n => n + 1)} title="Add Mapping / Type">
                 <Plus className="h-4 w-4" />
@@ -151,7 +144,7 @@ export default function EFactura() {
         <Routes>
           <Route index element={<Navigate to="unallocated" replace />} />
           <Route path="unallocated" element={<UnallocatedTab showHidden={showHidden} onShowHiddenChange={setShowHidden} hiddenCount={hiddenCount ?? 0} showFilters={showFilters} search={search} />} />
-          <Route path="mappings" element={<MappingsTab showFilters={showFilters} addTrigger={mappingAddTrigger} importTrigger={mappingImportTrigger} />} />
+          <Route path="mappings" element={<MappingsTab showFilters={showFilters} addTrigger={mappingAddTrigger} />} />
           {/* Redirect removed/old routes */}
           <Route path="fetch" element={<Navigate to="/app/efactura/unallocated" replace />} />
           <Route path="invoices" element={<Navigate to="/app/efactura/unallocated" replace />} />

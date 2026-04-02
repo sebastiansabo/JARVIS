@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
@@ -7,8 +7,8 @@ import {
   Tags,
   ToggleLeft,
   ToggleRight,
-  Check,
   Loader2,
+  Search,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,10 +33,102 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { efacturaApi } from '@/api/efactura'
 import { organizationApi } from '@/api/organization'
-import { Checkbox } from '@/components/ui/checkbox'
 import type { SupplierMapping, SupplierType } from '@/types/efactura'
 
 type ViewMode = 'mappings' | 'types'
+
+// ── Supplier Picker (inline dropdown) ──────────────────────
+function SupplierPicker({
+  existingMappings,
+  onSelect,
+}: {
+  existingMappings: SupplierMapping[]
+  onSelect: (supplier: { partner_name: string; partner_cif: string | null }) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  const { data: allSuppliers = [], isLoading } = useQuery({
+    queryKey: ['efactura-distinct-suppliers'],
+    queryFn: () => efacturaApi.getDistinctSuppliers(),
+    enabled: open,
+  })
+
+  // Filter out already-mapped suppliers
+  const existingNames = new Set(existingMappings.map((m) => m.partner_name.toLowerCase()))
+  const unmapped = allSuppliers.filter((s) => !existingNames.has(s.partner_name.toLowerCase()))
+
+  const filtered = unmapped.filter((s) => {
+    if (!search) return true
+    const q = search.toLowerCase()
+    return s.partner_name.toLowerCase().includes(q) || (s.partner_cif && s.partner_cif.includes(q))
+  })
+
+  useEffect(() => {
+    if (open) setTimeout(() => searchRef.current?.focus(), 100)
+  }, [open])
+
+  return (
+    <div className="relative">
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        className="h-9 w-9 shrink-0"
+        onClick={() => setOpen(!open)}
+        title="Pick from e-Factura suppliers"
+      >
+        <Plus className="h-4 w-4" />
+      </Button>
+      {open && (
+        <div className="absolute top-10 left-0 z-50 w-[400px] rounded-md border bg-popover shadow-lg">
+          <div className="p-2 border-b">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                ref={searchRef}
+                type="text"
+                className="w-full rounded-md border bg-background px-8 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="Search suppliers..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">{unmapped.length} unmapped suppliers</p>
+          </div>
+          <div className="max-h-[300px] overflow-y-auto">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : filtered.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {unmapped.length === 0 ? 'All suppliers mapped' : 'No match'}
+              </p>
+            ) : (
+              filtered.map((s) => (
+                <button
+                  key={s.partner_name}
+                  type="button"
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted/50 border-b last:border-b-0"
+                  onClick={() => {
+                    onSelect({ partner_name: s.partner_name, partner_cif: s.partner_cif })
+                    setOpen(false)
+                    setSearch('')
+                  }}
+                >
+                  <span className="font-medium truncate">{s.partner_name}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground font-mono">{s.partner_cif || ''}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Mapping Form ───────────────────────────────────────────
 function MappingFormDialog({
@@ -44,11 +136,13 @@ function MappingFormDialog({
   onOpenChange,
   mapping,
   supplierTypes,
+  existingMappings,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   mapping: SupplierMapping | null
   supplierTypes: SupplierType[]
+  existingMappings: SupplierMapping[]
 }) {
   const qc = useQueryClient()
   const [company, setCompany] = useState(mapping?.company_name ?? '')
@@ -72,6 +166,16 @@ function MappingFormDialog({
     setForm((f) => ({
       ...f,
       type_ids: f.type_ids.includes(id) ? f.type_ids.filter((t) => t !== id) : [...f.type_ids, id],
+    }))
+  }
+
+  const handleSupplierPick = (s: { partner_name: string; partner_cif: string | null }) => {
+    setForm((f) => ({
+      ...f,
+      partner_name: s.partner_name,
+      partner_cif: s.partner_cif ?? '',
+      supplier_name: s.partner_name,
+      supplier_vat: s.partner_cif ?? '',
     }))
   }
 
@@ -123,7 +227,12 @@ function MappingFormDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label className="text-xs">Supplier Name (e-Factura) *</Label>
-              <Input value={form.partner_name} onChange={(e) => set('partner_name', e.target.value)} />
+              <div className="flex gap-1.5">
+                <Input className="flex-1" value={form.partner_name} onChange={(e) => set('partner_name', e.target.value)} />
+                {!isEdit && (
+                  <SupplierPicker existingMappings={existingMappings} onSelect={handleSupplierPick} />
+                )}
+              </div>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Supplier CIF</Label>
@@ -367,198 +476,13 @@ function TypeFormDialog({
   )
 }
 
-// ── Import Suppliers Dialog ─────────────────────────────────
-function ImportSuppliersDialog({
-  open,
-  onOpenChange,
-  existingMappings,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  existingMappings: SupplierMapping[]
-}) {
-  const qc = useQueryClient()
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [search, setSearch] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [result, setResult] = useState<{ created: number; errors: number } | null>(null)
-
-  const { data: allSuppliers = [], isLoading } = useQuery({
-    queryKey: ['efactura-distinct-suppliers'],
-    queryFn: () => efacturaApi.getDistinctSuppliers(),
-    enabled: open,
-  })
-
-  // Filter out suppliers that already have a mapping (by partner_name)
-  const existingNames = new Set(existingMappings.map((m) => m.partner_name.toLowerCase()))
-  const unmapped = allSuppliers.filter((s) => !existingNames.has(s.partner_name.toLowerCase()))
-
-  const filtered = unmapped.filter((s) => {
-    if (!search) return true
-    const q = search.toLowerCase()
-    return s.partner_name.toLowerCase().includes(q) || (s.partner_cif && s.partner_cif.includes(q))
-  })
-
-  const allSelected = filtered.length > 0 && filtered.every((s) => selected.has(s.partner_name))
-
-  const toggleAll = () => {
-    if (allSelected) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(filtered.map((s) => s.partner_name)))
-    }
-  }
-
-  const toggle = (name: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
-      return next
-    })
-  }
-
-  const handleCreate = async () => {
-    setCreating(true)
-    let created = 0
-    let errors = 0
-    const toCreate = unmapped.filter((s) => selected.has(s.partner_name))
-
-    for (const s of toCreate) {
-      try {
-        await efacturaApi.createMapping({
-          partner_name: s.partner_name,
-          supplier_name: s.partner_name,
-          partner_cif: s.partner_cif || undefined,
-          supplier_vat: s.partner_cif || undefined,
-        })
-        created++
-      } catch {
-        errors++
-      }
-    }
-
-    setResult({ created, errors })
-    setCreating(false)
-    qc.invalidateQueries({ queryKey: ['efactura-mappings'] })
-  }
-
-  const handleClose = () => {
-    setSelected(new Set())
-    setSearch('')
-    setResult(null)
-    onOpenChange(false)
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Import Suppliers from Invoices</DialogTitle>
-        </DialogHeader>
-
-        {result ? (
-          <div className="space-y-4 py-4">
-            <div className="flex items-center gap-3">
-              <Check className="h-8 w-8 text-green-600" />
-              <div>
-                <p className="font-medium">Import complete</p>
-                <p className="text-sm text-muted-foreground">
-                  {result.created} mapping{result.created !== 1 ? 's' : ''} created
-                  {result.errors > 0 && `, ${result.errors} error${result.errors !== 1 ? 's' : ''}`}
-                </p>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={handleClose}>Close</Button>
-            </DialogFooter>
-          </div>
-        ) : (
-          <>
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm text-muted-foreground">
-                {unmapped.length} unmapped supplier{unmapped.length !== 1 ? 's' : ''} found
-                {existingNames.size > 0 && ` (${existingNames.size} already mapped)`}
-              </p>
-              <SearchInput value={search} onChange={setSearch} placeholder="Search..." className="w-[200px]" />
-            </div>
-
-            {isLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                {unmapped.length === 0 ? 'All suppliers already have mappings' : 'No suppliers match your search'}
-              </div>
-            ) : (
-              <div className="rounded border max-h-[50vh] overflow-y-auto">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-background">
-                    <tr className="border-b bg-muted/50">
-                      <th className="p-2 w-8">
-                        <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
-                      </th>
-                      <th className="p-2 text-left">Supplier Name</th>
-                      <th className="p-2 text-left">CIF</th>
-                      <th className="p-2 text-right">Invoices</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((s) => (
-                      <tr
-                        key={s.partner_name}
-                        className="border-b hover:bg-muted/30 cursor-pointer"
-                        onClick={() => toggle(s.partner_name)}
-                      >
-                        <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={selected.has(s.partner_name)}
-                            onCheckedChange={() => toggle(s.partner_name)}
-                          />
-                        </td>
-                        <td className="p-2 font-medium">{s.partner_name}</td>
-                        <td className="p-2 text-xs text-muted-foreground font-mono">{s.partner_cif || '—'}</td>
-                        <td className="p-2 text-right text-muted-foreground">{s.invoice_count ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <DialogFooter className="gap-2">
-              <span className="mr-auto text-sm text-muted-foreground">
-                {selected.size} selected
-              </span>
-              <Button variant="outline" onClick={handleClose}>Cancel</Button>
-              <Button onClick={handleCreate} disabled={selected.size === 0 || creating}>
-                {creating ? (
-                  <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  `Create ${selected.size} Mapping${selected.size !== 1 ? 's' : ''}`
-                )}
-              </Button>
-            </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 // ── Main Component ─────────────────────────────────────────
 export default function MappingsTab({
   showFilters = false,
   addTrigger = 0,
-  importTrigger = 0,
 }: {
   showFilters?: boolean
   addTrigger?: number
-  importTrigger?: number
 }) {
   const qc = useQueryClient()
   const [viewMode, setViewMode] = useState<ViewMode>('mappings')
@@ -567,7 +491,6 @@ export default function MappingsTab({
   const [editMapping, setEditMapping] = useState<SupplierMapping | null | undefined>(undefined) // undefined = closed
   const [editType, setEditType] = useState<SupplierType | null | undefined>(undefined)
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'mapping' | 'type'; id: number } | null>(null)
-  const [showImport, setShowImport] = useState(false)
 
   useEffect(() => {
     if (addTrigger > 0) {
@@ -575,10 +498,6 @@ export default function MappingsTab({
       else setEditType(null)
     }
   }, [addTrigger])
-
-  useEffect(() => {
-    if (importTrigger > 0) setShowImport(true)
-  }, [importTrigger])
 
   const { data: mappings = [], isLoading: mappingsLoading } = useQuery({
     queryKey: ['efactura-mappings', showInactive],
@@ -803,6 +722,7 @@ export default function MappingsTab({
           onOpenChange={() => setEditMapping(undefined)}
           mapping={editMapping}
           supplierTypes={supplierTypes}
+          existingMappings={mappings}
         />
       )}
 
@@ -812,15 +732,6 @@ export default function MappingsTab({
           open
           onOpenChange={() => setEditType(undefined)}
           supplierType={editType}
-        />
-      )}
-
-      {/* Import suppliers dialog */}
-      {showImport && (
-        <ImportSuppliersDialog
-          open
-          onOpenChange={() => setShowImport(false)}
-          existingMappings={mappings}
         />
       )}
 
