@@ -2038,6 +2038,7 @@ function ProfileInvoiceExpansion({
           unlinkDoc: profileApi.unlinkDmsDocument,
           searchDocs: profileApi.searchDmsDocuments,
           linkDoc: profileApi.linkDmsDocument,
+          uploadAndLink: profileApi.uploadAndLinkDms,
         }}
       />
     </div>

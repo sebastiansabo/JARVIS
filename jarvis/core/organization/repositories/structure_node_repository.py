@@ -320,8 +320,11 @@ class StructureNodeRepository(BaseRepository):
                                   department: str = None, subdepartment: str = None) -> str:
         """Find the responsable for a given company/brand/department/subdepartment path.
 
-        Walks the tree to the deepest matched node, then applies fallback:
-        if no responsable at that level, walks up ancestors, then company (L0).
+        Strategy: try tree-walk first (brand > department > subdepartment).
+        If the tree-walk only partially matches (e.g. flat structure where
+        department is NOT a child of brand), fall back to the most specific
+        individual node match: subdepartment > department > brand.
+        Finally falls back to company-level (L0) responsables.
         """
         row = self.query_one(
             'SELECT id FROM companies WHERE company = %s', (company_name,)
@@ -340,11 +343,35 @@ class StructureNodeRepository(BaseRepository):
             ''', (company_id,))
             return ', '.join(r['name'] for r in comp_rows)
 
+        # Try tree-walk first
         node = self.find_node_by_path(company_id, path)
-        if not node:
-            return ''
 
-        return self.get_node_responsable_names_with_fallback(node['id'], company_id)
+        # If tree-walk matched fewer segments than the full path,
+        # try individual node lookups from most specific to least specific
+        if node:
+            # Check if we matched the deepest segment (full path)
+            deepest_name = path[-1].lower()
+            if node['name'].lower() == deepest_name:
+                return self.get_node_responsable_names_with_fallback(node['id'], company_id)
+
+        # Flat structure fallback: find the most specific node by name
+        # Priority: subdepartment > department > brand
+        candidates = [n for n in [subdepartment, department, brand] if n]
+        for name in candidates:
+            found = self.query_one('''
+                SELECT id, name FROM structure_nodes
+                WHERE company_id = %s AND LOWER(name) = LOWER(%s)
+            ''', (company_id, name))
+            if found:
+                result = self.get_node_responsable_names_with_fallback(found['id'], company_id)
+                if result:
+                    return result
+
+        # If we had a partial tree-walk match, use it
+        if node:
+            return self.get_node_responsable_names_with_fallback(node['id'], company_id)
+
+        return ''
 
     def get_responsable_users_by_department(self, company_name: str, department: str) -> list[dict]:
         """Find responsable users for nodes named `department` under a company,
