@@ -57,6 +57,7 @@ export default function Hr() {
   const canViewTeamPontaje = perms?.['hr.team_pontaje.view'] ?? false
   const teamPontajeScope = scopes?.['hr.team_pontaje.view'] ?? 'deny'
   const canViewStructure = perms?.['hr.structure.view'] ?? false
+  const canViewTimesheets = authLoading || !user ? true : (perms?.['hr.timesheets.view'] ?? false)
   // Pontaje view: default true while auth loads; once loaded, gate on view_original
   const canViewPontaje = authLoading || !user ? true : (perms?.['hr.pontaje.view_original'] ?? true)
   const canViewBonuses = authLoading || !user ? true : (perms?.['hr.bonuses.view'] ?? true)
@@ -73,12 +74,14 @@ export default function Hr() {
     const t: { to: string; label: string; icon: typeof Fingerprint }[] = [
       { to: '/app/hr/pontaje', label: 'Pontaje', icon: Fingerprint },
     ]
-    t.push({ to: '/app/hr/timesheets', label: 'Timesheets', icon: FileSpreadsheet })
+    if (canViewTimesheets) {
+      t.push({ to: '/app/hr/timesheets', label: 'Timesheets', icon: FileSpreadsheet })
+    }
     if (canViewAdjustments) {
       t.push({ to: '/app/hr/adjustments', label: 'Adjustments', icon: ClipboardCheck })
     }
     return t
-  }, [canViewAdjustments])
+  }, [canViewTimesheets, canViewAdjustments])
 
   // Standalone pages — no tabs/stats
   if (isProfilePage) {
@@ -243,7 +246,7 @@ export default function Hr() {
               ? <BonusesTab canViewAmounts={canViewAmounts} showStats={showStats} showFilters={showFilters} addTrigger={bonusAddTrigger} search={search} />
               : <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">You don't have permission to view bonuses.</div>
           } />
-          <Route path="timesheets" element={<TimesheetTab search={search} />} />
+          {canViewTimesheets && <Route path="timesheets" element={<TimesheetTab search={search} />} />}
           {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab showStats={showStats} showFilters={showFilters} search={search} />} />}
         </Routes>
       </Suspense>

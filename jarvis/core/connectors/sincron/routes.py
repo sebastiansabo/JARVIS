@@ -2,12 +2,12 @@
 
 import logging
 import threading
-from flask import request, jsonify
+from flask import request, jsonify, g
 from flask_login import current_user
 
 from . import sincron_bp
 from .services import SincronSyncService
-from core.utils.api_helpers import api_login_required, admin_required, safe_error_response
+from core.utils.api_helpers import api_login_required, admin_required, safe_error_response, v2_permission_required
 
 logger = logging.getLogger('jarvis.sincron.routes')
 service = SincronSyncService()
@@ -254,17 +254,21 @@ def get_timesheet():
 
 @sincron_bp.route('/api/timesheets/employee/<int:user_id>', methods=['GET'])
 @api_login_required
+@v2_permission_required('hr', 'timesheets', 'view')
 def get_employee_timesheet(user_id):
-    """Get monthly timesheet for a specific employee (manager-scoped)."""
-    from hr.events.database import get_managed_employee_ids, is_manager
+    """Get monthly timesheet for a specific employee (V2 permission scoped)."""
+    from hr.events.database import get_managed_employee_ids
 
-    # Allow own data or manager access
+    scope = getattr(g, 'permission_scope', 'all')
+
+    # Allow own data always; for others, check scope
     if user_id != current_user.id:
-        if not is_manager(current_user.id):
+        if scope == 'own':
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
-        managed_ids = get_managed_employee_ids(current_user.id)
-        if user_id not in (managed_ids or []):
-            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+        if scope == 'department':
+            managed_ids = get_managed_employee_ids(current_user.id)
+            if user_id not in (managed_ids or []):
+                return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     year = request.args.get('year', type=int)
     month = request.args.get('month', type=int)
@@ -288,12 +292,12 @@ def get_employee_timesheet(user_id):
 
 @sincron_bp.route('/api/timesheets/team', methods=['GET'])
 @api_login_required
+@v2_permission_required('hr', 'timesheets', 'view')
 def get_team_timesheet():
-    """Get team timesheet summary for managed employees."""
-    from hr.events.database import get_managed_employee_ids, is_manager
+    """Get team timesheet summary. V2 permission scoped."""
+    from hr.events.database import get_managed_employee_ids
 
-    if not is_manager(current_user.id):
-        return jsonify({'success': True, 'is_manager': False, 'data': []})
+    scope = getattr(g, 'permission_scope', 'all')
 
     year = request.args.get('year', type=int)
     month = request.args.get('month', type=int)
@@ -309,14 +313,24 @@ def get_team_timesheet():
     if err:
         return err
 
-    managed_ids = get_managed_employee_ids(current_user.id, node_id=node_id)
+    # Scope-based filtering
+    if scope == 'own':
+        managed_ids = [current_user.id]
+    elif scope == 'department':
+        managed_ids = get_managed_employee_ids(current_user.id, node_id=node_id)
+        if not managed_ids:
+            managed_ids = [current_user.id]
+    else:
+        # scope == 'all' — get all managed employees (admin sees everyone via organigram)
+        managed_ids = get_managed_employee_ids(current_user.id, node_id=node_id)
+
     if not managed_ids:
-        return jsonify({'success': True, 'is_manager': True, 'data': [],
+        return jsonify({'success': True, 'data': [],
                         'year': year, 'month': month})
 
     try:
         data = service.get_team_timesheet_summary(managed_ids, year, month)
-        return jsonify({'success': True, 'is_manager': True, 'data': data,
+        return jsonify({'success': True, 'data': data,
                         'year': year, 'month': month})
     except Exception as e:
         return safe_error_response(e)

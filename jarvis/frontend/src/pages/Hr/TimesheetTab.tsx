@@ -55,7 +55,6 @@ export default function TimesheetTab({ search }: Props) {
   })
 
   const team: SincronTeamMember[] = data?.data ?? []
-  const isManager = data?.is_manager ?? false
 
   // Collect all activity codes across team
   const allCodes = useMemo(() => {
@@ -132,10 +131,6 @@ export default function TimesheetTab({ search }: Props) {
         <Skeleton className="h-96 w-full" />
       </div>
     )
-  }
-
-  if (!isManager) {
-    return <EmptyState icon={<Users className="h-10 w-10" />} title="Team Timesheets" description="You need manager access to view team timesheets." />
   }
 
   return (
