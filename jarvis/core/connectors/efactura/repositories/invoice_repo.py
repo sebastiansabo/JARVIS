@@ -615,31 +615,31 @@ class InvoiceRepository(BaseRepository):
                     OR
                     -- All types are hidden via supplier mapping (company-specific > global)
                     (i.type_override IS NULL AND EXISTS (
-                        SELECT 1 FROM LATERAL (
+                        SELECT 1 FROM efactura_supplier_mapping_types smt
+                        JOIN efactura_supplier_types pt ON pt.id = smt.type_id
+                        WHERE smt.mapping_id = (
                             SELECT sm2.id FROM efactura_supplier_mappings sm2
                             WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
                                 AND sm2.is_active = TRUE
                                 AND (sm2.company_id IS NULL OR sm2.company_id = i.company_id)
                             ORDER BY sm2.company_id IS NULL
                             LIMIT 1
-                        ) best_sm
-                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = best_sm.id
-                        JOIN efactura_supplier_types pt ON pt.id = smt.type_id
-                        WHERE pt.is_active = TRUE
-                            AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                        )
+                        AND pt.is_active = TRUE
+                        AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
                     ) AND NOT EXISTS (
-                        SELECT 1 FROM LATERAL (
+                        SELECT 1 FROM efactura_supplier_mapping_types smt
+                        JOIN efactura_supplier_types pt ON pt.id = smt.type_id
+                        WHERE smt.mapping_id = (
                             SELECT sm2.id FROM efactura_supplier_mappings sm2
                             WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
                                 AND sm2.is_active = TRUE
                                 AND (sm2.company_id IS NULL OR sm2.company_id = i.company_id)
                             ORDER BY sm2.company_id IS NULL
                             LIMIT 1
-                        ) best_sm
-                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = best_sm.id
-                        JOIN efactura_supplier_types pt ON pt.id = smt.type_id
-                        WHERE pt.is_active = TRUE
-                            AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
+                        )
+                        AND pt.is_active = TRUE
+                        AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
                     ))
                 )
             """)
@@ -961,31 +961,31 @@ class InvoiceRepository(BaseRepository):
                     OR
                     -- All types are hidden via supplier mapping (company-specific > global)
                     (i.type_override IS NULL AND EXISTS (
-                        SELECT 1 FROM LATERAL (
+                        SELECT 1 FROM efactura_supplier_mapping_types smt
+                        JOIN efactura_supplier_types pt ON pt.id = smt.type_id
+                        WHERE smt.mapping_id = (
                             SELECT sm2.id FROM efactura_supplier_mappings sm2
                             WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
                                 AND sm2.is_active = TRUE
                                 AND (sm2.company_id IS NULL OR sm2.company_id = i.company_id)
                             ORDER BY sm2.company_id IS NULL
                             LIMIT 1
-                        ) best_sm
-                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = best_sm.id
-                        JOIN efactura_supplier_types pt ON pt.id = smt.type_id
-                        WHERE pt.is_active = TRUE
-                            AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
+                        )
+                        AND pt.is_active = TRUE
+                        AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
                     ) AND NOT EXISTS (
-                        SELECT 1 FROM LATERAL (
+                        SELECT 1 FROM efactura_supplier_mapping_types smt
+                        JOIN efactura_supplier_types pt ON pt.id = smt.type_id
+                        WHERE smt.mapping_id = (
                             SELECT sm2.id FROM efactura_supplier_mappings sm2
                             WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
                                 AND sm2.is_active = TRUE
                                 AND (sm2.company_id IS NULL OR sm2.company_id = i.company_id)
                             ORDER BY sm2.company_id IS NULL
                             LIMIT 1
-                        ) best_sm
-                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = best_sm.id
-                        JOIN efactura_supplier_types pt ON pt.id = smt.type_id
-                        WHERE pt.is_active = TRUE
-                            AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
+                        )
+                        AND pt.is_active = TRUE
+                        AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
                     ))
                 )
         """)
