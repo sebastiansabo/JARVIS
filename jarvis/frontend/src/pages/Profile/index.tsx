@@ -5,8 +5,6 @@ import {
   FileText,
   Activity,
   Gift,
-  Receipt,
-  DollarSign,
   User,
   Mail,
   Phone,
@@ -16,7 +14,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  BarChart3,
   Fingerprint,
   Clock,
   LogIn,
@@ -84,7 +81,6 @@ const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
 export default function Profile() {
   const isMobile = useIsMobile()
   const [activeTab, setActiveTab] = useTabParam<Tab>('invoices')
-  const [showStats, setShowStats] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)

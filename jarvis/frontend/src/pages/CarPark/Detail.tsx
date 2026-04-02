@@ -16,6 +16,12 @@ import {
   DollarSign,
   TrendingUp,
   TrendingDown,
+  Globe,
+  ExternalLink,
+  Eye,
+  MessageSquare,
+  Power,
+  PowerOff,
 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
@@ -53,17 +59,21 @@ import {
   COST_TYPE_LABELS,
   REVENUE_TYPE_LABELS,
   PROMO_TYPE_LABELS,
+  LISTING_STATUS_LABELS,
   type Vehicle,
   type VehiclePhoto,
   type VehicleCost,
   type VehicleRevenue,
   type VehicleStatus,
+  type VehicleListing,
+  type ListingStatus,
   type CostType,
   type RevenueType,
   type Profitability,
   type PricingHistoryEntry,
   type FloorPrice,
   type Promotion,
+  type PublishingPlatform,
 } from '@/types/carpark'
 
 // ── Status colors (shared with catalog) ────────────────────
@@ -191,6 +201,18 @@ export default function CarParkDetail() {
     enabled: !!id,
   })
 
+  const { data: listingsData } = useQuery({
+    queryKey: ['carpark', 'listings', id],
+    queryFn: () => carparkApi.getVehicleListings(id),
+    enabled: !!id,
+  })
+
+  const { data: platformsData } = useQuery({
+    queryKey: ['carpark', 'platforms'],
+    queryFn: () => carparkApi.getPlatforms(true),
+    enabled: !!id,
+  })
+
   const vehicle = data?.vehicle
   const history = historyData?.history ?? []
   const modifications = modsData?.modifications ?? []
@@ -198,6 +220,8 @@ export default function CarParkDetail() {
   const revenues = revenuesData?.revenues ?? []
   const pricingHistory = pricingHistoryData?.history ?? []
   const vehiclePromos = vehiclePromosData?.promotions ?? []
+  const listings = listingsData?.listings ?? []
+  const platforms = platformsData?.platforms ?? []
 
   // Status change dialog
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
@@ -378,6 +402,7 @@ export default function CarParkDetail() {
           <TabsTrigger value="pricing">Pricing</TabsTrigger>
           <TabsTrigger value="costs">Costs ({costs.length})</TabsTrigger>
           <TabsTrigger value="revenues">Revenues ({revenues.length})</TabsTrigger>
+          <TabsTrigger value="listings">Listings ({listings.length})</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="modifications">Changes</TabsTrigger>
         </TabsList>
@@ -401,6 +426,10 @@ export default function CarParkDetail() {
 
         <TabsContent value="revenues" className="mt-4">
           <RevenuesTab vehicleId={id} revenues={revenues} canEdit={canEdit} currency={vehicle.price_currency || 'RON'} />
+        </TabsContent>
+
+        <TabsContent value="listings" className="mt-4">
+          <ListingsTab vehicleId={id} listings={listings} platforms={platforms} canEdit={canEdit} />
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
@@ -867,6 +896,184 @@ function PricingTab({
             ))}
           </div>
         </Card>
+      )}
+    </div>
+  )
+}
+
+// ── Listings Tab ──────────────────────────────────────────
+function ListingsTab({
+  vehicleId,
+  listings,
+  platforms,
+  canEdit,
+}: {
+  vehicleId: number
+  listings: VehicleListing[]
+  platforms: PublishingPlatform[]
+  canEdit: boolean
+}) {
+  const queryClient = useQueryClient()
+
+  const publishMutation = useMutation({
+    mutationFn: (platformId: number) => carparkApi.publishVehicle(vehicleId, platformId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'listings', vehicleId] })
+      toast.success('Publicat cu succes')
+    },
+    onError: () => toast.error('Eroare la publicare'),
+  })
+
+  const publishAllMutation = useMutation({
+    mutationFn: () => carparkApi.publishVehicleAll(vehicleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'listings', vehicleId] })
+      toast.success('Publicat pe toate platformele')
+    },
+    onError: () => toast.error('Eroare la publicare'),
+  })
+
+  const activateMutation = useMutation({
+    mutationFn: (listingId: number) => carparkApi.activateListing(listingId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'listings', vehicleId] })
+      toast.success('Listing activat')
+    },
+    onError: () => toast.error('Eroare la activare'),
+  })
+
+  const deactivateMutation = useMutation({
+    mutationFn: (listingId: number) => carparkApi.deactivateListing(listingId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'listings', vehicleId] })
+      toast.success('Listing dezactivat')
+    },
+    onError: () => toast.error('Eroare la dezactivare'),
+  })
+
+  const deactivateAllMutation = useMutation({
+    mutationFn: () => carparkApi.deactivateAllListings(vehicleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'listings', vehicleId] })
+      toast.success('Toate listing-urile dezactivate')
+    },
+    onError: () => toast.error('Eroare la dezactivare'),
+  })
+
+  // Platforms not yet listed
+  const listedPlatformIds = new Set(listings.map((l) => l.platform_id))
+  const unlistedPlatforms = platforms.filter((p) => !listedPlatformIds.has(p.id))
+
+  const statusColors: Record<string, string> = {
+    active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+    draft: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
+    inactive: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
+    expired: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
+    error: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Actions bar */}
+      {canEdit && (
+        <div className="flex items-center gap-2">
+          {unlistedPlatforms.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => publishAllMutation.mutate()}
+              disabled={publishAllMutation.isPending}
+            >
+              <Globe className="mr-1.5 h-3.5 w-3.5" />
+              {publishAllMutation.isPending ? 'Se publică...' : 'Publică pe toate'}
+            </Button>
+          )}
+          {listings.some((l) => l.status === 'active') && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => deactivateAllMutation.mutate()}
+              disabled={deactivateAllMutation.isPending}
+            >
+              <PowerOff className="mr-1.5 h-3.5 w-3.5" />
+              Dezactivează toate
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Current listings */}
+      {listings.length === 0 && unlistedPlatforms.length === 0 ? (
+        <EmptyState
+          icon={<Globe className="h-8 w-8" />}
+          title="Nicio platformă configurată"
+          description="Configurează platformele din secțiunea CarPark > Publishing"
+        />
+      ) : (
+        <div className="space-y-2">
+          {listings.map((listing) => (
+            <Card key={listing.id} className="flex items-center justify-between p-3">
+              <div className="flex items-center gap-3">
+                <Globe className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{listing.platform_name}</span>
+                    <Badge variant="outline" className={`text-[10px] ${statusColors[listing.status] ?? ''}`}>
+                      {LISTING_STATUS_LABELS[listing.status as ListingStatus] ?? listing.status}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                    <span className="flex items-center gap-1"><Eye className="h-3 w-3" /> {listing.views}</span>
+                    <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" /> {listing.inquiries}</span>
+                    {listing.published_at && <span>Publicat: {formatDate(listing.published_at)}</span>}
+                    {listing.last_sync && <span>Sync: {formatDate(listing.last_sync)}</span>}
+                    {listing.error_message && (
+                      <span className="text-red-500">{listing.error_message}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                {listing.external_url && (
+                  <Button variant="ghost" size="sm" asChild>
+                    <a href={listing.external_url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </Button>
+                )}
+                {canEdit && listing.status === 'active' && (
+                  <Button variant="ghost" size="sm" onClick={() => deactivateMutation.mutate(listing.id)} title="Dezactivează">
+                    <PowerOff className="h-4 w-4" />
+                  </Button>
+                )}
+                {canEdit && listing.status !== 'active' && (
+                  <Button variant="ghost" size="sm" onClick={() => activateMutation.mutate(listing.id)} title="Activează">
+                    <Power className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </Card>
+          ))}
+
+          {/* Unlisted platforms — quick publish buttons */}
+          {canEdit && unlistedPlatforms.map((platform) => (
+            <Card key={platform.id} className="flex items-center justify-between p-3 opacity-60">
+              <div className="flex items-center gap-3">
+                <Globe className="h-5 w-5 text-muted-foreground" />
+                <span className="text-sm">{platform.name}</span>
+                <Badge variant="outline" className="text-[10px]">Nepublicat</Badge>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => publishMutation.mutate(platform.id)}
+                disabled={publishMutation.isPending}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" /> Publică
+              </Button>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   )

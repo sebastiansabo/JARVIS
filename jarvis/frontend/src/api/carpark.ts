@@ -22,6 +22,9 @@ import type {
   SimulationResult,
   RuleExecutionResult,
   AgingVehicle,
+  PublishingPlatform,
+  VehicleListing,
+  SyncLogEntry,
 } from '../types/carpark'
 
 export const carparkApi = {
@@ -195,4 +198,52 @@ export const carparkApi = {
   // ── Aging Alerts ─────────────────────────────────────
   getAgingVehicles: (minDays?: number) =>
     api.get<{ vehicles: AgingVehicle[]; count: number }>('/api/carpark/pricing/aging', minDays ? { min_days: String(minDays) } : undefined),
+
+  // ── Publishing Platforms ─────────────────────────────
+  getPlatforms: (activeOnly = false) =>
+    api.get<{ platforms: PublishingPlatform[] }>('/api/carpark/platforms', activeOnly ? { active_only: 'true' } : undefined),
+
+  getPlatform: (platformId: number) =>
+    api.get<{ platform: PublishingPlatform }>(`/api/carpark/platforms/${platformId}`),
+
+  createPlatform: (data: Partial<PublishingPlatform>) =>
+    api.post<{ platform: PublishingPlatform }>('/api/carpark/platforms', data),
+
+  updatePlatform: (platformId: number, data: Partial<PublishingPlatform>) =>
+    api.put<{ platform: PublishingPlatform }>(`/api/carpark/platforms/${platformId}`, data),
+
+  deletePlatform: (platformId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/platforms/${platformId}`),
+
+  // ── Vehicle Listings ─────────────────────────────────
+  getVehicleListings: (vehicleId: number) =>
+    api.get<{ listings: VehicleListing[] }>(`/api/carpark/vehicles/${vehicleId}/listings`),
+
+  publishVehicle: (vehicleId: number, platformId: number, expiresAt?: string) =>
+    api.post<{ listing: VehicleListing; action: string }>(`/api/carpark/vehicles/${vehicleId}/publish`, { platform_id: platformId, expires_at: expiresAt }),
+
+  publishVehicleAll: (vehicleId: number, expiresAt?: string) =>
+    api.post<{ results: Array<{ platform_id: number; platform_name: string; action: string }> }>(`/api/carpark/vehicles/${vehicleId}/publish-all`, { expires_at: expiresAt }),
+
+  updateListing: (listingId: number, data: Partial<VehicleListing>) =>
+    api.put<{ listing: VehicleListing }>(`/api/carpark/listings/${listingId}`, data),
+
+  activateListing: (listingId: number) =>
+    api.post<{ listing: VehicleListing }>(`/api/carpark/listings/${listingId}/activate`, {}),
+
+  deactivateListing: (listingId: number) =>
+    api.post<{ listing: VehicleListing }>(`/api/carpark/listings/${listingId}/deactivate`, {}),
+
+  deactivateAllListings: (vehicleId: number) =>
+    api.post<{ deactivated: VehicleListing[]; count: number }>(`/api/carpark/vehicles/${vehicleId}/deactivate-all`, {}),
+
+  syncListing: (listingId: number) =>
+    api.post<{ listing: VehicleListing }>(`/api/carpark/listings/${listingId}/sync`, {}),
+
+  syncAllStats: () =>
+    api.post<{ synced: number; errors: number }>('/api/carpark/publishing/sync', {}),
+
+  // ── Sync Log ─────────────────────────────────────────
+  getSyncLog: (vehicleId: number) =>
+    api.get<{ log: SyncLogEntry[] }>(`/api/carpark/vehicles/${vehicleId}/sync-log`),
 }

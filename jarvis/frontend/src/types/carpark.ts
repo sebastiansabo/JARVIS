@@ -479,6 +479,75 @@ export const TARGET_TYPE_LABELS: Record<PromotionTargetType, string> = {
   specific: 'Vehicule specifice',
 }
 
+// ── Publishing types ──
+
+export type ListingStatus = 'draft' | 'active' | 'inactive' | 'expired' | 'error'
+export type PlatformType = 'autovit' | 'website' | 'marketplace' | 'custom'
+
+export interface PublishingPlatform {
+  id: number
+  name: string
+  platform_type: PlatformType | null
+  brand_scope: string | null
+  api_base_url: string | null
+  api_key_encrypted: string | null
+  dealer_account_id: string | null
+  website_url: string | null
+  icon_url: string | null
+  is_active: boolean
+  company_id: number | null
+  config: Record<string, unknown>
+  created_at: string
+  active_listings?: number
+}
+
+export interface VehicleListing {
+  id: number
+  vehicle_id: number
+  platform_id: number
+  platform_name?: string
+  platform_type?: string
+  icon_url?: string | null
+  external_listing_id: string | null
+  status: ListingStatus
+  published_at: string | null
+  expires_at: string | null
+  external_url: string | null
+  views: number
+  inquiries: number
+  last_sync: string | null
+  error_message: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SyncLogEntry {
+  id: number
+  vehicle_id: number
+  platform_id: number
+  platform_name?: string
+  action: string
+  success: boolean
+  http_status: number | null
+  error_message: string | null
+  created_at: string
+}
+
+export const LISTING_STATUS_LABELS: Record<ListingStatus, string> = {
+  draft: 'Ciornă',
+  active: 'Activ',
+  inactive: 'Inactiv',
+  expired: 'Expirat',
+  error: 'Eroare',
+}
+
+export const PLATFORM_TYPE_LABELS: Record<PlatformType, string> = {
+  autovit: 'Autovit.ro',
+  website: 'Website',
+  marketplace: 'Marketplace',
+  custom: 'Personalizat',
+}
+
 // Status display config
 export const STATUS_LABELS: Record<VehicleStatus, string> = {
   ACQUIRED: 'Achiziționat',
