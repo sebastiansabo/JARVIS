@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTabParam } from '@/hooks/useTabParam'
 import {
+  FileSpreadsheet,
   FileText,
   Activity,
   Gift,
@@ -55,6 +56,7 @@ import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { profileApi, type ProfileUpdatePayload } from '@/api/profile'
+import { sincronApi, type SincronTimesheetData } from '@/api/sincron'
 import { settingsApi } from '@/api/settings'
 import { checkinApi } from '@/api/checkin'
 import { usersApi } from '@/api/users'
@@ -68,13 +70,14 @@ import type { Invoice } from '@/types/invoices'
 import type { ProfileInvoice, ProfileActivity, ProfileBonus, OrgTreeNode } from '@/types/profile'
 import type { BioStarDayHistory, BioStarPunchLog, BioStarDailySummary, BioStarRangeSummary } from '@/types/biostar'
 
-type Tab = 'invoices' | 'hr-events' | 'pontaje' | 'team-pontaje' | 'activity'
+type Tab = 'invoices' | 'hr-events' | 'pontaje' | 'team-pontaje' | 'sincron' | 'activity'
 
 const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'invoices', label: 'My Invoices', icon: FileText },
   { key: 'hr-events', label: 'Bonuses', icon: Gift },
   { key: 'pontaje', label: 'Pontaje', icon: Fingerprint },
   { key: 'team-pontaje', label: 'Team Pontaje', icon: Users },
+  { key: 'sincron', label: 'Sincron', icon: FileSpreadsheet },
   { key: 'activity', label: 'Activity Log', icon: Activity },
 ]
 
@@ -221,6 +224,7 @@ export default function Profile() {
       {activeTab === 'hr-events' && <HrEventsPanel />}
       {activeTab === 'pontaje' && <PontajePanel />}
       {activeTab === 'team-pontaje' && <TeamPontajePanel />}
+      {activeTab === 'sincron' && <SincronPanel />}
       {activeTab === 'activity' && <ActivityPanel />}
     </div>
   )
@@ -2129,6 +2133,217 @@ function HrEventsPanel() {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+// ─── Sincron Panel ──────────────────────────────────────────────────
+
+const SINCRON_MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+const SINCRON_CODE_LABELS: Record<string, { label: string; color: string }> = {
+  OZ: { label: 'Work Hours', color: 'text-blue-600 dark:text-blue-400' },
+  CO: { label: 'Annual Leave', color: 'text-green-600 dark:text-green-400' },
+  CM: { label: 'Medical Leave', color: 'text-red-600 dark:text-red-400' },
+  OS: { label: 'Overtime', color: 'text-orange-600 dark:text-orange-400' },
+  CIC: { label: 'Child Care', color: 'text-purple-600 dark:text-purple-400' },
+  CES: { label: 'Unpaid Leave', color: 'text-gray-600 dark:text-gray-400' },
+  DLG: { label: 'Delegation', color: 'text-yellow-600 dark:text-yellow-400' },
+  CMS: { label: 'Sick Family', color: 'text-pink-600 dark:text-pink-400' },
+}
+
+function SincronPanel() {
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['profile', 'sincron-timesheet', year, month],
+    queryFn: () => sincronApi.getMyTimesheet(year, month),
+  })
+
+  const ts: SincronTimesheetData | null = data?.data ?? null
+  const days = ts?.days ?? {}
+  const summary = ts?.summary ?? []
+  const employee = ts?.employee
+
+  // All activity codes present this month
+  const allCodes = useMemo(() => {
+    const codes = new Set<string>()
+    Object.values(days).forEach((entries) => entries.forEach((e) => codes.add(e.short_code)))
+    const arr = [...codes]
+    arr.sort((a, b) => {
+      if (a === 'OZ') return -1
+      if (b === 'OZ') return 1
+      return a.localeCompare(b)
+    })
+    return arr
+  }, [days])
+
+  const sortedDays = useMemo(() => Object.keys(days).sort(), [days])
+
+  // Stats
+  const stats = useMemo(() => {
+    const oz = summary.find((s) => s.short_code === 'OZ')
+    const co = summary.find((s) => s.short_code === 'CO')
+    const os = summary.find((s) => s.short_code === 'OS')
+    const cm = summary.find((s) => s.short_code === 'CM')
+    return {
+      workHours: oz?.total_value ?? 0,
+      leaveDays: co?.day_count ?? 0,
+      overtime: os?.total_value ?? 0,
+      sickDays: cm?.day_count ?? 0,
+    }
+  }, [summary])
+
+  function prevMonth() {
+    if (month === 1) { setMonth(12); setYear((y) => y - 1) }
+    else setMonth((m) => m - 1)
+  }
+  function nextMonth() {
+    if (month === 12) { setMonth(1); setYear((y) => y + 1) }
+    else setMonth((m) => m + 1)
+  }
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <div className="space-y-3">
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-64 w-full" />
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (!employee) {
+    return (
+      <EmptyState
+        icon={<FileSpreadsheet className="h-10 w-10" />}
+        title="Sincron Not Linked"
+        description="Your profile is not mapped to a Sincron employee. Contact your administrator to set up the mapping in Settings > Connectors."
+      />
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Month navigation */}
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={prevMonth}>
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <h3 className="text-sm font-semibold">
+          {SINCRON_MONTHS[month - 1]} {year}
+        </h3>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={nextMonth}>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard title="Work Hours" value={stats.workHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
+        <StatCard title="Leave Days" value={stats.leaveDays} icon={<Calendar className="h-4 w-4" />} />
+        <StatCard title="Overtime" value={stats.overtime.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
+        <StatCard title="Sick Days" value={stats.sickDays} icon={<Calendar className="h-4 w-4" />} />
+      </div>
+
+      {/* Summary badges */}
+      {summary.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex flex-wrap gap-2">
+              {summary.map((s) => (
+                <Badge key={s.short_code} variant="outline" className="text-xs px-2.5 py-1">
+                  <span className={`font-semibold ${SINCRON_CODE_LABELS[s.short_code]?.color ?? ''}`}>
+                    {s.short_code}
+                  </span>
+                  <span className="ml-1.5 text-muted-foreground">
+                    {SINCRON_CODE_LABELS[s.short_code]?.label ?? s.short_code_en ?? s.short_code}
+                  </span>
+                  <span className="ml-1.5 font-medium">
+                    {s.total_value.toFixed(s.unit === 'hour' ? 1 : 0)} ({s.day_count}d)
+                  </span>
+                </Badge>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Daily grid */}
+      {sortedDays.length > 0 ? (
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-24">Date</TableHead>
+                    <TableHead className="w-12">Day</TableHead>
+                    {allCodes.map((c) => (
+                      <TableHead key={c} className="text-center">
+                        <span className={`text-xs font-semibold ${SINCRON_CODE_LABELS[c]?.color ?? ''}`}>{c}</span>
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sortedDays.map((day) => {
+                    const d = new Date(day + 'T00:00:00')
+                    const dow = d.getDay()
+                    const isWeekend = dow === 0 || dow === 6
+                    const entries = days[day]
+                    const byCode: Record<string, number> = {}
+                    entries.forEach((e) => { byCode[e.short_code] = e.value })
+
+                    return (
+                      <TableRow key={day} className={isWeekend ? 'bg-muted/40' : ''}>
+                        <TableCell className="tabular-nums text-xs">{day}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {d.toLocaleDateString('ro-RO', { weekday: 'short' })}
+                        </TableCell>
+                        {allCodes.map((c) => (
+                          <TableCell key={c} className="text-center tabular-nums text-sm">
+                            {byCode[c] !== undefined
+                              ? <span className={SINCRON_CODE_LABELS[c]?.color ?? ''}>{byCode[c].toFixed(byCode[c] % 1 === 0 ? 0 : 1)}</span>
+                              : <span className="text-muted-foreground">-</span>}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    )
+                  })}
+                  {/* Totals */}
+                  <TableRow className="font-semibold border-t-2">
+                    <TableCell colSpan={2}>Total</TableCell>
+                    {allCodes.map((c) => {
+                      const s = summary.find((x) => x.short_code === c)
+                      return (
+                        <TableCell key={c} className="text-center tabular-nums">
+                          {s ? s.total_value.toFixed(s.unit === 'hour' ? 1 : 0) : '-'}
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <EmptyState
+          icon={<FileSpreadsheet className="h-8 w-8" />}
+          title="No Data"
+          description={`No timesheet entries for ${SINCRON_MONTHS[month - 1]} ${year}. Data is synced from Sincron HR.`}
+        />
+      )}
+    </div>
   )
 }
 

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { ClipboardCheck, Download, Fingerprint, LayoutDashboard, BarChart3, SlidersHorizontal, Plus, Users } from 'lucide-react'
+import { ClipboardCheck, Download, FileSpreadsheet, Fingerprint, LayoutDashboard, BarChart3, SlidersHorizontal, Plus, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 const BonusesTab = lazy(() => import('./BonusesTab'))
 const PontajeTab = lazy(() => import('./PontajeTab'))
 const AdjustmentsTab = lazy(() => import('./AdjustmentsTab'))
+const TimesheetTab = lazy(() => import('./TimesheetTab'))
 const EmployeeProfile = lazy(() => import('./EmployeeProfile'))
 const OrganigramTab = lazy(() => import('./OrganigramTab'))
 
@@ -37,6 +38,7 @@ export default function Hr() {
   const isBonusesPage = useMatch('/app/hr/bonuses')
   const isAdjustmentsPage = useMatch('/app/hr/adjustments')
   const isOrganigramPage = useMatch('/app/hr/organigram')
+  const isTimesheetsPage = useMatch('/app/hr/timesheets')
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('hr_summary')
   const filters = useHrStore((s) => s.filters)
 
@@ -71,6 +73,7 @@ export default function Hr() {
     const t: { to: string; label: string; icon: typeof Fingerprint }[] = [
       { to: '/app/hr/pontaje', label: 'Pontaje', icon: Fingerprint },
     ]
+    t.push({ to: '/app/hr/timesheets', label: 'Timesheets', icon: FileSpreadsheet })
     if (canViewAdjustments) {
       t.push({ to: '/app/hr/adjustments', label: 'Adjustments', icon: ClipboardCheck })
     }
@@ -120,7 +123,7 @@ export default function Hr() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title={
-          isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : (
+          isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : isTimesheetsPage ? 'Timesheets' : (
             <span className="flex items-center gap-3">
               Pontaje
               {showTeamToggle && (
@@ -155,7 +158,7 @@ export default function Hr() {
         }
         breadcrumbs={[
           { label: 'HR', href: '/app/hr/pontaje' },
-          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : [{ label: 'Pontaje' }]),
+          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : [{ label: 'Pontaje' }]),
         ]}
         search={
           <SearchInput
@@ -189,7 +192,7 @@ export default function Hr() {
               </Button>
             )}
             {!isMobile && !isBonusesPage && tabs.length > 1 && (
-              <Tabs value={isAdjustmentsPage ? 'adjustments' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+              <Tabs value={isAdjustmentsPage ? 'adjustments' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
                 <TabsList className="w-auto">
                   {tabs.map((t) => {
                     const val = t.to.split('/').pop()!
@@ -209,7 +212,7 @@ export default function Hr() {
 
       {/* Mobile tab nav */}
       {!isBonusesPage && isMobile && tabs.length > 1 && (
-        <Tabs value={isAdjustmentsPage ? 'adjustments' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+        <Tabs value={isAdjustmentsPage ? 'adjustments' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
               {tabs.map((t) => {
@@ -240,6 +243,7 @@ export default function Hr() {
               ? <BonusesTab canViewAmounts={canViewAmounts} showStats={showStats} showFilters={showFilters} addTrigger={bonusAddTrigger} search={search} />
               : <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">You don't have permission to view bonuses.</div>
           } />
+          <Route path="timesheets" element={<TimesheetTab search={search} />} />
           {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab showStats={showStats} showFilters={showFilters} search={search} />} />}
         </Routes>
       </Suspense>

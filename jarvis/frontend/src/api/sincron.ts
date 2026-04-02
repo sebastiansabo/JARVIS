@@ -50,6 +50,38 @@ export interface SincronSyncRun {
   finished_at: string | null
 }
 
+export interface SincronTimesheetDay {
+  short_code: string
+  short_code_en: string
+  unit: string
+  value: number
+}
+
+export interface SincronTimesheetData {
+  days: Record<string, SincronTimesheetDay[]>
+  summary: Array<{
+    short_code: string
+    short_code_en: string
+    total_value: number
+    day_count: number
+    unit: string
+  }>
+  employee: {
+    sincron_employee_id: string
+    company_name: string
+    nume: string
+    prenume: string
+  } | null
+}
+
+export interface SincronTeamMember {
+  user_id: number
+  name: string
+  company: string
+  codes: Record<string, { value: number; unit: string; days: number }>
+  total_hours: number
+}
+
 export interface JarvisUser {
   id: number
   name: string
@@ -155,6 +187,30 @@ export const sincronApi = {
       `${BASE}/employees/jarvis-users`,
     )
     return res.data
+  },
+
+  // ── Timesheets (user-scoped) ──
+
+  getMyTimesheet: async (year: number, month: number) => {
+    const res = await api.get<{ success: boolean; data: SincronTimesheetData; year: number; month: number }>(
+      `${BASE}/timesheets${qs({ year, month })}`,
+    )
+    return res
+  },
+
+  getEmployeeTimesheet: async (userId: number, year: number, month: number) => {
+    const res = await api.get<{ success: boolean; data: SincronTimesheetData; year: number; month: number }>(
+      `${BASE}/timesheets/employee/${userId}${qs({ year, month })}`,
+    )
+    return res
+  },
+
+  getTeamTimesheet: async (year: number, month: number, nodeId?: number) => {
+    const res = await api.get<{
+      success: boolean; is_manager: boolean; data: SincronTeamMember[]
+      year: number; month: number
+    }>(`${BASE}/timesheets/team${qs({ year, month, node_id: nodeId })}`)
+    return res
   },
 
   // ── Activity Codes ──
