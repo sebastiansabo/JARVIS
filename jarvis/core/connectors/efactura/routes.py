@@ -2213,6 +2213,10 @@ def create_supplier_mapping():
             except (ValueError, TypeError):
                 type_ids = []
 
+        # Parse optional company_id
+        raw_company_id = data.get('company_id')
+        company_id = int(raw_company_id) if raw_company_id else None
+
         mapping_id = supplier_mapping_repo.create(
             partner_name=partner_name,
             supplier_name=supplier_name,
@@ -2224,6 +2228,7 @@ def create_supplier_mapping():
             brand=data.get('brand', '').strip() or None,
             department=data.get('department', '').strip() or None,
             subdepartment=data.get('subdepartment', '').strip() or None,
+            company_id=company_id,
         )
 
         # Note: No auto-hide here - visibility is now controlled dynamically
@@ -2285,6 +2290,12 @@ def update_supplier_mapping(mapping_id: int):
             except (ValueError, TypeError):
                 type_ids = []
 
+        # Parse optional company_id (distinguish between not-sent and explicitly null)
+        company_id_kwarg = {}
+        if 'company_id' in data:
+            raw_cid = data['company_id']
+            company_id_kwarg['company_id'] = int(raw_cid) if raw_cid else None
+
         success = supplier_mapping_repo.update(
             mapping_id,
             partner_name=data.get('partner_name'),
@@ -2298,6 +2309,7 @@ def update_supplier_mapping(mapping_id: int):
             brand=data.get('brand'),
             department=data.get('department'),
             subdepartment=data.get('subdepartment'),
+            **company_id_kwarg,
         )
 
         if not success:

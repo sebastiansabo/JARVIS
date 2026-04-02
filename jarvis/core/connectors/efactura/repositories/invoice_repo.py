@@ -613,22 +613,32 @@ class InvoiceRepository(BaseRepository):
                             AND i.type_override ILIKE '%%' || pt.name || '%%'
                     ))
                     OR
-                    -- All types are hidden via supplier mapping (has hidden AND no non-hidden)
+                    -- All types are hidden via supplier mapping (company-specific > global)
                     (i.type_override IS NULL AND EXISTS (
-                        SELECT 1 FROM efactura_supplier_mappings sm2
-                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
+                        SELECT 1 FROM LATERAL (
+                            SELECT sm2.id FROM efactura_supplier_mappings sm2
+                            WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
+                                AND sm2.is_active = TRUE
+                                AND (sm2.company_id IS NULL OR sm2.company_id = i.company_id)
+                            ORDER BY sm2.company_id IS NULL
+                            LIMIT 1
+                        ) best_sm
+                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = best_sm.id
                         JOIN efactura_supplier_types pt ON pt.id = smt.type_id
-                        WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
-                            AND sm2.is_active = TRUE
-                            AND pt.is_active = TRUE
+                        WHERE pt.is_active = TRUE
                             AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
                     ) AND NOT EXISTS (
-                        SELECT 1 FROM efactura_supplier_mappings sm2
-                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
+                        SELECT 1 FROM LATERAL (
+                            SELECT sm2.id FROM efactura_supplier_mappings sm2
+                            WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
+                                AND sm2.is_active = TRUE
+                                AND (sm2.company_id IS NULL OR sm2.company_id = i.company_id)
+                            ORDER BY sm2.company_id IS NULL
+                            LIMIT 1
+                        ) best_sm
+                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = best_sm.id
                         JOIN efactura_supplier_types pt ON pt.id = smt.type_id
-                        WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
-                            AND sm2.is_active = TRUE
-                            AND pt.is_active = TRUE
+                        WHERE pt.is_active = TRUE
                             AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
                     ))
                 )
@@ -667,8 +677,13 @@ class InvoiceRepository(BaseRepository):
                     sm.subdepartment as mapping_subdepartment,
                     sm.brand as mapping_brand
                 FROM efactura_invoices i
-                LEFT JOIN efactura_supplier_mappings sm
-                    ON LOWER(i.partner_name) = LOWER(sm.partner_name) AND sm.is_active = TRUE
+                LEFT JOIN LATERAL (
+                    SELECT sm2.* FROM efactura_supplier_mappings sm2
+                    WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name) AND sm2.is_active = TRUE
+                      AND (sm2.company_id IS NULL OR sm2.company_id = i.company_id)
+                    ORDER BY sm2.company_id IS NULL
+                    LIMIT 1
+                ) sm ON TRUE
                 WHERE {where_clause}
                 ORDER BY {order_clause}
                 LIMIT %(limit)s OFFSET %(offset)s
@@ -897,8 +912,13 @@ class InvoiceRepository(BaseRepository):
                         ARRAY[]::text[]
                     ) as type_names
                 FROM efactura_invoices i
-                LEFT JOIN efactura_supplier_mappings sm
-                    ON LOWER(i.partner_name) = LOWER(sm.partner_name) AND sm.is_active = TRUE
+                LEFT JOIN LATERAL (
+                    SELECT sm2.* FROM efactura_supplier_mappings sm2
+                    WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name) AND sm2.is_active = TRUE
+                      AND (sm2.company_id IS NULL OR sm2.company_id = i.company_id)
+                    ORDER BY sm2.company_id IS NULL
+                    LIMIT 1
+                ) sm ON TRUE
                 WHERE {where_clause}
                 ORDER BY i.updated_at DESC, i.id DESC
                 LIMIT %(limit)s OFFSET %(offset)s
@@ -939,22 +959,32 @@ class InvoiceRepository(BaseRepository):
                             AND i.type_override ILIKE '%%' || pt.name || '%%'
                     ))
                     OR
-                    -- All types are hidden via supplier mapping (has hidden AND no non-hidden)
+                    -- All types are hidden via supplier mapping (company-specific > global)
                     (i.type_override IS NULL AND EXISTS (
-                        SELECT 1 FROM efactura_supplier_mappings sm2
-                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
+                        SELECT 1 FROM LATERAL (
+                            SELECT sm2.id FROM efactura_supplier_mappings sm2
+                            WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
+                                AND sm2.is_active = TRUE
+                                AND (sm2.company_id IS NULL OR sm2.company_id = i.company_id)
+                            ORDER BY sm2.company_id IS NULL
+                            LIMIT 1
+                        ) best_sm
+                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = best_sm.id
                         JOIN efactura_supplier_types pt ON pt.id = smt.type_id
-                        WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
-                            AND sm2.is_active = TRUE
-                            AND pt.is_active = TRUE
+                        WHERE pt.is_active = TRUE
                             AND COALESCE(pt.hide_in_filter, TRUE) = TRUE
                     ) AND NOT EXISTS (
-                        SELECT 1 FROM efactura_supplier_mappings sm2
-                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = sm2.id
+                        SELECT 1 FROM LATERAL (
+                            SELECT sm2.id FROM efactura_supplier_mappings sm2
+                            WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
+                                AND sm2.is_active = TRUE
+                                AND (sm2.company_id IS NULL OR sm2.company_id = i.company_id)
+                            ORDER BY sm2.company_id IS NULL
+                            LIMIT 1
+                        ) best_sm
+                        JOIN efactura_supplier_mapping_types smt ON smt.mapping_id = best_sm.id
                         JOIN efactura_supplier_types pt ON pt.id = smt.type_id
-                        WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name)
-                            AND sm2.is_active = TRUE
-                            AND pt.is_active = TRUE
+                        WHERE pt.is_active = TRUE
                             AND COALESCE(pt.hide_in_filter, TRUE) = FALSE
                     ))
                 )
@@ -1061,8 +1091,13 @@ class InvoiceRepository(BaseRepository):
                         ARRAY[]::text[]
                     ) as type_names
                 FROM efactura_invoices i
-                LEFT JOIN efactura_supplier_mappings sm
-                    ON LOWER(i.partner_name) = LOWER(sm.partner_name) AND sm.is_active = TRUE
+                LEFT JOIN LATERAL (
+                    SELECT sm2.* FROM efactura_supplier_mappings sm2
+                    WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name) AND sm2.is_active = TRUE
+                      AND (sm2.company_id IS NULL OR sm2.company_id = i.company_id)
+                    ORDER BY sm2.company_id IS NULL
+                    LIMIT 1
+                ) sm ON TRUE
                 WHERE {where_clause}
                 ORDER BY i.deleted_at DESC, i.id DESC
                 LIMIT %(limit)s OFFSET %(offset)s
@@ -1253,8 +1288,13 @@ class InvoiceRepository(BaseRepository):
                 ) as responsible
             FROM efactura_invoices i
             LEFT JOIN companies c ON c.id = i.company_id
-            LEFT JOIN efactura_supplier_mappings sm
-                ON LOWER(i.partner_name) = LOWER(sm.partner_name) AND sm.is_active = TRUE
+            LEFT JOIN LATERAL (
+                SELECT sm2.* FROM efactura_supplier_mappings sm2
+                WHERE LOWER(i.partner_name) = LOWER(sm2.partner_name) AND sm2.is_active = TRUE
+                  AND (sm2.company_id IS NULL OR sm2.company_id = i.company_id)
+                ORDER BY sm2.company_id IS NULL
+                LIMIT 1
+            ) sm ON TRUE
             WHERE i.id = ANY(%s)
             AND i.jarvis_invoice_id IS NULL
             AND i.deleted_at IS NULL
@@ -1471,6 +1511,7 @@ class SupplierMappingRepository(BaseRepository):
             SELECT m.id, m.partner_name, m.partner_cif, m.supplier_name, m.supplier_note,
                    m.supplier_vat, m.kod_konto, m.type_id, m.is_active, m.created_at, m.updated_at,
                    m.brand, m.department, m.subdepartment,
+                   m.company_id, co.company as company_name,
                    COALESCE(
                        (SELECT array_agg(pt.id ORDER BY pt.name)
                         FROM efactura_supplier_mapping_types smt
@@ -1486,6 +1527,7 @@ class SupplierMappingRepository(BaseRepository):
                        ARRAY[]::text[]
                    ) as type_names
             FROM efactura_supplier_mappings m
+            LEFT JOIN companies co ON co.id = m.company_id
             {where_clause}
             ORDER BY m.partner_name
         """)
@@ -1503,6 +1545,7 @@ class SupplierMappingRepository(BaseRepository):
             SELECT m.id, m.partner_name, m.partner_cif, m.supplier_name, m.supplier_note,
                    m.supplier_vat, m.kod_konto, m.type_id, m.is_active, m.created_at, m.updated_at,
                    m.brand, m.department, m.subdepartment,
+                   m.company_id, co.company as company_name,
                    COALESCE(
                        (SELECT array_agg(pt.id ORDER BY pt.name)
                         FROM efactura_supplier_mapping_types smt
@@ -1518,6 +1561,7 @@ class SupplierMappingRepository(BaseRepository):
                        ARRAY[]::text[]
                    ) as type_names
             FROM efactura_supplier_mappings m
+            LEFT JOIN companies co ON co.id = m.company_id
             WHERE m.id = %s
         """, (mapping_id,))
         if not row:
@@ -1569,15 +1613,16 @@ class SupplierMappingRepository(BaseRepository):
         department: Optional[str] = None,
         subdepartment: Optional[str] = None,
         brand: Optional[str] = None,
+        company_id: Optional[int] = None,
     ) -> int:
         """Create a new supplier mapping."""
         def _work(cursor):
             cursor.execute("""
                 INSERT INTO efactura_supplier_mappings
-                (partner_name, partner_cif, supplier_name, supplier_note, supplier_vat, kod_konto, type_id, department, subdepartment, brand)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (partner_name, partner_cif, supplier_name, supplier_note, supplier_vat, kod_konto, type_id, department, subdepartment, brand, company_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            """, (partner_name, partner_cif, supplier_name, supplier_note, supplier_vat, kod_konto, type_id, department, subdepartment, brand))
+            """, (partner_name, partner_cif, supplier_name, supplier_note, supplier_vat, kod_konto, type_id, department, subdepartment, brand, company_id))
             mapping_id = cursor.fetchone()['id']
 
             # Insert types into junction table
@@ -1614,6 +1659,7 @@ class SupplierMappingRepository(BaseRepository):
         department: Optional[str] = None,
         subdepartment: Optional[str] = None,
         brand: Optional[str] = None,
+        company_id: object = 'NOT_SET',
     ) -> bool:
         """Update a supplier mapping."""
         def _work(cursor):
@@ -1653,6 +1699,9 @@ class SupplierMappingRepository(BaseRepository):
             if brand is not None:
                 updates.append('brand = %s')
                 params.append(brand if brand else None)
+            if company_id != 'NOT_SET':
+                updates.append('company_id = %s')
+                params.append(company_id if company_id else None)
 
             params.append(mapping_id)
 

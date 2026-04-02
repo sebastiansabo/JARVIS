@@ -51,7 +51,7 @@ function MappingFormDialog({
   supplierTypes: SupplierType[]
 }) {
   const qc = useQueryClient()
-  const [company, setCompany] = useState('')
+  const [company, setCompany] = useState(mapping?.company_name ?? '')
   const [form, setForm] = useState({
     partner_name: mapping?.partner_name ?? '',
     partner_cif: mapping?.partner_cif ?? '',
@@ -63,6 +63,7 @@ function MappingFormDialog({
     department: mapping?.department ?? '',
     subdepartment: mapping?.subdepartment ?? '',
     type_ids: mapping?.type_ids ?? [],
+    company_id: mapping?.company_id ?? null as number | null,
   })
 
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }))
@@ -75,9 +76,9 @@ function MappingFormDialog({
   }
 
   // ── Company structure queries ──
-  const { data: companies = [] } = useQuery({
-    queryKey: ['companies'],
-    queryFn: () => organizationApi.getCompanies(),
+  const { data: companiesFull = [] } = useQuery({
+    queryKey: ['companies-config'],
+    queryFn: () => organizationApi.getCompaniesConfig(),
   })
 
   const { data: brands = [] } = useQuery({
@@ -175,13 +176,16 @@ function MappingFormDialog({
             </div>
           )}
 
-          {/* Company selector for structure lookups */}
+          {/* Company selector — also sets company_id on the mapping */}
           <div className="space-y-1">
-            <Label className="text-xs">Company (for Brand/Dept lookups)</Label>
+            <Label className="text-xs">Company</Label>
             <Select
-              value={company || '__none__'}
+              value={company || '__all__'}
               onValueChange={(v) => {
-                setCompany(v === '__none__' ? '' : v)
+                const name = v === '__all__' ? '' : v
+                setCompany(name)
+                const found = companiesFull.find((c) => c.company === name)
+                set('company_id', found?.id ?? null)
                 set('brand', '')
                 set('department', '')
                 set('subdepartment', '')
@@ -191,13 +195,13 @@ function MappingFormDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none__">-- Select Company --</SelectItem>
-                {companies.map((c) => (
-                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                <SelectItem value="__all__">All Companies</SelectItem>
+                {companiesFull.map((c) => (
+                  <SelectItem key={c.id} value={c.company}>{c.company}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">Select a company to populate Department / Subdivision / Detail dropdowns</p>
+            <p className="text-[11px] text-muted-foreground">No company = applies to all invoices. Select a company to scope this mapping.</p>
           </div>
 
           {/* Department */}
@@ -426,6 +430,7 @@ function ImportSuppliersDialog({
           partner_name: s.partner_name,
           supplier_name: s.partner_name,
           partner_cif: s.partner_cif || undefined,
+          supplier_vat: s.partner_cif || undefined,
         })
         created++
       } catch {
@@ -602,7 +607,8 @@ export default function MappingsTab({
       m.partner_name.toLowerCase().includes(q) ||
       m.supplier_name.toLowerCase().includes(q) ||
       (m.partner_cif && m.partner_cif.includes(q)) ||
-      (m.supplier_vat && m.supplier_vat.includes(q))
+      (m.supplier_vat && m.supplier_vat.includes(q)) ||
+      (m.company_name && m.company_name.toLowerCase().includes(q))
     )
   })
 
@@ -670,6 +676,7 @@ export default function MappingsTab({
                   <th className="p-2 text-left">CIF</th>
                   <th className="p-2 text-left">Mapped Name</th>
                   <th className="p-2 text-left">Types</th>
+                  <th className="p-2 text-left">Company</th>
                   <th className="p-2 text-left">Kod Konto</th>
                   <th className="p-2 text-left">Dept</th>
                   <th className="p-2 text-center">Active</th>
@@ -693,6 +700,7 @@ export default function MappingsTab({
                         </div>
                       ) : '—'}
                     </td>
+                    <td className="p-2 text-xs">{m.company_name || 'All'}</td>
                     <td className="p-2 text-xs">{m.kod_konto || '—'}</td>
                     <td className="p-2 text-xs">{m.department || '—'}</td>
                     <td className="p-2 text-center">

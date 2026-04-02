@@ -396,15 +396,31 @@ def create_schema_efactura(conn, cursor):
     except Exception:
         conn.rollback()
 
-    # Unique constraint to prevent duplicate supplier mappings (case-insensitive)
+    # Migration: Add company_id column to supplier mappings (company-scoped mappings)
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'efactura_supplier_mappings' AND column_name = 'company_id'
+            ) THEN
+                ALTER TABLE efactura_supplier_mappings ADD COLUMN company_id INTEGER REFERENCES companies(id);
+            END IF;
+        END $$;
+    ''')
+
+    # Drop old unique index (global only) and create new one (per company or global)
+    cursor.execute('DROP INDEX IF EXISTS idx_efactura_supplier_mappings_partner_name_unique')
     try:
         cursor.execute('''
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_efactura_supplier_mappings_partner_name_unique
-            ON efactura_supplier_mappings (LOWER(partner_name))
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_efactura_supplier_mappings_partner_company_unique
+            ON efactura_supplier_mappings (LOWER(partner_name), COALESCE(company_id, 0))
             WHERE is_active = TRUE
         ''')
         conn.commit()
     except Exception:
         conn.rollback()
+
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_efactura_supplier_mappings_company ON efactura_supplier_mappings(company_id)')
 
     conn.commit()

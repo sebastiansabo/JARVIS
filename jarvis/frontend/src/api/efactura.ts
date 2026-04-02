@@ -256,6 +256,7 @@ export const efacturaApi = {
     brand?: string
     department?: string
     subdepartment?: string
+    company_id?: number | null
   }) => api.post<{ success: boolean; id: number }>(`${BASE}/mappings`, data),
   updateMapping: (id: number, data: Partial<SupplierMapping>) =>
     api.put<{ success: boolean }>(`${BASE}/mappings/${id}`, data),

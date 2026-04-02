@@ -139,6 +139,8 @@ export interface SupplierMapping {
   brand: string | null
   department: string | null
   subdepartment: string | null
+  company_id: number | null
+  company_name: string | null
   is_active: boolean
   created_at: string
   updated_at: string | null
