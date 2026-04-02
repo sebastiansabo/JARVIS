@@ -100,7 +100,7 @@ def api_upload_and_link(invoice_id):
     # Resolve company_id from allocations (same pattern as store-to-dms)
     company_id = None
     alloc_row = _dms_link_repo.query_one(
-        'SELECT company FROM invoice_allocations WHERE invoice_id = %s LIMIT 1',
+        'SELECT company FROM allocations WHERE invoice_id = %s LIMIT 1',
         (invoice_id,)
     )
     if alloc_row and alloc_row.get('company'):
