@@ -15,6 +15,13 @@ import type {
   CostTotals,
   RevenueTotals,
   Profitability,
+  PricingRule,
+  PricingHistoryEntry,
+  Promotion,
+  FloorPrice,
+  SimulationResult,
+  RuleExecutionResult,
+  AgingVehicle,
 } from '../types/carpark'
 
 export const carparkApi = {
@@ -133,4 +140,59 @@ export const carparkApi = {
   // ── Profitability ──────────────────────────────────────
   getProfitability: (vehicleId: number) =>
     api.get<Profitability>(`/api/carpark/vehicles/${vehicleId}/profitability`),
+
+  // ── Pricing Rules ────────────────────────────────────
+  getPricingRules: (activeOnly = false) =>
+    api.get<{ rules: PricingRule[] }>('/api/carpark/pricing/rules', activeOnly ? { active_only: 'true' } : undefined),
+
+  getPricingRule: (ruleId: number) =>
+    api.get<{ rule: PricingRule }>(`/api/carpark/pricing/rules/${ruleId}`),
+
+  createPricingRule: (data: Partial<PricingRule>) =>
+    api.post<{ rule: PricingRule }>('/api/carpark/pricing/rules', data),
+
+  updatePricingRule: (ruleId: number, data: Partial<PricingRule>) =>
+    api.put<{ rule: PricingRule }>(`/api/carpark/pricing/rules/${ruleId}`, data),
+
+  deletePricingRule: (ruleId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/pricing/rules/${ruleId}`),
+
+  executePricingRule: (ruleId: number, dryRun = false) =>
+    api.post<RuleExecutionResult>(`/api/carpark/pricing/rules/${ruleId}/execute`, { dry_run: dryRun }),
+
+  // ── Pricing Simulation ───────────────────────────────
+  simulatePricing: (params: { vehicle_id?: number; rule_id?: number }) =>
+    api.post<{ simulations: SimulationResult[] }>('/api/carpark/pricing/simulate', params),
+
+  // ── Floor Price ──────────────────────────────────────
+  getFloorPrice: (vehicleId: number) =>
+    api.get<FloorPrice>(`/api/carpark/vehicles/${vehicleId}/floor-price`),
+
+  // ── Pricing History ──────────────────────────────────
+  getPricingHistory: (vehicleId: number) =>
+    api.get<{ history: PricingHistoryEntry[] }>(`/api/carpark/vehicles/${vehicleId}/pricing-history`),
+
+  // ── Vehicle Promotions ───────────────────────────────
+  getVehiclePromotions: (vehicleId: number) =>
+    api.get<{ promotions: Promotion[] }>(`/api/carpark/vehicles/${vehicleId}/promotions`),
+
+  // ── Promotions ───────────────────────────────────────
+  getPromotions: (activeOnly = false) =>
+    api.get<{ promotions: Promotion[] }>('/api/carpark/promotions', activeOnly ? { active_only: 'true' } : undefined),
+
+  getPromotion: (promoId: number) =>
+    api.get<{ promotion: Promotion }>(`/api/carpark/promotions/${promoId}`),
+
+  createPromotion: (data: Partial<Promotion>) =>
+    api.post<{ promotion: Promotion }>('/api/carpark/promotions', data),
+
+  updatePromotion: (promoId: number, data: Partial<Promotion>) =>
+    api.put<{ promotion: Promotion }>(`/api/carpark/promotions/${promoId}`, data),
+
+  deletePromotion: (promoId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/promotions/${promoId}`),
+
+  // ── Aging Alerts ─────────────────────────────────────
+  getAgingVehicles: (minDays?: number) =>
+    api.get<{ vehicles: AgingVehicle[]; count: number }>('/api/carpark/pricing/aging', minDays ? { min_days: String(minDays) } : undefined),
 }

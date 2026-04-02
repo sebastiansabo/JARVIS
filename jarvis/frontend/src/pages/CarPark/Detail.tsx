@@ -52,6 +52,7 @@ import {
   CATEGORY_LABELS,
   COST_TYPE_LABELS,
   REVENUE_TYPE_LABELS,
+  PROMO_TYPE_LABELS,
   type Vehicle,
   type VehiclePhoto,
   type VehicleCost,
@@ -60,6 +61,9 @@ import {
   type CostType,
   type RevenueType,
   type Profitability,
+  type PricingHistoryEntry,
+  type FloorPrice,
+  type Promotion,
 } from '@/types/carpark'
 
 // ── Status colors (shared with catalog) ────────────────────
@@ -169,11 +173,31 @@ export default function CarParkDetail() {
     enabled: !!id,
   })
 
+  const { data: pricingHistoryData } = useQuery({
+    queryKey: ['carpark', 'pricing-history', id],
+    queryFn: () => carparkApi.getPricingHistory(id),
+    enabled: !!id,
+  })
+
+  const { data: floorPriceData } = useQuery({
+    queryKey: ['carpark', 'floor-price', id],
+    queryFn: () => carparkApi.getFloorPrice(id),
+    enabled: !!id,
+  })
+
+  const { data: vehiclePromosData } = useQuery({
+    queryKey: ['carpark', 'vehicle-promotions', id],
+    queryFn: () => carparkApi.getVehiclePromotions(id),
+    enabled: !!id,
+  })
+
   const vehicle = data?.vehicle
   const history = historyData?.history ?? []
   const modifications = modsData?.modifications ?? []
   const costs = costsData?.costs ?? []
   const revenues = revenuesData?.revenues ?? []
+  const pricingHistory = pricingHistoryData?.history ?? []
+  const vehiclePromos = vehiclePromosData?.promotions ?? []
 
   // Status change dialog
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
@@ -363,7 +387,12 @@ export default function CarParkDetail() {
         </TabsContent>
 
         <TabsContent value="pricing" className="mt-4">
-          <PricingTab vehicle={vehicle} />
+          <PricingTab
+            vehicle={vehicle}
+            pricingHistory={pricingHistory}
+            floorPrice={floorPriceData ?? null}
+            promotions={vehiclePromos}
+          />
         </TabsContent>
 
         <TabsContent value="costs" className="mt-4">
@@ -679,49 +708,164 @@ function DetailsTab({ vehicle: v }: { vehicle: Vehicle }) {
 }
 
 // ── Pricing Tab ────────────────────────────────────────────
-function PricingTab({ vehicle: v }: { vehicle: Vehicle }) {
+function PricingTab({
+  vehicle: v,
+  pricingHistory,
+  floorPrice,
+  promotions,
+}: {
+  vehicle: Vehicle
+  pricingHistory: PricingHistoryEntry[]
+  floorPrice: FloorPrice | null
+  promotions: Promotion[]
+}) {
   return (
-    <div className="grid gap-6 md:grid-cols-2">
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold mb-3">Sale Pricing</h3>
-        <dl className="grid grid-cols-2 gap-3">
-          <Field label="Current Price" value={v.current_price != null ? <CurrencyDisplay value={v.current_price} currency={v.price_currency} /> : null} />
-          <Field label="List Price" value={v.list_price != null ? <CurrencyDisplay value={v.list_price} currency={v.price_currency} /> : null} />
-          <Field label="Promotional Price" value={v.promotional_price != null ? <CurrencyDisplay value={v.promotional_price} currency={v.price_currency} /> : null} />
-          <Field label="Minimum Price" value={v.minimum_price != null ? <CurrencyDisplay value={v.minimum_price} currency={v.price_currency} /> : null} />
-          <Field label="VAT Included" value={v.price_includes_vat ? 'Yes' : 'No'} />
-          <Field label="Negotiable" value={v.is_negotiable ? 'Yes' : 'No'} />
-          <Field label="Margin Scheme" value={v.margin_scheme ? 'Yes' : 'No'} />
-          <Field label="Financing" value={v.eligible_for_financing ? 'Yes' : 'No'} />
-        </dl>
-      </Card>
-
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold mb-3">Acquisition Costs</h3>
-        <dl className="grid grid-cols-2 gap-3">
-          <Field label="Purchase Price" value={v.purchase_price_net != null ? <CurrencyDisplay value={v.purchase_price_net} currency={v.purchase_price_currency} /> : null} />
-          <Field label="Acquisition Value" value={v.acquisition_value != null ? <CurrencyDisplay value={v.acquisition_value} currency={v.acquisition_currency} /> : null} />
-          <Field label="VAT" value={v.acquisition_vat != null ? <CurrencyDisplay value={v.acquisition_vat} currency={v.acquisition_currency} /> : null} />
-          <Field label="Reconditioning" value={v.reconditioning_cost != null ? <CurrencyDisplay value={v.reconditioning_cost} currency={v.price_currency} /> : null} />
-          <Field label="Transport" value={v.transport_cost != null ? <CurrencyDisplay value={v.transport_cost} currency={v.price_currency} /> : null} />
-          <Field label="Registration" value={v.registration_cost != null ? <CurrencyDisplay value={v.registration_cost} currency={v.price_currency} /> : null} />
-          <Field label="Other Costs" value={v.other_costs != null ? <CurrencyDisplay value={v.other_costs} currency={v.price_currency} /> : null} />
-          <Field label="Total Cost" value={v.total_cost != null ? <CurrencyDisplay value={v.total_cost} currency={v.price_currency} className="font-bold" /> : null} />
-        </dl>
-      </Card>
-
-      {v.sale_price != null && (
-        <Card className="p-4 md:col-span-2">
-          <h3 className="text-sm font-semibold mb-3">Sale Info</h3>
-          <dl className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Field label="Sale Price" value={<CurrencyDisplay value={v.sale_price} currency={v.price_currency} />} />
-            <Field label="Sale Date" value={formatDate(v.sale_date)} />
-            <Field label="Gross Margin" value={
-              v.total_cost != null ? (
-                <CurrencyDisplay value={v.sale_price - v.total_cost} currency={v.price_currency} showSign />
-              ) : '-'
-            } />
+    <div className="space-y-6">
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold mb-3">Sale Pricing</h3>
+          <dl className="grid grid-cols-2 gap-3">
+            <Field label="Current Price" value={v.current_price != null ? <CurrencyDisplay value={v.current_price} currency={v.price_currency} /> : null} />
+            <Field label="List Price" value={v.list_price != null ? <CurrencyDisplay value={v.list_price} currency={v.price_currency} /> : null} />
+            <Field label="Promotional Price" value={v.promotional_price != null ? <CurrencyDisplay value={v.promotional_price} currency={v.price_currency} /> : null} />
+            <Field label="Minimum Price" value={v.minimum_price != null ? <CurrencyDisplay value={v.minimum_price} currency={v.price_currency} /> : null} />
+            <Field label="VAT Included" value={v.price_includes_vat ? 'Yes' : 'No'} />
+            <Field label="Negotiable" value={v.is_negotiable ? 'Yes' : 'No'} />
+            <Field label="Margin Scheme" value={v.margin_scheme ? 'Yes' : 'No'} />
+            <Field label="Financing" value={v.eligible_for_financing ? 'Yes' : 'No'} />
           </dl>
+        </Card>
+
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold mb-3">Acquisition Costs</h3>
+          <dl className="grid grid-cols-2 gap-3">
+            <Field label="Purchase Price" value={v.purchase_price_net != null ? <CurrencyDisplay value={v.purchase_price_net} currency={v.purchase_price_currency} /> : null} />
+            <Field label="Acquisition Value" value={v.acquisition_value != null ? <CurrencyDisplay value={v.acquisition_value} currency={v.acquisition_currency} /> : null} />
+            <Field label="VAT" value={v.acquisition_vat != null ? <CurrencyDisplay value={v.acquisition_vat} currency={v.acquisition_currency} /> : null} />
+            <Field label="Reconditioning" value={v.reconditioning_cost != null ? <CurrencyDisplay value={v.reconditioning_cost} currency={v.price_currency} /> : null} />
+            <Field label="Transport" value={v.transport_cost != null ? <CurrencyDisplay value={v.transport_cost} currency={v.price_currency} /> : null} />
+            <Field label="Registration" value={v.registration_cost != null ? <CurrencyDisplay value={v.registration_cost} currency={v.price_currency} /> : null} />
+            <Field label="Other Costs" value={v.other_costs != null ? <CurrencyDisplay value={v.other_costs} currency={v.price_currency} /> : null} />
+            <Field label="Total Cost" value={v.total_cost != null ? <CurrencyDisplay value={v.total_cost} currency={v.price_currency} className="font-bold" /> : null} />
+          </dl>
+        </Card>
+
+        {v.sale_price != null && (
+          <Card className="p-4 md:col-span-2">
+            <h3 className="text-sm font-semibold mb-3">Sale Info</h3>
+            <dl className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Field label="Sale Price" value={<CurrencyDisplay value={v.sale_price} currency={v.price_currency} />} />
+              <Field label="Sale Date" value={formatDate(v.sale_date)} />
+              <Field label="Gross Margin" value={
+                v.total_cost != null ? (
+                  <CurrencyDisplay value={v.sale_price - v.total_cost} currency={v.price_currency} showSign />
+                ) : '-'
+              } />
+            </dl>
+          </Card>
+        )}
+      </div>
+
+      {/* Floor Price */}
+      {floorPrice && floorPrice.floor_price > 0 && (
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold mb-3">Floor Price Analysis</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <div className="text-xs text-muted-foreground">Floor Price</div>
+              <div className="text-lg font-bold">
+                <CurrencyDisplay value={floorPrice.floor_price} currency={v.price_currency} />
+              </div>
+              <Badge variant="outline" className="mt-1 text-[10px]">
+                {floorPrice.binding_constraint === 'minimum_price' ? 'Preț minim' :
+                 floorPrice.binding_constraint === 'cost_plus_margin' ? 'Cost + marjă' : 'Recuperare achiziție'}
+              </Badge>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Min. Price Set</div>
+              <div className="text-sm font-medium">
+                <CurrencyDisplay value={floorPrice.components.minimum_price} currency={v.price_currency} />
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Cost + {floorPrice.components.min_margin_percent}% Margin</div>
+              <div className="text-sm font-medium">
+                <CurrencyDisplay value={floorPrice.components.cost_plus_margin} currency={v.price_currency} />
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Purchase Recovery</div>
+              <div className="text-sm font-medium">
+                <CurrencyDisplay value={floorPrice.components.purchase_recovery} currency={v.price_currency} />
+              </div>
+            </div>
+          </div>
+          {v.current_price != null && v.current_price < floorPrice.floor_price && (
+            <div className="mt-3 flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+              <TrendingDown className="h-4 w-4" />
+              Current price is below the calculated floor price
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Active Promotions */}
+      {promotions.length > 0 && (
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold mb-3">Active Promotions</h3>
+          <div className="space-y-2">
+            {promotions.map((promo) => (
+              <div key={promo.id} className="flex items-center justify-between rounded border p-2">
+                <div>
+                  <span className="text-sm font-medium">{promo.name}</span>
+                  <Badge variant="outline" className="ml-2 text-[10px]">
+                    {PROMO_TYPE_LABELS[promo.promo_type]}
+                  </Badge>
+                  {promo.discount_value != null && promo.promo_type === 'discount' && (
+                    <span className="ml-2 text-sm text-muted-foreground">
+                      {promo.discount_type === 'percent' ? `${promo.discount_value}%` : `${promo.discount_value} ${v.price_currency}`}
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {formatDate(promo.start_date)} — {formatDate(promo.end_date)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Pricing History */}
+      {pricingHistory.length > 0 && (
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold mb-3">Pricing History</h3>
+          <div className="space-y-2">
+            {pricingHistory.map((entry) => (
+              <div key={entry.id} className="flex items-center justify-between text-sm border-b last:border-0 pb-2 last:pb-0">
+                <div className="flex items-center gap-2">
+                  {entry.old_price != null && (
+                    <span className="text-muted-foreground line-through">
+                      <CurrencyDisplay value={entry.old_price} currency={v.price_currency} />
+                    </span>
+                  )}
+                  {entry.old_price != null && <span className="text-muted-foreground">&rarr;</span>}
+                  {entry.new_price != null && (
+                    <span className="font-medium">
+                      <CurrencyDisplay value={entry.new_price} currency={v.price_currency} />
+                    </span>
+                  )}
+                  {entry.change_reason && (
+                    <Badge variant="outline" className="text-[10px]">{entry.change_reason}</Badge>
+                  )}
+                  {entry.rule_name && (
+                    <Badge variant="secondary" className="text-[10px]">{entry.rule_name}</Badge>
+                  )}
+                </div>
+                <span className="text-xs text-muted-foreground">{formatDate(entry.created_at)}</span>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
     </div>

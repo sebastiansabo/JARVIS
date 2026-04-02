@@ -42,6 +42,8 @@ const Digest = lazy(() => import('./pages/Digest'))
 const CarPark = lazy(() => import('./pages/CarPark'))
 const CarParkDetail = lazy(() => import('./pages/CarPark/Detail'))
 const CarParkVehicleForm = lazy(() => import('./pages/CarPark/VehicleForm'))
+const CarParkPricingRules = lazy(() => import('./pages/CarPark/PricingRules'))
+const CarParkPromotions = lazy(() => import('./pages/CarPark/Promotions'))
 
 function PageLoader() {
   return (
@@ -189,6 +191,8 @@ export default function App() {
         <Route path="carpark/new" element={<Guard flag="can_edit_carpark"><SuspensePage><CarParkVehicleForm /></SuspensePage></Guard>} />
         <Route path="carpark/:vehicleId" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkDetail /></SuspensePage></Guard>} />
         <Route path="carpark/:vehicleId/edit" element={<Guard flag="can_edit_carpark"><SuspensePage><CarParkVehicleForm /></SuspensePage></Guard>} />
+        <Route path="carpark/pricing-rules" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkPricingRules /></SuspensePage></Guard>} />
+        <Route path="carpark/promotions" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkPromotions /></SuspensePage></Guard>} />
 
         {/* AI Agent — requires can_access_ai_agent */}
         <Route path="ai-agent" element={<Guard flag="can_access_ai_agent"><SuspensePage><AiAgent /></SuspensePage></Guard>} />

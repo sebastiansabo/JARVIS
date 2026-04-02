@@ -314,6 +314,171 @@ export const REVENUE_TYPE_LABELS: Record<RevenueType, string> = {
   other: 'Altele',
 }
 
+// ── Pricing types ──
+
+export type PricingActionType = 'reduce_percent' | 'reduce_amount' | 'set_price' | 'alert_only'
+export type PricingFloorType = 'minimum_price' | 'cost_plus_margin' | 'purchase_recovery'
+export type PromotionTargetType = 'all' | 'category' | 'brand' | 'specific'
+export type PromotionType = 'discount' | 'special_financing' | 'gift' | 'bundle'
+export type DiscountType = 'percent' | 'fixed'
+
+export interface PricingRule {
+  id: number
+  name: string
+  description: string | null
+  is_active: boolean
+  priority: number
+  condition_category: string[] | null
+  condition_brand: string[] | null
+  condition_min_days: number | null
+  condition_max_days: number | null
+  condition_min_price: number | null
+  condition_max_price: number | null
+  action_type: PricingActionType
+  action_value: number | null
+  action_floor_type: PricingFloorType | null
+  action_floor_value: number | null
+  frequency: string
+  last_executed: string | null
+  company_id: number | null
+  created_by: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PricingHistoryEntry {
+  id: number
+  vehicle_id: number
+  old_price: number | null
+  new_price: number | null
+  change_reason: string | null
+  rule_id: number | null
+  rule_name: string | null
+  changed_by: number | null
+  created_at: string
+}
+
+export interface Promotion {
+  id: number
+  name: string
+  description: string | null
+  target_type: PromotionTargetType
+  target_categories: string[] | null
+  target_brands: string[] | null
+  target_vehicle_ids: number[] | null
+  promo_type: PromotionType
+  discount_type: DiscountType | null
+  discount_value: number | null
+  special_financing_rate: number | null
+  gift_description: string | null
+  start_date: string
+  end_date: string
+  is_active: boolean
+  budget: number | null
+  spent: number | null
+  vehicles_sold: number | null
+  push_to_platforms: boolean
+  platform_badge: string | null
+  company_id: number | null
+  created_by: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FloorPrice {
+  floor_price: number
+  components: {
+    minimum_price: number
+    cost_plus_margin: number
+    purchase_recovery: number
+    total_cost: number
+    acquisition_price: number
+    min_margin_percent: number
+  }
+  binding_constraint: 'minimum_price' | 'cost_plus_margin' | 'purchase_recovery'
+}
+
+export interface SimulationResult {
+  rule_id: number
+  rule_name: string
+  vehicle_id: number
+  vin: string
+  brand?: string
+  model?: string
+  action: string
+  current_price: number
+  suggested_price: number
+  reduction: number
+  reduction_percent?: number
+  floor_price: number
+  floor_hit: boolean
+}
+
+export interface RuleExecutionResult {
+  rule_id: number
+  rule_name: string
+  dry_run: boolean
+  total_matched: number
+  applied_count: number
+  pending_approval_count: number
+  skipped_count: number
+  alert_count: number
+  applied: Array<{
+    vehicle_id: number
+    vin: string
+    brand: string
+    model: string
+    old_price: number
+    new_price: number
+    reduction: number
+    floor_hit: boolean
+    needs_approval: boolean
+    applied: boolean
+  }>
+  alerts: Array<{
+    vehicle_id: number
+    vin: string
+    brand: string
+    model: string
+    days_listed: number
+    current_price: number
+  }>
+}
+
+export interface AgingVehicle {
+  vehicle_id: number
+  vin: string
+  brand: string
+  model: string
+  status: string
+  days_listed: number
+  current_price: number
+  list_price: number
+  category: string
+  severity: 'critical' | 'warning' | 'info'
+}
+
+export const ACTION_TYPE_LABELS: Record<PricingActionType, string> = {
+  reduce_percent: 'Reducere %',
+  reduce_amount: 'Reducere sumă',
+  set_price: 'Setare preț',
+  alert_only: 'Doar alertă',
+}
+
+export const PROMO_TYPE_LABELS: Record<PromotionType, string> = {
+  discount: 'Discount',
+  special_financing: 'Finanțare specială',
+  gift: 'Cadou',
+  bundle: 'Pachet',
+}
+
+export const TARGET_TYPE_LABELS: Record<PromotionTargetType, string> = {
+  all: 'Toate vehiculele',
+  category: 'După categorie',
+  brand: 'După marcă',
+  specific: 'Vehicule specifice',
+}
+
 // Status display config
 export const STATUS_LABELS: Record<VehicleStatus, string> = {
   ACQUIRED: 'Achiziționat',
