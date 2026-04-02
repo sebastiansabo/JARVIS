@@ -110,11 +110,6 @@ export default function Profile() {
       <PageHeader
         title="My Profile"
         breadcrumbs={[{ label: 'My Profile' }]}
-        actions={
-          <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
-            <BarChart3 className="h-4 w-4" />
-          </Button>
-        }
       />
 
       {/* User Info Card */}
@@ -193,40 +188,6 @@ export default function Profile() {
 
       {/* Change Password Dialog */}
       <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
-
-      {/* Stats Row */}
-      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
-        <StatCard
-          title="Invoices"
-          value={summary?.invoices.total ?? 0}
-          icon={<Receipt className="h-4 w-4" />}
-          isLoading={isLoading}
-        />
-        <StatCard
-          title="Invoice Value"
-          value={
-            summary
-              ? new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
-                  summary.invoices.total_value,
-                ) + ' RON'
-              : '0'
-          }
-          icon={<DollarSign className="h-4 w-4" />}
-          isLoading={isLoading}
-        />
-        <StatCard
-          title="HR Bonuses"
-          value={summary?.hr_events.total_bonuses ?? 0}
-          icon={<Gift className="h-4 w-4" />}
-          isLoading={isLoading}
-        />
-        <StatCard
-          title="Activity Events"
-          value={summary?.activity.total_events ?? 0}
-          icon={<Activity className="h-4 w-4" />}
-          isLoading={isLoading}
-        />
-      </div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
