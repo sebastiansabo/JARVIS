@@ -321,10 +321,10 @@ def get_team_timesheet():
         if not managed_ids:
             managed_ids = [current_user.id]
     else:
-        # scope == 'all' — get all managed employees (admin sees everyone via organigram)
-        managed_ids = get_managed_employee_ids(current_user.id, node_id=node_id)
+        # scope == 'all' — admin sees ALL mapped employees across all companies
+        managed_ids = None  # None = no filter
 
-    if not managed_ids:
+    if managed_ids is not None and not managed_ids:
         return jsonify({'success': True, 'data': [],
                         'year': year, 'month': month})
 

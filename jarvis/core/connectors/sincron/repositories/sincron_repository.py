@@ -247,9 +247,27 @@ class SincronRepository(BaseRepository):
         ''', (jarvis_user_id, year, month))
 
     def get_team_timesheet_summary(self, jarvis_user_ids, year, month):
-        """Get monthly summary for a list of JARVIS users (team view)."""
-        if not jarvis_user_ids:
+        """Get monthly summary for JARVIS users. Pass None for all mapped employees."""
+        if jarvis_user_ids is not None and not jarvis_user_ids:
             return []
+        if jarvis_user_ids is None:
+            # All mapped employees (admin scope='all')
+            return self.query_all('''
+                SELECT se.mapped_jarvis_user_id, u.name AS employee_name,
+                       se.company_name,
+                       st.short_code, st.unit,
+                       SUM(st.value) AS total_value,
+                       COUNT(*) AS day_count
+                FROM sincron_timesheets st
+                JOIN sincron_employees se
+                  ON se.sincron_employee_id = st.sincron_employee_id
+                  AND se.company_name = st.company_name
+                JOIN users u ON u.id = se.mapped_jarvis_user_id
+                WHERE st.year = %s AND st.month = %s
+                GROUP BY se.mapped_jarvis_user_id, u.name, se.company_name,
+                         st.short_code, st.unit
+                ORDER BY u.name, st.short_code
+            ''', (year, month))
         return self.query_all('''
             SELECT se.mapped_jarvis_user_id, u.name AS employee_name,
                    se.company_name,
