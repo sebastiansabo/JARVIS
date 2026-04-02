@@ -39,6 +39,12 @@ const SupplierProfile = lazy(() => import('./pages/Dms/SupplierProfile'))
 const MobileCheckin = lazy(() => import('./pages/MobileCheckin'))
 const DownloadApp = lazy(() => import('./pages/DownloadApp'))
 const Digest = lazy(() => import('./pages/Digest'))
+const CarPark = lazy(() => import('./pages/CarPark'))
+const CarParkDetail = lazy(() => import('./pages/CarPark/Detail'))
+const CarParkVehicleForm = lazy(() => import('./pages/CarPark/VehicleForm'))
+const CarParkPricingRules = lazy(() => import('./pages/CarPark/PricingRules'))
+const CarParkPromotions = lazy(() => import('./pages/CarPark/Promotions'))
+const CarParkDashboard = lazy(() => import('./pages/CarPark/Dashboard'))
 
 function PageLoader() {
   return (
@@ -180,6 +186,15 @@ export default function App() {
         <Route path="dms/documents/:documentId" element={<Guard flag="can_access_dms"><SuspensePage><DmsDocumentDetail /></SuspensePage></Guard>} />
         <Route path="dms/suppliers" element={<Guard flag="can_access_dms"><SuspensePage><SuppliersPage /></SuspensePage></Guard>} />
         <Route path="dms/suppliers/:supplierId" element={<Guard flag="can_access_dms"><SuspensePage><SupplierProfile /></SuspensePage></Guard>} />
+
+        {/* CarPark — requires can_access_carpark */}
+        <Route path="carpark" element={<Guard flag="can_access_carpark"><SuspensePage><CarPark /></SuspensePage></Guard>} />
+        <Route path="carpark/new" element={<Guard flag="can_edit_carpark"><SuspensePage><CarParkVehicleForm /></SuspensePage></Guard>} />
+        <Route path="carpark/:vehicleId" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkDetail /></SuspensePage></Guard>} />
+        <Route path="carpark/:vehicleId/edit" element={<Guard flag="can_edit_carpark"><SuspensePage><CarParkVehicleForm /></SuspensePage></Guard>} />
+        <Route path="carpark/pricing-rules" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkPricingRules /></SuspensePage></Guard>} />
+        <Route path="carpark/promotions" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkPromotions /></SuspensePage></Guard>} />
+        <Route path="carpark/dashboard" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkDashboard /></SuspensePage></Guard>} />
 
         {/* AI Agent — requires can_access_ai_agent */}
         <Route path="ai-agent" element={<Guard flag="can_access_ai_agent"><SuspensePage><AiAgent /></SuspensePage></Guard>} />

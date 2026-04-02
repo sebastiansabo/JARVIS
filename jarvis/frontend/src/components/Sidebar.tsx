@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, LifeBuoy, ClipboardList, Newspaper } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Fingerprint, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, LifeBuoy, ClipboardList, Newspaper, Car, DollarSign, Tag, BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -82,6 +82,15 @@ const navItemsDef: NavItem[] = [
     children: [
       { path: '/app/sales/crm', label: 'CRM Database', icon: Contact, moduleKey: 'crm_database' },
       { path: '/app/sales/field-sales', label: 'Field Sales', icon: MapPin, moduleKey: 'field_sales' },
+    ],
+  },
+  {
+    path: '/app/carpark', label: 'CarPark', icon: Car, moduleKey: 'carpark', permission: 'can_access_carpark',
+    children: [
+      { path: '/app/carpark/dashboard', label: 'Dashboard', icon: BarChart3, moduleKey: 'carpark_dashboard' },
+      { path: '/app/carpark', label: 'Vehicule', icon: Car, moduleKey: 'carpark_vehicles' },
+      { path: '/app/carpark/pricing-rules', label: 'Reguli preț', icon: DollarSign, moduleKey: 'carpark_pricing' },
+      { path: '/app/carpark/promotions', label: 'Promoții', icon: Tag, moduleKey: 'carpark_promotions' },
     ],
   },
   { path: '/app/settings', label: 'Settings', icon: Settings, moduleKey: 'settings', permission: 'can_access_settings' },
