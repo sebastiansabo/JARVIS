@@ -1814,6 +1814,33 @@ def init_db():
             ''')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_checkin_locations_active ON checkin_locations(is_active)')
 
+            # CarPark: two-level cost hierarchy (cost lines → cost entries)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS carpark_vehicle_cost_lines (
+                    id SERIAL PRIMARY KEY,
+                    vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+                    cost_type VARCHAR(50) NOT NULL,
+                    description TEXT,
+                    planned_amount DECIMAL(12,2) DEFAULT 0,
+                    spent_amount DECIMAL(12,2) DEFAULT 0,
+                    currency VARCHAR(3) DEFAULT 'EUR',
+                    notes TEXT,
+                    created_by INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = 'carpark_vehicle_costs' AND column_name = 'cost_line_id') THEN
+                        ALTER TABLE carpark_vehicle_costs ADD COLUMN cost_line_id INTEGER REFERENCES carpark_vehicle_cost_lines(id) ON DELETE SET NULL;
+                        CREATE INDEX idx_carpark_costs_line ON carpark_vehicle_costs(cost_line_id);
+                    END IF;
+                END $$;
+            ''')
+
             conn.commit()
             logger.info('Database schema already initialized — skipping init_db()')
             return
