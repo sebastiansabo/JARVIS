@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/useMediaQuery'
@@ -11,9 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import {
-  Users, Building2, ArrowUpDown, Briefcase,
+  Users, Building2, ArrowUpDown, Briefcase, ChevronDown, ChevronRight,
+  Mail, Phone, Fingerprint, FileSpreadsheet, ExternalLink,
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { HrEmployee, StructureCompany } from '@/types/hr'
 
 interface Props {
@@ -29,6 +32,7 @@ export default function EmployeesTab({ search }: Props) {
   const [companyFilter, setCompanyFilter] = useState<string>('all')
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [expandedRow, setExpandedRow] = useState<number | null>(null)
 
   const { data: employeesData, isLoading: loadingEmployees } = useQuery({
     queryKey: ['hr', 'employees', 'all'],
@@ -180,6 +184,7 @@ export default function EmployeesTab({ search }: Props) {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8" />
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('name')}>
                       <span className="flex items-center gap-1">
                         Name <ArrowUpDown className="h-3 w-3" />
@@ -196,36 +201,153 @@ export default function EmployeesTab({ search }: Props) {
                       </span>
                     </TableHead>
                     <TableHead>Brand</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Phone</TableHead>
                     <TableHead className="text-center">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((e) => (
-                    <TableRow
-                      key={e.id}
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => navigate(`/app/hr/employees/${e.id}`)}
-                    >
-                      <TableCell className="font-medium">{e.name}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{e.company ?? '-'}</TableCell>
-                      <TableCell className="text-xs">{e.departments ?? '-'}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{e.brand ?? '-'}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{e.email ?? '-'}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{e.phone ?? '-'}</TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant={e.is_active ? 'default' : 'secondary'} className="text-xs">
-                          {e.is_active ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {filtered.map((e) => {
+                    const isExpanded = expandedRow === e.id
+                    return (
+                      <Fragment key={e.id}>
+                        <TableRow
+                          className={cn('cursor-pointer hover:bg-muted/40', isExpanded && 'bg-muted/50')}
+                          onClick={() => setExpandedRow(isExpanded ? null : e.id)}
+                          aria-expanded={isExpanded}
+                        >
+                          <TableCell className="w-8 px-2">
+                            {isExpanded
+                              ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                              : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                          </TableCell>
+                          <TableCell className="font-medium">{e.name}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{e.company ?? '-'}</TableCell>
+                          <TableCell className="text-xs">{e.departments ?? '-'}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{e.brand ?? '-'}</TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant={e.is_active ? 'default' : 'secondary'} className="text-xs">
+                              {e.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && (
+                          <TableRow>
+                            <TableCell colSpan={6} className="p-0">
+                              <ExpandedEmployeeRow employee={e} onNavigate={() => navigate(`/app/hr/employees/${e.id}`)} />
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
+                    )
+                  })}
                 </TableBody>
               </Table>
             </div>
           </CardContent>
         </Card>
+      )}
+    </div>
+  )
+}
+
+function ExpandedEmployeeRow({ employee: e, onNavigate }: { employee: HrEmployee; onNavigate: () => void }) {
+  const { data: overviewRes, isLoading } = useQuery({
+    queryKey: ['hr', 'employee-overview', e.id],
+    queryFn: () => hrApi.getEmployeeOverview(e.id),
+  })
+
+  const overview = overviewRes?.data ?? null
+
+  return (
+    <div className="px-8 py-3 border-l-2 border-l-primary/50 bg-muted/30 shadow-[inset_0_1px_0_0_hsl(var(--border)),inset_0_-1px_0_0_hsl(var(--border))]">
+      {isLoading ? (
+        <div className="flex gap-4">
+          <Skeleton className="h-16 w-48" />
+          <Skeleton className="h-16 w-48" />
+          <Skeleton className="h-16 w-48" />
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-x-8 gap-y-3 items-start">
+          {/* Contact */}
+          <div className="space-y-1 min-w-[180px]">
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Contact</div>
+            <div className="flex items-center gap-1.5 text-xs">
+              <Mail className="h-3 w-3 text-muted-foreground" />
+              {e.email || '-'}
+            </div>
+            <div className="flex items-center gap-1.5 text-xs">
+              <Phone className="h-3 w-3 text-muted-foreground" />
+              {e.phone || '-'}
+            </div>
+          </div>
+
+          {/* Organization */}
+          <div className="space-y-1 min-w-[160px]">
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Organization</div>
+            <div className="text-xs">{e.company ?? '-'}</div>
+            <div className="text-xs text-muted-foreground">
+              {[e.brand, e.departments, e.subdepartment].filter(Boolean).join(' > ') || '-'}
+            </div>
+          </div>
+
+          {/* Connectors */}
+          {overview && (
+            <div className="space-y-1 min-w-[140px]">
+              <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Connectors</div>
+              <div className="flex items-center gap-1.5 text-xs">
+                <Fingerprint className="h-3 w-3" />
+                BioStar:
+                {overview.biostar
+                  ? <Badge variant="default" className="text-[10px] h-4 ml-1">Mapped</Badge>
+                  : <Badge variant="secondary" className="text-[10px] h-4 ml-1">Unmapped</Badge>}
+              </div>
+              <div className="flex items-center gap-1.5 text-xs">
+                <FileSpreadsheet className="h-3 w-3" />
+                Sincron:
+                {overview.sincron
+                  ? <Badge variant="default" className="text-[10px] h-4 ml-1">Mapped</Badge>
+                  : <Badge variant="secondary" className="text-[10px] h-4 ml-1">Unmapped</Badge>}
+              </div>
+            </div>
+          )}
+
+          {/* Quick stats */}
+          {overview && (
+            <div className="space-y-1 min-w-[120px]">
+              <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Stats</div>
+              <div className="text-xs">Bonuses: <span className="font-medium">{overview.bonuses.count}</span></div>
+              <div className="text-xs">Forms: <span className="font-medium">{overview.forms_count}</span></div>
+              {overview.biostar && (
+                <div className="text-xs">Schedule: <span className="font-medium">{overview.biostar.working_hours}h/day</span></div>
+              )}
+            </div>
+          )}
+
+          {/* Sincron contract */}
+          {overview?.sincron && (
+            <div className="space-y-1 min-w-[140px]">
+              <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Contract</div>
+              <div className="text-xs">Nr: <span className="font-medium">{overview.sincron.nr_contract || '-'}</span></div>
+              <div className="text-xs text-muted-foreground">
+                From: {overview.sincron.data_incepere_contract
+                  ? new Date(overview.sincron.data_incepere_contract).toLocaleDateString('ro-RO')
+                  : '-'}
+              </div>
+            </div>
+          )}
+
+          {/* View full profile button */}
+          <div className="flex items-end ml-auto">
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs h-7 gap-1"
+              onClick={(ev) => { ev.stopPropagation(); onNavigate() }}
+            >
+              <ExternalLink className="h-3 w-3" />
+              Full Profile
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   )
