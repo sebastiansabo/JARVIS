@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Loader2 } from 'lucide-react'
+import { Save, Loader2, Search, Check, X } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchSelect } from '@/components/shared/SearchSelect'
 import { Button } from '@/components/ui/button'
@@ -24,6 +24,7 @@ import {
   CATEGORY_LABELS,
   type Vehicle,
   type VehicleCategory,
+  type VINDecodeResult,
 } from '@/types/carpark'
 import {
   AUTOVIT_BRANDS,
@@ -299,6 +300,49 @@ export default function VehicleForm() {
     return models.map((m) => ({ value: m, label: m }))
   }, [form.brand])
 
+  // VIN decoder
+  const [isDecoding, setIsDecoding] = useState(false)
+  const [decodeResult, setDecodeResult] = useState<VINDecodeResult | null>(null)
+
+  const handleDecodeVIN = async () => {
+    const vin = (form.vin as string)?.trim().toUpperCase()
+    if (!vin || vin.length !== 17) {
+      toast.error('Enter a valid 17-character VIN to decode')
+      return
+    }
+    setIsDecoding(true)
+    try {
+      const result = await carparkApi.decodeVIN(vin)
+      if (result.success && result.data) {
+        setDecodeResult(result.data)
+        toast.success(
+          `VIN decoded via ${result.data.provider} (${Math.round(result.data.confidence * 100)}% confidence)`,
+        )
+      } else {
+        toast.error((result as any).error || 'Could not decode VIN')
+      }
+    } catch (err: any) {
+      const msg = err?.data?.error || 'VIN decode failed'
+      toast.error(msg)
+    } finally {
+      setIsDecoding(false)
+    }
+  }
+
+  const applyDecodedFields = () => {
+    if (!decodeResult?.vehicle_fields) return
+    // Filter to only simple values compatible with FormData type
+    const fields: FormData = {}
+    for (const [k, v] of Object.entries(decodeResult.vehicle_fields)) {
+      if (v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+        fields[k] = v
+      }
+    }
+    setForm((prev) => ({ ...prev, ...fields }))
+    setDecodeResult(null)
+    toast.success('Vehicle specs applied from VIN decode')
+  }
+
   // VIN duplicate check
   const [vinError, setVinError] = useState<string | null>(null)
   const checkVinDuplicate = async (vin: string) => {
@@ -453,14 +497,61 @@ export default function VehicleForm() {
             <Label htmlFor="vin">
               VIN <span className="text-red-500">*</span>
             </Label>
-            <Input
-              id="vin"
-              value={(form.vin as string) ?? ''}
-              onChange={(e) => handleChange('vin', e.target.value.toUpperCase())}
-              placeholder="e.g. WBAPH5C55BA123456"
-              className={vinError ? 'border-red-500' : ''}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="vin"
+                value={(form.vin as string) ?? ''}
+                onChange={(e) => handleChange('vin', e.target.value.toUpperCase())}
+                placeholder="e.g. WBAPH5C55BA123456"
+                className={vinError ? 'border-red-500' : ''}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={handleDecodeVIN}
+                disabled={isDecoding || !form.vin || (form.vin as string).length !== 17}
+                title="Decode VIN"
+              >
+                {isDecoding ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
             {vinError && <p className="text-xs text-red-500">{vinError}</p>}
+            {decodeResult && (
+              <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium">
+                    {decodeResult.specs.brand} {decodeResult.specs.model}
+                    {decodeResult.specs.model_year ? ` (${decodeResult.specs.model_year})` : ''}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {decodeResult.provider} &middot; {Math.round(decodeResult.confidence * 100)}%
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 text-xs text-muted-foreground mb-2">
+                  {decodeResult.specs.fuel_type && <span>Fuel: {decodeResult.specs.fuel_type}</span>}
+                  {decodeResult.specs.engine_power_hp > 0 && <span>Power: {decodeResult.specs.engine_power_hp} HP</span>}
+                  {decodeResult.specs.engine_displacement_cc > 0 && <span>Engine: {decodeResult.specs.engine_displacement_cc} cc</span>}
+                  {decodeResult.specs.transmission && <span>Trans: {decodeResult.specs.transmission}</span>}
+                  {decodeResult.specs.body_type && <span>Body: {decodeResult.specs.body_type}</span>}
+                  {decodeResult.specs.drive_type && <span>Drive: {decodeResult.specs.drive_type}</span>}
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" size="sm" onClick={applyDecodedFields}>
+                    <Check className="mr-1 h-3 w-3" />
+                    Apply to Vehicle
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setDecodeResult(null)}>
+                    <X className="mr-1 h-3 w-3" />
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
           <TextField label="Stock Number" name="nr_stoc" value={form.nr_stoc as string} onChange={handleChange} />
           <SelectField

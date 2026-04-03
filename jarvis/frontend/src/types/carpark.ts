@@ -782,6 +782,72 @@ export interface DashboardData {
   recent_activity: RecentActivity[]
 }
 
+// ── VIN Decoder Types ────────────────────────────────────
+
+export interface VINDecodedSpecs {
+  vin: string
+  brand: string
+  model: string
+  variant: string
+  generation: string
+  model_year: number
+  manufacture_year: number
+  body_type: string
+  doors: number
+  seats: number
+  fuel_type: string
+  engine_displacement_cc: number
+  engine_power_hp: number
+  engine_power_kw: number
+  engine_code: string
+  cylinders: number
+  transmission: string
+  transmission_detail: string
+  drive_type: string
+  gears: number
+  length_mm: number
+  width_mm: number
+  height_mm: number
+  wheelbase_mm: number
+  curb_weight_kg: number
+  gross_weight_kg: number
+  max_speed_kmh: number
+  co2_emissions: number
+  euro_standard: string
+  battery_capacity_kwh: number
+  manufacturer: string
+  plant_country: string
+  plant_city: string
+  confidence_score: number
+  fields_decoded: number
+  fields_total: number
+  decoded_at: string
+  provider: string
+}
+
+export interface VINDecodeResult {
+  specs: VINDecodedSpecs
+  vehicle_fields: Partial<Vehicle>
+  provider: string
+  confidence: number
+}
+
+export interface VINValidation {
+  valid: boolean
+  vin: string
+  wmi: string
+  vds: string
+  vis: string
+  check_digit_valid: boolean
+  errors: string[]
+}
+
+export interface VINProviderStatus {
+  name: string
+  available: boolean
+  remaining_quota: number | null
+}
+
 // Catalog tab order
 export const CATALOG_TABS = [
   { key: '', label: 'Toate' },

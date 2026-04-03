@@ -25,6 +25,8 @@ import {
   Globe,
   Eye,
   EyeOff,
+  Car,
+  Pencil,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,6 +54,8 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { efacturaApi } from '@/api/efactura'
 import { biostarApi } from '@/api/biostar'
 import { sincronApi } from '@/api/sincron'
+import { autovitApi } from '@/api/autovit'
+import type { AutovitAccount } from '@/api/autovit'
 import type { SincronSyncRun, SincronEmployee } from '@/api/sincron'
 import type { BioStarSyncRun } from '@/types/biostar'
 import type { CompanyConnection } from '@/types/efactura'
@@ -1545,6 +1549,312 @@ function SincronEmployeeMapping() {
 }
 
 // ════════════════════════════════════════════════
+// Autovit.ro Section
+// ════════════════════════════════════════════════
+
+function AutovitAccountCard({
+  account,
+  onEdit,
+  onDelete,
+  onTest,
+}: {
+  account: AutovitAccount
+  onEdit: () => void
+  onDelete: () => void
+  onTest: () => void
+}) {
+  const statusColor =
+    account.status === 'connected'
+      ? 'text-green-600 dark:text-green-400'
+      : account.status === 'error'
+        ? 'text-red-600 dark:text-red-400'
+        : 'text-muted-foreground'
+
+  return (
+    <div className="rounded-lg border p-4 space-y-3">
+      <div className="flex items-start justify-between">
+        <div>
+          <h4 className="font-medium text-sm">{account.email}</h4>
+          <p className="text-xs text-muted-foreground">Client ID: {account.client_id}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-medium capitalize ${statusColor}`}>
+            {account.status === 'connected' ? (
+              <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5" /> Connected</span>
+            ) : account.status === 'error' ? (
+              <span className="flex items-center gap-1"><XCircle className="h-3.5 w-3.5" /> Error</span>
+            ) : (
+              <span className="flex items-center gap-1"><Plug className="h-3.5 w-3.5" /> Disconnected</span>
+            )}
+          </span>
+        </div>
+      </div>
+
+      {account.last_error && (
+        <p className="text-xs text-red-500 truncate" title={account.last_error}>
+          {account.last_error}
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" onClick={onTest}>
+          <Plug className="mr-1 h-3 w-3" /> Test
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onEdit}>
+          <Pencil className="mr-1 h-3 w-3" /> Edit
+        </Button>
+        <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600" onClick={onDelete}>
+          <Trash2 className="mr-1 h-3 w-3" /> Delete
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function AutovitSection() {
+  const qc = useQueryClient()
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [form, setForm] = useState({
+    email: '',
+    client_id: '',
+    client_secret: '',
+    password: '',
+    environment: 'production',
+  })
+  const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showSecret, setShowSecret] = useState(false)
+
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['autovit', 'accounts'],
+    queryFn: autovitApi.getAccounts,
+  })
+
+  const { data: status } = useQuery({
+    queryKey: ['autovit', 'status'],
+    queryFn: autovitApi.getStatus,
+  })
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      autovitApi.saveAccount({
+        ...(editingId ? { id: editingId } : {}),
+        email: form.email,
+        client_id: form.client_id,
+        client_secret: form.client_secret,
+        password: form.password,
+        environment: form.environment,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['autovit'] })
+      setShowForm(false)
+      setEditingId(null)
+      resetForm()
+      toast.success(editingId ? 'Account updated' : 'Account added')
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { error?: string })?.error || 'Failed to save account'
+      toast.error(msg)
+    },
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => autovitApi.deleteAccount(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['autovit'] })
+      setDeleteId(null)
+      toast.success('Account deleted')
+    },
+    onError: () => toast.error('Failed to delete account'),
+  })
+
+  const testMut = useMutation({
+    mutationFn: (id: number) => autovitApi.testConnection(id),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['autovit'] })
+      if (res.success) toast.success('Connection successful')
+      else toast.error(res.error || 'Connection failed')
+    },
+    onError: () => toast.error('Connection test failed'),
+  })
+
+  const resetForm = () => {
+    setForm({ email: '', client_id: '', client_secret: '', password: '', environment: 'production' })
+    setShowPassword(false)
+    setShowSecret(false)
+  }
+
+  const handleAdd = () => {
+    setEditingId(null)
+    resetForm()
+    setShowForm(true)
+  }
+
+  const handleEdit = (acc: AutovitAccount) => {
+    setEditingId(acc.id)
+    setForm({
+      email: acc.email,
+      client_id: acc.client_id,
+      client_secret: '',
+      password: '',
+      environment: acc.environment || 'production',
+    })
+    setShowForm(true)
+  }
+
+  const connectedCount = status?.connected ?? 0
+  const totalCount = status?.total_accounts ?? accounts.length
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Car className="h-5 w-5" />
+          <h3 className="text-base font-semibold">Autovit.ro (Marketplace)</h3>
+        </div>
+        <div className="flex items-center gap-2">
+          {totalCount > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {connectedCount}/{totalCount} connected
+            </span>
+          )}
+          <StatusBadge status={connectedCount > 0 ? 'active' : totalCount > 0 ? 'inactive' : 'inactive'} />
+        </div>
+      </div>
+
+      {accounts.length === 0 && !showForm ? (
+        <div className="rounded-lg border p-4">
+          <EmptyState
+            icon={<Car className="h-10 w-10" />}
+            title="No accounts configured"
+            description="Add your Autovit.ro dealer accounts to start publishing vehicles."
+            action={<Button onClick={handleAdd}><Plus className="mr-1 h-4 w-4" /> Add Account</Button>}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {accounts.map((acc) => (
+              <AutovitAccountCard
+                key={acc.id}
+                account={acc}
+                onEdit={() => handleEdit(acc)}
+                onDelete={() => setDeleteId(acc.id)}
+                onTest={() => testMut.mutate(acc.id)}
+              />
+            ))}
+          </div>
+
+          {!showForm && (
+            <Button size="sm" variant="outline" onClick={handleAdd}>
+              <Plus className="mr-1 h-3 w-3" /> Add Account
+            </Button>
+          )}
+        </>
+      )}
+
+      {/* Add/Edit form */}
+      {showForm && (
+        <div className="rounded-lg border p-4 space-y-4">
+          <h4 className="text-sm font-medium">{editingId ? 'Edit Account' : 'Add Dealer Account'}</h4>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label>Email (username)</Label>
+              <Input
+                placeholder="e.g. volvosales@autoworld.ro"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Client ID</Label>
+              <Input
+                placeholder="e.g. 1667"
+                value={form.client_id}
+                onChange={(e) => setForm({ ...form, client_id: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Client Secret</Label>
+              <div className="relative">
+                <Input
+                  type={showSecret ? 'text' : 'password'}
+                  placeholder={editingId ? '••••••• (leave blank to keep)' : ''}
+                  value={form.client_secret}
+                  onChange={(e) => setForm({ ...form, client_secret: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowSecret(!showSecret)}
+                >
+                  {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Password</Label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder={editingId ? '••••••• (leave blank to keep)' : ''}
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-2 max-w-xs">
+            <Label>Environment</Label>
+            <Select value={form.environment} onValueChange={(v) => setForm({ ...form, environment: v })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="production">Production</SelectItem>
+                <SelectItem value="sandbox">Sandbox</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => saveMut.mutate()}
+              disabled={saveMut.isPending || !form.email || !form.client_id || (!editingId && (!form.client_secret || !form.password))}
+            >
+              {saveMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+              {editingId ? 'Update' : 'Save'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setShowForm(false); setEditingId(null); resetForm() }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={deleteId !== null}
+        onOpenChange={(open) => { if (!open) setDeleteId(null) }}
+        title="Delete Autovit Account"
+        description="Are you sure you want to remove this dealer account? This cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (deleteId) deleteMut.mutate(deleteId) }}
+      />
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════
 // Main Export
 // ════════════════════════════════════════════════
 
@@ -1556,6 +1866,8 @@ export default function ConnectorsTab() {
       <BioStarConnectionSection />
       <hr className="border-border" />
       <SincronSection />
+      <hr className="border-border" />
+      <AutovitSection />
       <hr className="border-border" />
       <PushNotificationSection />
       <hr className="border-border" />

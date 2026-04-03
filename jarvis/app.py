@@ -145,6 +145,9 @@ def _register_blueprints(flask_app: Flask):
     from core.connectors.push import push_bp
     flask_app.register_blueprint(push_bp)
 
+    from carpark.connectors.autovit import autovit_bp
+    flask_app.register_blueprint(autovit_bp)
+
     from core.checkin import checkin_bp
     flask_app.register_blueprint(checkin_bp)
 

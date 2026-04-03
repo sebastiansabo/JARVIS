@@ -858,4 +858,22 @@ def create_schema_carpark(conn, cursor):
         WHERE NOT EXISTS (SELECT 1 FROM carpark_equipment_categories LIMIT 1)
     ''')
 
+    # ── VIN Decoder Cache ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_vin_cache (
+            id SERIAL PRIMARY KEY,
+            vin VARCHAR(17) NOT NULL,
+            provider VARCHAR(30) NOT NULL,
+            specs_json JSONB NOT NULL,
+            confidence_score DECIMAL(3,2),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            hit_count INTEGER DEFAULT 0,
+            last_hit_at TIMESTAMP,
+            UNIQUE(vin, provider)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vin_cache_vin ON carpark_vin_cache(vin)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vin_cache_expires ON carpark_vin_cache(expires_at)')
+
     conn.commit()

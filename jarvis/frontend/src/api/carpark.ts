@@ -84,6 +84,23 @@ export const carparkApi = {
   checkVin: (vin: string) =>
     api.get<{ exists: boolean; vehicle_id?: number }>('/api/carpark/vehicles/check-vin', { vin }),
 
+  // ── VIN Decoder ────────────────────────────────────────
+  decodeVIN: (vin: string, refresh = false) =>
+    api.get<{ success: boolean; data: import('@/types/carpark').VINDecodeResult }>(
+      `/api/carpark/vin/decode/${encodeURIComponent(vin)}`,
+      refresh ? { refresh: 'true' } : undefined,
+    ),
+
+  validateVIN: (vin: string) =>
+    api.get<{ success: boolean; data: import('@/types/carpark').VINValidation }>(
+      `/api/carpark/vin/validate/${encodeURIComponent(vin)}`,
+    ),
+
+  getVINProviders: () =>
+    api.get<{ success: boolean; data: import('@/types/carpark').VINProviderStatus[] }>(
+      '/api/carpark/vin/providers',
+    ),
+
   // ── Photos ───────────────────────────────────────────────
   getPhotos: (vehicleId: number) =>
     api.get<{ photos: VehiclePhoto[] }>(`/api/carpark/vehicles/${vehicleId}/photos`),

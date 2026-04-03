@@ -31,6 +31,18 @@ def cleanup_old_unallocated_invoices():
         logger.error(f"Cleanup task failed: {e}")
 
 
+def cleanup_vin_cache():
+    """Delete expired VIN decoder cache entries."""
+    try:
+        from carpark.connectors.vin_decoder.cache import VINCache
+        cache = VINCache()
+        count = cache.cleanup_expired()
+        if count > 0:
+            logger.info(f"Cleanup: deleted {count} expired VIN cache entries")
+    except Exception as e:
+        logger.error(f"VIN cache cleanup task failed: {e}")
+
+
 def reindex_rag_documents():
     """Reindex all RAG document sources for the AI agent."""
     try:
@@ -599,6 +611,18 @@ def start_scheduler():
                 misfire_grace_time=300,
                 coalesce=True,
             )
+
+    # CarPark — VIN cache cleanup (03:30 daily)
+    scheduler.add_job(
+        cleanup_vin_cache,
+        'cron',
+        hour=3,
+        minute=30,
+        id='carpark_vin_cache_cleanup',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
 
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown(wait=False))
