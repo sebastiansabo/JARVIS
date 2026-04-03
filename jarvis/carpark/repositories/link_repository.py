@@ -35,7 +35,7 @@ _ENTITY_JOINS = {
         'project',
     ),
     'hr_event': (
-        'LEFT JOIN events he ON he.id = vl.linked_entity_id AND vl.linked_entity_type = %s',
+        'LEFT JOIN hr.events he ON he.id = vl.linked_entity_id AND vl.linked_entity_type = %s',
         "COALESCE(he.name, 'Eveniment #' || vl.linked_entity_id::text)",
         "''",
         'hr_event',
@@ -203,7 +203,7 @@ class VehicleLinkRepository(BaseRepository):
             sql = '''
                 SELECT id, name AS label,
                        '' AS sublabel
-                FROM events
+                FROM hr.events
                 WHERE 1=1
             '''
             params = []
