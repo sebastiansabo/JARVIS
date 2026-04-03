@@ -69,6 +69,12 @@ export const formsApi = {
       { answers, source }
     ),
 
+  // ---- User submissions (cross-form) ----
+  getUserSubmissions: (userId: number, params?: { limit?: number; offset?: number }) =>
+    api.get<{ submissions: Array<{ id: number; form_id: number; form_name: string; status: string; source: string; respondent_name: string; created_at: string }>; total: number }>(
+      `${BASE}/submissions/by-user/${userId}${toQs({ ...params })}`
+    ),
+
   // ---- Export ----
 
   getExportUrl: (formId: number) => `${BASE}/forms/${formId}/export`,

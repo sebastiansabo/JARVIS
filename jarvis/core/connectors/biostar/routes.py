@@ -707,3 +707,33 @@ def get_jarvis_users():
     """Get all active JARVIS users for mapping dropdown."""
     users = service.repo.get_jarvis_users()
     return jsonify({'success': True, 'data': users})
+
+
+@biostar_bp.route('/api/employee-by-user/<int:user_id>', methods=['GET'])
+@api_login_required
+def get_employee_by_jarvis_user(user_id):
+    """Look up BioStar employee by JARVIS user ID."""
+    from database import get_db, get_cursor, release_db, dict_from_row
+    conn = get_db()
+    cursor = get_cursor(conn)
+    cursor.execute('''
+        SELECT biostar_user_id, user_name, user_group_name, is_active,
+               lunch_break_minutes, working_hours, schedule_start, schedule_end,
+               mapped_jarvis_user_id
+        FROM biostar_employees
+        WHERE mapped_jarvis_user_id = %s AND is_active = TRUE
+        LIMIT 1
+    ''', (user_id,))
+    row = cursor.fetchone()
+    release_db(conn)
+
+    if not row:
+        return jsonify({'success': True, 'data': None})
+
+    employee = dict_from_row(row)
+    if employee.get('schedule_start') and hasattr(employee['schedule_start'], 'isoformat'):
+        employee['schedule_start'] = str(employee['schedule_start'])
+    if employee.get('schedule_end') and hasattr(employee['schedule_end'], 'isoformat'):
+        employee['schedule_end'] = str(employee['schedule_end'])
+
+    return jsonify({'success': True, 'data': employee})

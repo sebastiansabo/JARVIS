@@ -52,6 +52,7 @@ const navItemsDef: NavItem[] = [
       { path: '/app/hr/pontaje', label: 'Pontaje', icon: Fingerprint, moduleKey: 'hr_pontaje', v2Permission: 'hr.pontaje.view_original' },
       { path: '/app/hr/timesheets', label: 'Timesheets', icon: FileSpreadsheet, moduleKey: 'hr_timesheets' },
       { path: '/app/hr/bonuses', label: 'Bonuses', icon: Award, moduleKey: 'hr_bonuses', v2Permission: 'hr.bonuses.view' },
+      { path: '/app/hr/employees', label: 'Employees', icon: Users, moduleKey: 'hr_employees', v2Permission: 'hr.employees.view' },
       { path: '/app/hr/organigram', label: 'Organigram', icon: Network, moduleKey: 'hr_organigram', v2Permission: 'hr.structure.view' },
     ],
   },

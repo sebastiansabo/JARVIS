@@ -166,9 +166,9 @@ export default function TimesheetTab({ search }: Props) {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard title="Employees" value={stats.employees} icon={<Users className="h-4 w-4" />} />
-        <StatCard title="Work Hours (OZ)" value={stats.workHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
-        <StatCard title="Leave Days (CO)" value={stats.leaveDays} icon={<CalendarDays className="h-4 w-4" />} />
-        <StatCard title="Overtime (OS)" value={stats.overtimeHours.toFixed(1)} icon={<Timer className="h-4 w-4" />} />
+        <StatCard title="Work Hours (OZ)" value={`${stats.workHours.toFixed(1)}h (${(stats.workHours / 8).toFixed(1)}d)`} icon={<Clock className="h-4 w-4" />} />
+        <StatCard title="Leave Days (CO)" value={`${stats.leaveDays}d (${(stats.leaveDays * 8)}h)`} icon={<CalendarDays className="h-4 w-4" />} />
+        <StatCard title="Overtime (OS)" value={`${stats.overtimeHours.toFixed(1)}h (${(stats.overtimeHours / 8).toFixed(1)}d)`} icon={<Timer className="h-4 w-4" />} />
       </div>
 
       {/* Data */}
@@ -308,11 +308,16 @@ function EmployeeTimesheetDialog({
           <div className="space-y-4">
             {/* Summary cards */}
             <div className="flex flex-wrap gap-2">
-              {summary.map((s) => (
-                <Badge key={s.short_code} variant="outline" className={`text-xs px-2.5 py-1 ${CODE_LABELS[s.short_code]?.color ?? ''}`}>
-                  {s.short_code}: {s.total_value.toFixed(s.unit === 'hour' ? 1 : 0)} ({s.day_count}d)
-                </Badge>
-              ))}
+              {summary.map((s) => {
+                const isHour = s.unit === 'hour'
+                const primary = isHour ? `${s.total_value.toFixed(1)}h` : `${s.total_value.toFixed(0)}d`
+                const secondary = isHour ? `${(s.total_value / 8).toFixed(1)}d` : `${(s.total_value * 8).toFixed(0)}h`
+                return (
+                  <Badge key={s.short_code} variant="outline" className={`text-xs px-2.5 py-1 ${CODE_LABELS[s.short_code]?.color ?? ''}`}>
+                    {s.short_code}: {primary} ({secondary}) — {s.day_count}d active
+                  </Badge>
+                )
+              })}
             </div>
 
             {/* Daily breakdown */}
@@ -359,9 +364,13 @@ function EmployeeTimesheetDialog({
                     <TableCell colSpan={2}>Total</TableCell>
                     {allCodes.map((c) => {
                       const s = summary.find((x) => x.short_code === c)
+                      if (!s) return <TableCell key={c} className="text-center">-</TableCell>
+                      const isHour = s.unit === 'hour'
+                      const primary = isHour ? `${s.total_value.toFixed(1)}h` : `${s.total_value.toFixed(0)}d`
+                      const secondary = isHour ? `(${(s.total_value / 8).toFixed(1)}d)` : `(${(s.total_value * 8).toFixed(0)}h)`
                       return (
                         <TableCell key={c} className="text-center tabular-nums">
-                          {s ? s.total_value.toFixed(s.unit === 'hour' ? 1 : 0) : '-'}
+                          {primary} <span className="text-muted-foreground text-xs">{secondary}</span>
                         </TableCell>
                       )
                     })}

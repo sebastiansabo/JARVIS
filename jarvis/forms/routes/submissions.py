@@ -132,6 +132,48 @@ def api_trigger_approval(submission_id):
     return jsonify({'success': False, 'error': result.error}), result.status_code
 
 
+# ---- List submissions by user ----
+
+@forms_bp.route('/api/submissions/by-user/<int:user_id>', methods=['GET'])
+@login_required
+@form_permission_required('submission', 'view')
+def api_list_user_submissions(user_id):
+    """List all form submissions by a specific user across all forms."""
+    limit = request.args.get('limit', 50, type=int)
+    offset = request.args.get('offset', 0, type=int)
+
+    from database import get_db, get_cursor, release_db, dict_from_row
+    conn = get_db()
+    cursor = get_cursor(conn)
+
+    cursor.execute('''
+        SELECT fs.id, fs.form_id, f.name AS form_name, fs.status,
+               fs.source, fs.respondent_name, fs.created_at
+        FROM form_submissions fs
+        JOIN forms f ON f.id = fs.form_id
+        WHERE fs.respondent_user_id = %s
+        ORDER BY fs.created_at DESC
+        LIMIT %s OFFSET %s
+    ''', (user_id, limit, offset))
+    rows = cursor.fetchall()
+
+    cursor.execute('''
+        SELECT COUNT(*) FROM form_submissions WHERE respondent_user_id = %s
+    ''', (user_id,))
+    total = cursor.fetchone()[0]
+
+    release_db(conn)
+
+    submissions = []
+    for row in rows:
+        sub = dict_from_row(row)
+        if sub.get('created_at') and hasattr(sub['created_at'], 'isoformat'):
+            sub['created_at'] = sub['created_at'].isoformat()
+        submissions.append(sub)
+
+    return jsonify({'submissions': submissions, 'total': total})
+
+
 # ---- Internal submission ----
 
 @forms_bp.route('/api/forms/<int:form_id>/submit', methods=['POST'])

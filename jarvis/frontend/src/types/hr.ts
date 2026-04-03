@@ -4,6 +4,8 @@ export interface EventBonus {
   employee_name: string
   event_id: number
   event_name: string
+  event_start: string | null
+  event_end: string | null
   year: number
   month: number
   participation_start: string | null

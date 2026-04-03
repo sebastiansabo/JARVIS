@@ -36,6 +36,21 @@ import type { EventBonus, BonusSummaryByEmployee, BonusSummaryByEvent } from '@/
 const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const MONTH_SHORT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+function fmtDate(d: string | null) {
+  if (!d) return null
+  const dt = new Date(d)
+  return `${dt.getDate()} ${MONTH_SHORT[dt.getMonth() + 1]} ${dt.getFullYear()}`
+}
+
+function fmtRange(start: string | null, end: string | null) {
+  const s = fmtDate(start)
+  const e = fmtDate(end)
+  if (!s && !e) return '—'
+  if (s === e) return s!
+  if (s && e) return `${s} – ${e}`
+  return s || e || '—'
+}
+
 export default function BonusesTab({ canViewAmounts, showFilters: _showFilters = false, showStats: _showStats = false, addTrigger = 0, search = '' }: { canViewAmounts: boolean; showFilters?: boolean; showStats?: boolean; addTrigger?: number; search?: string }) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
@@ -417,6 +432,8 @@ function BonusListTable({
               <TableHead>Company</TableHead>
               <TableHead>Brand</TableHead>
               <TableHead>Event</TableHead>
+              <TableHead>Event Date</TableHead>
+              <TableHead>Period</TableHead>
               <TableHead className="text-right">Days</TableHead>
               <TableHead className="text-right">Hours</TableHead>
               {canViewAmounts && <TableHead className="text-right">Bonus (Net)</TableHead>}
@@ -441,6 +458,8 @@ function BonusListTable({
                 <TableCell className="text-sm text-muted-foreground">{b.company ?? '—'}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{b.brand ?? '—'}</TableCell>
                 <TableCell className="text-sm">{b.event_name}</TableCell>
+                <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{fmtRange(b.event_start, b.event_end)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{fmtRange(b.participation_start, b.participation_end)}</TableCell>
                 <TableCell className="text-right text-sm">{b.bonus_days ?? '—'}</TableCell>
                 <TableCell className="text-right text-sm">{b.hours_free ?? '—'}</TableCell>
                 {canViewAmounts && (
