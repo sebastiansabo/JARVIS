@@ -1633,8 +1633,6 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
     enabled: expandedId !== null,
   })
 
-  const canAccessAccounting = user?.can_access_accounting ?? false
-
   const saveMutation = useMutation({
     mutationFn: (payload: { invoiceId: number; company: string; rows: import('@/pages/Accounting/AllocationEditor').AllocationRow[] }) =>
       profileApi.updateAllocations(payload.invoiceId, {
