@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Image as ImageIcon,
+  Download,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -221,11 +222,29 @@ function ConnectionSettings({
 
 function AdvertsSection({ accountId }: { accountId: number }) {
   const [page, setPage] = useState(1)
+  const [importingId, setImportingId] = useState<string | null>(null)
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['autovit', 'adverts', accountId, page],
     queryFn: () => autovitApi.getAdverts(accountId, page),
     enabled: !!accountId,
+  })
+
+  const importMut = useMutation({
+    mutationFn: (advertId: string) => autovitApi.importAdvert(accountId, advertId),
+    onSuccess: (res) => {
+      if (res.success && res.vehicle) {
+        toast.success(`Imported ${res.vehicle.brand} ${res.vehicle.model} (VIN: ${res.vehicle.vin})`)
+      } else {
+        toast.error(res.error || 'Import failed')
+      }
+      setImportingId(null)
+    },
+    onError: (err: unknown) => {
+      const apiErr = err as { data?: { error?: string; existing_vehicle_id?: number } }
+      toast.error(apiErr?.data?.error || 'Import failed')
+      setImportingId(null)
+    },
   })
 
   const adverts = data?.results ?? []
@@ -239,7 +258,7 @@ function AdvertsSection({ accountId }: { accountId: number }) {
         <div>
           <h3 className="text-sm font-semibold">Adverts</h3>
           <p className="text-xs text-muted-foreground">
-            {totalElements} total adverts on Autovit.ro
+            {totalElements} active adverts on Autovit.ro
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isLoading}>
@@ -260,7 +279,7 @@ function AdvertsSection({ accountId }: { accountId: number }) {
         </div>
       ) : adverts.length === 0 ? (
         <div className="text-center py-8 text-sm text-muted-foreground">
-          No adverts found for this account.
+          No active adverts found for this account.
         </div>
       ) : (
         <>
@@ -275,8 +294,7 @@ function AdvertsSection({ accountId }: { accountId: number }) {
                   <TableHead>Year</TableHead>
                   <TableHead>Mileage</TableHead>
                   <TableHead>Fuel</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
+                  <TableHead className="w-[80px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -284,6 +302,7 @@ function AdvertsSection({ accountId }: { accountId: number }) {
                   const params = (ad.params || {}) as Record<string, unknown>
                   const photos = (ad.photos || []) as string[]
                   const thumb = photos[0] || null
+                  const isImporting = importingId === ad.id
                   return (
                     <TableRow key={ad.id}>
                       <TableCell>
@@ -314,22 +333,35 @@ function AdvertsSection({ accountId }: { accountId: number }) {
                       </TableCell>
                       <TableCell className="text-xs">{getParam(params, 'fuel_type')}</TableCell>
                       <TableCell>
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          ad.status === 'active'
-                            ? 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-400'
-                            : ad.status === 'disabled'
-                              ? 'bg-yellow-50 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400'
-                              : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
-                        }`}>
-                          {ad.status}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {ad.url && (
-                          <a href={ad.url} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </a>
-                        )}
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            title="Import to Vehicle Catalog"
+                            className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-50"
+                            disabled={isImporting || importMut.isPending}
+                            onClick={() => {
+                              setImportingId(ad.id)
+                              importMut.mutate(ad.id)
+                            }}
+                          >
+                            {isImporting ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Download className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          {ad.url && (
+                            <a
+                              href={ad.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="View on Autovit.ro"
+                              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   )

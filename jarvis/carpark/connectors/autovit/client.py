@@ -108,12 +108,19 @@ class AutovitClient:
             'total_adverts': data.get('total_elements', 0),
         }
 
-    def get_adverts(self, page: int = 1) -> Dict[str, Any]:
+    def get_adverts(self, page: int = 1, status: str = None) -> Dict[str, Any]:
         """List adverts for this dealer account.
+
+        Args:
+            page: Page number (1-based).
+            status: Filter by status (e.g. 'active', 'disabled', 'removed_by_user').
 
         Returns: {results, total_elements, total_pages, current_page, ...}
         """
-        resp = self._request('GET', '/adverts/', params={'page': page})
+        params: Dict[str, Any] = {'page': page}
+        if status:
+            params['status'] = status
+        resp = self._request('GET', '/adverts/', params=params)
         return resp.json()
 
     def get_advert(self, advert_id: str) -> Dict[str, Any]:

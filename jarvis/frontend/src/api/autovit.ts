@@ -78,6 +78,14 @@ export const autovitApi = {
     return res.data
   },
 
+  importAdvert: (accountId: number, advertId: string) =>
+    api.post<{
+      success: boolean
+      vehicle?: { id: number; vin: string; brand: string; model: string }
+      error?: string
+      existing_vehicle_id?: number
+    }>(`${BASE}/accounts/${accountId}/import-advert`, { advert_id: advertId }),
+
   getStatus: async () => {
     const res = await api.get<{ success: boolean; data: AutovitStatus }>(`${BASE}/status`)
     return res.data

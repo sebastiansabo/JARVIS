@@ -13,10 +13,12 @@ from . import autovit_bp
 from .client import AutovitClient, AutovitAuthError, PRODUCTION_URL, SANDBOX_URL
 from core.connectors.repositories.connector_repository import ConnectorRepository
 from core.utils.api_helpers import api_login_required
+from carpark.repositories.vehicle_repository import VehicleRepository
 
 logger = logging.getLogger('jarvis.autovit.routes')
 
 _repo = ConnectorRepository()
+_vehicle_repo = VehicleRepository()
 
 CONNECTOR_TYPE = 'autovit'
 
@@ -214,11 +216,112 @@ def get_adverts(account_id):
         return jsonify({'success': False, 'error': 'Account not found'}), 404
 
     page = request.args.get('page', 1, type=int)
+    status = request.args.get('status', 'active')
 
     try:
         client = _build_client(connector)
-        data = client.get_adverts(page=page)
+        data = client.get_adverts(page=page, status=status)
         return jsonify({'success': True, 'data': data})
     except Exception as e:
         logger.exception('Failed to fetch adverts for account %s', account_id)
         return jsonify({'success': False, 'error': str(e)})
+
+
+# ── Import Advert → Vehicle Catalog ──
+
+def _map_advert_to_vehicle(advert: dict) -> dict:
+    """Map Autovit advert params to carpark_vehicles fields."""
+    params = advert.get('params', {})
+
+    def _val(key):
+        v = params.get(key)
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            return v.get('label') or v.get('value') or v.get('1')
+        return v
+
+    # Price extraction
+    price = params.get('price', {})
+    amount = price.get('1') if isinstance(price, dict) else None
+    currency = price.get('currency', 'EUR') if isinstance(price, dict) else 'EUR'
+
+    vehicle = {
+        'vin': str(_val('vin') or '').strip().upper(),
+        'brand': str(_val('make') or '').strip(),
+        'model': str(_val('model') or '').strip(),
+        'year_of_manufacture': int(_val('year')) if _val('year') else None,
+        'fuel_type': str(_val('fuel_type') or '').strip() or None,
+        'transmission': str(_val('gearbox') or '').strip() or None,
+        'body_type': str(_val('body_type') or '').strip() or None,
+        'mileage_km': int(_val('mileage')) if _val('mileage') else None,
+        'engine_displacement_cc': int(_val('engine_capacity')) if _val('engine_capacity') else None,
+        'engine_power_hp': int(_val('engine_power')) if _val('engine_power') else None,
+        'color_exterior': str(_val('color') or '').strip() or None,
+        'doors': int(_val('door_count')) if _val('door_count') else None,
+        'seats': int(_val('nr_seats')) if _val('nr_seats') else None,
+        'drive_type': str(_val('drive') or '').strip() or None,
+        'current_price': float(amount) if amount else None,
+        'price_currency': currency,
+        'listing_title': advert.get('title', ''),
+        'listing_description': advert.get('description', ''),
+        'source': 'autovit',
+        'status': 'ACQUIRED',
+    }
+
+    # Remove None values
+    return {k: v for k, v in vehicle.items() if v is not None and v != ''}
+
+
+@autovit_bp.route('/api/accounts/<int:account_id>/import-advert', methods=['POST'])
+@api_login_required
+def import_advert(account_id):
+    """Import a single advert into the vehicle catalog."""
+    from flask_login import current_user
+
+    connector = _repo.get(account_id)
+    if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
+        return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    advert_id = data.get('advert_id')
+    if not advert_id:
+        return jsonify({'success': False, 'error': 'advert_id is required'}), 400
+
+    try:
+        client = _build_client(connector)
+        advert = client.get_advert(str(advert_id))
+    except Exception as e:
+        logger.exception('Failed to fetch advert %s from account %s', advert_id, account_id)
+        return jsonify({'success': False, 'error': f'Failed to fetch advert: {e}'}), 500
+
+    vehicle_data = _map_advert_to_vehicle(advert)
+
+    # Validate required fields
+    if not vehicle_data.get('vin'):
+        return jsonify({'success': False, 'error': 'Advert has no VIN — cannot import without a VIN'}), 400
+    if not vehicle_data.get('brand') or not vehicle_data.get('model'):
+        return jsonify({'success': False, 'error': 'Advert missing make/model'}), 400
+
+    # Check for duplicate VIN
+    existing = _vehicle_repo.get_by_vin(vehicle_data['vin'])
+    if existing:
+        return jsonify({
+            'success': False,
+            'error': f'Vehicle with VIN {vehicle_data["vin"]} already exists (ID: {existing["id"]})',
+            'existing_vehicle_id': existing['id'],
+        }), 409
+
+    # Add server fields
+    if hasattr(current_user, 'id'):
+        vehicle_data['created_by'] = current_user.id
+        vehicle_data['updated_by'] = current_user.id
+
+    try:
+        vehicle = _vehicle_repo.create(vehicle_data)
+        return jsonify({'success': True, 'vehicle': {'id': vehicle['id'], 'vin': vehicle['vin'], 'brand': vehicle['brand'], 'model': vehicle['model']}}), 201
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        logger.exception('Failed to create vehicle from advert %s', advert_id)
+        return jsonify({'success': False, 'error': f'Failed to create vehicle: {e}'}), 500
