@@ -3,6 +3,8 @@
 CRITICAL: Output values must match autovitData.ts enum values exactly.
 Vincario/NHTSA raw values are normalized to the frontend dropdown format.
 """
+import re
+
 from .providers.base import VehicleSpecs
 
 # ── Brand Normalization ──
@@ -138,9 +140,16 @@ def normalize_body_type(raw: str) -> str:
     key = raw.strip().lower()
     if key in _BODY_MAP:
         return _BODY_MAP[key]
-    # NHTSA returns "Sedan/Saloon" — try each part
+    # NHTSA returns "Sport Utility Vehicle (SUV)/Multi-Purpose Vehicle (MPV)"
+    # Extract parenthesized abbreviations first
+    abbrevs = re.findall(r'\(([^)]+)\)', key)
+    for abbrev in abbrevs:
+        abbrev = abbrev.strip().lower()
+        if abbrev in _BODY_MAP:
+            return _BODY_MAP[abbrev]
+    # Try each slash-separated part
     for part in key.split('/'):
-        part = part.strip()
+        part = re.sub(r'\([^)]*\)', '', part).strip()
         if part in _BODY_MAP:
             return _BODY_MAP[part]
     return key
@@ -213,6 +222,9 @@ _DRIVE_MAP = {
     'xdrive': 'all-wheel-permanent',
     'quattro': 'all-wheel-permanent',
     '4motion': 'all-wheel-permanent',
+    '4x2': 'front-wheel',
+    '4x4': 'all-wheel-lock',
+    '2wd': 'front-wheel',
 }
 
 
@@ -383,26 +395,6 @@ def map_vincario_response(raw_data: dict, vin: str = '') -> VehicleSpecs:
 
 
 # ── NHTSA Mapper ──
-
-_NHTSA_FIELD_MAP = {
-    'Make': 'brand',
-    'Model': 'model',
-    'Model Year': 'model_year',
-    'Body Class': 'body_type',
-    'Doors': 'doors',
-    'Displacement (CC)': 'engine_displacement_cc',
-    'Engine Number of Cylinders': 'cylinders',
-    'Fuel Type - Primary': 'fuel_type',
-    'Transmission Style': 'transmission',
-    'Drive Type': 'drive_type',
-    'Engine Brake (hp) From': 'engine_power_hp',
-    'Manufacturer Name': 'manufacturer',
-    'Plant Country': 'plant_country',
-    'Plant City': 'plant_city',
-    'Series': 'variant',
-    'Trim': 'trim',
-}
-
 
 def map_nhtsa_response(results: list, vin: str = '') -> VehicleSpecs:
     """Map NHTSA vPIC API Results array to VehicleSpecs.
