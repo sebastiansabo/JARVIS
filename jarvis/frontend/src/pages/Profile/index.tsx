@@ -1735,7 +1735,7 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                   { key: 'percent', label: 'Allocation', expandOnly: true, render: (inv) => (inv.allocations?.length || 1) > 1 ? 'split' : `${inv.allocation_percent}%` },
                 ] satisfies MobileCardField<ProfileInvoice>[]}
                 getRowId={(inv) => inv.id}
-                actions={(inv) => (canAccessAccounting && inv.drive_link) ? (
+                actions={(inv) => inv.drive_link ? (
                   <a href={inv.drive_link} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
@@ -1794,7 +1794,7 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                               <StatusBadge status={inv.status} />
                             </TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()}>
-                              {canAccessAccounting && inv.drive_link && (
+                              {inv.drive_link && (
                                 <a
                                   href={inv.drive_link}
                                   target="_blank"
