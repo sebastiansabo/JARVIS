@@ -717,11 +717,12 @@ def get_employee_by_jarvis_user(user_id):
     conn = get_db()
     cursor = get_cursor(conn)
     cursor.execute('''
-        SELECT biostar_user_id, user_name, user_group_name, is_active,
+        SELECT biostar_user_id, name AS user_name, user_group_name,
+               (status = 'active') AS is_active,
                lunch_break_minutes, working_hours, schedule_start, schedule_end,
                mapped_jarvis_user_id
         FROM biostar_employees
-        WHERE mapped_jarvis_user_id = %s AND is_active = TRUE
+        WHERE mapped_jarvis_user_id = %s AND status = 'active'
         LIMIT 1
     ''', (user_id,))
     row = cursor.fetchone()

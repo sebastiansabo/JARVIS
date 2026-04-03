@@ -1450,7 +1450,8 @@ def api_get_employee_overview(user_id):
 
     # BioStar mapping
     cursor.execute('''
-        SELECT biostar_user_id, user_name, user_group_name, is_active,
+        SELECT biostar_user_id, name AS user_name, user_group_name,
+               (status = 'active') AS is_active,
                lunch_break_minutes, working_hours, schedule_start, schedule_end
         FROM biostar_employees
         WHERE mapped_jarvis_user_id = %s
