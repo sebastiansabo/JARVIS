@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@/hooks/useAuth'
 import { hrApi } from '@/api/hr'
 import { biostarApi } from '@/api/biostar'
 import { sincronApi, type SincronTimesheetData } from '@/api/sincron'
@@ -17,9 +18,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   User, Building2, Mail, Phone, Fingerprint, FileSpreadsheet,
   Award, ClipboardList, ChevronLeft, ChevronRight, Clock,
-  CalendarDays, Timer, Briefcase, ArrowLeft,
+  CalendarDays, Timer, Briefcase, ArrowLeft, CheckCircle2, RotateCcw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import type { BioStarDayHistory } from '@/types/biostar'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -161,7 +164,13 @@ export default function Employee360() {
         </TabsContent>
         {bio && (
           <TabsContent value="pontaj">
-            <PontajPanel biostarUserId={bio.biostar_user_id} workingHours={bio.working_hours} lunchBreak={bio.lunch_break_minutes} />
+            <PontajPanel
+              biostarUserId={bio.biostar_user_id}
+              workingHours={bio.working_hours}
+              lunchBreak={bio.lunch_break_minutes}
+              scheduleStart={bio.schedule_start}
+              scheduleEnd={bio.schedule_end}
+            />
           </TabsContent>
         )}
         {sinc && (
@@ -263,11 +272,21 @@ function PontajPanel({
   biostarUserId,
   workingHours,
   lunchBreak,
+  scheduleStart,
+  scheduleEnd,
 }: {
   biostarUserId: string
   workingHours: number
   lunchBreak: number
+  scheduleStart?: string | null
+  scheduleEnd?: string | null
 }) {
+  const qc = useQueryClient()
+  const { user: authUser } = useAuth()
+  const showAdjusted = authUser?.can_view_adjusted_punches ?? false
+  const canAdjust = authUser?.can_adjust_punches ?? false
+  const today = new Date().toISOString().split('T')[0]
+
   const now = new Date()
   const [days, setDays] = useState(30)
   const endDate = now.toISOString().split('T')[0]
@@ -279,6 +298,56 @@ function PontajPanel({
   })
 
   const history = historyData ?? []
+
+  const adjustDayMut = useMutation({
+    mutationFn: (day: BioStarDayHistory) => {
+      if (!day.first_punch) throw new Error('No data')
+      const datePart = day.date
+      const wh = workingHours ?? 8
+      const lunch = lunchBreak ?? 60
+      const schedStart = scheduleStart ? scheduleStart.slice(0, 5) : '08:00'
+      const whMin = Math.round(wh * 60)
+      const targetWorked = whMin + Math.floor(Math.random() * 11)
+      const targetSpan = targetWorked + lunch
+      const startOffset = Math.floor(Math.random() * 11) - 5
+      const [sh, sm] = schedStart.split(':').map(Number)
+      const startMin = sh * 60 + sm + startOffset
+      const endMin = startMin + targetSpan
+      const fmtMins = (m: number) => {
+        const hh = Math.floor(m / 60).toString().padStart(2, '0')
+        const mm = (m % 60).toString().padStart(2, '0')
+        return `${datePart}T${hh}:${mm}:00`
+      }
+      return biostarApi.adjustEmployee({
+        biostar_user_id: biostarUserId,
+        date: datePart,
+        adjusted_first_punch: fmtMins(startMin),
+        adjusted_last_punch: fmtMins(endMin),
+        original_first_punch: day.first_punch,
+        original_last_punch: day.last_punch || day.first_punch,
+        schedule_start: schedStart,
+        schedule_end: scheduleEnd?.slice(0, 5),
+        lunch_break_minutes: lunch,
+        working_hours: wh,
+        original_duration_seconds: day.duration_seconds ?? undefined,
+      })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['biostar', 'daily-history', biostarUserId] })
+      toast.success('Day adjusted')
+    },
+    onError: () => toast.error('Failed to adjust day'),
+  })
+
+  const revertDayMut = useMutation({
+    mutationFn: (day: BioStarDayHistory) =>
+      biostarApi.revertAdjustment(biostarUserId, day.date),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['biostar', 'daily-history', biostarUserId] })
+      toast.success('Adjustment reverted')
+    },
+    onError: () => toast.error('Failed to revert'),
+  })
 
   const stats = useMemo(() => {
     const lunchSec = lunchBreak * 60
@@ -292,6 +361,14 @@ function PontajPanel({
     const avgHours = daysPresent > 0 ? totalHours / daysPresent : 0
     return { daysPresent, totalHours, avgHours }
   }, [history, lunchBreak])
+
+  const fmtTime = (t: string | null) => t ? new Date(t).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : '—'
+  const fmtDur = (sec: number) => {
+    if (sec <= 0) return '—'
+    const h = Math.floor(sec / 3600)
+    const m = Math.floor((sec % 3600) / 60)
+    return h === 0 ? `${m}m` : `${h}h ${m}m`
+  }
 
   return (
     <div className="space-y-4 pt-2">
@@ -326,30 +403,34 @@ function PontajPanel({
                     <TableHead>Day</TableHead>
                     <TableHead>Check In</TableHead>
                     <TableHead>Check Out</TableHead>
+                    {showAdjusted && (
+                      <>
+                        <TableHead className="text-center">Adj. In</TableHead>
+                        <TableHead className="text-center">Adj. Out</TableHead>
+                      </>
+                    )}
                     <TableHead className="text-right">Duration</TableHead>
                     <TableHead className="text-center">Punches</TableHead>
+                    {canAdjust && <TableHead className="w-20" />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {history.map((d) => {
                     const dt = new Date(d.date + 'T00:00:00')
                     const isWeekend = dt.getDay() === 0 || dt.getDay() === 6
+                    const isToday = d.date === today
                     const rawSec = d.duration_seconds ?? 0
                     const netSec = rawSec > lunchBreak * 60 ? rawSec - lunchBreak * 60 : rawSec
                     const netH = netSec / 3600
                     const isAbsent = !d.total_punches || d.total_punches === 0
                     const notExited = d.total_punches === 1
                     const isShort = netH > 0 && netH < workingHours
-                    const fmtTime = (t: string | null) => t ? new Date(t).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : '—'
-                    const fmtDur = (sec: number) => {
-                      if (sec <= 0) return '—'
-                      const h = Math.floor(sec / 3600)
-                      const m = Math.floor((sec % 3600) / 60)
-                      return h === 0 ? `${m}m` : `${h}h ${m}m`
-                    }
                     return (
-                      <TableRow key={d.date} className={cn(isWeekend && 'bg-muted/40')}>
-                        <TableCell className="tabular-nums text-xs">{d.date}</TableCell>
+                      <TableRow key={d.date} className={cn(isWeekend && 'bg-muted/40', isToday && 'bg-muted/30')}>
+                        <TableCell className="tabular-nums text-xs">
+                          {d.date}
+                          {isToday && <Badge variant="secondary" className="ml-2 text-[10px]">Today</Badge>}
+                        </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {dt.toLocaleDateString('ro-RO', { weekday: 'short' })}
                         </TableCell>
@@ -363,6 +444,20 @@ function PontajPanel({
                             <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-300">Not exited</Badge>
                           ) : fmtTime(d.last_punch)}
                         </TableCell>
+                        {showAdjusted && (
+                          <>
+                            <TableCell className="text-center text-xs">
+                              {d.adjusted_first_punch
+                                ? <span className="font-medium text-green-600">{fmtTime(d.adjusted_first_punch)}</span>
+                                : <span className="text-muted-foreground">—</span>}
+                            </TableCell>
+                            <TableCell className="text-center text-xs">
+                              {d.adjusted_last_punch
+                                ? <span className="font-medium text-green-600">{fmtTime(d.adjusted_last_punch)}</span>
+                                : <span className="text-muted-foreground">—</span>}
+                            </TableCell>
+                          </>
+                        )}
                         <TableCell className="text-right tabular-nums text-xs font-medium">
                           {isAbsent ? (
                             <Badge variant="outline" className="text-[10px] text-muted-foreground">Absent</Badge>
@@ -375,6 +470,35 @@ function PontajPanel({
                         <TableCell className="text-center text-xs">
                           {isAbsent ? <span className="text-muted-foreground">—</span> : <Badge variant="secondary" className="text-xs">{d.total_punches}</Badge>}
                         </TableCell>
+                        {canAdjust && (
+                          <TableCell className="text-center">
+                            {!isAbsent && !isToday && (
+                              d.adjusted_first_punch ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 text-[10px] text-muted-foreground"
+                                  onClick={() => revertDayMut.mutate(d)}
+                                  disabled={revertDayMut.isPending}
+                                >
+                                  <RotateCcw className="mr-1 h-3 w-3" />
+                                  Revert
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 text-[10px]"
+                                  onClick={() => adjustDayMut.mutate(d)}
+                                  disabled={adjustDayMut.isPending}
+                                >
+                                  <CheckCircle2 className="mr-1 h-3 w-3" />
+                                  Adjust
+                                </Button>
+                              )
+                            )}
+                          </TableCell>
+                        )}
                       </TableRow>
                     )
                   })}
