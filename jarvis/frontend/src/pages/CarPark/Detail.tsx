@@ -352,66 +352,12 @@ export default function CarParkDetail() {
         <span className="text-sm text-muted-foreground">VIN: {vehicle.vin}</span>
       </div>
 
-      {/* Photo Gallery + Info Grid */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
-        {/* Photos */}
-        <PhotoGallery photos={photos} onPhotoClick={setLightboxIndex} />
-
-        {/* Quick Info Card */}
-        <Card className="p-4 space-y-4 h-fit">
-          {vehicle.current_price != null && (
-            <div>
-              <div className="text-xs text-muted-foreground">Price</div>
-              <CurrencyDisplay
-                value={vehicle.current_price}
-                currency={vehicle.price_currency}
-                className="text-2xl font-bold"
-              />
-              {vehicle.list_price != null && vehicle.list_price !== vehicle.current_price && (
-                <div className="text-sm text-muted-foreground line-through">
-                  {new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2 }).format(vehicle.list_price)} {vehicle.price_currency}
-                </div>
-              )}
-            </div>
-          )}
-          <Separator />
-          <dl className="grid grid-cols-2 gap-3">
-            <Field
-              label="Year"
-              value={vehicle.year_of_manufacture}
-            />
-            <Field
-              label="Mileage"
-              value={vehicle.mileage_km > 0 ? formatKm(vehicle.mileage_km) : '-'}
-            />
-            <Field label="Fuel" value={vehicle.fuel_type} />
-            <Field label="Transmission" value={vehicle.transmission} />
-            <Field label="Body" value={vehicle.body_type} />
-            <Field label="Power" value={vehicle.engine_power_hp ? `${vehicle.engine_power_hp} HP` : null} />
-            <Field label="Color" value={vehicle.color_exterior} />
-            <Field label="Doors" value={vehicle.doors} />
-          </dl>
-          <Separator />
-          <dl className="grid grid-cols-2 gap-3">
-            <Field label="Acquisition" value={formatDate(vehicle.acquisition_date)} />
-            <Field label="Days in Stock" value={
-              <span className={vehicle.stationary_days > 90 ? 'text-red-600 font-medium' : ''}>
-                {vehicle.stationary_days}
-              </span>
-            } />
-            <Field label="Location" value={vehicle.location_text ?? vehicle.location_name} />
-            <Field label="Parking" value={vehicle.parking_spot} />
-          </dl>
-        </Card>
-      </div>
-
-      {/* Tabbed sections */}
       {/* Profitability summary */}
       {profitData && <ProfitabilitySummary data={profitData} currency={vehicle.price_currency || 'RON'} />}
 
       <Tabs defaultValue="details">
         <TabsList>
-          <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="details">Detalii</TabsTrigger>
           <TabsTrigger value="pricing">Pricing</TabsTrigger>
           <TabsTrigger value="costs">Costs ({costs.length})</TabsTrigger>
           <TabsTrigger value="revenues">Revenues ({revenues.length})</TabsTrigger>
@@ -422,7 +368,7 @@ export default function CarParkDetail() {
         </TabsList>
 
         <TabsContent value="details" className="mt-4">
-          <DetailsTab vehicle={vehicle} />
+          <DetailsTab vehicle={vehicle} photos={photos} onPhotoClick={setLightboxIndex} />
         </TabsContent>
 
         <TabsContent value="pricing" className="mt-4">
@@ -656,9 +602,56 @@ function PhotoLightbox({
 }
 
 // ── Details Tab ────────────────────────────────────────────
-function DetailsTab({ vehicle: v }: { vehicle: Vehicle }) {
+function DetailsTab({ vehicle: v, photos, onPhotoClick }: { vehicle: Vehicle; photos: VehiclePhoto[]; onPhotoClick: (index: number) => void }) {
   return (
-    <div className="grid gap-6 md:grid-cols-2">
+    <div className="space-y-6">
+      {/* Photo Gallery + Quick Info */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
+        <PhotoGallery photos={photos} onPhotoClick={onPhotoClick} />
+
+        <Card className="p-4 space-y-4 h-fit">
+          {v.current_price != null && (
+            <div>
+              <div className="text-xs text-muted-foreground">Price</div>
+              <CurrencyDisplay
+                value={v.current_price}
+                currency={v.price_currency}
+                className="text-2xl font-bold"
+              />
+              {v.list_price != null && v.list_price !== v.current_price && (
+                <div className="text-sm text-muted-foreground line-through">
+                  {new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2 }).format(v.list_price)} {v.price_currency}
+                </div>
+              )}
+            </div>
+          )}
+          <Separator />
+          <dl className="grid grid-cols-2 gap-3">
+            <Field label="Year" value={v.year_of_manufacture} />
+            <Field label="Mileage" value={v.mileage_km > 0 ? formatKm(v.mileage_km) : '-'} />
+            <Field label="Fuel" value={v.fuel_type} />
+            <Field label="Transmission" value={v.transmission} />
+            <Field label="Body" value={v.body_type} />
+            <Field label="Power" value={v.engine_power_hp ? `${v.engine_power_hp} HP` : null} />
+            <Field label="Color" value={v.color_exterior} />
+            <Field label="Doors" value={v.doors} />
+          </dl>
+          <Separator />
+          <dl className="grid grid-cols-2 gap-3">
+            <Field label="Acquisition" value={formatDate(v.acquisition_date)} />
+            <Field label="Days in Stock" value={
+              <span className={v.stationary_days > 90 ? 'text-red-600 font-medium' : ''}>
+                {v.stationary_days}
+              </span>
+            } />
+            <Field label="Location" value={v.location_text ?? v.location_name} />
+            <Field label="Parking" value={v.parking_spot} />
+          </dl>
+        </Card>
+      </div>
+
+      {/* Detail cards */}
+      <div className="grid gap-6 md:grid-cols-2">
       {/* Identification */}
       <Card className="p-4">
         <h3 className="text-sm font-semibold mb-3">Identification</h3>
@@ -750,6 +743,7 @@ function DetailsTab({ vehicle: v }: { vehicle: Vehicle }) {
           )}
         </Card>
       )}
+      </div>
     </div>
   )
 }
