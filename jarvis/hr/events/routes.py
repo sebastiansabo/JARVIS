@@ -1,7 +1,7 @@
 """HR Module Routes."""
 from datetime import date
 from functools import wraps
-from flask import render_template, request, jsonify, redirect, url_for, flash, g
+from flask import render_template, request, jsonify, redirect, url_for, flash, g, current_app
 from flask_login import login_required, current_user
 
 from . import events_bp
@@ -1440,79 +1440,83 @@ def api_get_organigram():
 def api_get_employee_overview(user_id):
     """Get aggregated overview for Employee 360 page."""
     from database import get_db, get_cursor, release_db, dict_from_row
+    import traceback as _tb
 
-    employee = get_hr_employee(user_id)
-    if not employee:
-        return jsonify({'success': False, 'error': 'Employee not found'}), 404
+    try:
+        employee = get_hr_employee(user_id)
+        if not employee:
+            return jsonify({'success': False, 'error': 'Employee not found'}), 404
 
-    conn = get_db()
-    cursor = get_cursor(conn)
+        conn = get_db()
+        cursor = get_cursor(conn)
 
-    # BioStar mapping
-    cursor.execute('''
-        SELECT biostar_user_id, name AS user_name, user_group_name,
-               (status = 'active') AS is_active,
-               lunch_break_minutes, working_hours, schedule_start, schedule_end
-        FROM biostar_employees
-        WHERE mapped_jarvis_user_id = %s
-        LIMIT 1
-    ''', (user_id,))
-    biostar_row = cursor.fetchone()
-    biostar = dict_from_row(biostar_row) if biostar_row else None
+        # BioStar mapping
+        cursor.execute('''
+            SELECT biostar_user_id, name AS user_name, user_group_name,
+                   (status = 'active') AS is_active,
+                   lunch_break_minutes, working_hours,
+                   schedule_start::text, schedule_end::text
+            FROM biostar_employees
+            WHERE mapped_jarvis_user_id = %s
+            LIMIT 1
+        ''', (user_id,))
+        biostar_row = cursor.fetchone()
+        biostar = dict_from_row(biostar_row) if biostar_row else None
 
-    # Sincron mapping
-    cursor.execute('''
-        SELECT sincron_employee_id, company_name, nume, prenume,
-               nr_contract, data_incepere_contract, mapping_method, mapping_confidence
-        FROM sincron_employees
-        WHERE mapped_jarvis_user_id = %s AND is_active = TRUE
-        LIMIT 1
-    ''', (user_id,))
-    sincron_row = cursor.fetchone()
-    sincron = dict_from_row(sincron_row) if sincron_row else None
-    if sincron and sincron.get('data_incepere_contract'):
-        sincron['data_incepere_contract'] = str(sincron['data_incepere_contract'])
+        # Sincron mapping
+        cursor.execute('''
+            SELECT sincron_employee_id, company_name, nume, prenume,
+                   nr_contract, data_incepere_contract::text, mapping_method, mapping_confidence
+            FROM sincron_employees
+            WHERE mapped_jarvis_user_id = %s AND is_active = TRUE
+            LIMIT 1
+        ''', (user_id,))
+        sincron_row = cursor.fetchone()
+        sincron = dict_from_row(sincron_row) if sincron_row else None
 
-    # Org path
-    cursor.execute('''
-        SELECT u.company, u.brand, u.department, u.subdepartment
-        FROM users u WHERE u.id = %s
-    ''', (user_id,))
-    org_row = cursor.fetchone()
-    org = dict_from_row(org_row) if org_row else {}
+        # Org path
+        cursor.execute('''
+            SELECT u.company, u.brand, u.department, u.subdepartment
+            FROM users u WHERE u.id = %s
+        ''', (user_id,))
+        org_row = cursor.fetchone()
+        org = dict_from_row(org_row) if org_row else {}
 
-    # Bonus count
-    cursor.execute('''
-        SELECT COUNT(*) AS bonus_count,
-               COALESCE(SUM(bonus_days), 0) AS total_bonus_days,
-               COALESCE(SUM(bonus_net), 0) AS total_bonus_net
-        FROM hr.event_bonuses WHERE user_id = %s
-    ''', (user_id,))
-    bonus_row = cursor.fetchone()
-    bonuses = dict_from_row(bonus_row) if bonus_row else {'bonus_count': 0, 'total_bonus_days': 0, 'total_bonus_net': 0}
+        # Bonus count
+        cursor.execute('''
+            SELECT COUNT(*) AS bonus_count,
+                   COALESCE(SUM(bonus_days), 0) AS total_bonus_days,
+                   COALESCE(SUM(bonus_net), 0) AS total_bonus_net
+            FROM hr.event_bonuses WHERE user_id = %s
+        ''', (user_id,))
+        bonus_row = cursor.fetchone()
+        bonuses = dict_from_row(bonus_row) if bonus_row else {'bonus_count': 0, 'total_bonus_days': 0, 'total_bonus_net': 0}
 
-    # Form submissions count
-    cursor.execute('''
-        SELECT COUNT(*) AS submission_count
-        FROM form_submissions WHERE respondent_user_id = %s
-    ''', (user_id,))
-    forms_row = cursor.fetchone()
-    forms_count = forms_row[0] if forms_row else 0
+        # Form submissions count
+        cursor.execute('''
+            SELECT COUNT(*) AS submission_count
+            FROM form_submissions WHERE respondent_user_id = %s
+        ''', (user_id,))
+        forms_row = cursor.fetchone()
+        forms_count = forms_row['submission_count'] if forms_row else 0
 
-    release_db(conn)
+        release_db(conn)
 
-    return jsonify({
-        'success': True,
-        'data': {
-            'employee': employee,
-            'biostar': biostar,
-            'sincron': sincron,
-            'org': org,
-            'bonuses': {
-                'count': bonuses.get('bonus_count', 0),
-                'total_days': float(bonuses.get('total_bonus_days', 0)),
-                'total_net': float(bonuses.get('total_bonus_net', 0)),
-            },
-            'forms_count': forms_count,
-        }
-    })
+        return jsonify({
+            'success': True,
+            'data': {
+                'employee': employee,
+                'biostar': biostar,
+                'sincron': sincron,
+                'org': org,
+                'bonuses': {
+                    'count': bonuses.get('bonus_count', 0),
+                    'total_days': float(bonuses.get('total_bonus_days', 0)),
+                    'total_net': float(bonuses.get('total_bonus_net', 0)),
+                },
+                'forms_count': forms_count,
+            }
+        })
+    except Exception as exc:
+        current_app.logger.error('Employee overview error for user %s: %s\n%s', user_id, exc, _tb.format_exc())
+        return jsonify({'success': False, 'error': str(exc)}), 500
