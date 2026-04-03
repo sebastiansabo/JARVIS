@@ -1214,8 +1214,9 @@ function CostsTab({
   vehicleId: number; costs: VehicleCost[]; canEdit: boolean; currency: string
 }) {
   const queryClient = useQueryClient()
-  const [showForm, setShowForm] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
   const [form, setForm] = useState({
     cost_type: 'other' as CostType,
     amount: '',
@@ -1234,39 +1235,30 @@ function CostsTab({
       vat_rate: '19', vat_amount: '',
     })
     setEditingId(null)
-    setShowForm(false)
+    setDialogOpen(false)
+  }
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['carpark', 'costs', vehicleId] })
+    queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
   }
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => carparkApi.createCost(vehicleId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'costs', vehicleId] })
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
-      toast.success('Cost added')
-      resetForm()
-    },
+    onSuccess: () => { invalidate(); toast.success('Cost added'); resetForm() },
     onError: () => toast.error('Failed to add cost'),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
       carparkApi.updateCost(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'costs', vehicleId] })
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
-      toast.success('Cost updated')
-      resetForm()
-    },
+    onSuccess: () => { invalidate(); toast.success('Cost updated'); resetForm() },
     onError: () => toast.error('Failed to update cost'),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => carparkApi.deleteCost(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'costs', vehicleId] })
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
-      toast.success('Cost deleted')
-    },
+    onSuccess: () => { invalidate(); toast.success('Cost deleted'); setDeleteConfirmId(null) },
     onError: () => toast.error('Failed to delete cost'),
   })
 
@@ -1300,121 +1292,209 @@ function CostsTab({
       vat_amount: String(c.vat_amount ?? 0),
     })
     setEditingId(c.id)
-    setShowForm(true)
+    setDialogOpen(true)
   }
 
-  const totalCosts = costs.reduce((s, c) => s + Number(c.amount), 0)
+  const totalNet = costs.reduce((s, c) => s + Number(c.amount), 0)
+  const totalVat = costs.reduce((s, c) => s + Number(c.vat_amount ?? 0), 0)
+  const totalGross = totalNet + totalVat
+
+  // Group by type for summary
+  const byType = useMemo(() => {
+    const map: Record<string, number> = {}
+    costs.forEach((c) => {
+      const key = c.cost_type
+      map[key] = (map[key] ?? 0) + Number(c.amount)
+    })
+    return Object.entries(map)
+      .sort(([, a], [, b]) => b - a)
+  }, [costs])
+
+  const fmt = (v: number) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          Total: <CurrencyDisplay value={totalCosts} currency={currency} className="font-semibold text-foreground" />
+      {/* Summary Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-4 text-sm">
+          <span className="text-muted-foreground">
+            Net: <span className="font-semibold text-foreground tabular-nums">{fmt(totalNet)} {currency}</span>
+          </span>
+          {totalVat > 0 && (
+            <span className="text-muted-foreground">
+              TVA: <span className="font-medium tabular-nums">{fmt(totalVat)} {currency}</span>
+            </span>
+          )}
+          <span className="text-muted-foreground">
+            Total: <span className="font-bold text-foreground tabular-nums">{fmt(totalGross)} {currency}</span>
+          </span>
         </div>
         {canEdit && (
-          <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowForm(!showForm) }}>
+          <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true) }}>
             <Plus className="h-4 w-4 mr-1" /> Add Cost
           </Button>
         )}
       </div>
 
-      {showForm && (
-        <Card className="p-4 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <Label>Type</Label>
-              <Select value={form.cost_type} onValueChange={(v) => setForm((p) => ({ ...p, cost_type: v as CostType }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(COST_TYPE_LABELS).map(([k, label]) => (
-                    <SelectItem key={k} value={k}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Amount</Label>
-              <Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} />
-            </div>
-            <div>
-              <Label>VAT Rate %</Label>
-              <Input type="number" step="0.01" value={form.vat_rate} onChange={(e) => setForm((p) => ({ ...p, vat_rate: e.target.value }))} />
-            </div>
-            <div>
-              <Label>VAT Amount</Label>
-              <Input type="number" step="0.01" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Date</Label>
-              <Input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Supplier</Label>
-              <Input value={form.supplier_name} onChange={(e) => setForm((p) => ({ ...p, supplier_name: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Invoice #</Label>
-              <Input value={form.invoice_number} onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Description</Label>
-              <Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
-            </div>
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Button variant="ghost" size="sm" onClick={resetForm}>Cancel</Button>
-            <Button size="sm" onClick={handleSubmit} disabled={!form.amount || Number(form.amount) <= 0}>
-              {editingId ? 'Update' : 'Add'}
-            </Button>
-          </div>
-        </Card>
+      {/* Type Breakdown Badges */}
+      {byType.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {byType.map(([type, amount]) => {
+            const pct = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
+            return (
+              <div key={type} className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs">
+                <span className="font-medium">{COST_TYPE_LABELS[type as CostType] ?? type}</span>
+                <span className="tabular-nums text-muted-foreground">{fmt(amount)}</span>
+                <span className="text-[10px] text-muted-foreground">({pct}%)</span>
+              </div>
+            )
+          })}
+        </div>
       )}
 
+      {/* Costs Table */}
       {costs.length === 0 ? (
         <EmptyState title="No costs recorded" icon={<DollarSign className="h-8 w-8" />} />
       ) : (
-        <div className="border rounded-lg overflow-hidden">
+        <Card className="overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="text-left p-2 font-medium">Date</th>
-                <th className="text-left p-2 font-medium">Type</th>
-                <th className="text-left p-2 font-medium hidden sm:table-cell">Supplier</th>
-                <th className="text-left p-2 font-medium hidden md:table-cell">Description</th>
-                <th className="text-right p-2 font-medium">Amount</th>
-                {canEdit && <th className="p-2 w-20"></th>}
+            <thead>
+              <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
+                <th className="text-left px-3 py-2 font-medium">Date</th>
+                <th className="text-left px-3 py-2 font-medium">Type</th>
+                <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Supplier</th>
+                <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Invoice #</th>
+                <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Description</th>
+                <th className="text-right px-3 py-2 font-medium">Net</th>
+                <th className="text-right px-3 py-2 font-medium hidden sm:table-cell">TVA</th>
+                <th className="text-right px-3 py-2 font-medium">Total</th>
+                {canEdit && <th className="px-2 py-2 w-20"></th>}
               </tr>
             </thead>
             <tbody className="divide-y">
-              {costs.map((c) => (
-                <tr key={c.id} className="hover:bg-muted/30">
-                  <td className="p-2">{formatDate(c.date)}</td>
-                  <td className="p-2">
-                    <Badge variant="outline" className="text-[11px]">
-                      {COST_TYPE_LABELS[c.cost_type] ?? c.cost_type}
-                    </Badge>
-                  </td>
-                  <td className="p-2 hidden sm:table-cell text-muted-foreground">{c.supplier_name ?? '-'}</td>
-                  <td className="p-2 hidden md:table-cell text-muted-foreground truncate max-w-[200px]">{c.description ?? '-'}</td>
-                  <td className="p-2 text-right">
-                    <CurrencyDisplay value={c.amount} currency={c.currency} />
-                  </td>
-                  {canEdit && (
-                    <td className="p-2 text-right">
-                      <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => startEdit(c)}>
-                        <Pencil className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-7 px-2 text-red-500" onClick={() => deleteMutation.mutate(c.id)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+              {costs.map((c) => {
+                const net = Number(c.amount)
+                const vat = Number(c.vat_amount ?? 0)
+                return (
+                  <tr key={c.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-3 py-2 tabular-nums text-xs">{formatDate(c.date)}</td>
+                    <td className="px-3 py-2">
+                      <Badge variant="outline" className="text-[11px]">
+                        {COST_TYPE_LABELS[c.cost_type] ?? c.cost_type}
+                      </Badge>
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground truncate max-w-[140px]">{c.supplier_name || '-'}</td>
+                    <td className="px-3 py-2 hidden lg:table-cell font-mono text-xs text-muted-foreground">{c.invoice_number || '-'}</td>
+                    <td className="px-3 py-2 hidden md:table-cell text-muted-foreground truncate max-w-[180px]">{c.description || '-'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(net)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{vat > 0 ? fmt(vat) : '-'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(net + vat)}</td>
+                    {canEdit && (
+                      <td className="px-2 py-2 text-right whitespace-nowrap">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => startEdit(c)}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600" onClick={() => setDeleteConfirmId(c.id)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
             </tbody>
+            {costs.length > 1 && (
+              <tfoot>
+                <tr className="border-t bg-muted/30 font-medium text-xs">
+                  <td className="px-3 py-2" colSpan={5}></td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(totalNet)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{totalVat > 0 ? fmt(totalVat) : '-'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-bold">{fmt(totalGross)}</td>
+                  {canEdit && <td></td>}
+                </tr>
+              </tfoot>
+            )}
           </table>
-        </div>
+        </Card>
       )}
+
+      {/* Add/Edit Cost Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) resetForm() }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingId ? 'Edit Cost' : 'Add Cost'}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Type</Label>
+                <Select value={form.cost_type} onValueChange={(v) => setForm((p) => ({ ...p, cost_type: v as CostType }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(COST_TYPE_LABELS).map(([k, label]) => (
+                      <SelectItem key={k} value={k}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Date</Label>
+                <Input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>Amount (net)</Label>
+                <Input type="number" step="0.01" placeholder="0.00" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} />
+              </div>
+              <div>
+                <Label>VAT %</Label>
+                <Input type="number" step="0.01" value={form.vat_rate} onChange={(e) => setForm((p) => ({ ...p, vat_rate: e.target.value }))} />
+              </div>
+              <div>
+                <Label>VAT Amount</Label>
+                <Input type="number" step="0.01" placeholder="0.00" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Supplier</Label>
+                <Input placeholder="Supplier name" value={form.supplier_name} onChange={(e) => setForm((p) => ({ ...p, supplier_name: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Invoice #</Label>
+                <Input placeholder="Invoice number" value={form.invoice_number} onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input placeholder="Optional description" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={resetForm}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={!form.amount || Number(form.amount) <= 0 || createMutation.isPending || updateMutation.isPending}>
+              {createMutation.isPending || updateMutation.isPending ? 'Saving...' : editingId ? 'Update' : 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <Dialog open={deleteConfirmId !== null} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Cost</DialogTitle>
+            <DialogDescription>Are you sure? This action cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={deleteMutation.isPending} onClick={() => deleteConfirmId && deleteMutation.mutate(deleteConfirmId)}>
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -1426,8 +1506,9 @@ function RevenuesTab({
   vehicleId: number; revenues: VehicleRevenue[]; canEdit: boolean; currency: string
 }) {
   const queryClient = useQueryClient()
-  const [showForm, setShowForm] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
   const [form, setForm] = useState({
     revenue_type: 'sale' as RevenueType,
     amount: '',
@@ -1444,39 +1525,30 @@ function RevenuesTab({
       invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_amount: '',
     })
     setEditingId(null)
-    setShowForm(false)
+    setDialogOpen(false)
+  }
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['carpark', 'revenues', vehicleId] })
+    queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
   }
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => carparkApi.createRevenue(vehicleId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'revenues', vehicleId] })
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
-      toast.success('Revenue added')
-      resetForm()
-    },
+    onSuccess: () => { invalidate(); toast.success('Revenue added'); resetForm() },
     onError: () => toast.error('Failed to add revenue'),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
       carparkApi.updateRevenue(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'revenues', vehicleId] })
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
-      toast.success('Revenue updated')
-      resetForm()
-    },
+    onSuccess: () => { invalidate(); toast.success('Revenue updated'); resetForm() },
     onError: () => toast.error('Failed to update revenue'),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => carparkApi.deleteRevenue(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'revenues', vehicleId] })
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
-      toast.success('Revenue deleted')
-    },
+    onSuccess: () => { invalidate(); toast.success('Revenue deleted'); setDeleteConfirmId(null) },
     onError: () => toast.error('Failed to delete revenue'),
   })
 
@@ -1508,117 +1580,203 @@ function RevenuesTab({
       vat_amount: String(r.vat_amount ?? 0),
     })
     setEditingId(r.id)
-    setShowForm(true)
+    setDialogOpen(true)
   }
 
-  const totalRevenues = revenues.reduce((s, r) => s + Number(r.amount), 0)
+  const totalNet = revenues.reduce((s, r) => s + Number(r.amount), 0)
+  const totalVat = revenues.reduce((s, r) => s + Number(r.vat_amount ?? 0), 0)
+  const totalGross = totalNet + totalVat
+
+  const byType = useMemo(() => {
+    const map: Record<string, number> = {}
+    revenues.forEach((r) => {
+      const key = r.revenue_type
+      map[key] = (map[key] ?? 0) + Number(r.amount)
+    })
+    return Object.entries(map).sort(([, a], [, b]) => b - a)
+  }, [revenues])
+
+  const fmt = (v: number) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          Total: <CurrencyDisplay value={totalRevenues} currency={currency} className="font-semibold text-foreground" />
+      {/* Summary Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-4 text-sm">
+          <span className="text-muted-foreground">
+            Net: <span className="font-semibold text-emerald-600 tabular-nums">{fmt(totalNet)} {currency}</span>
+          </span>
+          {totalVat > 0 && (
+            <span className="text-muted-foreground">
+              TVA: <span className="font-medium tabular-nums">{fmt(totalVat)} {currency}</span>
+            </span>
+          )}
+          <span className="text-muted-foreground">
+            Total: <span className="font-bold text-emerald-600 tabular-nums">{fmt(totalGross)} {currency}</span>
+          </span>
         </div>
         {canEdit && (
-          <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowForm(!showForm) }}>
+          <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true) }}>
             <Plus className="h-4 w-4 mr-1" /> Add Revenue
           </Button>
         )}
       </div>
 
-      {showForm && (
-        <Card className="p-4 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <Label>Type</Label>
-              <Select value={form.revenue_type} onValueChange={(v) => setForm((p) => ({ ...p, revenue_type: v as RevenueType }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(REVENUE_TYPE_LABELS).map(([k, label]) => (
-                    <SelectItem key={k} value={k}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Amount</Label>
-              <Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} />
-            </div>
-            <div>
-              <Label>VAT Amount</Label>
-              <Input type="number" step="0.01" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Date</Label>
-              <Input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Client</Label>
-              <Input value={form.client_name} onChange={(e) => setForm((p) => ({ ...p, client_name: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Invoice #</Label>
-              <Input value={form.invoice_number} onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))} />
-            </div>
-            <div className="sm:col-span-2">
-              <Label>Description</Label>
-              <Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
-            </div>
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Button variant="ghost" size="sm" onClick={resetForm}>Cancel</Button>
-            <Button size="sm" onClick={handleSubmit} disabled={!form.amount || Number(form.amount) <= 0}>
-              {editingId ? 'Update' : 'Add'}
-            </Button>
-          </div>
-        </Card>
+      {/* Type Breakdown */}
+      {byType.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {byType.map(([type, amount]) => {
+            const pct = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
+            return (
+              <div key={type} className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs">
+                <span className="font-medium">{REVENUE_TYPE_LABELS[type as RevenueType] ?? type}</span>
+                <span className="tabular-nums text-muted-foreground">{fmt(amount)}</span>
+                <span className="text-[10px] text-muted-foreground">({pct}%)</span>
+              </div>
+            )
+          })}
+        </div>
       )}
 
+      {/* Revenues Table */}
       {revenues.length === 0 ? (
-        <EmptyState title="No revenues recorded" icon={<DollarSign className="h-8 w-8" />} />
+        <EmptyState title="No revenues recorded" icon={<TrendingUp className="h-8 w-8" />} />
       ) : (
-        <div className="border rounded-lg overflow-hidden">
+        <Card className="overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="text-left p-2 font-medium">Date</th>
-                <th className="text-left p-2 font-medium">Type</th>
-                <th className="text-left p-2 font-medium hidden sm:table-cell">Client</th>
-                <th className="text-left p-2 font-medium hidden md:table-cell">Description</th>
-                <th className="text-right p-2 font-medium">Amount</th>
-                {canEdit && <th className="p-2 w-20"></th>}
+            <thead>
+              <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
+                <th className="text-left px-3 py-2 font-medium">Date</th>
+                <th className="text-left px-3 py-2 font-medium">Type</th>
+                <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Client</th>
+                <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Invoice #</th>
+                <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Description</th>
+                <th className="text-right px-3 py-2 font-medium">Net</th>
+                <th className="text-right px-3 py-2 font-medium hidden sm:table-cell">TVA</th>
+                <th className="text-right px-3 py-2 font-medium">Total</th>
+                {canEdit && <th className="px-2 py-2 w-20"></th>}
               </tr>
             </thead>
             <tbody className="divide-y">
-              {revenues.map((r) => (
-                <tr key={r.id} className="hover:bg-muted/30">
-                  <td className="p-2">{formatDate(r.date)}</td>
-                  <td className="p-2">
-                    <Badge variant="outline" className="text-[11px]">
-                      {REVENUE_TYPE_LABELS[r.revenue_type] ?? r.revenue_type}
-                    </Badge>
-                  </td>
-                  <td className="p-2 hidden sm:table-cell text-muted-foreground">{r.client_name ?? '-'}</td>
-                  <td className="p-2 hidden md:table-cell text-muted-foreground truncate max-w-[200px]">{r.description ?? '-'}</td>
-                  <td className="p-2 text-right">
-                    <CurrencyDisplay value={r.amount} currency={r.currency} />
-                  </td>
-                  {canEdit && (
-                    <td className="p-2 text-right">
-                      <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => startEdit(r)}>
-                        <Pencil className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-7 px-2 text-red-500" onClick={() => deleteMutation.mutate(r.id)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+              {revenues.map((r) => {
+                const net = Number(r.amount)
+                const vat = Number(r.vat_amount ?? 0)
+                return (
+                  <tr key={r.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-3 py-2 tabular-nums text-xs">{formatDate(r.date)}</td>
+                    <td className="px-3 py-2">
+                      <Badge variant="outline" className="text-[11px]">
+                        {REVENUE_TYPE_LABELS[r.revenue_type] ?? r.revenue_type}
+                      </Badge>
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground truncate max-w-[140px]">{r.client_name || '-'}</td>
+                    <td className="px-3 py-2 hidden lg:table-cell font-mono text-xs text-muted-foreground">{r.invoice_number || '-'}</td>
+                    <td className="px-3 py-2 hidden md:table-cell text-muted-foreground truncate max-w-[180px]">{r.description || '-'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(net)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{vat > 0 ? fmt(vat) : '-'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(net + vat)}</td>
+                    {canEdit && (
+                      <td className="px-2 py-2 text-right whitespace-nowrap">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => startEdit(r)}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600" onClick={() => setDeleteConfirmId(r.id)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
             </tbody>
+            {revenues.length > 1 && (
+              <tfoot>
+                <tr className="border-t bg-muted/30 font-medium text-xs">
+                  <td className="px-3 py-2" colSpan={5}></td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(totalNet)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{totalVat > 0 ? fmt(totalVat) : '-'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-bold">{fmt(totalGross)}</td>
+                  {canEdit && <td></td>}
+                </tr>
+              </tfoot>
+            )}
           </table>
-        </div>
+        </Card>
       )}
+
+      {/* Add/Edit Revenue Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) resetForm() }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingId ? 'Edit Revenue' : 'Add Revenue'}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Type</Label>
+                <Select value={form.revenue_type} onValueChange={(v) => setForm((p) => ({ ...p, revenue_type: v as RevenueType }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(REVENUE_TYPE_LABELS).map(([k, label]) => (
+                      <SelectItem key={k} value={k}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Date</Label>
+                <Input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Amount (net)</Label>
+                <Input type="number" step="0.01" placeholder="0.00" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} />
+              </div>
+              <div>
+                <Label>VAT Amount</Label>
+                <Input type="number" step="0.01" placeholder="0.00" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Client</Label>
+                <Input placeholder="Client name" value={form.client_name} onChange={(e) => setForm((p) => ({ ...p, client_name: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Invoice #</Label>
+                <Input placeholder="Invoice number" value={form.invoice_number} onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input placeholder="Optional description" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={resetForm}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={!form.amount || Number(form.amount) <= 0 || createMutation.isPending || updateMutation.isPending}>
+              {createMutation.isPending || updateMutation.isPending ? 'Saving...' : editingId ? 'Update' : 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <Dialog open={deleteConfirmId !== null} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Revenue</DialogTitle>
+            <DialogDescription>Are you sure? This action cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={deleteMutation.isPending} onClick={() => deleteConfirmId && deleteMutation.mutate(deleteConfirmId)}>
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

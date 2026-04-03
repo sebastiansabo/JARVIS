@@ -12,8 +12,8 @@ ALLOWED_ENTITY_TYPES = {
 _ENTITY_JOINS = {
     'invoice': (
         'LEFT JOIN invoices inv ON inv.id = vl.linked_entity_id AND vl.linked_entity_type = %s',
-        "COALESCE(inv.invoice_number, 'Factură #' || vl.linked_entity_id::text)",
-        "COALESCE(inv.partner_name, '')",
+        "COALESCE(inv.invoice_number, 'Factura #' || vl.linked_entity_id::text)",
+        "COALESCE(inv.supplier, '')",
         'invoice',
     ),
     'dms_document': (
@@ -35,20 +35,20 @@ _ENTITY_JOINS = {
         'project',
     ),
     'hr_event': (
-        'LEFT JOIN hr_events he ON he.id = vl.linked_entity_id AND vl.linked_entity_type = %s',
-        "COALESCE(he.title, 'Eveniment #' || vl.linked_entity_id::text)",
-        "COALESCE(he.status, '')",
+        'LEFT JOIN events he ON he.id = vl.linked_entity_id AND vl.linked_entity_type = %s',
+        "COALESCE(he.name, 'Eveniment #' || vl.linked_entity_id::text)",
+        "''",
         'hr_event',
     ),
     'crm_deal': (
         'LEFT JOIN crm_deals cd ON cd.id = vl.linked_entity_id AND vl.linked_entity_type = %s',
-        "COALESCE(cd.title, 'Deal #' || vl.linked_entity_id::text)",
-        "COALESCE(cd.stage, '')",
+        "COALESCE(cd.brand || ' ' || cd.model_name, 'Deal #' || vl.linked_entity_id::text)",
+        "COALESCE(cd.dossier_status, '')",
         'crm_deal',
     ),
     'crm_client': (
         'LEFT JOIN crm_clients cc ON cc.id = vl.linked_entity_id AND vl.linked_entity_type = %s',
-        "COALESCE(cc.name, 'Client #' || vl.linked_entity_id::text)",
+        "COALESCE(cc.display_name, 'Client #' || vl.linked_entity_id::text)",
         "COALESCE(cc.company_name, '')",
         'crm_client',
     ),
@@ -130,13 +130,13 @@ class VehicleLinkRepository(BaseRepository):
         if entity_type == 'invoice':
             sql = '''
                 SELECT id, invoice_number AS label,
-                       COALESCE(partner_name, '') AS sublabel
+                       COALESCE(supplier, '') AS sublabel
                 FROM invoices
                 WHERE deleted_at IS NULL
             '''
             params: list = []
             if query:
-                sql += " AND (invoice_number ILIKE %s OR partner_name ILIKE %s)"
+                sql += " AND (invoice_number ILIKE %s OR supplier ILIKE %s)"
                 params.extend([f'%{query}%', f'%{query}%'])
             if company_id:
                 sql += ' AND company_id = %s'
@@ -201,14 +201,14 @@ class VehicleLinkRepository(BaseRepository):
 
         elif entity_type == 'hr_event':
             sql = '''
-                SELECT id, title AS label,
-                       COALESCE(status, '') AS sublabel
-                FROM hr_events
+                SELECT id, name AS label,
+                       '' AS sublabel
+                FROM events
                 WHERE 1=1
             '''
             params = []
             if query:
-                sql += " AND title ILIKE %s"
+                sql += " AND name ILIKE %s"
                 params.append(f'%{query}%')
             sql += ' ORDER BY created_at DESC LIMIT %s'
             params.append(limit)
@@ -216,15 +216,16 @@ class VehicleLinkRepository(BaseRepository):
 
         elif entity_type == 'crm_deal':
             sql = '''
-                SELECT id, title AS label,
-                       COALESCE(stage, '') AS sublabel
+                SELECT id,
+                       COALESCE(brand || ' ' || model_name, 'Deal #' || id::text) AS label,
+                       COALESCE(dossier_status, '') AS sublabel
                 FROM crm_deals
                 WHERE 1=1
             '''
             params = []
             if query:
-                sql += " AND title ILIKE %s"
-                params.append(f'%{query}%')
+                sql += " AND (brand ILIKE %s OR model_name ILIKE %s)"
+                params.extend([f'%{query}%', f'%{query}%'])
             if company_id:
                 sql += ' AND company_id = %s'
                 params.append(company_id)
@@ -234,19 +235,19 @@ class VehicleLinkRepository(BaseRepository):
 
         elif entity_type == 'crm_client':
             sql = '''
-                SELECT id, name AS label,
+                SELECT id, display_name AS label,
                        COALESCE(company_name, '') AS sublabel
                 FROM crm_clients
                 WHERE 1=1
             '''
             params = []
             if query:
-                sql += " AND (name ILIKE %s OR company_name ILIKE %s)"
+                sql += " AND (display_name ILIKE %s OR company_name ILIKE %s)"
                 params.extend([f'%{query}%', f'%{query}%'])
             if company_id:
                 sql += ' AND company_id = %s'
                 params.append(company_id)
-            sql += ' ORDER BY name ASC LIMIT %s'
+            sql += ' ORDER BY display_name ASC LIMIT %s'
             params.append(limit)
             return self.query_all(sql, tuple(params))
 

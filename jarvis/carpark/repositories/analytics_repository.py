@@ -226,10 +226,10 @@ class AnalyticsRepository(BaseRepository):
             SELECT
                 COUNT(DISTINCT l.vehicle_id) AS vehicles_published,
                 COUNT(l.id) AS total_listings,
-                COALESCE(SUM(l.views_count), 0) AS total_views,
-                COALESCE(SUM(l.inquiries_count), 0) AS total_inquiries,
-                CASE WHEN SUM(l.views_count) > 0
-                     THEN ROUND(100.0 * SUM(l.inquiries_count) / SUM(l.views_count), 2)
+                COALESCE(SUM(l.views), 0) AS total_views,
+                COALESCE(SUM(l.inquiries), 0) AS total_inquiries,
+                CASE WHEN SUM(l.views) > 0
+                     THEN ROUND(100.0 * SUM(l.inquiries) / SUM(l.views), 2)
                      ELSE 0 END AS inquiry_rate
             FROM carpark_vehicle_listings l
             JOIN carpark_vehicles v ON v.id = l.vehicle_id
@@ -261,11 +261,11 @@ class AnalyticsRepository(BaseRepository):
         """Recent status changes across all vehicles."""
         return self.query_all('''
             SELECT h.id, h.vehicle_id, h.old_status, h.new_status,
-                   h.changed_at, h.notes,
+                   h.created_at, h.notes,
                    v.brand, v.model, v.vin
             FROM carpark_status_history h
             JOIN carpark_vehicles v ON v.id = h.vehicle_id
             WHERE v.company_id = %s
-            ORDER BY h.changed_at DESC
+            ORDER BY h.created_at DESC
             LIMIT %s
         ''', (company_id, limit))
