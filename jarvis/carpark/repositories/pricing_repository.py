@@ -201,14 +201,89 @@ class PricingRepository(BaseRepository):
         ) > 0
 
     def get_vehicle_promotions(self, vehicle_id: int) -> List[Dict[str, Any]]:
-        """Get active promotions that apply to a specific vehicle."""
+        """Get active promotions that apply to a specific vehicle.
+
+        Checks: target_type='all', junction table, legacy array, category/brand match.
+        """
         return self.query_all('''
-            SELECT p.* FROM carpark_promotions p
+            SELECT DISTINCT p.* FROM carpark_promotions p
+            LEFT JOIN carpark_promotion_vehicles cpv
+                ON cpv.promotion_id = p.id AND cpv.vehicle_id = %s
+            LEFT JOIN carpark_vehicles v ON v.id = %s
             WHERE p.is_active = TRUE
               AND p.end_date >= CURRENT_DATE
               AND (
                   p.target_type = 'all'
+                  OR cpv.id IS NOT NULL
                   OR (p.target_type = 'specific' AND %s = ANY(p.target_vehicle_ids))
+                  OR (p.target_type = 'category' AND v.category = ANY(p.target_categories))
+                  OR (p.target_type = 'brand' AND v.brand = ANY(p.target_brands))
               )
             ORDER BY p.start_date DESC
-        ''', (vehicle_id,))
+        ''', (vehicle_id, vehicle_id, vehicle_id))
+
+    # ═══════════════════════════════════════════════
+    # PROMOTION VEHICLES (junction table)
+    # ═══════════════════════════════════════════════
+
+    def get_promotion_vehicles(self, promo_id: int) -> List[Dict[str, Any]]:
+        """Get vehicles assigned to a promotion via junction table."""
+        return self.query_all('''
+            SELECT cpv.id, cpv.promotion_id, cpv.vehicle_id, cpv.added_by,
+                   cpv.created_at,
+                   u.name AS added_by_name,
+                   v.vin, v.brand, v.model, v.current_price, v.status
+            FROM carpark_promotion_vehicles cpv
+            JOIN carpark_vehicles v ON v.id = cpv.vehicle_id
+            LEFT JOIN users u ON u.id = cpv.added_by
+            WHERE cpv.promotion_id = %s
+              AND v.deleted_at IS NULL
+            ORDER BY v.brand, v.model
+        ''', (promo_id,))
+
+    def add_vehicle_to_promotion(self, promo_id: int, vehicle_id: int,
+                                  added_by: int) -> Optional[Dict[str, Any]]:
+        """Add a vehicle to a promotion. Returns None if already exists."""
+        return self.execute('''
+            INSERT INTO carpark_promotion_vehicles (promotion_id, vehicle_id, added_by)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (promotion_id, vehicle_id) DO NOTHING
+            RETURNING *
+        ''', (promo_id, vehicle_id, added_by), returning=True)
+
+    def remove_vehicle_from_promotion(self, promo_id: int,
+                                       vehicle_id: int) -> bool:
+        """Remove a vehicle from a promotion."""
+        return self.execute(
+            'DELETE FROM carpark_promotion_vehicles WHERE promotion_id = %s AND vehicle_id = %s',
+            (promo_id, vehicle_id)
+        ) > 0
+
+    def set_promotion_vehicles(self, promo_id: int, vehicle_ids: List[int],
+                                added_by: int) -> int:
+        """Bulk set vehicles for a promotion. Returns count of new links."""
+        if not vehicle_ids:
+            self.execute(
+                'DELETE FROM carpark_promotion_vehicles WHERE promotion_id = %s',
+                (promo_id,)
+            )
+            return 0
+
+        def _work(cursor):
+            # Remove vehicles not in new list
+            cursor.execute(
+                'DELETE FROM carpark_promotion_vehicles WHERE promotion_id = %s AND vehicle_id != ALL(%s)',
+                (promo_id, vehicle_ids)
+            )
+            # Insert new ones
+            added = 0
+            for vid in vehicle_ids:
+                cursor.execute('''
+                    INSERT INTO carpark_promotion_vehicles (promotion_id, vehicle_id, added_by)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (promotion_id, vehicle_id) DO NOTHING
+                ''', (promo_id, vid, added_by))
+                added += cursor.rowcount
+            return added
+
+        return self.execute_many(_work)

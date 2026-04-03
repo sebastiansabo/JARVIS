@@ -580,6 +580,55 @@ export const CATEGORY_LABELS: Record<VehicleCategory, string> = {
   TI: 'Trade-In',
 }
 
+// ── Vehicle Links ──
+
+export type LinkedEntityType = 'invoice' | 'dms_document' | 'dms_folder' | 'project' | 'hr_event' | 'crm_deal' | 'crm_client'
+
+export interface VehicleLink {
+  id: number
+  vehicle_id: number
+  linked_entity_type: LinkedEntityType
+  linked_entity_id: number
+  notes: string | null
+  linked_by: number
+  linked_by_name: string | null
+  created_at: string
+  entity_label: string
+  entity_sublabel: string | null
+}
+
+export interface LinkSearchResult {
+  id: number
+  label: string
+  sublabel: string | null
+}
+
+export const ENTITY_TYPE_LABELS: Record<LinkedEntityType, string> = {
+  invoice: 'Facturi',
+  dms_document: 'Documente',
+  dms_folder: 'Dosare',
+  project: 'Proiecte',
+  hr_event: 'Evenimente HR',
+  crm_deal: 'Dealuri CRM',
+  crm_client: 'Clienti CRM',
+}
+
+// ── Promotion Vehicles ──
+
+export interface PromotionVehicle {
+  id: number
+  promotion_id: number
+  vehicle_id: number
+  added_by: number
+  added_by_name: string | null
+  created_at: string
+  vin: string
+  brand: string
+  model: string
+  current_price: number | null
+  status: string
+}
+
 // ── Analytics / Dashboard types ─────────────────────────────
 
 export interface InventorySummary {

@@ -294,6 +294,52 @@ def delete_promotion(promo_id):
 
 
 # ═══════════════════════════════════════════════
+# PROMOTION VEHICLES
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/promotions/<int:promo_id>/vehicles', methods=['GET'])
+@login_required
+@carpark_required
+def get_promotion_vehicles(promo_id):
+    """List vehicles assigned to a promotion."""
+    vehicles = _pricing_service.get_promotion_vehicles(promo_id)
+    return jsonify({'vehicles': _serialize(vehicles), 'count': len(vehicles)})
+
+
+@carpark_bp.route('/promotions/<int:promo_id>/vehicles', methods=['POST'])
+@login_required
+@carpark_edit_required
+def add_promotion_vehicles(promo_id):
+    """Add vehicles to a promotion. Body: { vehicle_ids: [1, 2, 3] }"""
+    data = request.get_json(silent=True)
+    if not data or not data.get('vehicle_ids'):
+        return jsonify({'error': 'vehicle_ids array is required'}), 400
+
+    promo = _pricing_service.get_promotion(promo_id)
+    if not promo:
+        return jsonify({'error': 'Promotion not found'}), 404
+
+    try:
+        added = _pricing_service.add_vehicles_to_promotion(
+            promo_id, data['vehicle_ids'], added_by=current_user.id
+        )
+        return jsonify({'added': added}), 201
+    except Exception as e:
+        logger.error(f'Add promotion vehicles failed: {e}', exc_info=True)
+        return jsonify({'error': 'Internal error'}), 500
+
+
+@carpark_bp.route('/promotions/<int:promo_id>/vehicles/<int:vehicle_id>', methods=['DELETE'])
+@login_required
+@carpark_edit_required
+def remove_promotion_vehicle(promo_id, vehicle_id):
+    """Remove a vehicle from a promotion."""
+    if _pricing_service.remove_vehicle_from_promotion(promo_id, vehicle_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'Vehicle not in promotion'}), 404
+
+
+# ═══════════════════════════════════════════════
 # AGING ALERTS
 # ═══════════════════════════════════════════════
 

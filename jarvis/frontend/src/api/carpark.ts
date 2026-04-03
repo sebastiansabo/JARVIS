@@ -26,6 +26,10 @@ import type {
   VehicleListing,
   SyncLogEntry,
   DashboardData,
+  VehicleLink,
+  LinkSearchResult,
+  LinkedEntityType,
+  PromotionVehicle,
 } from '../types/carpark'
 
 export const carparkApi = {
@@ -251,4 +255,27 @@ export const carparkApi = {
   // ── Analytics / Dashboard ──────────────────────────────
   getDashboard: (period = 90) =>
     api.get<DashboardData>('/api/carpark/analytics/dashboard', { period: String(period) }),
+
+  // ── Vehicle Links ─────────────────────────────────────
+  getVehicleLinks: (vehicleId: number, entityType?: LinkedEntityType) =>
+    api.get<{ links: VehicleLink[] }>(`/api/carpark/vehicles/${vehicleId}/links`, entityType ? { entity_type: entityType } : undefined),
+
+  linkEntity: (vehicleId: number, data: { entity_type: LinkedEntityType; entity_id: number; notes?: string }) =>
+    api.post<{ link: VehicleLink }>(`/api/carpark/vehicles/${vehicleId}/links`, data),
+
+  unlinkEntity: (vehicleId: number, linkId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/vehicles/${vehicleId}/links/${linkId}`),
+
+  searchLinkableEntities: (entityType: LinkedEntityType, q = '', limit = 20) =>
+    api.get<{ results: LinkSearchResult[] }>(`/api/carpark/link-search/${entityType}`, { q, limit: String(limit) }),
+
+  // ── Promotion Vehicles ─────────────────────────────────
+  getPromotionVehicles: (promoId: number) =>
+    api.get<{ vehicles: PromotionVehicle[]; count: number }>(`/api/carpark/promotions/${promoId}/vehicles`),
+
+  addPromotionVehicles: (promoId: number, vehicleIds: number[]) =>
+    api.post<{ added: number }>(`/api/carpark/promotions/${promoId}/vehicles`, { vehicle_ids: vehicleIds }),
+
+  removePromotionVehicle: (promoId: number, vehicleId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/promotions/${promoId}/vehicles/${vehicleId}`),
 }

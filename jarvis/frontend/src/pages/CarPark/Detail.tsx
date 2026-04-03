@@ -22,6 +22,9 @@ import {
   MessageSquare,
   Power,
   PowerOff,
+  Link2,
+  Search,
+  Unlink,
 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
@@ -74,6 +77,9 @@ import {
   type FloorPrice,
   type Promotion,
   type PublishingPlatform,
+  type VehicleLink,
+  type LinkedEntityType,
+  ENTITY_TYPE_LABELS,
 } from '@/types/carpark'
 
 // ── Status colors (shared with catalog) ────────────────────
@@ -213,7 +219,14 @@ export default function CarParkDetail() {
     enabled: !!id,
   })
 
+  const { data: linksData } = useQuery({
+    queryKey: ['carpark', 'vehicle-links', id],
+    queryFn: () => carparkApi.getVehicleLinks(id),
+    enabled: !!id,
+  })
+
   const vehicle = data?.vehicle
+  const vehicleLinks = linksData?.links ?? []
   const history = historyData?.history ?? []
   const modifications = modsData?.modifications ?? []
   const costs = costsData?.costs ?? []
@@ -403,6 +416,7 @@ export default function CarParkDetail() {
           <TabsTrigger value="costs">Costs ({costs.length})</TabsTrigger>
           <TabsTrigger value="revenues">Revenues ({revenues.length})</TabsTrigger>
           <TabsTrigger value="listings">Listings ({listings.length})</TabsTrigger>
+          <TabsTrigger value="links">Links ({vehicleLinks.length})</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="modifications">Changes</TabsTrigger>
         </TabsList>
@@ -430,6 +444,10 @@ export default function CarParkDetail() {
 
         <TabsContent value="listings" className="mt-4">
           <ListingsTab vehicleId={id} listings={listings} platforms={platforms} canEdit={canEdit} />
+        </TabsContent>
+
+        <TabsContent value="links" className="mt-4">
+          <LinksTab vehicleId={id} links={vehicleLinks} canEdit={canEdit} />
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
@@ -1607,6 +1625,195 @@ function RevenuesTab({
           </table>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Links Tab ──────────────────────────────────────────────
+const ENTITY_TYPES: LinkedEntityType[] = ['invoice', 'dms_document', 'dms_folder', 'project', 'hr_event', 'crm_deal', 'crm_client']
+
+function LinksTab({ vehicleId, links, canEdit }: { vehicleId: number; links: VehicleLink[]; canEdit: boolean }) {
+  const queryClient = useQueryClient()
+  const [filterType, setFilterType] = useState<LinkedEntityType | ''>('')
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [selectedEntityType, setSelectedEntityType] = useState<LinkedEntityType>('invoice')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const { data: searchData, isFetching: isSearching } = useQuery({
+    queryKey: ['carpark', 'link-search', selectedEntityType, searchQuery],
+    queryFn: () => carparkApi.searchLinkableEntities(selectedEntityType, searchQuery),
+    enabled: dialogOpen && searchQuery.length > 0,
+  })
+
+  const searchResults = searchData?.results ?? []
+
+  const linkMutation = useMutation({
+    mutationFn: (data: { entity_type: LinkedEntityType; entity_id: number }) =>
+      carparkApi.linkEntity(vehicleId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle-links', vehicleId] })
+      toast.success('Link adaugat')
+    },
+    onError: () => toast.error('Eroare la adaugarea linkului'),
+  })
+
+  const unlinkMutation = useMutation({
+    mutationFn: (linkId: number) => carparkApi.unlinkEntity(vehicleId, linkId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle-links', vehicleId] })
+      toast.success('Link sters')
+    },
+    onError: () => toast.error('Eroare la stergerea linkului'),
+  })
+
+  const filtered = filterType ? links.filter((l) => l.linked_entity_type === filterType) : links
+
+  const alreadyLinked = new Set(links.map((l) => `${l.linked_entity_type}:${l.linked_entity_id}`))
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant={filterType === '' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setFilterType('')}
+          >
+            Toate ({links.length})
+          </Button>
+          {ENTITY_TYPES.map((et) => {
+            const count = links.filter((l) => l.linked_entity_type === et).length
+            if (count === 0) return null
+            return (
+              <Button
+                key={et}
+                variant={filterType === et ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFilterType(et)}
+              >
+                {ENTITY_TYPE_LABELS[et]} ({count})
+              </Button>
+            )
+          })}
+        </div>
+        {canEdit && (
+          <Button size="sm" onClick={() => { setDialogOpen(true); setSearchQuery('') }}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Link
+          </Button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={<Link2 className="h-10 w-10" />}
+          title="Niciun link"
+          description="Leaga facturi, documente, proiecte sau alte entitati de acest vehicul"
+        />
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((link) => (
+            <Card key={link.id} className="p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Badge variant="outline" className="text-[10px] shrink-0">
+                    {ENTITY_TYPE_LABELS[link.linked_entity_type] ?? link.linked_entity_type}
+                  </Badge>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">{link.entity_label}</div>
+                    {link.entity_sublabel && (
+                      <div className="text-xs text-muted-foreground truncate">{link.entity_sublabel}</div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs text-muted-foreground hidden sm:inline">
+                    {link.linked_by_name} - {formatDate(link.created_at)}
+                  </span>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-red-500"
+                      onClick={() => unlinkMutation.mutate(link.id)}
+                    >
+                      <Unlink className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {link.notes && (
+                <div className="mt-1 text-xs text-muted-foreground">{link.notes}</div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Link Entity Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Leaga entitate</DialogTitle>
+            <DialogDescription>Cauta si selecteaza o entitate de legat</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Tip entitate</Label>
+              <Select value={selectedEntityType} onValueChange={(v) => { setSelectedEntityType(v as LinkedEntityType); setSearchQuery('') }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {ENTITY_TYPES.map((et) => (
+                    <SelectItem key={et} value={et}>{ENTITY_TYPE_LABELS[et]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Cauta</Label>
+              <div className="flex items-center gap-2">
+                <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={`Cauta ${ENTITY_TYPE_LABELS[selectedEntityType].toLowerCase()}...`}
+                />
+              </div>
+            </div>
+            <div className="max-h-60 overflow-y-auto border rounded-md">
+              {isSearching ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">Se cauta...</div>
+              ) : searchResults.length === 0 ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">
+                  {searchQuery ? 'Niciun rezultat' : 'Scrie pentru a cauta'}
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {searchResults.map((r) => {
+                    const isLinked = alreadyLinked.has(`${selectedEntityType}:${r.id}`)
+                    return (
+                      <button
+                        key={r.id}
+                        className="w-full text-left px-3 py-2 hover:bg-accent text-sm disabled:opacity-50"
+                        disabled={isLinked || linkMutation.isPending}
+                        onClick={() => {
+                          linkMutation.mutate({ entity_type: selectedEntityType, entity_id: r.id })
+                        }}
+                      >
+                        <div className="font-medium">{r.label}</div>
+                        {r.sublabel && <div className="text-xs text-muted-foreground">{r.sublabel}</div>}
+                        {isLinked && <span className="text-xs text-muted-foreground italic">Deja legat</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Inchide</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

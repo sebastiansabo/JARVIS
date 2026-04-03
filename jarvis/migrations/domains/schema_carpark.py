@@ -674,6 +674,36 @@ def create_schema_carpark(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_psl_vehicle ON carpark_publishing_sync_log(vehicle_id)')
 
+    # ── Vehicle Links (cross-module entity linking) ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_vehicle_links (
+            id SERIAL PRIMARY KEY,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            linked_entity_type VARCHAR(30) NOT NULL,
+            linked_entity_id INTEGER NOT NULL,
+            notes TEXT,
+            linked_by INTEGER NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(vehicle_id, linked_entity_type, linked_entity_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cvl_vehicle ON carpark_vehicle_links(vehicle_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cvl_entity ON carpark_vehicle_links(linked_entity_type, linked_entity_id)')
+
+    # ── Promotion Vehicles (junction table) ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_promotion_vehicles (
+            id SERIAL PRIMARY KEY,
+            promotion_id INTEGER NOT NULL REFERENCES carpark_promotions(id) ON DELETE CASCADE,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            added_by INTEGER NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(promotion_id, vehicle_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cpv_promo ON carpark_promotion_vehicles(promotion_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cpv_vehicle ON carpark_promotion_vehicles(vehicle_id)')
+
     # ── Permission column on roles table ──
     for col_name in ['can_access_carpark', 'can_edit_carpark', 'can_delete_carpark',
                       'can_access_carpark_mobile']:

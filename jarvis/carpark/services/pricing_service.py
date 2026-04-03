@@ -92,6 +92,22 @@ class PricingService:
     def get_vehicle_promotions(self, vehicle_id: int) -> List[Dict[str, Any]]:
         return self._pricing_repo.get_vehicle_promotions(vehicle_id)
 
+    def get_promotion_vehicles(self, promo_id: int) -> List[Dict[str, Any]]:
+        return self._pricing_repo.get_promotion_vehicles(promo_id)
+
+    def add_vehicles_to_promotion(self, promo_id: int, vehicle_ids: List[int],
+                                   added_by: int) -> int:
+        count = 0
+        for vid in vehicle_ids:
+            result = self._pricing_repo.add_vehicle_to_promotion(promo_id, vid, added_by)
+            if result:
+                count += 1
+        return count
+
+    def remove_vehicle_from_promotion(self, promo_id: int,
+                                       vehicle_id: int) -> bool:
+        return self._pricing_repo.remove_vehicle_from_promotion(promo_id, vehicle_id)
+
     # ═══════════════════════════════════════════════
     # PRICING HISTORY
     # ═══════════════════════════════════════════════
