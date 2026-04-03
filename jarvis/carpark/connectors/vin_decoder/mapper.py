@@ -74,7 +74,14 @@ def normalize_fuel_type(raw: str) -> str:
     if not raw:
         return ''
     key = raw.strip().lower()
-    return _FUEL_MAP.get(key, key)
+    if key in _FUEL_MAP:
+        return _FUEL_MAP[key]
+    # Handle "X / Y" composite values from APIs
+    for part in key.split('/'):
+        part = part.strip()
+        if part in _FUEL_MAP:
+            return _FUEL_MAP[part]
+    return key
 
 
 # ── Body Type Normalization ──
@@ -129,7 +136,14 @@ def normalize_body_type(raw: str) -> str:
     if not raw:
         return ''
     key = raw.strip().lower()
-    return _BODY_MAP.get(key, key)
+    if key in _BODY_MAP:
+        return _BODY_MAP[key]
+    # NHTSA returns "Sedan/Saloon" — try each part
+    for part in key.split('/'):
+        part = part.strip()
+        if part in _BODY_MAP:
+            return _BODY_MAP[part]
+    return key
 
 
 # ── Transmission Normalization ──
@@ -167,7 +181,13 @@ def normalize_transmission(raw: str) -> str:
     if not raw:
         return ''
     key = raw.strip().lower()
-    return _TRANSMISSION_MAP.get(key, key)
+    if key in _TRANSMISSION_MAP:
+        return _TRANSMISSION_MAP[key]
+    for part in key.split('/'):
+        part = part.strip()
+        if part in _TRANSMISSION_MAP:
+            return _TRANSMISSION_MAP[part]
+    return key
 
 
 # ── Drive Type Normalization ──
@@ -201,7 +221,14 @@ def normalize_drive_type(raw: str) -> str:
     if not raw:
         return ''
     key = raw.strip().lower()
-    return _DRIVE_MAP.get(key, key)
+    if key in _DRIVE_MAP:
+        return _DRIVE_MAP[key]
+    # NHTSA returns "AWD/All-Wheel Drive" — try each part
+    for part in key.split('/'):
+        part = part.strip()
+        if part in _DRIVE_MAP:
+            return _DRIVE_MAP[part]
+    return key
 
 
 # ── Euro Standard Normalization ──
