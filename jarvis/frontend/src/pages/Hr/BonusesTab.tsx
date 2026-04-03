@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
@@ -11,6 +11,9 @@ import {
   ChevronRight,
   Lock,
   CheckSquare,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -35,6 +38,51 @@ import type { EventBonus, BonusSummaryByEmployee, BonusSummaryByEvent } from '@/
 
 const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const MONTH_SHORT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/* ──── Reusable sort utilities ──── */
+
+type SortDir = 'asc' | 'desc' | null
+
+function useSort<T>(data: T[]) {
+  const [sortKey, setSortKey] = useState<string | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>(null)
+
+  const toggle = useCallback((key: string) => {
+    if (sortKey === key) {
+      if (sortDir === 'asc') setSortDir('desc')
+      else { setSortKey(null); setSortDir(null) }
+    } else { setSortKey(key); setSortDir('asc') }
+  }, [sortKey, sortDir])
+
+  const sorted = useMemo(() => {
+    if (!sortKey || !sortDir) return data
+    return [...data].sort((a, b) => {
+      const aVal = (a as Record<string, unknown>)[sortKey]
+      const bVal = (b as Record<string, unknown>)[sortKey]
+      if (aVal == null && bVal == null) return 0
+      if (aVal == null) return 1
+      if (bVal == null) return -1
+      const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+      return sortDir === 'desc' ? -cmp : cmp
+    })
+  }, [data, sortKey, sortDir])
+
+  return { sorted, sortKey, sortDir, toggle }
+}
+
+function SortHead({ label, field, sortKey, sortDir, onSort, className }: {
+  label: string; field: string; sortKey: string | null; sortDir: SortDir; onSort: (k: string) => void; className?: string
+}) {
+  const active = sortKey === field
+  return (
+    <TableHead className={cn('cursor-pointer select-none', className)} onClick={() => onSort(field)}>
+      <div className={cn('flex items-center gap-1', className?.includes('text-right') && 'justify-end')}>
+        {label}
+        {active ? (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+      </div>
+    </TableHead>
+  )
+}
 
 function fmtDate(d: string | null) {
   if (!d) return null
@@ -308,6 +356,7 @@ function BonusListTable({
   selectMode?: boolean
   isEditable: boolean
 }) {
+  const { sorted: sortedBonuses, sortKey, sortDir, toggle } = useSort(bonuses)
   const mobileFields: MobileCardField<EventBonus>[] = useMemo(() => [
     {
       key: 'employee',
@@ -432,24 +481,24 @@ function BonusListTable({
                   <Checkbox checked={allSelected ? true : someSelected ? 'indeterminate' : false} onCheckedChange={onSelectAll} />
                 </TableHead>
               )}
-              <TableHead>Year</TableHead>
-              <TableHead>Month</TableHead>
-              <TableHead>Employee</TableHead>
-              <TableHead>Department</TableHead>
-              <TableHead>Company</TableHead>
-              <TableHead>Brand</TableHead>
-              <TableHead>Event</TableHead>
+              <SortHead label="Year" field="year" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="Month" field="month" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="Employee" field="employee_name" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="Department" field="department" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="Company" field="company" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="Brand" field="brand" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="Event" field="event_name" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <TableHead>Event Date</TableHead>
               <TableHead>Period</TableHead>
-              <TableHead className="text-right">Days</TableHead>
-              <TableHead className="text-right">Hours</TableHead>
-              {canViewAmounts && <TableHead className="text-right">Bonus (Net)</TableHead>}
+              <SortHead label="Days" field="bonus_days" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
+              <SortHead label="Hours" field="hours_free" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
+              {canViewAmounts && <SortHead label="Bonus (Net)" field="bonus_net" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />}
               <TableHead>Details</TableHead>
               {isEditable && <TableHead className="w-28">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {bonuses.map((b) => (
+            {sortedBonuses.map((b) => (
               <TableRow key={b.id} className={cn(selectedIds.includes(b.id) && 'bg-muted/50')}>
                 {isEditable && (
                   <TableCell>
@@ -637,6 +686,7 @@ function EventEmployeesDetail({ eventId, year, month, canViewAmounts, isEditable
 /* ──── By Employee Table ──── */
 
 function ByEmployeeTable({ data, canViewAmounts, isMobile }: { data: BonusSummaryByEmployee[]; canViewAmounts: boolean; isMobile: boolean }) {
+  const { sorted: sortedData, sortKey, sortDir, toggle } = useSort(data)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
   const filters = useHrStore((s) => s.filters)
 
@@ -715,18 +765,18 @@ function ByEmployeeTable({ data, canViewAmounts, isMobile }: { data: BonusSummar
           <TableHeader>
             <TableRow>
               <TableHead className="w-8" />
-              <TableHead>Employee</TableHead>
-              <TableHead>Department</TableHead>
-              <TableHead>Company</TableHead>
-              <TableHead>Brand</TableHead>
-              <TableHead className="text-right"># Bonuses</TableHead>
-              <TableHead className="text-right">Total Days</TableHead>
-              <TableHead className="text-right">Total Hours</TableHead>
-              {canViewAmounts && <TableHead className="text-right">Total Bonus</TableHead>}
+              <SortHead label="Employee" field="name" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="Department" field="department" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="Company" field="company" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="Brand" field="brand" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="# Bonuses" field="bonus_count" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
+              <SortHead label="Total Days" field="total_days" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
+              <SortHead label="Total Hours" field="total_hours" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
+              {canViewAmounts && <SortHead label="Total Bonus" field="total_bonus" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map((row) => (
+            {sortedData.map((row) => (
               <>
                 <TableRow
                   key={row.id}
@@ -794,6 +844,7 @@ function ByEventTable({ data, canViewAmounts, isMobile, isEditable, onEdit, onDe
 }) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
   const filters = useHrStore((s) => s.filters)
+  const { sorted: sortedData, sortKey, sortDir, toggle } = useSort(data)
   const mobileFields: MobileCardField<BonusSummaryByEvent>[] = useMemo(() => [
     {
       key: 'name',
@@ -869,19 +920,19 @@ function ByEventTable({ data, canViewAmounts, isMobile, isEditable, onEdit, onDe
           <TableHeader>
             <TableRow>
               <TableHead className="w-8" />
-              <TableHead>Year</TableHead>
-              <TableHead>Month</TableHead>
-              <TableHead>Event</TableHead>
+              <SortHead label="Year" field="year" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="Month" field="month" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="Event" field="name" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <TableHead>Date Range</TableHead>
-              <TableHead>Company</TableHead>
-              <TableHead className="text-right"># Employees</TableHead>
-              <TableHead className="text-right">Total Days</TableHead>
-              <TableHead className="text-right">Total Hours</TableHead>
-              {canViewAmounts && <TableHead className="text-right">Total Bonus</TableHead>}
+              <SortHead label="Company" field="company" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHead label="# Employees" field="employee_count" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
+              <SortHead label="Total Days" field="total_days" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
+              <SortHead label="Total Hours" field="total_hours" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
+              {canViewAmounts && <SortHead label="Total Bonus" field="total_bonus" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map((row) => {
+            {sortedData.map((row) => {
               const rowKey = `${row.id}-${row.year}-${row.month}`
               return (
                 <>
