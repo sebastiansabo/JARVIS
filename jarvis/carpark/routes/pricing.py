@@ -114,12 +114,14 @@ def execute_pricing_rule(rule_id):
     """Execute a pricing rule. Body: { dry_run?: boolean }"""
     data = request.get_json(silent=True) or {}
     dry_run = data.get('dry_run', False)
+    approver_id = data.get('approver_id')
     company_id = _user_company_id()
 
     try:
         result = _pricing_service.execute_rule(
             rule_id, company_id=company_id,
-            executed_by=current_user.id, dry_run=dry_run
+            executed_by=current_user.id, dry_run=dry_run,
+            approver_id=approver_id
         )
         return jsonify(_serialize(result))
     except ValueError as e:
@@ -127,6 +129,117 @@ def execute_pricing_rule(rule_id):
     except Exception as e:
         logger.error(f'Rule execution failed: {e}', exc_info=True)
         return jsonify({'error': 'Internal error'}), 500
+
+
+# ═══════════════════════════════════════════════
+# PRICING RULE VEHICLES
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/pricing/rules/<int:rule_id>/vehicles', methods=['GET'])
+@login_required
+@carpark_required
+def list_rule_vehicles(rule_id):
+    """List vehicles assigned to a pricing rule."""
+    vehicles = _pricing_service.get_rule_vehicles(rule_id)
+    return jsonify({'vehicles': _serialize(vehicles), 'count': len(vehicles)})
+
+
+@carpark_bp.route('/pricing/rules/<int:rule_id>/vehicles', methods=['POST'])
+@login_required
+@carpark_edit_required
+def add_rule_vehicles(rule_id):
+    """Add vehicles to a pricing rule. Body: { vehicle_ids: [1, 2, 3] }"""
+    data = request.get_json(silent=True)
+    if not data or not data.get('vehicle_ids'):
+        return jsonify({'error': 'vehicle_ids array is required'}), 400
+
+    rule = _pricing_service.get_rule(rule_id)
+    if not rule:
+        return jsonify({'error': 'Rule not found'}), 404
+
+    try:
+        added = _pricing_service.add_vehicles_to_rule(
+            rule_id, data['vehicle_ids'], added_by=current_user.id
+        )
+        return jsonify({'added': added}), 201
+    except Exception as e:
+        logger.error(f'Add rule vehicles failed: {e}', exc_info=True)
+        return jsonify({'error': 'Internal error'}), 500
+
+
+@carpark_bp.route('/pricing/rules/<int:rule_id>/vehicles/<int:vehicle_id>', methods=['DELETE'])
+@login_required
+@carpark_edit_required
+def remove_rule_vehicle(rule_id, vehicle_id):
+    """Remove a vehicle from a pricing rule."""
+    if _pricing_service.remove_vehicle_from_rule(rule_id, vehicle_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'Vehicle not in rule'}), 404
+
+
+# ═══════════════════════════════════════════════
+# PROJECT LINKING
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/pricing/rules/<int:rule_id>/link-project', methods=['POST'])
+@login_required
+@carpark_edit_required
+def link_rule_to_project(rule_id):
+    """Link a pricing rule to a marketing project. Body: { project_id: 123 }"""
+    data = request.get_json(silent=True)
+    if not data or not data.get('project_id'):
+        return jsonify({'error': 'project_id is required'}), 400
+
+    rule = _pricing_service.get_rule(rule_id)
+    if not rule:
+        return jsonify({'error': 'Rule not found'}), 404
+
+    updated = _pricing_service.update_rule(rule_id, {'project_id': data['project_id']})
+    if updated:
+        return jsonify({'rule': _serialize(updated)})
+    return jsonify({'error': 'Update failed'}), 400
+
+
+@carpark_bp.route('/pricing/rules/<int:rule_id>/unlink-project', methods=['POST'])
+@login_required
+@carpark_edit_required
+def unlink_rule_from_project(rule_id):
+    """Unlink a pricing rule from its marketing project."""
+    rule = _pricing_service.get_rule(rule_id)
+    if not rule:
+        return jsonify({'error': 'Rule not found'}), 404
+
+    updated = _pricing_service.update_rule(rule_id, {'project_id': None})
+    if updated:
+        return jsonify({'rule': _serialize(updated)})
+    return jsonify({'error': 'Update failed'}), 400
+
+
+# ═══════════════════════════════════════════════
+# PENDING PRICE CHANGES
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/pricing/rules/<int:rule_id>/pending', methods=['GET'])
+@login_required
+@carpark_required
+def list_pending_changes(rule_id):
+    """List pending price changes for a pricing rule."""
+    status = request.args.get('status')
+    changes = _pricing_service.get_pending_changes(rule_id=rule_id, status=status)
+    return jsonify({'changes': _serialize(changes), 'count': len(changes)})
+
+
+# ═══════════════════════════════════════════════
+# RULES FOR PROJECT
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/pricing/rules/for-project/<int:project_id>', methods=['GET'])
+@login_required
+@carpark_required
+def rules_for_project(project_id):
+    """Get pricing rules linked to a marketing project."""
+    rules = _pricing_service.get_rules_for_project(project_id)
+    return jsonify({'rules': _serialize(rules)})
 
 
 # ═══════════════════════════════════════════════

@@ -661,6 +661,64 @@ def create_schema_carpark(conn, cursor):
         )
     ''')
 
+    # Pricing rules: project link + target mode
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'carpark_pricing_rules' AND column_name = 'project_id') THEN
+                ALTER TABLE carpark_pricing_rules
+                    ADD COLUMN project_id INTEGER REFERENCES mkt_projects(id) ON DELETE SET NULL;
+                ALTER TABLE carpark_pricing_rules
+                    ADD COLUMN target_mode VARCHAR(10) NOT NULL DEFAULT 'criteria';
+                CREATE INDEX idx_cpr_project ON carpark_pricing_rules(project_id);
+            END IF;
+        END $$;
+    ''')
+
+    # Pricing rule ↔ vehicle junction table (manual vehicle selection)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_pricing_rule_vehicles (
+            id SERIAL PRIMARY KEY,
+            rule_id INTEGER NOT NULL REFERENCES carpark_pricing_rules(id) ON DELETE CASCADE,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            added_by INTEGER NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(rule_id, vehicle_id)
+        )
+    ''')
+
+    # Pending price changes (approval workflow)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_pending_price_changes (
+            id SERIAL PRIMARY KEY,
+            rule_id INTEGER NOT NULL REFERENCES carpark_pricing_rules(id) ON DELETE CASCADE,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            old_price DECIMAL(12,2) NOT NULL,
+            new_price DECIMAL(12,2) NOT NULL,
+            reduction DECIMAL(12,2) NOT NULL,
+            floor_hit BOOLEAN DEFAULT FALSE,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            approval_request_id INTEGER,
+            applied_at TIMESTAMP,
+            applied_by INTEGER,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Seed approval flow for carpark price changes
+    cursor.execute('''
+        INSERT INTO approval_flows (name, slug, entity_type, is_active, created_by)
+        SELECT 'CarPark Price Approval', 'carpark-price-approval', 'carpark_price_change', TRUE, 1
+        WHERE NOT EXISTS (SELECT 1 FROM approval_flows WHERE slug = 'carpark-price-approval')
+    ''')
+    cursor.execute('''
+        INSERT INTO approval_steps (flow_id, name, step_order, approver_type, notify_on_pending, notify_on_decision)
+        SELECT f.id, 'Selected Approver', 1, 'context_approver', TRUE, TRUE
+        FROM approval_flows f WHERE f.slug = 'carpark-price-approval'
+        AND NOT EXISTS (SELECT 1 FROM approval_steps s WHERE s.flow_id = f.id)
+    ''')
+
     # ── Promotions ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS carpark_promotions (

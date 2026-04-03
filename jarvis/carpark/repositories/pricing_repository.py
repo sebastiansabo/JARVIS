@@ -11,7 +11,7 @@ RULE_FIELDS = (
     'condition_min_days', 'condition_max_days',
     'condition_min_price', 'condition_max_price',
     'action_type', 'action_value', 'action_floor_type', 'action_floor_value',
-    'frequency', 'company_id',
+    'frequency', 'company_id', 'project_id', 'target_mode',
 )
 
 RULE_UPDATABLE = set(RULE_FIELDS) | {'last_executed'}
@@ -41,23 +41,33 @@ class PricingRepository(BaseRepository):
 
     def list_rules(self, company_id: int = None,
                    active_only: bool = False,
+                   project_id: int = None,
                    limit: int = 100) -> List[Dict[str, Any]]:
         """List pricing rules, optionally filtered by company and active status."""
-        sql = 'SELECT * FROM carpark_pricing_rules WHERE 1=1'
+        sql = '''SELECT r.*, p.name AS project_name
+                 FROM carpark_pricing_rules r
+                 LEFT JOIN mkt_projects p ON p.id = r.project_id
+                 WHERE 1=1'''
         params: list = []
         if company_id:
-            sql += ' AND (company_id = %s OR company_id IS NULL)'
+            sql += ' AND (r.company_id = %s OR r.company_id IS NULL)'
             params.append(company_id)
         if active_only:
-            sql += ' AND is_active = TRUE'
-        sql += ' ORDER BY priority DESC, name ASC LIMIT %s'
+            sql += ' AND r.is_active = TRUE'
+        if project_id:
+            sql += ' AND r.project_id = %s'
+            params.append(project_id)
+        sql += ' ORDER BY r.priority DESC, r.name ASC LIMIT %s'
         params.append(limit)
         return self.query_all(sql, tuple(params))
 
     def get_rule(self, rule_id: int) -> Optional[Dict[str, Any]]:
-        return self.query_one(
-            'SELECT * FROM carpark_pricing_rules WHERE id = %s', (rule_id,)
-        )
+        return self.query_one('''
+            SELECT r.*, p.name AS project_name
+            FROM carpark_pricing_rules r
+            LEFT JOIN mkt_projects p ON p.id = r.project_id
+            WHERE r.id = %s
+        ''', (rule_id,))
 
     def create_rule(self, data: Dict[str, Any],
                     created_by: int = None) -> Dict[str, Any]:
@@ -100,6 +110,131 @@ class PricingRepository(BaseRepository):
         return self.execute(
             'DELETE FROM carpark_pricing_rules WHERE id = %s', (rule_id,)
         ) > 0
+
+    # ═══════════════════════════════════════════════
+    # PRICING RULE VEHICLES (junction table)
+    # ═══════════════════════════════════════════════
+
+    def get_rule_vehicles(self, rule_id: int) -> List[Dict[str, Any]]:
+        """Get vehicles assigned to a pricing rule via junction table."""
+        return self.query_all('''
+            SELECT crv.id, crv.rule_id, crv.vehicle_id, crv.added_by,
+                   crv.created_at,
+                   u.name AS added_by_name,
+                   v.vin, v.brand, v.model, v.current_price, v.status
+            FROM carpark_pricing_rule_vehicles crv
+            JOIN carpark_vehicles v ON v.id = crv.vehicle_id
+            LEFT JOIN users u ON u.id = crv.added_by
+            WHERE crv.rule_id = %s
+              AND v.deleted_at IS NULL
+            ORDER BY v.brand, v.model
+        ''', (rule_id,))
+
+    def add_vehicle_to_rule(self, rule_id: int, vehicle_id: int,
+                            added_by: int) -> Optional[Dict[str, Any]]:
+        """Add a vehicle to a pricing rule. Returns None if already exists."""
+        return self.execute('''
+            INSERT INTO carpark_pricing_rule_vehicles (rule_id, vehicle_id, added_by)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (rule_id, vehicle_id) DO NOTHING
+            RETURNING *
+        ''', (rule_id, vehicle_id, added_by), returning=True)
+
+    def remove_vehicle_from_rule(self, rule_id: int, vehicle_id: int) -> bool:
+        """Remove a vehicle from a pricing rule."""
+        return self.execute(
+            'DELETE FROM carpark_pricing_rule_vehicles WHERE rule_id = %s AND vehicle_id = %s',
+            (rule_id, vehicle_id)
+        ) > 0
+
+    def get_rule_vehicle_ids(self, rule_id: int) -> List[int]:
+        """Get just vehicle IDs for a rule (used by execution engine)."""
+        rows = self.query_all(
+            'SELECT vehicle_id FROM carpark_pricing_rule_vehicles WHERE rule_id = %s',
+            (rule_id,)
+        )
+        return [r['vehicle_id'] for r in rows]
+
+    # ═══════════════════════════════════════════════
+    # PENDING PRICE CHANGES
+    # ═══════════════════════════════════════════════
+
+    def create_pending_changes(self, items: List[Dict[str, Any]],
+                               rule_id: int,
+                               created_by: int) -> List[Dict[str, Any]]:
+        """Batch insert pending price changes. Returns list of created rows."""
+        def _work(cursor):
+            rows = []
+            for it in items:
+                cursor.execute('''
+                    INSERT INTO carpark_pending_price_changes
+                        (rule_id, vehicle_id, old_price, new_price, reduction, floor_hit, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *
+                ''', (rule_id, it['vehicle_id'], it['old_price'], it['new_price'],
+                      it['reduction'], it.get('floor_hit', False), created_by))
+                row = cursor.fetchone()
+                if row:
+                    rows.append(dict(row))
+            return rows
+        return self.execute_many(_work)
+
+    def get_pending_changes(self, rule_id: int = None,
+                            approval_request_id: int = None,
+                            status: str = None) -> List[Dict[str, Any]]:
+        """Get pending price changes with vehicle info."""
+        sql = '''SELECT pc.*, v.vin, v.brand, v.model, v.current_price AS vehicle_current_price
+                 FROM carpark_pending_price_changes pc
+                 JOIN carpark_vehicles v ON v.id = pc.vehicle_id
+                 WHERE 1=1'''
+        params: list = []
+        if rule_id:
+            sql += ' AND pc.rule_id = %s'
+            params.append(rule_id)
+        if approval_request_id:
+            sql += ' AND pc.approval_request_id = %s'
+            params.append(approval_request_id)
+        if status:
+            sql += ' AND pc.status = %s'
+            params.append(status)
+        sql += ' ORDER BY pc.created_at DESC'
+        return self.query_all(sql, tuple(params))
+
+    def link_pending_to_approval(self, pending_ids: List[int],
+                                  approval_request_id: int) -> int:
+        """Link pending changes to an approval request."""
+        return self.execute(
+            'UPDATE carpark_pending_price_changes SET approval_request_id = %s WHERE id = ANY(%s)',
+            (approval_request_id, pending_ids)
+        )
+
+    def update_pending_status(self, approval_request_id: int,
+                              new_status: str,
+                              applied_by: int = None) -> int:
+        """Update status of pending changes by approval_request_id."""
+        if new_status == 'approved' and applied_by:
+            return self.execute('''
+                UPDATE carpark_pending_price_changes
+                SET status = %s, applied_at = NOW(), applied_by = %s
+                WHERE approval_request_id = %s
+            ''', (new_status, applied_by, approval_request_id))
+        return self.execute(
+            'UPDATE carpark_pending_price_changes SET status = %s WHERE approval_request_id = %s',
+            (new_status, approval_request_id)
+        )
+
+    # ═══════════════════════════════════════════════
+    # PROJECT LINKING
+    # ═══════════════════════════════════════════════
+
+    def get_rules_for_project(self, project_id: int) -> List[Dict[str, Any]]:
+        """Get pricing rules linked to a marketing project."""
+        return self.query_all('''
+            SELECT r.*, p.name AS project_name
+            FROM carpark_pricing_rules r
+            LEFT JOIN mkt_projects p ON p.id = r.project_id
+            WHERE r.project_id = %s
+            ORDER BY r.priority DESC
+        ''', (project_id,))
 
     # ═══════════════════════════════════════════════
     # PRICING HISTORY

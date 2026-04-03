@@ -335,6 +335,7 @@ export const REVENUE_TYPE_LABELS: Record<RevenueType, string> = {
 
 // ── Pricing types ──
 
+export type TargetMode = 'criteria' | 'manual' | 'both'
 export type PricingActionType = 'reduce_percent' | 'reduce_amount' | 'set_price' | 'alert_only'
 export type PricingFloorType = 'minimum_price' | 'cost_plus_margin' | 'purchase_recovery'
 export type PromotionTargetType = 'all' | 'category' | 'brand' | 'specific'
@@ -360,6 +361,9 @@ export interface PricingRule {
   frequency: string
   last_executed: string | null
   company_id: number | null
+  project_id: number | null
+  project_name: string | null
+  target_mode: TargetMode
   created_by: number | null
   created_at: string
   updated_at: string
@@ -462,6 +466,40 @@ export interface RuleExecutionResult {
     days_listed: number
     current_price: number
   }>
+  approval_request_id: number | null
+}
+
+export interface PendingPriceChange {
+  id: number
+  rule_id: number
+  vehicle_id: number
+  old_price: number
+  new_price: number
+  reduction: number
+  floor_hit: boolean
+  status: 'pending' | 'approved' | 'rejected'
+  approval_request_id: number | null
+  applied_at: string | null
+  applied_by: number | null
+  created_by: number
+  created_at: string
+  vin: string
+  brand: string
+  model: string
+}
+
+export interface RuleVehicle {
+  id: number
+  rule_id: number
+  vehicle_id: number
+  added_by: number
+  added_by_name: string | null
+  created_at: string
+  vin: string
+  brand: string
+  model: string
+  current_price: number | null
+  status: string
 }
 
 export interface AgingVehicle {

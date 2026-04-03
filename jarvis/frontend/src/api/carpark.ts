@@ -31,6 +31,8 @@ import type {
   LinkedEntityType,
   PromotionVehicle,
   VehicleCostLine,
+  RuleVehicle,
+  PendingPriceChange,
 } from '../types/carpark'
 
 export const carparkApi = {
@@ -194,8 +196,11 @@ export const carparkApi = {
   deletePricingRule: (ruleId: number) =>
     api.delete<{ success: boolean }>(`/api/carpark/pricing/rules/${ruleId}`),
 
-  executePricingRule: (ruleId: number, dryRun = false) =>
-    api.post<RuleExecutionResult>(`/api/carpark/pricing/rules/${ruleId}/execute`, { dry_run: dryRun }),
+  executePricingRule: (ruleId: number, dryRun = false, approverId?: number) =>
+    api.post<RuleExecutionResult>(`/api/carpark/pricing/rules/${ruleId}/execute`, {
+      dry_run: dryRun,
+      ...(approverId ? { approver_id: approverId } : {}),
+    }),
 
   // ── Pricing Simulation ───────────────────────────────
   simulatePricing: (params: { vehicle_id?: number; rule_id?: number }) =>
@@ -228,6 +233,31 @@ export const carparkApi = {
 
   deletePromotion: (promoId: number) =>
     api.delete<{ success: boolean }>(`/api/carpark/promotions/${promoId}`),
+
+  // ── Rule Vehicles ──────────────────────────────────
+  getRuleVehicles: (ruleId: number) =>
+    api.get<{ vehicles: RuleVehicle[]; count: number }>(`/api/carpark/pricing/rules/${ruleId}/vehicles`),
+
+  addRuleVehicles: (ruleId: number, vehicleIds: number[]) =>
+    api.post<{ added: number }>(`/api/carpark/pricing/rules/${ruleId}/vehicles`, { vehicle_ids: vehicleIds }),
+
+  removeRuleVehicle: (ruleId: number, vehicleId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/pricing/rules/${ruleId}/vehicles/${vehicleId}`),
+
+  // ── Project Linking ───────────────────────────────
+  linkRuleToProject: (ruleId: number, projectId: number) =>
+    api.post<{ rule: PricingRule }>(`/api/carpark/pricing/rules/${ruleId}/link-project`, { project_id: projectId }),
+
+  unlinkRuleFromProject: (ruleId: number) =>
+    api.post<{ rule: PricingRule }>(`/api/carpark/pricing/rules/${ruleId}/unlink-project`, {}),
+
+  // ── Rules for Project ─────────────────────────────
+  getRulesForProject: (projectId: number) =>
+    api.get<{ rules: PricingRule[] }>(`/api/carpark/pricing/rules/for-project/${projectId}`),
+
+  // ── Pending Changes ───────────────────────────────
+  getPendingChanges: (ruleId: number, status?: string) =>
+    api.get<{ changes: PendingPriceChange[]; count: number }>(`/api/carpark/pricing/rules/${ruleId}/pending`, status ? { status } : undefined),
 
   // ── Aging Alerts ─────────────────────────────────────
   getAgingVehicles: (minDays?: number) =>

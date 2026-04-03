@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Play, Trash2, Pencil, AlertTriangle, Clock, Zap } from 'lucide-react'
+import {
+  Plus, Play, Trash2, Pencil, AlertTriangle, Clock, Zap,
+  Search, X, Car, Link2, Users,
+} from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
@@ -27,6 +30,8 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { carparkApi } from '@/api/carpark'
+import { marketingApi } from '@/api/marketing'
+import { usersApi } from '@/api/users'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import {
@@ -36,6 +41,8 @@ import {
   type PricingActionType,
   type AgingVehicle,
   type RuleExecutionResult,
+  type VehicleCatalogItem,
+  type TargetMode,
 } from '@/types/carpark'
 
 function formatDate(d: string | null): string {
@@ -47,6 +54,12 @@ function formatCurrency(val: number): string {
   return new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(val)
 }
 
+const TARGET_MODE_LABELS: Record<TargetMode, string> = {
+  criteria: 'Criterii',
+  manual: 'Manual',
+  both: 'Ambele',
+}
+
 const EMPTY_RULE: Partial<PricingRule> = {
   name: '',
   description: '',
@@ -55,6 +68,8 @@ const EMPTY_RULE: Partial<PricingRule> = {
   action_type: 'reduce_percent',
   action_value: 0,
   frequency: 'daily',
+  project_id: null,
+  target_mode: 'criteria',
 }
 
 export default function PricingRulesPage() {
@@ -66,6 +81,9 @@ export default function PricingRulesPage() {
   const [editingRule, setEditingRule] = useState<Partial<PricingRule> | null>(null)
   const [execResult, setExecResult] = useState<RuleExecutionResult | null>(null)
   const [execDialogOpen, setExecDialogOpen] = useState(false)
+  const [vehicleDialogRuleId, setVehicleDialogRuleId] = useState<number | null>(null)
+  const [vehicleDialogRuleName, setVehicleDialogRuleName] = useState('')
+  const [approverId, setApproverId] = useState<number | null>(null)
 
   const { data: rulesData, isLoading } = useQuery({
     queryKey: ['carpark', 'pricing-rules'],
@@ -77,8 +95,20 @@ export default function PricingRulesPage() {
     queryFn: () => carparkApi.getAgingVehicles(),
   })
 
+  const { data: projectsData } = useQuery({
+    queryKey: ['marketing', 'projects-list'],
+    queryFn: () => marketingApi.listProjects({ status: 'approved' }),
+  })
+
+  const { data: usersData } = useQuery({
+    queryKey: ['users-list'],
+    queryFn: () => usersApi.getUsers(),
+  })
+
   const rules = rulesData?.rules ?? []
   const agingVehicles = agingData?.vehicles ?? []
+  const projects = projectsData?.projects ?? []
+  const allUsers = usersData ?? []
 
   const createMutation = useMutation({
     mutationFn: (data: Partial<PricingRule>) => carparkApi.createPricingRule(data),
@@ -113,8 +143,8 @@ export default function PricingRulesPage() {
   })
 
   const executeMutation = useMutation({
-    mutationFn: ({ id, dryRun }: { id: number; dryRun: boolean }) =>
-      carparkApi.executePricingRule(id, dryRun),
+    mutationFn: ({ id, dryRun, approver }: { id: number; dryRun: boolean; approver?: number }) =>
+      carparkApi.executePricingRule(id, dryRun, approver),
     onSuccess: (result) => {
       setExecResult(result)
       setExecDialogOpen(true)
@@ -189,6 +219,10 @@ export default function PricingRulesPage() {
                   onDelete={() => deleteMutation.mutate(rule.id)}
                   onSimulate={() => executeMutation.mutate({ id: rule.id, dryRun: true })}
                   onExecute={() => executeMutation.mutate({ id: rule.id, dryRun: false })}
+                  onManageVehicles={() => {
+                    setVehicleDialogRuleId(rule.id)
+                    setVehicleDialogRuleName(rule.name)
+                  }}
                   isExecuting={executeMutation.isPending}
                 />
               ))}
@@ -239,6 +273,47 @@ export default function PricingRulesPage() {
                   onChange={(e) => setEditingRule({ ...editingRule, description: e.target.value })}
                   rows={2}
                 />
+              </div>
+
+              {/* Project selector */}
+              <div>
+                <Label>Proiect marketing</Label>
+                <Select
+                  value={editingRule.project_id ? String(editingRule.project_id) : '_none'}
+                  onValueChange={(v) => setEditingRule({
+                    ...editingRule,
+                    project_id: v === '_none' ? null : Number(v),
+                  })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Fără proiect" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Fără proiect</SelectItem>
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Target mode */}
+              <div>
+                <Label>Mod țintire vehicule</Label>
+                <Select
+                  value={editingRule.target_mode ?? 'criteria'}
+                  onValueChange={(v) => setEditingRule({ ...editingRule, target_mode: v as TargetMode })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(TARGET_MODE_LABELS).map(([k, label]) => (
+                      <SelectItem key={k} value={k}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {editingRule.target_mode === 'criteria' && 'Vehiculele sunt selectate automat pe baza criteriilor'}
+                  {editingRule.target_mode === 'manual' && 'Doar vehiculele adaugate manual sunt vizate'}
+                  {editingRule.target_mode === 'both' && 'Vehiculele din criterii + cele adaugate manual'}
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -396,6 +471,58 @@ export default function PricingRulesPage() {
                 </div>
               )}
 
+              {/* Approval submission UI */}
+              {!execResult.dry_run && execResult.pending_approval_count > 0 && !execResult.approval_request_id && (
+                <div className="border rounded-md p-4 bg-amber-50 dark:bg-amber-900/10 space-y-3">
+                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                    <Users className="h-4 w-4" />
+                    <span className="text-sm font-medium">
+                      {execResult.pending_approval_count} modificări necesită aprobare
+                    </span>
+                  </div>
+                  <div>
+                    <Label>Selectează aprobator</Label>
+                    <Select
+                      value={approverId ? String(approverId) : ''}
+                      onValueChange={(v) => setApproverId(v ? Number(v) : null)}
+                    >
+                      <SelectTrigger><SelectValue placeholder="Alege un aprobator..." /></SelectTrigger>
+                      <SelectContent>
+                        {allUsers.map((u) => (
+                          <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    size="sm"
+                    disabled={!approverId || executeMutation.isPending}
+                    onClick={() => {
+                      if (approverId && execResult.rule_id) {
+                        executeMutation.mutate({
+                          id: execResult.rule_id,
+                          dryRun: false,
+                          approver: approverId,
+                        })
+                      }
+                    }}
+                  >
+                    Trimite pentru aprobare
+                  </Button>
+                </div>
+              )}
+
+              {execResult.approval_request_id && (
+                <div className="border rounded-md p-4 bg-green-50 dark:bg-green-900/10">
+                  <div className="text-sm text-green-700 dark:text-green-400 font-medium">
+                    Cerere de aprobare trimisă (#{execResult.approval_request_id})
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Modificările de preț vor fi aplicate automat după aprobare.
+                  </p>
+                </div>
+              )}
+
               {execResult.alerts.length > 0 && (
                 <div>
                   <h4 className="font-medium text-sm mb-2">Alerte</h4>
@@ -416,11 +543,160 @@ export default function PricingRulesPage() {
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setExecDialogOpen(false)}>Închide</Button>
+            <Button variant="outline" onClick={() => { setExecDialogOpen(false); setApproverId(null) }}>Închide</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Vehicle Management Dialog */}
+      {vehicleDialogRuleId && (
+        <RuleVehicleDialog
+          ruleId={vehicleDialogRuleId}
+          ruleName={vehicleDialogRuleName}
+          onClose={() => setVehicleDialogRuleId(null)}
+        />
+      )}
     </div>
+  )
+}
+
+// ── Rule Vehicle Dialog ──────────────────────────────
+function RuleVehicleDialog({
+  ruleId,
+  ruleName,
+  onClose,
+}: {
+  ruleId: number
+  ruleName: string
+  onClose: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const { data: vehiclesData } = useQuery({
+    queryKey: ['carpark', 'rule-vehicles', ruleId],
+    queryFn: () => carparkApi.getRuleVehicles(ruleId),
+  })
+
+  const { data: searchData, isFetching: isSearching } = useQuery({
+    queryKey: ['carpark', 'catalog-search', searchQuery],
+    queryFn: () => carparkApi.getCatalog({ search: searchQuery }, 1, 20),
+    enabled: searchQuery.length >= 2,
+  })
+
+  const ruleVehicles = vehiclesData?.vehicles ?? []
+  const searchResults = searchData?.items ?? []
+  const ruleVehicleIds = new Set(ruleVehicles.map((v) => v.vehicle_id))
+
+  const addMutation = useMutation({
+    mutationFn: (vehicleIds: number[]) => carparkApi.addRuleVehicles(ruleId, vehicleIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'rule-vehicles', ruleId] })
+      toast.success('Vehicul adăugat')
+    },
+    onError: () => toast.error('Eroare la adăugare'),
+  })
+
+  const removeMutation = useMutation({
+    mutationFn: (vehicleId: number) => carparkApi.removeRuleVehicle(ruleId, vehicleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'rule-vehicles', ruleId] })
+      toast.success('Vehicul eliminat')
+    },
+    onError: () => toast.error('Eroare la eliminare'),
+  })
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Vehicule în regula: {ruleName}</DialogTitle>
+          <DialogDescription>Adaugă sau elimină vehicule din această regulă</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+          {/* Search to add */}
+          <div>
+            <Label>Adaugă vehicul</Label>
+            <div className="flex items-center gap-2 mt-1">
+              <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Caută după VIN, marcă, model..."
+              />
+            </div>
+            {searchQuery.length >= 2 && (
+              <div className="mt-2 max-h-40 overflow-y-auto border rounded-md">
+                {isSearching ? (
+                  <div className="p-3 text-center text-sm text-muted-foreground">Se caută...</div>
+                ) : searchResults.length === 0 ? (
+                  <div className="p-3 text-center text-sm text-muted-foreground">Niciun rezultat</div>
+                ) : (
+                  <div className="divide-y">
+                    {searchResults.map((v: VehicleCatalogItem) => {
+                      const isAdded = ruleVehicleIds.has(v.id)
+                      return (
+                        <button
+                          key={v.id}
+                          className="w-full text-left px-3 py-2 hover:bg-accent text-sm disabled:opacity-50 flex items-center justify-between"
+                          disabled={isAdded || addMutation.isPending}
+                          onClick={() => addMutation.mutate([v.id])}
+                        >
+                          <div>
+                            <span className="font-medium">{v.brand} {v.model}</span>
+                            <span className="ml-2 text-muted-foreground text-xs">{v.vin}</span>
+                          </div>
+                          {isAdded && <span className="text-xs text-muted-foreground">Deja adăugat</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Current vehicles */}
+          <div>
+            <Label>Vehicule în regulă ({ruleVehicles.length})</Label>
+            {ruleVehicles.length === 0 ? (
+              <div className="mt-2 p-4 text-center text-sm text-muted-foreground border rounded-md">
+                Niciun vehicul adăugat
+              </div>
+            ) : (
+              <div className="mt-2 space-y-1">
+                {ruleVehicles.map((rv) => (
+                  <div key={rv.id} className="flex items-center justify-between px-3 py-2 border rounded-md">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Car className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm font-medium">{rv.brand} {rv.model}</span>
+                      <span className="text-xs text-muted-foreground">{rv.vin}</span>
+                      {rv.current_price && (
+                        <span className="text-xs text-muted-foreground">{formatCurrency(rv.current_price)} EUR</span>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-red-500 shrink-0"
+                      onClick={() => removeMutation.mutate(rv.vehicle_id)}
+                      disabled={removeMutation.isPending}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Închide</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -432,6 +708,7 @@ function RuleCard({
   onDelete,
   onSimulate,
   onExecute,
+  onManageVehicles,
   isExecuting,
 }: {
   rule: PricingRule
@@ -440,13 +717,14 @@ function RuleCard({
   onDelete: () => void
   onSimulate: () => void
   onExecute: () => void
+  onManageVehicles: () => void
   isExecuting: boolean
 }) {
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-medium">{rule.name}</h3>
             <Badge variant={rule.is_active ? 'default' : 'secondary'}>
               {rule.is_active ? 'Activă' : 'Inactivă'}
@@ -455,6 +733,17 @@ function RuleCard({
             {rule.action_value != null && rule.action_type !== 'alert_only' && (
               <Badge variant="outline">
                 {rule.action_type === 'reduce_percent' ? `${rule.action_value}%` : formatCurrency(rule.action_value)}
+              </Badge>
+            )}
+            {rule.project_name && (
+              <Badge variant="outline" className="text-purple-600 border-purple-300">
+                <Link2 className="h-3 w-3 mr-1" />
+                {rule.project_name}
+              </Badge>
+            )}
+            {rule.target_mode !== 'criteria' && (
+              <Badge variant="outline" className="text-blue-600 border-blue-300">
+                {TARGET_MODE_LABELS[rule.target_mode]}
               </Badge>
             )}
           </div>
@@ -473,6 +762,11 @@ function RuleCard({
 
         {canEdit && (
           <div className="flex items-center gap-1 shrink-0 ml-4">
+            {(rule.target_mode === 'manual' || rule.target_mode === 'both') && (
+              <Button variant="ghost" size="sm" onClick={onManageVehicles} title="Gestionează vehicule">
+                <Car className="h-4 w-4" />
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={onSimulate} disabled={isExecuting} title="Simulare">
               <Play className="h-4 w-4" />
             </Button>
