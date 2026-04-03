@@ -228,9 +228,26 @@ export type CostType =
 export type RevenueType =
   | 'sale' | 'rental' | 'lease' | 'commission' | 'refund' | 'other'
 
+export interface VehicleCostLine {
+  id: number
+  vehicle_id: number
+  cost_type: CostType
+  description: string | null
+  planned_amount: number
+  spent_amount: number
+  currency: string
+  notes: string | null
+  created_by: number | null
+  created_at: string
+  updated_at: string | null
+  computed_spent?: number
+  cost_count?: number
+}
+
 export interface VehicleCost {
   id: number
   vehicle_id: number
+  cost_line_id: number | null
   cost_type: CostType
   description: string | null
   amount: number
@@ -249,6 +266,8 @@ export interface VehicleCost {
   date: string
   created_by: number | null
   created_at: string
+  invoice_number_ref?: string | null
+  invoice_supplier_ref?: string | null
 }
 
 export interface VehicleRevenue {

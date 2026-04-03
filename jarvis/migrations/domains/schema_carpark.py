@@ -252,6 +252,25 @@ def create_schema_carpark(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcp_vehicle ON carpark_vehicle_photos(vehicle_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcp_type ON carpark_vehicle_photos(photo_type)')
 
+    # ── Cost Lines (parent grouping for costs) ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_vehicle_cost_lines (
+            id SERIAL PRIMARY KEY,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            cost_type VARCHAR(50) NOT NULL,
+            description TEXT,
+            planned_amount DECIMAL(12,2) DEFAULT 0,
+            spent_amount DECIMAL(12,2) DEFAULT 0,
+            currency VARCHAR(3) DEFAULT 'EUR',
+            notes TEXT,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcl_vehicle ON carpark_vehicle_cost_lines(vehicle_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcl_type ON carpark_vehicle_cost_lines(cost_type)')
+
     # ── Costs ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS carpark_vehicle_costs (
@@ -280,6 +299,53 @@ def create_schema_carpark(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcc_vehicle ON carpark_vehicle_costs(vehicle_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcc_type ON carpark_vehicle_costs(cost_type)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcc_invoice ON carpark_vehicle_costs(invoice_id)')
+
+    # Add cost_line_id FK to costs (links child costs to parent cost lines)
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'carpark_vehicle_costs' AND column_name = 'cost_line_id'
+            ) THEN
+                ALTER TABLE carpark_vehicle_costs
+                ADD COLUMN cost_line_id INTEGER REFERENCES carpark_vehicle_cost_lines(id) ON DELETE CASCADE;
+            END IF;
+        END $$
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcc_cost_line ON carpark_vehicle_costs(cost_line_id)')
+
+    # Auto-migrate orphan costs into cost lines (idempotent)
+    cursor.execute('''
+        INSERT INTO carpark_vehicle_cost_lines (vehicle_id, cost_type, description, currency, created_by, created_at)
+        SELECT vehicle_id, cost_type,
+               cost_type AS description,
+               COALESCE(MIN(currency), 'RON'),
+               MIN(created_by),
+               MIN(created_at)
+        FROM carpark_vehicle_costs
+        WHERE cost_line_id IS NULL
+        GROUP BY vehicle_id, cost_type
+        ON CONFLICT DO NOTHING
+    ''')
+    cursor.execute('''
+        UPDATE carpark_vehicle_costs c
+        SET cost_line_id = cl.id
+        FROM carpark_vehicle_cost_lines cl
+        WHERE c.vehicle_id = cl.vehicle_id
+          AND c.cost_type = cl.cost_type
+          AND c.cost_line_id IS NULL
+    ''')
+    cursor.execute('''
+        UPDATE carpark_vehicle_cost_lines cl
+        SET spent_amount = COALESCE(sub.total, 0)
+        FROM (
+            SELECT cost_line_id, SUM(amount) AS total
+            FROM carpark_vehicle_costs
+            WHERE cost_line_id IS NOT NULL
+            GROUP BY cost_line_id
+        ) sub
+        WHERE cl.id = sub.cost_line_id
+    ''')
 
     # ── Revenues ──
     cursor.execute('''

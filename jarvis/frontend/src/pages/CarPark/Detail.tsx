@@ -8,6 +8,7 @@ import {
   Clock,
   FileText,
   ChevronLeft,
+  ChevronDown,
   ChevronRight,
   Car,
   ImageIcon,
@@ -65,6 +66,7 @@ import {
   LISTING_STATUS_LABELS,
   type Vehicle,
   type VehiclePhoto,
+  type VehicleCostLine,
   type VehicleCost,
   type VehicleRevenue,
   type VehicleStatus,
@@ -171,9 +173,9 @@ export default function CarParkDetail() {
     enabled: !!id,
   })
 
-  const { data: costsData } = useQuery({
-    queryKey: ['carpark', 'costs', id],
-    queryFn: () => carparkApi.getCosts(id),
+  const { data: costLinesData } = useQuery({
+    queryKey: ['carpark', 'cost-lines', id],
+    queryFn: () => carparkApi.getCostLines(id),
     enabled: !!id,
   })
 
@@ -229,7 +231,7 @@ export default function CarParkDetail() {
   const vehicleLinks = linksData?.links ?? []
   const history = historyData?.history ?? []
   const modifications = modsData?.modifications ?? []
-  const costs = costsData?.costs ?? []
+  const costLines = costLinesData?.cost_lines ?? []
   const revenues = revenuesData?.revenues ?? []
   const pricingHistory = pricingHistoryData?.history ?? []
   const vehiclePromos = vehiclePromosData?.promotions ?? []
@@ -359,7 +361,7 @@ export default function CarParkDetail() {
         <TabsList>
           <TabsTrigger value="details">Detalii</TabsTrigger>
           <TabsTrigger value="pricing">Pricing</TabsTrigger>
-          <TabsTrigger value="costs">Costs ({costs.length})</TabsTrigger>
+          <TabsTrigger value="costs">Costs ({costLines.length})</TabsTrigger>
           <TabsTrigger value="revenues">Revenues ({revenues.length})</TabsTrigger>
           <TabsTrigger value="listings">Listings ({listings.length})</TabsTrigger>
           <TabsTrigger value="links">Links ({vehicleLinks.length})</TabsTrigger>
@@ -381,7 +383,7 @@ export default function CarParkDetail() {
         </TabsContent>
 
         <TabsContent value="costs" className="mt-4">
-          <CostsTab vehicleId={id} costs={costs} canEdit={canEdit} currency={vehicle.price_currency || 'RON'} />
+          <CostsTab vehicleId={id} costLines={costLines} canEdit={canEdit} currency={vehicle.price_currency || 'EUR'} />
         </TabsContent>
 
         <TabsContent value="revenues" className="mt-4">
@@ -1209,80 +1211,133 @@ function ProfitabilitySummary({ data, currency }: { data: Profitability; currenc
 
 // ── Costs Tab ─────────────────────────────────────────────
 function CostsTab({
-  vehicleId, costs, canEdit, currency,
+  vehicleId, costLines, canEdit, currency,
 }: {
-  vehicleId: number; costs: VehicleCost[]; canEdit: boolean; currency: string
+  vehicleId: number; costLines: VehicleCostLine[]; canEdit: boolean; currency: string
 }) {
   const queryClient = useQueryClient()
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
-  const [form, setForm] = useState({
-    cost_type: 'other' as CostType,
-    amount: '',
-    description: '',
-    supplier_name: '',
-    invoice_number: '',
-    date: new Date().toISOString().slice(0, 10),
-    vat_rate: '19',
-    vat_amount: '',
-  })
+  const [expandedLineId, setExpandedLineId] = useState<number | null>(null)
 
-  const resetForm = () => {
-    setForm({
-      cost_type: 'other', amount: '', description: '', supplier_name: '',
-      invoice_number: '', date: new Date().toISOString().slice(0, 10),
-      vat_rate: '19', vat_amount: '',
-    })
-    setEditingId(null)
-    setDialogOpen(false)
-  }
+  // Dialogs
+  const [showAddLine, setShowAddLine] = useState(false)
+  const [addLineForm, setAddLineForm] = useState({ cost_type: 'other' as CostType, description: '', planned_amount: '', currency })
+  const [addCostLineId, setAddCostLineId] = useState<number | null>(null)
+  const [editCostId, setEditCostId] = useState<number | null>(null)
+  const [deleteLineId, setDeleteLineId] = useState<number | null>(null)
+  const [deleteCostId, setDeleteCostId] = useState<number | null>(null)
+  const [costForm, setCostForm] = useState({ amount: '', description: '', supplier_name: '', invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_rate: '19', vat_amount: '' })
+  const [linkInvoiceCostId, setLinkInvoiceCostId] = useState<number | null>(null)
+  const [invoiceSearch, setInvoiceSearch] = useState('')
+  const [editingPlanned, setEditingPlanned] = useState<{ id: number; draft: string } | null>(null)
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['carpark', 'costs', vehicleId] })
+    queryClient.invalidateQueries({ queryKey: ['carpark', 'cost-lines', vehicleId] })
     queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
   }
 
-  const createMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => carparkApi.createCost(vehicleId, data),
-    onSuccess: () => { invalidate(); toast.success('Cost added'); resetForm() },
+  // Cost line queries for expanded line
+  const { data: lineCostsData } = useQuery({
+    queryKey: ['carpark', 'line-costs', expandedLineId],
+    queryFn: () => carparkApi.getLineCosts(expandedLineId!),
+    enabled: !!expandedLineId,
+  })
+  const lineCosts = lineCostsData?.costs ?? []
+
+  // Invoice search for link dialog
+  const { data: invoiceSearchData } = useQuery({
+    queryKey: ['carpark', 'invoice-search', invoiceSearch],
+    queryFn: () => carparkApi.searchLinkableEntities('invoice', invoiceSearch),
+    enabled: linkInvoiceCostId !== null && invoiceSearch.length >= 1,
+  })
+  const invoiceResults = invoiceSearchData?.results ?? []
+
+  // Mutations
+  const createLineMut = useMutation({
+    mutationFn: (data: Record<string, unknown>) => carparkApi.createCostLine(vehicleId, data),
+    onSuccess: () => { invalidate(); toast.success('Cost line added'); setShowAddLine(false); setAddLineForm({ cost_type: 'other', description: '', planned_amount: '', currency }) },
+    onError: () => toast.error('Failed to create cost line'),
+  })
+
+  const deleteLineMut = useMutation({
+    mutationFn: (id: number) => carparkApi.deleteCostLine(id),
+    onSuccess: () => { invalidate(); toast.success('Cost line deleted'); setDeleteLineId(null); if (expandedLineId === deleteLineId) setExpandedLineId(null) },
+    onError: () => toast.error('Failed to delete cost line'),
+  })
+
+  const updateLineMut = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) => carparkApi.updateCostLine(id, data),
+    onSuccess: () => { invalidate() },
+    onError: () => toast.error('Failed to update cost line'),
+  })
+
+  const createCostMut = useMutation({
+    mutationFn: ({ lineId, data }: { lineId: number; data: Record<string, unknown> }) => carparkApi.createLineCost(lineId, data),
+    onSuccess: () => {
+      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
+      toast.success('Cost added')
+      setAddCostLineId(null)
+      setCostForm({ amount: '', description: '', supplier_name: '', invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_rate: '19', vat_amount: '' })
+    },
     onError: () => toast.error('Failed to add cost'),
   })
 
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
-      carparkApi.updateCost(id, data),
-    onSuccess: () => { invalidate(); toast.success('Cost updated'); resetForm() },
+  const updateCostMut = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) => carparkApi.updateLineCost(id, data),
+    onSuccess: () => {
+      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
+      toast.success('Cost updated')
+      setEditCostId(null)
+    },
     onError: () => toast.error('Failed to update cost'),
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => carparkApi.deleteCost(id),
-    onSuccess: () => { invalidate(); toast.success('Cost deleted'); setDeleteConfirmId(null) },
+  const deleteCostMut = useMutation({
+    mutationFn: (id: number) => carparkApi.deleteLineCost(id),
+    onSuccess: () => {
+      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
+      toast.success('Cost deleted')
+      setDeleteCostId(null)
+    },
     onError: () => toast.error('Failed to delete cost'),
   })
 
-  const handleSubmit = () => {
-    const payload = {
-      cost_type: form.cost_type,
-      amount: Number(form.amount),
-      description: form.description || null,
-      supplier_name: form.supplier_name || null,
-      invoice_number: form.invoice_number || null,
-      date: form.date,
-      vat_rate: form.vat_rate ? Number(form.vat_rate) : 19,
-      vat_amount: form.vat_amount ? Number(form.vat_amount) : 0,
-    }
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, data: payload })
-    } else {
-      createMutation.mutate(payload)
-    }
+  const linkInvoiceMut = useMutation({
+    mutationFn: ({ costId, invoiceId }: { costId: number; invoiceId: number }) =>
+      carparkApi.linkCostInvoice(costId, invoiceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
+      toast.success('Invoice linked')
+      setLinkInvoiceCostId(null)
+      setInvoiceSearch('')
+    },
+    onError: () => toast.error('Failed to link invoice'),
+  })
+
+  const unlinkInvoiceMut = useMutation({
+    mutationFn: (costId: number) => carparkApi.linkCostInvoice(costId, null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
+      toast.success('Invoice unlinked')
+    },
+  })
+
+  // Summaries
+  const totalPlanned = costLines.reduce((s, l) => s + Number(l.planned_amount || 0), 0)
+  const totalSpent = costLines.reduce((s, l) => s + Number(l.computed_spent ?? l.spent_amount ?? 0), 0)
+
+  const fmt = (v: number) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
+
+  const openAddCost = (lineId: number) => {
+    setCostForm({ amount: '', description: '', supplier_name: '', invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_rate: '19', vat_amount: '' })
+    setEditCostId(null)
+    setAddCostLineId(lineId)
   }
 
-  const startEdit = (c: VehicleCost) => {
-    setForm({
-      cost_type: c.cost_type,
+  const openEditCost = (c: VehicleCost) => {
+    setCostForm({
       amount: String(c.amount),
       description: c.description ?? '',
       supplier_name: c.supplier_name ?? '',
@@ -1291,26 +1346,26 @@ function CostsTab({
       vat_rate: String(c.vat_rate ?? 19),
       vat_amount: String(c.vat_amount ?? 0),
     })
-    setEditingId(c.id)
-    setDialogOpen(true)
+    setEditCostId(c.id)
+    setAddCostLineId(c.cost_line_id)
   }
 
-  const totalNet = costs.reduce((s, c) => s + Number(c.amount), 0)
-  const totalVat = costs.reduce((s, c) => s + Number(c.vat_amount ?? 0), 0)
-  const totalGross = totalNet + totalVat
-
-  // Group by type for summary
-  const byType = useMemo(() => {
-    const map: Record<string, number> = {}
-    costs.forEach((c) => {
-      const key = c.cost_type
-      map[key] = (map[key] ?? 0) + Number(c.amount)
-    })
-    return Object.entries(map)
-      .sort(([, a], [, b]) => b - a)
-  }, [costs])
-
-  const fmt = (v: number) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
+  const handleCostSubmit = () => {
+    const payload = {
+      amount: Number(costForm.amount),
+      description: costForm.description || null,
+      supplier_name: costForm.supplier_name || null,
+      invoice_number: costForm.invoice_number || null,
+      date: costForm.date,
+      vat_rate: costForm.vat_rate ? Number(costForm.vat_rate) : 19,
+      vat_amount: costForm.vat_amount ? Number(costForm.vat_amount) : 0,
+    }
+    if (editCostId) {
+      updateCostMut.mutate({ id: editCostId, data: payload })
+    } else if (addCostLineId) {
+      createCostMut.mutate({ lineId: addCostLineId, data: payload })
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -1318,117 +1373,231 @@ function CostsTab({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-4 text-sm">
           <span className="text-muted-foreground">
-            Net: <span className="font-semibold text-foreground tabular-nums">{fmt(totalNet)} {currency}</span>
+            Planned: <strong className="text-foreground tabular-nums">{fmt(totalPlanned)} {currency}</strong>
           </span>
-          {totalVat > 0 && (
+          <span className="text-muted-foreground">
+            Spent: <strong className="text-foreground tabular-nums">{fmt(totalSpent)} {currency}</strong>
+          </span>
+          {totalPlanned > 0 && (
             <span className="text-muted-foreground">
-              TVA: <span className="font-medium tabular-nums">{fmt(totalVat)} {currency}</span>
+              Execution: <strong className={totalSpent > totalPlanned ? 'text-red-500' : 'text-foreground'}>{Math.round((totalSpent / totalPlanned) * 100)}%</strong>
             </span>
           )}
-          <span className="text-muted-foreground">
-            Total: <span className="font-bold text-foreground tabular-nums">{fmt(totalGross)} {currency}</span>
-          </span>
         </div>
         {canEdit && (
-          <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true) }}>
-            <Plus className="h-4 w-4 mr-1" /> Add Cost
+          <Button size="sm" onClick={() => setShowAddLine(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Add Line
           </Button>
         )}
       </div>
 
-      {/* Type Breakdown Badges */}
-      {byType.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          {byType.map(([type, amount]) => {
-            const pct = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
-            return (
-              <div key={type} className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs">
-                <span className="font-medium">{COST_TYPE_LABELS[type as CostType] ?? type}</span>
-                <span className="tabular-nums text-muted-foreground">{fmt(amount)}</span>
-                <span className="text-[10px] text-muted-foreground">({pct}%)</span>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Costs Table */}
-      {costs.length === 0 ? (
-        <EmptyState title="No costs recorded" icon={<DollarSign className="h-8 w-8" />} />
+      {/* Cost Lines Table */}
+      {costLines.length === 0 ? (
+        <EmptyState title="No cost lines" icon={<DollarSign className="h-8 w-8" />} />
       ) : (
         <Card className="overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
-                <th className="text-left px-3 py-2 font-medium">Date</th>
+                <th className="w-8 px-2 py-2"></th>
                 <th className="text-left px-3 py-2 font-medium">Type</th>
-                <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Supplier</th>
-                <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Invoice #</th>
-                <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Description</th>
-                <th className="text-right px-3 py-2 font-medium">Net</th>
-                <th className="text-right px-3 py-2 font-medium hidden sm:table-cell">TVA</th>
-                <th className="text-right px-3 py-2 font-medium">Total</th>
-                {canEdit && <th className="px-2 py-2 w-20"></th>}
+                <th className="text-left px-3 py-2 font-medium">Description</th>
+                <th className="text-right px-3 py-2 font-medium">Planned</th>
+                <th className="text-right px-3 py-2 font-medium">Spent</th>
+                <th className="text-left px-3 py-2 font-medium w-32">Execution</th>
+                {canEdit && <th className="px-2 py-2 w-24"></th>}
               </tr>
             </thead>
             <tbody className="divide-y">
-              {costs.map((c) => {
-                const net = Number(c.amount)
-                const vat = Number(c.vat_amount ?? 0)
+              {costLines.map((l) => {
+                const planned = Number(l.planned_amount || 0)
+                const spent = Number(l.computed_spent ?? l.spent_amount ?? 0)
+                const exec = planned > 0 ? Math.round((spent / planned) * 100) : 0
+                const isExpanded = expandedLineId === l.id
                 return (
-                  <tr key={c.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="px-3 py-2 tabular-nums text-xs">{formatDate(c.date)}</td>
-                    <td className="px-3 py-2">
-                      <Badge variant="outline" className="text-[11px]">
-                        {COST_TYPE_LABELS[c.cost_type] ?? c.cost_type}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground truncate max-w-[140px]">{c.supplier_name || '-'}</td>
-                    <td className="px-3 py-2 hidden lg:table-cell font-mono text-xs text-muted-foreground">{c.invoice_number || '-'}</td>
-                    <td className="px-3 py-2 hidden md:table-cell text-muted-foreground truncate max-w-[180px]">{c.description || '-'}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{fmt(net)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{vat > 0 ? fmt(vat) : '-'}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(net + vat)}</td>
-                    {canEdit && (
-                      <td className="px-2 py-2 text-right whitespace-nowrap">
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => startEdit(c)}>
-                          <Pencil className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600" onClick={() => setDeleteConfirmId(c.id)}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                  <>{/* eslint-disable-next-line react/jsx-key */}
+                    <tr
+                      key={l.id}
+                      className="cursor-pointer hover:bg-muted/30 transition-colors"
+                      onClick={() => setExpandedLineId(isExpanded ? null : l.id)}
+                    >
+                      <td className="px-2 py-2 text-center">
+                        {isExpanded
+                          ? <ChevronDown className="h-4 w-4 text-muted-foreground inline" />
+                          : <ChevronRight className="h-4 w-4 text-muted-foreground inline" />}
                       </td>
+                      <td className="px-3 py-2">
+                        <Badge variant="outline" className="text-[11px]">
+                          {COST_TYPE_LABELS[l.cost_type] ?? l.cost_type}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {l.description || '-'}
+                        {(l.cost_count ?? 0) > 0 && (
+                          <span className="ml-2 text-[10px] text-muted-foreground/60">({l.cost_count} costs)</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {editingPlanned?.id === l.id ? (
+                          <Input
+                            type="number"
+                            value={editingPlanned.draft}
+                            onChange={(e) => setEditingPlanned({ id: l.id, draft: e.target.value })}
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={() => {
+                              const n = Number(editingPlanned.draft)
+                              if (!isNaN(n) && n !== planned) updateLineMut.mutate({ id: l.id, data: { planned_amount: n } })
+                              setEditingPlanned(null)
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { const n = Number(editingPlanned.draft); if (!isNaN(n) && n !== planned) updateLineMut.mutate({ id: l.id, data: { planned_amount: n } }); setEditingPlanned(null) }
+                              if (e.key === 'Escape') setEditingPlanned(null)
+                            }}
+                            className="h-7 w-28 text-sm text-right tabular-nums ml-auto"
+                            autoFocus
+                          />
+                        ) : (
+                          <span
+                            className="cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1"
+                            onDoubleClick={(e) => { e.stopPropagation(); setEditingPlanned({ id: l.id, draft: String(planned || '') }) }}
+                            title="Double-click to edit"
+                          >
+                            {fmt(planned)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(spent)}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${exec > 90 ? 'bg-red-500' : exec > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
+                              style={{ width: `${Math.min(exec, 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground tabular-nums">{exec}%</span>
+                        </div>
+                      </td>
+                      {canEdit && (
+                        <td className="px-2 py-2 text-right whitespace-nowrap">
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Record Cost"
+                            onClick={(e) => { e.stopPropagation(); openAddCost(l.id) }}>
+                            <DollarSign className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600" title="Delete Line"
+                            onClick={(e) => { e.stopPropagation(); setDeleteLineId(l.id) }}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </td>
+                      )}
+                    </tr>
+
+                    {/* Expanded: costs under this line */}
+                    {isExpanded && (
+                      <tr key={`${l.id}-expand`} className="bg-muted/20 hover:bg-muted/20">
+                        <td colSpan={canEdit ? 7 : 6} className="p-0">
+                          <div className="px-6 py-3 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Costs</span>
+                              {canEdit && (
+                                <div className="flex gap-1.5">
+                                  <Button variant="outline" size="sm" className="h-7 text-xs"
+                                    onClick={(e) => { e.stopPropagation(); openAddCost(l.id) }}>
+                                    <DollarSign className="h-3 w-3 mr-1" /> Record Cost
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                            {lineCosts.length === 0 ? (
+                              <div className="text-xs text-muted-foreground text-center py-3">No costs recorded yet.</div>
+                            ) : (
+                              <div className="rounded-md border bg-background">
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="border-b bg-muted/30 text-muted-foreground">
+                                      <th className="text-left px-3 py-1.5 font-medium">Date</th>
+                                      <th className="text-right px-3 py-1.5 font-medium">Amount</th>
+                                      <th className="text-right px-3 py-1.5 font-medium">VAT</th>
+                                      <th className="text-left px-3 py-1.5 font-medium">Supplier</th>
+                                      <th className="text-left px-3 py-1.5 font-medium">Invoice</th>
+                                      <th className="text-left px-3 py-1.5 font-medium">Description</th>
+                                      {canEdit && <th className="px-2 py-1.5 w-24"></th>}
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y">
+                                    {lineCosts.map((c) => (
+                                      <tr key={c.id} className="hover:bg-muted/20">
+                                        <td className="px-3 py-1.5 tabular-nums">{formatDate(c.date)}</td>
+                                        <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmt(Number(c.amount))}</td>
+                                        <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
+                                          {Number(c.vat_amount) > 0 ? fmt(Number(c.vat_amount)) : '-'}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[120px]">{c.supplier_name || '-'}</td>
+                                        <td className="px-3 py-1.5">
+                                          {c.invoice_id ? (
+                                            <div className="flex items-center gap-1">
+                                              <Badge variant="secondary" className="text-[10px] font-mono">
+                                                {c.invoice_number_ref || c.invoice_number || `#${c.invoice_id}`}
+                                              </Badge>
+                                              {canEdit && (
+                                                <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground hover:text-red-500"
+                                                  onClick={(e) => { e.stopPropagation(); unlinkInvoiceMut.mutate(c.id) }}>
+                                                  <Unlink className="h-3 w-3" />
+                                                </Button>
+                                              )}
+                                            </div>
+                                          ) : c.invoice_number ? (
+                                            <span className="font-mono text-muted-foreground">{c.invoice_number}</span>
+                                          ) : canEdit ? (
+                                            <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2 text-muted-foreground"
+                                              onClick={(e) => { e.stopPropagation(); setLinkInvoiceCostId(c.id); setInvoiceSearch('') }}>
+                                              <Link2 className="h-3 w-3 mr-1" /> Link
+                                            </Button>
+                                          ) : (
+                                            <span className="text-muted-foreground">-</span>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[150px]">{c.description || '-'}</td>
+                                        {canEdit && (
+                                          <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={(e) => { e.stopPropagation(); openEditCost(c) }}>
+                                              <Pencil className="h-3 w-3" />
+                                            </Button>
+                                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-500 hover:text-red-600"
+                                              onClick={(e) => { e.stopPropagation(); setDeleteCostId(c.id) }}>
+                                              <Trash2 className="h-3 w-3" />
+                                            </Button>
+                                          </td>
+                                        )}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </tr>
+                  </>
                 )
               })}
             </tbody>
-            {costs.length > 1 && (
-              <tfoot>
-                <tr className="border-t bg-muted/30 font-medium text-xs">
-                  <td className="px-3 py-2" colSpan={5}></td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmt(totalNet)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{totalVat > 0 ? fmt(totalVat) : '-'}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-bold">{fmt(totalGross)}</td>
-                  {canEdit && <td></td>}
-                </tr>
-              </tfoot>
-            )}
           </table>
         </Card>
       )}
 
-      {/* Add/Edit Cost Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) resetForm() }}>
-        <DialogContent className="sm:max-w-lg">
+      {/* Add Cost Line Dialog */}
+      <Dialog open={showAddLine} onOpenChange={setShowAddLine}>
+        <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
           <DialogHeader>
-            <DialogTitle>{editingId ? 'Edit Cost' : 'Add Cost'}</DialogTitle>
+            <DialogTitle>Add Cost Line</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Type</Label>
-                <Select value={form.cost_type} onValueChange={(v) => setForm((p) => ({ ...p, cost_type: v as CostType }))}>
+                <Select value={addLineForm.cost_type} onValueChange={(v) => setAddLineForm((p) => ({ ...p, cost_type: v as CostType }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {Object.entries(COST_TYPE_LABELS).map(([k, label]) => (
@@ -1438,59 +1607,166 @@ function CostsTab({
                 </Select>
               </div>
               <div>
-                <Label>Date</Label>
-                <Input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label>Amount (net)</Label>
-                <Input type="number" step="0.01" placeholder="0.00" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} />
-              </div>
-              <div>
-                <Label>VAT %</Label>
-                <Input type="number" step="0.01" value={form.vat_rate} onChange={(e) => setForm((p) => ({ ...p, vat_rate: e.target.value }))} />
-              </div>
-              <div>
-                <Label>VAT Amount</Label>
-                <Input type="number" step="0.01" placeholder="0.00" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Supplier</Label>
-                <Input placeholder="Supplier name" value={form.supplier_name} onChange={(e) => setForm((p) => ({ ...p, supplier_name: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Invoice #</Label>
-                <Input placeholder="Invoice number" value={form.invoice_number} onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))} />
+                <Label>Planned Amount</Label>
+                <Input type="number" step="0.01" placeholder="0.00" value={addLineForm.planned_amount}
+                  onChange={(e) => setAddLineForm((p) => ({ ...p, planned_amount: e.target.value }))} />
               </div>
             </div>
             <div>
               <Label>Description</Label>
-              <Input placeholder="Optional description" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
+              <Input placeholder="e.g. Insurance OMNIASIG, Transport from Germany" value={addLineForm.description}
+                onChange={(e) => setAddLineForm((p) => ({ ...p, description: e.target.value }))} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={resetForm}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={!form.amount || Number(form.amount) <= 0 || createMutation.isPending || updateMutation.isPending}>
-              {createMutation.isPending || updateMutation.isPending ? 'Saving...' : editingId ? 'Update' : 'Add'}
+            <Button variant="outline" onClick={() => setShowAddLine(false)}>Cancel</Button>
+            <Button disabled={createLineMut.isPending} onClick={() => createLineMut.mutate({
+              cost_type: addLineForm.cost_type,
+              description: addLineForm.description || null,
+              planned_amount: addLineForm.planned_amount ? Number(addLineForm.planned_amount) : 0,
+              currency: addLineForm.currency,
+            })}>
+              {createLineMut.isPending ? 'Creating...' : 'Create'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
-      <Dialog open={deleteConfirmId !== null} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null) }}>
+      {/* Add/Edit Cost Dialog */}
+      <Dialog open={addCostLineId !== null} onOpenChange={(open) => { if (!open) { setAddCostLineId(null); setEditCostId(null) } }}>
+        <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>{editCostId ? 'Edit Cost' : 'Record Cost'}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Amount (net) *</Label>
+                <Input type="number" step="0.01" placeholder="0.00" value={costForm.amount} autoFocus
+                  onChange={(e) => setCostForm((p) => ({ ...p, amount: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Date *</Label>
+                <Input type="date" value={costForm.date}
+                  onChange={(e) => setCostForm((p) => ({ ...p, date: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>VAT %</Label>
+                <Input type="number" step="0.01" value={costForm.vat_rate}
+                  onChange={(e) => setCostForm((p) => ({ ...p, vat_rate: e.target.value }))} />
+              </div>
+              <div>
+                <Label>VAT Amount</Label>
+                <Input type="number" step="0.01" placeholder="0.00" value={costForm.vat_amount}
+                  onChange={(e) => setCostForm((p) => ({ ...p, vat_amount: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Invoice #</Label>
+                <Input placeholder="Invoice number" value={costForm.invoice_number}
+                  onChange={(e) => setCostForm((p) => ({ ...p, invoice_number: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Supplier</Label>
+                <Input placeholder="Supplier name" value={costForm.supplier_name}
+                  onChange={(e) => setCostForm((p) => ({ ...p, supplier_name: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Input placeholder="Optional description" value={costForm.description}
+                  onChange={(e) => setCostForm((p) => ({ ...p, description: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setAddCostLineId(null); setEditCostId(null) }}>Cancel</Button>
+            <Button disabled={!costForm.amount || Number(costForm.amount) <= 0 || createCostMut.isPending || updateCostMut.isPending}
+              onClick={handleCostSubmit}>
+              {createCostMut.isPending || updateCostMut.isPending ? 'Saving...' : editCostId ? 'Update' : 'Record'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Link Invoice Dialog */}
+      <Dialog open={linkInvoiceCostId !== null} onOpenChange={(open) => { if (!open) { setLinkInvoiceCostId(null); setInvoiceSearch('') } }}>
+        <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Link Invoice</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Search invoices..." className="pl-9" value={invoiceSearch}
+                onChange={(e) => setInvoiceSearch(e.target.value)} autoFocus />
+            </div>
+            {invoiceResults && invoiceResults.length > 0 ? (
+              <div className="max-h-60 overflow-y-auto rounded-md border">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b bg-muted/30">
+                      <th className="text-left px-3 py-1.5 font-medium">Invoice #</th>
+                      <th className="text-left px-3 py-1.5 font-medium">Supplier</th>
+                      <th className="px-2 py-1.5 w-16"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {invoiceResults.map((inv) => (
+                      <tr key={inv.id} className="hover:bg-muted/20">
+                        <td className="px-3 py-1.5 font-mono">{inv.label}</td>
+                        <td className="px-3 py-1.5 text-muted-foreground">{inv.sublabel || '-'}</td>
+                        <td className="px-2 py-1.5 text-right">
+                          <Button size="sm" className="h-6 text-[10px] px-2" disabled={linkInvoiceMut.isPending}
+                            onClick={() => linkInvoiceCostId && linkInvoiceMut.mutate({ costId: linkInvoiceCostId, invoiceId: inv.id })}>
+                            Link
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : invoiceSearch.length >= 1 ? (
+              <div className="text-xs text-center text-muted-foreground py-4">No invoices found</div>
+            ) : (
+              <div className="text-xs text-center text-muted-foreground py-4">Type to search invoices</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Cost Line Confirmation */}
+      <Dialog open={deleteLineId !== null} onOpenChange={(open) => { if (!open) setDeleteLineId(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Cost Line</DialogTitle>
+            <DialogDescription>This will delete the cost line and all its cost entries. This cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteLineId(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={deleteLineMut.isPending}
+              onClick={() => deleteLineId && deleteLineMut.mutate(deleteLineId)}>
+              {deleteLineMut.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Cost Entry Confirmation */}
+      <Dialog open={deleteCostId !== null} onOpenChange={(open) => { if (!open) setDeleteCostId(null) }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Delete Cost</DialogTitle>
             <DialogDescription>Are you sure? This action cannot be undone.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
-            <Button variant="destructive" disabled={deleteMutation.isPending} onClick={() => deleteConfirmId && deleteMutation.mutate(deleteConfirmId)}>
-              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            <Button variant="outline" onClick={() => setDeleteCostId(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={deleteCostMut.isPending}
+              onClick={() => deleteCostId && deleteCostMut.mutate(deleteCostId)}>
+              {deleteCostMut.isPending ? 'Deleting...' : 'Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>

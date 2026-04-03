@@ -30,6 +30,7 @@ import type {
   LinkSearchResult,
   LinkedEntityType,
   PromotionVehicle,
+  VehicleCostLine,
 } from '../types/carpark'
 
 export const carparkApi = {
@@ -128,6 +129,34 @@ export const carparkApi = {
 
   getCostTotals: (vehicleId: number) =>
     api.get<CostTotals>(`/api/carpark/vehicles/${vehicleId}/costs/totals`),
+
+  // ── Cost Lines ───────────────────────────────────────────
+  getCostLines: (vehicleId: number) =>
+    api.get<{ cost_lines: VehicleCostLine[] }>(`/api/carpark/vehicles/${vehicleId}/cost-lines`),
+
+  createCostLine: (vehicleId: number, data: Partial<VehicleCostLine>) =>
+    api.post<{ success: boolean; id: number }>(`/api/carpark/vehicles/${vehicleId}/cost-lines`, data),
+
+  updateCostLine: (lineId: number, data: Partial<VehicleCostLine>) =>
+    api.put<{ success: boolean }>(`/api/carpark/cost-lines/${lineId}`, data),
+
+  deleteCostLine: (lineId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/cost-lines/${lineId}`),
+
+  getLineCosts: (lineId: number) =>
+    api.get<{ costs: VehicleCost[] }>(`/api/carpark/cost-lines/${lineId}/costs`),
+
+  createLineCost: (lineId: number, data: Partial<VehicleCost>) =>
+    api.post<{ success: boolean; id: number }>(`/api/carpark/cost-lines/${lineId}/costs`, data),
+
+  updateLineCost: (costId: number, data: Partial<VehicleCost>) =>
+    api.put<{ success: boolean }>(`/api/carpark/line-costs/${costId}`, data),
+
+  deleteLineCost: (costId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/line-costs/${costId}`),
+
+  linkCostInvoice: (costId: number, invoiceId: number | null) =>
+    api.put<{ success: boolean }>(`/api/carpark/line-costs/${costId}/link-invoice`, { invoice_id: invoiceId }),
 
   // ── Revenues ───────────────────────────────────────────
   getRevenues: (vehicleId: number) =>
