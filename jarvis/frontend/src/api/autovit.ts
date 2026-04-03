@@ -21,6 +21,24 @@ export interface AutovitStatus {
   has_accounts: boolean
 }
 
+export interface AutovitAdvert {
+  id: string
+  title: string
+  status: string
+  url: string
+  created_at: string
+  params: Record<string, unknown>
+  photos: string[]
+  description: string
+}
+
+export interface AutovitAdvertsResponse {
+  results: AutovitAdvert[]
+  total_elements: number
+  total_pages: number
+  current_page: number
+}
+
 const BASE = '/autovit/api'
 
 export const autovitApi = {
@@ -46,6 +64,19 @@ export const autovitApi = {
       `${BASE}/test-connection`,
       { account_id: accountId },
     ),
+
+  getAccount: async (id: number) => {
+    const res = await api.get<{ success: boolean; account: AutovitAccount }>(`${BASE}/config/${id}`)
+    return res.account
+  },
+
+  getAdverts: async (accountId: number, page = 1) => {
+    const res = await api.get<{ success: boolean; data: AutovitAdvertsResponse }>(
+      `${BASE}/accounts/${accountId}/adverts`,
+      { page: String(page) },
+    )
+    return res.data
+  },
 
   getStatus: async () => {
     const res = await api.get<{ success: boolean; data: AutovitStatus }>(`${BASE}/status`)

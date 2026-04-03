@@ -1,0 +1,1 @@
+import{j as t}from"./index-DQ5U9en0.js";function s({children:o}){return t.jsx("div",{className:"fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 backdrop-blur px-2 py-1.5 pb-safe",children:o})}export{s as M};

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plug,
@@ -1557,11 +1558,13 @@ function AutovitAccountCard({
   onEdit,
   onDelete,
   onTest,
+  onView,
 }: {
   account: AutovitAccount
   onEdit: () => void
   onDelete: () => void
   onTest: () => void
+  onView: () => void
 }) {
   const statusColor =
     account.status === 'connected'
@@ -1571,7 +1574,7 @@ function AutovitAccountCard({
         : 'text-muted-foreground'
 
   return (
-    <div className="rounded-lg border p-4 space-y-3">
+    <div className="rounded-lg border p-4 space-y-3 cursor-pointer hover:border-primary/50 transition-colors" onClick={onView}>
       <div className="flex items-start justify-between">
         <div>
           <h4 className="font-medium text-sm">{account.email}</h4>
@@ -1596,7 +1599,7 @@ function AutovitAccountCard({
         </p>
       )}
 
-      <div className="flex gap-2">
+      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
         <Button size="sm" variant="outline" onClick={onTest}>
           <Plug className="mr-1 h-3 w-3" /> Test
         </Button>
@@ -1613,6 +1616,7 @@ function AutovitAccountCard({
 
 function AutovitSection() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState({
@@ -1742,6 +1746,7 @@ function AutovitSection() {
                 onEdit={() => handleEdit(acc)}
                 onDelete={() => setDeleteId(acc.id)}
                 onTest={() => testMut.mutate(acc.id)}
+                onView={() => navigate(`autovit/${acc.id}`)}
               />
             ))}
           </div>

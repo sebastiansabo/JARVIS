@@ -12,7 +12,7 @@ Auth flow:
 """
 import logging
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 import requests
 
@@ -20,10 +20,10 @@ from carpark.connectors.base_connector import BaseConnector
 
 logger = logging.getLogger('jarvis.carpark.autovit')
 
-PRODUCTION_URL = 'https://ssl.autovit.ro/api/open'
+PRODUCTION_URL = 'https://www.autovit.ro/api/open'
 SANDBOX_URL = 'https://autovit.fixeads.com/api/open'
 
-TOKEN_TTL_BUFFER = 120  # refresh 2 min before expiry
+TOKEN_TTL_BUFFER = 300  # refresh 5 min before expiry
 
 
 class AutovitClient:
@@ -99,11 +99,21 @@ class AutovitClient:
     def health_check(self) -> Dict[str, Any]:
         """Test authentication — returns user/account info or raises."""
         self._get_token()
-        return {'success': True, 'username': self.username}
+        # Fetch first page to get total count
+        resp = self._request('GET', '/adverts/', params={'page': 1})
+        data = resp.json()
+        return {
+            'success': True,
+            'username': self.username,
+            'total_adverts': data.get('total_elements', 0),
+        }
 
-    def get_adverts(self, page: int = 1, limit: int = 50) -> Dict[str, Any]:
-        """List adverts for this dealer account."""
-        resp = self._request('GET', '/adverts', params={'page': page, 'limit': limit})
+    def get_adverts(self, page: int = 1) -> Dict[str, Any]:
+        """List adverts for this dealer account.
+
+        Returns: {results, total_elements, total_pages, current_page, ...}
+        """
+        resp = self._request('GET', '/adverts/', params={'page': page})
         return resp.json()
 
     def get_advert(self, advert_id: str) -> Dict[str, Any]:

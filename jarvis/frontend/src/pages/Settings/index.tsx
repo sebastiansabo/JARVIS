@@ -40,6 +40,7 @@ const MarketingTab = lazy(() => import('./MarketingTab'))
 const DocumentsTab = lazy(() => import('./DocumentsTab'))
 const PontajeTab = lazy(() => import('./PontajeTab'))
 const TablesTab = lazy(() => import('./TablesTab'))
+const AutovitDetail = lazy(() => import('./AutovitDetail'))
 
 const tabs = [
   // Access
@@ -138,6 +139,7 @@ export default function Settings() {
               <Route path="approvals" element={<ApprovalsTab />} />
               <Route path="marketing" element={<MarketingTab />} />
               <Route path="connectors" element={<ConnectorsTab />} />
+              <Route path="connectors/autovit/:accountId" element={<AutovitDetail />} />
               <Route path="ai" element={<AiTab />} />
               <Route path="*" element={<Navigate to="users" replace />} />
             </Routes>

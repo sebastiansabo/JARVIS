@@ -88,6 +88,16 @@ def get_accounts():
     return jsonify({'success': True, 'accounts': [_safe_account(r) for r in rows]})
 
 
+@autovit_bp.route('/api/config/<int:account_id>', methods=['GET'])
+@api_login_required
+def get_account(account_id):
+    """Get a single Autovit dealer account (credentials masked)."""
+    connector = _repo.get(account_id)
+    if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
+        return jsonify({'success': False, 'error': 'Account not found'}), 404
+    return jsonify({'success': True, 'account': _safe_account(connector)})
+
+
 @autovit_bp.route('/api/config', methods=['POST'])
 @api_login_required
 def save_account():
@@ -204,11 +214,10 @@ def get_adverts(account_id):
         return jsonify({'success': False, 'error': 'Account not found'}), 404
 
     page = request.args.get('page', 1, type=int)
-    limit = request.args.get('limit', 50, type=int)
 
     try:
         client = _build_client(connector)
-        data = client.get_adverts(page=page, limit=limit)
+        data = client.get_adverts(page=page)
         return jsonify({'success': True, 'data': data})
     except Exception as e:
         logger.exception('Failed to fetch adverts for account %s', account_id)
