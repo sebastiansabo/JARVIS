@@ -93,11 +93,15 @@ def validate_vin(vin: str) -> dict:
     vis = clean[9:]    # Vehicle Identifier Section (positions 10-17)
 
     # Check digit validation (position 9, index 8)
+    # Note: Check digit is mandatory for North American VINs (first char 1-5)
+    # but NOT used by most European/Asian manufacturers. For non-NA VINs,
+    # a mismatch is informational only and does NOT invalidate the VIN.
     expected = _calculate_check_digit(clean)
     actual = clean[8]
     check_digit_valid = expected == actual
+    is_north_american = clean[0] in '12345'
 
-    if not check_digit_valid:
+    if not check_digit_valid and is_north_american:
         errors.append(
             f'Check digit mismatch: position 9 is {actual}, expected {expected}'
         )
