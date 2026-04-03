@@ -281,11 +281,17 @@ function PontajPanel({
   const history = historyData ?? []
 
   const stats = useMemo(() => {
-    const daysPresent = history.filter((d) => (d.duration_seconds ?? 0) > 0).length
-    const totalHours = history.reduce((s, d) => s + (d.duration_seconds ?? 0) / 3600, 0)
+    const lunchSec = lunchBreak * 60
+    const daysPresent = history.filter((d) => (d.total_punches ?? 0) >= 2).length
+    const totalSec = history.reduce((s, d) => {
+      const raw = d.duration_seconds ?? 0
+      if (raw <= 0 || (d.total_punches ?? 0) < 2) return s
+      return s + (raw > lunchSec ? raw - lunchSec : raw)
+    }, 0)
+    const totalHours = totalSec / 3600
     const avgHours = daysPresent > 0 ? totalHours / daysPresent : 0
     return { daysPresent, totalHours, avgHours }
-  }, [history])
+  }, [history, lunchBreak])
 
   return (
     <div className="space-y-4 pt-2">
@@ -328,20 +334,47 @@ function PontajPanel({
                   {history.map((d) => {
                     const dt = new Date(d.date + 'T00:00:00')
                     const isWeekend = dt.getDay() === 0 || dt.getDay() === 6
-                    const hours = (d.duration_seconds ?? 0) / 3600
-                    const belowNorm = hours > 0 && hours < workingHours * 0.75
+                    const rawSec = d.duration_seconds ?? 0
+                    const netSec = rawSec > lunchBreak * 60 ? rawSec - lunchBreak * 60 : rawSec
+                    const netH = netSec / 3600
+                    const isAbsent = !d.total_punches || d.total_punches === 0
+                    const notExited = d.total_punches === 1
+                    const isShort = netH > 0 && netH < workingHours
+                    const fmtTime = (t: string | null) => t ? new Date(t).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : '—'
+                    const fmtDur = (sec: number) => {
+                      if (sec <= 0) return '—'
+                      const h = Math.floor(sec / 3600)
+                      const m = Math.floor((sec % 3600) / 60)
+                      return h === 0 ? `${m}m` : `${h}h ${m}m`
+                    }
                     return (
-                      <TableRow key={d.date} className={cn(isWeekend && 'bg-muted/40', belowNorm && 'text-orange-600')}>
+                      <TableRow key={d.date} className={cn(isWeekend && 'bg-muted/40')}>
                         <TableCell className="tabular-nums text-xs">{d.date}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {dt.toLocaleDateString('ro-RO', { weekday: 'short' })}
                         </TableCell>
-                        <TableCell className="text-xs">{d.first_punch ? new Date(d.first_punch).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : '-'}</TableCell>
-                        <TableCell className="text-xs">{d.last_punch ? new Date(d.last_punch).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : '-'}</TableCell>
-                        <TableCell className="text-right tabular-nums text-xs font-medium">
-                          {hours > 0 ? `${hours.toFixed(1)}h` : '-'}
+                        <TableCell className="text-xs">
+                          {isAbsent ? <span className="text-muted-foreground">—</span> : fmtTime(d.first_punch)}
                         </TableCell>
-                        <TableCell className="text-center text-xs">{d.total_punches || '-'}</TableCell>
+                        <TableCell className="text-xs">
+                          {isAbsent ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : notExited ? (
+                            <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-300">Not exited</Badge>
+                          ) : fmtTime(d.last_punch)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-xs font-medium">
+                          {isAbsent ? (
+                            <Badge variant="outline" className="text-[10px] text-muted-foreground">Absent</Badge>
+                          ) : notExited ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <span className={cn(isShort && 'text-orange-600')}>{fmtDur(netSec)}</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center text-xs">
+                          {isAbsent ? <span className="text-muted-foreground">—</span> : <Badge variant="secondary" className="text-xs">{d.total_punches}</Badge>}
+                        </TableCell>
                       </TableRow>
                     )
                   })}
