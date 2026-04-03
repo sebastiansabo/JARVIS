@@ -17,7 +17,7 @@ type HrState = DataTableState<HrFilters>
 export const useHrStore = create<HrState>((set) => ({
   ...createDataTableSlice<HrFilters>(
     {
-      defaultFilters: { year: now.getFullYear(), month: now.getMonth() + 1 },
+      defaultFilters: { year: now.getFullYear() },
     },
     set,
   ),
