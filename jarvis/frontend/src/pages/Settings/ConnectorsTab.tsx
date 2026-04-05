@@ -57,7 +57,7 @@ import { biostarApi } from '@/api/biostar'
 import { sincronApi } from '@/api/sincron'
 import { autovitApi } from '@/api/autovit'
 import type { AutovitAccount } from '@/api/autovit'
-import type { SincronSyncRun, SincronEmployee } from '@/api/sincron'
+import type { SincronSyncRun } from '@/api/sincron'
 import type { BioStarSyncRun } from '@/types/biostar'
 import type { CompanyConnection } from '@/types/efactura'
 import { FetchMessagesDialog } from './FetchMessagesDialog'
@@ -1399,7 +1399,6 @@ function SincronSection() {
       )}
 
       <SincronSyncHistory />
-      <SincronEmployeeMapping />
     </div>
   )
 }
@@ -1457,94 +1456,6 @@ function SincronSyncHistory() {
           ))}
         </TableBody>
       </Table>
-    </div>
-  )
-}
-
-function SincronEmployeeMapping() {
-  const qc = useQueryClient()
-  const { data: status } = useQuery({ queryKey: ['sincron', 'status'], queryFn: sincronApi.getStatus })
-  const [showMapping, setShowMapping] = useState(false)
-
-  const { data: unmapped = [] } = useQuery({
-    queryKey: ['sincron', 'unmapped'],
-    queryFn: sincronApi.getUnmapped,
-    enabled: !!status?.connected && showMapping,
-  })
-
-  const { data: jarvisUsers = [] } = useQuery({
-    queryKey: ['sincron', 'jarvisUsers'],
-    queryFn: sincronApi.getJarvisUsers,
-    enabled: !!status?.connected && showMapping,
-  })
-
-  const mapMut = useMutation({
-    mutationFn: (params: { sincronId: string; company: string; jarvisId: number }) =>
-      sincronApi.updateMapping(params.sincronId, params.company, params.jarvisId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['sincron'] })
-      toast.success('Employee mapped')
-    },
-    onError: () => toast.error('Mapping failed'),
-  })
-
-  if (!status?.connected || status.employee_count.unmapped === 0) return null
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium flex items-center gap-1.5">
-          <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />
-          {status.employee_count.unmapped} Unmapped Employees
-        </h4>
-        <Button size="sm" variant="ghost" onClick={() => setShowMapping(!showMapping)}>
-          {showMapping ? 'Hide' : 'Show'}
-        </Button>
-      </div>
-
-      {showMapping && unmapped.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Company</TableHead>
-              <TableHead>Contract</TableHead>
-              <TableHead className="w-48">Map to JARVIS User</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {unmapped.map((emp: SincronEmployee) => (
-              <TableRow key={`${emp.sincron_employee_id}-${emp.company_name}`}>
-                <TableCell className="text-sm font-medium">{emp.nume} {emp.prenume}</TableCell>
-                <TableCell className="text-xs">{emp.company_name}</TableCell>
-                <TableCell className="text-xs">{emp.nr_contract}</TableCell>
-                <TableCell>
-                  <Select
-                    onValueChange={(val) => {
-                      mapMut.mutate({
-                        sincronId: emp.sincron_employee_id,
-                        company: emp.company_name,
-                        jarvisId: Number(val),
-                      })
-                    }}
-                  >
-                    <SelectTrigger className="h-7 text-xs">
-                      <SelectValue placeholder="Select user..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {jarvisUsers.map((u) => (
-                        <SelectItem key={u.id} value={String(u.id)}>
-                          {u.name} ({u.email})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
     </div>
   )
 }

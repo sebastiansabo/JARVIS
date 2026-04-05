@@ -51,7 +51,7 @@ const tabs = [
   // Domain config
   { path: 'accounting', label: 'Accounting', icon: Calculator },
   { path: 'hr', label: 'HR', icon: Briefcase },
-  { path: 'pontaje', label: 'Pontaje', icon: Fingerprint },
+  { path: 'pontaje', label: 'Employee Mapping', icon: Fingerprint },
   { path: 'documents', label: 'Documents', icon: FileText },
   // Appearance
   { path: 'themes', label: 'Themes', icon: Palette },
