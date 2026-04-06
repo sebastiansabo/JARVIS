@@ -56,6 +56,13 @@ export const invoicesApi = {
     const response = await fetch('/api/drive/upload', { method: 'POST', body: formData, credentials: 'same-origin' })
     return response.json()
   },
+  uploadAttachment: async (file: File, driveLink: string): Promise<{ success: boolean; attachment_link?: string; error?: string }> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('drive_link', driveLink)
+    const response = await fetch('/api/drive/upload-attachment', { method: 'POST', body: formData, credentials: 'same-origin' })
+    return response.json()
+  },
 
   // Submit & Parse
   submitInvoice: (data: SubmitInvoiceInput) => api.post<{ success: boolean; invoice_id: number }>('/api/submit', data),

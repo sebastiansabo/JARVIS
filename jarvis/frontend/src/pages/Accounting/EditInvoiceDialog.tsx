@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from 'react'
+import { useState, useRef, useMemo, useCallback, type ChangeEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -80,6 +80,9 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
   const [comment, setComment] = useState(invoice.comment || '')
   const [driveLink, setDriveLink] = useState(invoice.drive_link || '')
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const isPerLine = invoice.allocation_mode === 'per_line'
   const lineItems = invoice.line_items ?? []
@@ -122,6 +125,52 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
 
   const updateInvoiceFn = apiOverrides?.updateInvoice ?? invoicesApi.updateInvoice
   const updateAllocationsFn = apiOverrides?.updateAllocations ?? invoicesApi.updateAllocations
+
+  const handleFileUpload = useCallback(async (files: FileList | File[]) => {
+    if (!files.length) return
+    setUploading(true)
+    const fileArr = Array.from(files)
+    const company = invoice.allocations?.[0]?.company || 'Unknown Company'
+    let currentLink = driveLink
+    const newlyUploaded: string[] = []
+
+    try {
+      for (const file of fileArr) {
+        if (!currentLink) {
+          // First file: create folder structure on Drive
+          const res = await invoicesApi.uploadToDrive(file, invoice.invoice_date, company, invoice.invoice_number)
+          if (!res.success) {
+            toast.error(`Upload failed for ${file.name}: ${res.error}`)
+            continue
+          }
+          currentLink = res.drive_link || ''
+          setDriveLink(currentLink)
+          newlyUploaded.push(file.name)
+        } else {
+          // Additional files: upload to the same folder
+          const res = await invoicesApi.uploadAttachment(file, currentLink)
+          if (!res.success) {
+            toast.error(`Upload failed for ${file.name}: ${res.error}`)
+            continue
+          }
+          newlyUploaded.push(file.name)
+        }
+      }
+      if (newlyUploaded.length > 0) {
+        setUploadedFiles(prev => [...prev, ...newlyUploaded])
+        toast.success(`Uploaded ${newlyUploaded.length} file(s) to Drive`)
+      }
+    } catch {
+      toast.error('File upload failed')
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }, [driveLink, invoice.invoice_date, invoice.invoice_number, invoice.allocations])
+
+  const onFileInputChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) handleFileUpload(e.target.files)
+  }, [handleFileUpload])
 
   const handleSave = useCallback(async () => {
     setSaving(true)
@@ -280,9 +329,38 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
               </>
             )}
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label className="text-xs">Drive Link</Label>
             <Input value={driveLink} onChange={(e) => setDriveLink(e.target.value)} placeholder="https://drive.google.com/..." />
+            <div className="flex items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.jpg,.jpeg,.png,.tiff,.tif"
+                onChange={onFileInputChange}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploading ? 'Uploading...' : 'Upload to Drive'}
+              </Button>
+              {driveLink && (
+                <a href={driveLink} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate max-w-[200px]">
+                  View on Drive
+                </a>
+              )}
+            </div>
+            {uploadedFiles.length > 0 && (
+              <div className="text-xs text-muted-foreground">
+                Uploaded: {uploadedFiles.join(', ')}
+              </div>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Comment</Label>
