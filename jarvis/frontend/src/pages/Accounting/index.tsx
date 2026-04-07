@@ -67,8 +67,13 @@ import type { Invoice, InvoiceFilters } from '@/types/invoices'
 import { InvoiceLinkedDocs } from '@/components/shared/InvoiceLinkedDocs'
 import { EditInvoiceDialog } from './EditInvoiceDialog'
 // import { SummaryTable } from './SummaryTable'
-import { AllocationEditor, allocationsToRows, rowsToApiPayload } from './AllocationEditor'
-import { dedupeMergedAllocations } from './allocationUtils'
+import { AllocationEditor, allocationsToRows, rowsToApiPayload, type AllocationRow } from './AllocationEditor'
+import { LineItemAllocations, autoGroupLineItems, type LineGroup } from './LineItemAllocations'
+import { LineItemAllocationsView } from './LineItemAllocationsView'
+import {
+  buildInitialLineAllocations,
+  detectMergedGroupsFromAllocations,
+} from './allocationUtils'
 import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
 import { BrandFilter } from '@/components/shared/BrandFilter'
 
@@ -1172,6 +1177,41 @@ const InvoiceRow = memo(function InvoiceRow({
   const hasAllocations = inv.allocations && inv.allocations.length > 0
   const [editingAllocations, setEditingAllocations] = useState(false)
 
+  const isPerLine = inv.allocation_mode === 'per_line'
+  const lineItems = inv.line_items ?? []
+  const effectiveValue = inv.net_value ?? inv.invoice_value
+  const perLineCompany = inv.allocations?.[0]?.company ?? ''
+
+  // Per-line editor state (lazily initialized from invoice on first edit)
+  const [lineAllocations, setLineAllocations] = useState<Map<number, AllocationRow[]>>(() =>
+    isPerLine ? buildInitialLineAllocations(inv, effectiveValue) : new Map(),
+  )
+  const [lineGroups, setLineGroups] = useState<LineGroup[]>(() =>
+    isPerLine ? detectMergedGroupsFromAllocations(inv) : autoGroupLineItems(lineItems),
+  )
+
+  // Companies / brands for the per-line editor
+  const { data: perLineCompanies = [] } = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => organizationApi.getCompanies(),
+    enabled: isPerLine && editingAllocations,
+    staleTime: 10 * 60_000,
+  })
+  const { data: perLineBrands = [] } = useQuery({
+    queryKey: ['brands', perLineCompany],
+    queryFn: () => organizationApi.getBrands(perLineCompany),
+    enabled: isPerLine && editingAllocations && !!perLineCompany,
+    staleTime: 5 * 60_000,
+  })
+
+  const startEditing = useCallback(() => {
+    if (isPerLine) {
+      setLineAllocations(buildInitialLineAllocations(inv, effectiveValue))
+      setLineGroups(detectMergedGroupsFromAllocations(inv))
+    }
+    setEditingAllocations(true)
+  }, [inv, effectiveValue, isPerLine])
+
   const storeToDmsMut = useMutation({
     mutationFn: () => invoicesApi.storeToDms([inv.id]),
     onSuccess: (result) => {
@@ -1184,7 +1224,7 @@ const InvoiceRow = memo(function InvoiceRow({
   })
 
   const saveMutation = useMutation({
-    mutationFn: (payload: { company: string; rows: import('./AllocationEditor').AllocationRow[] }) =>
+    mutationFn: (payload: { company: string; rows: AllocationRow[] }) =>
       invoicesApi.updateAllocations(inv.id, {
         allocations: rowsToApiPayload(payload.company, payload.rows),
       }),
@@ -1196,7 +1236,20 @@ const InvoiceRow = memo(function InvoiceRow({
     onError: () => toast.error('Failed to update allocations'),
   })
 
-  const effectiveValue = inv.net_value ?? inv.invoice_value
+  const savePerLineMutation = useMutation({
+    mutationFn: () => {
+      const allAllocations = Array.from(lineAllocations.entries()).flatMap(([lineIdx, lineRows]) =>
+        rowsToApiPayload(perLineCompany, lineRows, lineIdx),
+      )
+      return invoicesApi.updateAllocations(inv.id, { allocations: allAllocations })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      setEditingAllocations(false)
+      toast.success('Allocations updated')
+    },
+    onError: () => toast.error('Failed to update allocations'),
+  })
 
   return (
     <>
@@ -1263,103 +1316,141 @@ const InvoiceRow = memo(function InvoiceRow({
           <TableCell colSpan={colCount} className="p-0">
             <div className={cn('px-8 py-3 border-l-2 shadow-[inset_0_1px_0_0_hsl(var(--border)),inset_0_-1px_0_0_hsl(var(--border))]', statusRowBg[inv.status?.toLowerCase()] || 'bg-muted/50 border-l-primary/50')}>
               {editingAllocations ? (
-                <AllocationEditor
-                  initialCompany={inv.allocations?.[0]?.company}
-                  initialRows={inv.allocations ? allocationsToRows(inv.allocations, effectiveValue) : undefined}
-                  effectiveValue={effectiveValue}
-                  currency={inv.currency}
-                  onSave={(company, rows) => saveMutation.mutate({ company, rows })}
-                  onCancel={() => setEditingAllocations(false)}
-                  isSaving={saveMutation.isPending}
-                  compact
-                />
+                isPerLine && lineItems.length > 0 ? (
+                  <div className="space-y-3">
+                    <LineItemAllocations
+                      lineItems={lineItems}
+                      company={perLineCompany}
+                      companies={perLineCompanies as string[]}
+                      brands={perLineBrands}
+                      currency={inv.currency}
+                      allocations={lineAllocations}
+                      onChange={setLineAllocations}
+                      groups={lineGroups}
+                      onGroupsChange={setLineGroups}
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditingAllocations(false)}
+                        disabled={savePerLineMutation.isPending}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => savePerLineMutation.mutate()}
+                        disabled={savePerLineMutation.isPending}
+                      >
+                        {savePerLineMutation.isPending ? 'Saving...' : 'Save'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <AllocationEditor
+                    initialCompany={inv.allocations?.[0]?.company}
+                    initialRows={inv.allocations ? allocationsToRows(inv.allocations, effectiveValue) : undefined}
+                    effectiveValue={effectiveValue}
+                    currency={inv.currency}
+                    onSave={(company, rows) => saveMutation.mutate({ company, rows })}
+                    onCancel={() => setEditingAllocations(false)}
+                    isSaving={saveMutation.isPending}
+                    compact
+                  />
+                )
               ) : (
                 <>
-                  {(() => {
-                    const displayAllocations = inv.allocation_mode === 'per_line'
-                      ? dedupeMergedAllocations(inv.allocations!)
-                      : inv.allocations!
-                    const allRows = displayAllocations.flatMap(a => [a, ...(a.reinvoice_destinations ?? [])])
-                    const hasBrand = allRows.some(r => !!(r as Record<string, unknown>).brand)
-                    const hasSubdept = allRows.some(r => !!(r as Record<string, unknown>).subdepartment)
-                    const hasComment = displayAllocations.some(a => !!a.comment)
-                    return (
-                  <table className="text-xs w-full">
-                    <thead>
-                      <tr className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
-                        <th className="py-1 pr-4 text-left font-medium">Company</th>
-                        {hasBrand && <th className="py-1 pr-4 text-left font-medium">Brand</th>}
-                        <th className="py-1 pr-4 text-left font-medium">Department</th>
-                        {hasSubdept && <th className="py-1 pr-4 text-left font-medium">Sub-dept</th>}
-                        <th className="py-1 pr-4 text-left font-medium">Responsible</th>
-                        <th className="py-1 pr-4 text-right font-medium">Amount</th>
-                        <th className="py-1 pr-4 text-right font-medium w-14">%</th>
-                        {hasComment && <th className="py-1 text-left font-medium">Comment</th>}
-                        <th className="w-7" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayAllocations.map((alloc, idx) => {
-                        const hasReinvoice = alloc.reinvoice_destinations?.length > 0
-                        const totalTableRows = displayAllocations.reduce(
-                          (sum, a) => sum + 1 + (a.reinvoice_destinations?.length ?? 0), 0
-                        )
-                        return (
-                        <React.Fragment key={alloc.id}>
-                          <tr className={cn('border-t border-border/50', hasReinvoice && 'text-muted-foreground/50')}>
-                            <td className="py-1 pr-4">{alloc.company}</td>
-                            {hasBrand && <td className="py-1 pr-4">{alloc.brand || '-'}</td>}
-                            <td className="py-1 pr-4">{alloc.department}</td>
-                            {hasSubdept && <td className="py-1 pr-4">{alloc.subdepartment || '-'}</td>}
-                            <td className="py-1 pr-4 text-muted-foreground">{alloc.responsible || '-'}</td>
-                            <td className={cn('py-1 pr-4 text-right tabular-nums', hasReinvoice && 'opacity-40')}>
-                              <CurrencyDisplay value={alloc.allocation_value} currency={inv.currency} />
-                            </td>
-                            <td className="py-1 pr-4 text-right tabular-nums">{alloc.allocation_percent}%</td>
-                            {hasComment && (
-                            <td className="py-1 text-muted-foreground max-w-[150px] truncate">
-                              {alloc.comment ? (
-                                <TooltipProvider delayDuration={200}>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="cursor-default">{alloc.comment}</span>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="top" className="max-w-[400px] whitespace-pre-wrap">
-                                      {alloc.comment}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ) : ''}
-                            </td>
-                            )}
-                            {idx === 0 && !isBin && (
-                              <td rowSpan={totalTableRows} className="py-1 pl-1 align-middle w-7">
-                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditingAllocations(true)}>
-                                  <Pencil className="h-3 w-3" />
-                                </Button>
-                              </td>
-                            )}
-                          </tr>
-                          {hasReinvoice && alloc.reinvoice_destinations.map((rd) => (
-                            <tr key={rd.id} className="text-[11px]">
-                              <td className="py-0.5 pl-6 pr-4 text-foreground">{rd.company}</td>
-                              {hasBrand && <td className="py-0.5 pr-4 text-foreground">{rd.brand || '-'}</td>}
-                              <td className="py-0.5 pr-4 text-foreground">{rd.department}</td>
-                              {hasSubdept && <td className="py-0.5 pr-4 text-foreground">{rd.subdepartment || '-'}</td>}
-                              <td className="py-0.5 pr-4 text-muted-foreground italic">reinvoiced</td>
-                              <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">
-                                <CurrencyDisplay value={rd.value} currency={inv.currency} />
-                              </td>
-                              <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">{rd.percentage}%</td>
-                              {hasComment && <td className="py-0.5 text-muted-foreground italic">reinvoiced</td>}
-                            </tr>
-                          ))}
-                        </React.Fragment>
-                      )})}
-                    </tbody>
-                  </table>
-                    )
-                  })()}
+                  {isPerLine && lineItems.length > 0 ? (
+                    <LineItemAllocationsView
+                      invoice={inv}
+                      onEdit={startEditing}
+                      canEdit={canEdit && !isBin}
+                    />
+                  ) : (
+                    <table className="text-xs w-full">
+                      <thead>
+                        <tr className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
+                          <th className="py-1 pr-4 text-left font-medium">Company</th>
+                          {(inv.allocations ?? []).flatMap(a => [a, ...(a.reinvoice_destinations ?? [])]).some(r => !!(r as Record<string, unknown>).brand) && <th className="py-1 pr-4 text-left font-medium">Brand</th>}
+                          <th className="py-1 pr-4 text-left font-medium">Department</th>
+                          {(inv.allocations ?? []).flatMap(a => [a, ...(a.reinvoice_destinations ?? [])]).some(r => !!(r as Record<string, unknown>).subdepartment) && <th className="py-1 pr-4 text-left font-medium">Sub-dept</th>}
+                          <th className="py-1 pr-4 text-left font-medium">Responsible</th>
+                          <th className="py-1 pr-4 text-right font-medium">Amount</th>
+                          <th className="py-1 pr-4 text-right font-medium w-14">%</th>
+                          {(inv.allocations ?? []).some(a => !!a.comment) && <th className="py-1 text-left font-medium">Comment</th>}
+                          <th className="w-7" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const displayAllocations = inv.allocations!
+                          const allRows = displayAllocations.flatMap(a => [a, ...(a.reinvoice_destinations ?? [])])
+                          const hasBrand = allRows.some(r => !!(r as Record<string, unknown>).brand)
+                          const hasSubdept = allRows.some(r => !!(r as Record<string, unknown>).subdepartment)
+                          const hasComment = displayAllocations.some(a => !!a.comment)
+                          return displayAllocations.map((alloc, idx) => {
+                            const hasReinvoice = (alloc.reinvoice_destinations?.length ?? 0) > 0
+                            const totalTableRows = displayAllocations.reduce(
+                              (sum, a) => sum + 1 + (a.reinvoice_destinations?.length ?? 0), 0
+                            )
+                            return (
+                              <React.Fragment key={alloc.id}>
+                                <tr className={cn('border-t border-border/50', hasReinvoice && 'text-muted-foreground/50')}>
+                                  <td className="py-1 pr-4">{alloc.company}</td>
+                                  {hasBrand && <td className="py-1 pr-4">{alloc.brand || '-'}</td>}
+                                  <td className="py-1 pr-4">{alloc.department}</td>
+                                  {hasSubdept && <td className="py-1 pr-4">{alloc.subdepartment || '-'}</td>}
+                                  <td className="py-1 pr-4 text-muted-foreground">{alloc.responsible || '-'}</td>
+                                  <td className={cn('py-1 pr-4 text-right tabular-nums', hasReinvoice && 'opacity-40')}>
+                                    <CurrencyDisplay value={alloc.allocation_value} currency={inv.currency} />
+                                  </td>
+                                  <td className="py-1 pr-4 text-right tabular-nums">{alloc.allocation_percent}%</td>
+                                  {hasComment && (
+                                    <td className="py-1 text-muted-foreground max-w-[150px] truncate">
+                                      {alloc.comment ? (
+                                        <TooltipProvider delayDuration={200}>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <span className="cursor-default">{alloc.comment}</span>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="max-w-[400px] whitespace-pre-wrap">
+                                              {alloc.comment}
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+                                      ) : ''}
+                                    </td>
+                                  )}
+                                  {idx === 0 && !isBin && (
+                                    <td rowSpan={totalTableRows} className="py-1 pl-1 align-middle w-7">
+                                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={startEditing}>
+                                        <Pencil className="h-3 w-3" />
+                                      </Button>
+                                    </td>
+                                  )}
+                                </tr>
+                                {hasReinvoice && alloc.reinvoice_destinations.map((rd) => (
+                                  <tr key={rd.id} className="text-[11px]">
+                                    <td className="py-0.5 pl-6 pr-4 text-foreground">{rd.company}</td>
+                                    {hasBrand && <td className="py-0.5 pr-4 text-foreground">{rd.brand || '-'}</td>}
+                                    <td className="py-0.5 pr-4 text-foreground">{rd.department}</td>
+                                    {hasSubdept && <td className="py-0.5 pr-4 text-foreground">{rd.subdepartment || '-'}</td>}
+                                    <td className="py-0.5 pr-4 text-muted-foreground italic">reinvoiced</td>
+                                    <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">
+                                      <CurrencyDisplay value={rd.value} currency={inv.currency} />
+                                    </td>
+                                    <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">{rd.percentage}%</td>
+                                    {hasComment && <td className="py-0.5 text-muted-foreground italic">reinvoiced</td>}
+                                  </tr>
+                                ))}
+                              </React.Fragment>
+                            )
+                          })
+                        })()}
+                      </tbody>
+                    </table>
+                  )}
                   <div className="mt-2 flex justify-end">
                     <ApprovalWidget entityType="invoice" entityId={inv.id} compact />
                   </div>

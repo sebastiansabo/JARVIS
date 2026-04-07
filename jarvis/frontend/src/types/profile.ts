@@ -37,6 +37,16 @@ export interface ProfileSummary {
   }
 }
 
+export interface ProfileInvoiceAllocationReinvoiceDest {
+  id: number
+  company: string
+  brand: string | null
+  department: string
+  subdepartment: string | null
+  percentage: number
+  value: number
+}
+
 export interface ProfileInvoiceAllocation {
   id: number
   company: string
@@ -46,7 +56,17 @@ export interface ProfileInvoiceAllocation {
   allocation_percent: number
   allocation_value: number
   responsible: string | null
+  comment?: string | null
   line_item_index?: number | null
+  reinvoice_destinations?: ProfileInvoiceAllocationReinvoiceDest[]
+}
+
+export interface ProfileInvoiceLineItem {
+  description: string
+  quantity: number
+  unit_price: number
+  amount: number
+  vat_rate?: number | null
 }
 
 export interface ProfileInvoice {
@@ -66,6 +86,7 @@ export interface ProfileInvoice {
   allocation_value: number
   allocation_mode?: 'whole' | 'per_line'
   allocations?: ProfileInvoiceAllocation[]
+  line_items?: ProfileInvoiceLineItem[]
   drive_link: string | null
   comment: string | null
   created_at: string
