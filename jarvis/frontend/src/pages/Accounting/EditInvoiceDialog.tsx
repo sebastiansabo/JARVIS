@@ -16,7 +16,7 @@ import { TagPicker } from '@/components/shared/TagPicker'
 import { toast } from 'sonner'
 import type { Invoice } from '@/types/invoices'
 import { AllocationEditor, type AllocationEditorRef, type AllocationRow, allocationsToRows, rowsToApiPayload } from './AllocationEditor'
-import { LineItemAllocations, autoGroupLineItems } from './LineItemAllocations'
+import { LineItemAllocations, autoGroupLineItems, type LineGroup } from './LineItemAllocations'
 import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
 
 interface SelectOption {
@@ -63,6 +63,92 @@ function buildInitialLineAllocations(invoice: Invoice, effectiveValue: number): 
   return map
 }
 
+/**
+ * Build a stable fingerprint for a line's allocations, ignoring per-line value
+ * differences. Two lines with the same fingerprint were merged together — they
+ * have identical company / brand / department / subdepartment / percent /
+ * comment / reinvoice destinations.
+ */
+function lineAllocationsFingerprint(allocs: NonNullable<Invoice['allocations']>): string {
+  return [...allocs]
+    .map((a) => {
+      const reinvoice = (a.reinvoice_destinations ?? [])
+        .map(
+          (r) =>
+            `${r.company}|${r.brand ?? ''}|${r.department}|${r.subdepartment ?? ''}|${r.percentage}`,
+        )
+        .sort()
+        .join(';')
+      return [
+        a.company,
+        a.brand ?? '',
+        a.department,
+        a.subdepartment ?? '',
+        a.allocation_percent,
+        a.comment ?? '',
+        reinvoice,
+      ].join('|')
+    })
+    .sort()
+    .join('||')
+}
+
+/**
+ * Detect merged line groups from existing per-line allocations.
+ *
+ * When a user merges line items in the editor, the same allocation is
+ * replicated across each line_item_index. On reload, group line indices that
+ * share an identical allocation fingerprint back into the same merged group.
+ *
+ * Falls back to {@link autoGroupLineItems} (Meta-campaign template grouping)
+ * for lines that have no allocations yet (e.g. brand new invoice).
+ */
+function detectMergedGroupsFromAllocations(invoice: Invoice): LineGroup[] {
+  const lineItems = invoice.line_items ?? []
+  if (lineItems.length === 0) return []
+
+  const allocations = invoice.allocations ?? []
+  if (allocations.length === 0) return autoGroupLineItems(lineItems)
+
+  // Bucket allocations by line_item_index
+  const allocsByLine = new Map<number, NonNullable<Invoice['allocations']>>()
+  for (const alloc of allocations) {
+    const idx = alloc.line_item_index ?? -1
+    if (idx < 0) continue
+    const arr = allocsByLine.get(idx) ?? []
+    arr.push(alloc)
+    allocsByLine.set(idx, arr)
+  }
+
+  // If nothing has a line_item_index (legacy whole-invoice mode), fall back
+  if (allocsByLine.size === 0) return autoGroupLineItems(lineItems)
+
+  // Group line indices by their allocation fingerprint
+  const fingerprintToLines = new Map<string, number[]>()
+  const ungrouped: number[] = []
+  for (let i = 0; i < lineItems.length; i++) {
+    const allocs = allocsByLine.get(i)
+    if (!allocs || allocs.length === 0) {
+      ungrouped.push(i)
+      continue
+    }
+    const fp = lineAllocationsFingerprint(allocs)
+    const arr = fingerprintToLines.get(fp) ?? []
+    arr.push(i)
+    fingerprintToLines.set(fp, arr)
+  }
+
+  const groups: LineGroup[] = []
+  for (const lines of fingerprintToLines.values()) {
+    groups.push([...lines].sort((a, b) => a - b))
+  }
+  for (const idx of ungrouped) {
+    groups.push([idx])
+  }
+  groups.sort((a, b) => a[0] - b[0])
+  return groups
+}
+
 export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, paymentOptions, mode = 'full', apiOverrides, invalidateQueryKeys }: EditInvoiceDialogProps) {
   const isProfile = mode === 'profile'
   const queryClient = useQueryClient()
@@ -104,7 +190,11 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
   const [lineAllocations, setLineAllocations] = useState<Map<number, AllocationRow[]>>(() =>
     isPerLine ? buildInitialLineAllocations(invoice, effectiveValue) : new Map(),
   )
-  const [lineGroups, setLineGroups] = useState(() => autoGroupLineItems(lineItems))
+  // Restore merged groups from existing allocations so a previously-merged
+  // multi-line invoice still shows as merged when reopened in the editor.
+  const [lineGroups, setLineGroups] = useState<LineGroup[]>(() =>
+    isPerLine ? detectMergedGroupsFromAllocations(invoice) : autoGroupLineItems(lineItems),
+  )
 
   // Per-line mode needs company and brands
   const perLineCompany = isPerLine ? (invoice.allocations?.[0]?.company ?? '') : ''

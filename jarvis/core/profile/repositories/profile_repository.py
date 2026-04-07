@@ -189,7 +189,7 @@ class ProfileRepository(BaseRepository):
                 SELECT
                     i.id, i.invoice_number, i.invoice_date, i.invoice_value,
                     i.currency, i.supplier, i.status, i.drive_link, i.comment,
-                    i.created_at, i.updated_at, i.payment_status,
+                    i.created_at, i.updated_at, i.payment_status, i.allocation_mode,
                     COALESCE(
                         json_agg(
                             json_build_object(
@@ -200,7 +200,8 @@ class ProfileRepository(BaseRepository):
                                 'subdepartment', a.subdepartment,
                                 'allocation_percent', a.allocation_percent,
                                 'allocation_value', a.allocation_value,
-                                'responsible', a.responsible
+                                'responsible', a.responsible,
+                                'line_item_index', a.line_item_index
                             )
                         ) FILTER (WHERE a.id IS NOT NULL),
                         '[]'::json

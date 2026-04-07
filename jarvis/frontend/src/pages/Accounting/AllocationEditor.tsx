@@ -339,12 +339,13 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
   })
 
   const { data: managerData } = useQuery({
-    queryKey: ['manager', company, row.department, row.brand],
+    queryKey: ['manager', company, row.brand, row.department, row.subdepartment],
     queryFn: () =>
       organizationApi.getManager({
         company,
-        department: row.department,
         brand: row.brand || undefined,
+        department: row.department,
+        subdepartment: row.subdepartment || undefined,
       }),
     enabled: !!row.department,
     staleTime: 5 * 60_000,
