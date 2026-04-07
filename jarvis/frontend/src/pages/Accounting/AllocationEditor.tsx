@@ -421,12 +421,12 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
   const showL3 = showL2 && !!row.department && subdepartments.length > 0
 
   // Dynamic col spans so the grid always sums to 12
-  // Fixed: %(1) + value(2) + actions(2 or 3) = 5 or 6
+  // Fixed: %(2) + value(2) + actions(2 or 3) = 6 or 7
   const actionsSpan = hasBrands ? 2 : 3
-  const levelCols = 12 - 1 - 2 - actionsSpan   // 7 (brands) or 6 (no brands)
+  const levelCols = 12 - 2 - 2 - actionsSpan   // 6 (brands) or 5 (no brands)
   const l1Cols = hasBrands ? 2 : 0
-  const rem = levelCols - l1Cols                 // 5 or 6
-  const l2Cols = showL2 ? (showL3 ? (hasBrands ? 3 : 4) : rem) : 0
+  const rem = levelCols - l1Cols                 // 4 or 5
+  const l2Cols = showL2 ? (showL3 ? (hasBrands ? 2 : 3) : rem) : 0
   const l3Cols = showL3 ? rem - l2Cols : 0
   // When L2 is hidden, expand L1 to fill its space so there's no dead gap
   const effectiveL1Cols = hasBrands ? (showL2 ? l1Cols : levelCols) : 0
@@ -495,7 +495,7 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
             </Select>
           </div>
         )}
-        <div className="col-span-1 min-w-0">
+        <div className="col-span-2 min-w-0">
           <Input
             type="number"
             min={0}
