@@ -409,6 +409,18 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
     }
   }, [hasBrands, brands, row.brand, row.department, row.subdepartment, onUpdate])
 
+  // Inverse normalization: company is flat (no L1 brands shown), but legacy
+  // data has the L1 selection stored in row.brand with department empty.
+  // Move brand → department so the dropdown displays the saved value.
+  useEffect(() => {
+    if (!hasBrands && deptsFetched && row.brand && !row.department && departments.includes(row.brand)) {
+      onUpdate({
+        brand: '',
+        department: row.brand,
+      })
+    }
+  }, [hasBrands, deptsFetched, departments, row.brand, row.department, onUpdate])
+
   // Auto-set department to brand when brand is selected but has no L2 departments
   useEffect(() => {
     if (hasBrands && row.brand && deptsFetched && departments.length === 0 && row.department !== row.brand) {
@@ -658,6 +670,18 @@ function ReinvoiceDestRow({
       })
     }
   }, [hasBrands, targetBrands, dest.brand, dest.department, dest.subdepartment, onUpdate])
+
+  // Inverse normalization: target company is flat (no L1 brands shown), but
+  // legacy data has the L1 stored in dest.brand with department empty.
+  // Move brand → department so the dropdown displays the saved value.
+  useEffect(() => {
+    if (!hasBrands && targetDeptsFetched && dest.brand && !dest.department && targetDepts.includes(dest.brand)) {
+      onUpdate({
+        brand: '',
+        department: dest.brand,
+      })
+    }
+  }, [hasBrands, targetDeptsFetched, targetDepts, dest.brand, dest.department, onUpdate])
 
   // Auto-set department to brand when brand is selected but has no L2 departments
   useEffect(() => {
