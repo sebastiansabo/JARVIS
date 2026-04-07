@@ -324,7 +324,8 @@ class StructureNodeRepository(BaseRepository):
         If the tree-walk only partially matches (e.g. flat structure where
         department is NOT a child of brand), fall back to the most specific
         individual node match: subdepartment > department > brand.
-        Finally falls back to company-level (L0) responsables.
+        Finally falls back to company-level (L0) responsables so the
+        responsible field is never left empty when L0 managers exist.
         """
         row = self.query_one(
             'SELECT id FROM companies WHERE company = %s', (company_name,)
@@ -333,15 +334,18 @@ class StructureNodeRepository(BaseRepository):
             return ''
         company_id = row['id']
 
-        path = [n for n in [brand, department, subdepartment] if n]
-        if not path:
-            # No path — return company-level responsables
+        def company_l0_responsables() -> str:
             comp_rows = self.query_all('''
                 SELECT u.name FROM company_responsables cr
                 JOIN users u ON u.id = cr.user_id
                 WHERE cr.company_id = %s ORDER BY u.name
             ''', (company_id,))
             return ', '.join(r['name'] for r in comp_rows)
+
+        path = [n for n in [brand, department, subdepartment] if n]
+        if not path:
+            # No path — return company-level responsables
+            return company_l0_responsables()
 
         # Try tree-walk first
         node = self.find_node_by_path(company_id, path)
@@ -371,7 +375,9 @@ class StructureNodeRepository(BaseRepository):
         if node:
             return self.get_node_responsable_names_with_fallback(node['id'], company_id)
 
-        return ''
+        # Last resort: fall back to company-level (L0) responsables so we
+        # never leave the responsible field blank when L0 managers exist.
+        return company_l0_responsables()
 
     def get_responsable_users_by_department(self, company_name: str, department: str) -> list[dict]:
         """Find responsable users for nodes named `department` under a company,

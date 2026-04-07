@@ -63,6 +63,7 @@ import { usersApi } from '@/api/users'
 import { useAuth } from '@/hooks/useAuth'
 import { AllocationEditor, allocationsToRows, rowsToApiPayload } from '@/pages/Accounting/AllocationEditor'
 import { EditInvoiceDialog } from '@/pages/Accounting/EditInvoiceDialog'
+import { dedupeMergedAllocations } from '@/pages/Accounting/allocationUtils'
 import { InvoiceLinkedDocs } from '@/components/shared/InvoiceLinkedDocs'
 import { toast } from 'sonner'
 import { cn, usePersistedState } from '@/lib/utils'
@@ -1730,7 +1731,12 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                   { key: 'status', label: 'Status', render: (inv) => <StatusBadge status={inv.status} /> },
                   { key: 'company', label: 'Company', expandOnly: true, render: (inv) => inv.company },
                   { key: 'department', label: 'Department', expandOnly: true, render: (inv) => inv.department || '-' },
-                  { key: 'percent', label: 'Allocation', expandOnly: true, render: (inv) => (inv.allocations?.length || 1) > 1 ? 'split' : `${inv.allocation_percent}%` },
+                  { key: 'percent', label: 'Allocation', expandOnly: true, render: (inv) => {
+                    const allocs = inv.allocation_mode === 'per_line' && inv.allocations
+                      ? dedupeMergedAllocations(inv.allocations as never)
+                      : (inv.allocations ?? [])
+                    return (allocs.length || 1) > 1 ? 'split' : `${inv.allocation_percent}%`
+                  } },
                 ] satisfies MobileCardField<ProfileInvoice>[]}
                 getRowId={(inv) => inv.id}
                 actions={(inv) => inv.drive_link ? (
@@ -1759,7 +1765,13 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                   <TableBody>
                     {invoices.map((inv: ProfileInvoice) => {
                       const isExpanded = expandedId === inv.id
-                      const allocCount = inv.allocations?.length || 1
+                      // For per_line invoices, the same logical allocation is replicated
+                      // per merged line item index — collapse them so the +N badge and
+                      // "split" indicator reflect the real number of distinct destinations.
+                      const dedupedAllocs = inv.allocation_mode === 'per_line' && inv.allocations
+                        ? dedupeMergedAllocations(inv.allocations as never)
+                        : (inv.allocations ?? [])
+                      const allocCount = dedupedAllocs.length || 1
 
                       return (
                         <React.Fragment key={inv.id}>
@@ -1888,7 +1900,15 @@ function ProfileInvoiceExpansion({
     )
   }
 
-  const allocations = (inv.allocations ?? []) as Array<Record<string, unknown>>
+  const rawAllocations = (inv.allocations ?? []) as Array<Record<string, unknown>>
+  // Collapse merged per-line allocations the same way the Accounting list does,
+  // so the Profile invoice view shows merged groups as single rows instead of
+  // duplicating the entry per line item index.
+  const allocations = (
+    inv.allocation_mode === 'per_line'
+      ? (dedupeMergedAllocations(rawAllocations as unknown as never) as unknown as Array<Record<string, unknown>>)
+      : rawAllocations
+  )
   const effectiveValue = (inv.net_value ?? inv.invoice_value) as number
   const currency = inv.currency as string
 

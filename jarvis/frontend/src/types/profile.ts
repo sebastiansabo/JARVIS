@@ -46,6 +46,7 @@ export interface ProfileInvoiceAllocation {
   allocation_percent: number
   allocation_value: number
   responsible: string | null
+  line_item_index?: number | null
 }
 
 export interface ProfileInvoice {
@@ -63,6 +64,7 @@ export interface ProfileInvoice {
   subdepartment: string | null
   allocation_percent: number
   allocation_value: number
+  allocation_mode?: 'whole' | 'per_line'
   allocations?: ProfileInvoiceAllocation[]
   drive_link: string | null
   comment: string | null
