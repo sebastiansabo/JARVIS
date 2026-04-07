@@ -376,8 +376,10 @@ def _extract_meta_line_items_via_regex(file_path: str) -> list[dict]:
         return []
 
     try:
-        # Local import to avoid circular dependency at module load time
-        from jarvis.accounting.bugetare.bulk_processor import (
+        # Local import to avoid circular dependency at module load time.
+        # Use bare-name import (no `jarvis.` prefix) — the runtime WORKDIR
+        # is /app/jarvis, so the package root is `accounting`, not `jarvis`.
+        from accounting.bugetare.bulk_processor import (
             extract_text_from_pdf,
             parse_meta_invoice,
         )
