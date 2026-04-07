@@ -1099,10 +1099,12 @@ def send_to_invoice_module():
 
     Request body:
         invoice_ids: List of e-Factura invoice IDs to send
+        observer_user_ids: Optional list of user IDs to attach as observers to every created invoice
     """
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         invoice_ids = data.get('invoice_ids', [])
+        observer_user_ids = data.get('observer_user_ids') or None
 
         if not invoice_ids:
             return jsonify({
@@ -1110,7 +1112,7 @@ def send_to_invoice_module():
                 'error': "No invoices selected",
             }), 400
 
-        result = efactura_service.send_to_invoice_module(invoice_ids)
+        result = efactura_service.send_to_invoice_module(invoice_ids, observer_user_ids=observer_user_ids)
 
         if not result.success:
             return jsonify({

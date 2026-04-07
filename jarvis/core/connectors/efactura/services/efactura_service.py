@@ -1720,11 +1720,13 @@ Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
 
         return ServiceResult(success=True, data={'marked': len(pairs)})
 
-    def send_to_invoice_module(self, invoice_ids: List[int]) -> ServiceResult:
+    def send_to_invoice_module(self, invoice_ids: List[int],
+                               observer_user_ids: Optional[List[int]] = None) -> ServiceResult:
         """
         Send selected invoices to the main JARVIS Invoice Module.
 
         Creates records in the main invoices table and marks these as allocated.
+        Optionally attaches observer users to every newly created invoice.
 
         Optimized for batch operations:
         - 1 query to fetch all unallocated invoices
@@ -1772,6 +1774,30 @@ Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
 
             # Step 3: Bulk mark as allocated (1 query)
             self.invoice_repo.bulk_mark_allocated(mappings)
+
+            # Step 4: Attach optional observers to every newly created jarvis invoice
+            if observer_user_ids:
+                normalized_observers = []
+                seen_obs = set()
+                for raw in observer_user_ids:
+                    try:
+                        uid = int(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if uid in seen_obs:
+                        continue
+                    seen_obs.add(uid)
+                    normalized_observers.append(uid)
+
+                if normalized_observers:
+                    try:
+                        from accounting.invoices.repositories import InvoiceRepository as MainInvoiceRepository
+                        main_invoice_repo = MainInvoiceRepository()
+                        for _, jarvis_id in mappings:
+                            main_invoice_repo.sync_observers(jarvis_id, normalized_observers)
+                    except Exception as obs_err:
+                        logger.error(f"Failed to attach observers: {obs_err}")
+                        errors.append(f"Observers not attached: {obs_err}")
 
             logger.info(
                 f"Batch sent {len(mappings)} invoices to module",

@@ -37,7 +37,7 @@ class InvoiceRepository(BaseRepository):
              comment=None, payment_status='not_paid',
              subtract_vat=False, vat_rate=None, net_value=None,
              line_items=None, invoice_type='standard',
-             allocation_mode='whole'):
+             allocation_mode='whole', observer_user_ids=None):
         """Save invoice and its allocations to database. Returns the invoice ID."""
         def _work(cursor):
             cursor.execute('''
@@ -139,6 +139,21 @@ class InvoiceRepository(BaseRepository):
                         rd_value
                     ))
 
+            if observer_user_ids:
+                seen = set()
+                for obs_id in observer_user_ids:
+                    try:
+                        oid = int(obs_id)
+                    except (TypeError, ValueError):
+                        continue
+                    if oid in seen:
+                        continue
+                    seen.add(oid)
+                    cursor.execute(
+                        'INSERT INTO invoice_observers (invoice_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING',
+                        (invoice_id, oid)
+                    )
+
             clear_invoices_cache()
             return invoice_id
 
@@ -238,6 +253,19 @@ class InvoiceRepository(BaseRepository):
                 alloc['reinvoice_destinations'] = reinvoice_map.get(alloc['id'], [])
 
             invoice['allocations'] = allocations
+
+            cursor.execute('''
+                SELECT io.user_id, u.name
+                FROM invoice_observers io
+                JOIN users u ON u.id = io.user_id
+                WHERE io.invoice_id = %s
+                ORDER BY u.name
+            ''', (invoice_id,))
+            invoice['observers'] = [
+                {'user_id': row['user_id'], 'name': row['name']}
+                for row in cursor.fetchall()
+            ]
+
             return invoice
         return self.execute_many(_work)
 
@@ -581,6 +609,65 @@ class InvoiceRepository(BaseRepository):
             if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
                 raise ValueError("Invoice number already exists in database")
             raise
+
+    def get_observers(self, invoice_id):
+        """Return list of observer users for an invoice."""
+        return self.query_all('''
+            SELECT io.user_id, u.name, u.email
+            FROM invoice_observers io
+            JOIN users u ON u.id = io.user_id
+            WHERE io.invoice_id = %s
+            ORDER BY u.name
+        ''', (invoice_id,))
+
+    def sync_observers(self, invoice_id, user_ids):
+        """Replace the set of observers for an invoice with the given user IDs.
+
+        Passing None means "do not touch observers" (partial update).
+        Passing [] clears all observers for the invoice.
+        """
+        if user_ids is None:
+            return
+
+        def _work(cursor):
+            cursor.execute('DELETE FROM invoice_observers WHERE invoice_id = %s', (invoice_id,))
+            seen = set()
+            for raw in user_ids:
+                try:
+                    uid = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if uid in seen:
+                    continue
+                seen.add(uid)
+                cursor.execute(
+                    'INSERT INTO invoice_observers (invoice_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING',
+                    (invoice_id, uid)
+                )
+            return True
+
+        self.execute_many(_work)
+        clear_invoices_cache()
+
+    def get_observers_for_invoices(self, invoice_ids):
+        """Return observer map {invoice_id: [{user_id, name}, ...]} for multiple invoices."""
+        if not invoice_ids:
+            return {}
+        placeholders = ','.join(['%s'] * len(invoice_ids))
+        rows = self.query_all(f'''
+            SELECT io.invoice_id, io.user_id, u.name
+            FROM invoice_observers io
+            JOIN users u ON u.id = io.user_id
+            WHERE io.invoice_id IN ({placeholders})
+            ORDER BY u.name
+        ''', invoice_ids)
+        result = {}
+        for row in rows:
+            result.setdefault(row['invoice_id'], []).append({
+                'user_id': row['user_id'],
+                'name': row['name'],
+            })
+        return result
 
     def get_department_suggestions(self, supplier, limit=5):
         """Get allocation department histogram for a supplier."""

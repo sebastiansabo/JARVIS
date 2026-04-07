@@ -13,6 +13,7 @@ import { organizationApi } from '@/api/organization'
 import { tagsApi } from '@/api/tags'
 import { TagBadge } from '@/components/shared/TagBadge'
 import { TagPicker } from '@/components/shared/TagPicker'
+import { ObserverPicker } from '@/components/shared/ObserverPicker'
 import { toast } from 'sonner'
 import type { Invoice } from '@/types/invoices'
 import { AllocationEditor, allocationsToRows, type AllocationEditorRef, type AllocationRow, rowsToApiPayload } from './AllocationEditor'
@@ -26,7 +27,7 @@ interface SelectOption {
 }
 
 export interface EditInvoiceApiOverrides {
-  updateInvoice?: (id: number, data: Partial<Invoice>) => Promise<unknown>
+  updateInvoice?: (id: number, data: Partial<Invoice> & { observer_user_ids?: number[] }) => Promise<unknown>
   updateAllocations?: (id: number, data: { allocations: Record<string, unknown>[] }) => Promise<unknown>
 }
 
@@ -57,6 +58,13 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
   const [netValue, setNetValue] = useState(invoice.net_value != null ? String(invoice.net_value) : '')
   const [comment, setComment] = useState(invoice.comment || '')
   const [driveLink, setDriveLink] = useState(invoice.drive_link || '')
+  const [observerUserIds, setObserverUserIds] = useState<number[]>(
+    () => (invoice.observers ?? []).map((o) => o.user_id),
+  )
+  const initialObserverIds = useMemo(
+    () => (invoice.observers ?? []).map((o) => o.user_id).sort((a, b) => a - b),
+    [invoice.observers],
+  )
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([])
@@ -155,8 +163,12 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
   const handleSave = useCallback(async () => {
     setSaving(true)
     try {
+      const currentObserverIds = [...observerUserIds].sort((a, b) => a - b)
+      const observersChanged =
+        currentObserverIds.length !== initialObserverIds.length ||
+        currentObserverIds.some((id, idx) => id !== initialObserverIds[idx])
       // Save metadata — profile mode sends only allowed fields
-      const metadataPayload = isProfile
+      const metadataPayload: Partial<Invoice> & { observer_user_ids?: number[] } = isProfile
         ? {
             status,
             payment_status: paymentStatus,
@@ -180,6 +192,9 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
             comment: comment || null,
             drive_link: driveLink || null,
           }
+      if (!isProfile && observersChanged) {
+        metadataPayload.observer_user_ids = observerUserIds
+      }
       await updateInvoiceFn(invoice.id, metadataPayload)
 
       if (isPerLine) {
@@ -219,7 +234,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
     } finally {
       setSaving(false)
     }
-  }, [invoice.id, supplier, invoiceNumber, invoiceDate, invoiceValue, currency, status, paymentStatus, subtractVat, vatRate, netValue, comment, driveLink, isPerLine, isProfile, lineAllocations, perLineCompany, queryClient, onClose, updateInvoiceFn, updateAllocationsFn, invalidateQueryKeys])
+  }, [invoice.id, supplier, invoiceNumber, invoiceDate, invoiceValue, currency, status, paymentStatus, subtractVat, vatRate, netValue, comment, driveLink, observerUserIds, initialObserverIds, isPerLine, isProfile, lineAllocations, perLineCompany, queryClient, onClose, updateInvoiceFn, updateAllocationsFn, invalidateQueryKeys])
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -365,6 +380,18 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
                   )}
                 </div>
               </TagPicker>
+            </div>
+          )}
+
+          {/* Observers */}
+          {!isProfile && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Observers</Label>
+              <ObserverPicker
+                value={observerUserIds}
+                onChange={setObserverUserIds}
+                placeholder="Add view-only observers…"
+              />
             </div>
           )}
 

@@ -617,3 +617,16 @@ def create_schema_misc(conn, cursor):
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_allocations_line_item ON allocations(invoice_id, line_item_index)')
     conn.commit()
+
+    # Create invoice_observers table for view-only invoice access
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS invoice_observers (
+            invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (invoice_id, user_id)
+        )
+    ''')
+    conn.commit()
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_observers_user ON invoice_observers(user_id)')
+    conn.commit()

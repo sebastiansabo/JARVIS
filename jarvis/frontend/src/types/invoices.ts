@@ -1,3 +1,8 @@
+export interface InvoiceObserver {
+  user_id: number
+  name: string
+}
+
 export interface Invoice {
   id: number
   supplier: string
@@ -22,6 +27,8 @@ export interface Invoice {
   allocation_mode?: 'whole' | 'per_line'
   line_items?: LineItem[]
   allocations?: Allocation[]
+  observers?: InvoiceObserver[]
+  is_observer?: boolean
 }
 
 export interface LineItem {
@@ -224,6 +231,7 @@ export interface SubmitInvoiceInput {
   value_eur?: number
   exchange_rate?: number
   allocation_mode?: 'whole' | 'per_line'
+  observer_user_ids?: number[]
   distributions: {
     company: string
     brand?: string

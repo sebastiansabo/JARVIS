@@ -1725,7 +1725,17 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
               <MobileCardList
                 data={invoices}
                 fields={[
-                  { key: 'supplier', label: 'Supplier', isPrimary: true, render: (inv) => inv.supplier },
+                  { key: 'supplier', label: 'Supplier', isPrimary: true, render: (inv) => (
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate">{inv.supplier}</span>
+                      {inv.is_observer && (
+                        <Badge variant="outline" className="gap-0.5 px-1.5 py-0 text-[10px] text-muted-foreground">
+                          <Eye className="h-2.5 w-2.5" />
+                          Observer
+                        </Badge>
+                      )}
+                    </div>
+                  ) },
                   { key: 'invoice_number', label: 'Invoice #', isSecondary: true, render: (inv) => <span className="font-mono">{inv.invoice_number}</span> },
                   { key: 'date', label: 'Date', isSecondary: true, render: (inv) => new Date(inv.invoice_date).toLocaleDateString('ro-RO') },
                   { key: 'value', label: 'Value', render: (inv) => <CurrencyDisplay value={inv.invoice_value} currency={inv.currency} className="text-xs" /> },
@@ -1789,7 +1799,21 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                               {new Date(inv.invoice_date).toLocaleDateString('ro-RO')}
                             </TableCell>
                             <TableCell className="font-mono text-xs">{inv.invoice_number}</TableCell>
-                            <TableCell className="max-w-[200px] truncate font-medium">{inv.supplier}</TableCell>
+                            <TableCell className="max-w-[200px] font-medium">
+                              <div className="flex items-center gap-1.5">
+                                <span className="truncate">{inv.supplier}</span>
+                                {inv.is_observer && (
+                                  <Badge
+                                    variant="outline"
+                                    className="gap-0.5 px-1.5 py-0 text-[10px] text-muted-foreground"
+                                    title="You are an observer on this invoice (view-only)"
+                                  >
+                                    <Eye className="h-2.5 w-2.5" />
+                                    Observer
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
                             <TableCell className="text-sm">{inv.company}</TableCell>
                             <TableCell className="text-sm text-muted-foreground">
                               {inv.department || '-'}

@@ -94,25 +94,44 @@ class ProfileRepository(BaseRepository):
 
         return '(' + ' OR '.join(conditions) + ')', params
 
+    @staticmethod
+    def _build_visibility_scope(cursor, user_id: int) -> tuple[str, list]:
+        """Build full invoice visibility scope combining org-scope + observer + fallback.
+
+        Returns (sql_fragment, params) ready to drop into a WHERE clause that
+        joins invoices i with allocations a. The fragment always references
+        ``i.id`` for the observer subquery and ``a.*`` for org/responsible.
+        """
+        org_sql, org_params = ProfileRepository._build_org_filter(cursor, user_id)
+        observer_sql = 'i.id IN (SELECT invoice_id FROM invoice_observers WHERE user_id = %s)'
+        observer_params = [user_id]
+
+        if org_sql:
+            scope = f'({org_sql} OR {observer_sql})'
+            scope_params = list(org_params) + observer_params
+        else:
+            own_sql = (
+                '(a.responsible_user_id = %s OR '
+                '(a.responsible_user_id IS NULL AND LOWER(a.responsible) = '
+                '(SELECT LOWER(name) FROM users WHERE id = %s)))'
+            )
+            scope = f'({own_sql} OR {observer_sql})'
+            scope_params = [user_id, user_id] + observer_params
+
+        return scope, scope_params
+
     # ------------------------------------------------------------------
     # Invoice visibility check (same org-scope as list)
     # ------------------------------------------------------------------
 
     def is_invoice_visible_to_user(self, user_id: int, invoice_id: int) -> bool:
-        """Check if a given invoice is visible to the user via org-scope or direct responsibility."""
+        """Check if a given invoice is visible to the user via org-scope, responsibility, or observer."""
         def _work(cursor):
-            org_sql, org_params = self._build_org_filter(cursor, user_id)
-
-            if org_sql:
-                scope = org_sql
-                scope_params = org_params
-            else:
-                scope = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
-                scope_params = [user_id, user_id]
+            scope, scope_params = self._build_visibility_scope(cursor, user_id)
 
             cursor.execute(f'''
                 SELECT 1 FROM invoices i
-                INNER JOIN allocations a ON i.id = a.invoice_id
+                LEFT JOIN allocations a ON i.id = a.invoice_id
                 WHERE i.id = %s AND {scope} AND i.deleted_at IS NULL
                 LIMIT 1
             ''', [invoice_id] + list(scope_params))
@@ -144,16 +163,7 @@ class ProfileRepository(BaseRepository):
                 return []
 
             user_id = user_row['id']
-            org_sql, org_params = self._build_org_filter(cursor, user_id)
-
-            if org_sql:
-                # Org scope: L0 sees all company, L1 sees dept+descendants, etc.
-                scope = org_sql
-                scope_params = org_params
-            else:
-                # No org assignments: show only own invoices
-                scope = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
-                scope_params = [user_id, user_id]
+            scope, scope_params = self._build_visibility_scope(cursor, user_id)
 
             # Build optional filter clauses
             extra_where = ''
@@ -176,12 +186,14 @@ class ProfileRepository(BaseRepository):
                 extra_where += ' AND LOWER(a.department) = LOWER(%s)'
                 params.append(department)
 
-            # Use CTE to paginate distinct invoices, then aggregate allocations
+            # Use CTE to paginate distinct invoices, then aggregate allocations + observers.
+            # LEFT JOIN so invoices visible purely via observer (and having no matching
+            # allocation for the scope) are still returned.
             query = f'''
                 WITH filtered_invoices AS (
                     SELECT DISTINCT i.id
                     FROM invoices i
-                    INNER JOIN allocations a ON i.id = a.invoice_id
+                    LEFT JOIN allocations a ON i.id = a.invoice_id
                     WHERE {scope} AND i.deleted_at IS NULL {extra_where}
                     ORDER BY i.id DESC
                     LIMIT %s OFFSET %s
@@ -227,14 +239,30 @@ class ProfileRepository(BaseRepository):
                             ORDER BY a.id
                         ) FILTER (WHERE a.id IS NOT NULL),
                         '[]'::json
-                    ) as allocations
+                    ) as allocations,
+                    COALESCE(
+                        (
+                            SELECT json_agg(
+                                json_build_object('user_id', io.user_id, 'name', u.name)
+                                ORDER BY u.name
+                            )
+                            FROM invoice_observers io
+                            JOIN users u ON u.id = io.user_id
+                            WHERE io.invoice_id = i.id
+                        ),
+                        '[]'::json
+                    ) as observers,
+                    EXISTS (
+                        SELECT 1 FROM invoice_observers io
+                        WHERE io.invoice_id = i.id AND io.user_id = %s
+                    ) as is_observer
                 FROM filtered_invoices fi
                 JOIN invoices i ON i.id = fi.id
                 LEFT JOIN allocations a ON a.invoice_id = i.id
                 GROUP BY i.id
                 ORDER BY i.invoice_date DESC
             '''
-            params.extend([limit, offset])
+            params.extend([limit, offset, user_id])
 
             cursor.execute(query, params)
             rows = []
@@ -271,19 +299,12 @@ class ProfileRepository(BaseRepository):
                 return 0
 
             user_id = user_row['id']
-            org_sql, org_params = self._build_org_filter(cursor, user_id)
-
-            if org_sql:
-                scope = org_sql
-                scope_params = org_params
-            else:
-                scope = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
-                scope_params = [user_id, user_id]
+            scope, scope_params = self._build_visibility_scope(cursor, user_id)
 
             query = f'''
                 SELECT COUNT(DISTINCT i.id) as count
                 FROM invoices i
-                INNER JOIN allocations a ON i.id = a.invoice_id
+                LEFT JOIN allocations a ON i.id = a.invoice_id
                 WHERE {scope}
                 AND i.deleted_at IS NULL
             '''
@@ -320,19 +341,12 @@ class ProfileRepository(BaseRepository):
                 return {'total': 0, 'total_value': 0, 'by_status': {}}
 
             user_id = user_row['id']
-            org_sql, org_params = self._build_org_filter(cursor, user_id)
-
-            if org_sql:
-                base_where = org_sql
-                base_params = org_params
-            else:
-                base_where = '(a.responsible_user_id = %s OR (a.responsible_user_id IS NULL AND LOWER(a.responsible) = (SELECT LOWER(name) FROM users WHERE id = %s)))'
-                base_params = [user_id, user_id]
+            base_where, base_params = self._build_visibility_scope(cursor, user_id)
 
             cursor.execute(f'''
                 SELECT i.status, COUNT(DISTINCT i.id) as count
                 FROM invoices i
-                INNER JOIN allocations a ON i.id = a.invoice_id
+                LEFT JOIN allocations a ON i.id = a.invoice_id
                 WHERE {base_where} AND i.deleted_at IS NULL
                 GROUP BY i.status
             ''', base_params)
@@ -344,7 +358,7 @@ class ProfileRepository(BaseRepository):
             cursor.execute(f'''
                 SELECT COUNT(DISTINCT i.id) as total, COALESCE(SUM(DISTINCT i.invoice_value), 0) as total_value
                 FROM invoices i
-                INNER JOIN allocations a ON i.id = a.invoice_id
+                LEFT JOIN allocations a ON i.id = a.invoice_id
                 WHERE {base_where} AND i.deleted_at IS NULL
             ''', base_params)
 

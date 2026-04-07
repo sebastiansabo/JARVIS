@@ -69,6 +69,11 @@ export interface ProfileInvoiceLineItem {
   vat_rate?: number | null
 }
 
+export interface ProfileInvoiceObserver {
+  user_id: number
+  name: string
+}
+
 export interface ProfileInvoice {
   id: number
   invoice_number: string
@@ -91,6 +96,8 @@ export interface ProfileInvoice {
   comment: string | null
   created_at: string
   updated_at: string | null
+  observers?: ProfileInvoiceObserver[]
+  is_observer?: boolean
 }
 
 export interface ProfileActivity {

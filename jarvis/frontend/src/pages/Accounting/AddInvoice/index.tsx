@@ -34,6 +34,7 @@ import { FieldError } from '@/components/shared/FieldError'
 import type { ParseResult, SubmitInvoiceInput, DeptSuggestion } from '@/types/invoices'
 import { type AllocationRow, newRow, AllocationRowComponent } from '../AllocationEditor'
 import { LineItemAllocations, generateMergeComment, autoGroupLineItems, type LineGroup } from '../LineItemAllocations'
+import { ObserverPicker } from '@/components/shared/ObserverPicker'
 
 /* ──── Main Component ──── */
 
@@ -52,6 +53,7 @@ export default function AddInvoice() {
   const [vatRateId, setVatRateId] = useState<string>('')
   const [driveLink, setDriveLink] = useState('')
   const [templateName, setTemplateName] = useState('')
+  const [observerUserIds, setObserverUserIds] = useState<number[]>([])
 
   // Upload modal
   const [uploadOpen, setUploadOpen] = useState(true)
@@ -467,6 +469,7 @@ export default function AddInvoice() {
       value_eur: valueEur ?? undefined,
       exchange_rate: exchangeRate ?? undefined,
       allocation_mode: allocationMode,
+      observer_user_ids: observerUserIds.length > 0 ? observerUserIds : undefined,
       _line_items: lineItems.length > 0 ? lineItems : undefined,
       _invoice_type: invoiceType !== 'standard' ? invoiceType : undefined,
       _parse_result: parseResult ?? undefined,
@@ -489,6 +492,7 @@ export default function AddInvoice() {
     setVatRateId('')
     setDriveLink('')
     setTemplateName('')
+    setObserverUserIds([])
     setFile(null)
     setCompany('')
     setRows([newRow()])
@@ -893,6 +897,15 @@ export default function AddInvoice() {
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   rows={2}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Observers</Label>
+                <ObserverPicker
+                  value={observerUserIds}
+                  onChange={setObserverUserIds}
+                  placeholder="Add view-only observers…"
                 />
               </div>
             </CardContent>
