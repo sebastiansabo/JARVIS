@@ -64,6 +64,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { AllocationEditor, allocationsToRows, rowsToApiPayload } from '@/pages/Accounting/AllocationEditor'
 import { EditInvoiceDialog } from '@/pages/Accounting/EditInvoiceDialog'
 import { dedupeMergedAllocations } from '@/pages/Accounting/allocationUtils'
+import { LineItemAllocationsView } from '@/pages/Accounting/LineItemAllocationsView'
 import { InvoiceLinkedDocs } from '@/components/shared/InvoiceLinkedDocs'
 import { toast } from 'sonner'
 import { cn, usePersistedState } from '@/lib/utils'
@@ -1901,11 +1902,12 @@ function ProfileInvoiceExpansion({
   }
 
   const rawAllocations = (inv.allocations ?? []) as Array<Record<string, unknown>>
+  const isPerLine = inv.allocation_mode === 'per_line'
   // Collapse merged per-line allocations the same way the Accounting list does,
   // so the Profile invoice view shows merged groups as single rows instead of
   // duplicating the entry per line item index.
   const allocations = (
-    inv.allocation_mode === 'per_line'
+    isPerLine
       ? (dedupeMergedAllocations(rawAllocations as unknown as never) as unknown as Array<Record<string, unknown>>)
       : rawAllocations
   )
@@ -1913,6 +1915,9 @@ function ProfileInvoiceExpansion({
   const currency = inv.currency as string
 
   if (isEditing) {
+    // Per-line edit is not supported inline in Profile (edit via Edit Invoice
+    // modal which uses LineItemAllocations). Fall through to whole-mode editor
+    // for the rare case of editing a per-line invoice from Profile inline.
     return (
       <div className="px-8 py-3 bg-muted/30 border-l-2 border-l-primary/50">
         <AllocationEditor
@@ -1945,6 +1950,39 @@ function ProfileInvoiceExpansion({
             </div>
           )}
         </div>
+        <InvoiceLinkedDocs
+          invoiceId={invoiceId}
+          isBin={false}
+          canEdit={canEdit}
+          api={{
+            getDocs: profileApi.getInvoiceDmsDocuments,
+            unlinkDoc: profileApi.unlinkDmsDocument,
+            searchDocs: profileApi.searchDmsDocuments,
+            linkDoc: profileApi.linkDmsDocument,
+            uploadAndLink: profileApi.uploadAndLinkDms,
+          }}
+        />
+      </div>
+    )
+  }
+
+  // Per-line invoice: render the grouped read-only view that mirrors the
+  // Edit Invoice dialog's merged-group UX (collapsible "N items merged").
+  if (isPerLine && (inv.line_items?.length ?? 0) > 0) {
+    return (
+      <div className="px-8 py-3 bg-muted/30 border-l-2 border-l-primary/50">
+        <LineItemAllocationsView
+          invoice={inv as Invoice}
+          canEdit={canEdit}
+          onEdit={() => onEditInvoice(inv as Invoice)}
+        />
+        {canEdit && (
+          <div className="mt-2 flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => onEditInvoice(inv as Invoice)}>
+              <Pencil className="h-3 w-3 mr-1" /> Edit Invoice
+            </Button>
+          </div>
+        )}
         <InvoiceLinkedDocs
           invoiceId={invoiceId}
           isBin={false}

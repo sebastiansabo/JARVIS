@@ -190,6 +190,7 @@ class ProfileRepository(BaseRepository):
                     i.id, i.invoice_number, i.invoice_date, i.invoice_value,
                     i.currency, i.supplier, i.status, i.drive_link, i.comment,
                     i.created_at, i.updated_at, i.payment_status, i.allocation_mode,
+                    i.line_items,
                     COALESCE(
                         json_agg(
                             json_build_object(
@@ -201,8 +202,29 @@ class ProfileRepository(BaseRepository):
                                 'allocation_percent', a.allocation_percent,
                                 'allocation_value', a.allocation_value,
                                 'responsible', a.responsible,
-                                'line_item_index', a.line_item_index
+                                'comment', a.comment,
+                                'line_item_index', a.line_item_index,
+                                'reinvoice_destinations', COALESCE(
+                                    (
+                                        SELECT json_agg(
+                                            json_build_object(
+                                                'id', rd.id,
+                                                'company', rd.company,
+                                                'brand', rd.brand,
+                                                'department', rd.department,
+                                                'subdepartment', rd.subdepartment,
+                                                'percentage', rd.percentage,
+                                                'value', rd.value
+                                            )
+                                            ORDER BY rd.id
+                                        )
+                                        FROM reinvoice_destinations rd
+                                        WHERE rd.allocation_id = a.id
+                                    ),
+                                    '[]'::json
+                                )
                             )
+                            ORDER BY a.id
                         ) FILTER (WHERE a.id IS NOT NULL),
                         '[]'::json
                     ) as allocations
