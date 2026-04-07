@@ -396,6 +396,19 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
 
   const hasBrands = brands.length > 0
 
+  // Legacy data normalization: when an allocation was saved at the wrong levels
+  // (e.g. department holds an L1 name and brand is empty), promote the values
+  // up to their correct levels so they display & cascade properly.
+  useEffect(() => {
+    if (hasBrands && !row.brand && row.department && brands.includes(row.department)) {
+      onUpdate({
+        brand: row.department,
+        department: row.subdepartment || '',
+        subdepartment: '',
+      })
+    }
+  }, [hasBrands, brands, row.brand, row.department, row.subdepartment, onUpdate])
+
   // Auto-set department to brand when brand is selected but has no L2 departments
   useEffect(() => {
     if (hasBrands && row.brand && deptsFetched && departments.length === 0 && row.department !== row.brand) {
@@ -633,6 +646,18 @@ function ReinvoiceDestRow({
   })
 
   const hasBrands = targetBrands.length > 0
+
+  // Legacy data normalization: promote misplaced L1 names sitting in the
+  // department field up to the brand slot (matches main allocation row logic).
+  useEffect(() => {
+    if (hasBrands && !dest.brand && dest.department && targetBrands.includes(dest.department)) {
+      onUpdate({
+        brand: dest.department,
+        department: dest.subdepartment || '',
+        subdepartment: '',
+      })
+    }
+  }, [hasBrands, targetBrands, dest.brand, dest.department, dest.subdepartment, onUpdate])
 
   // Auto-set department to brand when brand is selected but has no L2 departments
   useEffect(() => {
