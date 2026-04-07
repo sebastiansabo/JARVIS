@@ -63,7 +63,7 @@ import { useAccountingStore, lockedColumns } from '@/stores/accountingStore'
 import { useAuthStore } from '@/stores/authStore'
 import { cn, usePersistedState } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { Invoice, InvoiceFilters } from '@/types/invoices'
+import type { Invoice, InvoiceFilters, Allocation } from '@/types/invoices'
 import { InvoiceLinkedDocs } from '@/components/shared/InvoiceLinkedDocs'
 import { EditInvoiceDialog } from './EditInvoiceDialog'
 // import { SummaryTable } from './SummaryTable'
@@ -1136,6 +1136,43 @@ function InvoiceTable({
 
 /* ──── Invoice Row + Allocation Expansion ──── */
 
+/**
+ * Deduplicate allocations from a per-line invoice: when multiple line items are
+ * merged in the editor, the same allocation (company / brand / department /
+ * subdept / responsible / percent / comment) is replicated per line_item_index
+ * with only the allocation_value differing. Collapse them back into a single
+ * row summing the values — matching the legacy expand/collapse behavior.
+ */
+function dedupeMergedAllocations(allocations: Allocation[]): Allocation[] {
+  const keyFn = (a: Allocation) =>
+    [
+      a.company,
+      a.brand ?? '',
+      a.department,
+      a.subdepartment ?? '',
+      a.responsible ?? '',
+      a.allocation_percent,
+      a.comment ?? '',
+    ].join('|')
+
+  const grouped = new Map<string, Allocation>()
+  const order: string[] = []
+  for (const alloc of allocations) {
+    const key = keyFn(alloc)
+    const existing = grouped.get(key)
+    if (existing) {
+      grouped.set(key, {
+        ...existing,
+        allocation_value: (existing.allocation_value || 0) + (alloc.allocation_value || 0),
+      })
+    } else {
+      grouped.set(key, alloc)
+      order.push(key)
+    }
+  }
+  return order.map((k) => grouped.get(k)!)
+}
+
 const InvoiceRow = memo(function InvoiceRow({
   invoice: inv,
   isSelected,
@@ -1275,10 +1312,13 @@ const InvoiceRow = memo(function InvoiceRow({
               ) : (
                 <>
                   {(() => {
-                    const allRows = inv.allocations!.flatMap(a => [a, ...(a.reinvoice_destinations ?? [])])
+                    const displayAllocations = inv.allocation_mode === 'per_line'
+                      ? dedupeMergedAllocations(inv.allocations!)
+                      : inv.allocations!
+                    const allRows = displayAllocations.flatMap(a => [a, ...(a.reinvoice_destinations ?? [])])
                     const hasBrand = allRows.some(r => !!(r as Record<string, unknown>).brand)
                     const hasSubdept = allRows.some(r => !!(r as Record<string, unknown>).subdepartment)
-                    const hasComment = inv.allocations!.some(a => !!a.comment)
+                    const hasComment = displayAllocations.some(a => !!a.comment)
                     return (
                   <table className="text-xs w-full">
                     <thead>
@@ -1295,9 +1335,9 @@ const InvoiceRow = memo(function InvoiceRow({
                       </tr>
                     </thead>
                     <tbody>
-                      {inv.allocations!.map((alloc, idx) => {
+                      {displayAllocations.map((alloc, idx) => {
                         const hasReinvoice = alloc.reinvoice_destinations?.length > 0
-                        const totalTableRows = inv.allocations!.reduce(
+                        const totalTableRows = displayAllocations.reduce(
                           (sum, a) => sum + 1 + (a.reinvoice_destinations?.length ?? 0), 0
                         )
                         return (
