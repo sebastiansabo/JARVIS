@@ -429,38 +429,73 @@ export function generateMergeComment(groups: LineGroup[], lineItems: LineItem[])
   return `[Merged line items]\n${lines.join('\n')}`
 }
 
-/* ──── Helper: Auto-group line items by campaign prefix ──── */
+/* ──── Auto-group: Meta Ads main campaign templates ──── */
 
 /**
- * Group line items that share a common campaign prefix.
+ * Regex templates that identify Meta Ads "main campaign" prefixes.
  *
- * For invoices like Meta Ads where descriptions follow the pattern
- * "Campaign - AdSet - Ad", this groups items sharing the same
- * "Campaign - AdSet" prefix into a single merged group. Items with
- * fewer than 3 ` - ` separated segments are kept as singletons.
+ * Each template's first capture group must return the canonical main campaign
+ * identifier — the part that is stable across all line items belonging to the
+ * same campaign, ignoring ad-set / ad-name suffixes which may themselves
+ * contain " - " separators (e.g. "BMW X5 50e xDrive Individual - Sky - AHK").
  *
- * Example:
+ * Add new templates here when new Meta Ads naming conventions appear.
+ * Lines that don't match any template stay as singletons (no grouping).
+ */
+const META_CAMPAIGN_TEMPLATES: RegExp[] = [
+  // [TAG] Activity - Modele <model> - <ad name with possible internal dashes>
+  // e.g. "[CA] Leads - Modele BMW - BMW X5 50e xDrive - Sky - AHK"
+  //      → "[CA] Leads - Modele BMW"
+  // e.g. "[CA] Leads - Modele MG HS - MG HS ICE 5 usi Exclusive..."
+  //      → "[CA] Leads - Modele MG HS"
+  /^(\[[A-Z]+\]\s+[^-]+?\s+-\s+Modele\s+[^-]+?)\s+-\s+/,
+
+  // GENERARE COMENZI Q? - <brand> - <ad name>
+  // e.g. "GENERARE COMENZI Q4 - Porsche - Cayenne Coupe"
+  //      → "GENERARE COMENZI Q4 - Porsche"
+  /^(GENERARE\s+COMENZI[^-]*-\s*[^-]+?)\s+-\s+/i,
+]
+
+/**
+ * Extract the canonical Meta Ads main campaign identifier from a line item
+ * description, or null if no template matches.
+ */
+function extractMetaMainCampaign(description: string): string | null {
+  const desc = (description || '').trim()
+  for (const template of META_CAMPAIGN_TEMPLATES) {
+    const match = desc.match(template)
+    if (match && match[1]) return match[1].trim()
+  }
+  return null
+}
+
+/* ──── Helper: Auto-group line items by main campaign ──── */
+
+/**
+ * Group line items that share the same Meta Ads main campaign.
+ *
+ * Only lines whose description matches one of `META_CAMPAIGN_TEMPLATES` are
+ * eligible for grouping; everything else stays as a singleton. This avoids
+ * accidentally merging unrelated lines on non-Meta invoices.
+ *
+ * Example (BMW campaign with mixed-length ad names):
  *   "[CA] Leads - Modele BMW - BMW X4 M40i xDrive"
- *   "[CA] Leads - Modele BMW - BMW X5 50e xDrive"
- *   → grouped under prefix "[CA] Leads - Modele BMW"
+ *   "[CA] Leads - Modele BMW - BMW X5 50e xDrive Individual - Sky - AHK"
+ *   → both grouped under "[CA] Leads - Modele BMW"
  */
 export function autoGroupLineItems(lineItems: { description?: string }[]): LineGroup[] {
-  const SEP = ' - '
-  const prefixToGroupIdx = new Map<string, number>()
+  const campaignToGroupIdx = new Map<string, number>()
   const groups: LineGroup[] = []
 
   lineItems.forEach((item, idx) => {
-    const desc = (item.description || '').trim()
-    const parts = desc.split(SEP)
-
-    if (parts.length >= 3) {
-      const prefix = parts.slice(0, -1).join(SEP)
-      const existingGroupIdx = prefixToGroupIdx.get(prefix)
-      if (existingGroupIdx != null) {
-        groups[existingGroupIdx] = [...groups[existingGroupIdx], idx]
+    const campaign = extractMetaMainCampaign(item.description || '')
+    if (campaign) {
+      const existingIdx = campaignToGroupIdx.get(campaign)
+      if (existingIdx != null) {
+        groups[existingIdx] = [...groups[existingIdx], idx]
         return
       }
-      prefixToGroupIdx.set(prefix, groups.length)
+      campaignToGroupIdx.set(campaign, groups.length)
     }
     groups.push([idx])
   })
