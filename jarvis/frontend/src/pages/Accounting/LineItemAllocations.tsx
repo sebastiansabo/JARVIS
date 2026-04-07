@@ -428,3 +428,42 @@ export function generateMergeComment(groups: LineGroup[], lineItems: LineItem[])
   })
   return `[Merged line items]\n${lines.join('\n')}`
 }
+
+/* ──── Helper: Auto-group line items by campaign prefix ──── */
+
+/**
+ * Group line items that share a common campaign prefix.
+ *
+ * For invoices like Meta Ads where descriptions follow the pattern
+ * "Campaign - AdSet - Ad", this groups items sharing the same
+ * "Campaign - AdSet" prefix into a single merged group. Items with
+ * fewer than 3 ` - ` separated segments are kept as singletons.
+ *
+ * Example:
+ *   "[CA] Leads - Modele BMW - BMW X4 M40i xDrive"
+ *   "[CA] Leads - Modele BMW - BMW X5 50e xDrive"
+ *   → grouped under prefix "[CA] Leads - Modele BMW"
+ */
+export function autoGroupLineItems(lineItems: { description?: string }[]): LineGroup[] {
+  const SEP = ' - '
+  const prefixToGroupIdx = new Map<string, number>()
+  const groups: LineGroup[] = []
+
+  lineItems.forEach((item, idx) => {
+    const desc = (item.description || '').trim()
+    const parts = desc.split(SEP)
+
+    if (parts.length >= 3) {
+      const prefix = parts.slice(0, -1).join(SEP)
+      const existingGroupIdx = prefixToGroupIdx.get(prefix)
+      if (existingGroupIdx != null) {
+        groups[existingGroupIdx] = [...groups[existingGroupIdx], idx]
+        return
+      }
+      prefixToGroupIdx.set(prefix, groups.length)
+    }
+    groups.push([idx])
+  })
+
+  return groups
+}

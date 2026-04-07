@@ -16,7 +16,7 @@ import { TagPicker } from '@/components/shared/TagPicker'
 import { toast } from 'sonner'
 import type { Invoice } from '@/types/invoices'
 import { AllocationEditor, type AllocationEditorRef, type AllocationRow, allocationsToRows, rowsToApiPayload } from './AllocationEditor'
-import { LineItemAllocations } from './LineItemAllocations'
+import { LineItemAllocations, autoGroupLineItems } from './LineItemAllocations'
 import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
 
 interface SelectOption {
@@ -104,9 +104,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
   const [lineAllocations, setLineAllocations] = useState<Map<number, AllocationRow[]>>(() =>
     isPerLine ? buildInitialLineAllocations(invoice, effectiveValue) : new Map(),
   )
-  const [lineGroups, setLineGroups] = useState(() =>
-    lineItems.map((_: unknown, i: number) => [i]),
-  )
+  const [lineGroups, setLineGroups] = useState(() => autoGroupLineItems(lineItems))
 
   // Per-line mode needs company and brands
   const perLineCompany = isPerLine ? (invoice.allocations?.[0]?.company ?? '') : ''
