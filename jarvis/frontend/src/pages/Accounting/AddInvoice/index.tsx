@@ -33,7 +33,7 @@ import { useFormValidation } from '@/hooks/useFormValidation'
 import { FieldError } from '@/components/shared/FieldError'
 import type { ParseResult, SubmitInvoiceInput, DeptSuggestion } from '@/types/invoices'
 import { type AllocationRow, newRow, AllocationRowComponent } from '../AllocationEditor'
-import { LineItemAllocations, generateMergeComment, type LineGroup } from '../LineItemAllocations'
+import { LineItemAllocations, generateMergeComment, autoGroupLineItems, type LineGroup } from '../LineItemAllocations'
 
 /* ──── Main Component ──── */
 
@@ -220,7 +220,7 @@ export default function AddInvoice() {
         if (d.auto_detected_template) setTemplateName(d.auto_detected_template)
         if (d.line_items?.length) {
           setLineItems(d.line_items)
-          setLineGroups(d.line_items.map((_: unknown, i: number) => [i]))
+          setLineGroups(autoGroupLineItems(d.line_items))
           setLineAllocations(new Map())
         } else {
           setLineItems([])
