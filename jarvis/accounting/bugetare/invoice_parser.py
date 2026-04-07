@@ -358,12 +358,86 @@ IMPORTANT:
         return {}
 
 
+def _extract_meta_line_items_via_regex(file_path: str) -> list[dict]:
+    """
+    Hybrid fast-path: extract Meta Ads line items via regex on PDF text.
+
+    The legacy bulk processor's `parse_meta_invoice` already knows how to
+    distinguish *main campaign headers* (followed by a date range + RON value)
+    from *ad-set sub-items* (followed by an "Impressions" count). The regex
+    naturally returns only main campaigns, which is exactly the level the
+    user wants displayed in Cost Distribution.
+
+    Returns a list[dict] in the standard line_items format, or [] if the
+    file is not a Meta invoice or text extraction failed.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext != '.pdf':
+        return []
+
+    try:
+        # Local import to avoid circular dependency at module load time
+        from jarvis.accounting.bugetare.bulk_processor import (
+            extract_text_from_pdf,
+            parse_meta_invoice,
+        )
+    except Exception:
+        return []
+
+    try:
+        text = extract_text_from_pdf(file_path)
+    except Exception:
+        return []
+
+    if not text:
+        return []
+
+    # Cheap supplier sniff — only run the Meta regex on Meta invoices.
+    meta_markers = ('Meta Platforms', 'Facebook', 'IE9692928F', 'Campanii')
+    if not any(marker in text for marker in meta_markers):
+        return []
+
+    try:
+        result = parse_meta_invoice(text)
+    except Exception:
+        return []
+
+    items = result.get('items') or {}
+    if not items:
+        return []
+
+    return [
+        {
+            'description': name,
+            'quantity': 1,
+            'unit_price': float(value),
+            'amount': float(value),
+            'vat_rate': None,
+        }
+        for name, value in items.items()
+    ]
+
+
 def extract_line_items_with_ai(file_path: str, api_key: Optional[str] = None) -> list[dict]:
     """
-    Extract line items from an invoice using AI vision.
-    Targeted extraction — only asks for line_items, not full invoice data.
-    Used as a supplement when template-based parsing produces no line items.
+    Extract line items from an invoice.
+
+    Hybrid strategy:
+      1. For Meta Ads PDFs, try the legacy regex parser first
+         (`parse_meta_invoice`). It correctly returns only main-campaign
+         headers because sub-items (ad sets / ads) don't have a date range.
+      2. If the regex returns nothing (non-Meta invoice or text extraction
+         failed), fall back to AI vision (Claude Sonnet on PDF images).
+
+    This avoids the AI's tendency to flatten campaign + ad-set + ad into
+    concatenated descriptions like "Campaign - AdSet - Ad - More Dashes".
     """
+    # Step 1: regex fast-path for Meta invoices
+    regex_items = _extract_meta_line_items_via_regex(file_path)
+    if regex_items:
+        return regex_items
+
+    # Step 2: AI vision fallback
     if api_key is None:
         api_key = os.environ.get('ANTHROPIC_API_KEY')
 
