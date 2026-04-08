@@ -84,11 +84,19 @@ export interface MktBudgetLine {
   period_end: string | null
   status: string
   notes: string | null
+  metadata?: MktBudgetLineMetadata | null
   created_at: string
   updated_at: string | null
   // Computed
   computed_spent?: number
   credit_amount?: number
+}
+
+export interface MktBudgetLineMetadata {
+  source?: 'event' | string
+  event_id?: number
+  event_name?: string
+  [key: string]: unknown
 }
 
 export interface MktBudgetTransaction {

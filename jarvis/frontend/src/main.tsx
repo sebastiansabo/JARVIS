@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { toast } from 'sonner'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { isChunkLoadError, tryChunkReload, resetChunkReloadAttempts } from '@/lib/chunkReload'
 import './index.css'
 
 function extractErrorMessage(error: unknown): string {
@@ -54,28 +55,24 @@ const queryClient = new QueryClient({
 // Keep-alive ping every 10 minutes to prevent DO App Platform cold starts
 setInterval(() => { fetch('/health').catch(() => {}) }, 10 * 60 * 1000)
 
-// Chunk-load failure handler — after a deploy, lazy-loaded route chunks get new
-// content-hash filenames. If the user had the app open, React Router navigates
-// without a full reload and tries to fetch the old hash → 404. Detect that and
-// force one reload so the browser picks up the fresh index.html + new chunks.
+// Chunk-load failure handler — after a deploy, lazy-loaded route chunks get
+// new content-hash filenames. If the user had the app open, the still-running
+// JS tries to import the old hash → 404. Detect that and force a cache-busted
+// reload so the browser picks up the fresh index.html + new chunks.
+//
+// React.lazy() rejections that are caught by Suspense boundaries surface here
+// (and also via ErrorBoundary.componentDidCatch). Native dynamic imports that
+// aren't wrapped in Suspense end up here as unhandledrejection events.
 window.addEventListener('unhandledrejection', (event) => {
-  const err = event.reason
-  if (
-    err instanceof TypeError && (
-      err.message.includes('Importing a module script failed') ||
-      err.message.includes('Failed to fetch') ||
-      err.message.includes('dynamically imported module') ||
-      err.message.includes('Unable to preload CSS')
-    )
-  ) {
-    const key = 'chunk_reload_at'
-    const last = sessionStorage.getItem(key)
-    const now = Date.now()
-    if (!last || now - parseInt(last) > 15_000) {
-      sessionStorage.setItem(key, String(now))
-      window.location.reload()
-    }
+  if (isChunkLoadError(event.reason)) {
+    tryChunkReload()
   }
+})
+
+// Vite emits this event when a <link rel="modulepreload"> fails to load,
+// which is the earliest signal that the bundle is stale.
+window.addEventListener('vite:preloadError', () => {
+  tryChunkReload()
 })
 
 // Console easter egg
@@ -113,7 +110,7 @@ console.log(
             <div style="font-size:3rem;margin-bottom:1rem">🤖</div>
             <div style="font-size:1.5rem;font-weight:700;margin-bottom:.5rem;background:linear-gradient(135deg,#6366f1,#a855f7,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent">J.A.R.V.I.S.</div>
             <div style="font-size:.95rem;color:#94a3b8;line-height:1.6;margin-bottom:1rem">
-              <b>J</b>ust <b>A</b>nother <b>R</b>eally <b>V</b>ery <b>I</b>ntelligent <b>S</b>ystem<br/>
+              <b>J</b>ust <b>A</b>utoWorld's <b>R</b>eal <b>V</b>ery <b>I</b>ntelligent <b>S</b>ystem<br/>
               <span style="font-size:.8rem;color:#64748b;font-style:italic">...or as Seba calls it: "Seba's Veeeery Intelligent System"</span>
             </div>
             <div style="font-size:.8rem;color:#475569;margin-top:1rem">Crafted with ♥ by Sebastian</div>
@@ -137,3 +134,8 @@ createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </StrictMode>,
 )
+
+// App mounted successfully — clear the chunk-reload attempt counter so the
+// next deploy gets a fresh budget, and strip any `?_v=` cache-buster from
+// the URL.
+resetChunkReloadAttempts()

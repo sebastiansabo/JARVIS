@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn, useDebounce } from '@/lib/utils'
 import {
   Plus, Trash2, DollarSign, Link2, Search, Pencil, Check,
-  ChevronDown, ChevronRight, CalendarDays, ArrowDownLeft, FileText, ExternalLink,
+  ChevronDown, ChevronRight, CalendarDays, ArrowDownLeft, FileText, ExternalLink, Sparkles,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
 import { settingsApi } from '@/api/settings'
@@ -329,27 +329,49 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                 const credits = Number(l.credit_amount) || 0
                 const exec = planned ? Math.max(0, Math.round((net / planned) * 100)) : 0
                 const isExpanded = expandedLineId === l.id
+                const isEventLine = l.metadata?.source === 'event'
                 return (
                   <>
                     <TableRow
                       key={l.id}
-                      className="cursor-pointer hover:bg-muted/50"
+                      className={cn('cursor-pointer hover:bg-muted/50', isEventLine && 'bg-violet-50/40 dark:bg-violet-950/10')}
                       onClick={() => setExpandedLineId(isExpanded ? null : l.id)}
                     >
                       <TableCell className="w-6 px-2">
                         {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-xs">{(l.channel ?? '').replace('_', ' ')}</Badge>
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="outline" className="text-xs">{(l.channel ?? '').replace('_', ' ')}</Badge>
+                          {isEventLine && (
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px] gap-1 border-violet-300 bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
+                              title="Auto-generated from a linked HR event"
+                            >
+                              <Sparkles className="h-2.5 w-2.5" />
+                              Event
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-sm max-w-[200px] truncate">{l.description || '—'}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{l.period_type}</TableCell>
                       <TableCell className="text-right text-sm tabular-nums">
-                        <InlineEditCell
-                          value={Number(l.planned_amount) || 0}
-                          currency={currency}
-                          onSave={(v) => updateLineMut.mutate({ lineId: l.id, data: { planned_amount: v } })}
-                        />
+                        {isEventLine ? (
+                          <span
+                            className="text-muted-foreground"
+                            title="Auto-synced from the linked HR event"
+                          >
+                            {fmt(Number(l.planned_amount) || 0, currency)}
+                          </span>
+                        ) : (
+                          <InlineEditCell
+                            value={Number(l.planned_amount) || 0}
+                            currency={currency}
+                            onSave={(v) => updateLineMut.mutate({ lineId: l.id, data: { planned_amount: v } })}
+                          />
+                        )}
                       </TableCell>
                       <TableCell className="text-right text-sm tabular-nums">
                         <InlineEditCell
@@ -383,11 +405,20 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                             onClick={() => { openLinkDialog(l.id) }}>
                             <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Link Event"
-                            onClick={() => { openEventDialog(l.id) }}>
-                            <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete" onClick={() => deleteMut.mutate(l.id)}>
+                          {!isEventLine && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7" title="Link Event"
+                              onClick={() => { openEventDialog(l.id) }}>
+                              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            title={isEventLine ? 'Unlink the event in the Events tab to remove this line' : 'Delete'}
+                            disabled={isEventLine}
+                            onClick={() => { if (!isEventLine) deleteMut.mutate(l.id) }}
+                          >
                             <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
                           </Button>
                         </div>

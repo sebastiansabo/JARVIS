@@ -24,6 +24,16 @@ class ProjectEventRepository(BaseRepository):
             ORDER BY e.start_date DESC
         ''', (project_id,))
 
+    def get_event_info(self, event_id):
+        """Fetch basic info + computed cost (SUM of bonus_net) for an HR event."""
+        return self.query_one('''
+            SELECT e.id, e.name, e.start_date, e.end_date, e.company,
+                   COALESCE((SELECT SUM(eb.bonus_net) FROM hr.event_bonuses eb
+                             WHERE eb.event_id = e.id), 0) AS event_cost
+            FROM hr.events e
+            WHERE e.id = %s
+        ''', (event_id,))
+
     def link(self, project_id, event_id, linked_by, notes=None):
         """Link an HR event to a project. Returns link ID or None if already linked."""
         # ON CONFLICT DO NOTHING may return no row

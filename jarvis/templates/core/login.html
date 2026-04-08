@@ -251,11 +251,12 @@
     <div class="login-container">
         <div class="login-card">
             <div class="login-header">
-                <div class="logo" id="loginLogo" title="Just Another Really Very Intelligent System — by Seba" style="cursor:default">
+                <div class="logo" id="loginLogo" title="Just AutoWorld's Real Very Intelligent System — crafted by Seba" style="cursor:pointer">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
                     <span id="logoLabel">JARVIS</span>
                 </div>
-                <p id="loginSubtitle">Sign in to continue</p>
+                <p id="loginSubtitle">Just AutoWorld's Real Very Intelligent System</p>
+                <p id="loginCredit" style="font-size:.7rem;color:var(--muted-foreground);margin-top:.25rem;opacity:.7;font-style:italic">crafted by Seba</p>
             </div>
 
             {% with messages = get_flashed_messages(with_categories=true) %}
@@ -301,7 +302,33 @@
         document.getElementById('loginForm').addEventListener('submit', function() {
             document.getElementById('loadingOverlay').classList.add('show');
         });
-        // Easter egg: double-click logo
+
+        // Easter egg 1: single-click logo cycles cheeky Seba quotes in the subtitle
+        var sebaQuotes = [
+            "Just AutoWorld's Real Very Intelligent System",
+            "Seba said \"one more feature\" — 49 modules ago",
+            "Built by Seba. Blame Seba. Thank Seba.",
+            "Powered by Seba's refusal to sleep",
+            "If it works, Seba wrote it at 3 AM",
+            "Seba: \"scope creep is a feature, not a bug\"",
+            "Seba's commit messages get unhinged past midnight",
+            "Seba once deployed to staging 14 times before breakfast",
+            "Seba's idea of MVP has 885 tests and an AI co-pilot",
+            "Brought to you by Seba and 400 cups of coffee"
+        ];
+        var quoteIdx = 0;
+        document.getElementById('loginLogo').addEventListener('click', function() {
+            quoteIdx = (quoteIdx + 1) % sebaQuotes.length;
+            var sub = document.getElementById('loginSubtitle');
+            sub.style.opacity = '0';
+            setTimeout(function() {
+                sub.textContent = sebaQuotes[quoteIdx];
+                sub.style.transition = 'opacity 0.3s';
+                sub.style.opacity = '1';
+            }, 150);
+        });
+
+        // Easter egg 2: double-click logo = full Seba takeover
         document.getElementById('loginLogo').addEventListener('dblclick', function() {
             var label = document.getElementById('logoLabel');
             var subtitle = document.getElementById('loginSubtitle');
@@ -309,15 +336,19 @@
             label.style.background = 'linear-gradient(135deg, #6366f1, #a855f7, #ec4899)';
             label.style.webkitBackgroundClip = 'text';
             label.style.webkitTextFillColor = 'transparent';
-            subtitle.textContent = 'Seba\'s Very Intelligent System';
+            subtitle.textContent = "Seba's Very Intelligent System (don't tell the others)";
             setTimeout(function() {
                 label.textContent = 'JARVIS';
                 label.style.background = '';
                 label.style.webkitBackgroundClip = '';
                 label.style.webkitTextFillColor = '';
-                subtitle.textContent = 'Sign in to continue';
+                subtitle.textContent = "Just AutoWorld's Real Very Intelligent System";
             }, 4000);
         });
+
+        // Easter egg 3: console greeting from the creator
+        console.log('%cJARVIS — Just AutoWorld\'s Real Very Intelligent System', 'color:#6366f1;font-weight:700;font-size:14px');
+        console.log('%cCrafted with \u2764 (and zero sleep) by Seba', 'color:#94a3b8;font-style:italic;font-size:11px');
     </script>
 </body>
 </html>

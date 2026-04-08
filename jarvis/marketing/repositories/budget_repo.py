@@ -33,11 +33,14 @@ class BudgetRepository(BaseRepository):
 
     def create_line(self, project_id, channel, **kwargs):
         def _work(cursor):
+            import json
+            metadata = kwargs.get('metadata')
+            metadata_json = json.dumps(metadata) if metadata else '{}'
             cursor.execute('''
                 INSERT INTO mkt_budget_lines
                     (project_id, channel, description, department_structure_id, agency_name,
-                     planned_amount, currency, period_type, period_start, period_end, notes)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     planned_amount, currency, period_type, period_start, period_end, notes, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
                 RETURNING id
             ''', (
                 project_id, channel, kwargs.get('description'),
@@ -45,11 +48,64 @@ class BudgetRepository(BaseRepository):
                 kwargs.get('planned_amount', 0), kwargs.get('currency', 'RON'),
                 kwargs.get('period_type', 'campaign'),
                 kwargs.get('period_start'), kwargs.get('period_end'),
-                kwargs.get('notes'),
+                kwargs.get('notes'), metadata_json,
             ))
             line_id = cursor.fetchone()['id']
             self._recalc_project_budget(cursor, project_id)
             return line_id
+        return self.execute_many(_work)
+
+    # ---- Event-linked auto lines ----
+
+    def create_for_event(self, project_id, event_id, event_name, event_cost, currency='RON'):
+        """Auto-create a budget line for a linked HR event. Idempotent."""
+        def _work(cursor):
+            import json
+            # Skip if an auto-line for this event already exists
+            cursor.execute('''
+                SELECT id FROM mkt_budget_lines
+                WHERE project_id = %s
+                  AND metadata->>'source' = 'event'
+                  AND metadata->>'event_id' = %s
+                LIMIT 1
+            ''', (project_id, str(event_id)))
+            existing = cursor.fetchone()
+            if existing:
+                return existing['id']
+            metadata = json.dumps({
+                'source': 'event',
+                'event_id': int(event_id),
+                'event_name': event_name,
+            })
+            cursor.execute('''
+                INSERT INTO mkt_budget_lines
+                    (project_id, channel, description, planned_amount, currency,
+                     period_type, status, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                RETURNING id
+            ''', (
+                project_id, 'events', f'Event: {event_name}',
+                event_cost or 0, currency, 'campaign', 'active', metadata,
+            ))
+            line_id = cursor.fetchone()['id']
+            self._recalc_project_budget(cursor, project_id)
+            return line_id
+        return self.execute_many(_work)
+
+    def delete_for_event(self, project_id, event_id):
+        """Delete the auto-generated budget line for an unlinked event. Returns True if deleted."""
+        def _work(cursor):
+            cursor.execute('''
+                DELETE FROM mkt_budget_lines
+                WHERE project_id = %s
+                  AND metadata->>'source' = 'event'
+                  AND metadata->>'event_id' = %s
+                RETURNING id
+            ''', (project_id, str(event_id)))
+            deleted = cursor.fetchone() is not None
+            if deleted:
+                self._recalc_project_budget(cursor, project_id)
+            return deleted
         return self.execute_many(_work)
 
     def update_line(self, line_id, **kwargs):

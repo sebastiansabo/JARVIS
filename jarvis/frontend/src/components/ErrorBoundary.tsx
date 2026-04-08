@@ -1,5 +1,6 @@
 import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
+import { isChunkLoadError, tryChunkReload } from '@/lib/chunkReload'
 
 interface Props {
   children: ReactNode
@@ -22,22 +23,11 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('ErrorBoundary caught:', error, info.componentStack)
-    // Auto-reload on chunk-load failures (stale cache after deploy)
-    if (
-      error instanceof TypeError && (
-        error.message.includes('Importing a module script failed') ||
-        error.message.includes('Failed to fetch') ||
-        error.message.includes('dynamically imported module') ||
-        error.message.includes('Unable to preload CSS')
-      )
-    ) {
-      const key = 'chunk_reload_at'
-      const last = sessionStorage.getItem(key)
-      const now = Date.now()
-      if (!last || now - parseInt(last) > 15_000) {
-        sessionStorage.setItem(key, String(now))
-        window.location.reload()
-      }
+    // Auto-reload on chunk-load failures (stale bundle after deploy).
+    // tryChunkReload bumps an attempt counter and skips reloading if we've
+    // already retried too many times — falling through to the error UI.
+    if (isChunkLoadError(error)) {
+      tryChunkReload()
     }
   }
 

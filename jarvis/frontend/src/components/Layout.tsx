@@ -106,7 +106,12 @@ export default function Layout() {
                 </Button>
               </SheetTrigger>
             </Sheet>
-            <span className="ml-2 text-lg font-semibold">JARVIS</span>
+            <span
+              className="ml-2 text-lg font-semibold"
+              title="Just AutoWorld's Real Very Intelligent System — crafted by Seba"
+            >
+              JARVIS
+            </span>
           </div>
           <NotificationBell />
         </header>
