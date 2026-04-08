@@ -61,6 +61,7 @@ import type { SincronSyncRun } from '@/api/sincron'
 import type { BioStarSyncRun } from '@/types/biostar'
 import type { CompanyConnection } from '@/types/efactura'
 import { FetchMessagesDialog } from './FetchMessagesDialog'
+import { UnifiedEmployeeMappingSection } from './UnifiedEmployeeMappingSection'
 import { api } from '@/api/client'
 import { toast } from 'sonner'
 
@@ -1777,6 +1778,8 @@ function AutovitSection() {
 export default function ConnectorsTab() {
   return (
     <div className="space-y-8">
+      <UnifiedEmployeeMappingSection />
+      <hr className="border-border" />
       <EFacturaSection />
       <hr className="border-border" />
       <BioStarConnectionSection />
