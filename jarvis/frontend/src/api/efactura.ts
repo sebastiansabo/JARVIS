@@ -90,7 +90,10 @@ export const efacturaApi = {
           : {}),
       },
     ),
-  updateOverrides: (invoiceId: number, overrides: Record<string, string | null>) =>
+  updateOverrides: (
+    invoiceId: number,
+    overrides: Record<string, string | null> & { observer_user_ids?: number[] },
+  ) =>
     api.put<{ success: boolean }>(`${BASE}/invoices/${invoiceId}/overrides`, overrides),
   bulkUpdateOverrides: (invoiceIds: number[], overrides: Record<string, string | null>) =>
     api.put<{ success: boolean; updated_count: number }>(`${BASE}/invoices/bulk-overrides`, {

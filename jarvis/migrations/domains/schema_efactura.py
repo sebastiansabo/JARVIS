@@ -116,6 +116,12 @@ def create_schema_efactura(conn, cursor):
             ) THEN
                 ALTER TABLE efactura_invoices ADD COLUMN subdepartment_override_2 VARCHAR(255);
             END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'efactura_invoices' AND column_name = 'observer_user_ids'
+            ) THEN
+                ALTER TABLE efactura_invoices ADD COLUMN observer_user_ids INTEGER[];
+            END IF;
         END $$;
     ''')
 

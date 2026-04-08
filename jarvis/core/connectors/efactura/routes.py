@@ -1015,6 +1015,13 @@ def update_invoice_overrides(invoice_id):
         department_override_2 = data.get('department_override_2') or None
         subdepartment_override_2 = data.get('subdepartment_override_2') or None
 
+        # Observers are only updated when the key is explicitly present in the payload
+        if 'observer_user_ids' in data:
+            raw_observers = data.get('observer_user_ids')
+            observer_user_ids = list(raw_observers) if isinstance(raw_observers, list) else []
+        else:
+            observer_user_ids = None
+
         success = efactura_service.invoice_repo.update_overrides(
             invoice_id=invoice_id,
             type_override=type_override,
@@ -1022,6 +1029,7 @@ def update_invoice_overrides(invoice_id):
             subdepartment_override=subdepartment_override,
             department_override_2=department_override_2,
             subdepartment_override_2=subdepartment_override_2,
+            observer_user_ids=observer_user_ids,
         )
 
         if success:

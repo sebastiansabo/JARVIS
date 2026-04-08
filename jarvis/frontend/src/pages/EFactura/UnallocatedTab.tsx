@@ -77,6 +77,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
     subdepartment_override_2: '',
   })
   const [splitDept, setSplitDept] = useState(false)
+  const [editObserverIds, setEditObserverIds] = useState<number[]>([])
   const [visibleColumns, setVisibleColumnsRaw] = useState<string[]>(loadColumns)
 
   const setVisibleColumns = (cols: string[]) => {
@@ -221,8 +222,10 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   })
 
   const updateOverridesMut = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Record<string, string | null> }) =>
-      efacturaApi.updateOverrides(id, data),
+    mutationFn: ({ id, data }: {
+      id: number
+      data: Record<string, string | null> & { observer_user_ids?: number[] }
+    }) => efacturaApi.updateOverrides(id, data),
     onSuccess: () => {
       invalidateAll()
       setEditInvoice(null)
@@ -346,7 +349,16 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   }
 
   const openSendDialog = (ids: number[]) => {
-    setSendObserverIds([])
+    // Pre-populate with the union of per-invoice stored observers so users
+    // immediately see what will be attached; they can edit/override here.
+    const prefilled = new Set<number>()
+    for (const inv of displayedInvoices) {
+      if (!ids.includes(inv.id)) continue
+      for (const uid of inv.observer_user_ids ?? []) {
+        prefilled.add(uid)
+      }
+    }
+    setSendObserverIds(Array.from(prefilled))
     setSendDialog({ ids })
   }
 
@@ -367,12 +379,13 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
       subdepartment_override_2: inv.subdepartment_override_2 ?? '',
     })
     setSplitDept(!!(inv.department_override_2 || inv.subdepartment_override_2))
+    setEditObserverIds(inv.observer_user_ids ?? [])
     setEditInvoice(inv)
   }
 
   const saveOverrides = () => {
     if (!editInvoice) return
-    const data: Record<string, string | null> = {}
+    const data: Record<string, string | null> & { observer_user_ids?: number[] } = {}
     for (const [k, v] of Object.entries(overrides)) {
       data[k] = v || null
     }
@@ -381,6 +394,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
       data.department_override_2 = null
       data.subdepartment_override_2 = null
     }
+    data.observer_user_ids = editObserverIds
     updateOverridesMut.mutate({ id: editInvoice.id, data })
   }
 
@@ -1153,6 +1167,19 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                   )}
                 </>
               )}
+
+              {/* Observers */}
+              <div className="space-y-1">
+                <Label className="text-xs">Observers</Label>
+                <ObserverPicker
+                  value={editObserverIds}
+                  onChange={setEditObserverIds}
+                  placeholder="Add view-only observers…"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Applied when the invoice is sent to Accounting
+                </p>
+              </div>
             </div>
           )}
           <DialogFooter>

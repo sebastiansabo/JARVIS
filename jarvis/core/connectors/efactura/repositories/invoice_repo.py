@@ -463,20 +463,52 @@ class InvoiceRepository(BaseRepository):
         subdepartment_override: Optional[str] = None,
         department_override_2: Optional[str] = None,
         subdepartment_override_2: Optional[str] = None,
+        observer_user_ids: Optional[List[int]] = None,
     ) -> bool:
-        """Update invoice-level overrides for Type, Department, and Subdepartment."""
+        """Update invoice-level overrides for Type, Department, Subdepartment, and Observers.
+
+        Passing observer_user_ids=None leaves the existing value untouched.
+        Passing an empty list clears stored observers.
+        """
         try:
-            self.execute("""
-                UPDATE efactura_invoices
-                SET type_override = %s,
-                    department_override = %s,
-                    subdepartment_override = %s,
-                    department_override_2 = %s,
-                    subdepartment_override_2 = %s,
-                    updated_at = NOW()
-                WHERE id = %s
-            """, (type_override, department_override, subdepartment_override,
-                  department_override_2, subdepartment_override_2, invoice_id))
+            if observer_user_ids is None:
+                self.execute("""
+                    UPDATE efactura_invoices
+                    SET type_override = %s,
+                        department_override = %s,
+                        subdepartment_override = %s,
+                        department_override_2 = %s,
+                        subdepartment_override_2 = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                """, (type_override, department_override, subdepartment_override,
+                      department_override_2, subdepartment_override_2, invoice_id))
+            else:
+                normalized = []
+                seen = set()
+                for raw in observer_user_ids:
+                    try:
+                        uid = int(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if uid in seen:
+                        continue
+                    seen.add(uid)
+                    normalized.append(uid)
+                stored_observers = normalized if normalized else None
+                self.execute("""
+                    UPDATE efactura_invoices
+                    SET type_override = %s,
+                        department_override = %s,
+                        subdepartment_override = %s,
+                        department_override_2 = %s,
+                        subdepartment_override_2 = %s,
+                        observer_user_ids = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                """, (type_override, department_override, subdepartment_override,
+                      department_override_2, subdepartment_override_2,
+                      stored_observers, invoice_id))
             logger.info(
                 f"Invoice overrides updated",
                 extra={
@@ -486,6 +518,7 @@ class InvoiceRepository(BaseRepository):
                     'subdepartment_override': subdepartment_override,
                     'department_override_2': department_override_2,
                     'subdepartment_override_2': subdepartment_override_2,
+                    'observers_updated': observer_user_ids is not None,
                 }
             )
             return True
@@ -722,6 +755,8 @@ class InvoiceRepository(BaseRepository):
                 inv_dict['subdepartment'] = row.get('subdepartment_override') or row.get('mapping_subdepartment')
                 inv_dict['department_override_2'] = row.get('department_override_2')
                 inv_dict['subdepartment_override_2'] = row.get('subdepartment_override_2')
+                raw_observers = row.get('observer_user_ids')
+                inv_dict['observer_user_ids'] = list(raw_observers) if raw_observers else []
                 invoices.append(inv_dict)
 
             return invoices, total, hidden_by_filter
@@ -931,6 +966,8 @@ class InvoiceRepository(BaseRepository):
                 type_names = row.get('type_names') or []
                 inv_dict['type_names'] = type_names
                 inv_dict['type_name'] = ', '.join(type_names) if type_names else None
+                raw_observers = row.get('observer_user_ids')
+                inv_dict['observer_user_ids'] = list(raw_observers) if raw_observers else []
                 invoices.append(inv_dict)
 
             return invoices, total
@@ -1273,6 +1310,7 @@ class InvoiceRepository(BaseRepository):
                 i.subdepartment_override,
                 i.department_override_2,
                 i.subdepartment_override_2,
+                i.observer_user_ids,
                 sm.department as mapping_department,
                 sm.subdepartment as mapping_subdepartment,
                 sm.brand as mapping_brand,
@@ -1327,6 +1365,7 @@ class InvoiceRepository(BaseRepository):
                 'subdepartment_override_2': row['subdepartment_override_2'],
                 'brand': row['mapping_brand'],
                 'responsible': row['responsible'],
+                'observer_user_ids': list(row['observer_user_ids']) if row.get('observer_user_ids') else [],
             })
 
         logger.info(
