@@ -447,7 +447,32 @@ class InvoiceRepository(BaseRepository):
                 invoice = dict_from_row(row)
                 if isinstance(invoice.get('allocations'), str):
                     invoice['allocations'] = json.loads(invoice['allocations'])
+                invoice['observers'] = []
                 invoices.append(invoice)
+
+            # Attach observers in bulk using the same cursor/transaction.
+            # Without this, the list endpoint never returns observers and the
+            # Edit Invoice dialog shows an empty picker after save, making it
+            # look like observers were not persisted.
+            if invoices:
+                invoice_ids = [inv['id'] for inv in invoices]
+                placeholders = ','.join(['%s'] * len(invoice_ids))
+                cursor.execute(f'''
+                    SELECT io.invoice_id, io.user_id, u.name
+                    FROM invoice_observers io
+                    JOIN users u ON u.id = io.user_id
+                    WHERE io.invoice_id IN ({placeholders})
+                    ORDER BY u.name
+                ''', invoice_ids)
+                observer_map = {}
+                for obs_row in cursor.fetchall():
+                    obs = dict_from_row(obs_row)
+                    observer_map.setdefault(obs['invoice_id'], []).append({
+                        'user_id': obs['user_id'],
+                        'name': obs['name'],
+                    })
+                for inv in invoices:
+                    inv['observers'] = observer_map.get(inv['id'], [])
 
             _invoices_cache['data'] = invoices
             _invoices_cache['timestamp'] = time.time()
