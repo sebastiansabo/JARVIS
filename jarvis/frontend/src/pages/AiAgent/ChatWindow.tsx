@@ -93,6 +93,17 @@ export function ChatWindow({ conversationId: selectedConversationId, pendingMess
     "Sebastian treats 'scope creep' as a feature, not a bug. The bilant module proves it.",
     "Seba asked for a simple dashboard. 6 months later we have RAG, AI tools, and an approval engine.",
     "Legend says Sebastian's first commit message was 'init'. His last 300 were 'fix: one more thing'.",
+    "Seba says JARVIS stands for 'Just AutoWorld's Real Very Intelligent System'. The 'R' quietly stands for 'Refactored Again'.",
+    "The 'A' in JARVIS is for AutoWorld. The 'S' is for Seba. Don't tell the others.",
+    "Seba wrote the JARVIS acronym on a napkin. Then refactored the napkin three times.",
+    "Fun fact: Seba once asked for 'a small tweak'. Git tracked it as 47 files changed.",
+    "Seba's debugging process: print statements, coffee, sigh audibly, refactor the universe.",
+    "Sebastian's favorite error message is 'works on my machine'. His second favorite is 'fixed in next deploy'.",
+    "When Seba says 'production-ready', he means 'tested on Seba's laptop at 4 AM'.",
+    "Seba once tried git blame. It just returned his own name 15,000 times.",
+    "The JARVIS changelog is 80% 'fix', 15% 'feat', and 5% Seba arguing with himself in Romanian.",
+    "Seba's TODO list is version-controlled. It has 6,847 open items and 3 closed.",
+    "Rumor: Seba writes unit tests just to have someone agree with him.",
   ]
   const idleNudges = [
     "Still thinking? Seba would've added 3 more modules by now.",
@@ -100,6 +111,9 @@ export function ChatWindow({ conversationId: selectedConversationId, pendingMess
     "JARVIS is getting lonely. Even Seba talks to me more, and he built me.",
     "Writer's block? Seba once refactored 20 phases fueled entirely by spite.",
     "Take your time. Seba can't — he's already planning the next feature.",
+    "Seba just pushed 4 commits while you were typing that first word.",
+    "Meanwhile, Seba is merging a PR titled 'final fix (real this time)'.",
+    "Tick-tock. Seba just wrote a migration, a test, and a new module.",
   ]
 
   // Reset idle timer on every keystroke in the input
@@ -125,7 +139,7 @@ export function ChatWindow({ conversationId: selectedConversationId, pendingMess
       setEasterEggMsg({
         id: -42,
         role: 'assistant',
-        content: '🥚 **You found the Seba file.**\n\n> *"I didn\'t over-engineer it. The requirements evolved. Aggressively. In my head."*\n> — Sebastian, probably\n\n**Classified dossier on the creator:**\n\n- Built this entire system from scratch, then complained it wasn\'t ambitious enough\n- His definition of "quick fix" involves 3 new database tables and a migration script\n- Told Claude to "keep it simple." Proceeded to request AI tools, RAG, approval workflows, and a bilant module\n- Sleeps in dark mode\n- Once deployed 14 features in a week. His commit messages got progressively unhinged\n- Named this system JARVIS and genuinely expected nobody to roast him for it\n- The 7-click logo easter egg? That was his first feature request. Before authentication.\n\n**Current status:** Probably planning the next module right now while pretending to review this one.\n\n*This message is not stored. Seba\'s reputation, however, is permanent.*',
+        content: '🥚 **You found the Seba file.**\n\n> *"I didn\'t over-engineer it. The requirements evolved. Aggressively. In my head."*\n> — Sebastian, probably\n\n**JARVIS** = **J**ust **A**utoWorld\'s **R**eal **V**ery **I**ntelligent **S**ystem\n*(unofficially: Seba\'s Very Intelligent System — don\'t tell the others)*\n\n**Classified dossier on the creator:**\n\n- Built this entire system from scratch, then complained it wasn\'t ambitious enough\n- His definition of "quick fix" involves 3 new database tables and a migration script\n- Told Claude to "keep it simple." Proceeded to request AI tools, RAG, approval workflows, and a bilant module\n- Sleeps in dark mode\n- Once deployed 14 features in a week. His commit messages got progressively unhinged\n- Named this system JARVIS and genuinely expected nobody to roast him for it\n- The 7-click logo easter egg? That was his first feature request. Before authentication.\n- Refactored the JARVIS acronym itself. Twice. This is the third version.\n- Has more open VS Code tabs than AutoWorld has cars in the lot\n\n**Current status:** Probably planning the next module right now while pretending to review this one.\n\n*This message is not stored. Seba\'s reputation, however, is permanent.*',
         input_tokens: 0,
         output_tokens: 0,
         cost: '0',

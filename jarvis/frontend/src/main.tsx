@@ -110,7 +110,7 @@ console.log(
             <div style="font-size:3rem;margin-bottom:1rem">🤖</div>
             <div style="font-size:1.5rem;font-weight:700;margin-bottom:.5rem;background:linear-gradient(135deg,#6366f1,#a855f7,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent">J.A.R.V.I.S.</div>
             <div style="font-size:.95rem;color:#94a3b8;line-height:1.6;margin-bottom:1rem">
-              <b>J</b>ust <b>A</b>nother <b>R</b>eally <b>V</b>ery <b>I</b>ntelligent <b>S</b>ystem<br/>
+              <b>J</b>ust <b>A</b>utoWorld's <b>R</b>eal <b>V</b>ery <b>I</b>ntelligent <b>S</b>ystem<br/>
               <span style="font-size:.8rem;color:#64748b;font-style:italic">...or as Seba calls it: "Seba's Veeeery Intelligent System"</span>
             </div>
             <div style="font-size:.8rem;color:#475569;margin-top:1rem">Crafted with ♥ by Sebastian</div>

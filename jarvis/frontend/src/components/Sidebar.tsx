@@ -419,14 +419,31 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
       >
         {/* Header */}
         <div className={cn('flex h-14 items-center border-b', collapsed ? 'justify-center px-2' : 'justify-between px-4')}>
-          <Link to="/app/dashboard" className="flex items-center gap-2 text-lg font-semibold" onClick={handleLogoClick}>
-            <Bot className="h-5 w-5 shrink-0 text-primary" />
-            {!collapsed && (
-              <span className={logoText !== 'JARVIS' ? 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent transition-all duration-500' : ''}>
-                {logoText}
-              </span>
-            )}
-          </Link>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link to="/app/dashboard" className="flex items-center gap-2 text-lg font-semibold" onClick={handleLogoClick}>
+                <Bot className="h-5 w-5 shrink-0 text-primary" />
+                {!collapsed && (
+                  <span className={logoText !== 'JARVIS' ? 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent transition-all duration-500' : ''}>
+                    {logoText}
+                  </span>
+                )}
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-xs">
+              <div className="text-xs">
+                <div className="font-semibold">
+                  <span className="underline">J</span>ust{' '}
+                  <span className="underline">A</span>utoWorld's{' '}
+                  <span className="underline">R</span>eal{' '}
+                  <span className="underline">V</span>ery{' '}
+                  <span className="underline">I</span>ntelligent{' '}
+                  <span className="underline">S</span>ystem
+                </div>
+                <div className="mt-1 italic opacity-70">crafted by Seba — click 7× for secrets</div>
+              </div>
+            </TooltipContent>
+          </Tooltip>
           {!collapsed && <NotificationBell />}
         </div>
 

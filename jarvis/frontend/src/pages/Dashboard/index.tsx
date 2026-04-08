@@ -98,9 +98,16 @@ export default function Dashboard() {
     "All systems nominal, Creator.",
     "The system you built is running smoothly, Seba.",
     "At your service, as always.",
+    "JARVIS online — Just AutoWorld's Real Very Intelligent System, ready when you are.",
+    "Seba. The 'S' in JARVIS stands for you. (Don't tell the others.)",
+    "Back for more features? I had a feeling.",
+    "Your move, architect. I already compiled.",
+    "Good to see you, Seba. The tests are green. For now.",
   ]
   const [greetingIdx] = useState(() => Math.floor(Math.random() * sebaGreetings.length))
-  const greeting = isSeba ? sebaGreetings[greetingIdx] : `Welcome, ${user?.name}.`
+  const greeting = isSeba
+    ? sebaGreetings[greetingIdx]
+    : `Welcome, ${user?.name}. Just AutoWorld's Real Very Intelligent System at your service.`
 
   // Filter out widgets with no data, then build layouts
   const activeWidgets = useMemo(() => {
