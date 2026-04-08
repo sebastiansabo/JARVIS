@@ -5,7 +5,7 @@ from flask import jsonify, request
 from flask_login import login_required, current_user
 
 from marketing import marketing_bp
-from marketing.repositories import ProjectEventRepository, ActivityRepository
+from marketing.repositories import ProjectEventRepository, ActivityRepository, BudgetRepository
 from marketing.routes.projects import mkt_permission_required
 from core.utils.api_helpers import get_json_or_error, safe_error_response
 
@@ -13,6 +13,7 @@ logger = logging.getLogger('jarvis.marketing.routes.events')
 
 _event_repo = ProjectEventRepository()
 _activity_repo = ActivityRepository()
+_budget_repo = BudgetRepository()
 
 
 # ---- Project ↔ HR Event links ----
@@ -45,7 +46,23 @@ def api_link_event(project_id):
             return jsonify({'success': False, 'error': 'Event already linked'}), 409
         _activity_repo.log(project_id, 'event_linked', actor_id=current_user.id,
                            details={'event_id': event_id})
-        return jsonify({'success': True, 'id': link_id}), 201
+
+        # Auto-create a budget line tracking this event's total cost.
+        budget_line_id = None
+        try:
+            info = _event_repo.get_event_info(event_id)
+            if info:
+                budget_line_id = _budget_repo.create_for_event(
+                    project_id=project_id,
+                    event_id=event_id,
+                    event_name=info.get('name') or f'Event #{event_id}',
+                    event_cost=float(info.get('event_cost') or 0),
+                )
+        except Exception as budget_err:
+            # Don't fail the link if budget-line creation hits an edge case.
+            logger.warning('Auto budget line for event %s failed: %s', event_id, budget_err)
+
+        return jsonify({'success': True, 'id': link_id, 'budget_line_id': budget_line_id}), 201
     except Exception as e:
         return safe_error_response(e)
 
@@ -58,6 +75,11 @@ def api_unlink_event(project_id, event_id):
     if _event_repo.unlink(project_id, event_id):
         _activity_repo.log(project_id, 'event_unlinked', actor_id=current_user.id,
                            details={'event_id': event_id})
+        # Remove the auto-generated budget line for this event (if any).
+        try:
+            _budget_repo.delete_for_event(project_id, event_id)
+        except Exception as budget_err:
+            logger.warning('Auto budget-line cleanup for event %s failed: %s', event_id, budget_err)
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Link not found'}), 404
 

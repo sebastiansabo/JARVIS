@@ -102,6 +102,7 @@ export function EventsTab({ projectId }: { projectId: number }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-project-events', projectId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-budget-lines', projectId] })
       setShowLink(false)
       setEventSearch('')
       setEventResults([])
@@ -113,6 +114,7 @@ export function EventsTab({ projectId }: { projectId: number }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-project-events', projectId] })
       queryClient.invalidateQueries({ queryKey: ['mkt-project', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mkt-budget-lines', projectId] })
       if (expandedRow) setExpandedRow(null)
     },
   })
