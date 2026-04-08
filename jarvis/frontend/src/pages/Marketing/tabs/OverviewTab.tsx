@@ -104,16 +104,41 @@ function BudgetDonutChart({ lines, currency }: { lines: { channel: string; plann
           <span>Execution by Channel</span>
         </div>
         {slices.map((s, i) => {
-          const exec = s.planned > 0 ? Math.min(100, Math.max(0, Math.round((s.spent / s.planned) * 100))) : 0
+          const execReal = s.planned > 0 ? Math.max(0, Math.round((s.spent / s.planned) * 100)) : 0
+          // Bar scales up to 120% so overruns are visibly drawn past the planned line at 100/120 = 83.3%.
+          const BAR_MAX = 120
+          const plannedMark = (100 / BAR_MAX) * 100      // = 83.33%
+          const fillPct = Math.min(BAR_MAX, execReal)
+          const fillWidth = (fillPct / BAR_MAX) * 100
+          const over = execReal >= 100
+          const warn = execReal >= 90 && execReal < 100
           return (
             <div key={i} className="flex items-center gap-2">
               <span className="text-[10px] w-20 truncate text-muted-foreground">{s.channel.replace('_', ' ')}</span>
-              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${exec}%`, backgroundColor: s.color, opacity: 0.8 }} />
+              <div className="relative flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${fillWidth}%`,
+                    backgroundColor: over ? '#ef4444' : warn ? '#f59e0b' : s.color,
+                    opacity: 0.85,
+                  }}
+                />
+                {/* Planned marker at the 100% mark of the bar's scale */}
+                <div
+                  className="absolute top-0 bottom-0 w-px bg-foreground/50"
+                  style={{ left: `${plannedMark}%` }}
+                  title={`Planned: ${fmt(s.planned, currency)}`}
+                />
               </div>
-              <span className="text-[10px] tabular-nums text-muted-foreground w-16 text-right">
-                {fmt(s.spent, currency)}
-                {s.credits > 0 && <span className="text-green-600 ml-1">(-{fmt(s.credits, currency)})</span>}
+              <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 w-28 text-right">
+                {fmt(s.spent, currency)} / {fmt(s.planned, currency)}
+              </span>
+              <span className={cn(
+                'text-[10px] tabular-nums w-10 text-right shrink-0',
+                over ? 'text-red-600 font-semibold' : warn ? 'text-orange-600 font-semibold' : 'text-muted-foreground',
+              )}>
+                {execReal}%
               </span>
             </div>
           )
@@ -151,9 +176,8 @@ export function OverviewTab({ project }: { project: MktProject }) {
   const spent = typeof project.total_spent === 'string' ? parseFloat(project.total_spent as string) : (project.total_spent ?? 0)
   const eventCost = typeof project.event_cost === 'string' ? parseFloat(project.event_cost as string) : (project.event_cost ?? 0)
   const totalCredits = typeof project.total_credits === 'string' ? parseFloat(project.total_credits as string) : (project.total_credits ?? 0)
-  const budgetSpent = spent - eventCost               // net from budget lines (debits - credits)
-  const grossSpent = budgetSpent + totalCredits         // actual outflows (debits only, for breakdown)
-  const netCost = spent                                 // real net = debits - credits + events
+  const netCost = spent                                 // sum of budget line spent_amount (debits - credits)
+  const grossSpent = spent + totalCredits               // actual debit outflows (credits added back)
   const remaining = budget - netCost                    // how much budget is left
   const execution = budget ? Math.max(0, Math.round((netCost / budget) * 100)) : 0  // net cost efficiency
 
