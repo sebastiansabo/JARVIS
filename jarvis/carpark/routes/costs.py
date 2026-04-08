@@ -147,6 +147,206 @@ def cost_totals(vehicle_id):
 
 
 # ═══════════════════════════════════════════════
+# COST LINES — LIST
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/vehicles/<int:vehicle_id>/cost-lines', methods=['GET'])
+@login_required
+@carpark_required
+def list_cost_lines(vehicle_id):
+    """List all cost lines for a vehicle."""
+    _, err = _verify_vehicle_ownership(vehicle_id)
+    if err:
+        return err
+    lines = _service.get_cost_lines(vehicle_id)
+    return jsonify({'cost_lines': _serialize(lines)})
+
+
+# ═══════════════════════════════════════════════
+# COST LINES — CREATE
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/vehicles/<int:vehicle_id>/cost-lines', methods=['POST'])
+@login_required
+@carpark_edit_required
+def create_cost_line(vehicle_id):
+    """Create a cost line. Body: {cost_type, description?, planned_amount?, currency?, notes?}"""
+    _, err = _verify_vehicle_ownership(vehicle_id)
+    if err:
+        return err
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({'error': 'Request body required'}), 400
+    cost_type = data.get('cost_type')
+    if not cost_type or cost_type not in VALID_COST_TYPES:
+        return jsonify({'error': f'Invalid cost_type. Allowed: {", ".join(sorted(VALID_COST_TYPES))}'}), 400
+    try:
+        line_id = _service.create_cost_line(
+            vehicle_id, cost_type,
+            created_by=current_user.id,
+            description=data.get('description'),
+            planned_amount=data.get('planned_amount', 0),
+            currency=data.get('currency', 'EUR'),
+            notes=data.get('notes'),
+        )
+        return jsonify({'success': True, 'id': line_id}), 201
+    except Exception as e:
+        logger.error(f'Cost line creation failed: {e}', exc_info=True)
+        return jsonify({'error': 'Internal error'}), 500
+
+
+# ═══════════════════════════════════════════════
+# COST LINES — UPDATE
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/cost-lines/<int:line_id>', methods=['PUT'])
+@login_required
+@carpark_edit_required
+def update_cost_line(line_id):
+    """Update a cost line."""
+    line = _service.get_cost_line(line_id)
+    if not line:
+        return jsonify({'error': 'Cost line not found'}), 404
+    _, err = _verify_vehicle_ownership(line['vehicle_id'])
+    if err:
+        return err
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({'error': 'Request body required'}), 400
+    if data.get('cost_type') and data['cost_type'] not in VALID_COST_TYPES:
+        return jsonify({'error': 'Invalid cost_type'}), 400
+    _service.update_cost_line(line_id, **{
+        k: v for k, v in data.items()
+        if k in ('cost_type', 'description', 'planned_amount', 'currency', 'notes')
+    })
+    return jsonify({'success': True})
+
+
+# ═══════════════════════════════════════════════
+# COST LINES — DELETE
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/cost-lines/<int:line_id>', methods=['DELETE'])
+@login_required
+@carpark_edit_required
+def delete_cost_line(line_id):
+    """Delete a cost line and all its child costs."""
+    line = _service.get_cost_line(line_id)
+    if not line:
+        return jsonify({'error': 'Cost line not found'}), 404
+    _, err = _verify_vehicle_ownership(line['vehicle_id'])
+    if err:
+        return err
+    if _service.delete_cost_line(line_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'Cost line not found'}), 404
+
+
+# ═══════════════════════════════════════════════
+# COST LINE → COSTS (children)
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/cost-lines/<int:line_id>/costs', methods=['GET'])
+@login_required
+@carpark_required
+def list_line_costs(line_id):
+    """List cost entries under a cost line."""
+    line = _service.get_cost_line(line_id)
+    if not line:
+        return jsonify({'error': 'Cost line not found'}), 404
+    _, err = _verify_vehicle_ownership(line['vehicle_id'])
+    if err:
+        return err
+    costs = _service.get_line_costs(line_id)
+    return jsonify({'costs': _serialize(costs)})
+
+
+@carpark_bp.route('/cost-lines/<int:line_id>/costs', methods=['POST'])
+@login_required
+@carpark_edit_required
+def create_line_cost(line_id):
+    """Create a cost entry under a cost line.
+
+    Body: {amount, date?, description?, supplier_name?, vat_rate?, vat_amount?,
+           invoice_number?, invoice_id?, ...}
+    """
+    line = _service.get_cost_line(line_id)
+    if not line:
+        return jsonify({'error': 'Cost line not found'}), 404
+    _, err = _verify_vehicle_ownership(line['vehicle_id'])
+    if err:
+        return err
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({'error': 'Request body required'}), 400
+    try:
+        cost_id = _service.create_line_cost(line_id, data, created_by=current_user.id)
+        return jsonify({'success': True, 'id': cost_id}), 201
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f'Line cost creation failed: {e}', exc_info=True)
+        return jsonify({'error': 'Internal error'}), 500
+
+
+# ═══════════════════════════════════════════════
+# INDIVIDUAL COST OPERATIONS (under a line)
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/line-costs/<int:cost_id>', methods=['PUT'])
+@login_required
+@carpark_edit_required
+def update_line_cost(cost_id):
+    """Update a cost entry under a cost line."""
+    existing = _service.get_cost(cost_id)
+    if not existing:
+        return jsonify({'error': 'Cost not found'}), 404
+    _, err = _verify_vehicle_ownership(existing['vehicle_id'])
+    if err:
+        return err
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({'error': 'Request body required'}), 400
+    _service.update_line_cost(cost_id, data)
+    return jsonify({'success': True})
+
+
+@carpark_bp.route('/line-costs/<int:cost_id>', methods=['DELETE'])
+@login_required
+@carpark_edit_required
+def delete_line_cost(cost_id):
+    """Delete a cost entry under a cost line."""
+    existing = _service.get_cost(cost_id)
+    if not existing:
+        return jsonify({'error': 'Cost not found'}), 404
+    _, err = _verify_vehicle_ownership(existing['vehicle_id'])
+    if err:
+        return err
+    if _service.delete_line_cost(cost_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'Cost not found'}), 404
+
+
+@carpark_bp.route('/line-costs/<int:cost_id>/link-invoice', methods=['PUT'])
+@login_required
+@carpark_edit_required
+def link_cost_invoice(cost_id):
+    """Link or unlink an invoice to a cost entry. Body: {invoice_id: N|null}"""
+    existing = _service.get_cost(cost_id)
+    if not existing:
+        return jsonify({'error': 'Cost not found'}), 404
+    _, err = _verify_vehicle_ownership(existing['vehicle_id'])
+    if err:
+        return err
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({'error': 'Request body required'}), 400
+    invoice_id = data.get('invoice_id')
+    _service.link_cost_invoice(cost_id, invoice_id)
+    return jsonify({'success': True})
+
+
+# ═══════════════════════════════════════════════
 # REVENUES — LIST
 # ═══════════════════════════════════════════════
 

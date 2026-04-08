@@ -215,6 +215,9 @@ def api_current_user():
                 'can_access_forms':      _access('forms',      'can_access_forms'),
                 'can_access_digest':     _access('digest',     'can_access_digest'),
                 'can_access_field_sales': _access('field_sales', None),
+                'can_access_carpark':    _access('carpark',     'can_access_carpark'),
+                'can_edit_carpark':      current_user.can_edit_carpark,
+                'can_delete_carpark':    current_user.can_delete_carpark,
                 # Legacy / granular flags still read from role
                 'can_access_connectors': current_user.can_access_connectors,
                 'can_access_templates': current_user.can_access_templates,

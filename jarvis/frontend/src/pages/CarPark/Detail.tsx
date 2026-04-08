@@ -8,6 +8,7 @@ import {
   Clock,
   FileText,
   ChevronLeft,
+  ChevronDown,
   ChevronRight,
   Car,
   ImageIcon,
@@ -22,6 +23,9 @@ import {
   MessageSquare,
   Power,
   PowerOff,
+  Link2,
+  Search,
+  Unlink,
 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
@@ -62,6 +66,7 @@ import {
   LISTING_STATUS_LABELS,
   type Vehicle,
   type VehiclePhoto,
+  type VehicleCostLine,
   type VehicleCost,
   type VehicleRevenue,
   type VehicleStatus,
@@ -74,6 +79,9 @@ import {
   type FloorPrice,
   type Promotion,
   type PublishingPlatform,
+  type VehicleLink,
+  type LinkedEntityType,
+  ENTITY_TYPE_LABELS,
 } from '@/types/carpark'
 
 // ── Status colors (shared with catalog) ────────────────────
@@ -165,9 +173,9 @@ export default function CarParkDetail() {
     enabled: !!id,
   })
 
-  const { data: costsData } = useQuery({
-    queryKey: ['carpark', 'costs', id],
-    queryFn: () => carparkApi.getCosts(id),
+  const { data: costLinesData } = useQuery({
+    queryKey: ['carpark', 'cost-lines', id],
+    queryFn: () => carparkApi.getCostLines(id),
     enabled: !!id,
   })
 
@@ -213,10 +221,17 @@ export default function CarParkDetail() {
     enabled: !!id,
   })
 
+  const { data: linksData } = useQuery({
+    queryKey: ['carpark', 'vehicle-links', id],
+    queryFn: () => carparkApi.getVehicleLinks(id),
+    enabled: !!id,
+  })
+
   const vehicle = data?.vehicle
+  const vehicleLinks = linksData?.links ?? []
   const history = historyData?.history ?? []
   const modifications = modsData?.modifications ?? []
-  const costs = costsData?.costs ?? []
+  const costLines = costLinesData?.cost_lines ?? []
   const revenues = revenuesData?.revenues ?? []
   const pricingHistory = pricingHistoryData?.history ?? []
   const vehiclePromos = vehiclePromosData?.promotions ?? []
@@ -339,76 +354,23 @@ export default function CarParkDetail() {
         <span className="text-sm text-muted-foreground">VIN: {vehicle.vin}</span>
       </div>
 
-      {/* Photo Gallery + Info Grid */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
-        {/* Photos */}
-        <PhotoGallery photos={photos} onPhotoClick={setLightboxIndex} />
-
-        {/* Quick Info Card */}
-        <Card className="p-4 space-y-4 h-fit">
-          {vehicle.current_price != null && (
-            <div>
-              <div className="text-xs text-muted-foreground">Price</div>
-              <CurrencyDisplay
-                value={vehicle.current_price}
-                currency={vehicle.price_currency}
-                className="text-2xl font-bold"
-              />
-              {vehicle.list_price != null && vehicle.list_price !== vehicle.current_price && (
-                <div className="text-sm text-muted-foreground line-through">
-                  {new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2 }).format(vehicle.list_price)} {vehicle.price_currency}
-                </div>
-              )}
-            </div>
-          )}
-          <Separator />
-          <dl className="grid grid-cols-2 gap-3">
-            <Field
-              label="Year"
-              value={vehicle.year_of_manufacture}
-            />
-            <Field
-              label="Mileage"
-              value={vehicle.mileage_km > 0 ? formatKm(vehicle.mileage_km) : '-'}
-            />
-            <Field label="Fuel" value={vehicle.fuel_type} />
-            <Field label="Transmission" value={vehicle.transmission} />
-            <Field label="Body" value={vehicle.body_type} />
-            <Field label="Power" value={vehicle.engine_power_hp ? `${vehicle.engine_power_hp} HP` : null} />
-            <Field label="Color" value={vehicle.color_exterior} />
-            <Field label="Doors" value={vehicle.doors} />
-          </dl>
-          <Separator />
-          <dl className="grid grid-cols-2 gap-3">
-            <Field label="Acquisition" value={formatDate(vehicle.acquisition_date)} />
-            <Field label="Days in Stock" value={
-              <span className={vehicle.stationary_days > 90 ? 'text-red-600 font-medium' : ''}>
-                {vehicle.stationary_days}
-              </span>
-            } />
-            <Field label="Location" value={vehicle.location_text ?? vehicle.location_name} />
-            <Field label="Parking" value={vehicle.parking_spot} />
-          </dl>
-        </Card>
-      </div>
-
-      {/* Tabbed sections */}
       {/* Profitability summary */}
       {profitData && <ProfitabilitySummary data={profitData} currency={vehicle.price_currency || 'RON'} />}
 
       <Tabs defaultValue="details">
         <TabsList>
-          <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="details">Detalii</TabsTrigger>
           <TabsTrigger value="pricing">Pricing</TabsTrigger>
-          <TabsTrigger value="costs">Costs ({costs.length})</TabsTrigger>
+          <TabsTrigger value="costs">Costs ({costLines.length})</TabsTrigger>
           <TabsTrigger value="revenues">Revenues ({revenues.length})</TabsTrigger>
           <TabsTrigger value="listings">Listings ({listings.length})</TabsTrigger>
+          <TabsTrigger value="links">Links ({vehicleLinks.length})</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="modifications">Changes</TabsTrigger>
         </TabsList>
 
         <TabsContent value="details" className="mt-4">
-          <DetailsTab vehicle={vehicle} />
+          <DetailsTab vehicle={vehicle} photos={photos} onPhotoClick={setLightboxIndex} />
         </TabsContent>
 
         <TabsContent value="pricing" className="mt-4">
@@ -421,7 +383,7 @@ export default function CarParkDetail() {
         </TabsContent>
 
         <TabsContent value="costs" className="mt-4">
-          <CostsTab vehicleId={id} costs={costs} canEdit={canEdit} currency={vehicle.price_currency || 'RON'} />
+          <CostsTab vehicleId={id} costLines={costLines} canEdit={canEdit} currency={vehicle.price_currency || 'EUR'} />
         </TabsContent>
 
         <TabsContent value="revenues" className="mt-4">
@@ -430,6 +392,10 @@ export default function CarParkDetail() {
 
         <TabsContent value="listings" className="mt-4">
           <ListingsTab vehicleId={id} listings={listings} platforms={platforms} canEdit={canEdit} />
+        </TabsContent>
+
+        <TabsContent value="links" className="mt-4">
+          <LinksTab vehicleId={id} links={vehicleLinks} canEdit={canEdit} />
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
@@ -638,9 +604,56 @@ function PhotoLightbox({
 }
 
 // ── Details Tab ────────────────────────────────────────────
-function DetailsTab({ vehicle: v }: { vehicle: Vehicle }) {
+function DetailsTab({ vehicle: v, photos, onPhotoClick }: { vehicle: Vehicle; photos: VehiclePhoto[]; onPhotoClick: (index: number) => void }) {
   return (
-    <div className="grid gap-6 md:grid-cols-2">
+    <div className="space-y-6">
+      {/* Photo Gallery + Quick Info */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
+        <PhotoGallery photos={photos} onPhotoClick={onPhotoClick} />
+
+        <Card className="p-4 space-y-4 h-fit">
+          {v.current_price != null && (
+            <div>
+              <div className="text-xs text-muted-foreground">Price</div>
+              <CurrencyDisplay
+                value={v.current_price}
+                currency={v.price_currency}
+                className="text-2xl font-bold"
+              />
+              {v.list_price != null && v.list_price !== v.current_price && (
+                <div className="text-sm text-muted-foreground line-through">
+                  {new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2 }).format(v.list_price)} {v.price_currency}
+                </div>
+              )}
+            </div>
+          )}
+          <Separator />
+          <dl className="grid grid-cols-2 gap-3">
+            <Field label="Year" value={v.year_of_manufacture} />
+            <Field label="Mileage" value={v.mileage_km > 0 ? formatKm(v.mileage_km) : '-'} />
+            <Field label="Fuel" value={v.fuel_type} />
+            <Field label="Transmission" value={v.transmission} />
+            <Field label="Body" value={v.body_type} />
+            <Field label="Power" value={v.engine_power_hp ? `${v.engine_power_hp} HP` : null} />
+            <Field label="Color" value={v.color_exterior} />
+            <Field label="Doors" value={v.doors} />
+          </dl>
+          <Separator />
+          <dl className="grid grid-cols-2 gap-3">
+            <Field label="Acquisition" value={formatDate(v.acquisition_date)} />
+            <Field label="Days in Stock" value={
+              <span className={v.stationary_days > 90 ? 'text-red-600 font-medium' : ''}>
+                {v.stationary_days}
+              </span>
+            } />
+            <Field label="Location" value={v.location_text ?? v.location_name} />
+            <Field label="Parking" value={v.parking_spot} />
+          </dl>
+        </Card>
+      </div>
+
+      {/* Detail cards */}
+      <div className="grid gap-6 md:grid-cols-2">
       {/* Identification */}
       <Card className="p-4">
         <h3 className="text-sm font-semibold mb-3">Identification</h3>
@@ -732,6 +745,7 @@ function DetailsTab({ vehicle: v }: { vehicle: Vehicle }) {
           )}
         </Card>
       )}
+      </div>
     </div>
   )
 }
@@ -1197,88 +1211,133 @@ function ProfitabilitySummary({ data, currency }: { data: Profitability; currenc
 
 // ── Costs Tab ─────────────────────────────────────────────
 function CostsTab({
-  vehicleId, costs, canEdit, currency,
+  vehicleId, costLines, canEdit, currency,
 }: {
-  vehicleId: number; costs: VehicleCost[]; canEdit: boolean; currency: string
+  vehicleId: number; costLines: VehicleCostLine[]; canEdit: boolean; currency: string
 }) {
   const queryClient = useQueryClient()
-  const [showForm, setShowForm] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [form, setForm] = useState({
-    cost_type: 'other' as CostType,
-    amount: '',
-    description: '',
-    supplier_name: '',
-    invoice_number: '',
-    date: new Date().toISOString().slice(0, 10),
-    vat_rate: '19',
-    vat_amount: '',
-  })
+  const [expandedLineId, setExpandedLineId] = useState<number | null>(null)
 
-  const resetForm = () => {
-    setForm({
-      cost_type: 'other', amount: '', description: '', supplier_name: '',
-      invoice_number: '', date: new Date().toISOString().slice(0, 10),
-      vat_rate: '19', vat_amount: '',
-    })
-    setEditingId(null)
-    setShowForm(false)
+  // Dialogs
+  const [showAddLine, setShowAddLine] = useState(false)
+  const [addLineForm, setAddLineForm] = useState({ cost_type: 'other' as CostType, description: '', planned_amount: '', currency })
+  const [addCostLineId, setAddCostLineId] = useState<number | null>(null)
+  const [editCostId, setEditCostId] = useState<number | null>(null)
+  const [deleteLineId, setDeleteLineId] = useState<number | null>(null)
+  const [deleteCostId, setDeleteCostId] = useState<number | null>(null)
+  const [costForm, setCostForm] = useState({ amount: '', description: '', supplier_name: '', invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_rate: '19', vat_amount: '' })
+  const [linkInvoiceCostId, setLinkInvoiceCostId] = useState<number | null>(null)
+  const [invoiceSearch, setInvoiceSearch] = useState('')
+  const [editingPlanned, setEditingPlanned] = useState<{ id: number; draft: string } | null>(null)
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['carpark', 'cost-lines', vehicleId] })
+    queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
   }
 
-  const createMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => carparkApi.createCost(vehicleId, data),
+  // Cost line queries for expanded line
+  const { data: lineCostsData } = useQuery({
+    queryKey: ['carpark', 'line-costs', expandedLineId],
+    queryFn: () => carparkApi.getLineCosts(expandedLineId!),
+    enabled: !!expandedLineId,
+  })
+  const lineCosts = lineCostsData?.costs ?? []
+
+  // Invoice search for link dialog
+  const { data: invoiceSearchData } = useQuery({
+    queryKey: ['carpark', 'invoice-search', invoiceSearch],
+    queryFn: () => carparkApi.searchLinkableEntities('invoice', invoiceSearch),
+    enabled: linkInvoiceCostId !== null && invoiceSearch.length >= 1,
+  })
+  const invoiceResults = invoiceSearchData?.results ?? []
+
+  // Mutations
+  const createLineMut = useMutation({
+    mutationFn: (data: Record<string, unknown>) => carparkApi.createCostLine(vehicleId, data),
+    onSuccess: () => { invalidate(); toast.success('Cost line added'); setShowAddLine(false); setAddLineForm({ cost_type: 'other', description: '', planned_amount: '', currency }) },
+    onError: () => toast.error('Failed to create cost line'),
+  })
+
+  const deleteLineMut = useMutation({
+    mutationFn: (id: number) => carparkApi.deleteCostLine(id),
+    onSuccess: () => { invalidate(); toast.success('Cost line deleted'); setDeleteLineId(null); if (expandedLineId === deleteLineId) setExpandedLineId(null) },
+    onError: () => toast.error('Failed to delete cost line'),
+  })
+
+  const updateLineMut = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) => carparkApi.updateCostLine(id, data),
+    onSuccess: () => { invalidate() },
+    onError: () => toast.error('Failed to update cost line'),
+  })
+
+  const createCostMut = useMutation({
+    mutationFn: ({ lineId, data }: { lineId: number; data: Record<string, unknown> }) => carparkApi.createLineCost(lineId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'costs', vehicleId] })
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
+      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
       toast.success('Cost added')
-      resetForm()
+      setAddCostLineId(null)
+      setCostForm({ amount: '', description: '', supplier_name: '', invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_rate: '19', vat_amount: '' })
     },
     onError: () => toast.error('Failed to add cost'),
   })
 
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
-      carparkApi.updateCost(id, data),
+  const updateCostMut = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) => carparkApi.updateLineCost(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'costs', vehicleId] })
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
+      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
       toast.success('Cost updated')
-      resetForm()
+      setEditCostId(null)
     },
     onError: () => toast.error('Failed to update cost'),
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => carparkApi.deleteCost(id),
+  const deleteCostMut = useMutation({
+    mutationFn: (id: number) => carparkApi.deleteLineCost(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'costs', vehicleId] })
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
+      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
       toast.success('Cost deleted')
+      setDeleteCostId(null)
     },
     onError: () => toast.error('Failed to delete cost'),
   })
 
-  const handleSubmit = () => {
-    const payload = {
-      cost_type: form.cost_type,
-      amount: Number(form.amount),
-      description: form.description || null,
-      supplier_name: form.supplier_name || null,
-      invoice_number: form.invoice_number || null,
-      date: form.date,
-      vat_rate: form.vat_rate ? Number(form.vat_rate) : 19,
-      vat_amount: form.vat_amount ? Number(form.vat_amount) : 0,
-    }
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, data: payload })
-    } else {
-      createMutation.mutate(payload)
-    }
+  const linkInvoiceMut = useMutation({
+    mutationFn: ({ costId, invoiceId }: { costId: number; invoiceId: number }) =>
+      carparkApi.linkCostInvoice(costId, invoiceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
+      toast.success('Invoice linked')
+      setLinkInvoiceCostId(null)
+      setInvoiceSearch('')
+    },
+    onError: () => toast.error('Failed to link invoice'),
+  })
+
+  const unlinkInvoiceMut = useMutation({
+    mutationFn: (costId: number) => carparkApi.linkCostInvoice(costId, null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
+      toast.success('Invoice unlinked')
+    },
+  })
+
+  // Summaries
+  const totalPlanned = costLines.reduce((s, l) => s + Number(l.planned_amount || 0), 0)
+  const totalSpent = costLines.reduce((s, l) => s + Number(l.computed_spent ?? l.spent_amount ?? 0), 0)
+
+  const fmt = (v: number) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
+
+  const openAddCost = (lineId: number) => {
+    setCostForm({ amount: '', description: '', supplier_name: '', invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_rate: '19', vat_amount: '' })
+    setEditCostId(null)
+    setAddCostLineId(lineId)
   }
 
-  const startEdit = (c: VehicleCost) => {
-    setForm({
-      cost_type: c.cost_type,
+  const openEditCost = (c: VehicleCost) => {
+    setCostForm({
       amount: String(c.amount),
       description: c.description ?? '',
       supplier_name: c.supplier_name ?? '',
@@ -1287,122 +1346,431 @@ function CostsTab({
       vat_rate: String(c.vat_rate ?? 19),
       vat_amount: String(c.vat_amount ?? 0),
     })
-    setEditingId(c.id)
-    setShowForm(true)
+    setEditCostId(c.id)
+    setAddCostLineId(c.cost_line_id)
   }
 
-  const totalCosts = costs.reduce((s, c) => s + Number(c.amount), 0)
+  const handleCostSubmit = () => {
+    const payload = {
+      amount: Number(costForm.amount),
+      description: costForm.description || null,
+      supplier_name: costForm.supplier_name || null,
+      invoice_number: costForm.invoice_number || null,
+      date: costForm.date,
+      vat_rate: costForm.vat_rate ? Number(costForm.vat_rate) : 19,
+      vat_amount: costForm.vat_amount ? Number(costForm.vat_amount) : 0,
+    }
+    if (editCostId) {
+      updateCostMut.mutate({ id: editCostId, data: payload })
+    } else if (addCostLineId) {
+      createCostMut.mutate({ lineId: addCostLineId, data: payload })
+    }
+  }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          Total: <CurrencyDisplay value={totalCosts} currency={currency} className="font-semibold text-foreground" />
+      {/* Summary Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-4 text-sm">
+          <span className="text-muted-foreground">
+            Planned: <strong className="text-foreground tabular-nums">{fmt(totalPlanned)} {currency}</strong>
+          </span>
+          <span className="text-muted-foreground">
+            Spent: <strong className="text-foreground tabular-nums">{fmt(totalSpent)} {currency}</strong>
+          </span>
+          {totalPlanned > 0 && (
+            <span className="text-muted-foreground">
+              Execution: <strong className={totalSpent > totalPlanned ? 'text-red-500' : 'text-foreground'}>{Math.round((totalSpent / totalPlanned) * 100)}%</strong>
+            </span>
+          )}
         </div>
         {canEdit && (
-          <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowForm(!showForm) }}>
-            <Plus className="h-4 w-4 mr-1" /> Add Cost
+          <Button size="sm" onClick={() => setShowAddLine(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Add Line
           </Button>
         )}
       </div>
 
-      {showForm && (
-        <Card className="p-4 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <Label>Type</Label>
-              <Select value={form.cost_type} onValueChange={(v) => setForm((p) => ({ ...p, cost_type: v as CostType }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(COST_TYPE_LABELS).map(([k, label]) => (
-                    <SelectItem key={k} value={k}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Amount</Label>
-              <Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} />
-            </div>
-            <div>
-              <Label>VAT Rate %</Label>
-              <Input type="number" step="0.01" value={form.vat_rate} onChange={(e) => setForm((p) => ({ ...p, vat_rate: e.target.value }))} />
-            </div>
-            <div>
-              <Label>VAT Amount</Label>
-              <Input type="number" step="0.01" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Date</Label>
-              <Input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Supplier</Label>
-              <Input value={form.supplier_name} onChange={(e) => setForm((p) => ({ ...p, supplier_name: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Invoice #</Label>
-              <Input value={form.invoice_number} onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Description</Label>
-              <Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
-            </div>
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Button variant="ghost" size="sm" onClick={resetForm}>Cancel</Button>
-            <Button size="sm" onClick={handleSubmit} disabled={!form.amount || Number(form.amount) <= 0}>
-              {editingId ? 'Update' : 'Add'}
-            </Button>
-          </div>
-        </Card>
-      )}
-
-      {costs.length === 0 ? (
-        <EmptyState title="No costs recorded" icon={<DollarSign className="h-8 w-8" />} />
+      {/* Cost Lines Table */}
+      {costLines.length === 0 ? (
+        <EmptyState title="No cost lines" icon={<DollarSign className="h-8 w-8" />} />
       ) : (
-        <div className="border rounded-lg overflow-hidden">
+        <Card className="overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="text-left p-2 font-medium">Date</th>
-                <th className="text-left p-2 font-medium">Type</th>
-                <th className="text-left p-2 font-medium hidden sm:table-cell">Supplier</th>
-                <th className="text-left p-2 font-medium hidden md:table-cell">Description</th>
-                <th className="text-right p-2 font-medium">Amount</th>
-                {canEdit && <th className="p-2 w-20"></th>}
+            <thead>
+              <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
+                <th className="w-8 px-2 py-2"></th>
+                <th className="text-left px-3 py-2 font-medium">Type</th>
+                <th className="text-left px-3 py-2 font-medium">Description</th>
+                <th className="text-right px-3 py-2 font-medium">Planned</th>
+                <th className="text-right px-3 py-2 font-medium">Spent</th>
+                <th className="text-left px-3 py-2 font-medium w-32">Execution</th>
+                {canEdit && <th className="px-2 py-2 w-24"></th>}
               </tr>
             </thead>
             <tbody className="divide-y">
-              {costs.map((c) => (
-                <tr key={c.id} className="hover:bg-muted/30">
-                  <td className="p-2">{formatDate(c.date)}</td>
-                  <td className="p-2">
-                    <Badge variant="outline" className="text-[11px]">
-                      {COST_TYPE_LABELS[c.cost_type] ?? c.cost_type}
-                    </Badge>
-                  </td>
-                  <td className="p-2 hidden sm:table-cell text-muted-foreground">{c.supplier_name ?? '-'}</td>
-                  <td className="p-2 hidden md:table-cell text-muted-foreground truncate max-w-[200px]">{c.description ?? '-'}</td>
-                  <td className="p-2 text-right">
-                    <CurrencyDisplay value={c.amount} currency={c.currency} />
-                  </td>
-                  {canEdit && (
-                    <td className="p-2 text-right">
-                      <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => startEdit(c)}>
-                        <Pencil className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-7 px-2 text-red-500" onClick={() => deleteMutation.mutate(c.id)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </td>
-                  )}
-                </tr>
-              ))}
+              {costLines.map((l) => {
+                const planned = Number(l.planned_amount || 0)
+                const spent = Number(l.computed_spent ?? l.spent_amount ?? 0)
+                const exec = planned > 0 ? Math.round((spent / planned) * 100) : 0
+                const isExpanded = expandedLineId === l.id
+                return (
+                  <>{/* eslint-disable-next-line react/jsx-key */}
+                    <tr
+                      key={l.id}
+                      className="cursor-pointer hover:bg-muted/30 transition-colors"
+                      onClick={() => setExpandedLineId(isExpanded ? null : l.id)}
+                    >
+                      <td className="px-2 py-2 text-center">
+                        {isExpanded
+                          ? <ChevronDown className="h-4 w-4 text-muted-foreground inline" />
+                          : <ChevronRight className="h-4 w-4 text-muted-foreground inline" />}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge variant="outline" className="text-[11px]">
+                          {COST_TYPE_LABELS[l.cost_type] ?? l.cost_type}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {l.description || '-'}
+                        {(l.cost_count ?? 0) > 0 && (
+                          <span className="ml-2 text-[10px] text-muted-foreground/60">({l.cost_count} costs)</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {editingPlanned?.id === l.id ? (
+                          <Input
+                            type="number"
+                            value={editingPlanned.draft}
+                            onChange={(e) => setEditingPlanned({ id: l.id, draft: e.target.value })}
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={() => {
+                              const n = Number(editingPlanned.draft)
+                              if (!isNaN(n) && n !== planned) updateLineMut.mutate({ id: l.id, data: { planned_amount: n } })
+                              setEditingPlanned(null)
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { const n = Number(editingPlanned.draft); if (!isNaN(n) && n !== planned) updateLineMut.mutate({ id: l.id, data: { planned_amount: n } }); setEditingPlanned(null) }
+                              if (e.key === 'Escape') setEditingPlanned(null)
+                            }}
+                            className="h-7 w-28 text-sm text-right tabular-nums ml-auto"
+                            autoFocus
+                          />
+                        ) : (
+                          <span
+                            className="cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1"
+                            onDoubleClick={(e) => { e.stopPropagation(); setEditingPlanned({ id: l.id, draft: String(planned || '') }) }}
+                            title="Double-click to edit"
+                          >
+                            {fmt(planned)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(spent)}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${exec > 90 ? 'bg-red-500' : exec > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
+                              style={{ width: `${Math.min(exec, 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground tabular-nums">{exec}%</span>
+                        </div>
+                      </td>
+                      {canEdit && (
+                        <td className="px-2 py-2 text-right whitespace-nowrap">
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Record Cost"
+                            onClick={(e) => { e.stopPropagation(); openAddCost(l.id) }}>
+                            <DollarSign className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600" title="Delete Line"
+                            onClick={(e) => { e.stopPropagation(); setDeleteLineId(l.id) }}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </td>
+                      )}
+                    </tr>
+
+                    {/* Expanded: costs under this line */}
+                    {isExpanded && (
+                      <tr key={`${l.id}-expand`} className="bg-muted/20 hover:bg-muted/20">
+                        <td colSpan={canEdit ? 7 : 6} className="p-0">
+                          <div className="px-6 py-3 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Costs</span>
+                              {canEdit && (
+                                <div className="flex gap-1.5">
+                                  <Button variant="outline" size="sm" className="h-7 text-xs"
+                                    onClick={(e) => { e.stopPropagation(); openAddCost(l.id) }}>
+                                    <DollarSign className="h-3 w-3 mr-1" /> Record Cost
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                            {lineCosts.length === 0 ? (
+                              <div className="text-xs text-muted-foreground text-center py-3">No costs recorded yet.</div>
+                            ) : (
+                              <div className="rounded-md border bg-background">
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="border-b bg-muted/30 text-muted-foreground">
+                                      <th className="text-left px-3 py-1.5 font-medium">Date</th>
+                                      <th className="text-right px-3 py-1.5 font-medium">Amount</th>
+                                      <th className="text-right px-3 py-1.5 font-medium">VAT</th>
+                                      <th className="text-left px-3 py-1.5 font-medium">Supplier</th>
+                                      <th className="text-left px-3 py-1.5 font-medium">Invoice</th>
+                                      <th className="text-left px-3 py-1.5 font-medium">Description</th>
+                                      {canEdit && <th className="px-2 py-1.5 w-24"></th>}
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y">
+                                    {lineCosts.map((c) => (
+                                      <tr key={c.id} className="hover:bg-muted/20">
+                                        <td className="px-3 py-1.5 tabular-nums">{formatDate(c.date)}</td>
+                                        <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmt(Number(c.amount))}</td>
+                                        <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
+                                          {Number(c.vat_amount) > 0 ? fmt(Number(c.vat_amount)) : '-'}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[120px]">{c.supplier_name || '-'}</td>
+                                        <td className="px-3 py-1.5">
+                                          {c.invoice_id ? (
+                                            <div className="flex items-center gap-1">
+                                              <Badge variant="secondary" className="text-[10px] font-mono">
+                                                {c.invoice_number_ref || c.invoice_number || `#${c.invoice_id}`}
+                                              </Badge>
+                                              {canEdit && (
+                                                <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground hover:text-red-500"
+                                                  onClick={(e) => { e.stopPropagation(); unlinkInvoiceMut.mutate(c.id) }}>
+                                                  <Unlink className="h-3 w-3" />
+                                                </Button>
+                                              )}
+                                            </div>
+                                          ) : c.invoice_number ? (
+                                            <span className="font-mono text-muted-foreground">{c.invoice_number}</span>
+                                          ) : canEdit ? (
+                                            <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2 text-muted-foreground"
+                                              onClick={(e) => { e.stopPropagation(); setLinkInvoiceCostId(c.id); setInvoiceSearch('') }}>
+                                              <Link2 className="h-3 w-3 mr-1" /> Link
+                                            </Button>
+                                          ) : (
+                                            <span className="text-muted-foreground">-</span>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[150px]">{c.description || '-'}</td>
+                                        {canEdit && (
+                                          <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={(e) => { e.stopPropagation(); openEditCost(c) }}>
+                                              <Pencil className="h-3 w-3" />
+                                            </Button>
+                                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-500 hover:text-red-600"
+                                              onClick={(e) => { e.stopPropagation(); setDeleteCostId(c.id) }}>
+                                              <Trash2 className="h-3 w-3" />
+                                            </Button>
+                                          </td>
+                                        )}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                )
+              })}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
+
+      {/* Add Cost Line Dialog */}
+      <Dialog open={showAddLine} onOpenChange={setShowAddLine}>
+        <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Add Cost Line</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Type</Label>
+                <Select value={addLineForm.cost_type} onValueChange={(v) => setAddLineForm((p) => ({ ...p, cost_type: v as CostType }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(COST_TYPE_LABELS).map(([k, label]) => (
+                      <SelectItem key={k} value={k}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Planned Amount</Label>
+                <Input type="number" step="0.01" placeholder="0.00" value={addLineForm.planned_amount}
+                  onChange={(e) => setAddLineForm((p) => ({ ...p, planned_amount: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input placeholder="e.g. Insurance OMNIASIG, Transport from Germany" value={addLineForm.description}
+                onChange={(e) => setAddLineForm((p) => ({ ...p, description: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddLine(false)}>Cancel</Button>
+            <Button disabled={createLineMut.isPending} onClick={() => createLineMut.mutate({
+              cost_type: addLineForm.cost_type,
+              description: addLineForm.description || null,
+              planned_amount: addLineForm.planned_amount ? Number(addLineForm.planned_amount) : 0,
+              currency: addLineForm.currency,
+            })}>
+              {createLineMut.isPending ? 'Creating...' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Cost Dialog */}
+      <Dialog open={addCostLineId !== null} onOpenChange={(open) => { if (!open) { setAddCostLineId(null); setEditCostId(null) } }}>
+        <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>{editCostId ? 'Edit Cost' : 'Record Cost'}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Amount (net) *</Label>
+                <Input type="number" step="0.01" placeholder="0.00" value={costForm.amount} autoFocus
+                  onChange={(e) => setCostForm((p) => ({ ...p, amount: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Date *</Label>
+                <Input type="date" value={costForm.date}
+                  onChange={(e) => setCostForm((p) => ({ ...p, date: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>VAT %</Label>
+                <Input type="number" step="0.01" value={costForm.vat_rate}
+                  onChange={(e) => setCostForm((p) => ({ ...p, vat_rate: e.target.value }))} />
+              </div>
+              <div>
+                <Label>VAT Amount</Label>
+                <Input type="number" step="0.01" placeholder="0.00" value={costForm.vat_amount}
+                  onChange={(e) => setCostForm((p) => ({ ...p, vat_amount: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Invoice #</Label>
+                <Input placeholder="Invoice number" value={costForm.invoice_number}
+                  onChange={(e) => setCostForm((p) => ({ ...p, invoice_number: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Supplier</Label>
+                <Input placeholder="Supplier name" value={costForm.supplier_name}
+                  onChange={(e) => setCostForm((p) => ({ ...p, supplier_name: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Input placeholder="Optional description" value={costForm.description}
+                  onChange={(e) => setCostForm((p) => ({ ...p, description: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setAddCostLineId(null); setEditCostId(null) }}>Cancel</Button>
+            <Button disabled={!costForm.amount || Number(costForm.amount) <= 0 || createCostMut.isPending || updateCostMut.isPending}
+              onClick={handleCostSubmit}>
+              {createCostMut.isPending || updateCostMut.isPending ? 'Saving...' : editCostId ? 'Update' : 'Record'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Link Invoice Dialog */}
+      <Dialog open={linkInvoiceCostId !== null} onOpenChange={(open) => { if (!open) { setLinkInvoiceCostId(null); setInvoiceSearch('') } }}>
+        <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Link Invoice</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Search invoices..." className="pl-9" value={invoiceSearch}
+                onChange={(e) => setInvoiceSearch(e.target.value)} autoFocus />
+            </div>
+            {invoiceResults && invoiceResults.length > 0 ? (
+              <div className="max-h-60 overflow-y-auto rounded-md border">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b bg-muted/30">
+                      <th className="text-left px-3 py-1.5 font-medium">Invoice #</th>
+                      <th className="text-left px-3 py-1.5 font-medium">Supplier</th>
+                      <th className="px-2 py-1.5 w-16"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {invoiceResults.map((inv) => (
+                      <tr key={inv.id} className="hover:bg-muted/20">
+                        <td className="px-3 py-1.5 font-mono">{inv.label}</td>
+                        <td className="px-3 py-1.5 text-muted-foreground">{inv.sublabel || '-'}</td>
+                        <td className="px-2 py-1.5 text-right">
+                          <Button size="sm" className="h-6 text-[10px] px-2" disabled={linkInvoiceMut.isPending}
+                            onClick={() => linkInvoiceCostId && linkInvoiceMut.mutate({ costId: linkInvoiceCostId, invoiceId: inv.id })}>
+                            Link
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : invoiceSearch.length >= 1 ? (
+              <div className="text-xs text-center text-muted-foreground py-4">No invoices found</div>
+            ) : (
+              <div className="text-xs text-center text-muted-foreground py-4">Type to search invoices</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Cost Line Confirmation */}
+      <Dialog open={deleteLineId !== null} onOpenChange={(open) => { if (!open) setDeleteLineId(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Cost Line</DialogTitle>
+            <DialogDescription>This will delete the cost line and all its cost entries. This cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteLineId(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={deleteLineMut.isPending}
+              onClick={() => deleteLineId && deleteLineMut.mutate(deleteLineId)}>
+              {deleteLineMut.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Cost Entry Confirmation */}
+      <Dialog open={deleteCostId !== null} onOpenChange={(open) => { if (!open) setDeleteCostId(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Cost</DialogTitle>
+            <DialogDescription>Are you sure? This action cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteCostId(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={deleteCostMut.isPending}
+              onClick={() => deleteCostId && deleteCostMut.mutate(deleteCostId)}>
+              {deleteCostMut.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -1414,8 +1782,9 @@ function RevenuesTab({
   vehicleId: number; revenues: VehicleRevenue[]; canEdit: boolean; currency: string
 }) {
   const queryClient = useQueryClient()
-  const [showForm, setShowForm] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
   const [form, setForm] = useState({
     revenue_type: 'sale' as RevenueType,
     amount: '',
@@ -1432,39 +1801,30 @@ function RevenuesTab({
       invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_amount: '',
     })
     setEditingId(null)
-    setShowForm(false)
+    setDialogOpen(false)
+  }
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['carpark', 'revenues', vehicleId] })
+    queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
   }
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => carparkApi.createRevenue(vehicleId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'revenues', vehicleId] })
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
-      toast.success('Revenue added')
-      resetForm()
-    },
+    onSuccess: () => { invalidate(); toast.success('Revenue added'); resetForm() },
     onError: () => toast.error('Failed to add revenue'),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
       carparkApi.updateRevenue(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'revenues', vehicleId] })
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
-      toast.success('Revenue updated')
-      resetForm()
-    },
+    onSuccess: () => { invalidate(); toast.success('Revenue updated'); resetForm() },
     onError: () => toast.error('Failed to update revenue'),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => carparkApi.deleteRevenue(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'revenues', vehicleId] })
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
-      toast.success('Revenue deleted')
-    },
+    onSuccess: () => { invalidate(); toast.success('Revenue deleted'); setDeleteConfirmId(null) },
     onError: () => toast.error('Failed to delete revenue'),
   })
 
@@ -1496,117 +1856,392 @@ function RevenuesTab({
       vat_amount: String(r.vat_amount ?? 0),
     })
     setEditingId(r.id)
-    setShowForm(true)
+    setDialogOpen(true)
   }
 
-  const totalRevenues = revenues.reduce((s, r) => s + Number(r.amount), 0)
+  const totalNet = revenues.reduce((s, r) => s + Number(r.amount), 0)
+  const totalVat = revenues.reduce((s, r) => s + Number(r.vat_amount ?? 0), 0)
+  const totalGross = totalNet + totalVat
+
+  const byType = useMemo(() => {
+    const map: Record<string, number> = {}
+    revenues.forEach((r) => {
+      const key = r.revenue_type
+      map[key] = (map[key] ?? 0) + Number(r.amount)
+    })
+    return Object.entries(map).sort(([, a], [, b]) => b - a)
+  }, [revenues])
+
+  const fmt = (v: number) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          Total: <CurrencyDisplay value={totalRevenues} currency={currency} className="font-semibold text-foreground" />
+      {/* Summary Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-4 text-sm">
+          <span className="text-muted-foreground">
+            Net: <span className="font-semibold text-emerald-600 tabular-nums">{fmt(totalNet)} {currency}</span>
+          </span>
+          {totalVat > 0 && (
+            <span className="text-muted-foreground">
+              TVA: <span className="font-medium tabular-nums">{fmt(totalVat)} {currency}</span>
+            </span>
+          )}
+          <span className="text-muted-foreground">
+            Total: <span className="font-bold text-emerald-600 tabular-nums">{fmt(totalGross)} {currency}</span>
+          </span>
         </div>
         {canEdit && (
-          <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowForm(!showForm) }}>
+          <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true) }}>
             <Plus className="h-4 w-4 mr-1" /> Add Revenue
           </Button>
         )}
       </div>
 
-      {showForm && (
-        <Card className="p-4 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Type Breakdown */}
+      {byType.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {byType.map(([type, amount]) => {
+            const pct = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
+            return (
+              <div key={type} className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs">
+                <span className="font-medium">{REVENUE_TYPE_LABELS[type as RevenueType] ?? type}</span>
+                <span className="tabular-nums text-muted-foreground">{fmt(amount)}</span>
+                <span className="text-[10px] text-muted-foreground">({pct}%)</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Revenues Table */}
+      {revenues.length === 0 ? (
+        <EmptyState title="No revenues recorded" icon={<TrendingUp className="h-8 w-8" />} />
+      ) : (
+        <Card className="overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
+                <th className="text-left px-3 py-2 font-medium">Date</th>
+                <th className="text-left px-3 py-2 font-medium">Type</th>
+                <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Client</th>
+                <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Invoice #</th>
+                <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Description</th>
+                <th className="text-right px-3 py-2 font-medium">Net</th>
+                <th className="text-right px-3 py-2 font-medium hidden sm:table-cell">TVA</th>
+                <th className="text-right px-3 py-2 font-medium">Total</th>
+                {canEdit && <th className="px-2 py-2 w-20"></th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {revenues.map((r) => {
+                const net = Number(r.amount)
+                const vat = Number(r.vat_amount ?? 0)
+                return (
+                  <tr key={r.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-3 py-2 tabular-nums text-xs">{formatDate(r.date)}</td>
+                    <td className="px-3 py-2">
+                      <Badge variant="outline" className="text-[11px]">
+                        {REVENUE_TYPE_LABELS[r.revenue_type] ?? r.revenue_type}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground truncate max-w-[140px]">{r.client_name || '-'}</td>
+                    <td className="px-3 py-2 hidden lg:table-cell font-mono text-xs text-muted-foreground">{r.invoice_number || '-'}</td>
+                    <td className="px-3 py-2 hidden md:table-cell text-muted-foreground truncate max-w-[180px]">{r.description || '-'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(net)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{vat > 0 ? fmt(vat) : '-'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(net + vat)}</td>
+                    {canEdit && (
+                      <td className="px-2 py-2 text-right whitespace-nowrap">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => startEdit(r)}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600" onClick={() => setDeleteConfirmId(r.id)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
+            </tbody>
+            {revenues.length > 1 && (
+              <tfoot>
+                <tr className="border-t bg-muted/30 font-medium text-xs">
+                  <td className="px-3 py-2" colSpan={5}></td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(totalNet)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{totalVat > 0 ? fmt(totalVat) : '-'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-bold">{fmt(totalGross)}</td>
+                  {canEdit && <td></td>}
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </Card>
+      )}
+
+      {/* Add/Edit Revenue Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) resetForm() }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingId ? 'Edit Revenue' : 'Add Revenue'}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Type</Label>
+                <Select value={form.revenue_type} onValueChange={(v) => setForm((p) => ({ ...p, revenue_type: v as RevenueType }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(REVENUE_TYPE_LABELS).map(([k, label]) => (
+                      <SelectItem key={k} value={k}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Date</Label>
+                <Input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Amount (net)</Label>
+                <Input type="number" step="0.01" placeholder="0.00" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} />
+              </div>
+              <div>
+                <Label>VAT Amount</Label>
+                <Input type="number" step="0.01" placeholder="0.00" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Client</Label>
+                <Input placeholder="Client name" value={form.client_name} onChange={(e) => setForm((p) => ({ ...p, client_name: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Invoice #</Label>
+                <Input placeholder="Invoice number" value={form.invoice_number} onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))} />
+              </div>
+            </div>
             <div>
-              <Label>Type</Label>
-              <Select value={form.revenue_type} onValueChange={(v) => setForm((p) => ({ ...p, revenue_type: v as RevenueType }))}>
+              <Label>Description</Label>
+              <Input placeholder="Optional description" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={resetForm}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={!form.amount || Number(form.amount) <= 0 || createMutation.isPending || updateMutation.isPending}>
+              {createMutation.isPending || updateMutation.isPending ? 'Saving...' : editingId ? 'Update' : 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <Dialog open={deleteConfirmId !== null} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Revenue</DialogTitle>
+            <DialogDescription>Are you sure? This action cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={deleteMutation.isPending} onClick={() => deleteConfirmId && deleteMutation.mutate(deleteConfirmId)}>
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// ── Links Tab ──────────────────────────────────────────────
+const ENTITY_TYPES: LinkedEntityType[] = ['invoice', 'dms_document', 'dms_folder', 'project', 'hr_event', 'crm_deal', 'crm_client']
+
+function LinksTab({ vehicleId, links, canEdit }: { vehicleId: number; links: VehicleLink[]; canEdit: boolean }) {
+  const queryClient = useQueryClient()
+  const [filterType, setFilterType] = useState<LinkedEntityType | ''>('')
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [selectedEntityType, setSelectedEntityType] = useState<LinkedEntityType>('invoice')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const { data: searchData, isFetching: isSearching } = useQuery({
+    queryKey: ['carpark', 'link-search', selectedEntityType, searchQuery],
+    queryFn: () => carparkApi.searchLinkableEntities(selectedEntityType, searchQuery),
+    enabled: dialogOpen && searchQuery.length > 0,
+  })
+
+  const searchResults = searchData?.results ?? []
+
+  const linkMutation = useMutation({
+    mutationFn: (data: { entity_type: LinkedEntityType; entity_id: number }) =>
+      carparkApi.linkEntity(vehicleId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle-links', vehicleId] })
+      toast.success('Link adaugat')
+    },
+    onError: () => toast.error('Eroare la adaugarea linkului'),
+  })
+
+  const unlinkMutation = useMutation({
+    mutationFn: (linkId: number) => carparkApi.unlinkEntity(vehicleId, linkId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle-links', vehicleId] })
+      toast.success('Link sters')
+    },
+    onError: () => toast.error('Eroare la stergerea linkului'),
+  })
+
+  const filtered = filterType ? links.filter((l) => l.linked_entity_type === filterType) : links
+
+  const alreadyLinked = new Set(links.map((l) => `${l.linked_entity_type}:${l.linked_entity_id}`))
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant={filterType === '' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setFilterType('')}
+          >
+            Toate ({links.length})
+          </Button>
+          {ENTITY_TYPES.map((et) => {
+            const count = links.filter((l) => l.linked_entity_type === et).length
+            if (count === 0) return null
+            return (
+              <Button
+                key={et}
+                variant={filterType === et ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFilterType(et)}
+              >
+                {ENTITY_TYPE_LABELS[et]} ({count})
+              </Button>
+            )
+          })}
+        </div>
+        {canEdit && (
+          <Button size="sm" onClick={() => { setDialogOpen(true); setSearchQuery('') }}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Link
+          </Button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={<Link2 className="h-10 w-10" />}
+          title="Niciun link"
+          description="Leaga facturi, documente, proiecte sau alte entitati de acest vehicul"
+        />
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((link) => (
+            <Card key={link.id} className="p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Badge variant="outline" className="text-[10px] shrink-0">
+                    {ENTITY_TYPE_LABELS[link.linked_entity_type] ?? link.linked_entity_type}
+                  </Badge>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">{link.entity_label}</div>
+                    {link.entity_sublabel && (
+                      <div className="text-xs text-muted-foreground truncate">{link.entity_sublabel}</div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs text-muted-foreground hidden sm:inline">
+                    {link.linked_by_name} - {formatDate(link.created_at)}
+                  </span>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-red-500"
+                      onClick={() => unlinkMutation.mutate(link.id)}
+                    >
+                      <Unlink className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {link.notes && (
+                <div className="mt-1 text-xs text-muted-foreground">{link.notes}</div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Link Entity Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Leaga entitate</DialogTitle>
+            <DialogDescription>Cauta si selecteaza o entitate de legat</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Tip entitate</Label>
+              <Select value={selectedEntityType} onValueChange={(v) => { setSelectedEntityType(v as LinkedEntityType); setSearchQuery('') }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(REVENUE_TYPE_LABELS).map(([k, label]) => (
-                    <SelectItem key={k} value={k}>{label}</SelectItem>
+                  {ENTITY_TYPES.map((et) => (
+                    <SelectItem key={et} value={et}>{ENTITY_TYPE_LABELS[et]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Amount</Label>
-              <Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} />
+              <Label>Cauta</Label>
+              <div className="flex items-center gap-2">
+                <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={`Cauta ${ENTITY_TYPE_LABELS[selectedEntityType].toLowerCase()}...`}
+                />
+              </div>
             </div>
-            <div>
-              <Label>VAT Amount</Label>
-              <Input type="number" step="0.01" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Date</Label>
-              <Input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Client</Label>
-              <Input value={form.client_name} onChange={(e) => setForm((p) => ({ ...p, client_name: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Invoice #</Label>
-              <Input value={form.invoice_number} onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))} />
-            </div>
-            <div className="sm:col-span-2">
-              <Label>Description</Label>
-              <Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
+            <div className="max-h-60 overflow-y-auto border rounded-md">
+              {isSearching ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">Se cauta...</div>
+              ) : searchResults.length === 0 ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">
+                  {searchQuery ? 'Niciun rezultat' : 'Scrie pentru a cauta'}
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {searchResults.map((r) => {
+                    const isLinked = alreadyLinked.has(`${selectedEntityType}:${r.id}`)
+                    return (
+                      <button
+                        key={r.id}
+                        className="w-full text-left px-3 py-2 hover:bg-accent text-sm disabled:opacity-50"
+                        disabled={isLinked || linkMutation.isPending}
+                        onClick={() => {
+                          linkMutation.mutate({ entity_type: selectedEntityType, entity_id: r.id })
+                        }}
+                      >
+                        <div className="font-medium">{r.label}</div>
+                        {r.sublabel && <div className="text-xs text-muted-foreground">{r.sublabel}</div>}
+                        {isLinked && <span className="text-xs text-muted-foreground italic">Deja legat</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
-          <div className="flex gap-2 justify-end">
-            <Button variant="ghost" size="sm" onClick={resetForm}>Cancel</Button>
-            <Button size="sm" onClick={handleSubmit} disabled={!form.amount || Number(form.amount) <= 0}>
-              {editingId ? 'Update' : 'Add'}
-            </Button>
-          </div>
-        </Card>
-      )}
-
-      {revenues.length === 0 ? (
-        <EmptyState title="No revenues recorded" icon={<DollarSign className="h-8 w-8" />} />
-      ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="text-left p-2 font-medium">Date</th>
-                <th className="text-left p-2 font-medium">Type</th>
-                <th className="text-left p-2 font-medium hidden sm:table-cell">Client</th>
-                <th className="text-left p-2 font-medium hidden md:table-cell">Description</th>
-                <th className="text-right p-2 font-medium">Amount</th>
-                {canEdit && <th className="p-2 w-20"></th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {revenues.map((r) => (
-                <tr key={r.id} className="hover:bg-muted/30">
-                  <td className="p-2">{formatDate(r.date)}</td>
-                  <td className="p-2">
-                    <Badge variant="outline" className="text-[11px]">
-                      {REVENUE_TYPE_LABELS[r.revenue_type] ?? r.revenue_type}
-                    </Badge>
-                  </td>
-                  <td className="p-2 hidden sm:table-cell text-muted-foreground">{r.client_name ?? '-'}</td>
-                  <td className="p-2 hidden md:table-cell text-muted-foreground truncate max-w-[200px]">{r.description ?? '-'}</td>
-                  <td className="p-2 text-right">
-                    <CurrencyDisplay value={r.amount} currency={r.currency} />
-                  </td>
-                  {canEdit && (
-                    <td className="p-2 text-right">
-                      <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => startEdit(r)}>
-                        <Pencil className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-7 px-2 text-red-500" onClick={() => deleteMutation.mutate(r.id)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Inchide</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

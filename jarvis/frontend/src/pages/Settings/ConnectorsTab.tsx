@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plug,
@@ -25,6 +26,8 @@ import {
   Globe,
   Eye,
   EyeOff,
+  Car,
+  Pencil,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -51,6 +54,10 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { efacturaApi } from '@/api/efactura'
 import { biostarApi } from '@/api/biostar'
+import { sincronApi } from '@/api/sincron'
+import { autovitApi } from '@/api/autovit'
+import type { AutovitAccount } from '@/api/autovit'
+import type { SincronSyncRun } from '@/api/sincron'
 import type { BioStarSyncRun } from '@/types/biostar'
 import type { CompanyConnection } from '@/types/efactura'
 import { FetchMessagesDialog } from './FetchMessagesDialog'
@@ -1144,6 +1151,626 @@ function BusinessDataSection() {
 }
 
 // ════════════════════════════════════════════════
+// Sincron HR Section
+// ════════════════════════════════════════════════
+
+const SINCRON_COMPANIES = [
+  'AUTOWORLD S.R.L.',
+  'AUTOWORLD INSURANCE S.R.L.',
+  'AUTOWORLD INTERNATIONAL S.R.L.',
+  'AUTOWORLD NEXT S.R.L.',
+  'AUTOWORLD ONE S.R.L.',
+  'AUTOWORLD PLUS S.R.L.',
+  'AUTOWORLD PREMIUM S.R.L.',
+  'AUTOWORLD PRESTIGE S.R.L.',
+]
+
+function SincronSection() {
+  const qc = useQueryClient()
+  const [showForm, setShowForm] = useState(false)
+  const [tokens, setTokens] = useState<Record<string, string>>({})
+  const [showTokens, setShowTokens] = useState<Record<string, boolean>>({})
+  const [syncYear, setSyncYear] = useState(new Date().getFullYear())
+  const [syncMonth, setSyncMonth] = useState(new Date().getMonth() + 1)
+
+  const { data: status } = useQuery({
+    queryKey: ['sincron', 'status'],
+    queryFn: sincronApi.getStatus,
+    refetchInterval: 30_000,
+  })
+
+  const { data: config } = useQuery({
+    queryKey: ['sincron', 'config'],
+    queryFn: sincronApi.getConfig,
+  })
+
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const nonEmpty = Object.fromEntries(
+        Object.entries(tokens).filter(([, v]) => v.trim()),
+      )
+      return sincronApi.saveConfig(nonEmpty)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sincron'] })
+      setShowForm(false)
+      toast.success('Sincron configuration saved')
+    },
+    onError: () => toast.error('Failed to save configuration'),
+  })
+
+  const testMut = useMutation({
+    mutationFn: () => sincronApi.testConnection(),
+    onSuccess: (res) => {
+      const total = Object.keys(res.companies || {}).length
+      const ok = Object.values(res.companies || {}).filter(c => c.success).length
+      if (res.success) toast.success(`All ${total} companies connected`)
+      else toast.warning(`${ok}/${total} companies connected`)
+    },
+    onError: () => toast.error('Connection test failed'),
+  })
+
+  const syncMut = useMutation({
+    mutationFn: () => sincronApi.syncTimesheetsNow({ year: syncYear, month: syncMonth }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['sincron'] })
+      if (res.success) {
+        toast.success(`Synced ${res.total_employees} employees, ${res.total_records} records`)
+      } else {
+        toast.error('Sync had errors')
+      }
+    },
+    onError: () => toast.error('Sync failed'),
+  })
+
+  const autoMapMut = useMutation({
+    mutationFn: () => sincronApi.autoMap(),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['sincron'] })
+      if (res.total_mapped > 0) {
+        toast.success(`Mapped ${res.total_mapped} employees (${res.cnp_mapped} by CNP, ${res.name_mapped} by name)`)
+      } else {
+        toast.info('No new employees to map')
+      }
+    },
+    onError: () => toast.error('Auto-map failed'),
+  })
+
+  const handleEditClick = () => {
+    // Pre-fill with empty tokens for all companies
+    const t: Record<string, string> = {}
+    SINCRON_COMPANIES.forEach(c => { t[c] = '' })
+    setTokens(t)
+    setShowForm(true)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold">Sincron HR (Timesheets)</h3>
+        {status && (
+          <StatusBadge status={status.connected ? 'active' : 'inactive'} />
+        )}
+      </div>
+
+      {status?.connected && !showForm ? (
+        <div className="rounded-lg border p-4 space-y-4">
+          <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+            <div>
+              <span className="text-muted-foreground">Companies:</span>
+              <p className="font-medium">{status.companies_configured}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Employees:</span>
+              <p className="font-medium">{status.employee_count.total} active</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Mapped:</span>
+              <p className="font-medium">{status.employee_count.mapped} / {status.employee_count.total}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Last Sync:</span>
+              <p className="font-medium text-xs">
+                {status.last_sync
+                  ? new Date(status.last_sync).toLocaleString('ro-RO', { timeZone: 'Europe/Bucharest' })
+                  : 'Never'}
+              </p>
+            </div>
+          </div>
+
+          {/* Sync controls */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex items-center justify-between rounded border p-3">
+              <div>
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <Users className="h-3.5 w-3.5" /> Employee Mapping
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {status.employee_count.unmapped} unmapped
+                </p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => autoMapMut.mutate()} disabled={autoMapMut.isPending}>
+                {autoMapMut.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                Auto-Map
+              </Button>
+            </div>
+            <div className="rounded border p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5 text-sm font-medium">
+                    <Clock className="h-3.5 w-3.5" /> Timesheet Sync
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={String(syncMonth)} onValueChange={(v) => setSyncMonth(Number(v))}>
+                  <SelectTrigger className="h-8 w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <SelectItem key={i + 1} value={String(i + 1)}>
+                        {new Date(2024, i).toLocaleString('ro-RO', { month: 'short' })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  className="h-8 w-20"
+                  value={syncYear}
+                  onChange={(e) => setSyncYear(Number(e.target.value))}
+                  min={2000}
+                  max={2100}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => syncMut.mutate()}
+                  disabled={syncMut.isPending}
+                >
+                  {syncMut.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                  Sync
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={handleEditClick}>Edit Tokens</Button>
+            <Button size="sm" variant="outline" onClick={() => testMut.mutate()} disabled={testMut.isPending}>
+              {testMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Plug className="mr-1.5 h-4 w-4" />}
+              Test All
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border p-4 space-y-4">
+          {!config && !showForm ? (
+            <EmptyState
+              icon={<PlugZap className="h-10 w-10" />}
+              title="Not configured"
+              description="Set up Sincron HR API tokens to sync official timesheets."
+              action={<Button onClick={handleEditClick}>Configure</Button>}
+            />
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Enter Bearer tokens for each company. Leave blank to skip a company.
+              </p>
+              <div className="grid gap-3">
+                {SINCRON_COMPANIES.map((company) => (
+                  <div key={company} className="grid gap-1">
+                    <Label className="text-xs">{company}</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type={showTokens[company] ? 'text' : 'password'}
+                        placeholder={config?.companies_configured?.[company] ? '••••••• (configured)' : 'Bearer token'}
+                        value={tokens[company] || ''}
+                        onChange={(e) => setTokens({ ...tokens, [company]: e.target.value })}
+                        className="h-8 text-xs font-mono"
+                      />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0"
+                        onClick={() => setShowTokens({ ...showTokens, [company]: !showTokens[company] })}
+                      >
+                        {showTokens[company] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !Object.values(tokens).some(v => v.trim())}>
+                  {saveMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+                  Save
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => testMut.mutate()} disabled={testMut.isPending}>
+                  {testMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Plug className="mr-1.5 h-4 w-4" />}
+                  Test
+                </Button>
+                {showForm && <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      <SincronSyncHistory />
+    </div>
+  )
+}
+
+function SincronSyncHistory() {
+  const { data: status } = useQuery({ queryKey: ['sincron', 'status'], queryFn: sincronApi.getStatus })
+  const { data: runs = [] } = useQuery({
+    queryKey: ['sincron', 'syncHistory'],
+    queryFn: () => sincronApi.getSyncHistory({ limit: 10 }),
+    enabled: !!status?.connected,
+    refetchInterval: (query): number => {
+      const data = query.state.data as SincronSyncRun[] | undefined
+      return data?.some((r: SincronSyncRun) => !r.finished_at) ? 3_000 : 30_000
+    },
+  })
+
+  if (!status?.connected || runs.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      <h4 className="text-sm font-medium flex items-center gap-1.5">
+        <History className="h-3.5 w-3.5" /> Recent Syncs
+      </h4>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-32">Date</TableHead>
+            <TableHead>Company</TableHead>
+            <TableHead>Period</TableHead>
+            <TableHead className="text-right">Employees</TableHead>
+            <TableHead className="text-right">Records</TableHead>
+            <TableHead>Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {runs.map((run: SincronSyncRun) => (
+            <TableRow key={run.run_id}>
+              <TableCell className="text-xs">
+                {new Date(run.started_at).toLocaleString('ro-RO', { timeZone: 'Europe/Bucharest', dateStyle: 'short', timeStyle: 'short' })}
+              </TableCell>
+              <TableCell className="text-xs">{run.company_name || 'All'}</TableCell>
+              <TableCell className="text-xs">{run.month}/{run.year}</TableCell>
+              <TableCell className="text-right text-xs">{run.employees_synced}</TableCell>
+              <TableCell className="text-right text-xs">{run.records_created}</TableCell>
+              <TableCell>
+                {run.status === 'completed' ? (
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                ) : run.status === 'failed' ? (
+                  <XCircle className="h-4 w-4 text-red-500" />
+                ) : (
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════
+// Autovit.ro Section
+// ════════════════════════════════════════════════
+
+function AutovitAccountCard({
+  account,
+  onEdit,
+  onDelete,
+  onTest,
+  onView,
+}: {
+  account: AutovitAccount
+  onEdit: () => void
+  onDelete: () => void
+  onTest: () => void
+  onView: () => void
+}) {
+  const statusColor =
+    account.status === 'connected'
+      ? 'text-green-600 dark:text-green-400'
+      : account.status === 'error'
+        ? 'text-red-600 dark:text-red-400'
+        : 'text-muted-foreground'
+
+  return (
+    <div className="rounded-lg border p-4 space-y-3 cursor-pointer hover:border-primary/50 transition-colors" onClick={onView}>
+      <div className="flex items-start justify-between">
+        <div>
+          <h4 className="font-medium text-sm">{account.email}</h4>
+          <p className="text-xs text-muted-foreground">Client ID: {account.client_id}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-medium capitalize ${statusColor}`}>
+            {account.status === 'connected' ? (
+              <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5" /> Connected</span>
+            ) : account.status === 'error' ? (
+              <span className="flex items-center gap-1"><XCircle className="h-3.5 w-3.5" /> Error</span>
+            ) : (
+              <span className="flex items-center gap-1"><Plug className="h-3.5 w-3.5" /> Disconnected</span>
+            )}
+          </span>
+        </div>
+      </div>
+
+      {account.last_error && (
+        <p className="text-xs text-red-500 truncate" title={account.last_error}>
+          {account.last_error}
+        </p>
+      )}
+
+      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+        <Button size="sm" variant="outline" onClick={onTest}>
+          <Plug className="mr-1 h-3 w-3" /> Test
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onEdit}>
+          <Pencil className="mr-1 h-3 w-3" /> Edit
+        </Button>
+        <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600" onClick={onDelete}>
+          <Trash2 className="mr-1 h-3 w-3" /> Delete
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function AutovitSection() {
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [form, setForm] = useState({
+    email: '',
+    client_id: '',
+    client_secret: '',
+    password: '',
+    environment: 'production',
+  })
+  const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showSecret, setShowSecret] = useState(false)
+
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['autovit', 'accounts'],
+    queryFn: autovitApi.getAccounts,
+  })
+
+  const { data: status } = useQuery({
+    queryKey: ['autovit', 'status'],
+    queryFn: autovitApi.getStatus,
+  })
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      autovitApi.saveAccount({
+        ...(editingId ? { id: editingId } : {}),
+        email: form.email,
+        client_id: form.client_id,
+        client_secret: form.client_secret,
+        password: form.password,
+        environment: form.environment,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['autovit'] })
+      setShowForm(false)
+      setEditingId(null)
+      resetForm()
+      toast.success(editingId ? 'Account updated' : 'Account added')
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { error?: string })?.error || 'Failed to save account'
+      toast.error(msg)
+    },
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => autovitApi.deleteAccount(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['autovit'] })
+      setDeleteId(null)
+      toast.success('Account deleted')
+    },
+    onError: () => toast.error('Failed to delete account'),
+  })
+
+  const testMut = useMutation({
+    mutationFn: (id: number) => autovitApi.testConnection(id),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['autovit'] })
+      if (res.success) toast.success('Connection successful')
+      else toast.error(res.error || 'Connection failed')
+    },
+    onError: () => toast.error('Connection test failed'),
+  })
+
+  const resetForm = () => {
+    setForm({ email: '', client_id: '', client_secret: '', password: '', environment: 'production' })
+    setShowPassword(false)
+    setShowSecret(false)
+  }
+
+  const handleAdd = () => {
+    setEditingId(null)
+    resetForm()
+    setShowForm(true)
+  }
+
+  const handleEdit = (acc: AutovitAccount) => {
+    setEditingId(acc.id)
+    setForm({
+      email: acc.email,
+      client_id: acc.client_id,
+      client_secret: '',
+      password: '',
+      environment: acc.environment || 'production',
+    })
+    setShowForm(true)
+  }
+
+  const connectedCount = status?.connected ?? 0
+  const totalCount = status?.total_accounts ?? accounts.length
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Car className="h-5 w-5" />
+          <h3 className="text-base font-semibold">Autovit.ro (Marketplace)</h3>
+        </div>
+        <div className="flex items-center gap-2">
+          {totalCount > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {connectedCount}/{totalCount} connected
+            </span>
+          )}
+          <StatusBadge status={connectedCount > 0 ? 'active' : totalCount > 0 ? 'inactive' : 'inactive'} />
+        </div>
+      </div>
+
+      {accounts.length === 0 && !showForm ? (
+        <div className="rounded-lg border p-4">
+          <EmptyState
+            icon={<Car className="h-10 w-10" />}
+            title="No accounts configured"
+            description="Add your Autovit.ro dealer accounts to start publishing vehicles."
+            action={<Button onClick={handleAdd}><Plus className="mr-1 h-4 w-4" /> Add Account</Button>}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {accounts.map((acc) => (
+              <AutovitAccountCard
+                key={acc.id}
+                account={acc}
+                onEdit={() => handleEdit(acc)}
+                onDelete={() => setDeleteId(acc.id)}
+                onTest={() => testMut.mutate(acc.id)}
+                onView={() => navigate(`autovit/${acc.id}`)}
+              />
+            ))}
+          </div>
+
+          {!showForm && (
+            <Button size="sm" variant="outline" onClick={handleAdd}>
+              <Plus className="mr-1 h-3 w-3" /> Add Account
+            </Button>
+          )}
+        </>
+      )}
+
+      {/* Add/Edit form */}
+      {showForm && (
+        <div className="rounded-lg border p-4 space-y-4">
+          <h4 className="text-sm font-medium">{editingId ? 'Edit Account' : 'Add Dealer Account'}</h4>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label>Email (username)</Label>
+              <Input
+                placeholder="e.g. volvosales@autoworld.ro"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Client ID</Label>
+              <Input
+                placeholder="e.g. 1667"
+                value={form.client_id}
+                onChange={(e) => setForm({ ...form, client_id: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Client Secret</Label>
+              <div className="relative">
+                <Input
+                  type={showSecret ? 'text' : 'password'}
+                  placeholder={editingId ? '••••••• (leave blank to keep)' : ''}
+                  value={form.client_secret}
+                  onChange={(e) => setForm({ ...form, client_secret: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowSecret(!showSecret)}
+                >
+                  {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Password</Label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder={editingId ? '••••••• (leave blank to keep)' : ''}
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-2 max-w-xs">
+            <Label>Environment</Label>
+            <Select value={form.environment} onValueChange={(v) => setForm({ ...form, environment: v })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="production">Production</SelectItem>
+                <SelectItem value="sandbox">Sandbox</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => saveMut.mutate()}
+              disabled={saveMut.isPending || !form.email || !form.client_id || (!editingId && (!form.client_secret || !form.password))}
+            >
+              {saveMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+              {editingId ? 'Update' : 'Save'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setShowForm(false); setEditingId(null); resetForm() }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={deleteId !== null}
+        onOpenChange={(open) => { if (!open) setDeleteId(null) }}
+        title="Delete Autovit Account"
+        description="Are you sure you want to remove this dealer account? This cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (deleteId) deleteMut.mutate(deleteId) }}
+      />
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════
 // Main Export
 // ════════════════════════════════════════════════
 
@@ -1153,6 +1780,10 @@ export default function ConnectorsTab() {
       <EFacturaSection />
       <hr className="border-border" />
       <BioStarConnectionSection />
+      <hr className="border-border" />
+      <SincronSection />
+      <hr className="border-border" />
+      <AutovitSection />
       <hr className="border-border" />
       <PushNotificationSection />
       <hr className="border-border" />

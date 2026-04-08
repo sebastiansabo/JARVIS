@@ -89,6 +89,7 @@ function fmtDate(d: string | null) {
   const dt = new Date(d)
   return `${dt.getDate()} ${MONTH_SHORT[dt.getMonth() + 1]} ${dt.getFullYear()}`
 }
+
 function fmtRange(start: string | null, end: string | null) {
   const s = fmtDate(start)
   const e = fmtDate(end)
@@ -487,6 +488,8 @@ function BonusListTable({
               <SortHead label="Company" field="company" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <SortHead label="Brand" field="brand" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <SortHead label="Event" field="event_name" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <TableHead>Event Date</TableHead>
+              <TableHead>Period</TableHead>
               <SortHead label="Days" field="bonus_days" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
               <SortHead label="Hours" field="hours_free" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
               {canViewAmounts && <SortHead label="Bonus (Net)" field="bonus_net" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />}
@@ -511,6 +514,8 @@ function BonusListTable({
                 <TableCell className="text-sm text-muted-foreground">{b.company ?? '—'}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{b.brand ?? '—'}</TableCell>
                 <TableCell className="text-sm">{b.event_name}</TableCell>
+                <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{fmtRange(b.event_start, b.event_end)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{fmtRange(b.participation_start, b.participation_end)}</TableCell>
                 <TableCell className="text-right text-sm">{b.bonus_days ?? '—'}</TableCell>
                 <TableCell className="text-right text-sm">{b.hours_free ?? '—'}</TableCell>
                 {canViewAmounts && (

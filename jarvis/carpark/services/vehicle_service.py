@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any, List
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.photo_repository import PhotoRepository
 from carpark.repositories.cost_repository import CostRepository
+from carpark.repositories.cost_line_repository import CostLineRepository
 from carpark.repositories.revenue_repository import RevenueRepository
 
 logger = logging.getLogger('jarvis.carpark')
@@ -27,6 +28,7 @@ class VehicleService:
         self._repo = VehicleRepository()
         self._photo_repo = PhotoRepository()
         self._cost_repo = CostRepository()
+        self._cost_line_repo = CostLineRepository()
         self._revenue_repo = RevenueRepository()
 
     # ── CATALOG ──
@@ -216,6 +218,41 @@ class VehicleService:
 
     def get_cost_totals(self, vehicle_id: int) -> Dict[str, Any]:
         return self._cost_repo.get_totals_by_vehicle(vehicle_id)
+
+    # ── COST LINES ──
+
+    def get_cost_lines(self, vehicle_id: int) -> List[Dict[str, Any]]:
+        return self._cost_line_repo.get_lines_by_vehicle(vehicle_id)
+
+    def get_cost_line(self, line_id: int) -> Optional[Dict[str, Any]]:
+        return self._cost_line_repo.get_line_by_id(line_id)
+
+    def create_cost_line(self, vehicle_id: int, cost_type: str,
+                         created_by: int = None, **kwargs) -> int:
+        return self._cost_line_repo.create_line(
+            vehicle_id, cost_type, created_by=created_by, **kwargs)
+
+    def update_cost_line(self, line_id: int, **kwargs) -> bool:
+        return self._cost_line_repo.update_line(line_id, **kwargs)
+
+    def delete_cost_line(self, line_id: int) -> bool:
+        return self._cost_line_repo.delete_line(line_id)
+
+    def get_line_costs(self, cost_line_id: int) -> List[Dict[str, Any]]:
+        return self._cost_line_repo.get_costs_by_line(cost_line_id)
+
+    def create_line_cost(self, cost_line_id: int, data: Dict[str, Any],
+                         created_by: int = None) -> int:
+        return self._cost_line_repo.create_cost(cost_line_id, data, created_by)
+
+    def update_line_cost(self, cost_id: int, data: Dict[str, Any]) -> bool:
+        return self._cost_line_repo.update_cost(cost_id, data)
+
+    def delete_line_cost(self, cost_id: int) -> bool:
+        return self._cost_line_repo.delete_cost(cost_id)
+
+    def link_cost_invoice(self, cost_id: int, invoice_id: int = None) -> bool:
+        return self._cost_line_repo.link_cost_invoice(cost_id, invoice_id)
 
     # ── REVENUES ──
 

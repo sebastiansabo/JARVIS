@@ -92,6 +92,57 @@ class PricingService:
     def get_vehicle_promotions(self, vehicle_id: int) -> List[Dict[str, Any]]:
         return self._pricing_repo.get_vehicle_promotions(vehicle_id)
 
+    def get_promotion_vehicles(self, promo_id: int) -> List[Dict[str, Any]]:
+        return self._pricing_repo.get_promotion_vehicles(promo_id)
+
+    def add_vehicles_to_promotion(self, promo_id: int, vehicle_ids: List[int],
+                                   added_by: int) -> int:
+        count = 0
+        for vid in vehicle_ids:
+            result = self._pricing_repo.add_vehicle_to_promotion(promo_id, vid, added_by)
+            if result:
+                count += 1
+        return count
+
+    def remove_vehicle_from_promotion(self, promo_id: int,
+                                       vehicle_id: int) -> bool:
+        return self._pricing_repo.remove_vehicle_from_promotion(promo_id, vehicle_id)
+
+    # ═══════════════════════════════════════════════
+    # RULE VEHICLES
+    # ═══════════════════════════════════════════════
+
+    def get_rule_vehicles(self, rule_id: int) -> List[Dict[str, Any]]:
+        return self._pricing_repo.get_rule_vehicles(rule_id)
+
+    def add_vehicles_to_rule(self, rule_id: int, vehicle_ids: List[int],
+                              added_by: int) -> int:
+        count = 0
+        for vid in vehicle_ids:
+            result = self._pricing_repo.add_vehicle_to_rule(rule_id, vid, added_by)
+            if result:
+                count += 1
+        return count
+
+    def remove_vehicle_from_rule(self, rule_id: int, vehicle_id: int) -> bool:
+        return self._pricing_repo.remove_vehicle_from_rule(rule_id, vehicle_id)
+
+    # ═══════════════════════════════════════════════
+    # PENDING CHANGES
+    # ═══════════════════════════════════════════════
+
+    def get_pending_changes(self, rule_id: int = None,
+                            approval_request_id: int = None,
+                            status: str = None) -> List[Dict[str, Any]]:
+        return self._pricing_repo.get_pending_changes(rule_id, approval_request_id, status)
+
+    # ═══════════════════════════════════════════════
+    # PROJECT LINKING
+    # ═══════════════════════════════════════════════
+
+    def get_rules_for_project(self, project_id: int) -> List[Dict[str, Any]]:
+        return self._pricing_repo.get_rules_for_project(project_id)
+
     # ═══════════════════════════════════════════════
     # PRICING HISTORY
     # ═══════════════════════════════════════════════
@@ -233,6 +284,27 @@ class PricingService:
     # SIMULATE (dry-run)
     # ═══════════════════════════════════════════════
 
+    def _calculate_floor_price_from_data(self, vehicle: Dict[str, Any],
+                                         cost_totals: Dict[str, Any]) -> float:
+        """Calculate floor price using pre-fetched vehicle + cost data (no DB calls)."""
+        minimum_price = float(vehicle.get('minimum_price') or 0)
+        acquisition_price = float(vehicle.get('acquisition_price') or 0)
+        total_cost = acquisition_price + float(cost_totals.get('total_with_vat', 0))
+        cost_plus_margin = total_cost * (1 + MIN_MARGIN_PERCENT / 100)
+        purchase_net = float(vehicle.get('purchase_price_net') or 0)
+        return max(minimum_price, cost_plus_margin, purchase_net)
+
+    def _batch_floor_prices(self, vehicles: List[Dict[str, Any]]) -> Dict[int, float]:
+        """Compute floor prices for a batch of vehicles in 1 query instead of 2N."""
+        if not vehicles:
+            return {}
+        vids = [v['id'] for v in vehicles]
+        cost_map = self._cost_repo.get_totals_batch(vids)
+        return {
+            v['id']: self._calculate_floor_price_from_data(v, cost_map.get(v['id'], {}))
+            for v in vehicles
+        }
+
     def simulate_rules(self, vehicle_id: int = None,
                        rule_id: int = None,
                        company_id: int = None) -> List[Dict[str, Any]]:
@@ -266,13 +338,14 @@ class PricingService:
                 return []
             # Get vehicles that match the rule's conditions
             vehicles = self._get_eligible_vehicles(rule, company_id)
+            # Batch floor price calculation — 1 query instead of 2N
+            floor_map = self._batch_floor_prices(vehicles)
             for v in vehicles:
                 vid = v['id']
-                floor_data = self.calculate_floor_price(vid)
                 current_price = float(v.get('current_price') or v.get('list_price') or 0)
                 if current_price <= 0:
                     continue
-                result = self._apply_rule_action(current_price, rule, floor_data['floor_price'])
+                result = self._apply_rule_action(current_price, rule, floor_map.get(vid, 0))
                 result['rule_id'] = rule['id']
                 result['rule_name'] = rule['name']
                 result['vehicle_id'] = vid
@@ -286,25 +359,52 @@ class PricingService:
     def _get_eligible_vehicles(self, rule: Dict[str, Any],
                                company_id: int = None,
                                limit: int = 200) -> List[Dict[str, Any]]:
-        """Get vehicles matching a rule's conditions for batch simulation."""
-        filters: Dict[str, Any] = {}
-        if company_id:
-            filters['company_id'] = str(company_id)
+        """Get vehicles matching a rule's conditions for batch simulation.
 
-        cats = rule.get('condition_category')
-        if cats and len(cats) == 1:
-            filters['category'] = cats[0]
+        Supports target_mode: 'criteria' (default), 'manual', 'both'.
+        """
+        target_mode = rule.get('target_mode', 'criteria')
 
-        brands = rule.get('condition_brand')
-        if brands and len(brands) == 1:
-            filters['brand'] = brands[0]
+        criteria_vehicles = []
+        if target_mode in ('criteria', 'both'):
+            filters: Dict[str, Any] = {}
+            if company_id:
+                filters['company_id'] = str(company_id)
 
-        # Fetch a broad set from catalog
-        result = self._vehicle_repo.get_catalog(filters, page=1, per_page=limit)
-        vehicles = result.get('items', [])
+            cats = rule.get('condition_category')
+            if cats and len(cats) == 1:
+                filters['category'] = cats[0]
 
-        # Further filter in Python for multi-condition matching
-        return [v for v in vehicles if self._vehicle_matches_rule(v, rule)]
+            brands = rule.get('condition_brand')
+            if brands and len(brands) == 1:
+                filters['brand'] = brands[0]
+
+            result = self._vehicle_repo.get_catalog(filters, page=1, per_page=limit)
+            all_vehicles = result.get('items', [])
+            criteria_vehicles = [v for v in all_vehicles if self._vehicle_matches_rule(v, rule)]
+
+        manual_vehicles = []
+        if target_mode in ('manual', 'both'):
+            manual_ids = self._pricing_repo.get_rule_vehicle_ids(rule['id'])
+            if manual_ids:
+                for vid in manual_ids:
+                    v = self._vehicle_repo.get_by_id(vid)
+                    if v and not v.get('deleted_at'):
+                        manual_vehicles.append(v)
+
+        if target_mode == 'criteria':
+            return criteria_vehicles
+        if target_mode == 'manual':
+            return manual_vehicles
+
+        # 'both' — union deduped by vehicle_id
+        seen = set()
+        combined = []
+        for v in criteria_vehicles + manual_vehicles:
+            if v['id'] not in seen:
+                seen.add(v['id'])
+                combined.append(v)
+        return combined
 
     # ═══════════════════════════════════════════════
     # EXECUTE RULE (apply price changes)
@@ -312,11 +412,13 @@ class PricingService:
 
     def execute_rule(self, rule_id: int, company_id: int = None,
                      executed_by: int = None,
-                     dry_run: bool = False) -> Dict[str, Any]:
+                     dry_run: bool = False,
+                     approver_id: int = None) -> Dict[str, Any]:
         """Execute a pricing rule against all matching vehicles.
 
         Returns summary with applied/skipped counts and details.
         Set dry_run=True for simulation without writes.
+        If approver_id is provided, items needing approval are submitted for formal approval.
         """
         rule = self._pricing_repo.get_rule(rule_id)
         if not rule:
@@ -325,9 +427,12 @@ class PricingService:
             raise ValueError('Rule is not active')
 
         vehicles = self._get_eligible_vehicles(rule, company_id)
+        # Batch floor price calculation — 1 query instead of 2N
+        floor_map = self._batch_floor_prices(vehicles)
         applied = []
         skipped = []
         alerts = []
+        pending_items = []
 
         for v in vehicles:
             vid = v['id']
@@ -336,8 +441,7 @@ class PricingService:
                 skipped.append({'vehicle_id': vid, 'reason': 'no_price'})
                 continue
 
-            floor_data = self.calculate_floor_price(vid)
-            result = self._apply_rule_action(current_price, rule, floor_data['floor_price'])
+            result = self._apply_rule_action(current_price, rule, floor_map.get(vid, 0))
 
             if result['action'] == 'alert_only':
                 alerts.append({
@@ -371,6 +475,15 @@ class PricingService:
                     changed_by=executed_by
                 )
 
+            if needs_approval:
+                pending_items.append({
+                    'vehicle_id': vid,
+                    'old_price': current_price,
+                    'new_price': result['suggested_price'],
+                    'reduction': result['reduction'],
+                    'floor_hit': result['floor_hit'],
+                })
+
             applied.append({
                 'vehicle_id': vid,
                 'vin': v.get('vin'),
@@ -383,6 +496,13 @@ class PricingService:
                 'needs_approval': needs_approval,
                 'applied': not dry_run and not needs_approval,
             })
+
+        # Submit pending items for approval
+        approval_request_id = None
+        if not dry_run and pending_items and approver_id:
+            approval_request_id = self._submit_for_approval(
+                rule, pending_items, executed_by, approver_id
+            )
 
         # Update last_executed timestamp
         if not dry_run:
@@ -400,7 +520,42 @@ class PricingService:
             'applied': applied,
             'skipped': skipped,
             'alerts': alerts,
+            'approval_request_id': approval_request_id,
         }
+
+    def _submit_for_approval(self, rule: Dict[str, Any],
+                              pending_items: List[Dict[str, Any]],
+                              executed_by: int,
+                              approver_id: int) -> Optional[int]:
+        """Create pending price changes and submit for formal approval."""
+        try:
+            from core.approvals.engine import ApprovalEngine
+
+            rows = self._pricing_repo.create_pending_changes(
+                pending_items, rule['id'], executed_by
+            )
+            total_reduction = sum(it['reduction'] for it in pending_items)
+
+            engine = ApprovalEngine()
+            ar = engine.submit(
+                entity_type='carpark_price_change',
+                entity_id=rule['id'],
+                context={
+                    'approver_user_id': approver_id,
+                    'title': f'Reducere preț: {rule["name"]}',
+                    'vehicle_count': len(pending_items),
+                    'total_reduction': round(total_reduction, 2),
+                    'rule_name': rule['name'],
+                },
+                submitted_by=executed_by,
+            )
+            if ar:
+                pending_ids = [r['id'] for r in rows]
+                self._pricing_repo.link_pending_to_approval(pending_ids, ar['id'])
+                return ar['id']
+        except Exception as e:
+            logger.error(f'Failed to submit pricing approval: {e}', exc_info=True)
+        return None
 
     # ═══════════════════════════════════════════════
     # AGING ALERTS

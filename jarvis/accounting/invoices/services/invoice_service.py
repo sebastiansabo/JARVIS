@@ -52,6 +52,7 @@ class InvoiceService:
                       email notify -> auto-tag -> event log.
         """
         try:
+            observer_user_ids = self._normalize_observer_ids(data.get('observer_user_ids'))
             invoice_id = self.invoice_repo.save(
                 supplier=data['supplier'],
                 invoice_template=data.get('invoice_template', ''),
@@ -72,6 +73,7 @@ class InvoiceService:
                 line_items=data.get('_line_items'),
                 invoice_type=data.get('_invoice_type', 'standard'),
                 allocation_mode=data.get('allocation_mode', 'whole'),
+                observer_user_ids=observer_user_ids,
             )
 
             self._track_corrections(data, invoice_id, user)
@@ -230,7 +232,13 @@ class InvoiceService:
                 net_value=float(data['net_value']) if data.get('net_value') else None,
             )
 
-            if not updated:
+            observers_touched = False
+            if 'observer_user_ids' in data:
+                normalized_observers = self._normalize_observer_ids(data.get('observer_user_ids')) or []
+                self.invoice_repo.sync_observers(invoice_id, normalized_observers)
+                observers_touched = True
+
+            if not updated and not observers_touched:
                 return ServiceResult(success=False, error='Invoice not found or no changes made', status_code=404)
 
             # Status change handling
@@ -385,6 +393,26 @@ class InvoiceService:
         })
 
     # ============== Private Helpers ==============
+
+    @staticmethod
+    def _normalize_observer_ids(raw) -> Optional[List[int]]:
+        """Coerce observer payload into a clean list of int user IDs or None."""
+        if raw is None:
+            return None
+        if not isinstance(raw, (list, tuple, set)):
+            return None
+        result: List[int] = []
+        seen = set()
+        for item in raw:
+            try:
+                uid = int(item)
+            except (TypeError, ValueError):
+                continue
+            if uid in seen:
+                continue
+            seen.add(uid)
+            result.append(uid)
+        return result
 
     def _log_event(self, user: UserContext, event_type: str,
                    description: str = None, entity_type: str = None,

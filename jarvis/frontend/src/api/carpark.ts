@@ -26,6 +26,13 @@ import type {
   VehicleListing,
   SyncLogEntry,
   DashboardData,
+  VehicleLink,
+  LinkSearchResult,
+  LinkedEntityType,
+  PromotionVehicle,
+  VehicleCostLine,
+  RuleVehicle,
+  PendingPriceChange,
 } from '../types/carpark'
 
 export const carparkApi = {
@@ -77,6 +84,23 @@ export const carparkApi = {
   checkVin: (vin: string) =>
     api.get<{ exists: boolean; vehicle_id?: number }>('/api/carpark/vehicles/check-vin', { vin }),
 
+  // ── VIN Decoder ────────────────────────────────────────
+  decodeVIN: (vin: string, refresh = false) =>
+    api.get<{ success: boolean; data: import('@/types/carpark').VINDecodeResult }>(
+      `/api/carpark/vin/decode/${encodeURIComponent(vin)}`,
+      refresh ? { refresh: 'true' } : undefined,
+    ),
+
+  validateVIN: (vin: string) =>
+    api.get<{ success: boolean; data: import('@/types/carpark').VINValidation }>(
+      `/api/carpark/vin/validate/${encodeURIComponent(vin)}`,
+    ),
+
+  getVINProviders: () =>
+    api.get<{ success: boolean; data: import('@/types/carpark').VINProviderStatus[] }>(
+      '/api/carpark/vin/providers',
+    ),
+
   // ── Photos ───────────────────────────────────────────────
   getPhotos: (vehicleId: number) =>
     api.get<{ photos: VehiclePhoto[] }>(`/api/carpark/vehicles/${vehicleId}/photos`),
@@ -125,6 +149,34 @@ export const carparkApi = {
   getCostTotals: (vehicleId: number) =>
     api.get<CostTotals>(`/api/carpark/vehicles/${vehicleId}/costs/totals`),
 
+  // ── Cost Lines ───────────────────────────────────────────
+  getCostLines: (vehicleId: number) =>
+    api.get<{ cost_lines: VehicleCostLine[] }>(`/api/carpark/vehicles/${vehicleId}/cost-lines`),
+
+  createCostLine: (vehicleId: number, data: Partial<VehicleCostLine>) =>
+    api.post<{ success: boolean; id: number }>(`/api/carpark/vehicles/${vehicleId}/cost-lines`, data),
+
+  updateCostLine: (lineId: number, data: Partial<VehicleCostLine>) =>
+    api.put<{ success: boolean }>(`/api/carpark/cost-lines/${lineId}`, data),
+
+  deleteCostLine: (lineId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/cost-lines/${lineId}`),
+
+  getLineCosts: (lineId: number) =>
+    api.get<{ costs: VehicleCost[] }>(`/api/carpark/cost-lines/${lineId}/costs`),
+
+  createLineCost: (lineId: number, data: Partial<VehicleCost>) =>
+    api.post<{ success: boolean; id: number }>(`/api/carpark/cost-lines/${lineId}/costs`, data),
+
+  updateLineCost: (costId: number, data: Partial<VehicleCost>) =>
+    api.put<{ success: boolean }>(`/api/carpark/line-costs/${costId}`, data),
+
+  deleteLineCost: (costId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/line-costs/${costId}`),
+
+  linkCostInvoice: (costId: number, invoiceId: number | null) =>
+    api.put<{ success: boolean }>(`/api/carpark/line-costs/${costId}/link-invoice`, { invoice_id: invoiceId }),
+
   // ── Revenues ───────────────────────────────────────────
   getRevenues: (vehicleId: number) =>
     api.get<{ revenues: VehicleRevenue[] }>(`/api/carpark/vehicles/${vehicleId}/revenues`),
@@ -161,8 +213,11 @@ export const carparkApi = {
   deletePricingRule: (ruleId: number) =>
     api.delete<{ success: boolean }>(`/api/carpark/pricing/rules/${ruleId}`),
 
-  executePricingRule: (ruleId: number, dryRun = false) =>
-    api.post<RuleExecutionResult>(`/api/carpark/pricing/rules/${ruleId}/execute`, { dry_run: dryRun }),
+  executePricingRule: (ruleId: number, dryRun = false, approverId?: number) =>
+    api.post<RuleExecutionResult>(`/api/carpark/pricing/rules/${ruleId}/execute`, {
+      dry_run: dryRun,
+      ...(approverId ? { approver_id: approverId } : {}),
+    }),
 
   // ── Pricing Simulation ───────────────────────────────
   simulatePricing: (params: { vehicle_id?: number; rule_id?: number }) =>
@@ -195,6 +250,31 @@ export const carparkApi = {
 
   deletePromotion: (promoId: number) =>
     api.delete<{ success: boolean }>(`/api/carpark/promotions/${promoId}`),
+
+  // ── Rule Vehicles ──────────────────────────────────
+  getRuleVehicles: (ruleId: number) =>
+    api.get<{ vehicles: RuleVehicle[]; count: number }>(`/api/carpark/pricing/rules/${ruleId}/vehicles`),
+
+  addRuleVehicles: (ruleId: number, vehicleIds: number[]) =>
+    api.post<{ added: number }>(`/api/carpark/pricing/rules/${ruleId}/vehicles`, { vehicle_ids: vehicleIds }),
+
+  removeRuleVehicle: (ruleId: number, vehicleId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/pricing/rules/${ruleId}/vehicles/${vehicleId}`),
+
+  // ── Project Linking ───────────────────────────────
+  linkRuleToProject: (ruleId: number, projectId: number) =>
+    api.post<{ rule: PricingRule }>(`/api/carpark/pricing/rules/${ruleId}/link-project`, { project_id: projectId }),
+
+  unlinkRuleFromProject: (ruleId: number) =>
+    api.post<{ rule: PricingRule }>(`/api/carpark/pricing/rules/${ruleId}/unlink-project`, {}),
+
+  // ── Rules for Project ─────────────────────────────
+  getRulesForProject: (projectId: number) =>
+    api.get<{ rules: PricingRule[] }>(`/api/carpark/pricing/rules/for-project/${projectId}`),
+
+  // ── Pending Changes ───────────────────────────────
+  getPendingChanges: (ruleId: number, status?: string) =>
+    api.get<{ changes: PendingPriceChange[]; count: number }>(`/api/carpark/pricing/rules/${ruleId}/pending`, status ? { status } : undefined),
 
   // ── Aging Alerts ─────────────────────────────────────
   getAgingVehicles: (minDays?: number) =>
@@ -251,4 +331,27 @@ export const carparkApi = {
   // ── Analytics / Dashboard ──────────────────────────────
   getDashboard: (period = 90) =>
     api.get<DashboardData>('/api/carpark/analytics/dashboard', { period: String(period) }),
+
+  // ── Vehicle Links ─────────────────────────────────────
+  getVehicleLinks: (vehicleId: number, entityType?: LinkedEntityType) =>
+    api.get<{ links: VehicleLink[] }>(`/api/carpark/vehicles/${vehicleId}/links`, entityType ? { entity_type: entityType } : undefined),
+
+  linkEntity: (vehicleId: number, data: { entity_type: LinkedEntityType; entity_id: number; notes?: string }) =>
+    api.post<{ link: VehicleLink }>(`/api/carpark/vehicles/${vehicleId}/links`, data),
+
+  unlinkEntity: (vehicleId: number, linkId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/vehicles/${vehicleId}/links/${linkId}`),
+
+  searchLinkableEntities: (entityType: LinkedEntityType, q = '', limit = 20) =>
+    api.get<{ results: LinkSearchResult[] }>(`/api/carpark/link-search/${entityType}`, { q, limit: String(limit) }),
+
+  // ── Promotion Vehicles ─────────────────────────────────
+  getPromotionVehicles: (promoId: number) =>
+    api.get<{ vehicles: PromotionVehicle[]; count: number }>(`/api/carpark/promotions/${promoId}/vehicles`),
+
+  addPromotionVehicles: (promoId: number, vehicleIds: number[]) =>
+    api.post<{ added: number }>(`/api/carpark/promotions/${promoId}/vehicles`, { vehicle_ids: vehicleIds }),
+
+  removePromotionVehicle: (promoId: number, vehicleId: number) =>
+    api.delete<{ success: boolean }>(`/api/carpark/promotions/${promoId}/vehicles/${vehicleId}`),
 }

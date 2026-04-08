@@ -45,6 +45,32 @@ class PublishingRepository(BaseRepository):
         params.append(limit)
         return self.query_all(sql, tuple(params))
 
+    def list_platforms_with_counts(self, company_id: int = None,
+                                   active_only: bool = False,
+                                   limit: int = 50) -> List[Dict[str, Any]]:
+        """List platforms with active listing counts in a single query."""
+        sql = '''
+            SELECT p.*,
+                   COALESCE(c.cnt, 0) AS active_listings
+            FROM carpark_publishing_platforms p
+            LEFT JOIN (
+                SELECT platform_id, COUNT(*) AS cnt
+                FROM carpark_vehicle_listings
+                WHERE status = 'active'
+                GROUP BY platform_id
+            ) c ON c.platform_id = p.id
+            WHERE 1=1
+        '''
+        params: list = []
+        if company_id:
+            sql += ' AND (p.company_id = %s OR p.company_id IS NULL)'
+            params.append(company_id)
+        if active_only:
+            sql += ' AND p.is_active = TRUE'
+        sql += ' ORDER BY p.name ASC LIMIT %s'
+        params.append(limit)
+        return self.query_all(sql, tuple(params))
+
     def get_platform(self, platform_id: int) -> Optional[Dict[str, Any]]:
         return self.query_one(
             'SELECT * FROM carpark_publishing_platforms WHERE id = %s', (platform_id,)

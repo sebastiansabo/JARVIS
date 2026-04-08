@@ -53,6 +53,7 @@ MODULES = [
         'children': [
             {'module_key': 'hr_pontaje', 'name': 'Pontaje', 'description': 'Time tracking', 'icon': 'bi-fingerprint', 'url': '/hr/pontaje', 'sort_order': 1},
             {'module_key': 'hr_bonuses', 'name': 'Bonuses', 'description': 'Event bonuses', 'icon': 'bi-gift', 'url': '/hr/bonuses', 'sort_order': 2},
+            {'module_key': 'hr_employees', 'name': 'Employees', 'description': 'Employee directory & 360 view', 'icon': 'bi-person-badge', 'url': '/hr/employees', 'sort_order': 3},
         ],
     },
     {

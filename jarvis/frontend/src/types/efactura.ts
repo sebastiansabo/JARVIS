@@ -47,6 +47,7 @@ export interface EFacturaInvoice {
   subdepartment_override?: string | null
   department_override_2?: string | null
   subdepartment_override_2?: string | null
+  observer_user_ids?: number[] | null
   // Mapping fields (joined from supplier_mappings)
   mapped_supplier_name?: string | null
   mapped_type_names?: string[] | null

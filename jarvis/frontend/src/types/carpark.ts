@@ -228,9 +228,26 @@ export type CostType =
 export type RevenueType =
   | 'sale' | 'rental' | 'lease' | 'commission' | 'refund' | 'other'
 
+export interface VehicleCostLine {
+  id: number
+  vehicle_id: number
+  cost_type: CostType
+  description: string | null
+  planned_amount: number
+  spent_amount: number
+  currency: string
+  notes: string | null
+  created_by: number | null
+  created_at: string
+  updated_at: string | null
+  computed_spent?: number
+  cost_count?: number
+}
+
 export interface VehicleCost {
   id: number
   vehicle_id: number
+  cost_line_id: number | null
   cost_type: CostType
   description: string | null
   amount: number
@@ -249,6 +266,8 @@ export interface VehicleCost {
   date: string
   created_by: number | null
   created_at: string
+  invoice_number_ref?: string | null
+  invoice_supplier_ref?: string | null
 }
 
 export interface VehicleRevenue {
@@ -316,6 +335,7 @@ export const REVENUE_TYPE_LABELS: Record<RevenueType, string> = {
 
 // ── Pricing types ──
 
+export type TargetMode = 'criteria' | 'manual' | 'both'
 export type PricingActionType = 'reduce_percent' | 'reduce_amount' | 'set_price' | 'alert_only'
 export type PricingFloorType = 'minimum_price' | 'cost_plus_margin' | 'purchase_recovery'
 export type PromotionTargetType = 'all' | 'category' | 'brand' | 'specific'
@@ -341,6 +361,9 @@ export interface PricingRule {
   frequency: string
   last_executed: string | null
   company_id: number | null
+  project_id: number | null
+  project_name: string | null
+  target_mode: TargetMode
   created_by: number | null
   created_at: string
   updated_at: string
@@ -443,6 +466,40 @@ export interface RuleExecutionResult {
     days_listed: number
     current_price: number
   }>
+  approval_request_id: number | null
+}
+
+export interface PendingPriceChange {
+  id: number
+  rule_id: number
+  vehicle_id: number
+  old_price: number
+  new_price: number
+  reduction: number
+  floor_hit: boolean
+  status: 'pending' | 'approved' | 'rejected'
+  approval_request_id: number | null
+  applied_at: string | null
+  applied_by: number | null
+  created_by: number
+  created_at: string
+  vin: string
+  brand: string
+  model: string
+}
+
+export interface RuleVehicle {
+  id: number
+  rule_id: number
+  vehicle_id: number
+  added_by: number
+  added_by_name: string | null
+  created_at: string
+  vin: string
+  brand: string
+  model: string
+  current_price: number | null
+  status: string
 }
 
 export interface AgingVehicle {
@@ -580,6 +637,55 @@ export const CATEGORY_LABELS: Record<VehicleCategory, string> = {
   TI: 'Trade-In',
 }
 
+// ── Vehicle Links ──
+
+export type LinkedEntityType = 'invoice' | 'dms_document' | 'dms_folder' | 'project' | 'hr_event' | 'crm_deal' | 'crm_client'
+
+export interface VehicleLink {
+  id: number
+  vehicle_id: number
+  linked_entity_type: LinkedEntityType
+  linked_entity_id: number
+  notes: string | null
+  linked_by: number
+  linked_by_name: string | null
+  created_at: string
+  entity_label: string
+  entity_sublabel: string | null
+}
+
+export interface LinkSearchResult {
+  id: number
+  label: string
+  sublabel: string | null
+}
+
+export const ENTITY_TYPE_LABELS: Record<LinkedEntityType, string> = {
+  invoice: 'Facturi',
+  dms_document: 'Documente',
+  dms_folder: 'Dosare',
+  project: 'Proiecte',
+  hr_event: 'Evenimente HR',
+  crm_deal: 'Dealuri CRM',
+  crm_client: 'Clienti CRM',
+}
+
+// ── Promotion Vehicles ──
+
+export interface PromotionVehicle {
+  id: number
+  promotion_id: number
+  vehicle_id: number
+  added_by: number
+  added_by_name: string | null
+  created_at: string
+  vin: string
+  brand: string
+  model: string
+  current_price: number | null
+  status: string
+}
+
 // ── Analytics / Dashboard types ─────────────────────────────
 
 export interface InventorySummary {
@@ -674,6 +780,72 @@ export interface DashboardData {
   publishing: PublishingStats
   cost_overview: CostOverviewItem[]
   recent_activity: RecentActivity[]
+}
+
+// ── VIN Decoder Types ────────────────────────────────────
+
+export interface VINDecodedSpecs {
+  vin: string
+  brand: string
+  model: string
+  variant: string
+  generation: string
+  model_year: number
+  manufacture_year: number
+  body_type: string
+  doors: number
+  seats: number
+  fuel_type: string
+  engine_displacement_cc: number
+  engine_power_hp: number
+  engine_power_kw: number
+  engine_code: string
+  cylinders: number
+  transmission: string
+  transmission_detail: string
+  drive_type: string
+  gears: number
+  length_mm: number
+  width_mm: number
+  height_mm: number
+  wheelbase_mm: number
+  curb_weight_kg: number
+  gross_weight_kg: number
+  max_speed_kmh: number
+  co2_emissions: number
+  euro_standard: string
+  battery_capacity_kwh: number
+  manufacturer: string
+  plant_country: string
+  plant_city: string
+  confidence_score: number
+  fields_decoded: number
+  fields_total: number
+  decoded_at: string
+  provider: string
+}
+
+export interface VINDecodeResult {
+  specs: VINDecodedSpecs
+  vehicle_fields: Partial<Vehicle>
+  provider: string
+  confidence: number
+}
+
+export interface VINValidation {
+  valid: boolean
+  vin: string
+  wmi: string
+  vds: string
+  vis: string
+  check_digit_valid: boolean
+  errors: string[]
+}
+
+export interface VINProviderStatus {
+  name: string
+  available: boolean
+  remaining_quota: number | null
 }
 
 // Catalog tab order

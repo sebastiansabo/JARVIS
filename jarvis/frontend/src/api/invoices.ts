@@ -7,7 +7,8 @@ export const invoicesApi = {
   getInvoices: (filters: InvoiceFilters & { limit?: number; offset?: number; include_allocations?: boolean } = {}) =>
     api.get<Invoice[]>(`/api/db/invoices${buildQs(filters)}`),
   getInvoice: (id: number) => api.get<Invoice>(`/api/db/invoices/${id}`),
-  updateInvoice: (id: number, data: Partial<Invoice>) => api.put<{ success: boolean }>(`/api/db/invoices/${id}`, data),
+  updateInvoice: (id: number, data: Partial<Invoice> & { observer_user_ids?: number[] }) =>
+    api.put<{ success: boolean }>(`/api/db/invoices/${id}`, data),
   deleteInvoice: (id: number) => api.delete<{ success: boolean }>(`/api/db/invoices/${id}`),
   restoreInvoice: (id: number) => api.post<{ success: boolean }>(`/api/db/invoices/${id}/restore`, {}),
   permanentDeleteInvoice: (id: number) => api.delete<{ success: boolean }>(`/api/db/invoices/${id}/permanent`),

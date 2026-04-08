@@ -47,6 +47,7 @@ import { organizationApi } from '@/api/organization'
 import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
 import { TagFilter } from '@/components/shared/TagFilter'
+import { ObserverPicker } from '@/components/shared/ObserverPicker'
 import { tagsApi } from '@/api/tags'
 import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
 import type { EFacturaInvoiceFilters } from '@/types/efactura'
@@ -64,6 +65,8 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
   const [confirmAction, setConfirmAction] = useState<{ action: string; ids: number[] } | null>(null)
+  const [sendDialog, setSendDialog] = useState<{ ids: number[] } | null>(null)
+  const [sendObserverIds, setSendObserverIds] = useState<number[]>([])
   const [viewInvoice, setViewInvoice] = useState<InvoiceRow | null>(null)
   const [editInvoice, setEditInvoice] = useState<InvoiceRow | null>(null)
   const [overrides, setOverrides] = useState({
@@ -74,6 +77,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
     subdepartment_override_2: '',
   })
   const [splitDept, setSplitDept] = useState(false)
+  const [editObserverIds, setEditObserverIds] = useState<number[]>([])
   const [visibleColumns, setVisibleColumnsRaw] = useState<string[]>(loadColumns)
 
   const setVisibleColumns = (cols: string[]) => {
@@ -153,8 +157,13 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   }
 
   const sendToModuleMut = useMutation({
-    mutationFn: (ids: number[]) => efacturaApi.sendToModule(ids),
-    onSuccess: invalidateAll,
+    mutationFn: ({ ids, observerUserIds }: { ids: number[]; observerUserIds?: number[] }) =>
+      efacturaApi.sendToModule(ids, observerUserIds),
+    onSuccess: () => {
+      setSendDialog(null)
+      setSendObserverIds([])
+      invalidateAll()
+    },
   })
 
   const unallocQueryKey = ['efactura-unallocated', { ...filters, search }]
@@ -213,8 +222,10 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   })
 
   const updateOverridesMut = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Record<string, string | null> }) =>
-      efacturaApi.updateOverrides(id, data),
+    mutationFn: ({ id, data }: {
+      id: number
+      data: Record<string, string | null> & { observer_user_ids?: number[] }
+    }) => efacturaApi.updateOverrides(id, data),
     onSuccess: () => {
       invalidateAll()
       setEditInvoice(null)
@@ -331,11 +342,32 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
     if (!confirmAction) return
     const { action, ids } = confirmAction
     switch (action) {
-      case 'send': sendToModuleMut.mutate(ids); break
       case 'hide': bulkHideMut.mutate(ids); break
       case 'restore-hidden': bulkRestoreHiddenMut.mutate(ids); break
       case 'delete': deleteMut.mutate(ids); break
     }
+  }
+
+  const openSendDialog = (ids: number[]) => {
+    // Pre-populate with the union of per-invoice stored observers so users
+    // immediately see what will be attached; they can edit/override here.
+    const prefilled = new Set<number>()
+    for (const inv of displayedInvoices) {
+      if (!ids.includes(inv.id)) continue
+      for (const uid of inv.observer_user_ids ?? []) {
+        prefilled.add(uid)
+      }
+    }
+    setSendObserverIds(Array.from(prefilled))
+    setSendDialog({ ids })
+  }
+
+  const confirmSend = () => {
+    if (!sendDialog) return
+    sendToModuleMut.mutate({
+      ids: sendDialog.ids,
+      observerUserIds: sendObserverIds.length > 0 ? sendObserverIds : undefined,
+    })
   }
 
   const openEdit = (inv: InvoiceRow) => {
@@ -347,12 +379,13 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
       subdepartment_override_2: inv.subdepartment_override_2 ?? '',
     })
     setSplitDept(!!(inv.department_override_2 || inv.subdepartment_override_2))
+    setEditObserverIds(inv.observer_user_ids ?? [])
     setEditInvoice(inv)
   }
 
   const saveOverrides = () => {
     if (!editInvoice) return
-    const data: Record<string, string | null> = {}
+    const data: Record<string, string | null> & { observer_user_ids?: number[] } = {}
     for (const [k, v] of Object.entries(overrides)) {
       data[k] = v || null
     }
@@ -361,6 +394,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
       data.department_override_2 = null
       data.subdepartment_override_2 = null
     }
+    data.observer_user_ids = editObserverIds
     updateOverridesMut.mutate({ id: editInvoice.id, data })
   }
 
@@ -508,10 +542,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
             const unsendable = selectedInvoices.filter((i) => !i._hidden && !canSend(i))
             return (
             <>
-              <Button size="sm" disabled={sendable.length === 0} onClick={() => setConfirmAction({
-                action: 'send',
-                ids: sendable.map((i) => i.id),
-              })}>
+              <Button size="sm" disabled={sendable.length === 0} onClick={() => openSendDialog(sendable.map((i) => i.id))}>
                 <Send className="mr-1 h-3 w-3" /> Send to Module{sendable.length > 0 ? ` (${sendable.length})` : ''}
               </Button>
               {unsendable.length > 0 && (
@@ -598,7 +629,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
               ) : (
                 <>
                   <Button variant="ghost" size="icon" className="h-9 w-9 text-green-600" title="Send"
-                    disabled={!canSend(inv)} onClick={() => setConfirmAction({ action: 'send', ids: [inv.id] })}>
+                    disabled={!canSend(inv)} onClick={() => openSendDialog([inv.id])}>
                     <Send className="h-4 w-4" />
                   </Button>
                   <Button variant="ghost" size="icon" className="h-9 w-9 text-amber-600" title="Edit"
@@ -689,7 +720,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                             className="h-7 w-7 text-green-600 dark:text-green-400"
                             title={canSend(inv) ? 'Send to Module' : 'Set Type and Department before sending'}
                             disabled={!canSend(inv)}
-                            onClick={() => setConfirmAction({ action: 'send', ids: [inv.id] })}
+                            onClick={() => openSendDialog([inv.id])}
                           >
                             <Send className="h-3.5 w-3.5" />
                           </Button>
@@ -799,8 +830,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
         open={!!confirmAction}
         onOpenChange={() => setConfirmAction(null)}
         title={
-          confirmAction?.action === 'send' ? 'Send to Invoice Module'
-          : confirmAction?.action === 'hide' ? 'Hide Invoices'
+          confirmAction?.action === 'hide' ? 'Hide Invoices'
           : confirmAction?.action === 'delete' ? 'Delete Invoices'
           : 'Restore from Hidden'
         }
@@ -812,6 +842,54 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
         onConfirm={executeAction}
         destructive={confirmAction?.action === 'delete'}
       />
+
+      {/* Send to Module dialog with observer picker */}
+      <Dialog
+        open={!!sendDialog}
+        onOpenChange={(o) => {
+          if (!o && !sendToModuleMut.isPending) {
+            setSendDialog(null)
+            setSendObserverIds([])
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send to Invoice Module</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              This will send {sendDialog?.ids.length ?? 0} invoice(s) to the Invoice module.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Observers (optional)</Label>
+              <ObserverPicker
+                value={sendObserverIds}
+                onChange={setSendObserverIds}
+                placeholder="Add view-only observers…"
+              />
+              <p className="text-xs text-muted-foreground">
+                Observers get view-only access to the resulting invoices.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSendDialog(null)
+                setSendObserverIds([])
+              }}
+              disabled={sendToModuleMut.isPending}
+            >
+              Cancel
+            </Button>
+            <Button onClick={confirmSend} disabled={sendToModuleMut.isPending}>
+              {sendToModuleMut.isPending ? 'Sending…' : 'Send'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* View Details Dialog */}
       <Dialog open={!!viewInvoice} onOpenChange={() => setViewInvoice(null)}>
@@ -1089,6 +1167,19 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                   )}
                 </>
               )}
+
+              {/* Observers */}
+              <div className="space-y-1">
+                <Label className="text-xs">Observers</Label>
+                <ObserverPicker
+                  value={editObserverIds}
+                  onChange={setEditObserverIds}
+                  placeholder="Add view-only observers…"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Applied when the invoice is sent to Accounting
+                </p>
+              </div>
             </div>
           )}
           <DialogFooter>

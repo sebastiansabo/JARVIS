@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Pencil, Tag, Calendar } from 'lucide-react'
+import { Plus, Trash2, Pencil, Tag, Calendar, Car, X, Search } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,7 @@ import {
   type PromotionTargetType,
   type PromotionType,
   type DiscountType,
+  type VehicleCatalogItem,
 } from '@/types/carpark'
 
 function formatDate(d: string | null): string {
@@ -66,6 +67,7 @@ export default function PromotionsPage() {
 
   const [promoDialogOpen, setPromoDialogOpen] = useState(false)
   const [editingPromo, setEditingPromo] = useState<Partial<Promotion> | null>(null)
+  const [vehicleDialogPromoId, setVehicleDialogPromoId] = useState<number | null>(null)
 
   const { data: promosData, isLoading } = useQuery({
     queryKey: ['carpark', 'promotions'],
@@ -167,6 +169,7 @@ export default function PromotionsPage() {
                     canEdit={canEdit}
                     onEdit={() => openEditPromo(promo)}
                     onDelete={() => deleteMutation.mutate(promo.id)}
+                    onManageVehicles={() => setVehicleDialogPromoId(promo.id)}
                   />
                 ))}
               </div>
@@ -186,6 +189,7 @@ export default function PromotionsPage() {
                     canEdit={canEdit}
                     onEdit={() => openEditPromo(promo)}
                     onDelete={() => deleteMutation.mutate(promo.id)}
+                    onManageVehicles={() => setVehicleDialogPromoId(promo.id)}
                   />
                 ))}
               </div>
@@ -372,7 +376,156 @@ export default function PromotionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Vehicle Management Dialog */}
+      {vehicleDialogPromoId && (
+        <VehicleManagementDialog
+          promoId={vehicleDialogPromoId}
+          promoName={promotions.find((p) => p.id === vehicleDialogPromoId)?.name ?? ''}
+          onClose={() => setVehicleDialogPromoId(null)}
+        />
+      )}
     </div>
+  )
+}
+
+// ── Vehicle Management Dialog ─────────────────
+function VehicleManagementDialog({
+  promoId,
+  promoName,
+  onClose,
+}: {
+  promoId: number
+  promoName: string
+  onClose: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const { data: vehiclesData } = useQuery({
+    queryKey: ['carpark', 'promotion-vehicles', promoId],
+    queryFn: () => carparkApi.getPromotionVehicles(promoId),
+  })
+
+  const { data: searchData, isFetching: isSearching } = useQuery({
+    queryKey: ['carpark', 'catalog-search', searchQuery],
+    queryFn: () => carparkApi.getCatalog({ search: searchQuery }, 1, 20),
+    enabled: searchQuery.length >= 2,
+  })
+
+  const promoVehicles = vehiclesData?.vehicles ?? []
+  const searchResults = searchData?.items ?? []
+  const promoVehicleIds = new Set(promoVehicles.map((v) => v.vehicle_id))
+
+  const addMutation = useMutation({
+    mutationFn: (vehicleIds: number[]) => carparkApi.addPromotionVehicles(promoId, vehicleIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'promotion-vehicles', promoId] })
+      toast.success('Vehicul adaugat')
+    },
+    onError: () => toast.error('Eroare la adaugare'),
+  })
+
+  const removeMutation = useMutation({
+    mutationFn: (vehicleId: number) => carparkApi.removePromotionVehicle(promoId, vehicleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'promotion-vehicles', promoId] })
+      toast.success('Vehicul eliminat')
+    },
+    onError: () => toast.error('Eroare la eliminare'),
+  })
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Vehicule in promotia: {promoName}</DialogTitle>
+          <DialogDescription>Adauga sau elimina vehicule din aceasta promotie</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+          {/* Search to add */}
+          <div>
+            <Label>Adauga vehicul</Label>
+            <div className="flex items-center gap-2 mt-1">
+              <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cauta dupa VIN, marca, model..."
+              />
+            </div>
+            {searchQuery.length >= 2 && (
+              <div className="mt-2 max-h-40 overflow-y-auto border rounded-md">
+                {isSearching ? (
+                  <div className="p-3 text-center text-sm text-muted-foreground">Se cauta...</div>
+                ) : searchResults.length === 0 ? (
+                  <div className="p-3 text-center text-sm text-muted-foreground">Niciun rezultat</div>
+                ) : (
+                  <div className="divide-y">
+                    {searchResults.map((v: VehicleCatalogItem) => {
+                      const isAdded = promoVehicleIds.has(v.id)
+                      return (
+                        <button
+                          key={v.id}
+                          className="w-full text-left px-3 py-2 hover:bg-accent text-sm disabled:opacity-50 flex items-center justify-between"
+                          disabled={isAdded || addMutation.isPending}
+                          onClick={() => addMutation.mutate([v.id])}
+                        >
+                          <div>
+                            <span className="font-medium">{v.brand} {v.model}</span>
+                            <span className="ml-2 text-muted-foreground text-xs">{v.vin}</span>
+                          </div>
+                          {isAdded && <span className="text-xs text-muted-foreground">Deja adaugat</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Current vehicles */}
+          <div>
+            <Label>Vehicule in promotie ({promoVehicles.length})</Label>
+            {promoVehicles.length === 0 ? (
+              <div className="mt-2 p-4 text-center text-sm text-muted-foreground border rounded-md">
+                Niciun vehicul adaugat
+              </div>
+            ) : (
+              <div className="mt-2 space-y-1">
+                {promoVehicles.map((pv) => (
+                  <div key={pv.id} className="flex items-center justify-between px-3 py-2 border rounded-md">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Car className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm font-medium">{pv.brand} {pv.model}</span>
+                      <span className="text-xs text-muted-foreground">{pv.vin}</span>
+                      {pv.current_price && (
+                        <span className="text-xs text-muted-foreground">{formatCurrency(pv.current_price)} EUR</span>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-red-500 shrink-0"
+                      onClick={() => removeMutation.mutate(pv.vehicle_id)}
+                      disabled={removeMutation.isPending}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Inchide</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -382,11 +535,13 @@ function PromoCard({
   canEdit,
   onEdit,
   onDelete,
+  onManageVehicles,
 }: {
   promo: Promotion
   canEdit: boolean
   onEdit: () => void
   onDelete: () => void
+  onManageVehicles: () => void
 }) {
   const isExpired = new Date(promo.end_date) < new Date()
   const isActive = promo.is_active && !isExpired
@@ -395,10 +550,10 @@ function PromoCard({
     <Card className={`p-4 ${!isActive ? 'opacity-60' : ''}`}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-medium">{promo.name}</h3>
             <Badge variant={isActive ? 'default' : 'secondary'}>
-              {isActive ? 'Activă' : isExpired ? 'Expirată' : 'Inactivă'}
+              {isActive ? 'Activa' : isExpired ? 'Expirata' : 'Inactiva'}
             </Badge>
             <Badge variant="outline">{PROMO_TYPE_LABELS[promo.promo_type]}</Badge>
             <Badge variant="outline">{TARGET_TYPE_LABELS[promo.target_type]}</Badge>
@@ -406,7 +561,7 @@ function PromoCard({
           {promo.description && (
             <p className="text-sm text-muted-foreground mt-1">{promo.description}</p>
           )}
-          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
             <span className="flex items-center gap-1">
               <Calendar className="h-3 w-3" />
               {formatDate(promo.start_date)} — {formatDate(promo.end_date)}
@@ -420,7 +575,7 @@ function PromoCard({
               <span>Buget: {formatCurrency(promo.budget)} (cheltuit: {formatCurrency(promo.spent ?? 0)})</span>
             )}
             {(promo.vehicles_sold ?? 0) > 0 && (
-              <span>Vândute: {promo.vehicles_sold}</span>
+              <span>Vandute: {promo.vehicles_sold}</span>
             )}
             {promo.push_to_platforms && promo.platform_badge && (
               <Badge variant="outline" className="text-[10px]">{promo.platform_badge}</Badge>
@@ -430,6 +585,9 @@ function PromoCard({
 
         {canEdit && (
           <div className="flex items-center gap-1 shrink-0 ml-4">
+            <Button variant="ghost" size="sm" onClick={onManageVehicles} title="Gestioneaza vehicule">
+              <Car className="h-4 w-4" />
+            </Button>
             <Button variant="ghost" size="sm" onClick={onEdit}>
               <Pencil className="h-4 w-4" />
             </Button>

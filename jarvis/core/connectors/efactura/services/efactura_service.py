@@ -1171,6 +1171,9 @@ class EFacturaService:
                 'subdepartment_override': inv.get('subdepartment_override'),
                 'mapping_subdepartment': inv.get('mapping_subdepartment'),
                 'mapped_brand': inv.get('mapping_brand'),
+                'department_override_2': inv.get('department_override_2'),
+                'subdepartment_override_2': inv.get('subdepartment_override_2'),
+                'observer_user_ids': inv.get('observer_user_ids') or [],
             })
 
         return ServiceResult(success=True, data={
@@ -1720,11 +1723,13 @@ Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
 
         return ServiceResult(success=True, data={'marked': len(pairs)})
 
-    def send_to_invoice_module(self, invoice_ids: List[int]) -> ServiceResult:
+    def send_to_invoice_module(self, invoice_ids: List[int],
+                               observer_user_ids: Optional[List[int]] = None) -> ServiceResult:
         """
         Send selected invoices to the main JARVIS Invoice Module.
 
         Creates records in the main invoices table and marks these as allocated.
+        Optionally attaches observer users to every newly created invoice.
 
         Optimized for batch operations:
         - 1 query to fetch all unallocated invoices
@@ -1772,6 +1777,41 @@ Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
 
             # Step 3: Bulk mark as allocated (1 query)
             self.invoice_repo.bulk_mark_allocated(mappings)
+
+            # Step 4: Attach observers — union of dialog-level observers and per-invoice stored observers.
+            def _normalize_ids(raw_list):
+                out = []
+                seen = set()
+                for raw in raw_list or []:
+                    try:
+                        uid = int(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if uid in seen:
+                        continue
+                    seen.add(uid)
+                    out.append(uid)
+                return out
+
+            dialog_observers = _normalize_ids(observer_user_ids)
+            # Build a lookup: efactura_id -> stored observer list
+            efactura_observers_by_id = {
+                inv['id']: _normalize_ids(inv.get('observer_user_ids'))
+                for inv in invoices
+            }
+
+            if dialog_observers or any(efactura_observers_by_id.values()):
+                try:
+                    from accounting.invoices.repositories import InvoiceRepository as MainInvoiceRepository
+                    main_invoice_repo = MainInvoiceRepository()
+                    for efactura_id, jarvis_id in mappings:
+                        stored = efactura_observers_by_id.get(efactura_id, [])
+                        merged = list(dict.fromkeys([*dialog_observers, *stored]))
+                        if merged:
+                            main_invoice_repo.sync_observers(jarvis_id, merged)
+                except Exception as obs_err:
+                    logger.error(f"Failed to attach observers: {obs_err}")
+                    errors.append(f"Observers not attached: {obs_err}")
 
             logger.info(
                 f"Batch sent {len(mappings)} invoices to module",

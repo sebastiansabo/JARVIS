@@ -59,14 +59,14 @@ def create_schema_carpark(conn, cursor):
             interior_code VARCHAR(30),
             fuel_type VARCHAR(30),
             transmission VARCHAR(20),
-            drive_type VARCHAR(10),
+            drive_type VARCHAR(30),
             engine_displacement_cc INTEGER,
             engine_power_hp INTEGER,
             engine_power_kw INTEGER,
             engine_power_electric_hp INTEGER,
             engine_torque_nm INTEGER,
             co2_emissions INTEGER,
-            euro_standard VARCHAR(10),
+            euro_standard VARCHAR(20),
             mileage_km INTEGER DEFAULT 0,
             max_weight_kg INTEGER,
             doors INTEGER,
@@ -252,6 +252,25 @@ def create_schema_carpark(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcp_vehicle ON carpark_vehicle_photos(vehicle_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcp_type ON carpark_vehicle_photos(photo_type)')
 
+    # ── Cost Lines (parent grouping for costs) ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_vehicle_cost_lines (
+            id SERIAL PRIMARY KEY,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            cost_type VARCHAR(50) NOT NULL,
+            description TEXT,
+            planned_amount DECIMAL(12,2) DEFAULT 0,
+            spent_amount DECIMAL(12,2) DEFAULT 0,
+            currency VARCHAR(3) DEFAULT 'EUR',
+            notes TEXT,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcl_vehicle ON carpark_vehicle_cost_lines(vehicle_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcl_type ON carpark_vehicle_cost_lines(cost_type)')
+
     # ── Costs ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS carpark_vehicle_costs (
@@ -280,6 +299,53 @@ def create_schema_carpark(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcc_vehicle ON carpark_vehicle_costs(vehicle_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcc_type ON carpark_vehicle_costs(cost_type)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcc_invoice ON carpark_vehicle_costs(invoice_id)')
+
+    # Add cost_line_id FK to costs (links child costs to parent cost lines)
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'carpark_vehicle_costs' AND column_name = 'cost_line_id'
+            ) THEN
+                ALTER TABLE carpark_vehicle_costs
+                ADD COLUMN cost_line_id INTEGER REFERENCES carpark_vehicle_cost_lines(id) ON DELETE CASCADE;
+            END IF;
+        END $$
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcc_cost_line ON carpark_vehicle_costs(cost_line_id)')
+
+    # Auto-migrate orphan costs into cost lines (idempotent)
+    cursor.execute('''
+        INSERT INTO carpark_vehicle_cost_lines (vehicle_id, cost_type, description, currency, created_by, created_at)
+        SELECT vehicle_id, cost_type,
+               cost_type AS description,
+               COALESCE(MIN(currency), 'RON'),
+               MIN(created_by),
+               MIN(created_at)
+        FROM carpark_vehicle_costs
+        WHERE cost_line_id IS NULL
+        GROUP BY vehicle_id, cost_type
+        ON CONFLICT DO NOTHING
+    ''')
+    cursor.execute('''
+        UPDATE carpark_vehicle_costs c
+        SET cost_line_id = cl.id
+        FROM carpark_vehicle_cost_lines cl
+        WHERE c.vehicle_id = cl.vehicle_id
+          AND c.cost_type = cl.cost_type
+          AND c.cost_line_id IS NULL
+    ''')
+    cursor.execute('''
+        UPDATE carpark_vehicle_cost_lines cl
+        SET spent_amount = COALESCE(sub.total, 0)
+        FROM (
+            SELECT cost_line_id, SUM(amount) AS total
+            FROM carpark_vehicle_costs
+            WHERE cost_line_id IS NOT NULL
+            GROUP BY cost_line_id
+        ) sub
+        WHERE cl.id = sub.cost_line_id
+    ''')
 
     # ── Revenues ──
     cursor.execute('''
@@ -595,6 +661,64 @@ def create_schema_carpark(conn, cursor):
         )
     ''')
 
+    # Pricing rules: project link + target mode
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'carpark_pricing_rules' AND column_name = 'project_id') THEN
+                ALTER TABLE carpark_pricing_rules
+                    ADD COLUMN project_id INTEGER REFERENCES mkt_projects(id) ON DELETE SET NULL;
+                ALTER TABLE carpark_pricing_rules
+                    ADD COLUMN target_mode VARCHAR(10) NOT NULL DEFAULT 'criteria';
+                CREATE INDEX idx_cpr_project ON carpark_pricing_rules(project_id);
+            END IF;
+        END $$;
+    ''')
+
+    # Pricing rule ↔ vehicle junction table (manual vehicle selection)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_pricing_rule_vehicles (
+            id SERIAL PRIMARY KEY,
+            rule_id INTEGER NOT NULL REFERENCES carpark_pricing_rules(id) ON DELETE CASCADE,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            added_by INTEGER NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(rule_id, vehicle_id)
+        )
+    ''')
+
+    # Pending price changes (approval workflow)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_pending_price_changes (
+            id SERIAL PRIMARY KEY,
+            rule_id INTEGER NOT NULL REFERENCES carpark_pricing_rules(id) ON DELETE CASCADE,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            old_price DECIMAL(12,2) NOT NULL,
+            new_price DECIMAL(12,2) NOT NULL,
+            reduction DECIMAL(12,2) NOT NULL,
+            floor_hit BOOLEAN DEFAULT FALSE,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            approval_request_id INTEGER,
+            applied_at TIMESTAMP,
+            applied_by INTEGER,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Seed approval flow for carpark price changes
+    cursor.execute('''
+        INSERT INTO approval_flows (name, slug, entity_type, is_active, created_by)
+        SELECT 'CarPark Price Approval', 'carpark-price-approval', 'carpark_price_change', TRUE, 1
+        WHERE NOT EXISTS (SELECT 1 FROM approval_flows WHERE slug = 'carpark-price-approval')
+    ''')
+    cursor.execute('''
+        INSERT INTO approval_steps (flow_id, name, step_order, approver_type, notify_on_pending, notify_on_decision)
+        SELECT f.id, 'Selected Approver', 1, 'context_approver', TRUE, TRUE
+        FROM approval_flows f WHERE f.slug = 'carpark-price-approval'
+        AND NOT EXISTS (SELECT 1 FROM approval_steps s WHERE s.flow_id = f.id)
+    ''')
+
     # ── Promotions ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS carpark_promotions (
@@ -674,6 +798,36 @@ def create_schema_carpark(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_psl_vehicle ON carpark_publishing_sync_log(vehicle_id)')
 
+    # ── Vehicle Links (cross-module entity linking) ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_vehicle_links (
+            id SERIAL PRIMARY KEY,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            linked_entity_type VARCHAR(30) NOT NULL,
+            linked_entity_id INTEGER NOT NULL,
+            notes TEXT,
+            linked_by INTEGER NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(vehicle_id, linked_entity_type, linked_entity_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cvl_vehicle ON carpark_vehicle_links(vehicle_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cvl_entity ON carpark_vehicle_links(linked_entity_type, linked_entity_id)')
+
+    # ── Promotion Vehicles (junction table) ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_promotion_vehicles (
+            id SERIAL PRIMARY KEY,
+            promotion_id INTEGER NOT NULL REFERENCES carpark_promotions(id) ON DELETE CASCADE,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            added_by INTEGER NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(promotion_id, vehicle_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cpv_promo ON carpark_promotion_vehicles(promotion_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cpv_vehicle ON carpark_promotion_vehicles(vehicle_id)')
+
     # ── Permission column on roles table ──
     for col_name in ['can_access_carpark', 'can_edit_carpark', 'can_delete_carpark',
                       'can_access_carpark_mobile']:
@@ -703,5 +857,23 @@ def create_schema_carpark(conn, cursor):
         ) AS v(name, name_ro, sort_order)
         WHERE NOT EXISTS (SELECT 1 FROM carpark_equipment_categories LIMIT 1)
     ''')
+
+    # ── VIN Decoder Cache ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_vin_cache (
+            id SERIAL PRIMARY KEY,
+            vin VARCHAR(17) NOT NULL,
+            provider VARCHAR(30) NOT NULL,
+            specs_json JSONB NOT NULL,
+            confidence_score DECIMAL(3,2),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            hit_count INTEGER DEFAULT 0,
+            last_hit_at TIMESTAMP,
+            UNIQUE(vin, provider)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vin_cache_vin ON carpark_vin_cache(vin)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vin_cache_expires ON carpark_vin_cache(expires_at)')
 
     conn.commit()

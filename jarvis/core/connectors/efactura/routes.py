@@ -1015,6 +1015,13 @@ def update_invoice_overrides(invoice_id):
         department_override_2 = data.get('department_override_2') or None
         subdepartment_override_2 = data.get('subdepartment_override_2') or None
 
+        # Observers are only updated when the key is explicitly present in the payload
+        if 'observer_user_ids' in data:
+            raw_observers = data.get('observer_user_ids')
+            observer_user_ids = list(raw_observers) if isinstance(raw_observers, list) else []
+        else:
+            observer_user_ids = None
+
         success = efactura_service.invoice_repo.update_overrides(
             invoice_id=invoice_id,
             type_override=type_override,
@@ -1022,6 +1029,7 @@ def update_invoice_overrides(invoice_id):
             subdepartment_override=subdepartment_override,
             department_override_2=department_override_2,
             subdepartment_override_2=subdepartment_override_2,
+            observer_user_ids=observer_user_ids,
         )
 
         if success:
@@ -1099,10 +1107,12 @@ def send_to_invoice_module():
 
     Request body:
         invoice_ids: List of e-Factura invoice IDs to send
+        observer_user_ids: Optional list of user IDs to attach as observers to every created invoice
     """
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         invoice_ids = data.get('invoice_ids', [])
+        observer_user_ids = data.get('observer_user_ids') or None
 
         if not invoice_ids:
             return jsonify({
@@ -1110,7 +1120,7 @@ def send_to_invoice_module():
                 'error': "No invoices selected",
             }), 400
 
-        result = efactura_service.send_to_invoice_module(invoice_ids)
+        result = efactura_service.send_to_invoice_module(invoice_ids, observer_user_ids=observer_user_ids)
 
         if not result.success:
             return jsonify({

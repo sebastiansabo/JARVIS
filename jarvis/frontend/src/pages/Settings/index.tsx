@@ -40,6 +40,7 @@ const MarketingTab = lazy(() => import('./MarketingTab'))
 const DocumentsTab = lazy(() => import('./DocumentsTab'))
 const PontajeTab = lazy(() => import('./PontajeTab'))
 const TablesTab = lazy(() => import('./TablesTab'))
+const AutovitDetail = lazy(() => import('./AutovitDetail'))
 
 const tabs = [
   // Access
@@ -50,7 +51,7 @@ const tabs = [
   // Domain config
   { path: 'accounting', label: 'Accounting', icon: Calculator },
   { path: 'hr', label: 'HR', icon: Briefcase },
-  { path: 'pontaje', label: 'Pontaje', icon: Fingerprint },
+  { path: 'pontaje', label: 'Employee Mapping', icon: Fingerprint },
   { path: 'documents', label: 'Documents', icon: FileText },
   // Appearance
   { path: 'themes', label: 'Themes', icon: Palette },
@@ -138,6 +139,7 @@ export default function Settings() {
               <Route path="approvals" element={<ApprovalsTab />} />
               <Route path="marketing" element={<MarketingTab />} />
               <Route path="connectors" element={<ConnectorsTab />} />
+              <Route path="connectors/autovit/:accountId" element={<AutovitDetail />} />
               <Route path="ai" element={<AiTab />} />
               <Route path="*" element={<Navigate to="users" replace />} />
             </Routes>

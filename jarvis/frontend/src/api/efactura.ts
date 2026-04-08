@@ -80,12 +80,20 @@ export const efacturaApi = {
     )
     return res.ids
   },
-  sendToModule: (invoiceIds: number[]) =>
+  sendToModule: (invoiceIds: number[], observerUserIds?: number[]) =>
     api.post<{ success: boolean; sent: number; duplicates: number; errors: string[] }>(
       `${BASE}/invoices/send-to-module`,
-      { invoice_ids: invoiceIds },
+      {
+        invoice_ids: invoiceIds,
+        ...(observerUserIds && observerUserIds.length > 0
+          ? { observer_user_ids: observerUserIds }
+          : {}),
+      },
     ),
-  updateOverrides: (invoiceId: number, overrides: Record<string, string | null>) =>
+  updateOverrides: (
+    invoiceId: number,
+    overrides: Record<string, string | null> & { observer_user_ids?: number[] },
+  ) =>
     api.put<{ success: boolean }>(`${BASE}/invoices/${invoiceId}/overrides`, overrides),
   bulkUpdateOverrides: (invoiceIds: number[], overrides: Record<string, string | null>) =>
     api.put<{ success: boolean; updated_count: number }>(`${BASE}/invoices/bulk-overrides`, {

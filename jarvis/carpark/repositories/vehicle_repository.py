@@ -339,30 +339,30 @@ class VehicleRepository(BaseRepository):
         return self.query_all(sql, tuple(params))
 
     def get_filter_options(self, company_id: int = None) -> Dict[str, List]:
-        """Distinct values for filter dropdowns."""
+        """Distinct values for filter dropdowns (single query)."""
         where = 'WHERE deleted_at IS NULL'
         params = []
         if company_id:
             where += ' AND company_id = %s'
             params.append(company_id)
 
-        brands = self.query_all(
-            f'SELECT DISTINCT brand FROM carpark_vehicles {where} ORDER BY brand',
-            tuple(params)
-        )
-        fuel_types = self.query_all(
-            f'SELECT DISTINCT fuel_type FROM carpark_vehicles {where} AND fuel_type IS NOT NULL ORDER BY fuel_type',
-            tuple(params)
-        )
-        body_types = self.query_all(
-            f'SELECT DISTINCT body_type FROM carpark_vehicles {where} AND body_type IS NOT NULL ORDER BY body_type',
-            tuple(params)
-        )
-        return {
-            'brands': [r['brand'] for r in brands],
-            'fuel_types': [r['fuel_type'] for r in fuel_types],
-            'body_types': [r['body_type'] for r in body_types],
-        }
+        rows = self.query_all(f'''
+            SELECT 'brand' AS kind, brand AS val FROM carpark_vehicles {where} AND brand IS NOT NULL
+            UNION
+            SELECT 'fuel_type', fuel_type FROM carpark_vehicles {where} AND fuel_type IS NOT NULL
+            UNION
+            SELECT 'body_type', body_type FROM carpark_vehicles {where} AND body_type IS NOT NULL
+            ORDER BY kind, val
+        ''', tuple(params * 3))
+        result: Dict[str, List] = {'brands': [], 'fuel_types': [], 'body_types': []}
+        for r in rows:
+            if r['kind'] == 'brand':
+                result['brands'].append(r['val'])
+            elif r['kind'] == 'fuel_type':
+                result['fuel_types'].append(r['val'])
+            elif r['kind'] == 'body_type':
+                result['body_types'].append(r['val'])
+        return result
 
     # ── HISTORY ──
 

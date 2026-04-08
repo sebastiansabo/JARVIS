@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Loader2 } from 'lucide-react'
+import { Save, Loader2, Search, Check, X } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { SearchSelect } from '@/components/shared/SearchSelect'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -23,7 +24,22 @@ import {
   CATEGORY_LABELS,
   type Vehicle,
   type VehicleCategory,
+  type VINDecodeResult,
 } from '@/types/carpark'
+import {
+  AUTOVIT_BRANDS,
+  AUTOVIT_MODELS,
+  AUTOVIT_BODY_TYPES,
+  AUTOVIT_FUEL_TYPES,
+  AUTOVIT_GEARBOX_TYPES,
+  AUTOVIT_DRIVE_TYPES,
+  AUTOVIT_COLORS,
+  AUTOVIT_INTERIOR_COLORS,
+  AUTOVIT_EURO_STANDARDS,
+  AUTOVIT_VEHICLE_STATES,
+  AUTOVIT_DOORS,
+  AUTOVIT_SEATS,
+} from '@/data/autovitData'
 
 type FormData = Record<string, string | number | boolean | null>
 
@@ -34,10 +50,6 @@ function inputVal(v: string | number | boolean | null | undefined): string | num
 }
 
 const CATEGORIES: VehicleCategory[] = ['NEW', 'ORD', 'SH', 'TD', 'CUS', 'SHR', 'DSP', 'CON', 'TI']
-const FUEL_TYPES = ['Benzina', 'Diesel', 'Hybrid', 'Electric', 'Plug-in Hybrid', 'GPL', 'CNG']
-const TRANSMISSIONS = ['Manual', 'Automatic', 'CVT', 'DSG', 'Tiptronic']
-const BODY_TYPES = ['Sedan', 'SUV', 'Hatchback', 'Break', 'Coupe', 'Cabrio', 'Van', 'Pickup']
-const DRIVE_TYPES = ['FWD', 'RWD', 'AWD', '4WD']
 
 // ── Form field components ──────────────────────────────────
 function TextField({
@@ -111,6 +123,48 @@ function SelectField({
   )
 }
 
+function SearchSelectField({
+  label,
+  name,
+  value,
+  options,
+  onChange,
+  required,
+  placeholder,
+  searchPlaceholder,
+  allowCustom,
+  disabled,
+}: {
+  label: string
+  name: string
+  value: string | null
+  options: { value: string; label: string }[]
+  onChange: (name: string, value: string) => void
+  required?: boolean
+  placeholder?: string
+  searchPlaceholder?: string
+  allowCustom?: boolean
+  disabled?: boolean
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>
+        {label}
+        {required && <span className="text-red-500 ml-0.5">*</span>}
+      </Label>
+      <SearchSelect
+        value={value ?? ''}
+        onValueChange={(v) => onChange(name, v)}
+        options={options}
+        placeholder={placeholder ?? `Select ${label.toLowerCase()}`}
+        searchPlaceholder={searchPlaceholder ?? `Search ${label.toLowerCase()}...`}
+        allowCustom={allowCustom}
+        disabled={disabled}
+      />
+    </div>
+  )
+}
+
 function CheckboxField({
   label,
   name,
@@ -135,6 +189,9 @@ function CheckboxField({
     </div>
   )
 }
+
+// ── Build options ──────────────────────────────────────────
+const brandOptions = AUTOVIT_BRANDS.map((b) => ({ value: b, label: b }))
 
 // ── Main Form ──────────────────────────────────────────────
 export default function VehicleForm() {
@@ -164,7 +221,10 @@ export default function VehicleForm() {
     brand: '',
     model: '',
     variant: '',
+    generation: '',
+    equipment_level: '',
     category: 'SH',
+    state: 'Rulat',
     year_of_manufacture: null,
     fuel_type: '',
     transmission: '',
@@ -177,6 +237,8 @@ export default function VehicleForm() {
     color_interior: '',
     doors: null,
     seats: null,
+    euro_standard: '',
+    co2_emissions: null,
     current_price: null,
     list_price: null,
     minimum_price: null,
@@ -207,6 +269,7 @@ export default function VehicleForm() {
     has_service_book: false,
     has_tuning: false,
     is_registered: false,
+    first_registration_date: '',
     notes: '',
     internal_notes: '',
     listing_title: '',
@@ -229,6 +292,57 @@ export default function VehicleForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingData])
 
+  // Model options based on selected brand
+  const modelOptions = useMemo(() => {
+    const brand = form.brand as string
+    if (!brand) return []
+    const models = AUTOVIT_MODELS[brand] ?? []
+    return models.map((m) => ({ value: m, label: m }))
+  }, [form.brand])
+
+  // VIN decoder
+  const [isDecoding, setIsDecoding] = useState(false)
+  const [decodeResult, setDecodeResult] = useState<VINDecodeResult | null>(null)
+
+  const handleDecodeVIN = async () => {
+    const vin = (form.vin as string)?.trim().toUpperCase()
+    if (!vin || vin.length !== 17) {
+      toast.error('Enter a valid 17-character VIN to decode')
+      return
+    }
+    setIsDecoding(true)
+    try {
+      const result = await carparkApi.decodeVIN(vin)
+      if (result.success && result.data) {
+        setDecodeResult(result.data)
+        toast.success(
+          `VIN decoded via ${result.data.provider} (${Math.round(result.data.confidence * 100)}% confidence)`,
+        )
+      } else {
+        toast.error((result as any).error || 'Could not decode VIN')
+      }
+    } catch (err: any) {
+      const msg = err?.data?.error || 'VIN decode failed'
+      toast.error(msg)
+    } finally {
+      setIsDecoding(false)
+    }
+  }
+
+  const applyDecodedFields = () => {
+    if (!decodeResult?.vehicle_fields) return
+    // Filter to only simple values compatible with FormData type
+    const fields: FormData = {}
+    for (const [k, v] of Object.entries(decodeResult.vehicle_fields)) {
+      if (v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+        fields[k] = v
+      }
+    }
+    setForm((prev) => ({ ...prev, ...fields }))
+    setDecodeResult(null)
+    toast.success('Vehicle specs applied from VIN decode')
+  }
+
   // VIN duplicate check
   const [vinError, setVinError] = useState<string | null>(null)
   const checkVinDuplicate = async (vin: string) => {
@@ -249,7 +363,14 @@ export default function VehicleForm() {
   }
 
   const handleChange = (name: string, value: string | number | boolean) => {
-    setForm((prev) => ({ ...prev, [name]: value }))
+    setForm((prev) => {
+      const next = { ...prev, [name]: value }
+      // Clear model when brand changes
+      if (name === 'brand' && prev.brand !== value) {
+        next.model = ''
+      }
+      return next
+    })
     if (name === 'vin') {
       checkVinDuplicate(value as string)
     }
@@ -308,7 +429,7 @@ export default function VehicleForm() {
       return
     }
 
-    // Clean empty strings → null
+    // Clean empty strings -> null
     const payload: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(form)) {
       if (v === '') {
@@ -376,14 +497,61 @@ export default function VehicleForm() {
             <Label htmlFor="vin">
               VIN <span className="text-red-500">*</span>
             </Label>
-            <Input
-              id="vin"
-              value={(form.vin as string) ?? ''}
-              onChange={(e) => handleChange('vin', e.target.value.toUpperCase())}
-              placeholder="e.g. WBAPH5C55BA123456"
-              className={vinError ? 'border-red-500' : ''}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="vin"
+                value={(form.vin as string) ?? ''}
+                onChange={(e) => handleChange('vin', e.target.value.toUpperCase())}
+                placeholder="e.g. WBAPH5C55BA123456"
+                className={vinError ? 'border-red-500' : ''}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={handleDecodeVIN}
+                disabled={isDecoding || !form.vin || (form.vin as string).length !== 17}
+                title="Decode VIN"
+              >
+                {isDecoding ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
             {vinError && <p className="text-xs text-red-500">{vinError}</p>}
+            {decodeResult && (
+              <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium">
+                    {decodeResult.specs.brand} {decodeResult.specs.model}
+                    {decodeResult.specs.model_year ? ` (${decodeResult.specs.model_year})` : ''}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {decodeResult.provider} &middot; {Math.round(decodeResult.confidence * 100)}%
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 text-xs text-muted-foreground mb-2">
+                  {decodeResult.specs.fuel_type && <span>Fuel: {decodeResult.specs.fuel_type}</span>}
+                  {decodeResult.specs.engine_power_hp > 0 && <span>Power: {decodeResult.specs.engine_power_hp} HP</span>}
+                  {decodeResult.specs.engine_displacement_cc > 0 && <span>Engine: {decodeResult.specs.engine_displacement_cc} cc</span>}
+                  {decodeResult.specs.transmission && <span>Trans: {decodeResult.specs.transmission}</span>}
+                  {decodeResult.specs.body_type && <span>Body: {decodeResult.specs.body_type}</span>}
+                  {decodeResult.specs.drive_type && <span>Drive: {decodeResult.specs.drive_type}</span>}
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" size="sm" onClick={applyDecodedFields}>
+                    <Check className="mr-1 h-3 w-3" />
+                    Apply to Vehicle
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setDecodeResult(null)}>
+                    <X className="mr-1 h-3 w-3" />
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
           <TextField label="Stock Number" name="nr_stoc" value={form.nr_stoc as string} onChange={handleChange} />
           <SelectField
@@ -395,10 +563,43 @@ export default function VehicleForm() {
             required
           />
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <TextField label="Brand" name="brand" value={form.brand as string} onChange={handleChange} required placeholder="e.g. BMW" />
-          <TextField label="Model" name="model" value={form.model as string} onChange={handleChange} required placeholder="e.g. X5" />
+        <div className="grid gap-4 md:grid-cols-4">
+          <SearchSelectField
+            label="Brand"
+            name="brand"
+            value={form.brand as string}
+            options={brandOptions}
+            onChange={handleChange}
+            required
+            placeholder="Select brand"
+            searchPlaceholder="Search brand..."
+            allowCustom
+          />
+          <SearchSelectField
+            label="Model"
+            name="model"
+            value={form.model as string}
+            options={modelOptions}
+            onChange={handleChange}
+            required
+            placeholder={form.brand ? 'Select model' : 'Select brand first'}
+            searchPlaceholder="Search model..."
+            allowCustom
+            disabled={!form.brand}
+          />
           <TextField label="Variant" name="variant" value={form.variant as string} onChange={handleChange} placeholder="e.g. xDrive40i" />
+          <SelectField
+            label="State"
+            name="state"
+            value={form.state as string}
+            options={[...AUTOVIT_VEHICLE_STATES]}
+            onChange={handleChange}
+          />
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <TextField label="Generation" name="generation" value={form.generation as string} onChange={handleChange} placeholder="e.g. G05 (LCI)" />
+          <TextField label="Equipment Level" name="equipment_level" value={form.equipment_level as string} onChange={handleChange} placeholder="e.g. M Sport, Inscription" />
+          <TextField label="First Registration" name="first_registration_date" value={form.first_registration_date as string} onChange={handleChange} type="date" />
         </div>
       </Card>
 
@@ -415,26 +616,29 @@ export default function VehicleForm() {
               placeholder="2024"
             />
           </div>
-          <SelectField
+          <SearchSelectField
             label="Fuel Type"
             name="fuel_type"
             value={form.fuel_type as string}
-            options={FUEL_TYPES.map((f) => ({ value: f, label: f }))}
+            options={[...AUTOVIT_FUEL_TYPES]}
             onChange={handleChange}
+            searchPlaceholder="Search fuel type..."
           />
-          <SelectField
+          <SearchSelectField
             label="Transmission"
             name="transmission"
             value={form.transmission as string}
-            options={TRANSMISSIONS.map((t) => ({ value: t, label: t }))}
+            options={[...AUTOVIT_GEARBOX_TYPES]}
             onChange={handleChange}
+            searchPlaceholder="Search gearbox..."
           />
-          <SelectField
+          <SearchSelectField
             label="Body Type"
             name="body_type"
             value={form.body_type as string}
-            options={BODY_TYPES.map((b) => ({ value: b, label: b }))}
+            options={[...AUTOVIT_BODY_TYPES]}
             onChange={handleChange}
+            searchPlaceholder="Search body type..."
           />
         </div>
         <div className="grid gap-4 md:grid-cols-4">
@@ -463,31 +667,62 @@ export default function VehicleForm() {
               onChange={(e) => handleNumericChange('engine_displacement_cc', e.target.value)}
             />
           </div>
-          <SelectField
+          <SearchSelectField
             label="Drive Type"
             name="drive_type"
             value={form.drive_type as string}
-            options={DRIVE_TYPES.map((d) => ({ value: d, label: d }))}
+            options={[...AUTOVIT_DRIVE_TYPES]}
             onChange={handleChange}
+            searchPlaceholder="Search drive type..."
           />
         </div>
         <div className="grid gap-4 md:grid-cols-4">
-          <TextField label="Exterior Color" name="color_exterior" value={form.color_exterior as string} onChange={handleChange} />
-          <TextField label="Interior Color" name="color_interior" value={form.color_interior as string} onChange={handleChange} />
+          <SearchSelectField
+            label="Exterior Color"
+            name="color_exterior"
+            value={form.color_exterior as string}
+            options={[...AUTOVIT_COLORS]}
+            onChange={handleChange}
+            searchPlaceholder="Search color..."
+          />
+          <SearchSelectField
+            label="Interior Color"
+            name="color_interior"
+            value={form.color_interior as string}
+            options={[...AUTOVIT_INTERIOR_COLORS]}
+            onChange={handleChange}
+            searchPlaceholder="Search color..."
+          />
+          <SelectField
+            label="Doors"
+            name="doors"
+            value={form.doors != null ? String(form.doors) : ''}
+            options={[...AUTOVIT_DOORS]}
+            onChange={(n, v) => handleNumericChange(n, v)}
+          />
+          <SelectField
+            label="Seats"
+            name="seats"
+            value={form.seats != null ? String(form.seats) : ''}
+            options={[...AUTOVIT_SEATS]}
+            onChange={(n, v) => handleNumericChange(n, v)}
+          />
+        </div>
+        <div className="grid gap-4 md:grid-cols-4">
+          <SearchSelectField
+            label="Euro Standard"
+            name="euro_standard"
+            value={form.euro_standard as string}
+            options={[...AUTOVIT_EURO_STANDARDS]}
+            onChange={handleChange}
+            searchPlaceholder="Search euro..."
+          />
           <div className="space-y-1.5">
-            <Label>Doors</Label>
+            <Label>CO2 Emissions (g/km)</Label>
             <Input
               type="number"
-              value={inputVal(form.doors)}
-              onChange={(e) => handleNumericChange('doors', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Seats</Label>
-            <Input
-              type="number"
-              value={inputVal(form.seats)}
-              onChange={(e) => handleNumericChange('seats', e.target.value)}
+              value={inputVal(form.co2_emissions)}
+              onChange={(e) => handleNumericChange('co2_emissions', e.target.value)}
             />
           </div>
         </div>

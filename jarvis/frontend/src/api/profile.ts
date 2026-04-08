@@ -112,6 +112,19 @@ export const profileApi = {
       `/profile/api/team-pontaje/punches?biostar_user_id=${biostarUserId}&date=${date}`,
     ),
 
+  getSincronTimesheet: (params?: { year?: number; month?: number }) => {
+    const sp = new URLSearchParams()
+    if (params?.year) sp.set('year', String(params.year))
+    if (params?.month) sp.set('month', String(params.month))
+    const qs = sp.toString()
+    return api.get<{
+      success: boolean
+      data: import('@/api/sincron').SincronTimesheetData
+      year: number
+      month: number
+    }>(`/sincron/api/timesheets${qs ? `?${qs}` : ''}`)
+  },
+
   changePassword: (currentPassword: string, newPassword: string) =>
     api.post<{ success: boolean; message?: string; error?: string }>('/api/auth/change-password', {
       current_password: currentPassword,

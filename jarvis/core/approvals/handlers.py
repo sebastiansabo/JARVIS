@@ -276,6 +276,32 @@ def _on_approved(payload):
         except Exception as e:
             logger.error(f'Failed to update mkt_project status on approval: {e}')
 
+    # Apply carpark price changes on approval
+    if entity_type == 'carpark_price_change' and entity_id:
+        try:
+            from carpark.repositories.pricing_repository import PricingRepository
+            from carpark.repositories.vehicle_repository import VehicleRepository
+            pricing_repo = PricingRepository()
+            vehicle_repo = VehicleRepository()
+
+            changes = pricing_repo.get_pending_changes(approval_request_id=request_id, status='pending')
+            for ch in changes:
+                vehicle_repo.update(ch['vehicle_id'], {
+                    'current_price': float(ch['new_price'])
+                })
+                pricing_repo.log_price_change(
+                    ch['vehicle_id'],
+                    float(ch['old_price']),
+                    float(ch['new_price']),
+                    f'approved:rule#{entity_id}',
+                    rule_id=entity_id,
+                    changed_by=requester_id,
+                )
+            pricing_repo.update_pending_status(request_id, 'approved', applied_by=requester_id)
+            logger.info(f'CarPark price changes approved for rule #{entity_id}: {len(changes)} vehicles updated')
+        except Exception as e:
+            logger.error(f'Failed to apply carpark price changes on approval: {e}', exc_info=True)
+
     # Auto-create signature request if flow requires_signature
     try:
         from core.approvals.repositories import RequestRepository, FlowRepository
@@ -362,6 +388,15 @@ def _on_rejected(payload):
                     'View Form',
                 ),
             )
+
+    # Mark carpark pending price changes as rejected
+    if entity_type == 'carpark_price_change' and entity_id:
+        try:
+            from carpark.repositories.pricing_repository import PricingRepository
+            PricingRepository().update_pending_status(request_id, 'rejected')
+            logger.info(f'CarPark price changes rejected for rule #{entity_id}')
+        except Exception as e:
+            logger.error(f'Failed to reject carpark price changes: {e}', exc_info=True)
 
     # Revert marketing project to draft on rejection
     if entity_type == 'mkt_project' and entity_id:
@@ -539,6 +574,8 @@ def _entity_link(entity_type, entity_id):
         return '/app/accounting'
     if entity_type == 'form_submission' and entity_id:
         return '/app/forms'
+    if entity_type == 'carpark_price_change':
+        return '/app/carpark/pricing-rules'
     return '/app/approvals'
 
 

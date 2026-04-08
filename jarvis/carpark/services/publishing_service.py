@@ -44,10 +44,7 @@ class PublishingService:
 
     def list_platforms(self, company_id: int = None,
                        active_only: bool = False) -> List[Dict[str, Any]]:
-        platforms = self._pub_repo.list_platforms(company_id, active_only)
-        for p in platforms:
-            p['active_listings'] = self._pub_repo.get_active_listings_count(p['id'])
-        return platforms
+        return self._pub_repo.list_platforms_with_counts(company_id, active_only)
 
     def get_platform(self, platform_id: int) -> Optional[Dict[str, Any]]:
         return self._pub_repo.get_platform(platform_id)
@@ -220,16 +217,31 @@ class PublishingService:
         return updated
 
     def deactivate_all(self, vehicle_id: int) -> List[Dict[str, Any]]:
-        """Deactivate all listings for a vehicle."""
+        """Deactivate all active listings for a vehicle."""
         listings = self._pub_repo.get_listings_for_vehicle(vehicle_id)
         results = []
         for listing in listings:
-            if listing.get('status') == 'active':
-                try:
-                    updated = self.deactivate_listing(listing['id'])
-                    results.append(updated)
-                except Exception as e:
-                    logger.error(f'Failed to deactivate listing {listing["id"]}: {e}')
+            if listing.get('status') != 'active':
+                continue
+            try:
+                # Inline deactivation using already-fetched listing data
+                platform = self._pub_repo.get_platform(listing['platform_id'])
+                connector = self._get_connector(platform) if platform else None
+
+                if connector and listing.get('external_listing_id'):
+                    result = connector.deactivate(listing['external_listing_id'])
+                    self._pub_repo.log_sync(
+                        listing['vehicle_id'], listing['platform_id'],
+                        'deactivate', result.get('success', False),
+                        error_message=result.get('error'),
+                    )
+
+                updated = self._pub_repo.update_listing(listing['id'], {
+                    'status': 'inactive',
+                })
+                results.append(updated)
+            except Exception as e:
+                logger.error(f'Failed to deactivate listing {listing["id"]}: {e}')
         return results
 
     # ═══════════════════════════════════════════════
@@ -262,10 +274,7 @@ class PublishingService:
 
     def sync_all_platform_stats(self) -> Dict[str, int]:
         """Sync stats for all active listings across all platforms. Scheduled task."""
-        # Get all active listings
-        from core.base_repository import BaseRepository
-        repo = BaseRepository()
-        listings = repo.query_all(
+        listings = self._pub_repo.query_all(
             "SELECT id FROM carpark_vehicle_listings WHERE status = 'active'"
         )
         synced = 0

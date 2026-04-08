@@ -71,6 +71,13 @@ export const biostarApi = {
     return res.data
   },
 
+  getEmployeeByUserId: async (jarvisUserId: number) => {
+    const res = await api.get<{ success: boolean; data: BioStarEmployee | null }>(
+      `${BASE}/employee-by-user/${jarvisUserId}`,
+    )
+    return res.data
+  },
+
   updateMapping: (biostarUserId: string, jarvisUserId: number) =>
     api.put<{ success: boolean; message: string }>(`${BASE}/employees/${biostarUserId}/mapping`, {
       jarvis_user_id: jarvisUserId,
