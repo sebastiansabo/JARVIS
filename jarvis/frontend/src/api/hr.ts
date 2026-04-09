@@ -158,6 +158,13 @@ export const hrApi = {
       org: { company: string; brand: string; department: string; subdepartment: string }
       bonuses: { count: number; total_days: number; total_net: number }
       forms_count: number
+      month_stats: {
+        year: number
+        month: number
+        attendance: { days_present: number; total_hours: number; avg_daily_hours: number }
+        timesheet: Record<string, { value: number; unit: string }>
+        leave_permits: { count: number; total_hours: number }
+      }
     } }>(`${BASE}/employees/${userId}/overview`),
 
   // Organigram

@@ -1514,6 +1514,73 @@ def api_get_employee_overview(user_id):
         forms_row = cursor.fetchone()
         forms_count = forms_row['submission_count'] if forms_row else 0
 
+        # ── Current-month work statistics ──
+        from datetime import date as _date
+        _today = _date.today()
+        _year, _month = _today.year, _today.month
+
+        # BioStar attendance this month (days with punches + total hours)
+        attendance = {'days_present': 0, 'total_hours': 0.0, 'avg_daily_hours': 0.0}
+        if biostar:
+            cursor.execute('''
+                SELECT COUNT(DISTINCT event_datetime::date) AS days_present
+                FROM biostar_punch_logs
+                WHERE biostar_user_id = %s
+                  AND EXTRACT(YEAR FROM event_datetime) = %s
+                  AND EXTRACT(MONTH FROM event_datetime) = %s
+            ''', (biostar['biostar_user_id'], _year, _month))
+            att_row = cursor.fetchone()
+            attendance['days_present'] = att_row['days_present'] if att_row else 0
+
+            # Calculate total worked hours from first/last punch per day
+            cursor.execute('''
+                SELECT SUM(span_h) AS total_h FROM (
+                    SELECT (EXTRACT(EPOCH FROM MAX(event_datetime) - MIN(event_datetime)) / 3600) AS span_h
+                    FROM biostar_punch_logs
+                    WHERE biostar_user_id = %s
+                      AND EXTRACT(YEAR FROM event_datetime) = %s
+                      AND EXTRACT(MONTH FROM event_datetime) = %s
+                    GROUP BY event_datetime::date
+                    HAVING COUNT(*) >= 2
+                ) sub
+            ''', (biostar['biostar_user_id'], _year, _month))
+            hours_row = cursor.fetchone()
+            total_h = float(hours_row['total_h'] or 0) if hours_row else 0.0
+            attendance['total_hours'] = round(total_h, 1)
+            if attendance['days_present'] > 0:
+                attendance['avg_daily_hours'] = round(total_h / attendance['days_present'], 1)
+
+        # Sincron timesheet summary for current month
+        timesheet_summary = {}
+        if sincron:
+            cursor.execute('''
+                SELECT short_code, unit, SUM(value) AS total
+                FROM sincron_timesheets
+                WHERE sincron_employee_id = %s AND company_name = %s
+                  AND year = %s AND month = %s
+                GROUP BY short_code, unit
+                ORDER BY short_code
+            ''', (sincron['sincron_employee_id'], sincron['company_name'], _year, _month))
+            for row in cursor.fetchall():
+                code = row['short_code'] if isinstance(row, dict) else row[0]
+                unit = row['unit'] if isinstance(row, dict) else row[1]
+                total = float(row['total'] if isinstance(row, dict) else row[2])
+                timesheet_summary[code] = {'value': total, 'unit': unit}
+
+        # Leave permits this month (Connecteam + JARVIS)
+        leave_stats = {'count': 0, 'total_hours': 0.0}
+        cursor.execute('''
+            SELECT COUNT(*) AS cnt, COALESCE(SUM(leave_hours), 0) AS total_h
+            FROM connecteam_form_submissions
+            WHERE mapped_jarvis_user_id = %s
+              AND EXTRACT(YEAR FROM leave_date) = %s
+              AND EXTRACT(MONTH FROM leave_date) = %s
+        ''', (user_id, _year, _month))
+        lp_row = cursor.fetchone()
+        if lp_row:
+            leave_stats['count'] = lp_row['cnt'] if isinstance(lp_row, dict) else lp_row[0]
+            leave_stats['total_hours'] = round(float(lp_row['total_h'] if isinstance(lp_row, dict) else lp_row[1]), 1)
+
         release_db(conn)
 
         return jsonify({
@@ -1530,6 +1597,13 @@ def api_get_employee_overview(user_id):
                     'total_net': float(bonuses.get('total_bonus_net', 0)),
                 },
                 'forms_count': forms_count,
+                'month_stats': {
+                    'year': _year,
+                    'month': _month,
+                    'attendance': attendance,
+                    'timesheet': timesheet_summary,
+                    'leave_permits': leave_stats,
+                },
             }
         })
     except Exception as exc:
