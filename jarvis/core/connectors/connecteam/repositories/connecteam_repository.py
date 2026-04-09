@@ -107,9 +107,9 @@ class ConnecteamRepository(BaseRepository):
         query += ' ORDER BY cfs.leave_date DESC, cfs.submission_timestamp DESC'
         return self.query_all(query, tuple(params))
 
-    def get_recent_submissions(self, limit=50):
-        """Get most recent submissions across all users."""
-        return self.query_all('''
+    def get_recent_submissions(self, limit=50, year=None, month=None):
+        """Get submissions across all users, optionally filtered by year/month."""
+        query = '''
             SELECT cfs.id, cfs.submission_id, cfs.form_id, cfs.form_name,
                    cfs.connecteam_user_id, cfs.mapped_jarvis_user_id,
                    cfs.submission_timestamp::text,
@@ -123,9 +123,18 @@ class ConnecteamRepository(BaseRepository):
             FROM connecteam_form_submissions cfs
             LEFT JOIN connecteam_users cu ON cu.connecteam_user_id = cfs.connecteam_user_id
             LEFT JOIN users u ON u.id = cfs.mapped_jarvis_user_id
-            ORDER BY cfs.received_at DESC
-            LIMIT %s
-        ''', (limit,))
+            WHERE 1=1
+        '''
+        params = []
+        if year:
+            query += ' AND EXTRACT(YEAR FROM cfs.leave_date) = %s'
+            params.append(year)
+        if month:
+            query += ' AND EXTRACT(MONTH FROM cfs.leave_date) = %s'
+            params.append(month)
+        query += ' ORDER BY cfs.leave_date DESC, cfs.entry_num DESC LIMIT %s'
+        params.append(limit)
+        return self.query_all(query, tuple(params))
 
     def update_submissions_mapping(self, connecteam_user_id, jarvis_user_id):
         """Update mapped_jarvis_user_id on all submissions for a Connecteam user."""
