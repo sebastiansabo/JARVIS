@@ -110,6 +110,16 @@ type DialogState =
       mode: 'mapBiostar'
       orphan: IdentityOrphanBiostar
     }
+  | {
+      mode: 'mapSincronForUser'
+      userId: number
+      userName: string
+    }
+  | {
+      mode: 'mapBiostarForUser'
+      userId: number
+      userName: string
+    }
 
 export function UnifiedEmployeeMappingSection() {
   const qc = useQueryClient()
@@ -117,6 +127,7 @@ export function UnifiedEmployeeMappingSection() {
   const [search, setSearch] = useState('')
   const [dialog, setDialog] = useState<DialogState>({ mode: 'closed' })
   const [dialogSelection, setDialogSelection] = useState<string>('')
+  const [dialogSearch, setDialogSearch] = useState('')
 
   const { data, isLoading, isError } = useQuery<IdentityUnifiedView>({
     queryKey: ['identity', 'employees'],
@@ -218,21 +229,67 @@ export function UnifiedEmployeeMappingSection() {
   const orphanSincron = data?.orphan_sincron ?? []
   const orphanBiostar = data?.orphan_biostar ?? []
 
+  const filteredJarvisUsers = useMemo(() => {
+    const term = dialogSearch.trim().toLowerCase()
+    if (!term) return jarvisUsers
+    return jarvisUsers.filter(
+      (u) =>
+        (u.name ?? '').toLowerCase().includes(term) ||
+        (u.email ?? '').toLowerCase().includes(term),
+    )
+  }, [jarvisUsers, dialogSearch])
+
+  const filteredOrphanSincronForDialog = useMemo(() => {
+    const term = dialogSearch.trim().toLowerCase()
+    if (!term) return orphanSincron
+    return orphanSincron.filter(
+      (e) =>
+        `${e.nume ?? ''} ${e.prenume ?? ''} ${e.company_name ?? ''} ${e.cnp ?? ''}`
+          .toLowerCase()
+          .includes(term),
+    )
+  }, [orphanSincron, dialogSearch])
+
+  const filteredOrphanBiostarForDialog = useMemo(() => {
+    const term = dialogSearch.trim().toLowerCase()
+    if (!term) return orphanBiostar
+    return orphanBiostar.filter(
+      (e) =>
+        `${e.name ?? ''} ${e.email ?? ''} ${e.user_group_name ?? ''}`
+          .toLowerCase()
+          .includes(term),
+    )
+  }, [orphanBiostar, dialogSearch])
+
   const openMapSincronDialog = (orphan: IdentityOrphanSincron) => {
     setDialogSelection('')
+    setDialogSearch('')
     setDialog({ mode: 'mapSincron', orphan })
   }
 
   const openMapBiostarDialog = (orphan: IdentityOrphanBiostar) => {
     setDialogSelection('')
+    setDialogSearch('')
     setDialog({ mode: 'mapBiostar', orphan })
+  }
+
+  const openMapSincronForUser = (userId: number, userName: string) => {
+    setDialogSelection('')
+    setDialogSearch('')
+    setDialog({ mode: 'mapSincronForUser', userId, userName })
+  }
+
+  const openMapBiostarForUser = (userId: number, userName: string) => {
+    setDialogSelection('')
+    setDialogSearch('')
+    setDialog({ mode: 'mapBiostarForUser', userId, userName })
   }
 
   const confirmDialogMapping = () => {
     if (!dialogSelection) return
-    const userId = Number(dialogSelection)
-    if (!Number.isFinite(userId)) return
     if (dialog.mode === 'mapSincron') {
+      const userId = Number(dialogSelection)
+      if (!Number.isFinite(userId)) return
       setMappingMut.mutate({
         userId,
         source: 'sincron',
@@ -240,10 +297,29 @@ export function UnifiedEmployeeMappingSection() {
         company_name: dialog.orphan.company_name,
       })
     } else if (dialog.mode === 'mapBiostar') {
+      const userId = Number(dialogSelection)
+      if (!Number.isFinite(userId)) return
       setMappingMut.mutate({
         userId,
         source: 'biostar',
         external_id: dialog.orphan.biostar_user_id,
+      })
+    } else if (dialog.mode === 'mapSincronForUser') {
+      // dialogSelection = "sincron_employee_id::company_name"
+      const [extId, ...rest] = dialogSelection.split('::')
+      const companyName = rest.join('::')
+      setMappingMut.mutate({
+        userId: dialog.userId,
+        source: 'sincron',
+        external_id: extId,
+        company_name: companyName || undefined,
+      })
+    } else if (dialog.mode === 'mapBiostarForUser') {
+      // dialogSelection = biostar_user_id
+      setMappingMut.mutate({
+        userId: dialog.userId,
+        source: 'biostar',
+        external_id: dialogSelection,
       })
     }
   }
@@ -430,10 +506,30 @@ export function UnifiedEmployeeMappingSection() {
                       <StatusPill status={status} />
                     </TableCell>
                     <TableCell className="text-right">
-                      {/* Inline edit is done via orphan rows below; per-user quick-map is not shown here
-                          since manual remapping for already-mapped users is best done from the
-                          existing Sincron/BioStar sections that expose their own pickers. */}
-                      <span className="text-xs text-muted-foreground">—</span>
+                      <div className="flex items-center justify-end gap-1">
+                        {(status === 'biostar_only' || status === 'unmapped') && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => openMapSincronForUser(row.user_id, row.name)}
+                            title="Map Sincron employee"
+                          >
+                            + Sincron
+                          </Button>
+                        )}
+                        {(status === 'sincron_only' || status === 'unmapped') && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => openMapBiostarForUser(row.user_id, row.name)}
+                            title="Map BioStar employee"
+                          >
+                            + BioStar
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 )
@@ -536,17 +632,22 @@ export function UnifiedEmployeeMappingSection() {
           if (!open) {
             setDialog({ mode: 'closed' })
             setDialogSelection('')
+            setDialogSearch('')
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
               {dialog.mode === 'mapSincron'
                 ? 'Map Sincron employee'
                 : dialog.mode === 'mapBiostar'
                   ? 'Map BioStar employee'
-                  : ''}
+                  : dialog.mode === 'mapSincronForUser'
+                    ? 'Map Sincron → user'
+                    : dialog.mode === 'mapBiostarForUser'
+                      ? 'Map BioStar → user'
+                      : ''}
             </DialogTitle>
             <DialogDescription>
               {dialog.mode === 'mapSincron' && (
@@ -560,28 +661,110 @@ export function UnifiedEmployeeMappingSection() {
                   {dialog.orphan.email ? ` · ${dialog.orphan.email}` : ''}
                 </>
               )}
+              {(dialog.mode === 'mapSincronForUser' || dialog.mode === 'mapBiostarForUser') && (
+                <>Select an unmatched external record to link to <strong>{dialog.userName}</strong></>
+              )}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-2">
-            <Select value={dialogSelection} onValueChange={setDialogSelection}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select JARVIS user..." />
-              </SelectTrigger>
-              <SelectContent className="max-h-72">
-                {jarvisUsers.map((u) => (
-                  <SelectItem key={u.id} value={String(u.id)}>
-                    {u.name} {u.email ? `(${u.email})` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+
+          {/* Search input */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="h-8 pl-7 text-xs"
+              placeholder={
+                dialog.mode === 'mapSincronForUser'
+                  ? 'Search by name / company / CNP...'
+                  : dialog.mode === 'mapBiostarForUser'
+                    ? 'Search by name / email / group...'
+                    : 'Search by name / email...'
+              }
+              value={dialogSearch}
+              onChange={(e) => setDialogSearch(e.target.value)}
+              autoFocus
+            />
           </div>
+
+          {/* Scrollable list */}
+          <div className="max-h-64 overflow-y-auto rounded border">
+            {(dialog.mode === 'mapSincron' || dialog.mode === 'mapBiostar') &&
+              filteredJarvisUsers.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors ${
+                    dialogSelection === String(u.id) ? 'bg-accent font-medium' : ''
+                  }`}
+                  onClick={() => setDialogSelection(String(u.id))}
+                >
+                  {u.name}
+                  {u.email && (
+                    <span className="ml-1 text-xs text-muted-foreground">({u.email})</span>
+                  )}
+                </button>
+              ))}
+            {dialog.mode === 'mapSincronForUser' &&
+              filteredOrphanSincronForDialog.map((e) => {
+                const val = `${e.sincron_employee_id}::${e.company_name}`
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors ${
+                      dialogSelection === val ? 'bg-accent font-medium' : ''
+                    }`}
+                    onClick={() => setDialogSelection(val)}
+                  >
+                    {e.nume} {e.prenume}
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      · {e.company_name}
+                    </span>
+                    {e.cnp && (
+                      <span className="ml-1 text-[10px] font-mono text-muted-foreground">
+                        CNP {e.cnp}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            {dialog.mode === 'mapBiostarForUser' &&
+              filteredOrphanBiostarForDialog.map((e) => (
+                <button
+                  key={e.biostar_user_id}
+                  type="button"
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors ${
+                    dialogSelection === e.biostar_user_id ? 'bg-accent font-medium' : ''
+                  }`}
+                  onClick={() => setDialogSelection(e.biostar_user_id)}
+                >
+                  {e.name ?? e.biostar_user_id}
+                  {e.email && (
+                    <span className="ml-1 text-xs text-muted-foreground">({e.email})</span>
+                  )}
+                  {e.user_group_name && (
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      · {e.user_group_name}
+                    </span>
+                  )}
+                </button>
+              ))}
+            {((dialog.mode === 'mapSincron' || dialog.mode === 'mapBiostar') &&
+              filteredJarvisUsers.length === 0) ||
+            (dialog.mode === 'mapSincronForUser' && filteredOrphanSincronForDialog.length === 0) ||
+            (dialog.mode === 'mapBiostarForUser' && filteredOrphanBiostarForDialog.length === 0) ? (
+              <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                No results match &ldquo;{dialogSearch}&rdquo;
+              </div>
+            ) : null}
+          </div>
+
           <DialogFooter>
             <Button
               variant="ghost"
               onClick={() => {
                 setDialog({ mode: 'closed' })
                 setDialogSelection('')
+                setDialogSearch('')
               }}
             >
               Cancel
