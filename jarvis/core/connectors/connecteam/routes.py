@@ -267,10 +267,12 @@ def get_employee_submissions(user_id):
 @connecteam_bp.route('/api/submissions/recent', methods=['GET'])
 @admin_required
 def get_recent_submissions():
-    """Get most recent submissions across all users (admin only)."""
-    limit = min(request.args.get('limit', 50, type=int), 200)
+    """Get submissions across all users (admin only), filtered by year/month."""
+    limit = min(request.args.get('limit', 500, type=int), 1000)
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
     try:
-        data = service.repo.get_recent_submissions(limit)
+        data = service.repo.get_recent_submissions(limit, year=year, month=month)
         return jsonify({'success': True, 'data': data})
     except Exception as e:
         return safe_error_response(e)

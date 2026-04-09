@@ -20,11 +20,11 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     queryFn: () => connecteamApi.getStatus().then(r => r.data),
   })
 
-  // Fetch recent submissions (admin endpoint)
+  // Fetch submissions for the selected month (server-side filtered)
   const { data: recentData, isLoading } = useQuery({
-    queryKey: ['connecteam', 'recent-submissions'],
+    queryKey: ['connecteam', 'submissions', year, month],
     queryFn: () =>
-      fetch('/connecteam/api/submissions/recent?limit=200', { credentials: 'include' })
+      fetch(`/connecteam/api/submissions/recent?year=${year}&month=${month}&limit=500`, { credentials: 'include' })
         .then(r => r.json())
         .then(r => r.data as ConnecteamSubmission[]),
   })
@@ -32,7 +32,8 @@ export default function LeavePermitsTab({ search }: { search: string }) {
   const importMut = useMutation({
     mutationFn: (file: File) => connecteamApi.importExcel(file),
     onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['connecteam'] })
+      qc.invalidateQueries({ queryKey: ['connecteam', 'submissions'] })
+      qc.invalidateQueries({ queryKey: ['connecteam', 'status'] })
       const d = res.data
       if (d.inserted > 0) {
         toast.success(`Imported ${d.inserted} submissions (${d.skipped} skipped)`)
@@ -53,29 +54,17 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     }
   }
 
-  // Filter by month, year, and search
+  // Filter by search only (year/month filtering is server-side)
   const filtered = useMemo(() => {
     if (!recentData) return []
+    if (!search) return recentData
+    const q = search.toLowerCase()
     return recentData.filter((s) => {
-      // Date filter
-      if (s.leave_date) {
-        const d = new Date(s.leave_date)
-        if (d.getFullYear() !== year || d.getMonth() + 1 !== month) return false
-      } else {
-        // No leave_date — filter by created_at
-        const d = new Date(s.created_at)
-        if (d.getFullYear() !== year || d.getMonth() + 1 !== month) return false
-      }
-      // Search
-      if (search) {
-        const q = search.toLowerCase()
-        const name = (s.connecteam_user_name || '').toLowerCase()
-        const reason = (s.leave_reason || '').toLowerCase()
-        if (!name.includes(q) && !reason.includes(q)) return false
-      }
-      return true
+      const name = (s.connecteam_user_name || '').toLowerCase()
+      const reason = (s.leave_reason || '').toLowerCase()
+      return name.includes(q) || reason.includes(q)
     })
-  }, [recentData, year, month, search])
+  }, [recentData, search])
 
   const monthLabel = new Date(year, month - 1).toLocaleString('ro-RO', { month: 'long', year: 'numeric' })
 
