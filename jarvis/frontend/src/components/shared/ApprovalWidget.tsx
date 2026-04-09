@@ -304,7 +304,7 @@ export function ApprovalWidget({ entityType, entityId, context, className, compa
       {isApprover && pendingRequest && (
         <div className="space-y-2">
           {!decisionAction && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 className="bg-green-600 hover:bg-green-700 text-white"
@@ -324,8 +324,7 @@ export function ApprovalWidget({ entityType, entityId, context, className, compa
               </Button>
               <Button
                 size="sm"
-                variant="outline"
-                className="border-red-400 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950"
+                variant="destructive"
                 onClick={() => setDecisionAction('rejected')}
               >
                 <XCircle className="mr-1 h-3.5 w-3.5" />
