@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useCallback, memo } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useState, useMemo, useCallback, memo, useEffect, useRef } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -115,6 +115,9 @@ export default function Accounting() {
   const [selectMode, setSelectMode] = useState(false)
   const [brandFilterKey, setBrandFilterKey] = useState<string | null>(null)
   const [binSelectedIds, setBinSelectedIds] = useState<number[]>([])
+  const [highlightedInvoiceId, setHighlightedInvoiceId] = useState<number | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const highlightScrolledRef = useRef(false)
 
   const toggleBinSelected = useCallback((id: number) => {
     setBinSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
@@ -151,6 +154,35 @@ export default function Accounting() {
     queryFn: () => invoicesApi.getDeletedInvoices(),
     enabled: showBin,
   })
+
+  // Handle ?highlight=<invoiceId> from notification clicks
+  useEffect(() => {
+    const highlightParam = searchParams.get('highlight')
+    if (!highlightParam || isLoading || invoices.length === 0) return
+    const invoiceId = Number(highlightParam)
+    if (!invoiceId) return
+
+    // Check if this invoice exists in the current list
+    const exists = invoices.some((inv) => inv.id === invoiceId)
+    if (exists && !highlightScrolledRef.current) {
+      setExpandedRow(invoiceId)
+      setHighlightedInvoiceId(invoiceId)
+      highlightScrolledRef.current = true
+
+      // Clean up the URL param
+      searchParams.delete('highlight')
+      setSearchParams(searchParams, { replace: true })
+
+      // Scroll to the row after a brief render delay
+      requestAnimationFrame(() => {
+        const row = document.querySelector(`[data-invoice-id="${invoiceId}"]`)
+        row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+
+      // Clear highlight after animation
+      setTimeout(() => setHighlightedInvoiceId(null), 3000)
+    }
+  }, [searchParams, invoices, isLoading])
 
   // Entity tags for invoices
   const invoiceIds = useMemo(() => invoices.map((i) => i.id), [invoices])
@@ -653,6 +685,7 @@ export default function Accounting() {
           selectMode={selectMode}
           canEdit={canEdit}
           canDelete={canDelete}
+          highlightedInvoiceId={highlightedInvoiceId}
         />
       )}
 
@@ -927,6 +960,7 @@ function InvoiceTable({
   selectMode,
   canEdit,
   canDelete,
+  highlightedInvoiceId,
 }: {
   invoices: Invoice[]
   isLoading: boolean
@@ -949,6 +983,7 @@ function InvoiceTable({
   selectMode?: boolean
   canEdit?: boolean
   canDelete?: boolean
+  highlightedInvoiceId?: number | null
 }) {
   const colCount = 2 + activeCols.length + 1 // checkbox + ID + visible cols + actions
 
@@ -1116,6 +1151,7 @@ function InvoiceTable({
                     invoice={inv}
                     isSelected={selectedIds.includes(inv.id)}
                     isExpanded={expandedRow === inv.id}
+                    isHighlighted={highlightedInvoiceId === inv.id}
                     onToggleSelect={onToggleSelect}
                     onToggleExpand={onToggleExpand}
                     onEdit={onEdit}
@@ -1146,6 +1182,7 @@ const InvoiceRow = memo(function InvoiceRow({
   invoice: inv,
   isSelected,
   isExpanded,
+  isHighlighted,
   onToggleSelect,
   onToggleExpand,
   onEdit,
@@ -1161,6 +1198,7 @@ const InvoiceRow = memo(function InvoiceRow({
   invoice: Invoice
   isSelected: boolean
   isExpanded: boolean
+  isHighlighted?: boolean
   onToggleSelect: (id: number) => void
   onToggleExpand: (id: number) => void
   onEdit: (inv: Invoice) => void
@@ -1253,11 +1291,20 @@ const InvoiceRow = memo(function InvoiceRow({
 
   return (
     <>
-      <TableRow className={cn('cursor-pointer hover:bg-muted/40', isSelected && 'bg-muted/50')} onClick={(e) => {
-        const target = e.target as HTMLElement
-        if (target.closest('[data-slot="select-trigger"], [data-slot="select-content"], [role="combobox"], [role="option"], [role="listbox"], button, input, [data-radix-collection-item]')) return
-        onToggleExpand(inv.id)
-      }} aria-expanded={isExpanded}>
+      <TableRow
+        data-invoice-id={inv.id}
+        className={cn(
+          'cursor-pointer hover:bg-muted/40',
+          isSelected && 'bg-muted/50',
+          isHighlighted && 'animate-pulse bg-primary/10 ring-1 ring-primary/30',
+        )}
+        onClick={(e) => {
+          const target = e.target as HTMLElement
+          if (target.closest('[data-slot="select-trigger"], [data-slot="select-content"], [role="combobox"], [role="option"], [role="listbox"], button, input, [data-radix-collection-item]')) return
+          onToggleExpand(inv.id)
+        }}
+        aria-expanded={isExpanded}
+      >
         <TableCell onClick={(e) => e.stopPropagation()}>
           <Checkbox checked={isSelected} onCheckedChange={() => onToggleSelect(inv.id)} />
         </TableCell>

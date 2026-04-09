@@ -3,9 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Bell, CheckCircle2, XCircle, RotateCcw, ClipboardCheck, FileText, Info, Check } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { notificationsApi } from '@/api/notifications'
 import type { InAppNotification } from '@/types/notifications'
@@ -23,7 +21,6 @@ const titleIcons: Record<string, React.ElementType> = {
 }
 
 function getIcon(notification: InAppNotification) {
-  // Check title for specific status keywords
   const lower = notification.title.toLowerCase()
   for (const [keyword, Icon] of Object.entries(titleIcons)) {
     if (lower.includes(keyword)) return Icon
@@ -50,14 +47,12 @@ export function NotificationBell() {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
 
-  // Poll unread count every 30s
   const { data: countData } = useQuery({
     queryKey: ['notification-unread-count'],
     queryFn: () => notificationsApi.getUnreadCount(),
     refetchInterval: 30000,
   })
 
-  // Fetch notifications when popover opens
   const { data: listData, isLoading } = useQuery({
     queryKey: ['notifications-list'],
     queryFn: () => notificationsApi.getNotifications({ limit: 20 }),
@@ -109,9 +104,9 @@ export function NotificationBell() {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-0" sideOffset={8}>
+      <PopoverContent align="end" className="w-80 p-0 overflow-hidden" sideOffset={8}>
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3">
+        <div className="flex items-center justify-between border-b px-3 py-2.5">
           <h4 className="text-sm font-semibold">Notifications</h4>
           {unreadCount > 0 && (
             <Button
@@ -126,10 +121,9 @@ export function NotificationBell() {
             </Button>
           )}
         </div>
-        <Separator />
 
-        {/* List */}
-        <ScrollArea className="max-h-80">
+        {/* List with constrained scroll */}
+        <div className="max-h-[360px] overflow-y-auto overscroll-contain">
           {isLoading ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
               Loading...
@@ -139,47 +133,54 @@ export function NotificationBell() {
               No notifications
             </div>
           ) : (
-            <div className="divide-y">
-              {notifications.map((n) => {
-                const Icon = getIcon(n)
-                return (
-                  <button
-                    key={n.id}
-                    onClick={() => handleClick(n)}
-                    className={cn(
-                      'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent',
-                      !n.is_read && 'bg-accent/50',
-                    )}
-                  >
+            notifications.map((n, idx) => {
+              const Icon = getIcon(n)
+              const hasLink = !!n.link
+              return (
+                <button
+                  key={n.id}
+                  onClick={() => handleClick(n)}
+                  className={cn(
+                    'flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors',
+                    hasLink && 'cursor-pointer hover:bg-accent/80',
+                    !hasLink && 'cursor-default',
+                    !n.is_read ? 'bg-primary/5' : 'bg-transparent',
+                    idx < notifications.length - 1 && 'border-b border-border/50',
+                  )}
+                >
+                  <div className={cn(
+                    'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
+                    !n.is_read ? 'bg-primary/10' : 'bg-muted',
+                  )}>
                     <Icon className={cn(
-                      'mt-0.5 h-4 w-4 shrink-0',
+                      'h-3.5 w-3.5',
                       !n.is_read ? 'text-primary' : 'text-muted-foreground',
                     )} />
-                    <div className="min-w-0 flex-1">
-                      <p className={cn(
-                        'truncate text-sm',
-                        !n.is_read && 'font-medium',
-                      )}>
-                        {n.title}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className={cn(
+                      'text-sm leading-snug',
+                      !n.is_read ? 'font-medium text-foreground' : 'text-muted-foreground',
+                    )}>
+                      {n.title}
+                    </p>
+                    {n.message && (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {n.message}
                       </p>
-                      {n.message && (
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {n.message}
-                        </p>
-                      )}
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {timeAgo(n.created_at)}
-                      </p>
-                    </div>
-                    {!n.is_read && (
-                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
                     )}
-                  </button>
-                )
-              })}
-            </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground/70">
+                      {timeAgo(n.created_at)}
+                    </p>
+                  </div>
+                  {!n.is_read && (
+                    <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                  )}
+                </button>
+              )
+            })
           )}
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   )
