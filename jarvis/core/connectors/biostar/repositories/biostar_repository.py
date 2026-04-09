@@ -30,24 +30,32 @@ class BioStarRepository(BaseRepository):
         )
 
     def upsert_employee(self, data):
-        """Insert a new BioStar employee, skip if exists. Returns the row."""
+        """Insert a new BioStar employee, skip if exists. Returns the row.
+
+        `cnp` is optional — when supplied it is persisted, but existing CNPs are
+        preserved on re-sync via COALESCE(EXCLUDED.cnp, biostar_employees.cnp).
+        """
         return self.execute('''
             INSERT INTO biostar_employees
                 (biostar_user_id, name, email, phone, user_group_id,
-                 user_group_name, card_ids, status, last_synced_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                 user_group_name, card_ids, status, cnp, last_synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (biostar_user_id) DO UPDATE SET
+                cnp = COALESCE(EXCLUDED.cnp, biostar_employees.cnp),
                 last_synced_at = NOW()
             RETURNING id, biostar_user_id
         ''', (
             data['biostar_user_id'], data['name'], data.get('email'),
             data.get('phone'), data.get('user_group_id'),
             data.get('user_group_name'), json.dumps(data.get('card_ids', [])),
-            data.get('status', 'active')
+            data.get('status', 'active'), data.get('cnp')
         ), returning=True)
 
     def bulk_upsert_employees(self, employees):
-        """Insert new employees, skip existing. Returns {created, updated, skipped}."""
+        """Insert new employees, skip existing. Returns {created, updated, skipped}.
+
+        CNP is persisted when supplied; existing CNP is preserved via COALESCE.
+        """
         def _work(cursor):
             created = 0
             skipped = 0
@@ -55,15 +63,16 @@ class BioStarRepository(BaseRepository):
                 cursor.execute('''
                     INSERT INTO biostar_employees
                         (biostar_user_id, name, email, phone, user_group_id,
-                         user_group_name, card_ids, status, last_synced_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                         user_group_name, card_ids, status, cnp, last_synced_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                     ON CONFLICT (biostar_user_id) DO UPDATE SET
+                        cnp = COALESCE(EXCLUDED.cnp, biostar_employees.cnp),
                         last_synced_at = NOW()
                 ''', (
                     emp['biostar_user_id'], emp['name'], emp.get('email'),
                     emp.get('phone'), emp.get('user_group_id'),
                     emp.get('user_group_name'), json.dumps(emp.get('card_ids', [])),
-                    emp.get('status', 'active')
+                    emp.get('status', 'active'), emp.get('cnp')
                 ))
                 if cursor.rowcount > 0:
                     created += 1
@@ -186,6 +195,106 @@ class BioStarRepository(BaseRepository):
                 COUNT(*) FILTER (WHERE mapped_jarvis_user_id IS NOT NULL) AS mapped,
                 COUNT(*) FILTER (WHERE mapped_jarvis_user_id IS NULL AND status = 'active') AS unmapped
             FROM biostar_employees
+        ''')
+
+    # ── Auto-mapping (SQL-based, mirrors Sincron style) ──
+
+    def auto_map_by_cnp(self):
+        """Link unmapped BioStar employees to JARVIS users by CNP (confidence 100).
+
+        Requires the biostar_employees.cnp column (migration 002). Safe when CNP
+        is NULL — the WHERE clause excludes those rows.
+        """
+        return self.execute('''
+            UPDATE biostar_employees be
+            SET mapped_jarvis_user_id = u.id,
+                mapping_method = 'cnp',
+                mapping_confidence = 100,
+                updated_at = NOW()
+            FROM users u
+            WHERE be.mapped_jarvis_user_id IS NULL
+              AND be.status = 'active'
+              AND be.cnp IS NOT NULL
+              AND u.cnp IS NOT NULL
+              AND u.is_active = TRUE
+              AND LOWER(TRIM(be.cnp)) = LOWER(TRIM(u.cnp))
+        ''')
+
+    def auto_map_by_email(self):
+        """Link unmapped BioStar employees to JARVIS users by email (confidence 100)."""
+        return self.execute('''
+            UPDATE biostar_employees be
+            SET mapped_jarvis_user_id = u.id,
+                mapping_method = 'auto_email',
+                mapping_confidence = 100,
+                updated_at = NOW()
+            FROM users u
+            WHERE be.mapped_jarvis_user_id IS NULL
+              AND be.status = 'active'
+              AND be.email IS NOT NULL
+              AND be.email <> ''
+              AND u.email IS NOT NULL
+              AND u.email <> ''
+              AND u.is_active = TRUE
+              AND LOWER(TRIM(be.email)) = LOWER(TRIM(u.email))
+        ''')
+
+    def auto_map_by_name(self):
+        """Link unmapped BioStar employees to JARVIS users by exact name (confidence 90)."""
+        return self.execute('''
+            UPDATE biostar_employees be
+            SET mapped_jarvis_user_id = u.id,
+                mapping_method = 'auto_name',
+                mapping_confidence = 90,
+                updated_at = NOW()
+            FROM users u
+            WHERE be.mapped_jarvis_user_id IS NULL
+              AND be.status = 'active'
+              AND be.name IS NOT NULL
+              AND be.name <> ''
+              AND u.name IS NOT NULL
+              AND u.name <> ''
+              AND u.is_active = TRUE
+              AND LOWER(TRIM(be.name)) = LOWER(TRIM(u.name))
+        ''')
+
+    def auto_map_cross_verified(self):
+        """Link unmapped BioStar employees via existing Sincron mappings (confidence 95).
+
+        For each still-unmapped BioStar row, if a sincron_employees row is already
+        mapped to a JARVIS user AND any of {email, full-name, reversed full-name}
+        match, copy the same mapped_jarvis_user_id across with
+        method='cross_verified'.
+        """
+        return self.execute('''
+            UPDATE biostar_employees be
+            SET mapped_jarvis_user_id = se.mapped_jarvis_user_id,
+                mapping_method = 'cross_verified',
+                mapping_confidence = 95,
+                updated_at = NOW()
+            FROM sincron_employees se
+            JOIN users u ON u.id = se.mapped_jarvis_user_id
+            WHERE be.mapped_jarvis_user_id IS NULL
+              AND be.status = 'active'
+              AND se.mapped_jarvis_user_id IS NOT NULL
+              AND se.is_active = TRUE
+              AND u.is_active = TRUE
+              AND (
+                    (be.email IS NOT NULL AND be.email <> ''
+                     AND u.email IS NOT NULL AND u.email <> ''
+                     AND LOWER(TRIM(be.email)) = LOWER(TRIM(u.email)))
+                 OR (be.name IS NOT NULL AND be.name <> ''
+                     AND u.name IS NOT NULL AND u.name <> ''
+                     AND LOWER(TRIM(be.name)) = LOWER(TRIM(u.name)))
+                 OR (be.name IS NOT NULL AND be.name <> ''
+                     AND se.nume IS NOT NULL AND se.prenume IS NOT NULL
+                     AND LOWER(TRIM(be.name)) =
+                         LOWER(TRIM(se.nume || ' ' || se.prenume)))
+                 OR (be.name IS NOT NULL AND be.name <> ''
+                     AND se.nume IS NOT NULL AND se.prenume IS NOT NULL
+                     AND LOWER(TRIM(be.name)) =
+                         LOWER(TRIM(se.prenume || ' ' || se.nume)))
+              )
         ''')
 
     # ── Punch Logs ──

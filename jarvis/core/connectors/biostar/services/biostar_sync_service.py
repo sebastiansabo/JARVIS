@@ -238,48 +238,32 @@ class BioStarSyncService:
         }
 
     def _auto_map_employees(self):
-        """Match BioStar employees to JARVIS users by name/email."""
-        unmapped = self.repo.get_unmapped_employees()
-        jarvis_users = self.repo.get_jarvis_users()
+        """Match BioStar employees to JARVIS users using the shared SQL pipeline.
 
-        # Build lookups
-        name_lookup = {}
-        email_lookup = {}
-        for u in jarvis_users:
-            name_key = (u.get('name') or '').strip().lower()
-            if name_key:
-                name_lookup[name_key] = u
-            email_key = (u.get('email') or '').strip().lower()
-            if email_key:
-                email_lookup[email_key] = u
+        Delegates to BioStarRepository helpers so the logic stays identical with
+        the unified /identity/api/auto-map endpoint:
+            1. CNP  (confidence 100, only when cnp column is populated)
+            2. email (confidence 100)
+            3. name  (confidence 90)
+        Cross-verification via Sincron runs as part of the unified pipeline and
+        is intentionally NOT invoked here to keep the sync step self-contained.
+        """
+        before = self.repo.get_unmapped_employees()
+        total_unmapped = len(before)
 
-        newly_mapped = 0
-        for emp in unmapped:
-            # Try email match first (highest confidence)
-            emp_email = (emp.get('email') or '').strip().lower()
-            if emp_email and emp_email in email_lookup:
-                jarvis_user = email_lookup[emp_email]
-                self.repo.update_mapping(
-                    emp['biostar_user_id'], jarvis_user['id'],
-                    'auto_email', 100.0
-                )
-                newly_mapped += 1
-                continue
+        cnp_mapped = self.repo.auto_map_by_cnp() or 0
+        email_mapped = self.repo.auto_map_by_email() or 0
+        name_mapped = self.repo.auto_map_by_name() or 0
 
-            # Try exact name match
-            emp_name = (emp.get('name') or '').strip().lower()
-            if emp_name and emp_name in name_lookup:
-                jarvis_user = name_lookup[emp_name]
-                self.repo.update_mapping(
-                    emp['biostar_user_id'], jarvis_user['id'],
-                    'auto_name', 90.0
-                )
-                newly_mapped += 1
-                continue
-
+        newly_mapped = (cnp_mapped or 0) + (email_mapped or 0) + (name_mapped or 0)
         return {
             'newly_mapped': newly_mapped,
-            'still_unmapped': len(unmapped) - newly_mapped,
+            'still_unmapped': max(total_unmapped - newly_mapped, 0),
+            'by_method': {
+                'cnp': cnp_mapped or 0,
+                'email': email_mapped or 0,
+                'name': name_mapped or 0,
+            },
         }
 
     # ── Event Sync ──

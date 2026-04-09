@@ -35,6 +35,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { BioStarEmployee, JarvisUser } from '@/types/biostar'
 import CheckinLocations from './CheckinTab'
+import { UnifiedEmployeeMappingSection } from './UnifiedEmployeeMappingSection'
 
 type SortField = 'name' | 'group' | 'status'
 type SortDir = 'asc' | 'desc'
@@ -298,6 +299,7 @@ export default function PontajeTab() {
   if (!status?.connected) {
     return (
       <div className="space-y-6">
+        <UnifiedEmployeeMappingSection />
         <Card>
           <CardContent className="py-8">
             <EmptyState
@@ -322,13 +324,14 @@ export default function PontajeTab() {
 
   return (
     <div className="space-y-6">
+    <UnifiedEmployeeMappingSection />
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="flex items-center gap-2">
               <Link2 className="h-5 w-5" />
-              Pontaje — Employee Mapping
+              Pontaje — Employee Mapping (BioStar only)
             </CardTitle>
             <CardDescription>
               Map BioStar employees to JARVIS users.

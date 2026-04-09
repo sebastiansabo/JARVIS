@@ -142,6 +142,9 @@ def _register_blueprints(flask_app: Flask):
     from core.connectors.sincron import sincron_bp
     flask_app.register_blueprint(sincron_bp)
 
+    from core.identity import identity_bp
+    flask_app.register_blueprint(identity_bp)
+
     from core.connectors.push import push_bp
     flask_app.register_blueprint(push_bp)
 
