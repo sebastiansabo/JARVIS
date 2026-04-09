@@ -1581,6 +1581,37 @@ def api_get_employee_overview(user_id):
             leave_stats['count'] = lp_row['cnt'] if isinstance(lp_row, dict) else lp_row[0]
             leave_stats['total_hours'] = round(float(lp_row['total_h'] if isinstance(lp_row, dict) else lp_row[1]), 1)
 
+        # ── YTD leave balance from Sincron ──
+        ytd_leave = {}
+        if sincron:
+            cursor.execute('''
+                SELECT short_code, unit, SUM(value) AS total
+                FROM sincron_timesheets
+                WHERE sincron_employee_id = %s AND company_name = %s
+                  AND year = %s
+                  AND short_code IN ('CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG')
+                GROUP BY short_code, unit
+                ORDER BY short_code
+            ''', (sincron['sincron_employee_id'], sincron['company_name'], _year))
+            for row in cursor.fetchall():
+                code = row['short_code'] if isinstance(row, dict) else row[0]
+                unit = row['unit'] if isinstance(row, dict) else row[1]
+                total = float(row['total'] if isinstance(row, dict) else row[2])
+                ytd_leave[code] = {'value': total, 'unit': unit}
+
+        # YTD leave permits (Connecteam + JARVIS)
+        ytd_permits = {'count': 0, 'total_hours': 0.0}
+        cursor.execute('''
+            SELECT COUNT(*) AS cnt, COALESCE(SUM(leave_hours), 0) AS total_h
+            FROM connecteam_form_submissions
+            WHERE mapped_jarvis_user_id = %s
+              AND EXTRACT(YEAR FROM leave_date) = %s
+        ''', (user_id, _year))
+        ytp_row = cursor.fetchone()
+        if ytp_row:
+            ytd_permits['count'] = ytp_row['cnt'] if isinstance(ytp_row, dict) else ytp_row[0]
+            ytd_permits['total_hours'] = round(float(ytp_row['total_h'] if isinstance(ytp_row, dict) else ytp_row[1]), 1)
+
         release_db(conn)
 
         return jsonify({
@@ -1603,6 +1634,18 @@ def api_get_employee_overview(user_id):
                     'attendance': attendance,
                     'timesheet': timesheet_summary,
                     'leave_permits': leave_stats,
+                },
+                'leave_balance': {
+                    'year': _year,
+                    'annual_entitlement': 21,
+                    'annual_used': ytd_leave.get('CO', {}).get('value', 0),
+                    'annual_remaining': max(0, 21 - ytd_leave.get('CO', {}).get('value', 0)),
+                    'sick_leave': ytd_leave.get('CM', {}).get('value', 0),
+                    'unpaid_leave': ytd_leave.get('CES', {}).get('value', 0),
+                    'child_care': ytd_leave.get('CIC', {}).get('value', 0),
+                    'delegation': ytd_leave.get('DLG', {}).get('value', 0),
+                    'sick_family': ytd_leave.get('CMS', {}).get('value', 0),
+                    'ytd_permits': ytd_permits,
                 },
             }
         })

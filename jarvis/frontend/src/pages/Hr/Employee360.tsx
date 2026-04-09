@@ -214,7 +214,7 @@ const TS_CODE_LABELS: Record<string, { label: string; color: string }> = {
 }
 
 function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<typeof hrApi.getEmployeeOverview>>['data']> }) {
-  const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses, month_stats: ms } = overview
+  const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses, month_stats: ms, leave_balance: lb } = overview
   const monthName = ms ? new Date(ms.year, ms.month - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : ''
 
   // Compute Sincron totals
@@ -225,6 +225,9 @@ function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<
   const totalLeaveDays = tsEntries
     .filter(([code]) => ['CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG'].includes(code))
     .reduce((s, [, v]) => s + v.value, 0)
+
+  // Leave balance
+  const annualPct = lb ? Math.min(100, Math.round((lb.annual_used / lb.annual_entitlement) * 100)) : 0
 
   return (
     <div className="space-y-4 pt-2">
@@ -258,6 +261,65 @@ function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<
         <StatCard title="Form Submissions" value={overview.forms_count} icon={<ClipboardList className="h-4 w-4" />} />
         {sinc && <StatCard title="Overtime" value={`${overtimeHours}h`} icon={<Timer className="h-4 w-4" />} />}
       </div>
+
+      {/* Leave Balance — YTD */}
+      {lb && sinc && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">{lb.year} — Leave Balance (YTD)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Annual Leave progress */}
+            <div>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="text-muted-foreground">Annual Leave (CO)</span>
+                <span className="font-medium tabular-nums">{lb.annual_used}d / {lb.annual_entitlement}d</span>
+              </div>
+              <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                <div
+                  className={cn(
+                    'h-full rounded-full transition-all',
+                    annualPct >= 90 ? 'bg-red-500' : annualPct >= 70 ? 'bg-amber-500' : 'bg-green-500',
+                  )}
+                  style={{ width: `${annualPct}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground mt-0.5">
+                <span>{lb.annual_remaining}d remaining</span>
+                <span>{annualPct}% used</span>
+              </div>
+            </div>
+
+            {/* Other leave types */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-1">
+              <div className="text-center p-2 rounded-md bg-red-50 dark:bg-red-950/30">
+                <div className="text-lg font-bold text-red-600 dark:text-red-400">{lb.sick_leave}d</div>
+                <div className="text-[10px] text-muted-foreground">Sick Leave</div>
+              </div>
+              <div className="text-center p-2 rounded-md bg-gray-50 dark:bg-gray-900/30">
+                <div className="text-lg font-bold">{lb.unpaid_leave}d</div>
+                <div className="text-[10px] text-muted-foreground">Unpaid Leave</div>
+              </div>
+              <div className="text-center p-2 rounded-md bg-purple-50 dark:bg-purple-950/30">
+                <div className="text-lg font-bold text-purple-600 dark:text-purple-400">{lb.child_care}d</div>
+                <div className="text-[10px] text-muted-foreground">Child Care</div>
+              </div>
+              <div className="text-center p-2 rounded-md bg-yellow-50 dark:bg-yellow-950/30">
+                <div className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{lb.delegation}d</div>
+                <div className="text-[10px] text-muted-foreground">Delegation</div>
+              </div>
+            </div>
+
+            {/* YTD Permits */}
+            {lb.ytd_permits.count > 0 && (
+              <div className="flex items-center justify-between text-sm pt-1 border-t">
+                <span className="text-muted-foreground">Leave Permits (YTD)</span>
+                <span className="font-medium tabular-nums">{lb.ytd_permits.count} permits — {lb.ytd_permits.total_hours}h</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Sincron Timesheet Breakdown */}

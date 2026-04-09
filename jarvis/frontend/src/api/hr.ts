@@ -165,6 +165,18 @@ export const hrApi = {
         timesheet: Record<string, { value: number; unit: string }>
         leave_permits: { count: number; total_hours: number }
       }
+      leave_balance: {
+        year: number
+        annual_entitlement: number
+        annual_used: number
+        annual_remaining: number
+        sick_leave: number
+        unpaid_leave: number
+        child_care: number
+        delegation: number
+        sick_family: number
+        ytd_permits: { count: number; total_hours: number }
+      }
     } }>(`${BASE}/employees/${userId}/overview`),
 
   // Organigram
