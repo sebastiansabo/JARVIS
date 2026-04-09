@@ -335,6 +335,9 @@ def search_company_by_name(query):
                     'source': 'rrf.ro',
                 })
         if results:
+            # Sort: exact name matches first, then partial matches
+            q_upper = query.strip().upper()
+            results.sort(key=lambda r: (0 if r['name'].upper() == q_upper else 1))
             return results
     except Exception as e:
         logger.warning('RRF.ro search error for "%s": %s', query, e)
