@@ -33,6 +33,14 @@ export interface IdentityBiostarMapping {
   status: string
 }
 
+export interface IdentityConnecteamMapping {
+  connecteam_user_id: number
+  connecteam_user_name: string | null
+  mapping_method: string | null
+  mapping_confidence: number | null
+  is_active: boolean
+}
+
 export interface IdentityUnifiedRow {
   user_id: number
   name: string
@@ -43,6 +51,7 @@ export interface IdentityUnifiedRow {
   is_active: boolean
   sincron_mappings: IdentitySincronMapping[]
   biostar_mappings: IdentityBiostarMapping[]
+  connecteam_mappings: IdentityConnecteamMapping[]
   /** Derived on the client when not supplied. */
   status?: 'fully_mapped' | 'sincron_only' | 'biostar_only' | 'unmapped'
 }
@@ -67,6 +76,13 @@ export interface IdentityOrphanBiostar {
   status: string
 }
 
+export interface IdentityOrphanConnecteam {
+  id: number
+  connecteam_user_id: number
+  connecteam_user_name: string | null
+  is_active: boolean
+}
+
 export interface IdentityStats {
   total_users: number
   fully_mapped: number
@@ -75,12 +91,14 @@ export interface IdentityStats {
   unmapped_users: number
   orphan_sincron: number
   orphan_biostar: number
+  orphan_connecteam: number
 }
 
 export interface IdentityUnifiedView {
   users: IdentityUnifiedRow[]
   orphan_sincron: IdentityOrphanSincron[]
   orphan_biostar: IdentityOrphanBiostar[]
+  orphan_connecteam: IdentityOrphanConnecteam[]
   stats: IdentityStats
 }
 
@@ -95,7 +113,7 @@ export interface IdentityAutoMapResult {
   [errorKey: string]: number | string
 }
 
-export type IdentityMappingSource = 'sincron' | 'biostar'
+export type IdentityMappingSource = 'sincron' | 'biostar' | 'connecteam'
 
 // ── API ──
 

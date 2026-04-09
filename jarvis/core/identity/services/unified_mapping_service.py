@@ -1,15 +1,16 @@
-"""Unified mapping service — orchestrates Sincron + BioStar employee mapping.
+"""Unified mapping service — orchestrates Sincron + BioStar + Connecteam employee mapping.
 
 Delegates all writes to the existing per-connector repositories so that
-SincronRepository and BioStarRepository remain the single source of truth for
-their own tables. Only the read-side unified view and the auto-map pipeline
-live here.
+SincronRepository, BioStarRepository, and ConnecteamRepository remain the
+single source of truth for their own tables. Only the read-side unified view
+and the auto-map pipeline live here.
 """
 
 import logging
 
 from core.connectors.sincron.repositories.sincron_repository import SincronRepository
 from core.connectors.biostar.repositories.biostar_repository import BioStarRepository
+from core.connectors.connecteam.repositories.connecteam_repository import ConnecteamRepository
 
 from ..repositories.unified_mapping_repository import UnifiedMappingRepository
 
@@ -24,6 +25,7 @@ class UnifiedMappingService:
         self.repo = UnifiedMappingRepository()
         self.sincron_repo = SincronRepository()
         self.biostar_repo = BioStarRepository()
+        self.connecteam_repo = ConnecteamRepository()
 
     # ── Read-side ──
 
@@ -34,6 +36,7 @@ class UnifiedMappingService:
             'users': users,
             'orphan_sincron': self.repo.get_orphan_sincron(),
             'orphan_biostar': self.repo.get_orphan_biostar(),
+            'orphan_connecteam': self.repo.get_orphan_connecteam(),
             'stats': self.repo.get_stats() or {},
         }
 
@@ -103,6 +106,13 @@ class UnifiedMappingService:
             results['biostar_cross_error'] = str(exc)
             results['biostar_cross'] = 0
 
+        try:
+            results['connecteam_name'] = self.connecteam_repo.auto_map_by_name() or 0
+        except Exception as exc:
+            logger.exception('connecteam_name auto-map failed')
+            results['connecteam_name_error'] = str(exc)
+            results['connecteam_name'] = 0
+
         results['total_mapped'] = (
             results.get('sincron_cnp', 0)
             + results.get('sincron_name', 0)
@@ -110,6 +120,7 @@ class UnifiedMappingService:
             + results.get('biostar_email', 0)
             + results.get('biostar_name', 0)
             + results.get('biostar_cross', 0)
+            + results.get('connecteam_name', 0)
         )
         return results
 
@@ -120,8 +131,8 @@ class UnifiedMappingService:
 
         Args:
             user_id: JARVIS users.id
-            source: 'sincron' or 'biostar'
-            external_id: sincron_employee_id or biostar_user_id
+            source: 'sincron', 'biostar', or 'connecteam'
+            external_id: sincron_employee_id, biostar_user_id, or connecteam_user_id
             company_name: required for Sincron (part of composite PK)
         """
         if source == 'sincron':
@@ -133,6 +144,10 @@ class UnifiedMappingService:
         if source == 'biostar':
             self.biostar_repo.update_mapping(external_id, user_id, method='manual', confidence=100.0)
             return {'source': 'biostar', 'external_id': external_id, 'user_id': user_id}
+        if source == 'connecteam':
+            self.connecteam_repo.update_user_mapping(int(external_id), user_id, method='manual')
+            self.connecteam_repo.update_submissions_mapping(int(external_id), user_id)
+            return {'source': 'connecteam', 'external_id': external_id, 'user_id': user_id}
         raise ValueError(f"Unknown source: {source!r}")
 
     def remove_mapping(self, source, external_id, company_name=None):
@@ -146,4 +161,7 @@ class UnifiedMappingService:
         if source == 'biostar':
             self.biostar_repo.remove_mapping(external_id)
             return {'source': 'biostar', 'external_id': external_id}
+        if source == 'connecteam':
+            self.connecteam_repo.remove_user_mapping(int(external_id))
+            return {'source': 'connecteam', 'external_id': external_id}
         raise ValueError(f"Unknown source: {source!r}")

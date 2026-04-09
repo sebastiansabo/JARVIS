@@ -1,9 +1,10 @@
 """Unified mapping repository — cross-connector read queries.
 
-Read-only queries that join `users` with `sincron_employees` and
-`biostar_employees` to produce a per-user unified view. Writes are still
-delegated to the per-connector repositories (SincronRepository,
-BioStarRepository) so this module never touches their underlying tables.
+Read-only queries that join `users` with `sincron_employees`,
+`biostar_employees`, and `connecteam_users` to produce a per-user unified
+view. Writes are still delegated to the per-connector repositories
+(SincronRepository, BioStarRepository, ConnecteamRepository) so this module
+never touches their underlying tables.
 """
 
 from core.base_repository import BaseRepository
@@ -13,16 +14,17 @@ class UnifiedMappingRepository(BaseRepository):
     """Read-only cross-connector queries for the unified mapping UI."""
 
     def get_unified_view(self):
-        """Return one row per active JARVIS user with Sincron + BioStar mappings.
+        """Return one row per active JARVIS user with Sincron + BioStar + Connecteam mappings.
 
-        Both sides are JSON arrays because a user may have multiple rows in
+        All sides are JSON arrays because a user may have multiple rows in
         either table (different Sincron companies, or legacy + current BioStar
         cards).
 
         Output columns:
             user_id, name, email, cnp, company, department, is_active,
             sincron_mappings (JSON array — may be empty),
-            biostar_mappings (JSON array — may be empty)
+            biostar_mappings (JSON array — may be empty),
+            connecteam_mappings (JSON array — may be empty)
         """
         return self.query_all('''
             WITH sincron_agg AS (
@@ -68,6 +70,24 @@ class UnifiedMappingRepository(BaseRepository):
                 WHERE be.mapped_jarvis_user_id IS NOT NULL
                   AND be.status = 'active'
                 GROUP BY be.mapped_jarvis_user_id
+            ),
+            connecteam_agg AS (
+                SELECT
+                    cu.mapped_jarvis_user_id AS user_id,
+                    json_agg(
+                        jsonb_build_object(
+                            'connecteam_user_id',  cu.connecteam_user_id,
+                            'connecteam_user_name', cu.connecteam_user_name,
+                            'mapping_method',      cu.mapping_method,
+                            'mapping_confidence',  cu.mapping_confidence,
+                            'is_active',           cu.is_active
+                        )
+                        ORDER BY cu.connecteam_user_name
+                    ) AS connecteam_mappings
+                FROM connecteam_users cu
+                WHERE cu.mapped_jarvis_user_id IS NOT NULL
+                  AND cu.is_active = TRUE
+                GROUP BY cu.mapped_jarvis_user_id
             )
             SELECT
                 u.id          AS user_id,
@@ -78,10 +98,12 @@ class UnifiedMappingRepository(BaseRepository):
                 u.department  AS department,
                 u.is_active   AS is_active,
                 COALESCE(sa.sincron_mappings, '[]'::json) AS sincron_mappings,
-                COALESCE(ba.biostar_mappings, '[]'::json) AS biostar_mappings
+                COALESCE(ba.biostar_mappings, '[]'::json) AS biostar_mappings,
+                COALESCE(ca.connecteam_mappings, '[]'::json) AS connecteam_mappings
             FROM users u
             LEFT JOIN sincron_agg sa ON sa.user_id = u.id
             LEFT JOIN biostar_agg ba ON ba.user_id = u.id
+            LEFT JOIN connecteam_agg ca ON ca.user_id = u.id
             WHERE u.is_active = TRUE
             ORDER BY u.name
         ''')
@@ -109,6 +131,17 @@ class UnifiedMappingRepository(BaseRepository):
             WHERE be.mapped_jarvis_user_id IS NULL
               AND be.status = 'active'
             ORDER BY be.name
+        ''')
+
+    def get_orphan_connecteam(self):
+        """Connecteam users with no JARVIS user mapping."""
+        return self.query_all('''
+            SELECT cu.id, cu.connecteam_user_id, cu.connecteam_user_name,
+                   cu.is_active
+            FROM connecteam_users cu
+            WHERE cu.mapped_jarvis_user_id IS NULL
+              AND cu.is_active = TRUE
+            ORDER BY cu.connecteam_user_name
         ''')
 
     def get_stats(self):
@@ -167,7 +200,11 @@ class UnifiedMappingRepository(BaseRepository):
                 (
                     SELECT COUNT(*) FROM biostar_employees
                     WHERE mapped_jarvis_user_id IS NULL AND status = 'active'
-                ) AS orphan_biostar
+                ) AS orphan_biostar,
+                (
+                    SELECT COUNT(*) FROM connecteam_users
+                    WHERE mapped_jarvis_user_id IS NULL AND is_active = TRUE
+                ) AS orphan_connecteam
         ''')
 
     def get_jarvis_users(self):
