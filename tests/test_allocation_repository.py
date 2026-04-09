@@ -360,9 +360,10 @@ class TestUpdateInvoiceAllocations:
         mock_get_db.return_value = mock_conn
         mock_get_cursor.return_value = mock_cursor
 
-        # fetchone calls: invoice lookup, allocation id
+        # fetchone calls: invoice lookup, user lookup for responsible, allocation id
         mock_cursor.fetchone.side_effect = [
             {'invoice_value': 1000.0, 'subtract_vat': False, 'net_value': None},  # invoice
+            {'id': 7},   # user lookup for responsible
             {'id': 50},  # allocation id
         ]
 
@@ -371,6 +372,7 @@ class TestUpdateInvoiceAllocations:
             'company': 'DWA',
             'department': 'Marketing',
             'allocation_percent': 100.0,
+            'responsible': 'Test User',
         }])
 
         assert result is True
@@ -386,6 +388,7 @@ class TestUpdateInvoiceAllocations:
 
         mock_cursor.fetchone.side_effect = [
             {'invoice_value': 2000.0, 'subtract_vat': False, 'net_value': None},  # invoice
+            {'id': 7},   # user lookup for responsible
             {'id': 60},  # allocation id
         ]
 
@@ -394,6 +397,7 @@ class TestUpdateInvoiceAllocations:
             'company': 'DWA',
             'department': 'Service',
             'allocation_percent': 100.0,
+            'responsible': 'Test User',
             'reinvoice_destinations': [
                 {'company': 'AWP', 'percentage': 30, 'department': 'Service'},
             ],
