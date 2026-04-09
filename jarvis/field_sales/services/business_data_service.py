@@ -313,16 +313,12 @@ def search_company_by_name(query):
     """
     results = []
 
-    # Primary: RRF.ro — free public API backed by ONRC data
+    # Primary: RRF.ro via CF Worker proxy (direct calls blocked from datacenter IPs)
     try:
         resp = requests.get(
-            'https://www.rrf.ro/api/search',
+            'https://rrf-proxy.sebastian-sabo.workers.dev/',
             params={'q': query.strip()},
-            headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-                'Accept': 'application/json',
-            },
-            timeout=8,
+            timeout=10,
         )
         resp.raise_for_status()
         data = resp.json()
