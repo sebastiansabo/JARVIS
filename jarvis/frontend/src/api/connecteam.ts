@@ -55,4 +55,7 @@ export const connecteamApi = {
     api.get<{ success: boolean; data: ConnecteamSubmission[] }>(
       `${BASE}/submissions/employee/${userId}${qs({ year, month })}`
     ),
+
+  getApprovers: () =>
+    api.get<{ success: boolean; data: { id: number; name: string }[] }>(`${BASE}/approvers`),
 }
