@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { hrApi } from '@/api/hr'
 import { biostarApi } from '@/api/biostar'
 import { sincronApi, type SincronTimesheetData } from '@/api/sincron'
+import { connecteamApi, type ConnecteamSubmission } from '@/api/connecteam'
 import { formsApi } from '@/api/forms'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
@@ -16,7 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  User, Building2, Mail, Phone, Fingerprint, FileSpreadsheet,
+  User, Building2, Mail, Phone, Fingerprint, FileSpreadsheet, FileText,
   Award, ClipboardList, ChevronLeft, ChevronRight, Clock,
   CalendarDays, Timer, Briefcase, ArrowLeft, CheckCircle2, RotateCcw,
 } from 'lucide-react'
@@ -84,6 +85,7 @@ export default function Employee360() {
   const emp = overview.employee
   const bio = overview.biostar
   const sinc = overview.sincron
+  const ct = overview.connecteam
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -115,6 +117,7 @@ export default function Employee360() {
                 <h2 className="text-lg font-semibold">{emp.name}</h2>
                 {bio && <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-950"><Fingerprint className="h-3 w-3 mr-1" />BioStar</Badge>}
                 {sinc && <Badge variant="outline" className="text-xs bg-green-50 dark:bg-green-950"><FileSpreadsheet className="h-3 w-3 mr-1" />Sincron</Badge>}
+                {ct && <Badge variant="outline" className="text-xs bg-indigo-50 dark:bg-indigo-950"><FileText className="h-3 w-3 mr-1" />Connecteam</Badge>}
               </div>
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
                 {emp.email && <span className="flex items-center gap-1"><Mail className="h-3.5 w-3.5" />{emp.email}</span>}
@@ -155,6 +158,7 @@ export default function Employee360() {
           <TabsTrigger value="overview"><User className="h-4 w-4 mr-1" />Overview</TabsTrigger>
           {bio && <TabsTrigger value="pontaj"><Fingerprint className="h-4 w-4 mr-1" />Pontaj</TabsTrigger>}
           {sinc && <TabsTrigger value="timesheet"><FileSpreadsheet className="h-4 w-4 mr-1" />Timesheet</TabsTrigger>}
+          {ct && <TabsTrigger value="leave-permits"><FileText className="h-4 w-4 mr-1" />Leave Permits</TabsTrigger>}
           <TabsTrigger value="bonuses"><Award className="h-4 w-4 mr-1" />Bonuses</TabsTrigger>
           <TabsTrigger value="forms"><ClipboardList className="h-4 w-4 mr-1" />Forms</TabsTrigger>
         </TabsList>
@@ -178,6 +182,11 @@ export default function Employee360() {
             <TimesheetPanel userId={uid} />
           </TabsContent>
         )}
+        {ct && (
+          <TabsContent value="leave-permits">
+            <LeavePermitsPanel userId={uid} />
+          </TabsContent>
+        )}
         <TabsContent value="bonuses">
           <BonusesPanel userId={uid} />
         </TabsContent>
@@ -192,7 +201,7 @@ export default function Employee360() {
 // ── Overview Panel ──
 
 function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<typeof hrApi.getEmployeeOverview>>['data']> }) {
-  const { biostar: bio, sincron: sinc, org, bonuses } = overview
+  const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses } = overview
 
   return (
     <div className="space-y-4 pt-2">
@@ -238,6 +247,16 @@ function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<
               {sinc ? (
                 <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-xs">
                   {sinc.nume} {sinc.prenume} — {sinc.company_name}
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-xs">Not mapped</Badge>
+              )}
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Connecteam</span>
+              {ct ? (
+                <Badge variant="outline" className="bg-indigo-50 dark:bg-indigo-950 text-xs">
+                  {ct.connecteam_user_name} ({ct.submission_count} permits)
                 </Badge>
               ) : (
                 <Badge variant="secondary" className="text-xs">Not mapped</Badge>
@@ -695,6 +714,88 @@ function BonusesPanel({ userId }: { userId: number }) {
                       <TableCell className="text-right tabular-nums">{b.hours_free ?? '-'}</TableCell>
                       <TableCell className="text-right tabular-nums">{b.bonus_net != null ? `${b.bonus_net} RON` : '-'}</TableCell>
                       <TableCell className="text-xs text-muted-foreground max-w-48 truncate">{b.details ?? '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+// ── Leave Permits Panel (Connecteam) ──
+
+function LeavePermitsPanel({ userId }: { userId: number }) {
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['connecteam', 'submissions', userId, year, month],
+    queryFn: () => connecteamApi.getEmployeeSubmissions(userId, year, month),
+  })
+
+  const submissions: ConnecteamSubmission[] = data?.data?.data ?? []
+
+  const prevMonth = () => {
+    if (month === 1) { setMonth(12); setYear(y => y - 1) }
+    else setMonth(m => m - 1)
+  }
+  const nextMonth = () => {
+    if (month === 12) { setMonth(1); setYear(y => y + 1) }
+    else setMonth(m => m + 1)
+  }
+
+  return (
+    <div className="space-y-4 pt-2">
+      {/* Month navigator */}
+      <div className="flex items-center justify-center gap-4">
+        <Button variant="ghost" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+        <span className="text-sm font-medium w-36 text-center">{MONTHS[month - 1]} {year}</span>
+        <Button variant="ghost" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-64 w-full" />
+      ) : submissions.length === 0 ? (
+        <EmptyState icon={<FileText className="h-8 w-8" />} title="No Leave Permits" description={`No leave permits found for ${MONTHS[month - 1]} ${year}.`} />
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Start</TableHead>
+                    <TableHead>End</TableHead>
+                    <TableHead>Hours</TableHead>
+                    <TableHead>Reason</TableHead>
+                    <TableHead>Destination</TableHead>
+                    <TableHead>Approved By</TableHead>
+                    <TableHead>Submitted</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {submissions.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium text-sm whitespace-nowrap">
+                        {s.leave_date ? new Date(s.leave_date).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                      </TableCell>
+                      <TableCell className="text-sm">{s.leave_start_time ?? '-'}</TableCell>
+                      <TableCell className="text-sm">{s.leave_end_time ?? '-'}</TableCell>
+                      <TableCell className="text-sm font-medium">{s.leave_hours != null ? `${s.leave_hours}h` : '-'}</TableCell>
+                      <TableCell className="text-sm max-w-48 truncate" title={s.leave_reason ?? ''}>
+                        {s.leave_reason ?? '-'}
+                      </TableCell>
+                      <TableCell className="text-sm">{s.leave_destination ?? '-'}</TableCell>
+                      <TableCell className="text-sm">{s.approved_by ?? '-'}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                        {s.submission_timestamp ? new Date(s.submission_timestamp).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-'}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
