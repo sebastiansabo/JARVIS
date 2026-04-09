@@ -44,6 +44,7 @@ export interface ConnecteamSubmission {
   entry_num: number
   received_at: string
   created_at: string
+  source?: 'connecteam' | 'jarvis'
 }
 
 export const connecteamApi = {

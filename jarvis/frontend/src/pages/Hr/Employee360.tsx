@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   User, Building2, Mail, Phone, Fingerprint, FileSpreadsheet, FileText,
-  Award, ClipboardList, ChevronLeft, ChevronRight, Clock,
+  Award, ClipboardList, ChevronLeft, ChevronRight, Clock, Plus,
   CalendarDays, Timer, Briefcase, ArrowLeft, CheckCircle2, RotateCcw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -158,7 +158,7 @@ export default function Employee360() {
           <TabsTrigger value="overview"><User className="h-4 w-4 mr-1" />Overview</TabsTrigger>
           {bio && <TabsTrigger value="pontaj"><Fingerprint className="h-4 w-4 mr-1" />Pontaj</TabsTrigger>}
           {sinc && <TabsTrigger value="timesheet"><FileSpreadsheet className="h-4 w-4 mr-1" />Timesheet</TabsTrigger>}
-          {ct && <TabsTrigger value="leave-permits"><FileText className="h-4 w-4 mr-1" />Leave Permits</TabsTrigger>}
+          <TabsTrigger value="leave-permits"><FileText className="h-4 w-4 mr-1" />Leave Permits</TabsTrigger>
           <TabsTrigger value="bonuses"><Award className="h-4 w-4 mr-1" />Bonuses</TabsTrigger>
           <TabsTrigger value="forms"><ClipboardList className="h-4 w-4 mr-1" />Forms</TabsTrigger>
         </TabsList>
@@ -182,11 +182,9 @@ export default function Employee360() {
             <TimesheetPanel userId={uid} />
           </TabsContent>
         )}
-        {ct && (
-          <TabsContent value="leave-permits">
-            <LeavePermitsPanel userId={uid} />
-          </TabsContent>
-        )}
+        <TabsContent value="leave-permits">
+          <LeavePermitsPanel userId={uid} />
+        </TabsContent>
         <TabsContent value="bonuses">
           <BonusesPanel userId={uid} />
         </TabsContent>
@@ -726,19 +724,21 @@ function BonusesPanel({ userId }: { userId: number }) {
   )
 }
 
-// ── Leave Permits Panel (Connecteam) ──
+// ── Leave Permits Panel (Connecteam + JARVIS Form) ──
 
 function LeavePermitsPanel({ userId }: { userId: number }) {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
+  const [showForm, setShowForm] = useState(false)
+  const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
     queryKey: ['connecteam', 'submissions', userId, year, month],
     queryFn: () => connecteamApi.getEmployeeSubmissions(userId, year, month),
   })
 
-  const submissions: ConnecteamSubmission[] = data?.data?.data ?? []
+  const submissions: ConnecteamSubmission[] = data?.data ?? []
 
   const prevMonth = () => {
     if (month === 1) { setMonth(12); setYear(y => y - 1) }
@@ -751,11 +751,16 @@ function LeavePermitsPanel({ userId }: { userId: number }) {
 
   return (
     <div className="space-y-4 pt-2">
-      {/* Month navigator */}
-      <div className="flex items-center justify-center gap-4">
-        <Button variant="ghost" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-        <span className="text-sm font-medium w-36 text-center">{MONTHS[month - 1]} {year}</span>
-        <Button variant="ghost" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+      {/* Header with month nav + new request button */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+          <span className="text-sm font-medium w-36 text-center">{MONTHS[month - 1]} {year}</span>
+          <Button variant="ghost" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+        </div>
+        <Button size="sm" onClick={() => setShowForm(true)}>
+          <Plus className="h-4 w-4 mr-1" />New Request
+        </Button>
       </div>
 
       {isLoading ? (
@@ -776,12 +781,13 @@ function LeavePermitsPanel({ userId }: { userId: number }) {
                     <TableHead>Reason</TableHead>
                     <TableHead>Destination</TableHead>
                     <TableHead>Approved By</TableHead>
+                    <TableHead>Source</TableHead>
                     <TableHead>Submitted</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {submissions.map((s) => (
-                    <TableRow key={s.id}>
+                    <TableRow key={`${s.source ?? 'ct'}-${s.id}`}>
                       <TableCell className="font-medium text-sm whitespace-nowrap">
                         {s.leave_date ? new Date(s.leave_date).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
                       </TableCell>
@@ -793,6 +799,13 @@ function LeavePermitsPanel({ userId }: { userId: number }) {
                       </TableCell>
                       <TableCell className="text-sm">{s.leave_destination ?? '-'}</TableCell>
                       <TableCell className="text-sm">{s.approved_by ?? '-'}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={cn('text-xs',
+                          s.source === 'jarvis' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                        )}>
+                          {s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                         {s.submission_timestamp ? new Date(s.submission_timestamp).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-'}
                       </TableCell>
@@ -804,6 +817,123 @@ function LeavePermitsPanel({ userId }: { userId: number }) {
           </CardContent>
         </Card>
       )}
+
+      {/* New Leave Request Dialog */}
+      {showForm && (
+        <LeaveRequestDialog
+          onClose={() => setShowForm(false)}
+          onSubmitted={() => {
+            setShowForm(false)
+            queryClient.invalidateQueries({ queryKey: ['connecteam', 'submissions', userId] })
+            toast.success('Leave request submitted')
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Leave Request Dialog (JARVIS Form) ──
+
+function LeaveRequestDialog({ onClose, onSubmitted }: {
+  onClose: () => void
+  onSubmitted: () => void
+}) {
+  const [formData, setFormData] = useState({
+    leave_date: '',
+    start_time: '',
+    end_time: '',
+    hours: '',
+    reason: '',
+    destination: '',
+    notes: '',
+  })
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      // Find the JARVIS leave form by slug
+      const formsRes = await formsApi.listForms({ search: 'Bilet de Invoire', limit: 1 })
+      const forms = formsRes?.forms ?? []
+      if (forms.length === 0) {
+        toast.error('Leave permission form not found. Contact admin.')
+        return
+      }
+      const formId = forms[0].id
+
+      const answers: Record<string, string> = {
+        f_bi_leave_date: formData.leave_date,
+        f_bi_start_time: formData.start_time,
+        f_bi_end_time: formData.end_time,
+        f_bi_hours: formData.hours,
+        f_bi_reason: formData.reason,
+      }
+      if (formData.destination) answers.f_bi_destination = formData.destination
+      if (formData.notes) answers.f_bi_notes = formData.notes
+
+      await formsApi.submitInternal(formId, answers, 'web_internal')
+      onSubmitted()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to submit request')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const reasons = ['Personal', 'Medical', 'Familial', 'Oficial', 'Altul']
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <Card className="w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
+        <CardHeader>
+          <CardTitle className="text-lg">New Leave Request</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Data *</label>
+              <input type="date" required className="w-full mt-1 px-3 py-2 border rounded-md text-sm" value={formData.leave_date} onChange={e => setFormData(p => ({ ...p, leave_date: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Ora de inceput *</label>
+                <input type="time" required className="w-full mt-1 px-3 py-2 border rounded-md text-sm" value={formData.start_time} onChange={e => setFormData(p => ({ ...p, start_time: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Ora de sfarsit *</label>
+                <input type="time" required className="w-full mt-1 px-3 py-2 border rounded-md text-sm" value={formData.end_time} onChange={e => setFormData(p => ({ ...p, end_time: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Numar de ore *</label>
+              <input type="number" required min="0.5" max="24" step="0.5" className="w-full mt-1 px-3 py-2 border rounded-md text-sm" value={formData.hours} onChange={e => setFormData(p => ({ ...p, hours: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Motivul *</label>
+              <select required className="w-full mt-1 px-3 py-2 border rounded-md text-sm" value={formData.reason} onChange={e => setFormData(p => ({ ...p, reason: e.target.value }))}>
+                <option value="">Selectati motivul</option>
+                {reasons.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Destinatia</label>
+              <input type="text" className="w-full mt-1 px-3 py-2 border rounded-md text-sm" placeholder="Unde va deplasati" value={formData.destination} onChange={e => setFormData(p => ({ ...p, destination: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Detalii suplimentare</label>
+              <textarea className="w-full mt-1 px-3 py-2 border rounded-md text-sm" rows={2} placeholder="Adaugati orice detalii relevante" value={formData.notes} onChange={e => setFormData(p => ({ ...p, notes: e.target.value }))} />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? 'Submitting...' : 'Submit Request'}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   )
 }

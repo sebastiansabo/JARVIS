@@ -13,10 +13,21 @@ from datetime import datetime
 from ..client.connecteam_client import ConnecteamClient
 from ..client.exceptions import ConnecteamError
 from ..repositories.connecteam_repository import ConnecteamRepository
-from ..config import BILET_INVOIRE_FORM_ID, BILET_INVOIRE_FORM_NAME, SUPPORTED_EVENT_TYPES
+from ..config import (BILET_INVOIRE_FORM_ID, BILET_INVOIRE_FORM_NAME,
+                       SUPPORTED_EVENT_TYPES, JARVIS_LEAVE_FORM_SLUG)
 from core.connectors.repositories.connector_repository import ConnectorRepository
 
 logger = logging.getLogger('jarvis.connecteam.service')
+
+
+def _safe_float(val):
+    """Convert value to float, return None on failure."""
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return None
 
 
 class ConnecteamService:
@@ -450,8 +461,111 @@ class ConnecteamService:
     # ── Query ──
 
     def get_user_submissions(self, jarvis_user_id, year=None, month=None):
-        """Get leave permission submissions for a JARVIS user."""
-        return self.repo.get_submissions_by_jarvis_user(jarvis_user_id, year, month)
+        """Get leave permission submissions for a JARVIS user.
+
+        Combines data from two sources:
+        - Connecteam webhook submissions (connecteam_form_submissions)
+        - JARVIS internal form submissions (form_submissions for 'bilet-de-invoire')
+        """
+        # Connecteam submissions
+        ct_submissions = self.repo.get_submissions_by_jarvis_user(
+            jarvis_user_id, year, month
+        )
+        # Tag source
+        for s in ct_submissions:
+            s['source'] = 'connecteam'
+
+        # JARVIS form submissions
+        jarvis_submissions = self._get_jarvis_form_submissions(
+            jarvis_user_id, year, month
+        )
+
+        # Merge and sort by leave_date descending
+        all_subs = ct_submissions + jarvis_submissions
+        all_subs.sort(
+            key=lambda s: s.get('leave_date') or s.get('created_at') or '',
+            reverse=True,
+        )
+        return all_subs
+
+    def _get_jarvis_form_submissions(self, jarvis_user_id, year=None, month=None):
+        """Fetch JARVIS internal 'Bilet de Invoire' form submissions for a user."""
+        from database import get_db, get_cursor, release_db, dict_from_row
+
+        conn = get_db()
+        cursor = get_cursor(conn)
+        try:
+            # Find the JARVIS leave form by slug
+            cursor.execute(
+                "SELECT id FROM forms WHERE slug = %s AND deleted_at IS NULL LIMIT 1",
+                (JARVIS_LEAVE_FORM_SLUG,)
+            )
+            form_row = cursor.fetchone()
+            if not form_row:
+                return []
+
+            form_id = form_row['id'] if isinstance(form_row, dict) else form_row[0]
+
+            query = '''
+                SELECT fs.id, fs.form_id, f.name AS form_name,
+                       fs.answers, fs.status, fs.source,
+                       fs.respondent_user_id, fs.created_at::text,
+                       u.name AS respondent_name
+                FROM form_submissions fs
+                JOIN forms f ON f.id = fs.form_id
+                LEFT JOIN users u ON u.id = fs.respondent_user_id
+                WHERE fs.form_id = %s AND fs.respondent_user_id = %s
+            '''
+            params = [form_id, jarvis_user_id]
+
+            if year:
+                query += " AND EXTRACT(YEAR FROM fs.created_at) = %s"
+                params.append(year)
+            if month:
+                query += " AND EXTRACT(MONTH FROM fs.created_at) = %s"
+                params.append(month)
+
+            query += ' ORDER BY fs.created_at DESC'
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+
+            results = []
+            for row in rows:
+                r = dict_from_row(row) if not isinstance(row, dict) else dict(row)
+                answers = r.get('answers', {})
+                if isinstance(answers, str):
+                    answers = json.loads(answers)
+
+                # Map JARVIS form answers to the same shape as Connecteam submissions
+                results.append({
+                    'id': r['id'],
+                    'submission_id': f"jarvis-{r['id']}",
+                    'form_id': r['form_id'],
+                    'form_name': r.get('form_name', BILET_INVOIRE_FORM_NAME),
+                    'connecteam_user_id': None,
+                    'mapped_jarvis_user_id': jarvis_user_id,
+                    'connecteam_user_name': r.get('respondent_name'),
+                    'submission_timestamp': r.get('created_at'),
+                    'leave_date': answers.get('f_bi_leave_date'),
+                    'leave_start_time': answers.get('f_bi_start_time'),
+                    'leave_end_time': answers.get('f_bi_end_time'),
+                    'leave_hours': _safe_float(answers.get('f_bi_hours')),
+                    'leave_reason': answers.get('f_bi_reason'),
+                    'leave_destination': answers.get('f_bi_destination'),
+                    'approved_by': None,
+                    'status': r.get('status', 'new'),
+                    'event_type': 'jarvis_form',
+                    'entry_num': None,
+                    'received_at': r.get('created_at'),
+                    'created_at': r.get('created_at'),
+                    'source': 'jarvis',
+                })
+            return results
+        except Exception as e:
+            logger.error('Error fetching JARVIS form submissions: %s', e)
+            return []
+        finally:
+            release_db(conn)
 
     def get_status(self):
         """Get overall connector status."""

@@ -13,3 +13,6 @@ BILET_INVOIRE_FORM_NAME = 'Bilet de Invoire'
 
 # Webhook event types we handle
 SUPPORTED_EVENT_TYPES = ['form_submission', 'form_submission_edited']
+
+# JARVIS internal form slug (created by seed script)
+JARVIS_LEAVE_FORM_SLUG = 'bilet-de-invoire'
