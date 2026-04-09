@@ -56,10 +56,12 @@ import { efacturaApi } from '@/api/efactura'
 import { biostarApi } from '@/api/biostar'
 import { sincronApi } from '@/api/sincron'
 import { autovitApi } from '@/api/autovit'
+import { connecteamApi } from '@/api/connecteam'
 import type { AutovitAccount } from '@/api/autovit'
 import type { SincronSyncRun } from '@/api/sincron'
 import type { BioStarSyncRun } from '@/types/biostar'
 import type { CompanyConnection } from '@/types/efactura'
+import type { ImportResult } from '@/api/connecteam'
 import { FetchMessagesDialog } from './FetchMessagesDialog'
 import { api } from '@/api/client'
 import { toast } from 'sonner'
@@ -1769,6 +1771,179 @@ function AutovitSection() {
 }
 
 // ════════════════════════════════════════════════
+// Connecteam Section (Excel Import)
+// ════════════════════════════════════════════════
+
+function ConnecteamSection() {
+  const qc = useQueryClient()
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
+
+  const { data: status } = useQuery({
+    queryKey: ['connecteam', 'status'],
+    queryFn: () => connecteamApi.getStatus().then(r => r.data),
+    refetchInterval: 60_000,
+  })
+
+  const importMut = useMutation({
+    mutationFn: (file: File) => connecteamApi.importExcel(file),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['connecteam'] })
+      setImportResult(res.data)
+      if (res.data.inserted > 0) {
+        toast.success(`Imported ${res.data.inserted} submissions (${res.data.skipped} skipped)`)
+      } else if (res.data.skipped > 0) {
+        toast.info(`All ${res.data.skipped} submissions already imported`)
+      } else {
+        toast.info('No data found in file')
+      }
+    },
+    onError: () => toast.error('Import failed'),
+  })
+
+  const autoMapMut = useMutation({
+    mutationFn: () => connecteamApi.autoMapUsers(),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['connecteam'] })
+      if (res.total_mapped > 0) {
+        toast.success(`Mapped ${res.total_mapped} users by name`)
+      } else {
+        toast.info('No new users to map')
+      }
+    },
+    onError: () => toast.error('Auto-map failed'),
+  })
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      importMut.mutate(file)
+      e.target.value = ''
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold">Connecteam (Bilet de Invoire)</h3>
+        <StatusBadge status={status ? 'active' : 'inactive'} />
+      </div>
+
+      <div className="rounded-lg border p-4 space-y-4">
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+          <div>
+            <span className="text-muted-foreground">Submissions:</span>
+            <p className="font-medium">{status?.total_submissions ?? 0}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Users:</span>
+            <p className="font-medium">{status?.total_users ?? 0}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Mapped:</span>
+            <p className="font-medium">{status?.mapped_users ?? 0} / {status?.total_users ?? 0}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Last Import:</span>
+            <p className="font-medium text-xs">
+              {status?.last_import_at
+                ? new Date(status.last_import_at).toLocaleString('ro-RO', { timeZone: 'Europe/Bucharest' })
+                : 'Never'}
+            </p>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {/* Import */}
+          <div className="flex items-center justify-between rounded border p-3">
+            <div>
+              <div className="flex items-center gap-1.5 text-sm font-medium">
+                <Download className="h-3.5 w-3.5" /> Import Excel
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Upload Connecteam .xlsx export
+              </p>
+            </div>
+            <div>
+              <input
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                id="connecteam-file-input"
+                onChange={handleFileChange}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => document.getElementById('connecteam-file-input')?.click()}
+                disabled={importMut.isPending}
+              >
+                {importMut.isPending
+                  ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  : <Download className="mr-1 h-3.5 w-3.5" />}
+                {importMut.isPending ? 'Importing...' : 'Upload'}
+              </Button>
+            </div>
+          </div>
+
+          {/* Auto-map */}
+          <div className="flex items-center justify-between rounded border p-3">
+            <div>
+              <div className="flex items-center gap-1.5 text-sm font-medium">
+                <Users className="h-3.5 w-3.5" /> User Mapping
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {status?.unmapped_users ?? 0} unmapped
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => autoMapMut.mutate()}
+              disabled={autoMapMut.isPending}
+            >
+              {autoMapMut.isPending
+                ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+              Auto-Map
+            </Button>
+          </div>
+        </div>
+
+        {/* Import result */}
+        {importResult && (
+          <div className="rounded border bg-muted/50 p-3 text-sm space-y-1">
+            <div className="flex items-center gap-2 font-medium">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              Import Complete
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
+              <span>Rows: {importResult.rows_processed}</span>
+              <span>Inserted: {importResult.inserted}</span>
+              <span>Skipped: {importResult.skipped}</span>
+              <span>Users created: {importResult.users_created}</span>
+            </div>
+            {importResult.unmapped_names.length > 0 && (
+              <details className="text-xs">
+                <summary className="cursor-pointer text-amber-600">
+                  {importResult.unmapped_names.length} unmapped names
+                </summary>
+                <ul className="mt-1 list-disc pl-4 text-muted-foreground">
+                  {importResult.unmapped_names.map((n) => (
+                    <li key={n}>{n}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════
 // Main Export
 // ════════════════════════════════════════════════
 
@@ -1780,6 +1955,8 @@ export default function ConnectorsTab() {
       <BioStarConnectionSection />
       <hr className="border-border" />
       <SincronSection />
+      <hr className="border-border" />
+      <ConnecteamSection />
       <hr className="border-border" />
       <AutovitSection />
       <hr className="border-border" />

@@ -1,4 +1,4 @@
-"""Connecteam Connector — Leave permission form submissions via webhook."""
+"""Connecteam Connector — Leave permission form submissions via Excel import."""
 
 from flask import Blueprint
 
