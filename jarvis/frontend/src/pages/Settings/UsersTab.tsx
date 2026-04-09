@@ -495,6 +495,24 @@ function UserFormDialog({
                   <span className="text-muted-foreground text-xs">Name:</span>{' '}
                   <span className="font-medium">{connectors.biostar.user_name}</span>
                 </div>
+                {connectors.biostar.email && (
+                  <div>
+                    <span className="text-muted-foreground text-xs">Email:</span>{' '}
+                    <span className="font-medium">{connectors.biostar.email}</span>
+                  </div>
+                )}
+                {connectors.biostar.phone && (
+                  <div>
+                    <span className="text-muted-foreground text-xs">Phone:</span>{' '}
+                    <span className="font-medium">{connectors.biostar.phone}</span>
+                  </div>
+                )}
+                {connectors.biostar.cnp && (
+                  <div>
+                    <span className="text-muted-foreground text-xs">CNP:</span>{' '}
+                    <span className="font-medium">{connectors.biostar.cnp}</span>
+                  </div>
+                )}
                 <div>
                   <span className="text-muted-foreground text-xs">Group:</span>{' '}
                   <span className="font-medium">{connectors.biostar.user_group_name}</span>
@@ -517,6 +535,10 @@ function UserFormDialog({
                     <span className="font-medium">{connectors.biostar.schedule_start || '–'} – {connectors.biostar.schedule_end || '–'}</span>
                   </div>
                 )}
+                <div>
+                  <span className="text-muted-foreground text-xs">Mapping:</span>{' '}
+                  <span className="font-medium">{connectors.biostar.mapping_method} ({connectors.biostar.mapping_confidence}%)</span>
+                </div>
               </div>
             </div>
           )}
@@ -534,6 +556,12 @@ function UserFormDialog({
                   <span className="text-muted-foreground text-xs">Name:</span>{' '}
                   <span className="font-medium">{connectors.sincron.nume} {connectors.sincron.prenume}</span>
                 </div>
+                {connectors.sincron.cnp && (
+                  <div>
+                    <span className="text-muted-foreground text-xs">CNP:</span>{' '}
+                    <span className="font-medium">{connectors.sincron.cnp}</span>
+                  </div>
+                )}
                 <div>
                   <span className="text-muted-foreground text-xs">Company:</span>{' '}
                   <span className="font-medium">{connectors.sincron.company_name}</span>
@@ -550,7 +578,7 @@ function UserFormDialog({
                 )}
                 <div>
                   <span className="text-muted-foreground text-xs">Mapping:</span>{' '}
-                  <span className="font-medium">{connectors.sincron.mapping_method} ({Math.round(connectors.sincron.mapping_confidence * 100)}%)</span>
+                  <span className="font-medium">{connectors.sincron.mapping_method} ({connectors.sincron.mapping_confidence}%)</span>
                 </div>
               </div>
             </div>

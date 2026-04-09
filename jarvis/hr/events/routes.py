@@ -1452,10 +1452,11 @@ def api_get_employee_overview(user_id):
 
         # BioStar mapping
         cursor.execute('''
-            SELECT biostar_user_id, name AS user_name, user_group_name,
-                   (status = 'active') AS is_active,
+            SELECT biostar_user_id, name AS user_name, email, phone, cnp,
+                   user_group_name, (status = 'active') AS is_active,
                    lunch_break_minutes, working_hours,
-                   schedule_start::text, schedule_end::text
+                   schedule_start::text, schedule_end::text,
+                   mapping_method, mapping_confidence
             FROM biostar_employees
             WHERE mapped_jarvis_user_id = %s
             LIMIT 1
@@ -1465,7 +1466,7 @@ def api_get_employee_overview(user_id):
 
         # Sincron mapping
         cursor.execute('''
-            SELECT sincron_employee_id, company_name, nume, prenume,
+            SELECT sincron_employee_id, company_name, nume, prenume, cnp,
                    nr_contract, data_incepere_contract::text, mapping_method, mapping_confidence
             FROM sincron_employees
             WHERE mapped_jarvis_user_id = %s AND is_active = TRUE
