@@ -127,6 +127,7 @@ export function UnifiedEmployeeMappingSection() {
   const [search, setSearch] = useState('')
   const [dialog, setDialog] = useState<DialogState>({ mode: 'closed' })
   const [dialogSelection, setDialogSelection] = useState<string>('')
+  const [dialogMultiSelection, setDialogMultiSelection] = useState<Set<string>>(new Set())
   const [dialogSearch, setDialogSearch] = useState('')
 
   const { data, isLoading, isError } = useQuery<IdentityUnifiedView>({
@@ -275,19 +276,30 @@ export function UnifiedEmployeeMappingSection() {
 
   const openMapSincronForUser = (userId: number, userName: string) => {
     setDialogSelection('')
+    setDialogMultiSelection(new Set())
     setDialogSearch('')
     setDialog({ mode: 'mapSincronForUser', userId, userName })
   }
 
   const openMapBiostarForUser = (userId: number, userName: string) => {
     setDialogSelection('')
+    setDialogMultiSelection(new Set())
     setDialogSearch('')
     setDialog({ mode: 'mapBiostarForUser', userId, userName })
   }
 
-  const confirmDialogMapping = () => {
-    if (!dialogSelection) return
+  const toggleMultiSelection = (val: string) => {
+    setDialogMultiSelection((prev) => {
+      const next = new Set(prev)
+      if (next.has(val)) next.delete(val)
+      else next.add(val)
+      return next
+    })
+  }
+
+  const confirmDialogMapping = async () => {
     if (dialog.mode === 'mapSincron') {
+      if (!dialogSelection) return
       const userId = Number(dialogSelection)
       if (!Number.isFinite(userId)) return
       setMappingMut.mutate({
@@ -297,6 +309,7 @@ export function UnifiedEmployeeMappingSection() {
         company_name: dialog.orphan.company_name,
       })
     } else if (dialog.mode === 'mapBiostar') {
+      if (!dialogSelection) return
       const userId = Number(dialogSelection)
       if (!Number.isFinite(userId)) return
       setMappingMut.mutate({
@@ -305,17 +318,31 @@ export function UnifiedEmployeeMappingSection() {
         external_id: dialog.orphan.biostar_user_id,
       })
     } else if (dialog.mode === 'mapSincronForUser') {
-      // dialogSelection = "sincron_employee_id::company_name"
-      const [extId, ...rest] = dialogSelection.split('::')
-      const companyName = rest.join('::')
-      setMappingMut.mutate({
-        userId: dialog.userId,
-        source: 'sincron',
-        external_id: extId,
-        company_name: companyName || undefined,
+      // Multi-select: map all checked orphan Sincron records to this user
+      if (dialogMultiSelection.size === 0) return
+      const promises = Array.from(dialogMultiSelection).map((val) => {
+        const [extId, ...rest] = val.split('::')
+        const companyName = rest.join('::')
+        return identityApi.setMapping(dialog.userId, {
+          source: 'sincron',
+          external_id: extId,
+          company_name: companyName || undefined,
+        })
       })
+      try {
+        await Promise.all(promises)
+        qc.invalidateQueries({ queryKey: ['identity'] })
+        qc.invalidateQueries({ queryKey: ['sincron'] })
+        toast.success(`Mapped ${dialogMultiSelection.size} Sincron record(s)`)
+        setDialog({ mode: 'closed' })
+        setDialogSelection('')
+        setDialogMultiSelection(new Set())
+        setDialogSearch('')
+      } catch {
+        toast.error('Failed to save some mappings')
+      }
     } else if (dialog.mode === 'mapBiostarForUser') {
-      // dialogSelection = biostar_user_id
+      if (!dialogSelection) return
       setMappingMut.mutate({
         userId: dialog.userId,
         source: 'biostar',
@@ -632,6 +659,7 @@ export function UnifiedEmployeeMappingSection() {
           if (!open) {
             setDialog({ mode: 'closed' })
             setDialogSelection('')
+            setDialogMultiSelection(new Set())
             setDialogSearch('')
           }
         }}
@@ -661,8 +689,11 @@ export function UnifiedEmployeeMappingSection() {
                   {dialog.orphan.email ? ` · ${dialog.orphan.email}` : ''}
                 </>
               )}
-              {(dialog.mode === 'mapSincronForUser' || dialog.mode === 'mapBiostarForUser') && (
-                <>Select an unmatched external record to link to <strong>{dialog.userName}</strong></>
+              {dialog.mode === 'mapSincronForUser' && (
+                <>Select one or more Sincron records to link to <strong>{dialog.userName}</strong></>
+              )}
+              {dialog.mode === 'mapBiostarForUser' && (
+                <>Select an unmatched BioStar record to link to <strong>{dialog.userName}</strong></>
               )}
             </DialogDescription>
           </DialogHeader>
@@ -706,24 +737,36 @@ export function UnifiedEmployeeMappingSection() {
             {dialog.mode === 'mapSincronForUser' &&
               filteredOrphanSincronForDialog.map((e) => {
                 const val = `${e.sincron_employee_id}::${e.company_name}`
+                const checked = dialogMultiSelection.has(val)
                 return (
                   <button
                     key={val}
                     type="button"
-                    className={`w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors ${
-                      dialogSelection === val ? 'bg-accent font-medium' : ''
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2 ${
+                      checked ? 'bg-accent/60' : ''
                     }`}
-                    onClick={() => setDialogSelection(val)}
+                    onClick={() => toggleMultiSelection(val)}
                   >
-                    {e.nume} {e.prenume}
-                    <span className="ml-1 text-xs text-muted-foreground">
-                      · {e.company_name}
+                    <span
+                      className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
+                        checked
+                          ? 'bg-primary border-primary text-primary-foreground'
+                          : 'border-muted-foreground/40'
+                      }`}
+                    >
+                      {checked && '✓'}
                     </span>
-                    {e.cnp && (
-                      <span className="ml-1 text-[10px] font-mono text-muted-foreground">
-                        CNP {e.cnp}
+                    <span>
+                      {e.nume} {e.prenume}
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        · {e.company_name}
                       </span>
-                    )}
+                      {e.cnp && (
+                        <span className="ml-1 text-[10px] font-mono text-muted-foreground">
+                          CNP {e.cnp}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 )
               })}
@@ -764,6 +807,7 @@ export function UnifiedEmployeeMappingSection() {
               onClick={() => {
                 setDialog({ mode: 'closed' })
                 setDialogSelection('')
+                setDialogMultiSelection(new Set())
                 setDialogSearch('')
               }}
             >
@@ -771,12 +815,18 @@ export function UnifiedEmployeeMappingSection() {
             </Button>
             <Button
               onClick={confirmDialogMapping}
-              disabled={!dialogSelection || setMappingMut.isPending}
+              disabled={
+                dialog.mode === 'mapSincronForUser'
+                  ? dialogMultiSelection.size === 0
+                  : !dialogSelection || setMappingMut.isPending
+              }
             >
               {setMappingMut.isPending && (
                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
               )}
-              Save mapping
+              {dialog.mode === 'mapSincronForUser' && dialogMultiSelection.size > 0
+                ? `Save ${dialogMultiSelection.size} mapping(s)`
+                : 'Save mapping'}
             </Button>
           </DialogFooter>
         </DialogContent>
