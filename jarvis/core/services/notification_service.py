@@ -525,7 +525,7 @@ def notify_allocation(invoice_data: dict, allocation: dict) -> list[dict]:
                 responsable_id,
                 f'New allocation: {inv_num} ({supplier})',
                 message=f'{company} / {department} — {allocation.get("allocation_percent", 0)}%',
-                link='/app/accounting',
+                link=f'/app/accounting?highlight={invoice_id}',
                 entity_type='invoice',
                 entity_id=invoice_id,
                 type='info',

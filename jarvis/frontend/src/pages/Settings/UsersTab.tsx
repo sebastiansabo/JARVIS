@@ -17,6 +17,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { usersApi } from '@/api/users'
+import { hrApi } from '@/api/hr'
 import { rolesApi } from '@/api/roles'
 import { toast } from 'sonner'
 import { useIsMobile } from '@/hooks/useMediaQuery'
@@ -383,6 +384,16 @@ function UserFormDialog({
     enabled: !!user,
   })
 
+  // Fetch BioStar / Sincron connector data (read-only)
+  const { data: connectors } = useQuery({
+    queryKey: ['user-connectors', user?.id],
+    queryFn: async () => {
+      const res = await hrApi.getEmployeeOverview(user!.id)
+      return { biostar: res.data.biostar, sincron: res.data.sincron }
+    },
+    enabled: !!user,
+  })
+
   return (
     <Dialog
       open={open}
@@ -468,6 +479,80 @@ function UserFormDialog({
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* BioStar (read-only) */}
+          {connectors?.biostar && (
+            <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">BioStar</Label>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                <div>
+                  <span className="text-muted-foreground text-xs">BioStar ID:</span>{' '}
+                  <span className="font-medium">{connectors.biostar.biostar_user_id}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-xs">Name:</span>{' '}
+                  <span className="font-medium">{connectors.biostar.user_name}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-xs">Group:</span>{' '}
+                  <span className="font-medium">{connectors.biostar.user_group_name}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-xs">Status:</span>{' '}
+                  <span className="font-medium">{connectors.biostar.is_active ? 'Active' : 'Inactive'}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-xs">Working Hours:</span>{' '}
+                  <span className="font-medium">{connectors.biostar.working_hours}h</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-xs">Lunch Break:</span>{' '}
+                  <span className="font-medium">{connectors.biostar.lunch_break_minutes} min</span>
+                </div>
+                {(connectors.biostar.schedule_start || connectors.biostar.schedule_end) && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground text-xs">Schedule:</span>{' '}
+                    <span className="font-medium">{connectors.biostar.schedule_start || '–'} – {connectors.biostar.schedule_end || '–'}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Sincron (read-only) */}
+          {connectors?.sincron && (
+            <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sincron</Label>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                <div>
+                  <span className="text-muted-foreground text-xs">Sincron ID:</span>{' '}
+                  <span className="font-medium">{connectors.sincron.sincron_employee_id}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-xs">Name:</span>{' '}
+                  <span className="font-medium">{connectors.sincron.nume} {connectors.sincron.prenume}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-xs">Company:</span>{' '}
+                  <span className="font-medium">{connectors.sincron.company_name}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-xs">Contract Nr:</span>{' '}
+                  <span className="font-medium">{connectors.sincron.nr_contract}</span>
+                </div>
+                {connectors.sincron.data_incepere_contract && (
+                  <div>
+                    <span className="text-muted-foreground text-xs">Contract Start:</span>{' '}
+                    <span className="font-medium">{connectors.sincron.data_incepere_contract}</span>
+                  </div>
+                )}
+                <div>
+                  <span className="text-muted-foreground text-xs">Mapping:</span>{' '}
+                  <span className="font-medium">{connectors.sincron.mapping_method} ({Math.round(connectors.sincron.mapping_confidence * 100)}%)</span>
+                </div>
+              </div>
             </div>
           )}
 
