@@ -152,8 +152,8 @@ export const hrApi = {
   getEmployeeOverview: (userId: number) =>
     api.get<{ success: boolean; data: {
       employee: HrEmployee
-      biostar: { biostar_user_id: string; user_name: string; user_group_name: string; is_active: boolean; lunch_break_minutes: number; working_hours: number; schedule_start: string | null; schedule_end: string | null } | null
-      sincron: { sincron_employee_id: string; company_name: string; nume: string; prenume: string; nr_contract: string; data_incepere_contract: string | null; mapping_method: string; mapping_confidence: number } | null
+      biostar: { biostar_user_id: string; user_name: string; email: string | null; phone: string | null; cnp: string | null; user_group_name: string; is_active: boolean; lunch_break_minutes: number; working_hours: number; schedule_start: string | null; schedule_end: string | null; mapping_method: string; mapping_confidence: number } | null
+      sincron: { sincron_employee_id: string; company_name: string; nume: string; prenume: string; cnp: string | null; nr_contract: string; data_incepere_contract: string | null; mapping_method: string; mapping_confidence: number } | null
       org: { company: string; brand: string; department: string; subdepartment: string }
       bonuses: { count: number; total_days: number; total_net: number }
       forms_count: number
