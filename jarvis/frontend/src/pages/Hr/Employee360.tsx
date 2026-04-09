@@ -199,19 +199,100 @@ export default function Employee360() {
 
 // ── Overview Panel ──
 
+const TS_CODE_LABELS: Record<string, { label: string; color: string }> = {
+  OZ: { label: 'Work Hours', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200' },
+  CO: { label: 'Annual Leave', color: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' },
+  CM: { label: 'Medical Leave', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200' },
+  OSW: { label: 'Overtime', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200' },
+  CIC: { label: 'Child Care', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200' },
+  CES: { label: 'Unpaid Leave', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-200' },
+  DLG: { label: 'Delegation', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200' },
+  CMS: { label: 'Sick Family', color: 'bg-pink-100 text-pink-800 dark:bg-pink-900/40 dark:text-pink-200' },
+  X: { label: 'Day Off', color: 'bg-slate-100 text-slate-800 dark:bg-slate-900/40 dark:text-slate-200' },
+  ZLC: { label: 'Legal Holiday', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200' },
+  ZLS: { label: 'Sat/Sun Off', color: 'bg-slate-100 text-slate-600 dark:bg-slate-900/40 dark:text-slate-300' },
+}
+
 function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<typeof hrApi.getEmployeeOverview>>['data']> }) {
-  const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses } = overview
+  const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses, month_stats: ms } = overview
+  const monthName = ms ? new Date(ms.year, ms.month - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : ''
+
+  // Compute Sincron totals
+  const tsEntries = ms ? Object.entries(ms.timesheet) : []
+  const overtimeHours = ms?.timesheet?.OSW?.value ?? 0
+  const annualLeaveDays = ms?.timesheet?.CO?.value ?? 0
+  const sickLeaveDays = ms?.timesheet?.CM?.value ?? 0
+  const totalLeaveDays = tsEntries
+    .filter(([code]) => ['CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG'].includes(code))
+    .reduce((s, [, v]) => s + v.value, 0)
 
   return (
     <div className="space-y-4 pt-2">
+      {/* Monthly stats header */}
+      {ms && (
+        <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+          {monthName} — Monthly Summary
+        </div>
+      )}
+
+      {/* Top stat cards — attendance & work time */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {bio && <StatCard title="Days Present" value={ms?.attendance.days_present ?? 0} icon={<Fingerprint className="h-4 w-4" />} />}
+        {bio && <StatCard title="Hours Worked" value={`${ms?.attendance.total_hours ?? 0}h`} icon={<Clock className="h-4 w-4" />} />}
+        {bio && <StatCard title="Avg Daily" value={`${ms?.attendance.avg_daily_hours ?? 0}h`} icon={<Timer className="h-4 w-4" />} />}
+        {bio && <StatCard title="Schedule" value={`${bio.working_hours}h/day`} icon={<CalendarDays className="h-4 w-4" />} />}
+      </div>
+
+      {/* Leave & absence stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard title="Leave Permits" value={ms?.leave_permits.count ?? 0} icon={<FileText className="h-4 w-4" />} />
+        <StatCard title="Permit Hours" value={`${ms?.leave_permits.total_hours ?? 0}h`} icon={<Clock className="h-4 w-4" />} />
+        {sinc && <StatCard title="Annual Leave" value={`${annualLeaveDays}d`} icon={<CalendarDays className="h-4 w-4" />} />}
+        {sinc && <StatCard title="Sick Leave" value={`${sickLeaveDays}d`} icon={<CheckCircle2 className="h-4 w-4" />} />}
+      </div>
+
+      {/* Bonuses row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard title="Bonuses" value={bonuses.count} icon={<Award className="h-4 w-4" />} />
         <StatCard title="Bonus Days" value={bonuses.total_days} icon={<CalendarDays className="h-4 w-4" />} />
         <StatCard title="Form Submissions" value={overview.forms_count} icon={<ClipboardList className="h-4 w-4" />} />
-        {bio && <StatCard title="Work Schedule" value={`${bio.working_hours}h/day`} icon={<Clock className="h-4 w-4" />} />}
+        {sinc && <StatCard title="Overtime" value={`${overtimeHours}h`} icon={<Timer className="h-4 w-4" />} />}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Sincron Timesheet Breakdown */}
+        {sinc && tsEntries.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Timesheet Breakdown — {monthName}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1.5 text-sm">
+              {tsEntries
+                .filter(([code]) => code !== 'ZLS')
+                .map(([code, data]) => {
+                  const meta = TS_CODE_LABELS[code] || { label: code, color: 'bg-gray-100 text-gray-800' }
+                  return (
+                    <div key={code} className="flex items-center justify-between py-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-mono font-bold', meta.color)}>{code}</span>
+                        <span className="text-muted-foreground">{meta.label}</span>
+                      </div>
+                      <span className="font-medium tabular-nums">
+                        {data.value}{data.unit === 'hour' ? 'h' : 'd'}
+                      </span>
+                    </div>
+                  )
+                })}
+              {totalLeaveDays > 0 && (
+                <div className="flex items-center justify-between pt-1 border-t text-xs">
+                  <span className="text-muted-foreground font-medium">Total Leave Days</span>
+                  <span className="font-bold">{totalLeaveDays}d</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Organization */}
         <Card>
           <CardHeader className="pb-2">
