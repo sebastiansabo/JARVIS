@@ -45,10 +45,11 @@ def _get_connector_config(connector_type):
 
 
 def fetch_termene(cui):
-    """Fetch company data from Termene.ro API.
+    """Fetch company data from Termene.ro v2 API.
 
-    API: POST /api/dateFirmaSumar.php
-    Auth: username + password in request body
+    API: POST https://api.termene.ro/v2
+    Auth: HTTP Basic Auth
+    Body: JSON with cui and schemaKey
     """
     config, creds, _ = _get_connector_config('termene')
     if not config or not creds:
@@ -59,13 +60,16 @@ def fetch_termene(cui):
     if not username or not password:
         return None
 
-    endpoint = config.get('api_endpoint', 'https://termene.ro/api/dateFirmaSumar.php')
+    endpoint = config.get('api_endpoint', 'https://api.termene.ro/v2')
+    schema_key = config.get('schema_key', '')
     timeout = config.get('timeout_seconds', 10)
 
     try:
         resp = requests.post(
             endpoint,
-            data={'cui': str(cui).strip(), 'username': username, 'password': password},
+            json={'cui': int(str(cui).strip()), 'schemaKey': schema_key},
+            headers={'Content-Type': 'application/json'},
+            auth=(username, password),
             timeout=timeout,
         )
         resp.raise_for_status()

@@ -230,7 +230,7 @@ def create_schema_core(conn, cursor):
          '{"api_endpoint": "https://webservicesp.anaf.ro/PlatitorTvaRest/api/v8/ws/tva", "timeout_seconds": 5, "cache_hours": 24, "description": "Free government API. VAT status, company identification, fiscal activity. No auth needed. Max 500 CUIs/request."}',
          '{}'),
         ('termene', 'Termene.ro', 'disconnected',
-         '{"api_endpoint": "https://termene.ro/api/dateFirmaSumar.php", "timeout_seconds": 10, "cache_hours": 24, "description": "Most comprehensive Romanian business data. Financial indicators, court cases, insolvency risk, shareholders, beneficial owners, public contracts. Subscription required."}',
+         '{"api_endpoint": "https://api.termene.ro/v2", "schema_key": "6fb370d6-b4db-42f0-9e9e-c504620f6920", "timeout_seconds": 10, "cache_hours": 24, "description": "Most comprehensive Romanian business data. Financial indicators, court cases, insolvency risk, shareholders, beneficial owners, public contracts. Subscription required."}',
          '{"username": "", "password": ""}'),
         ('risco', 'RisCo.ro', 'disconnected',
          '{"api_endpoint": "https://www.risco.ro/v3/api/external", "timeout_seconds": 10, "cache_hours": 24, "description": "Risk assessment & credit scoring. 20+ endpoints: financial rating (RAT), insolvency probability (PIM), company valuation (VAL), court cases (JST), tax debts (RES). Pay-per-query from 0.2 RON."}',
