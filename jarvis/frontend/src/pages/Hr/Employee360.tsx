@@ -165,7 +165,7 @@ export default function Employee360() {
         </TabsList>
 
         <TabsContent value="overview">
-          <OverviewPanel overview={overview} />
+          <OverviewPanel overview={overview} userId={uid} />
         </TabsContent>
         {bio && (
           <TabsContent value="pontaj">
@@ -213,8 +213,20 @@ const TS_CODE_LABELS: Record<string, { label: string; color: string }> = {
   ZLS: { label: 'Sat/Sun Off', color: 'bg-slate-100 text-slate-600 dark:bg-slate-900/40 dark:text-slate-300' },
 }
 
-function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<typeof hrApi.getEmployeeOverview>>['data']> }) {
-  const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses, month_stats: ms, leave_balance: lb } = overview
+function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<ReturnType<typeof hrApi.getEmployeeOverview>>['data']>; userId: number }) {
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+
+  // Fetch monthly data for selected month
+  const { data: monthRes, isLoading: monthLoading } = useQuery({
+    queryKey: ['hr', 'employee-overview', userId, year, month],
+    queryFn: () => hrApi.getEmployeeOverview(userId, year, month),
+    enabled: !!userId,
+  })
+
+  const md = monthRes?.data ?? overview
+  const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses, month_stats: ms, leave_balance: lb } = md
   const monthName = ms ? new Date(ms.year, ms.month - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : ''
 
   // Compute Sincron totals
@@ -229,14 +241,47 @@ function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<
   // Leave balance
   const annualPct = lb ? Math.min(100, Math.round((lb.annual_used / lb.annual_entitlement) * 100)) : 0
 
+  // Daily chart data
+  const dailyData = ms?.daily_hours ?? []
+
+  // Leave donut data
+  const donutSlices = useMemo(() => {
+    if (!lb) return []
+    const items = [
+      { label: 'Used Annual', value: lb.annual_used, color: '#10b981' },
+      { label: 'Remaining', value: lb.annual_remaining, color: '#d1d5db' },
+      { label: 'Sick Leave', value: lb.sick_leave, color: '#ef4444' },
+      { label: 'Unpaid', value: lb.unpaid_leave, color: '#6b7280' },
+      { label: 'Child Care', value: lb.child_care, color: '#8b5cf6' },
+      { label: 'Delegation', value: lb.delegation, color: '#f59e0b' },
+    ].filter(s => s.value > 0)
+    return items
+  }, [lb])
+
+  const prevMonth = () => {
+    if (month === 1) { setMonth(12); setYear(y => y - 1) }
+    else setMonth(m => m - 1)
+  }
+  const nextMonth = () => {
+    if (month === 12) { setMonth(1); setYear(y => y + 1) }
+    else setMonth(m => m + 1)
+  }
+
   return (
     <div className="space-y-4 pt-2">
-      {/* Monthly stats header */}
-      {ms && (
-        <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-          {monthName} — Monthly Summary
+      {/* Month navigation */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={prevMonth}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm font-medium capitalize w-44 text-center">{monthName}</span>
+          <Button variant="ghost" size="icon" onClick={nextMonth}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
-      )}
+        {monthLoading && <span className="text-xs text-muted-foreground animate-pulse">Loading...</span>}
+      </div>
 
       {/* Top stat cards — attendance & work time */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -258,70 +303,76 @@ function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard title="Bonuses" value={bonuses.count} icon={<Award className="h-4 w-4" />} />
         <StatCard title="Bonus Days" value={bonuses.total_days} icon={<CalendarDays className="h-4 w-4" />} />
-        <StatCard title="Form Submissions" value={overview.forms_count} icon={<ClipboardList className="h-4 w-4" />} />
+        <StatCard title="Form Submissions" value={md.forms_count} icon={<ClipboardList className="h-4 w-4" />} />
         {sinc && <StatCard title="Overtime" value={`${overtimeHours}h`} icon={<Timer className="h-4 w-4" />} />}
       </div>
 
-      {/* Leave Balance — YTD */}
-      {lb && sinc && (
+      {/* Daily Attendance Chart */}
+      {bio && dailyData.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">{lb.year} — Leave Balance (YTD)</CardTitle>
+            <CardTitle className="text-sm font-medium">Daily Attendance — {monthName}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {/* Annual Leave progress */}
-            <div>
-              <div className="flex items-center justify-between text-sm mb-1">
-                <span className="text-muted-foreground">Annual Leave (CO)</span>
-                <span className="font-medium tabular-nums">{lb.annual_used}d / {lb.annual_entitlement}d</span>
-              </div>
-              <div className="h-2.5 bg-muted rounded-full overflow-hidden">
-                <div
-                  className={cn(
-                    'h-full rounded-full transition-all',
-                    annualPct >= 90 ? 'bg-red-500' : annualPct >= 70 ? 'bg-amber-500' : 'bg-green-500',
-                  )}
-                  style={{ width: `${annualPct}%` }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground mt-0.5">
-                <span>{lb.annual_remaining}d remaining</span>
-                <span>{annualPct}% used</span>
-              </div>
-            </div>
-
-            {/* Other leave types */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-1">
-              <div className="text-center p-2 rounded-md bg-red-50 dark:bg-red-950/30">
-                <div className="text-lg font-bold text-red-600 dark:text-red-400">{lb.sick_leave}d</div>
-                <div className="text-[10px] text-muted-foreground">Sick Leave</div>
-              </div>
-              <div className="text-center p-2 rounded-md bg-gray-50 dark:bg-gray-900/30">
-                <div className="text-lg font-bold">{lb.unpaid_leave}d</div>
-                <div className="text-[10px] text-muted-foreground">Unpaid Leave</div>
-              </div>
-              <div className="text-center p-2 rounded-md bg-purple-50 dark:bg-purple-950/30">
-                <div className="text-lg font-bold text-purple-600 dark:text-purple-400">{lb.child_care}d</div>
-                <div className="text-[10px] text-muted-foreground">Child Care</div>
-              </div>
-              <div className="text-center p-2 rounded-md bg-yellow-50 dark:bg-yellow-950/30">
-                <div className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{lb.delegation}d</div>
-                <div className="text-[10px] text-muted-foreground">Delegation</div>
-              </div>
-            </div>
-
-            {/* YTD Permits */}
-            {lb.ytd_permits.count > 0 && (
-              <div className="flex items-center justify-between text-sm pt-1 border-t">
-                <span className="text-muted-foreground">Leave Permits (YTD)</span>
-                <span className="font-medium tabular-nums">{lb.ytd_permits.count} permits — {lb.ytd_permits.total_hours}h</span>
-              </div>
-            )}
+          <CardContent className="pt-0">
+            <AttendanceBarChart data={dailyData} />
           </CardContent>
         </Card>
       )}
 
+      {/* Leave Balance + Donut chart */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {lb && sinc && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">{lb.year} — Leave Balance (YTD)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-6">
+                {/* Donut */}
+                {donutSlices.length > 0 && (
+                  <LeaveDonut slices={donutSlices} entitlement={lb.annual_entitlement} />
+                )}
+                {/* Legend */}
+                <div className="flex-1 space-y-1.5 min-w-0">
+                  {donutSlices.map((s, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                      <span className="truncate flex-1">{s.label}</span>
+                      <span className="tabular-nums font-medium shrink-0">{s.value}d</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Annual Leave progress bar */}
+              <div>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">Annual Leave (CO)</span>
+                  <span className="font-medium tabular-nums">{lb.annual_used}d / {lb.annual_entitlement}d</span>
+                </div>
+                <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={cn(
+                      'h-full rounded-full transition-all',
+                      annualPct >= 90 ? 'bg-red-500' : annualPct >= 70 ? 'bg-amber-500' : 'bg-green-500',
+                    )}
+                    style={{ width: `${annualPct}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground mt-0.5">
+                  <span>{lb.annual_remaining}d remaining</span>
+                  <span>{annualPct}% used</span>
+                </div>
+              </div>
+              {lb.ytd_permits.count > 0 && (
+                <div className="flex items-center justify-between text-sm pt-1 border-t">
+                  <span className="text-muted-foreground">Leave Permits (YTD)</span>
+                  <span className="font-medium tabular-nums">{lb.ytd_permits.count} permits — {lb.ytd_permits.total_hours}h</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Sincron Timesheet Breakdown */}
         {sinc && tsEntries.length > 0 && (
           <Card>
@@ -354,7 +405,9 @@ function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<
             </CardContent>
           </Card>
         )}
+      </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Organization */}
         <Card>
           <CardHeader className="pb-2">
@@ -424,6 +477,133 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
       <span className="text-muted-foreground">{label}</span>
       <span className="font-medium">{value || '-'}</span>
     </div>
+  )
+}
+
+// ── Attendance Bar Chart (SVG) ──
+
+function AttendanceBarChart({ data }: { data: { day: number; date: string; hours: number; expected: number; weekend: boolean }[] }) {
+  const maxHours = Math.max(...data.map(d => d.hours), ...data.map(d => d.expected), 1)
+  const yMax = Math.ceil(maxHours + 1)
+  const w = Math.max(700, data.length * 26)
+  const h = 180
+  const pad = { t: 14, b: 28, l: 28, r: 8 }
+  const iw = w - pad.l - pad.r
+  const ih = h - pad.t - pad.b
+  const barWidth = Math.min(iw / data.length - 3, 18)
+  const gap = (iw - barWidth * data.length) / (data.length + 1)
+  const expectedLine = data.find(d => d.expected > 0)?.expected ?? 8
+  const ySteps = [0, Math.floor(yMax / 2), yMax]
+
+  return (
+    <div className="w-full overflow-x-auto">
+      <svg viewBox={`0 0 ${w} ${h}`} className="text-foreground w-full" style={{ minWidth: w }}>
+        {/* Grid */}
+        {ySteps.map((v, i) => {
+          const y = pad.t + ih - (v / yMax) * ih
+          return (
+            <g key={i}>
+              <line x1={pad.l} x2={w - pad.r} y1={y} y2={y} stroke="currentColor" strokeOpacity={0.08} />
+              <text x={pad.l - 4} y={y + 3} textAnchor="end" className="fill-muted-foreground" fontSize={8}>{v}h</text>
+            </g>
+          )
+        })}
+        {/* Expected hours reference */}
+        {expectedLine > 0 && (
+          <line
+            x1={pad.l} x2={w - pad.r}
+            y1={pad.t + ih - (expectedLine / yMax) * ih}
+            y2={pad.t + ih - (expectedLine / yMax) * ih}
+            stroke="hsl(142, 76%, 36%)" strokeOpacity={0.3} strokeDasharray="4 3"
+          />
+        )}
+        {/* Bars */}
+        {data.map((d, i) => {
+          const x = pad.l + gap + i * (barWidth + gap)
+          const barH = (d.hours / yMax) * ih
+          const y = pad.t + ih - barH
+          const color = d.weekend && d.hours === 0
+            ? 'hsl(0, 0%, 90%)'
+            : d.hours === 0
+              ? 'hsl(0, 0%, 80%)'
+              : d.hours >= d.expected
+                ? 'hsl(142, 76%, 36%)'
+                : d.hours >= d.expected * 0.75
+                  ? 'hsl(38, 92%, 50%)'
+                  : 'hsl(0, 72%, 51%)'
+          return (
+            <g key={i}>
+              {d.hours === 0 && (
+                <rect x={x} y={pad.t + ih - 2} width={barWidth} height={2} rx={1} fill="currentColor" fillOpacity={d.weekend ? 0.03 : 0.1} />
+              )}
+              {d.hours > 0 && (
+                <rect x={x} y={y} width={barWidth} height={Math.max(barH, 1)} rx={2} fill={color} fillOpacity={0.8} />
+              )}
+              {d.hours > 0 && (
+                <text x={x + barWidth / 2} y={y - 3} textAnchor="middle" className="fill-muted-foreground" fontSize={7}>
+                  {d.hours.toFixed(1)}
+                </text>
+              )}
+              <text
+                x={x + barWidth / 2} y={pad.t + ih + 14}
+                textAnchor="middle"
+                className={d.weekend ? 'fill-muted-foreground/50' : 'fill-muted-foreground'}
+                fontSize={8}
+              >
+                {d.day}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+      {/* Legend */}
+      <div className="flex items-center gap-4 text-[10px] text-muted-foreground mt-1 px-1">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(142, 76%, 36%)' }} />On target</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(38, 92%, 50%)' }} />Below target</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(0, 72%, 51%)' }} />Undertime</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm border" style={{ background: 'transparent' }} />Absent</span>
+      </div>
+    </div>
+  )
+}
+
+// ── Leave Donut Chart (SVG) ──
+
+function LeaveDonut({ slices, entitlement }: { slices: { label: string; value: number; color: string }[]; entitlement: number }) {
+  const total = slices.reduce((s, sl) => s + sl.value, 0)
+  if (total <= 0) return null
+
+  const size = 120
+  const cx = size / 2
+  const cy = size / 2
+  const r = 40
+  const strokeWidth = 18
+
+  let cumulative = 0
+  const arcs = slices.map((sl) => {
+    const pct = sl.value / total
+    const startAngle = cumulative * 2 * Math.PI - Math.PI / 2
+    cumulative += pct
+    const endAngle = cumulative * 2 * Math.PI - Math.PI / 2
+    const largeArc = pct > 0.5 ? 1 : 0
+    const x1 = cx + r * Math.cos(startAngle)
+    const y1 = cy + r * Math.sin(startAngle)
+    const x2 = cx + r * Math.cos(endAngle)
+    const y2 = cy + r * Math.sin(endAngle)
+    const d = pct >= 0.999
+      ? `M ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx + r - 0.001} ${cy}`
+      : `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`
+    return { ...sl, d }
+  })
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      {arcs.map((a, i) => (
+        <path key={i} d={a.d} fill="none" stroke={a.color} strokeWidth={strokeWidth} strokeLinecap="butt" />
+      ))}
+      <text x={cx} y={cy - 4} textAnchor="middle" className="fill-foreground text-sm font-bold">{entitlement}d</text>
+      <text x={cx} y={cy + 10} textAnchor="middle" className="fill-muted-foreground" fontSize={9}>entitlement</text>
+    </svg>
   )
 }
 

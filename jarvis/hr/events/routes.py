@@ -1514,10 +1514,11 @@ def api_get_employee_overview(user_id):
         forms_row = cursor.fetchone()
         forms_count = forms_row['submission_count'] if forms_row else 0
 
-        # ── Current-month work statistics ──
+        # ── Monthly work statistics (supports year/month query params) ──
         from datetime import date as _date
         _today = _date.today()
-        _year, _month = _today.year, _today.month
+        _year = request.args.get('year', _today.year, type=int)
+        _month = request.args.get('month', _today.month, type=int)
 
         # BioStar attendance this month (days with punches + total hours)
         attendance = {'days_present': 0, 'total_hours': 0.0, 'avg_daily_hours': 0.0}
@@ -1612,6 +1613,64 @@ def api_get_employee_overview(user_id):
             ytd_permits['count'] = ytp_row['cnt'] if isinstance(ytp_row, dict) else ytp_row[0]
             ytd_permits['total_hours'] = round(float(ytp_row['total_h'] if isinstance(ytp_row, dict) else ytp_row[1]), 1)
 
+        # ── Daily attendance for bar chart ──
+        import calendar
+        daily_hours = []
+        days_in_month = calendar.monthrange(_year, _month)[1]
+        working_h = float(biostar.get('working_hours', 8)) if biostar else 8.0
+
+        if biostar:
+            cursor.execute('''
+                SELECT event_datetime::date AS day,
+                       EXTRACT(EPOCH FROM MAX(event_datetime) - MIN(event_datetime)) / 3600 AS span_h
+                FROM biostar_punch_logs
+                WHERE biostar_user_id = %s
+                  AND EXTRACT(YEAR FROM event_datetime) = %s
+                  AND EXTRACT(MONTH FROM event_datetime) = %s
+                GROUP BY event_datetime::date
+                HAVING COUNT(*) >= 2
+                ORDER BY day
+            ''', (biostar['biostar_user_id'], _year, _month))
+            day_map = {}
+            for row in cursor.fetchall():
+                d = row['day'] if isinstance(row, dict) else row[0]
+                h = float(row['span_h'] if isinstance(row, dict) else row[1])
+                day_map[d.day if hasattr(d, 'day') else int(str(d).split('-')[2])] = round(h, 1)
+
+            for d in range(1, days_in_month + 1):
+                dt = _date(_year, _month, d)
+                wd = dt.weekday()  # 0=Mon, 6=Sun
+                daily_hours.append({
+                    'day': d,
+                    'date': dt.isoformat(),
+                    'hours': day_map.get(d, 0),
+                    'expected': working_h if wd < 5 else 0,
+                    'weekend': wd >= 5,
+                })
+
+        # Daily Sincron activity codes for timeline
+        daily_codes = []
+        if sincron:
+            cursor.execute('''
+                SELECT day, short_code, unit, value
+                FROM sincron_timesheets
+                WHERE sincron_employee_id = %s AND company_name = %s
+                  AND year = %s AND month = %s
+                  AND short_code != 'ZLS'
+                ORDER BY day, short_code
+            ''', (sincron['sincron_employee_id'], sincron['company_name'], _year, _month))
+            code_map: dict = {}
+            for row in cursor.fetchall():
+                day_num = int(row['day'] if isinstance(row, dict) else row[0])
+                code = row['short_code'] if isinstance(row, dict) else row[1]
+                val = float(row['value'] if isinstance(row, dict) else row[3])
+                if day_num not in code_map:
+                    code_map[day_num] = {}
+                code_map[day_num][code] = val
+            for d in range(1, days_in_month + 1):
+                if d in code_map:
+                    daily_codes.append({'day': d, 'codes': code_map[d]})
+
         release_db(conn)
 
         return jsonify({
@@ -1634,6 +1693,8 @@ def api_get_employee_overview(user_id):
                     'attendance': attendance,
                     'timesheet': timesheet_summary,
                     'leave_permits': leave_stats,
+                    'daily_hours': daily_hours,
+                    'daily_codes': daily_codes,
                 },
                 'leave_balance': {
                     'year': _year,
