@@ -305,54 +305,41 @@ def detect_company_type(name):
 # ── Company search by name ─────────────────────────────────────
 
 def search_company_by_name(query):
-    """Search for a company by name or Nr. Reg using connected APIs.
+    """Search for a company by name or Nr. Reg.
 
-    Tries OpenAPI.ro, ListaFirme, FirmeAPI in order.
-    Returns list of dicts: [{cui, name, address, ...}] or [].
+    Primary: RRF.ro (free, no auth, uses ONRC trade registry data).
+    Fallback: ListaFirme, OpenAPI.ro, FirmeAPI (if connected).
+    Returns list of dicts: [{cui, name, address, nr_reg, source}] or [].
     """
     results = []
 
-    # Try OpenAPI.ro search
-    config, creds, _ = _get_connector_config('openapi_ro')
-    if config and creds:
-        api_key = creds.get('api_key')
-        if api_key:
-            try:
-                base_url = config.get('api_endpoint', 'https://api.openapi.ro/api/companies')
-                resp = requests.get(
-                    f'{base_url}/search',
-                    params={'query': query.strip()},
-                    headers={'X-API-KEY': api_key},
-                    timeout=10,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                if isinstance(data, list):
-                    for item in data[:10]:
-                        results.append({
-                            'cui': str(item.get('cif') or item.get('cui') or ''),
-                            'name': item.get('denumire') or item.get('name') or '',
-                            'address': item.get('adresa') or item.get('address') or '',
-                            'nr_reg': item.get('nrRegCom') or item.get('nr_reg') or '',
-                            'status': item.get('stare') or item.get('status') or '',
-                            'source': 'openapi_ro',
-                        })
-                elif isinstance(data, dict) and data.get('results'):
-                    for item in data['results'][:10]:
-                        results.append({
-                            'cui': str(item.get('cif') or item.get('cui') or ''),
-                            'name': item.get('denumire') or item.get('name') or '',
-                            'address': item.get('adresa') or item.get('address') or '',
-                            'nr_reg': item.get('nrRegCom') or item.get('nr_reg') or '',
-                            'status': item.get('stare') or item.get('status') or '',
-                            'source': 'openapi_ro',
-                        })
-                if results:
-                    return results
-            except Exception as e:
-                logger.warning('OpenAPI.ro search error for "%s": %s', query, e)
+    # Primary: RRF.ro — free public API backed by ONRC data
+    try:
+        resp = requests.get(
+            'https://www.rrf.ro/api/search',
+            params={'q': query.strip()},
+            headers={'User-Agent': 'JARVIS/1.0'},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        for item in (data.get('data') or [])[:10]:
+            attrs = item.get('attributes') or {}
+            cui_val = attrs.get('id')
+            if cui_val:
+                results.append({
+                    'cui': str(cui_val),
+                    'name': attrs.get('name', ''),
+                    'nr_reg': attrs.get('registry_number', ''),
+                    'address': '',
+                    'source': 'rrf.ro',
+                })
+        if results:
+            return results
+    except Exception as e:
+        logger.warning('RRF.ro search error for "%s": %s', query, e)
 
-    # Try ListaFirme search
+    # Fallback: ListaFirme search
     config, creds, _ = _get_connector_config('listafirme')
     if config and creds:
         api_key = creds.get('api_key')
@@ -379,35 +366,6 @@ def search_company_by_name(query):
                     return results
             except Exception as e:
                 logger.warning('ListaFirme search error for "%s": %s', query, e)
-
-    # Try FirmeAPI search
-    config, creds, _ = _get_connector_config('firmeapi')
-    if config and creds:
-        api_key = creds.get('api_key')
-        if api_key:
-            try:
-                base_url = config.get('api_endpoint', 'https://www.firmeapi.ro/api/v1')
-                resp = requests.get(
-                    f'{base_url}/companies/search',
-                    params={'q': query.strip()},
-                    headers={'Authorization': f'Bearer {api_key}'},
-                    timeout=10,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                items = data if isinstance(data, list) else data.get('results', data.get('data', []))
-                for item in items[:10]:
-                    results.append({
-                        'cui': str(item.get('cui') or item.get('cif') or ''),
-                        'name': item.get('denumire') or item.get('name') or '',
-                        'address': item.get('adresa') or '',
-                        'nr_reg': item.get('nrRegCom') or '',
-                        'source': 'firmeapi',
-                    })
-                if results:
-                    return results
-            except Exception as e:
-                logger.warning('FirmeAPI search error for "%s": %s', query, e)
 
     return results
 
