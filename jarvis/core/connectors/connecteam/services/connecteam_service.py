@@ -143,7 +143,8 @@ class ConnecteamService:
                 start_time = row[6]
                 end_time = row[7]
                 reason = row[8]
-                approved_by = row[10]
+                approved_by = row[10]  # Aviz superior ierarhic
+                person = row[14] if len(row) > 14 else None  # Person (approver)
                 status_raw = row[13] if len(row) > 13 else None
 
                 if not full_name or not entry_num:
@@ -201,10 +202,11 @@ class ConnecteamService:
                 else:
                     sub_ts = datetime.now()
 
-                # Clean approved_by
+                # Clean approved_by — prefer Person column, fallback to Aviz superior
+                raw_approver = person if (person and str(person).strip() and str(person).strip() not in ('None', 'none')) else approved_by
                 approved_str = None
-                if approved_by and str(approved_by).strip():
-                    approved_str = str(approved_by).strip().split(',')[0].strip()
+                if raw_approver and str(raw_approver).strip() and str(raw_approver).strip() not in ('None', 'none'):
+                    approved_str = str(raw_approver).strip().split(',')[0].strip()
 
                 cursor.execute("""
                     INSERT INTO connecteam_form_submissions

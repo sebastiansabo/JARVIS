@@ -44,6 +44,7 @@ import {
   type IdentityJarvisUser,
   type IdentityOrphanSincron,
   type IdentityOrphanBiostar,
+  type IdentityOrphanConnecteam,
   type IdentityMappingSource,
 } from '@/api/identity'
 
@@ -52,9 +53,12 @@ type StatusFilter = 'all' | 'fully_mapped' | 'sincron_only' | 'biostar_only' | '
 function computeStatus(row: IdentityUnifiedRow): Exclude<StatusFilter, 'all'> {
   const hasSincron = (row.sincron_mappings?.length ?? 0) > 0
   const hasBiostar = (row.biostar_mappings?.length ?? 0) > 0
+  const hasConnecteam = (row.connecteam_mappings?.length ?? 0) > 0
+  if (hasSincron && hasBiostar && hasConnecteam) return 'fully_mapped'
   if (hasSincron && hasBiostar) return 'fully_mapped'
   if (hasSincron) return 'sincron_only'
   if (hasBiostar) return 'biostar_only'
+  if (hasConnecteam) return 'biostar_only' // partial — shows as partial mapped
   return 'unmapped'
 }
 
@@ -111,12 +115,21 @@ type DialogState =
       orphan: IdentityOrphanBiostar
     }
   | {
+      mode: 'mapConnecteam'
+      orphan: IdentityOrphanConnecteam
+    }
+  | {
       mode: 'mapSincronForUser'
       userId: number
       userName: string
     }
   | {
       mode: 'mapBiostarForUser'
+      userId: number
+      userName: string
+    }
+  | {
+      mode: 'mapConnecteamForUser'
       userId: number
       userName: string
     }
@@ -147,12 +160,13 @@ export function UnifiedEmployeeMappingSection() {
       qc.invalidateQueries({ queryKey: ['identity'] })
       qc.invalidateQueries({ queryKey: ['sincron'] })
       qc.invalidateQueries({ queryKey: ['biostar'] })
+      qc.invalidateQueries({ queryKey: ['connecteam'] })
       const total = r?.total_mapped ?? 0
       if (total > 0) {
         toast.success(
           `Mapped ${total} employees — Sincron: ${(r?.sincron_cnp ?? 0) + (r?.sincron_name ?? 0)} · BioStar: ${
             (r?.biostar_cnp ?? 0) + (r?.biostar_email ?? 0) + (r?.biostar_name ?? 0) + (r?.biostar_cross ?? 0)
-          }`,
+          } · Connecteam: ${r?.connecteam_name ?? 0}`,
         )
       } else {
         toast.info('No new employees to map')
@@ -177,6 +191,7 @@ export function UnifiedEmployeeMappingSection() {
       qc.invalidateQueries({ queryKey: ['identity'] })
       qc.invalidateQueries({ queryKey: ['sincron'] })
       qc.invalidateQueries({ queryKey: ['biostar'] })
+      qc.invalidateQueries({ queryKey: ['connecteam'] })
       toast.success('Mapping updated')
       setDialog({ mode: 'closed' })
       setDialogSelection('')
@@ -199,6 +214,7 @@ export function UnifiedEmployeeMappingSection() {
       qc.invalidateQueries({ queryKey: ['identity'] })
       qc.invalidateQueries({ queryKey: ['sincron'] })
       qc.invalidateQueries({ queryKey: ['biostar'] })
+      qc.invalidateQueries({ queryKey: ['connecteam'] })
       toast.success('Mapping removed')
     },
     onError: () => toast.error('Failed to remove mapping'),
@@ -219,6 +235,7 @@ export function UnifiedEmployeeMappingSection() {
         row.department ?? '',
         ...(row.biostar_mappings ?? []).map(m => `${m.name ?? ''} ${m.email ?? ''} ${m.user_group_name ?? ''}`),
         ...(row.sincron_mappings ?? []).map(m => `${m.nume ?? ''} ${m.prenume ?? ''} ${m.company_name ?? ''}`),
+        ...(row.connecteam_mappings ?? []).map(m => m.connecteam_user_name ?? ''),
       ]
         .join(' ')
         .toLowerCase()
@@ -229,6 +246,7 @@ export function UnifiedEmployeeMappingSection() {
   const stats = data?.stats
   const orphanSincron = data?.orphan_sincron ?? []
   const orphanBiostar = data?.orphan_biostar ?? []
+  const orphanConnecteam = data?.orphan_connecteam ?? []
 
   const filteredJarvisUsers = useMemo(() => {
     const term = dialogSearch.trim().toLowerCase()
@@ -262,6 +280,15 @@ export function UnifiedEmployeeMappingSection() {
     )
   }, [orphanBiostar, dialogSearch])
 
+  const filteredOrphanConnecteamForDialog = useMemo(() => {
+    const term = dialogSearch.trim().toLowerCase()
+    if (!term) return orphanConnecteam
+    return orphanConnecteam.filter(
+      (e) =>
+        (e.connecteam_user_name ?? '').toLowerCase().includes(term),
+    )
+  }, [orphanConnecteam, dialogSearch])
+
   const openMapSincronDialog = (orphan: IdentityOrphanSincron) => {
     setDialogSelection('')
     setDialogSearch('')
@@ -272,6 +299,12 @@ export function UnifiedEmployeeMappingSection() {
     setDialogSelection('')
     setDialogSearch('')
     setDialog({ mode: 'mapBiostar', orphan })
+  }
+
+  const openMapConnecteamDialog = (orphan: IdentityOrphanConnecteam) => {
+    setDialogSelection('')
+    setDialogSearch('')
+    setDialog({ mode: 'mapConnecteam', orphan })
   }
 
   const openMapSincronForUser = (userId: number, userName: string) => {
@@ -286,6 +319,12 @@ export function UnifiedEmployeeMappingSection() {
     setDialogMultiSelection(new Set())
     setDialogSearch('')
     setDialog({ mode: 'mapBiostarForUser', userId, userName })
+  }
+
+  const openMapConnecteamForUser = (userId: number, userName: string) => {
+    setDialogSelection('')
+    setDialogSearch('')
+    setDialog({ mode: 'mapConnecteamForUser', userId, userName })
   }
 
   const toggleMultiSelection = (val: string) => {
@@ -346,6 +385,22 @@ export function UnifiedEmployeeMappingSection() {
       setMappingMut.mutate({
         userId: dialog.userId,
         source: 'biostar',
+        external_id: dialogSelection,
+      })
+    } else if (dialog.mode === 'mapConnecteam') {
+      if (!dialogSelection) return
+      const userId = Number(dialogSelection)
+      if (!Number.isFinite(userId)) return
+      setMappingMut.mutate({
+        userId,
+        source: 'connecteam',
+        external_id: String(dialog.orphan.connecteam_user_id),
+      })
+    } else if (dialog.mode === 'mapConnecteamForUser') {
+      if (!dialogSelection) return
+      setMappingMut.mutate({
+        userId: dialog.userId,
+        source: 'connecteam',
         external_id: dialogSelection,
       })
     }
@@ -420,6 +475,7 @@ export function UnifiedEmployeeMappingSection() {
               <TableHead className="w-[160px]">Company / Dept</TableHead>
               <TableHead>Sincron</TableHead>
               <TableHead>BioStar</TableHead>
+              <TableHead>Connecteam</TableHead>
               <TableHead className="w-[120px]">Status</TableHead>
               <TableHead className="w-[100px] text-right">Actions</TableHead>
             </TableRow>
@@ -427,19 +483,19 @@ export function UnifiedEmployeeMappingSection() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-6">
+                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
                   <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                 </TableCell>
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-sm text-red-600 py-6">
+                <TableCell colSpan={7} className="text-center text-sm text-red-600 py-6">
                   Failed to load unified view.
                 </TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-6">
+                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
                   No users match the current filters.
                 </TableCell>
               </TableRow>
@@ -530,11 +586,48 @@ export function UnifiedEmployeeMappingSection() {
                       )}
                     </TableCell>
                     <TableCell>
+                      {row.connecteam_mappings && row.connecteam_mappings.length > 0 ? (
+                        <div className="space-y-1">
+                          {row.connecteam_mappings.map((c) => (
+                            <div
+                              key={c.connecteam_user_id}
+                              className="flex items-center gap-1.5 text-xs"
+                            >
+                              <MethodBadge
+                                method={c.mapping_method}
+                                confidence={c.mapping_confidence}
+                              />
+                              <span className="truncate max-w-[160px]">
+                                {c.connecteam_user_name || String(c.connecteam_user_id)}
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0"
+                                onClick={() =>
+                                  removeMappingMut.mutate({
+                                    userId: row.user_id,
+                                    source: 'connecteam',
+                                    external_id: String(c.connecteam_user_id),
+                                  })
+                                }
+                                title="Remove Connecteam mapping"
+                              >
+                                <Unlink className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Not mapped</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <StatusPill status={status} />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {(status === 'biostar_only' || status === 'unmapped') && (
+                        {!row.sincron_mappings?.length && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -545,7 +638,7 @@ export function UnifiedEmployeeMappingSection() {
                             + Sincron
                           </Button>
                         )}
-                        {(status === 'sincron_only' || status === 'unmapped') && (
+                        {!row.biostar_mappings?.length && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -554,6 +647,17 @@ export function UnifiedEmployeeMappingSection() {
                             title="Map BioStar employee"
                           >
                             + BioStar
+                          </Button>
+                        )}
+                        {!row.connecteam_mappings?.length && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => openMapConnecteamForUser(row.user_id, row.name)}
+                            title="Map Connecteam user"
+                          >
+                            + Connecteam
                           </Button>
                         )}
                       </div>
@@ -566,7 +670,7 @@ export function UnifiedEmployeeMappingSection() {
         </Table>
       </div>
 
-      {(orphanSincron.length > 0 || orphanBiostar.length > 0) && (
+      {(orphanSincron.length > 0 || orphanBiostar.length > 0 || orphanConnecteam.length > 0) && (
         <div className="space-y-3 rounded-md border p-3">
           <h4 className="text-sm font-semibold flex items-center gap-2">
             <LinkIcon className="h-3.5 w-3.5" />
@@ -650,6 +754,40 @@ export function UnifiedEmployeeMappingSection() {
               </div>
             </div>
           )}
+          {orphanConnecteam.length > 0 && (
+            <div>
+              <div className="text-xs font-medium mb-1">
+                Connecteam ({orphanConnecteam.length})
+              </div>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead className="text-right w-24">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {orphanConnecteam.map((emp) => (
+                      <TableRow key={emp.connecteam_user_id}>
+                        <TableCell className="text-xs">{emp.connecteam_user_name ?? '—'}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => openMapConnecteamDialog(emp)}
+                          >
+                            Map
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -671,11 +809,15 @@ export function UnifiedEmployeeMappingSection() {
                 ? 'Map Sincron employee'
                 : dialog.mode === 'mapBiostar'
                   ? 'Map BioStar employee'
-                  : dialog.mode === 'mapSincronForUser'
-                    ? 'Map Sincron → user'
-                    : dialog.mode === 'mapBiostarForUser'
-                      ? 'Map BioStar → user'
-                      : ''}
+                  : dialog.mode === 'mapConnecteam'
+                    ? 'Map Connecteam user'
+                    : dialog.mode === 'mapSincronForUser'
+                      ? 'Map Sincron → user'
+                      : dialog.mode === 'mapBiostarForUser'
+                        ? 'Map BioStar → user'
+                        : dialog.mode === 'mapConnecteamForUser'
+                          ? 'Map Connecteam → user'
+                          : ''}
             </DialogTitle>
             <DialogDescription>
               {dialog.mode === 'mapSincron' && (
@@ -689,11 +831,19 @@ export function UnifiedEmployeeMappingSection() {
                   {dialog.orphan.email ? ` · ${dialog.orphan.email}` : ''}
                 </>
               )}
+              {dialog.mode === 'mapConnecteam' && (
+                <>
+                  {dialog.orphan.connecteam_user_name ?? String(dialog.orphan.connecteam_user_id)}
+                </>
+              )}
               {dialog.mode === 'mapSincronForUser' && (
                 <>Select one or more Sincron records to link to <strong>{dialog.userName}</strong></>
               )}
               {dialog.mode === 'mapBiostarForUser' && (
                 <>Select an unmatched BioStar record to link to <strong>{dialog.userName}</strong></>
+              )}
+              {dialog.mode === 'mapConnecteamForUser' && (
+                <>Select an unmatched Connecteam user to link to <strong>{dialog.userName}</strong></>
               )}
             </DialogDescription>
           </DialogHeader>
@@ -708,7 +858,9 @@ export function UnifiedEmployeeMappingSection() {
                   ? 'Search by name / company / CNP...'
                   : dialog.mode === 'mapBiostarForUser'
                     ? 'Search by name / email / group...'
-                    : 'Search by name / email...'
+                    : dialog.mode === 'mapConnecteamForUser'
+                      ? 'Search by name...'
+                      : 'Search by name / email...'
               }
               value={dialogSearch}
               onChange={(e) => setDialogSearch(e.target.value)}
@@ -718,7 +870,7 @@ export function UnifiedEmployeeMappingSection() {
 
           {/* Scrollable list */}
           <div className="max-h-64 overflow-y-auto rounded border">
-            {(dialog.mode === 'mapSincron' || dialog.mode === 'mapBiostar') &&
+            {(dialog.mode === 'mapSincron' || dialog.mode === 'mapBiostar' || dialog.mode === 'mapConnecteam') &&
               filteredJarvisUsers.map((u) => (
                 <button
                   key={u.id}
@@ -791,10 +943,24 @@ export function UnifiedEmployeeMappingSection() {
                   )}
                 </button>
               ))}
-            {((dialog.mode === 'mapSincron' || dialog.mode === 'mapBiostar') &&
+            {dialog.mode === 'mapConnecteamForUser' &&
+              filteredOrphanConnecteamForDialog.map((e) => (
+                <button
+                  key={e.connecteam_user_id}
+                  type="button"
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors ${
+                    dialogSelection === String(e.connecteam_user_id) ? 'bg-accent font-medium' : ''
+                  }`}
+                  onClick={() => setDialogSelection(String(e.connecteam_user_id))}
+                >
+                  {e.connecteam_user_name ?? String(e.connecteam_user_id)}
+                </button>
+              ))}
+            {((dialog.mode === 'mapSincron' || dialog.mode === 'mapBiostar' || dialog.mode === 'mapConnecteam') &&
               filteredJarvisUsers.length === 0) ||
             (dialog.mode === 'mapSincronForUser' && filteredOrphanSincronForDialog.length === 0) ||
-            (dialog.mode === 'mapBiostarForUser' && filteredOrphanBiostarForDialog.length === 0) ? (
+            (dialog.mode === 'mapBiostarForUser' && filteredOrphanBiostarForDialog.length === 0) ||
+            (dialog.mode === 'mapConnecteamForUser' && filteredOrphanConnecteamForDialog.length === 0) ? (
               <div className="px-3 py-4 text-center text-xs text-muted-foreground">
                 No results match &ldquo;{dialogSearch}&rdquo;
               </div>
