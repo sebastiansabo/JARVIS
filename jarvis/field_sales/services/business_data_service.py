@@ -1,7 +1,7 @@
 """Business Data Enrichment Service.
 
 Fetches company data from multiple Romanian business data APIs
-(Termene.ro, RisCo, ListaFirme, OpenAPI.ro, FirmeAPI.ro)
+(Termene.ro, OpenAPI.ro, FirmeAPI.ro)
 using connector credentials from the connectors table.
 """
 import json
@@ -80,65 +80,6 @@ def fetch_termene(cui):
         return None
 
 
-def fetch_risco(cui):
-    """Fetch company data from RisCo.ro API.
-
-    API: GET /v3/api/external/firmeSumar?cui=CUI
-    Auth: api_key query param
-    """
-    config, creds, _ = _get_connector_config('risco')
-    if not config or not creds:
-        return None
-
-    api_key = creds.get('api_key')
-    if not api_key:
-        return None
-
-    base_url = config.get('api_endpoint', 'https://www.risco.ro/v3/api/external')
-    timeout = config.get('timeout_seconds', 10)
-
-    try:
-        resp = requests.get(
-            f'{base_url}/firmeSumar',
-            params={'cui': str(cui).strip(), 'api_key': api_key},
-            timeout=timeout,
-        )
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        logger.warning('RisCo API error for CUI %s: %s', cui, str(e))
-        return None
-
-
-def fetch_listafirme(cui):
-    """Fetch company data from ListaFirme.eu API.
-
-    API: GET /api/info-v1.asp?api_key=KEY&cui=CUI
-    Auth: api_key query param
-    """
-    config, creds, _ = _get_connector_config('listafirme')
-    if not config or not creds:
-        return None
-
-    api_key = creds.get('api_key')
-    if not api_key:
-        return None
-
-    endpoint = config.get('api_endpoint', 'https://listafirme.ro/api/info-v1.asp')
-    timeout = config.get('timeout_seconds', 10)
-
-    try:
-        resp = requests.get(
-            endpoint,
-            params={'api_key': api_key, 'cui': str(cui).strip()},
-            timeout=timeout,
-        )
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        logger.warning('ListaFirme API error for CUI %s: %s', cui, str(e))
-        return None
-
 
 def fetch_openapi_ro(cui):
     """Fetch company data from OpenAPI.ro.
@@ -203,8 +144,6 @@ def fetch_firmeapi(cui):
 # Registry of fetch functions by connector type
 CONNECTOR_FETCHERS = {
     'termene': fetch_termene,
-    'risco': fetch_risco,
-    'listafirme': fetch_listafirme,
     'openapi_ro': fetch_openapi_ro,
     'firmeapi': fetch_firmeapi,
 }
@@ -313,13 +252,12 @@ def search_company_by_name(query):
     """
     results = []
 
-    # Primary: RRF.ro — free public API backed by ONRC data
+    # Primary: RRF.ro via CF Worker proxy (direct calls blocked from datacenter IPs)
     try:
         resp = requests.get(
-            'https://www.rrf.ro/api/search',
+            'https://rrf-proxy.sebastian-sabo.workers.dev/',
             params={'q': query.strip()},
-            headers={'User-Agent': 'JARVIS/1.0'},
-            timeout=8,
+            timeout=10,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -341,34 +279,6 @@ def search_company_by_name(query):
             return results
     except Exception as e:
         logger.warning('RRF.ro search error for "%s": %s', query, e)
-
-    # Fallback: ListaFirme search
-    config, creds, _ = _get_connector_config('listafirme')
-    if config and creds:
-        api_key = creds.get('api_key')
-        if api_key:
-            try:
-                base_url = config.get('api_endpoint', 'https://listafirme.ro/api')
-                resp = requests.get(
-                    f'{base_url}/search-v1.asp',
-                    params={'api_key': api_key, 'q': query.strip()},
-                    timeout=10,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                items = data if isinstance(data, list) else data.get('results', [])
-                for item in items[:10]:
-                    results.append({
-                        'cui': str(item.get('cui') or item.get('cif') or ''),
-                        'name': item.get('denumire') or item.get('name') or '',
-                        'address': item.get('adresa') or '',
-                        'nr_reg': item.get('nrRegCom') or '',
-                        'source': 'listafirme',
-                    })
-                if results:
-                    return results
-            except Exception as e:
-                logger.warning('ListaFirme search error for "%s": %s', query, e)
 
     return results
 

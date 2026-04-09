@@ -45,8 +45,6 @@ function _fmtEur(val: number | undefined | null): string {
 const CONNECTOR_META: Record<string, { icon: string; label: string }> = {
   anaf: { icon: '🏛️', label: 'ANAF' },
   termene: { icon: '⚖️', label: 'Termene.ro' },
-  risco: { icon: '📊', label: 'RisCo' },
-  listafirme: { icon: '📋', label: 'ListaFirme' },
   openapi_ro: { icon: '🔌', label: 'OpenAPI.ro' },
   firmeapi: { icon: '⚡', label: 'FirmeAPI' },
 }

@@ -975,8 +975,6 @@ interface BusinessConnector {
 const CONNECTOR_META: Record<string, { icon: string; color: string; url: string }> = {
   anaf: { icon: '🏛️', color: 'text-blue-600', url: 'https://www.anaf.ro' },
   termene: { icon: '⚖️', color: 'text-purple-600', url: 'https://termene.ro' },
-  risco: { icon: '📊', color: 'text-orange-600', url: 'https://risco.ro' },
-  listafirme: { icon: '📋', color: 'text-green-600', url: 'https://listafirme.eu' },
   openapi_ro: { icon: '🔌', color: 'text-cyan-600', url: 'https://openapi.ro' },
   firmeapi: { icon: '⚡', color: 'text-yellow-600', url: 'https://firmeapi.ro' },
 }

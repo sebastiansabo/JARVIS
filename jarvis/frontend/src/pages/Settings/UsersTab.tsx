@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Shield, ChevronDown, CheckSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -394,6 +394,43 @@ function UserFormDialog({
     enabled: !!user,
   })
 
+  // Auto-fill empty user fields from connector data
+  const [filledFrom, setFilledFrom] = useState<Record<string, string>>({})
+  const didAutoFill = useRef(false)
+  useEffect(() => {
+    if (!connectors || didAutoFill.current) return
+    didAutoFill.current = true
+    const patches: Record<string, string> = {}
+    const sources: Record<string, string> = {}
+
+    // CNP: prefer Sincron, fallback BioStar
+    if (!form.cnp) {
+      if (connectors.sincron?.cnp) { patches.cnp = connectors.sincron.cnp; sources.cnp = 'Sincron' }
+      else if (connectors.biostar?.cnp) { patches.cnp = connectors.biostar.cnp; sources.cnp = 'BioStar' }
+    }
+    // Contract Start from Sincron
+    if (!form.contract_work_date && connectors.sincron?.data_incepere_contract) {
+      patches.contract_work_date = connectors.sincron.data_incepere_contract
+      sources.contract_work_date = 'Sincron'
+    }
+    // Phone from BioStar
+    if (!form.phone && connectors.biostar?.phone) {
+      patches.phone = connectors.biostar.phone
+      sources.phone = 'BioStar'
+    }
+
+    if (Object.keys(patches).length > 0) {
+      const next = { ...form, ...patches }
+      // Also derive birthdate from auto-filled CNP
+      if (patches.cnp) {
+        const bd = birthdateFromCnp(patches.cnp)
+        if (bd && !form.birthdate) next.birthdate = bd
+      }
+      setForm(next)
+      setFilledFrom(sources)
+    }
+  }, [connectors]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <Dialog
       open={open}
@@ -416,11 +453,11 @@ function UserFormDialog({
             <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
           <div className="grid gap-2">
-            <Label>Phone</Label>
+            <Label>Phone{filledFrom.phone && <span className="text-xs text-muted-foreground font-normal ml-1">(from {filledFrom.phone})</span>}</Label>
             <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           </div>
           <div className="grid gap-2">
-            <Label>CNP</Label>
+            <Label>CNP{filledFrom.cnp && <span className="text-xs text-muted-foreground font-normal ml-1">(from {filledFrom.cnp})</span>}</Label>
             <Input value={form.cnp} onChange={(e) => {
               const cnp = e.target.value
               const next = { ...form, cnp }
@@ -439,7 +476,7 @@ function UserFormDialog({
               <DateField value={form.birthdate} onChange={() => {}} disabled className="bg-muted w-full" />
             </div>
             <div className="grid gap-2">
-              <Label>Contract Start</Label>
+              <Label>Contract Start{filledFrom.contract_work_date && <span className="text-xs text-muted-foreground font-normal ml-1">(from {filledFrom.contract_work_date})</span>}</Label>
               <DateField value={form.contract_work_date} onChange={(v) => setForm({ ...form, contract_work_date: v })} className="w-full" />
             </div>
           </div>
@@ -507,12 +544,6 @@ function UserFormDialog({
                     <span className="font-medium">{connectors.biostar.phone}</span>
                   </div>
                 )}
-                {connectors.biostar.cnp && (
-                  <div>
-                    <span className="text-muted-foreground text-xs">CNP:</span>{' '}
-                    <span className="font-medium">{connectors.biostar.cnp}</span>
-                  </div>
-                )}
                 <div>
                   <span className="text-muted-foreground text-xs">Group:</span>{' '}
                   <span className="font-medium">{connectors.biostar.user_group_name}</span>
@@ -556,12 +587,6 @@ function UserFormDialog({
                   <span className="text-muted-foreground text-xs">Name:</span>{' '}
                   <span className="font-medium">{connectors.sincron.nume} {connectors.sincron.prenume}</span>
                 </div>
-                {connectors.sincron.cnp && (
-                  <div>
-                    <span className="text-muted-foreground text-xs">CNP:</span>{' '}
-                    <span className="font-medium">{connectors.sincron.cnp}</span>
-                  </div>
-                )}
                 <div>
                   <span className="text-muted-foreground text-xs">Company:</span>{' '}
                   <span className="font-medium">{connectors.sincron.company_name}</span>
@@ -570,12 +595,6 @@ function UserFormDialog({
                   <span className="text-muted-foreground text-xs">Contract Nr:</span>{' '}
                   <span className="font-medium">{connectors.sincron.nr_contract}</span>
                 </div>
-                {connectors.sincron.data_incepere_contract && (
-                  <div>
-                    <span className="text-muted-foreground text-xs">Contract Start:</span>{' '}
-                    <span className="font-medium">{connectors.sincron.data_incepere_contract}</span>
-                  </div>
-                )}
                 <div>
                   <span className="text-muted-foreground text-xs">Mapping:</span>{' '}
                   <span className="font-medium">{connectors.sincron.mapping_method} ({connectors.sincron.mapping_confidence}%)</span>
