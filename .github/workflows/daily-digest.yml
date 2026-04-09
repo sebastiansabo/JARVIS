@@ -1,0 +1,89 @@
+name: Commits Digest
+
+on:
+  schedule:
+    # Target: 08:00 Europe/Bucharest
+    #   - EEST (summer, UTC+3): 05:00 UTC
+    #   - EET  (winter, UTC+2): 06:00 UTC
+    # Script exits unless current Romania hour is 08 (plus period-specific
+    # day-of-week / day-of-month guards), so running twice is safe.
+    - cron: '0 5 * * *'
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      period:
+        description: 'Which digest to send (daily / weekly / monthly)'
+        required: false
+        default: 'daily'
+        type: choice
+        options:
+          - 'daily'
+          - 'weekly'
+          - 'monthly'
+      force_run:
+        description: 'Bypass the time/day guard and send immediately'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        period:
+          - daily
+          - weekly
+          - monthly
+    steps:
+      - name: Skip non-selected period on manual run
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.period != matrix.period
+        run: |
+          echo "Manual run selected '${{ github.event.inputs.period }}', skipping '${{ matrix.period }}'."
+          exit 0
+
+      - name: Checkout JARVIS
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.period == matrix.period
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: JARVIS
+
+      - name: Checkout jarvis-mobile
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.period == matrix.period
+        uses: actions/checkout@v4
+        with:
+          repository: sebastiansabo/jarvis-mobile
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
+          path: jarvis-mobile
+
+      - name: Set up Python
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.period == matrix.period
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.period == matrix.period
+        run: pip install --no-cache-dir anthropic
+
+      - name: Generate and send ${{ matrix.period }} digest
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.period == matrix.period
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM_EMAIL: ${{ secrets.SMTP_FROM_EMAIL }}
+          SMTP_FROM_NAME: JARVIS Digest
+          JARVIS_PATH: ${{ github.workspace }}/JARVIS
+          MOBILE_PATH: ${{ github.workspace }}/jarvis-mobile
+          DIGEST_PERIOD: ${{ matrix.period }}
+          FORCE_RUN: ${{ github.event.inputs.force_run == 'true' && '1' || '0' }}
+        run: python JARVIS/scripts/daily_digest.py
