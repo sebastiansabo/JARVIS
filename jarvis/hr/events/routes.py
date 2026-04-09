@@ -1533,9 +1533,10 @@ def api_get_employee_overview(user_id):
             att_row = cursor.fetchone()
             attendance['days_present'] = att_row['days_present'] if att_row else 0
 
-            # Calculate total worked hours from first/last punch per day
+            # Calculate total worked hours from first/last punch per day (subtract lunch break)
+            lunch_h = float(biostar.get('lunch_break_minutes', 0)) / 60.0
             cursor.execute('''
-                SELECT SUM(span_h) AS total_h FROM (
+                SELECT SUM(span_h) AS total_h, COUNT(*) AS day_count FROM (
                     SELECT (EXTRACT(EPOCH FROM MAX(event_datetime) - MIN(event_datetime)) / 3600) AS span_h
                     FROM biostar_punch_logs
                     WHERE biostar_user_id = %s
@@ -1546,7 +1547,9 @@ def api_get_employee_overview(user_id):
                 ) sub
             ''', (biostar['biostar_user_id'], _year, _month))
             hours_row = cursor.fetchone()
-            total_h = float(hours_row['total_h'] or 0) if hours_row else 0.0
+            raw_total_h = float(hours_row['total_h'] or 0) if hours_row else 0.0
+            days_with_punches = int(hours_row['day_count'] or 0) if hours_row else 0
+            total_h = max(0, raw_total_h - (lunch_h * days_with_punches))
             attendance['total_hours'] = round(total_h, 1)
             if attendance['days_present'] > 0:
                 attendance['avg_daily_hours'] = round(total_h / attendance['days_present'], 1)
@@ -1635,7 +1638,8 @@ def api_get_employee_overview(user_id):
             for row in cursor.fetchall():
                 d = row['day'] if isinstance(row, dict) else row[0]
                 h = float(row['span_h'] if isinstance(row, dict) else row[1])
-                day_map[d.day if hasattr(d, 'day') else int(str(d).split('-')[2])] = round(h, 1)
+                net_h = max(0, h - lunch_h) if h > 0 else 0  # subtract lunch break
+                day_map[d.day if hasattr(d, 'day') else int(str(d).split('-')[2])] = round(net_h, 1)
 
             for d in range(1, days_in_month + 1):
                 dt = _date(_year, _month, d)

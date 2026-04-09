@@ -229,34 +229,45 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
   const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses, month_stats: ms, leave_balance: lb } = md
   const monthName = ms ? new Date(ms.year, ms.month - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : ''
 
-  // Compute Sincron totals
+  // Hours per day (norma) for day→hours conversion
+  const norm = bio?.working_hours ?? 8
+  const dToH = (days: number) => Math.round(days * norm * 10) / 10
+  const fmtH = (hours: number, days?: number) => {
+    const d = days ?? Math.round(hours / norm * 10) / 10
+    return d > 0 ? `${hours}h (${d}d)` : `${hours}h`
+  }
+
+  // Compute Sincron totals — normalise day-based codes to hours
   const tsEntries = ms ? Object.entries(ms.timesheet) : []
   const overtimeHours = ms?.timesheet?.OSW?.value ?? 0
-  const annualLeaveDays = ms?.timesheet?.CO?.value ?? 0
-  const sickLeaveDays = ms?.timesheet?.CM?.value ?? 0
-  const totalLeaveDays = tsEntries
+  const annualLeaveH = dToH(ms?.timesheet?.CO?.value ?? 0)
+  const sickLeaveH = dToH(ms?.timesheet?.CM?.value ?? 0)
+  const totalLeaveH = tsEntries
     .filter(([code]) => ['CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG'].includes(code))
-    .reduce((s, [, v]) => s + v.value, 0)
+    .reduce((s, [, v]) => s + (v.unit === 'hour' ? v.value : dToH(v.value)), 0)
 
-  // Leave balance
+  // Leave balance — in hours
+  const lbUsedH = lb ? dToH(lb.annual_used) : 0
+  const lbEntH = lb ? dToH(lb.annual_entitlement) : 0
+  const lbRemH = lb ? dToH(lb.annual_remaining) : 0
   const annualPct = lb ? Math.min(100, Math.round((lb.annual_used / lb.annual_entitlement) * 100)) : 0
 
   // Daily chart data
   const dailyData = ms?.daily_hours ?? []
 
-  // Leave donut data
+  // Leave donut data — in hours
   const donutSlices = useMemo(() => {
     if (!lb) return []
     const items = [
-      { label: 'Used Annual', value: lb.annual_used, color: '#10b981' },
-      { label: 'Remaining', value: lb.annual_remaining, color: '#d1d5db' },
-      { label: 'Sick Leave', value: lb.sick_leave, color: '#ef4444' },
-      { label: 'Unpaid', value: lb.unpaid_leave, color: '#6b7280' },
-      { label: 'Child Care', value: lb.child_care, color: '#8b5cf6' },
-      { label: 'Delegation', value: lb.delegation, color: '#f59e0b' },
+      { label: 'Used Annual', value: dToH(lb.annual_used), color: '#10b981' },
+      { label: 'Remaining', value: dToH(lb.annual_remaining), color: '#d1d5db' },
+      { label: 'Sick Leave', value: dToH(lb.sick_leave), color: '#ef4444' },
+      { label: 'Unpaid', value: dToH(lb.unpaid_leave), color: '#6b7280' },
+      { label: 'Child Care', value: dToH(lb.child_care), color: '#8b5cf6' },
+      { label: 'Delegation', value: dToH(lb.delegation), color: '#f59e0b' },
     ].filter(s => s.value > 0)
     return items
-  }, [lb])
+  }, [lb, norm])
 
   const prevMonth = () => {
     if (month === 1) { setMonth(12); setYear(y => y - 1) }
@@ -295,8 +306,8 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard title="Leave Permits" value={ms?.leave_permits.count ?? 0} icon={<FileText className="h-4 w-4" />} />
         <StatCard title="Permit Hours" value={`${ms?.leave_permits.total_hours ?? 0}h`} icon={<Clock className="h-4 w-4" />} />
-        {sinc && <StatCard title="Annual Leave" value={`${annualLeaveDays}d`} icon={<CalendarDays className="h-4 w-4" />} />}
-        {sinc && <StatCard title="Sick Leave" value={`${sickLeaveDays}d`} icon={<CheckCircle2 className="h-4 w-4" />} />}
+        {sinc && <StatCard title="Annual Leave" value={fmtH(annualLeaveH)} icon={<CalendarDays className="h-4 w-4" />} />}
+        {sinc && <StatCard title="Sick Leave" value={fmtH(sickLeaveH)} icon={<CheckCircle2 className="h-4 w-4" />} />}
       </div>
 
       {/* Bonuses row */}
@@ -330,7 +341,7 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
               <div className="flex items-center gap-6">
                 {/* Donut */}
                 {donutSlices.length > 0 && (
-                  <LeaveDonut slices={donutSlices} entitlement={lb.annual_entitlement} />
+                  <LeaveDonut slices={donutSlices} centerLabel={`${lbEntH}h`} centerSub="entitlement" />
                 )}
                 {/* Legend */}
                 <div className="flex-1 space-y-1.5 min-w-0">
@@ -338,7 +349,7 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
                     <div key={i} className="flex items-center gap-2 text-xs">
                       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
                       <span className="truncate flex-1">{s.label}</span>
-                      <span className="tabular-nums font-medium shrink-0">{s.value}d</span>
+                      <span className="tabular-nums font-medium shrink-0">{fmtH(s.value)}</span>
                     </div>
                   ))}
                 </div>
@@ -347,7 +358,7 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
               <div>
                 <div className="flex items-center justify-between text-sm mb-1">
                   <span className="text-muted-foreground">Annual Leave (CO)</span>
-                  <span className="font-medium tabular-nums">{lb.annual_used}d / {lb.annual_entitlement}d</span>
+                  <span className="font-medium tabular-nums">{lbUsedH}h / {lbEntH}h <span className="text-muted-foreground text-xs">({lb.annual_used}d / {lb.annual_entitlement}d)</span></span>
                 </div>
                 <div className="h-2.5 bg-muted rounded-full overflow-hidden">
                   <div
@@ -359,7 +370,7 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
                   />
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground mt-0.5">
-                  <span>{lb.annual_remaining}d remaining</span>
+                  <span>{lbRemH}h remaining ({lb.annual_remaining}d)</span>
                   <span>{annualPct}% used</span>
                 </div>
               </div>
@@ -391,15 +402,17 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
                         <span className="text-muted-foreground">{meta.label}</span>
                       </div>
                       <span className="font-medium tabular-nums">
-                        {data.value}{data.unit === 'hour' ? 'h' : 'd'}
+                        {data.unit === 'hour'
+                          ? `${data.value}h`
+                          : fmtH(dToH(data.value), data.value)}
                       </span>
                     </div>
                   )
                 })}
-              {totalLeaveDays > 0 && (
+              {totalLeaveH > 0 && (
                 <div className="flex items-center justify-between pt-1 border-t text-xs">
-                  <span className="text-muted-foreground font-medium">Total Leave Days</span>
-                  <span className="font-bold">{totalLeaveDays}d</span>
+                  <span className="text-muted-foreground font-medium">Total Leave</span>
+                  <span className="font-bold">{fmtH(totalLeaveH)}</span>
                 </div>
               )}
             </CardContent>
@@ -569,7 +582,7 @@ function AttendanceBarChart({ data }: { data: { day: number; date: string; hours
 
 // ── Leave Donut Chart (SVG) ──
 
-function LeaveDonut({ slices, entitlement }: { slices: { label: string; value: number; color: string }[]; entitlement: number }) {
+function LeaveDonut({ slices, centerLabel, centerSub }: { slices: { label: string; value: number; color: string }[]; centerLabel: string; centerSub: string }) {
   const total = slices.reduce((s, sl) => s + sl.value, 0)
   if (total <= 0) return null
 
@@ -601,8 +614,8 @@ function LeaveDonut({ slices, entitlement }: { slices: { label: string; value: n
       {arcs.map((a, i) => (
         <path key={i} d={a.d} fill="none" stroke={a.color} strokeWidth={strokeWidth} strokeLinecap="butt" />
       ))}
-      <text x={cx} y={cy - 4} textAnchor="middle" className="fill-foreground text-sm font-bold">{entitlement}d</text>
-      <text x={cx} y={cy + 10} textAnchor="middle" className="fill-muted-foreground" fontSize={9}>entitlement</text>
+      <text x={cx} y={cy - 4} textAnchor="middle" className="fill-foreground text-sm font-bold">{centerLabel}</text>
+      <text x={cx} y={cy + 10} textAnchor="middle" className="fill-muted-foreground" fontSize={9}>{centerSub}</text>
     </svg>
   )
 }
