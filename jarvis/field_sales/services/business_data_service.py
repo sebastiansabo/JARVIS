@@ -318,7 +318,10 @@ def search_company_by_name(query):
         resp = requests.get(
             'https://www.rrf.ro/api/search',
             params={'q': query.strip()},
-            headers={'User-Agent': 'JARVIS/1.0'},
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+            },
             timeout=8,
         )
         resp.raise_for_status()
@@ -348,9 +351,9 @@ def search_company_by_name(query):
         api_key = creds.get('api_key')
         if api_key:
             try:
-                base_url = config.get('api_endpoint', 'https://listafirme.ro/api')
+                search_url = config.get('search_endpoint') or 'https://listafirme.ro/api/search-v1.asp'
                 resp = requests.get(
-                    f'{base_url}/search-v1.asp',
+                    search_url,
                     params={'api_key': api_key, 'q': query.strip()},
                     timeout=10,
                 )
