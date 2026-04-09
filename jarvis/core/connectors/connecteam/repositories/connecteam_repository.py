@@ -110,11 +110,14 @@ class ConnecteamRepository(BaseRepository):
     def get_recent_submissions(self, limit=50):
         """Get most recent submissions across all users."""
         return self.query_all('''
-            SELECT cfs.id, cfs.submission_id, cfs.form_name,
+            SELECT cfs.id, cfs.submission_id, cfs.form_id, cfs.form_name,
                    cfs.connecteam_user_id, cfs.mapped_jarvis_user_id,
                    cfs.submission_timestamp::text,
-                   cfs.leave_date::text, cfs.leave_hours,
-                   cfs.leave_reason, cfs.status, cfs.event_type,
+                   cfs.leave_date::text, cfs.leave_start_time::text,
+                   cfs.leave_end_time::text, cfs.leave_hours,
+                   cfs.leave_reason, cfs.leave_destination, cfs.approved_by,
+                   cfs.status, cfs.event_type, cfs.entry_num,
+                   cfs.received_at::text, cfs.created_at::text,
                    cu.connecteam_user_name,
                    u.name AS jarvis_user_name
             FROM connecteam_form_submissions cfs
