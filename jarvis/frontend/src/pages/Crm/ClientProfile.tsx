@@ -867,12 +867,26 @@ export default function ClientProfile() {
             )}
           </div>
 
-          {/* Other Business Connectors */}
-          {connectors.filter(c => c.connector_type !== 'anaf').map(connector => {
+          {/* Other Business Connectors — hide disconnected ones that have no data */}
+          {connectors.filter(c => c.connector_type !== 'anaf').filter(c => c.status === 'connected' || enrichmentData[c.connector_type]?.data).map(connector => {
             const meta = CONNECTOR_META[connector.connector_type] || { icon: '📡', label: connector.name }
             const enriched = enrichmentData[connector.connector_type]
             const hasData = enriched && enriched.data && !enriched.error
             const isExpanded = expandedConnector === connector.connector_type
+
+            // Flatten nested objects (e.g. termene returns {firma: {...}}) into flat key-value pairs
+            const flatEntries: [string, string][] = []
+            if (hasData) {
+              for (const [key, value] of Object.entries(enriched.data)) {
+                if (value && typeof value === 'object' && !Array.isArray(value)) {
+                  for (const [subKey, subVal] of Object.entries(value as Record<string, unknown>)) {
+                    flatEntries.push([subKey, typeof subVal === 'object' ? JSON.stringify(subVal) : String(subVal ?? '')])
+                  }
+                } else {
+                  flatEntries.push([key, typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')])
+                }
+              }
+            }
 
             return (
               <div key={connector.connector_type} className="rounded-lg border p-3 mb-3">
@@ -907,13 +921,10 @@ export default function ClientProfile() {
                 )}
                 {isExpanded && hasData && (
                   <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-sm">
-                    {Object.entries(enriched.data).map(([key, value]) => (
-                      <InfoRow key={key} label={key} value={typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')} />
+                    {flatEntries.map(([key, value]) => (
+                      <InfoRow key={key} label={key} value={value} />
                     ))}
                   </div>
-                )}
-                {connector.status !== 'connected' && (
-                  <p className="text-xs text-muted-foreground mt-1">Configure credentials in Settings → Connectors to enable.</p>
                 )}
               </div>
             )
