@@ -89,38 +89,12 @@ def create_schema_connecteam(conn, cursor):
         ON connecteam_form_submissions(connecteam_user_id)
     """)
 
-    # ── Webhook event log (debugging / replay) ──
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS connecteam_webhook_log (
-            id SERIAL PRIMARY KEY,
-            request_id VARCHAR(100),
-            event_type VARCHAR(50),
-            form_id BIGINT,
-            status VARCHAR(20) NOT NULL DEFAULT 'received',
-            error_message TEXT,
-            raw_payload JSONB NOT NULL,
-            received_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-    """)
-
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_connecteam_webhook_log_status
-        ON connecteam_webhook_log(status)
-    """)
-
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_connecteam_webhook_log_date
-        ON connecteam_webhook_log(received_at)
-    """)
-
     # ── CHECK constraints ──
     for stmt in [
         """ALTER TABLE connecteam_users ADD CONSTRAINT chk_ct_user_confidence
            CHECK (mapping_confidence BETWEEN 0 AND 100)""",
         """ALTER TABLE connecteam_form_submissions ADD CONSTRAINT chk_ct_sub_hours
            CHECK (leave_hours IS NULL OR leave_hours >= 0)""",
-        """ALTER TABLE connecteam_webhook_log ADD CONSTRAINT chk_ct_wh_status
-           CHECK (status IN ('received', 'processed', 'failed', 'ignored'))""",
     ]:
         try:
             cursor.execute(stmt)
