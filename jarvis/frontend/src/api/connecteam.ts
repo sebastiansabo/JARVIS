@@ -13,14 +13,31 @@ function qs(params: Record<string, unknown>): string {
 export interface ConnecteamStatus {
   connected: boolean
   status: string
-  last_sync: string | null
   form_name: string
-  webhook_registered: boolean
   total_users: number
   mapped_users: number
   unmapped_users: number
   total_submissions: number
-  last_webhook_at: string | null
+  last_import_at: string | null
+}
+
+export interface ConnecteamUser {
+  id: number
+  connecteam_user_id: number
+  connecteam_user_name: string | null
+  mapped_jarvis_user_id: number | null
+  mapped_jarvis_user_name: string | null
+  mapping_method: string | null
+  mapping_confidence: number
+  is_active: boolean
+}
+
+export interface ImportResult {
+  rows_processed: number
+  inserted: number
+  skipped: number
+  users_created: number
+  unmapped_names: string[]
 }
 
 export interface ConnecteamSubmission {
@@ -58,4 +75,25 @@ export const connecteamApi = {
 
   getApprovers: () =>
     api.get<{ success: boolean; data: { id: number; name: string }[] }>(`${BASE}/approvers`),
+
+  importExcel: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<{ success: boolean; data: ImportResult }>(`${BASE}/import-excel`, form)
+  },
+
+  getUsers: (activeOnly = true) =>
+    api.get<{ success: boolean; data: ConnecteamUser[] }>(`${BASE}/users?active_only=${activeOnly}`),
+
+  autoMapUsers: () =>
+    api.post<{ success: boolean; name_mapped: number; total_mapped: number }>(`${BASE}/users/auto-map`),
+
+  updateMapping: (connecteamUserId: number, jarvisUserId: number) =>
+    api.put<{ success: boolean }>(`${BASE}/users/mapping`, {
+      connecteam_user_id: connecteamUserId,
+      jarvis_user_id: jarvisUserId,
+    }),
+
+  removeMapping: (connecteamUserId: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/users/mapping?connecteam_user_id=${connecteamUserId}`),
 }

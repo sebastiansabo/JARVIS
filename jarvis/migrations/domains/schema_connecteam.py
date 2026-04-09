@@ -1,4 +1,4 @@
-"""Connecteam connector schema — leave permission form submissions via webhook."""
+"""Connecteam connector schema — leave permission form submissions via Excel import."""
 
 import logging
 

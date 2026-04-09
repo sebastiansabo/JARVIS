@@ -1,11 +1,11 @@
-"""Connecteam connector data access — users, form submissions, webhook log."""
+"""Connecteam connector data access — users, form submissions."""
 
 import json
 from core.base_repository import BaseRepository
 
 
 class ConnecteamRepository(BaseRepository):
-    """CRUD for connecteam_users, connecteam_form_submissions, connecteam_webhook_log."""
+    """CRUD for connecteam_users and connecteam_form_submissions."""
 
     # ── User operations ──
 
@@ -22,25 +22,6 @@ class ConnecteamRepository(BaseRepository):
                 updated_at = NOW()
             RETURNING id, connecteam_user_id, mapped_jarvis_user_id
         ''', (connecteam_user_id, name, email, phone), returning=True)
-
-    def get_user_by_connecteam_id(self, connecteam_user_id):
-        """Get Connecteam user by their Connecteam ID."""
-        return self.query_one('''
-            SELECT cu.*, u.name AS mapped_jarvis_user_name
-            FROM connecteam_users cu
-            LEFT JOIN users u ON u.id = cu.mapped_jarvis_user_id
-            WHERE cu.connecteam_user_id = %s
-        ''', (connecteam_user_id,))
-
-    def get_user_by_jarvis_id(self, jarvis_user_id):
-        """Get Connecteam user mapped to a JARVIS user."""
-        return self.query_one('''
-            SELECT cu.*, u.name AS mapped_jarvis_user_name
-            FROM connecteam_users cu
-            LEFT JOIN users u ON u.id = cu.mapped_jarvis_user_id
-            WHERE cu.mapped_jarvis_user_id = %s AND cu.is_active = TRUE
-            LIMIT 1
-        ''', (jarvis_user_id,))
 
     def get_all_users(self, active_only=True):
         """Get all Connecteam users with mapping info."""
@@ -60,17 +41,6 @@ class ConnecteamRepository(BaseRepository):
             query += ' AND cu.is_active = TRUE'
         query += ' ORDER BY cu.connecteam_user_name'
         return self.query_all(query, tuple(params))
-
-    def get_unmapped_users(self):
-        """Get users not yet mapped to JARVIS users."""
-        return self.query_all('''
-            SELECT id, connecteam_user_id, connecteam_user_name,
-                   connecteam_email, connecteam_phone,
-                   is_active, created_at
-            FROM connecteam_users
-            WHERE mapped_jarvis_user_id IS NULL AND is_active = TRUE
-            ORDER BY connecteam_user_name
-        ''')
 
     def update_user_mapping(self, connecteam_user_id, jarvis_user_id, method='manual'):
         """Manually map a Connecteam user to a JARVIS user."""
@@ -94,38 +64,6 @@ class ConnecteamRepository(BaseRepository):
             WHERE connecteam_user_id = %s
         ''', (connecteam_user_id,))
 
-    def auto_map_by_email(self):
-        """Auto-map Connecteam users to JARVIS users by email match."""
-        return self.execute('''
-            UPDATE connecteam_users cu
-            SET mapped_jarvis_user_id = u.id,
-                mapping_method = 'email',
-                mapping_confidence = 100,
-                updated_at = NOW()
-            FROM users u
-            WHERE LOWER(cu.connecteam_email) = LOWER(u.email)
-              AND cu.mapped_jarvis_user_id IS NULL
-              AND cu.connecteam_email IS NOT NULL
-              AND u.is_active = TRUE
-        ''')
-
-    def auto_map_by_phone(self):
-        """Auto-map Connecteam users to JARVIS users by phone match."""
-        return self.execute('''
-            UPDATE connecteam_users cu
-            SET mapped_jarvis_user_id = u.id,
-                mapping_method = 'phone',
-                mapping_confidence = 95,
-                updated_at = NOW()
-            FROM users u
-            WHERE REPLACE(REPLACE(cu.connecteam_phone, ' ', ''), '+', '')
-                = REPLACE(REPLACE(u.phone, ' ', ''), '+', '')
-              AND cu.mapped_jarvis_user_id IS NULL
-              AND cu.connecteam_phone IS NOT NULL
-              AND u.phone IS NOT NULL
-              AND u.is_active = TRUE
-        ''')
-
     def auto_map_by_name(self):
         """Auto-map Connecteam users to JARVIS users by name match."""
         return self.execute('''
@@ -142,50 +80,6 @@ class ConnecteamRepository(BaseRepository):
         ''')
 
     # ── Submission operations ──
-
-    def upsert_submission(self, submission_id, form_id, connecteam_user_id,
-                          submission_timestamp, form_name=None,
-                          mapped_jarvis_user_id=None, submission_timezone=None,
-                          entry_num=None, is_anonymous=False,
-                          leave_date=None, leave_start_time=None,
-                          leave_end_time=None, leave_hours=None,
-                          leave_reason=None, leave_destination=None,
-                          approved_by=None, status='submitted',
-                          raw_answers=None, raw_payload=None,
-                          event_type='form_submission'):
-        """Insert or update a form submission."""
-        return self.execute('''
-            INSERT INTO connecteam_form_submissions
-                (submission_id, form_id, form_name, connecteam_user_id,
-                 mapped_jarvis_user_id, submission_timestamp, submission_timezone,
-                 entry_num, is_anonymous,
-                 leave_date, leave_start_time, leave_end_time, leave_hours,
-                 leave_reason, leave_destination, approved_by, status,
-                 raw_answers, raw_payload, event_type)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (submission_id) DO UPDATE SET
-                form_name = COALESCE(EXCLUDED.form_name, connecteam_form_submissions.form_name),
-                mapped_jarvis_user_id = COALESCE(EXCLUDED.mapped_jarvis_user_id, connecteam_form_submissions.mapped_jarvis_user_id),
-                leave_date = COALESCE(EXCLUDED.leave_date, connecteam_form_submissions.leave_date),
-                leave_start_time = COALESCE(EXCLUDED.leave_start_time, connecteam_form_submissions.leave_start_time),
-                leave_end_time = COALESCE(EXCLUDED.leave_end_time, connecteam_form_submissions.leave_end_time),
-                leave_hours = COALESCE(EXCLUDED.leave_hours, connecteam_form_submissions.leave_hours),
-                leave_reason = COALESCE(EXCLUDED.leave_reason, connecteam_form_submissions.leave_reason),
-                leave_destination = COALESCE(EXCLUDED.leave_destination, connecteam_form_submissions.leave_destination),
-                approved_by = COALESCE(EXCLUDED.approved_by, connecteam_form_submissions.approved_by),
-                status = EXCLUDED.status,
-                raw_answers = EXCLUDED.raw_answers,
-                raw_payload = EXCLUDED.raw_payload,
-                event_type = EXCLUDED.event_type,
-                updated_at = NOW()
-            RETURNING id, submission_id, mapped_jarvis_user_id
-        ''', (submission_id, form_id, form_name, connecteam_user_id,
-              mapped_jarvis_user_id, submission_timestamp, submission_timezone,
-              entry_num, is_anonymous,
-              leave_date, leave_start_time, leave_end_time, leave_hours,
-              leave_reason, leave_destination, approved_by, status,
-              json.dumps(raw_answers or []), json.dumps(raw_payload) if raw_payload else None,
-              event_type), returning=True)
 
     def get_submissions_by_jarvis_user(self, jarvis_user_id, year=None, month=None):
         """Get leave permission submissions for a JARVIS user."""
@@ -238,37 +132,6 @@ class ConnecteamRepository(BaseRepository):
             WHERE connecteam_user_id = %s
         ''', (jarvis_user_id, connecteam_user_id))
 
-    # ── Webhook log ──
-
-    def log_webhook(self, request_id, event_type, form_id, raw_payload,
-                    status='received'):
-        """Log an incoming webhook event."""
-        return self.execute('''
-            INSERT INTO connecteam_webhook_log
-                (request_id, event_type, form_id, status, raw_payload)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id
-        ''', (request_id, event_type, form_id, status,
-              json.dumps(raw_payload)), returning=True)
-
-    def update_webhook_log(self, log_id, status, error_message=None):
-        """Update webhook log entry status."""
-        return self.execute('''
-            UPDATE connecteam_webhook_log
-            SET status = %s, error_message = %s
-            WHERE id = %s
-        ''', (status, error_message, log_id))
-
-    def get_webhook_log(self, limit=50):
-        """Get recent webhook log entries."""
-        return self.query_all('''
-            SELECT id, request_id, event_type, form_id, status,
-                   error_message, received_at::text
-            FROM connecteam_webhook_log
-            ORDER BY received_at DESC
-            LIMIT %s
-        ''', (limit,))
-
     # ── Stats ──
 
     def get_stats(self):
@@ -281,6 +144,5 @@ class ConnecteamRepository(BaseRepository):
                 (SELECT COUNT(*) FROM connecteam_users
                  WHERE mapped_jarvis_user_id IS NULL AND is_active = TRUE) AS unmapped_users,
                 (SELECT COUNT(*) FROM connecteam_form_submissions) AS total_submissions,
-                (SELECT MAX(received_at)::text FROM connecteam_webhook_log
-                 WHERE status = 'processed') AS last_webhook_at
+                (SELECT MAX(created_at)::text FROM connecteam_form_submissions) AS last_import_at
         ''')
