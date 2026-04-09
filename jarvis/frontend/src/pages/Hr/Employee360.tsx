@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/useAuth'
 import { hrApi } from '@/api/hr'
 import { biostarApi } from '@/api/biostar'
 import { sincronApi, type SincronTimesheetData } from '@/api/sincron'
+import { connecteamApi, type ConnecteamSubmission } from '@/api/connecteam'
 import { formsApi } from '@/api/forms'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
@@ -16,10 +17,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  User, Building2, Mail, Phone, Fingerprint, FileSpreadsheet,
-  Award, ClipboardList, ChevronLeft, ChevronRight, Clock,
+  User, Building2, Mail, Phone, Fingerprint, FileSpreadsheet, FileText,
+  Award, ClipboardList, ChevronLeft, ChevronRight, Clock, Plus,
   CalendarDays, Timer, Briefcase, ArrowLeft, CheckCircle2, RotateCcw,
 } from 'lucide-react'
+import { DateField, todayStr, shiftDate } from '@/components/ui/date-field'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { BioStarDayHistory } from '@/types/biostar'
@@ -84,6 +86,7 @@ export default function Employee360() {
   const emp = overview.employee
   const bio = overview.biostar
   const sinc = overview.sincron
+  const ct = overview.connecteam
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -115,6 +118,7 @@ export default function Employee360() {
                 <h2 className="text-lg font-semibold">{emp.name}</h2>
                 {bio && <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-950"><Fingerprint className="h-3 w-3 mr-1" />BioStar</Badge>}
                 {sinc && <Badge variant="outline" className="text-xs bg-green-50 dark:bg-green-950"><FileSpreadsheet className="h-3 w-3 mr-1" />Sincron</Badge>}
+                {ct && <Badge variant="outline" className="text-xs bg-indigo-50 dark:bg-indigo-950"><FileText className="h-3 w-3 mr-1" />Connecteam</Badge>}
               </div>
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
                 {emp.email && <span className="flex items-center gap-1"><Mail className="h-3.5 w-3.5" />{emp.email}</span>}
@@ -155,6 +159,7 @@ export default function Employee360() {
           <TabsTrigger value="overview"><User className="h-4 w-4 mr-1" />Overview</TabsTrigger>
           {bio && <TabsTrigger value="pontaj"><Fingerprint className="h-4 w-4 mr-1" />Pontaj</TabsTrigger>}
           {sinc && <TabsTrigger value="timesheet"><FileSpreadsheet className="h-4 w-4 mr-1" />Timesheet</TabsTrigger>}
+          <TabsTrigger value="leave-permits"><FileText className="h-4 w-4 mr-1" />Leave Permits</TabsTrigger>
           <TabsTrigger value="bonuses"><Award className="h-4 w-4 mr-1" />Bonuses</TabsTrigger>
           <TabsTrigger value="forms"><ClipboardList className="h-4 w-4 mr-1" />Forms</TabsTrigger>
         </TabsList>
@@ -178,6 +183,9 @@ export default function Employee360() {
             <TimesheetPanel userId={uid} />
           </TabsContent>
         )}
+        <TabsContent value="leave-permits">
+          <LeavePermitsPanel userId={uid} />
+        </TabsContent>
         <TabsContent value="bonuses">
           <BonusesPanel userId={uid} />
         </TabsContent>
@@ -192,7 +200,7 @@ export default function Employee360() {
 // ── Overview Panel ──
 
 function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<typeof hrApi.getEmployeeOverview>>['data']> }) {
-  const { biostar: bio, sincron: sinc, org, bonuses } = overview
+  const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses } = overview
 
   return (
     <div className="space-y-4 pt-2">
@@ -238,6 +246,16 @@ function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<
               {sinc ? (
                 <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-xs">
                   {sinc.nume} {sinc.prenume} — {sinc.company_name}
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-xs">Not mapped</Badge>
+              )}
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Connecteam</span>
+              {ct ? (
+                <Badge variant="outline" className="bg-indigo-50 dark:bg-indigo-950 text-xs">
+                  {ct.connecteam_user_name} ({ct.submission_count} permits)
                 </Badge>
               ) : (
                 <Badge variant="secondary" className="text-xs">Not mapped</Badge>
@@ -703,6 +721,378 @@ function BonusesPanel({ userId }: { userId: number }) {
           </CardContent>
         </Card>
       )}
+    </div>
+  )
+}
+
+// ── Leave Permits Panel (Connecteam + JARVIS Form) ──
+
+function LeavePermitsPanel({ userId }: { userId: number }) {
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+  const [showForm, setShowForm] = useState(false)
+  const queryClient = useQueryClient()
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['connecteam', 'submissions', userId, year, month],
+    queryFn: () => connecteamApi.getEmployeeSubmissions(userId, year, month),
+  })
+
+  const submissions: ConnecteamSubmission[] = data?.data ?? []
+
+  const prevMonth = () => {
+    if (month === 1) { setMonth(12); setYear(y => y - 1) }
+    else setMonth(m => m - 1)
+  }
+  const nextMonth = () => {
+    if (month === 12) { setMonth(1); setYear(y => y + 1) }
+    else setMonth(m => m + 1)
+  }
+
+  return (
+    <div className="space-y-4 pt-2">
+      {/* Header with month nav + new request button */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+          <span className="text-sm font-medium w-36 text-center">{MONTHS[month - 1]} {year}</span>
+          <Button variant="ghost" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+        </div>
+        <Button size="sm" onClick={() => setShowForm(true)}>
+          <Plus className="h-4 w-4 mr-1" />New Request
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-64 w-full" />
+      ) : submissions.length === 0 ? (
+        <EmptyState icon={<FileText className="h-8 w-8" />} title="No Leave Permits" description={`No leave permits found for ${MONTHS[month - 1]} ${year}.`} />
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Start</TableHead>
+                    <TableHead>End</TableHead>
+                    <TableHead>Hours</TableHead>
+                    <TableHead>Reason</TableHead>
+                    <TableHead>Destination</TableHead>
+                    <TableHead>Approved By</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Submitted</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {submissions.map((s) => (
+                    <TableRow key={`${s.source ?? 'ct'}-${s.id}`}>
+                      <TableCell className="font-medium text-sm whitespace-nowrap">
+                        {s.leave_date ? new Date(s.leave_date).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                      </TableCell>
+                      <TableCell className="text-sm">{s.leave_start_time ?? '-'}</TableCell>
+                      <TableCell className="text-sm">{s.leave_end_time ?? '-'}</TableCell>
+                      <TableCell className="text-sm font-medium">{s.leave_hours != null ? `${s.leave_hours}h` : '-'}</TableCell>
+                      <TableCell className="text-sm max-w-48 truncate" title={s.leave_reason ?? ''}>
+                        {s.leave_reason ?? '-'}
+                      </TableCell>
+                      <TableCell className="text-sm">{s.leave_destination ?? '-'}</TableCell>
+                      <TableCell className="text-sm">{s.approved_by ?? '-'}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={cn('text-xs',
+                          s.source === 'jarvis' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                        )}>
+                          {s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                        {s.submission_timestamp ? new Date(s.submission_timestamp).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* New Leave Request Dialog */}
+      {showForm && (
+        <LeaveRequestDialog
+          onClose={() => setShowForm(false)}
+          onSubmitted={() => {
+            setShowForm(false)
+            queryClient.invalidateQueries({ queryKey: ['connecteam', 'submissions', userId] })
+            toast.success('Leave request submitted')
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Leave Request Dialog (JARVIS Form) ──
+
+// Generate 30-min interval time slots (07:00 – 19:00)
+const TIME_SLOTS = Array.from({ length: 25 }, (_, i) => {
+  const totalMin = 7 * 60 + i * 30
+  const h = String(Math.floor(totalMin / 60)).padStart(2, '0')
+  const m = String(totalMin % 60).padStart(2, '0')
+  return `${h}:${m}`
+})
+
+function addMinutesToTime(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number)
+  const total = h * 60 + m + minutes
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+function timeDiffHours(start: string, end: string): number {
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  return (eh * 60 + em - (sh * 60 + sm)) / 60
+}
+
+function LeaveRequestDialog({ onClose, onSubmitted }: {
+  onClose: () => void
+  onSubmitted: () => void
+}) {
+  const [formData, setFormData] = useState({
+    leave_date: '',
+    start_time: '',
+    end_time: '',
+    hours: '',
+    reason: '',
+    destination: '',
+    notes: '',
+    approved_by: '',
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const [approvers, setApprovers] = useState<{ id: number; name: string }[]>([])
+
+  // Fetch approvers on mount
+  useEffect(() => {
+    connecteamApi.getApprovers().then(res => {
+      setApprovers(res?.data ?? [])
+    }).catch(() => {})
+  }, [])
+
+  // Auto-calculate hours when start/end time changes
+  useEffect(() => {
+    if (formData.start_time && formData.end_time) {
+      const diff = timeDiffHours(formData.start_time, formData.end_time)
+      if (diff > 0) {
+        setFormData(p => ({ ...p, hours: String(Math.round(diff * 10) / 10) }))
+      } else {
+        setFormData(p => ({ ...p, hours: '' }))
+      }
+    }
+  }, [formData.start_time, formData.end_time])
+
+  const handleDurationPreset = (minutes: number) => {
+    if (!formData.start_time) return
+    const endTime = addMinutesToTime(formData.start_time, minutes)
+    if (endTime <= '19:00') {
+      setFormData(p => ({ ...p, end_time: endTime }))
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      const formsRes = await formsApi.listForms({ search: 'Bilet de Invoire', limit: 1 })
+      const forms = formsRes?.forms ?? []
+      if (forms.length === 0) {
+        toast.error('Leave permission form not found. Contact admin.')
+        return
+      }
+      const formId = forms[0].id
+
+      const answers: Record<string, string> = {
+        f_bi_leave_date: formData.leave_date,
+        f_bi_start_time: formData.start_time,
+        f_bi_end_time: formData.end_time,
+        f_bi_hours: formData.hours,
+        f_bi_reason: formData.reason,
+      }
+      if (formData.destination) answers.f_bi_destination = formData.destination
+      if (formData.notes) answers.f_bi_notes = formData.notes
+      if (formData.approved_by) answers.f_bi_approved_by = formData.approved_by
+
+      await formsApi.submitInternal(formId, answers, 'web_internal')
+      onSubmitted()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to submit request')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const reasons = ['Personal', 'Medical', 'Familial', 'Oficial', 'Altul']
+  const today = todayStr()
+  const tomorrow = shiftDate(today, 1)
+
+  // Filter end_time slots to only show times after start_time
+  const endTimeSlots = formData.start_time
+    ? TIME_SLOTS.filter(t => t > formData.start_time)
+    : TIME_SLOTS
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <Card className="w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <CardHeader>
+          <CardTitle className="text-lg">New Leave Request</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Date picker + quick buttons */}
+            <div>
+              <label className="text-sm font-medium">Data *</label>
+              <div className="flex items-center gap-2 mt-1">
+                <DateField
+                  value={formData.leave_date}
+                  onChange={v => setFormData(p => ({ ...p, leave_date: v }))}
+                  placeholder="Selectati data"
+                  className="flex-1"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setFormData(p => ({ ...p, leave_date: today }))}
+                  className={cn(
+                    'px-3 py-1.5 text-xs rounded-md border transition-colors',
+                    formData.leave_date === today
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'hover:bg-accent'
+                  )}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(p => ({ ...p, leave_date: tomorrow }))}
+                  className={cn(
+                    'px-3 py-1.5 text-xs rounded-md border transition-colors',
+                    formData.leave_date === tomorrow
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'hover:bg-accent'
+                  )}
+                >
+                  Tomorrow
+                </button>
+              </div>
+            </div>
+
+            {/* Time selectors */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Ora de inceput *</label>
+                <select
+                  required
+                  className="w-full mt-1 px-3 py-2 border rounded-md text-sm"
+                  value={formData.start_time}
+                  onChange={e => setFormData(p => ({ ...p, start_time: e.target.value }))}
+                >
+                  <option value="">-- : --</option>
+                  {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Ora de sfarsit *</label>
+                <select
+                  required
+                  className="w-full mt-1 px-3 py-2 border rounded-md text-sm"
+                  value={formData.end_time}
+                  onChange={e => setFormData(p => ({ ...p, end_time: e.target.value }))}
+                >
+                  <option value="">-- : --</option>
+                  {endTimeSlots.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Duration presets */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Quick:</span>
+              {[
+                { label: '30 min', minutes: 30 },
+                { label: '1 ora', minutes: 60 },
+                { label: '2 ore', minutes: 120 },
+              ].map(p => (
+                <button
+                  key={p.minutes}
+                  type="button"
+                  disabled={!formData.start_time}
+                  onClick={() => handleDurationPreset(p.minutes)}
+                  className={cn(
+                    'px-2.5 py-1 text-xs rounded-md border transition-colors',
+                    !formData.start_time
+                      ? 'opacity-40 cursor-not-allowed'
+                      : formData.start_time && formData.end_time === addMinutesToTime(formData.start_time, p.minutes)
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'hover:bg-accent'
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+              {formData.hours && (
+                <span className="ml-auto text-sm font-medium">{formData.hours}h</span>
+              )}
+            </div>
+
+            {/* Reason */}
+            <div>
+              <label className="text-sm font-medium">Motivul *</label>
+              <select required className="w-full mt-1 px-3 py-2 border rounded-md text-sm" value={formData.reason} onChange={e => setFormData(p => ({ ...p, reason: e.target.value }))}>
+                <option value="">Selectati motivul</option>
+                {reasons.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+
+            {/* Destination */}
+            <div>
+              <label className="text-sm font-medium">Destinatia</label>
+              <input type="text" className="w-full mt-1 px-3 py-2 border rounded-md text-sm" placeholder="Unde va deplasati" value={formData.destination} onChange={e => setFormData(p => ({ ...p, destination: e.target.value }))} />
+            </div>
+
+            {/* Approver */}
+            <div>
+              <label className="text-sm font-medium">Aprobat de *</label>
+              {approvers.length > 0 ? (
+                <select
+                  required
+                  className="w-full mt-1 px-3 py-2 border rounded-md text-sm"
+                  value={formData.approved_by}
+                  onChange={e => setFormData(p => ({ ...p, approved_by: e.target.value }))}
+                >
+                  <option value="">Selectati persoana</option>
+                  {approvers.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                </select>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">No approvers available</p>
+              )}
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="text-sm font-medium">Detalii suplimentare</label>
+              <textarea className="w-full mt-1 px-3 py-2 border rounded-md text-sm" rows={2} placeholder="Adaugati orice detalii relevante" value={formData.notes} onChange={e => setFormData(p => ({ ...p, notes: e.target.value }))} />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? 'Submitting...' : 'Submit Request'}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   )
 }

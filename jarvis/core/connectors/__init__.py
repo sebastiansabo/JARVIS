@@ -14,6 +14,7 @@ connectors_bp = Blueprint('connectors_ui', __name__)
 from .efactura import efactura_bp  # noqa: E402
 from .biostar import biostar_bp  # noqa: E402
 from .push import push_bp  # noqa: E402
+from .connecteam import connecteam_bp  # noqa: E402
 from . import routes  # noqa: E402, F401
 
-__all__ = ['efactura_bp', 'biostar_bp', 'push_bp', 'connectors_bp']
+__all__ = ['efactura_bp', 'biostar_bp', 'push_bp', 'connecteam_bp', 'connectors_bp']

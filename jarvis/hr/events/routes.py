@@ -1475,6 +1475,19 @@ def api_get_employee_overview(user_id):
         sincron_row = cursor.fetchone()
         sincron = dict_from_row(sincron_row) if sincron_row else None
 
+        # Connecteam mapping
+        cursor.execute('''
+            SELECT cu.connecteam_user_id, cu.connecteam_user_name,
+                   cu.connecteam_email, cu.mapping_method, cu.mapping_confidence,
+                   (SELECT COUNT(*) FROM connecteam_form_submissions cfs
+                    WHERE cfs.mapped_jarvis_user_id = %s) AS submission_count
+            FROM connecteam_users cu
+            WHERE cu.mapped_jarvis_user_id = %s AND cu.is_active = TRUE
+            LIMIT 1
+        ''', (user_id, user_id))
+        connecteam_row = cursor.fetchone()
+        connecteam = dict_from_row(connecteam_row) if connecteam_row else None
+
         # Org path
         cursor.execute('''
             SELECT u.company, u.brand, u.department, u.subdepartment
@@ -1509,6 +1522,7 @@ def api_get_employee_overview(user_id):
                 'employee': employee,
                 'biostar': biostar,
                 'sincron': sincron,
+                'connecteam': connecteam,
                 'org': org,
                 'bonuses': {
                     'count': bonuses.get('bonus_count', 0),
