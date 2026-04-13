@@ -387,7 +387,7 @@ def create_schema_incremental(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_sim_bench_stage ON mkt_sim_benchmarks(funnel_stage)')
     cursor.execute("SELECT COUNT(*) as cnt FROM mkt_sim_benchmarks")
     if cursor.fetchone()['cnt'] == 0:
-        from migrations.init_schema import _seed_sim_benchmarks
+        from .schema_marketing import _seed_sim_benchmarks
         _seed_sim_benchmarks(cursor)
     # OKR tables for marketing projects
     cursor.execute('''
@@ -623,12 +623,12 @@ def create_schema_incremental(conn, cursor):
     # Seed standard Romanian chart of accounts (global, no company)
     cursor.execute("SELECT COUNT(*) as cnt FROM chart_of_accounts WHERE company_id IS NULL")
     if cursor.fetchone()['cnt'] == 0:
-        from migrations.init_schema import _seed_chart_of_accounts
+        from .schema_bilant import _seed_chart_of_accounts
         _seed_chart_of_accounts(cursor)
     # Seed default Bilant template
     cursor.execute("SELECT COUNT(*) as cnt FROM bilant_templates")
     if cursor.fetchone()['cnt'] == 0:
-        from migrations.init_schema import _seed_bilant_default_template
+        from .schema_bilant import _seed_bilant_default_template
         _seed_bilant_default_template(cursor)
     # Dynamic metrics: add new columns to bilant_metric_configs
     cursor.execute('''
@@ -653,7 +653,7 @@ def create_schema_incremental(conn, cursor):
         WHERE t.is_default = TRUE AND mc.metric_group = 'ratio'
     """)
     if cursor.fetchone()['cnt'] == 0:
-        from migrations.init_schema import _seed_bilant_dynamic_metrics
+        from .schema_bilant import _seed_bilant_dynamic_metrics
         _seed_bilant_dynamic_metrics(cursor)
     # Fix corrupted seed data from original export
     cursor.execute("""
