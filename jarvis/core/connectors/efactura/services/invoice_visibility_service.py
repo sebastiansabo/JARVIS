@@ -7,7 +7,7 @@ from datetime import date
 from core.utils.logging_config import get_logger
 from ..config import InvoiceDirection
 from ..repositories import InvoiceRepository
-from .base import ServiceResult
+from .base import ServiceResult, _iso
 
 logger = get_logger('jarvis.core.connectors.efactura.invoice_visibility_service')
 
@@ -53,13 +53,13 @@ class InvoiceVisibilityService:
                     'partner_cif': inv['partner_cif'],
                     'invoice_number': inv['invoice_number'],
                     'invoice_series': inv['invoice_series'],
-                    'issue_date': inv['issue_date'].isoformat() if inv.get('issue_date') else None,
+                    'issue_date': _iso(inv.get('issue_date')),
                     'total_amount': str(inv['total_amount']),
                     'total_vat': str(inv['total_vat']),
                     'total_without_vat': str(inv.get('total_without_vat', 0)),
-                    'due_date': inv['due_date'].isoformat() if inv.get('due_date') and hasattr(inv['due_date'], 'isoformat') else inv.get('due_date'),
+                    'due_date': _iso(inv.get('due_date')),
                     'currency': inv['currency'],
-                    'created_at': inv['created_at'].isoformat() if inv.get('created_at') else None,
+                    'created_at': _iso(inv.get('created_at')),
                     'type_name': inv.get('type_name'),
                     'type_names': inv.get('type_names', []),
                 }
@@ -125,12 +125,12 @@ class InvoiceVisibilityService:
                     'partner_cif': inv.get('partner_cif'),
                     'invoice_number': inv.get('invoice_number'),
                     'invoice_series': inv.get('invoice_series'),
-                    'issue_date': inv.get('issue_date').isoformat() if inv.get('issue_date') else None,
+                    'issue_date': _iso(inv.get('issue_date')),
                     'total_amount': str(inv.get('total_amount', 0)),
                     'total_vat': str(inv.get('total_vat', 0)),
                     'currency': inv.get('currency'),
-                    'created_at': inv.get('created_at').isoformat() if inv.get('created_at') else None,
-                    'deleted_at': inv.get('deleted_at').isoformat() if inv.get('deleted_at') else None,
+                    'created_at': _iso(inv.get('created_at')),
+                    'deleted_at': _iso(inv.get('deleted_at')),
                     'type_name': inv.get('type_name'),
                     'type_names': inv.get('type_names', []),
                 }

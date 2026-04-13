@@ -29,7 +29,7 @@ from ..models import (
     InvoiceArtifact,
 )
 from .invoice_service import InvoiceService
-from .base import ServiceResult, MOCK_MODE
+from .base import ServiceResult, _iso, MOCK_MODE
 
 logger = get_logger('jarvis.core.connectors.efactura.service')
 
@@ -281,8 +281,8 @@ class EFacturaService:
                 'environment': c.environment,
                 'status': c.status,
                 'status_message': c.status_message,
-                'last_sync_at': c.last_sync_at.isoformat() if c.last_sync_at else None,
-                'cert_expires_at': c.cert_expires_at.isoformat() if c.cert_expires_at else None,
+                'last_sync_at': _iso(c.last_sync_at),
+                'cert_expires_at': _iso(c.cert_expires_at),
                 'cert_expiring_soon': c.is_cert_expiring_soon(),
             }
             for c in connections
@@ -303,11 +303,11 @@ class EFacturaService:
             'status': connection.status,
             'status_message': connection.status_message,
             'config': connection.config,
-            'last_sync_at': connection.last_sync_at.isoformat() if connection.last_sync_at else None,
+            'last_sync_at': _iso(connection.last_sync_at),
             'cert_fingerprint': connection.cert_fingerprint,
-            'cert_expires_at': connection.cert_expires_at.isoformat() if connection.cert_expires_at else None,
-            'created_at': connection.created_at.isoformat() if connection.created_at else None,
-            'updated_at': connection.updated_at.isoformat() if connection.updated_at else None,
+            'cert_expires_at': _iso(connection.cert_expires_at),
+            'created_at': _iso(connection.created_at),
+            'updated_at': _iso(connection.updated_at),
         })
 
     def create_connection(
@@ -384,13 +384,13 @@ class EFacturaService:
                     'partner_cif': inv.partner_cif,
                     'partner_name': inv.partner_name,
                     'invoice_number': inv.full_invoice_number,
-                    'issue_date': inv.issue_date.isoformat() if inv.issue_date else None,
-                    'due_date': inv.due_date.isoformat() if inv.due_date else None,
+                    'issue_date': _iso(inv.issue_date),
+                    'due_date': _iso(inv.due_date),
                     'total_amount': str(inv.total_amount),
                     'total_vat': str(inv.total_vat),
                     'currency': inv.currency,
                     'status': inv.status.value,
-                    'created_at': inv.created_at.isoformat() if inv.created_at else None,
+                    'created_at': _iso(inv.created_at),
                 }
                 for inv in invoices
             ],
@@ -443,15 +443,15 @@ class EFacturaService:
             'partner_name': invoice.partner_name,
             'invoice_number': invoice.full_invoice_number,
             'invoice_series': invoice.invoice_series,
-            'issue_date': invoice.issue_date.isoformat() if invoice.issue_date else None,
-            'due_date': invoice.due_date.isoformat() if invoice.due_date else None,
+            'issue_date': _iso(invoice.issue_date),
+            'due_date': _iso(invoice.due_date),
             'total_amount': str(invoice.total_amount),
             'total_vat': str(invoice.total_vat),
             'total_without_vat': str(invoice.total_without_vat),
             'currency': invoice.currency,
             'status': invoice.status.value,
-            'created_at': invoice.created_at.isoformat() if invoice.created_at else None,
-            'updated_at': invoice.updated_at.isoformat() if invoice.updated_at else None,
+            'created_at': _iso(invoice.created_at),
+            'updated_at': _iso(invoice.updated_at),
             'seller': seller_info,
             'buyer': buyer_info,
             'external_ref': {

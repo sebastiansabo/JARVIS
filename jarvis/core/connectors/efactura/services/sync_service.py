@@ -59,8 +59,8 @@ class EFacturaSyncService:
                 'run_id': r.run_id,
                 'company_cif': r.company_cif,
                 'direction': r.direction,
-                'started_at': r.started_at.isoformat() if r.started_at else None,
-                'finished_at': r.finished_at.isoformat() if r.finished_at else None,
+                'started_at': r.started_at.isoformat() if hasattr(r.started_at, 'isoformat') else r.started_at,
+                'finished_at': r.finished_at.isoformat() if hasattr(r.finished_at, 'isoformat') else r.finished_at,
                 'success': r.success,
                 'invoices_created': r.invoices_created,
                 'invoices_skipped': r.invoices_skipped,
@@ -83,7 +83,7 @@ class EFacturaSyncService:
                 'message_id': e.message_id,
                 'invoice_ref': e.invoice_ref,
                 'is_retryable': e.is_retryable,
-                'created_at': e.created_at.isoformat() if e.created_at else None,
+                'created_at': e.created_at.isoformat() if hasattr(e.created_at, 'isoformat') else e.created_at,
             }
             for e in errors
         ]
