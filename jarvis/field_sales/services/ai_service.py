@@ -7,17 +7,12 @@ Uses Anthropic API (claude-sonnet-4-5-20250514) for:
 
 import json
 import logging
-import os
+
+from ai_agent.services.llm_client import ask
 
 logger = logging.getLogger('jarvis.field_sales.ai')
 
 _MODEL = 'claude-sonnet-4-5-20250514'
-
-
-def _get_client():
-    """Create an Anthropic client instance."""
-    import anthropic
-    return anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
 
 
 def structure_visit_note(raw_note, client_context=None):
@@ -82,17 +77,7 @@ Raw visit note:
 Structure this note into the JSON format specified. Return ONLY the JSON object."""
 
     try:
-        client = _get_client()
-        response = client.messages.create(
-            model=_MODEL,
-            max_tokens=2000,
-            system=system_prompt,
-            messages=[
-                {'role': 'user', 'content': user_message}
-            ],
-        )
-
-        response_text = response.content[0].text.strip()
+        response_text = ask(user_message, system=system_prompt, model=_MODEL, max_tokens=2000).strip()
 
         # Try to extract JSON from response (handle markdown code blocks)
         json_text = response_text
@@ -231,17 +216,7 @@ Rules:
 {full_context}"""
 
     try:
-        client = _get_client()
-        response = client.messages.create(
-            model=_MODEL,
-            max_tokens=1000,
-            system=system_prompt,
-            messages=[
-                {'role': 'user', 'content': user_message}
-            ],
-        )
-
-        return response.content[0].text.strip()
+        return ask(user_message, system=system_prompt, model=_MODEL, max_tokens=1000).strip()
 
     except Exception as e:
         logger.error('AI brief generation failed: %s', str(e))

@@ -141,9 +141,9 @@ class DuplicateDetectionService:
         """
         import json
         import os
-        import anthropic
         from difflib import SequenceMatcher
         from ai_agent.providers.base_provider import BaseProvider
+        from ai_agent.services.llm_client import ask
 
         api_key = os.environ.get('ANTHROPIC_API_KEY')
         if not api_key:
@@ -267,14 +267,8 @@ Consider:
 Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
 
                     try:
-                        client = anthropic.Anthropic(api_key=api_key)
-                        response = client.messages.create(
-                            model="claude-sonnet-4-20250514",
-                            max_tokens=256,
-                            messages=[{"role": "user", "content": prompt}]
-                        )
-
-                        response_text = response.content[0].text
+                        response_text = ask(prompt, model="claude-sonnet-4-20250514",
+                                            max_tokens=256, api_key=api_key)
                         result = BaseProvider._extract_json(response_text)
 
                         if result.get('is_duplicate') and result.get('confidence', 0) >= 0.7:

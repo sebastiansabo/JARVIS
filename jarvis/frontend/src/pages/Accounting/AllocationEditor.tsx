@@ -483,6 +483,9 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">Select...</SelectItem>
+                {row.department && !departments.includes(row.department) && (
+                  <SelectItem key={row.department} value={row.department}>{row.department}</SelectItem>
+                )}
                 {departments.filter(Boolean).map((d) => (
                   <SelectItem key={d} value={d}>{d}</SelectItem>
                 ))}
@@ -501,6 +504,9 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">Select...</SelectItem>
+                {row.subdepartment && !subdepartments.includes(row.subdepartment) && (
+                  <SelectItem key={row.subdepartment} value={row.subdepartment}>{row.subdepartment}</SelectItem>
+                )}
                 {subdepartments.filter(Boolean).map((sd) => (
                   <SelectItem key={sd} value={sd}>{sd}</SelectItem>
                 ))}

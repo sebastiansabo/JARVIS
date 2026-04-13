@@ -297,13 +297,13 @@ def ai_research_company(client_data, profile_data=None, fiscal_data=None, enrich
     Returns:
         dict with research results: {summary, suggested_cui, industry, news, risks, opportunities}
     """
-    import os
     try:
-        import anthropic
+        from ai_agent.services.llm_client import ask
     except ImportError:
-        logger.warning('anthropic package not installed')
+        logger.warning('ai_agent package not available')
         return {'error': 'AI not available'}
 
+    import os
     api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
         return {'error': 'ANTHROPIC_API_KEY not configured'}
@@ -412,14 +412,7 @@ Furnizeaza analiza ta in urmatoarea structura JSON (raspunde DOAR cu JSON valid,
 }}"""
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
-            model='claude-sonnet-4-20250514',
-            max_tokens=3000,
-            temperature=0.3,
-            messages=[{'role': 'user', 'content': prompt}],
-        )
-        content = message.content[0].text.strip()
+        content = ask(prompt, model='claude-sonnet-4-20250514', max_tokens=3000, api_key=api_key).strip()
         # Parse JSON response
         if content.startswith('```'):
             content = content.split('\n', 1)[1].rsplit('```', 1)[0].strip()

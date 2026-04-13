@@ -20,16 +20,22 @@ match_company_by_vat = _company_repo.match_by_vat
 
 
 class EFacturaSyncService:
-    def __init__(self, anaf_client_factory: Optional[Callable] = None):
+    def __init__(self, anaf_client_factory: Optional[Callable] = None, efactura_service=None):
         self.invoice_repo = InvoiceRepository()
         self.sync_repo = SyncRepository()
+        self._efactura_service = efactura_service
         if anaf_client_factory is not None:
             self._get_client = anaf_client_factory
         else:
             def _lazy_client(cif):
-                from .efactura_service import EFacturaService
-                return EFacturaService().get_anaf_client(cif)
+                return self._get_efactura_service().get_anaf_client(cif)
             self._get_client = _lazy_client
+
+    def _get_efactura_service(self):
+        if self._efactura_service is None:
+            from .efactura_service import EFacturaService
+            self._efactura_service = EFacturaService()
+        return self._efactura_service
 
     def get_anaf_client(self, cif: str):
         return self._get_client(cif)
@@ -353,8 +359,7 @@ class EFacturaSyncService:
         logger.info("Starting sync_all operation", extra={'days': days})
 
         # Get all active company connections
-        from .efactura_service import EFacturaService
-        connections = EFacturaService().get_all_connections()
+        connections = self._get_efactura_service().get_all_connections()
 
         if not connections:
             return ServiceResult(
@@ -509,8 +514,7 @@ class EFacturaSyncService:
         logger.info(f"Syncing single company", extra={'cif': cif, 'days': days})
 
         # Find company display name
-        from .efactura_service import EFacturaService
-        connections = EFacturaService().get_all_connections()
+        connections = self._get_efactura_service().get_all_connections()
         display_name = cif
         for conn in connections:
             if conn['cif'] == cif:

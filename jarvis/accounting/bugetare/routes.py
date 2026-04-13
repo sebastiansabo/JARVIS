@@ -197,8 +197,7 @@ def api_bulk_group_similar_items():
     def _generate():
         yield 'data: {"status":"running"}\n\n'
         try:
-            import anthropic
-            client = anthropic.Anthropic()
+            from ai_agent.services.llm_client import ask
             items_list = "\n".join([f"{i}: {item}" for i, item in enumerate(items_snapshot)])
             prompt = (
                 "Analyze these campaign/item names and group together items that should be merged "
@@ -211,13 +210,7 @@ def api_bulk_group_similar_items():
                 "Return ONLY a JSON array of groups, e.g. [[0,3],[1,4,7]]. "
                 "Only include groups with 2+ items."
             )
-            response = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1024,
-                timeout=30,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            result_text = response.content[0].text.strip()
+            result_text = ask(prompt, model="claude-sonnet-4-20250514", max_tokens=1024).strip()
             json_match = re.search(r'\[[\s\S]*\]', result_text)
             if json_match:
                 groups = json.loads(json_match.group())

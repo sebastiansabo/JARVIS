@@ -38,8 +38,7 @@ def _ai_company_lookup(company_name, cui=None):
     Returns dict with company fields or None.
     """
     try:
-        import anthropic
-        client = anthropic.Anthropic()
+        from ai_agent.services.llm_client import ask
         prompt = f"""Find basic company information for the Romanian company: "{company_name}"{f' (CUI: {cui})' if cui else ''}.
 
 Return ONLY a JSON object with these fields (use null if unknown):
@@ -57,13 +56,8 @@ Return ONLY a JSON object with these fields (use null if unknown):
 
 Return ONLY valid JSON, no explanation."""
 
-        resp = client.messages.create(
-            model='claude-haiku-4-5-20251001',
-            max_tokens=300,
-            messages=[{'role': 'user', 'content': prompt}],
-        )
         import json
-        text = resp.content[0].text.strip()
+        text = ask(prompt, model='claude-haiku-4-5-20251001', max_tokens=300).strip()
         # Extract JSON from possible markdown
         if '```' in text:
             text = text.split('```')[1]
@@ -193,6 +187,13 @@ def _extract_profile_from_connector(connector_type, data):
     if 'adresa_sediu_social' in data and isinstance(data['adresa_sediu_social'], dict):
         for k, v in data['adresa_sediu_social'].items():
             data.setdefault(k, v)
+
+    # --- CUI / CIF ---
+    for key in ('cui', 'cif', 'cod_fiscal', 'fiscal_code'):
+        val = data.get(key)
+        if val and str(val).strip() and str(val).strip() not in ('null', 'None', '0'):
+            profile['cui'] = str(val).strip()
+            break
 
     # --- Industry / CAEN ---
     for key in ('cod_caen', 'cod_CAEN', 'caen', 'caen_code'):

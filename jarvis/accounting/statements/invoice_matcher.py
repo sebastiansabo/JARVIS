@@ -286,7 +286,7 @@ def match_with_ai(transaction: dict, candidates: list, use_cache: bool = True) -
     Returns:
         Match result with invoice_id, confidence, reasoning, and alternatives.
     """
-    import anthropic
+    from ai_agent.services.llm_client import ask
 
     api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
@@ -353,15 +353,7 @@ Consider:
 Return ONLY valid JSON, no other text."""
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        response_text = response.content[0].text
+        response_text = ask(prompt, model="claude-sonnet-4-20250514", max_tokens=1024, api_key=api_key)
         result = BaseProvider._extract_json(response_text)
 
         return {

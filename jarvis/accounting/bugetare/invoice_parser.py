@@ -1,4 +1,3 @@
-import anthropic
 import base64
 import os
 import re
@@ -10,6 +9,7 @@ import json
 import tempfile
 
 from ai_agent.providers.base_provider import BaseProvider
+from ai_agent.services.llm_client import call as _llm_call, ask as _llm_ask
 
 
 def normalize_vat_number(vat: str) -> str:
@@ -109,8 +109,6 @@ def parse_invoice(file_path: str, api_key: Optional[str] = None) -> dict:
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY not set. Please set the environment variable or pass api_key parameter.")
 
-    client = anthropic.Anthropic(api_key=api_key)
-
     # Prepare image(s) based on file type
     ext = os.path.splitext(file_path)[1].lower()
 
@@ -200,16 +198,13 @@ ADVERTISING INVOICE LINE ITEMS:
 - Return ONLY the JSON, no other text"""
     })
 
-    response = client.messages.create(
+    # Parse the response
+    response_text = _llm_call(
+        [{"role": "user", "content": content}],
         model="claude-sonnet-4-20250514",
         max_tokens=4096,
-        messages=[
-            {"role": "user", "content": content}
-        ]
+        api_key=api_key,
     )
-
-    # Parse the response
-    response_text = response.content[0].text
 
     try:
         result = BaseProvider._extract_json(response_text)
@@ -271,8 +266,6 @@ def extract_missing_fields_with_ai(file_path: str, missing_fields: list, api_key
     if not api_key:
         return {}
 
-    client = anthropic.Anthropic(api_key=api_key)
-
     # Prepare image(s) based on file type
     ext = os.path.splitext(file_path)[1].lower()
 
@@ -329,16 +322,13 @@ IMPORTANT:
 
     content.append({"type": "text", "text": prompt})
 
-    response = client.messages.create(
+    # Parse the response
+    response_text = _llm_call(
+        [{"role": "user", "content": content}],
         model="claude-sonnet-4-20250514",
         max_tokens=512,
-        messages=[
-            {"role": "user", "content": content}
-        ]
+        api_key=api_key,
     )
-
-    # Parse the response
-    response_text = response.content[0].text
 
     try:
         result = BaseProvider._extract_json(response_text)
@@ -446,8 +436,6 @@ def extract_line_items_with_ai(file_path: str, api_key: Optional[str] = None) ->
     if not api_key:
         return []
 
-    client = anthropic.Anthropic(api_key=api_key)
-
     ext = os.path.splitext(file_path)[1].lower()
 
     if ext == '.pdf':
@@ -501,15 +489,12 @@ IMPORTANT:
     })
 
     try:
-        response = client.messages.create(
+        response_text = _llm_call(
+            [{"role": "user", "content": content}],
             model="claude-sonnet-4-20250514",
             max_tokens=4096,
-            messages=[
-                {"role": "user", "content": content}
-            ]
+            api_key=api_key,
         )
-
-        response_text = response.content[0].text
         result = BaseProvider._extract_json(response_text)
 
         if isinstance(result, list):
@@ -1112,8 +1097,6 @@ def generate_template_from_invoice(file_bytes: bytes, filename: str, api_key: Op
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY not set. Please set the environment variable or pass api_key parameter.")
 
-    client = anthropic.Anthropic(api_key=api_key)
-
     ext = os.path.splitext(filename)[1].lower()
 
     # Create temp file
@@ -1208,16 +1191,13 @@ EXAMPLES OF GOOD PATTERNS:
 Return ONLY the JSON, no other text."""
         })
 
-        response = client.messages.create(
+        # Parse the response
+        response_text = _llm_call(
+            [{"role": "user", "content": content}],
             model="claude-sonnet-4-20250514",
             max_tokens=2048,
-            messages=[
-                {"role": "user", "content": content}
-            ]
+            api_key=api_key,
         )
-
-        # Parse the response
-        response_text = response.content[0].text
 
         try:
             result = BaseProvider._extract_json(response_text)
@@ -1366,8 +1346,6 @@ def match_campaigns_with_ai(source_campaigns: list, target_campaigns: list, api_
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY not set")
 
-    client = anthropic.Anthropic(api_key=api_key)
-
     prompt = f"""Match advertising campaign names from a source list to a target list based on semantic similarity.
 The campaigns are typically advertising campaigns with similar naming conventions like "[CA] Leads - Brand Name" or "CAMPAIGN NAME - DESCRIPTION".
 
@@ -1391,14 +1369,8 @@ Example response format:
 IMPORTANT: Return ONLY the JSON object, no explanation or additional text."""
 
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
         # Extract JSON from response
-        response_text = response.content[0].text
+        response_text = _llm_ask(prompt, model="claude-sonnet-4-20250514", max_tokens=1024, api_key=api_key)
 
         try:
             result = BaseProvider._extract_json(response_text)
