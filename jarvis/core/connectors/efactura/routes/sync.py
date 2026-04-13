@@ -357,7 +357,7 @@ def lookup_companies_batch():
             return jsonify({
                 'success': False,
                 'error': result.error,
-            }), 500
+            }), 400
 
         return jsonify({
             'success': True,
