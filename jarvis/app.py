@@ -86,6 +86,10 @@ def _configure_app(flask_app: Flask, config: AppConfig):
     # Store config for use in hooks
     flask_app.jarvis_config = config
 
+    # Base URL for generating absolute links (download page, etc.)
+    import os as _os
+    flask_app.config['APP_BASE_URL'] = _os.environ.get('APP_BASE_URL', 'https://jarvis.autoworld.ro')
+
 
 def _setup_login_manager(flask_app: Flask):
     """Configure Flask-Login."""
@@ -308,14 +312,12 @@ def _register_hooks(flask_app: Flask):
             return response
         if response.content_type and 'application/json' in response.content_type:
             if response.status_code == 200 and response.data:
-                if_none_match = request.headers.get('If-None-Match')
-                if if_none_match:
-                    import hashlib
-                    etag = hashlib.md5(response.data).hexdigest()
-                    response.headers['ETag'] = f'"{etag}"'
-                    if if_none_match == f'"{etag}"':
-                        response.status_code = 304
-                        response.data = b''
+                import hashlib
+                etag = f'"{hashlib.md5(response.data).hexdigest()}"'
+                response.headers['ETag'] = etag
+                if request.headers.get('If-None-Match') == etag:
+                    response.status_code = 304
+                    response.data = b''
         if request.path == '/login' and response.status_code == 200:
             response.headers['Cache-Control'] = 'private, max-age=3600'
         if request.path == '/health' and response.status_code == 200:
@@ -465,7 +467,7 @@ def _register_routes(flask_app: Flask):
 
     @flask_app.route('/download')
     def download_page():
-        base_url = request.host_url.rstrip('/')
+        base_url = flask_app.config.get('APP_BASE_URL', 'https://jarvis.autoworld.ro').rstrip('/')
         apk_url = f'{base_url}/download/jarvis.apk'
         html = f'''<!DOCTYPE html>
 <html lang="en">

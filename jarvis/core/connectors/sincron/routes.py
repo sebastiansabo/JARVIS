@@ -257,7 +257,7 @@ def get_timesheet():
 @v2_permission_required('hr', 'timesheets', 'view')
 def get_employee_timesheet(user_id):
     """Get monthly timesheet for a specific employee (V2 permission scoped)."""
-    from hr.events.database import get_managed_employee_ids
+    from core.organization.hr_utils import get_managed_employee_ids
 
     scope = getattr(g, 'permission_scope', 'all')
 
@@ -295,7 +295,7 @@ def get_employee_timesheet(user_id):
 @v2_permission_required('hr', 'timesheets', 'view')
 def get_team_timesheet():
     """Get team timesheet summary. V2 permission scoped."""
-    from hr.events.database import get_managed_employee_ids
+    from core.organization.hr_utils import get_managed_employee_ids
 
     scope = getattr(g, 'permission_scope', 'all')
 

@@ -3,6 +3,7 @@
 All authentication, user management, employee management, password management,
 and event log routes.
 """
+import os
 import threading
 from flask import jsonify, request, render_template, redirect, url_for, flash
 from flask_login import login_required, login_user, logout_user, current_user
@@ -16,7 +17,7 @@ _user_repo = UserRepository()
 _event_repo = EventRepository()
 _auth_limiter = RateLimiter()
 
-SUPERADMIN_EMAIL = 'sebastian.sabo@autoworld.ro'
+SUPERADMIN_EMAIL = os.environ.get('SUPERADMIN_EMAIL', 'sebastian.sabo@autoworld.ro')
 
 
 def _is_superadmin(user_id: int) -> bool:

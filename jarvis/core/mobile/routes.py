@@ -13,21 +13,11 @@ from flask import jsonify, request
 from . import mobile_bp
 from core.auth.repositories import UserRepository
 from core.auth.models import User
+from core.utils.api_helpers import RateLimiter
 
 _user_repo = UserRepository()
+_auth_limiter = RateLimiter()
 
-
-@mobile_bp.after_request
-def _add_cors(response):
-    """Allow cross-origin requests from mobile app."""
-    origin = request.headers.get('Origin', '')
-    # Allow capacitor:// (native app) and localhost dev
-    if origin.startswith(('capacitor://', 'http://localhost', 'https://localhost', 'http://127.0.0.1')):
-        response.headers['Access-Control-Allow-Origin'] = origin
-        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-        response.headers['Access-Control-Max-Age'] = '86400'
-    return response
 
 
 @mobile_bp.route('/api/auth/token', methods=['OPTIONS'])
@@ -195,6 +185,11 @@ def _user_json(user) -> dict:
 @mobile_bp.route('/api/auth/token', methods=['POST'])
 def api_token():
     """JWT login — returns access + refresh tokens."""
+    allowed, retry_after = _auth_limiter.is_allowed(
+        f'mobile_login:{request.remote_addr}', max_requests=10, window_seconds=300)
+    if not allowed:
+        return jsonify({'error': f'Too many login attempts. Try again in {retry_after} seconds.'}), 429
+
     data = request.get_json()
     if not data:
         return jsonify({'error': 'JSON body required'}), 400

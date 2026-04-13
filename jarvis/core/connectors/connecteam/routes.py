@@ -241,7 +241,7 @@ def get_approvers():
 @v2_permission_required('hr', 'leave_permissions', 'view')
 def get_employee_submissions(user_id):
     """Get leave permission submissions for an employee (V2 permission scoped)."""
-    from hr.events.database import get_managed_employee_ids
+    from core.organization.hr_utils import get_managed_employee_ids
 
     scope = getattr(g, 'permission_scope', 'all')
 

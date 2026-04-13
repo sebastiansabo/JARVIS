@@ -64,7 +64,7 @@ def api_profile_summary():
         hr_events_summary = _profile_repo.get_user_event_bonuses_summary(current_user.id)
 
         # Check if user is an org responsable (L0-L5) for edit permissions
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
         is_org_responsable = is_manager(current_user.id)
 
         # Sincron timesheet mapping status
@@ -200,7 +200,7 @@ def api_profile_invoice_detail(invoice_id):
 def api_profile_update_allocations(invoice_id):
     """Update allocations for an invoice — allowed for org responsables within their scope."""
     try:
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
 
         # Must be an org responsable (L0-L5)
         if not is_manager(current_user.id):
@@ -246,7 +246,7 @@ PROFILE_EDITABLE_FIELDS = {'status', 'payment_status', 'comment', 'drive_link',
 def api_profile_update_invoice_metadata(invoice_id):
     """Update restricted invoice fields — allowed for org responsables within their scope."""
     try:
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
         if not is_manager(current_user.id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
         if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
@@ -284,7 +284,7 @@ def api_profile_update_invoice_metadata(invoice_id):
 def api_profile_get_invoice_dms_docs(invoice_id):
     """List DMS documents linked to an invoice — org-scope check."""
     try:
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
         if not is_manager(current_user.id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
         if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
@@ -302,7 +302,7 @@ def api_profile_get_invoice_dms_docs(invoice_id):
 def api_profile_link_invoice_dms_doc(invoice_id):
     """Link a DMS document to an invoice — org-scope check."""
     try:
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
         if not is_manager(current_user.id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
         if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
@@ -327,7 +327,7 @@ def api_profile_link_invoice_dms_doc(invoice_id):
 def api_profile_unlink_invoice_dms_doc(invoice_id, document_id):
     """Unlink a DMS document from an invoice — org-scope check."""
     try:
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
         if not is_manager(current_user.id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
         if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
@@ -346,7 +346,7 @@ def api_profile_unlink_invoice_dms_doc(invoice_id, document_id):
 def api_profile_search_dms_docs():
     """Search DMS documents for the linking picker — org manager check only."""
     try:
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
         if not is_manager(current_user.id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
@@ -476,7 +476,7 @@ def api_profile_team_pontaje():
     """
     try:
         from datetime import datetime, timedelta
-        from hr.events.database import get_managed_employee_ids, is_manager, get_visible_tree
+        from core.organization.hr_utils import get_managed_employee_ids, is_manager, get_visible_tree
         from database import get_db, get_cursor, release_db, dict_from_row
 
         if not is_manager(current_user.id):
@@ -596,7 +596,7 @@ def api_profile_team_pontaje():
 def api_profile_team_pontaje_punches():
     """Get individual punch logs for a team member on a specific date."""
     try:
-        from hr.events.database import get_managed_employee_ids, is_manager
+        from core.organization.hr_utils import get_managed_employee_ids, is_manager
         from core.connectors.biostar.services import BioStarSyncService
 
         biostar_user_id = request.args.get('biostar_user_id', '')

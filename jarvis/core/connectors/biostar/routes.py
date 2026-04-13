@@ -54,7 +54,7 @@ def _resolve_manager_filter():
 
 def _get_managed_ids_with_self():
     """Return organigram-managed employee IDs including the current user."""
-    from hr.events.database import get_managed_employee_ids
+    from core.organization.hr_utils import get_managed_employee_ids
     user_ids = get_managed_employee_ids(current_user.id) or []
     # Include self so manager also sees their own punches
     if current_user.id not in user_ids:

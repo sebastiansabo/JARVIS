@@ -550,7 +550,9 @@ def add_bonus():
 def api_get_events():
     """API: Get all events. Requires hr.events.view permission."""
     from datetime import date
-    events = get_all_hr_events()
+    limit = request.args.get('limit', 200, type=int)
+    offset = request.args.get('offset', 0, type=int)
+    events = get_all_hr_events(limit=limit, offset=offset)
     upcoming_param = request.args.get('upcoming')
     if upcoming_param is not None:
         today = date.today().isoformat()
