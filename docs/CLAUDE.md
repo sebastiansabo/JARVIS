@@ -1523,3 +1523,32 @@ tests/
 - Each test is independent — no shared mutable state
 - Always test error paths, not just happy paths
 - Current baseline: 560 tests passing
+
+## Commit Digest (scripts/daily_digest.py)
+
+Automated email digest of git commits across JARVIS + jarvis-mobile repos, translated to Romanian via Claude API.
+
+**Manual send (local):**
+```bash
+./scripts/send-digest.sh              # daily
+./scripts/send-digest.sh weekly       # weekly
+./scripts/send-digest.sh monthly      # monthly
+```
+
+**Manual send (via GitHub Actions):**
+```bash
+./scripts/send-digest.sh daily remote
+./scripts/send-digest.sh weekly remote
+./scripts/send-digest.sh monthly remote
+```
+
+**Recipients:**
+- Daily: sebastian.sabo@gmail.com
+- Weekly/Monthly: sebastian.sabo@gmail.com, sebastian.sabo@autoworld.ro, boardaw@autoworld.ro
+- Override with env var: `DIGEST_RECIPIENTS="a@x.com, b@x.com" ./scripts/send-digest.sh daily`
+
+**Cron schedule:** 08:00 Bucharest time daily (weekly fires Mondays, monthly fires 1st of month)
+
+**GitHub secrets required:** `ANTHROPIC_API_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `GH_PAT`
+
+**Credentials (local):** `~/.jarvis-digest.env`

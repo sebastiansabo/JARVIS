@@ -144,6 +144,86 @@ class ConnecteamRepository(BaseRepository):
             WHERE connecteam_user_id = %s
         ''', (jarvis_user_id, connecteam_user_id))
 
+    # ── Approvers ──
+
+    def get_approvers_for_user(self, user_id):
+        """Walk UP the structure tree to collect responsables above the user.
+
+        Returns list of {id, name} dicts. Falls back to company L0 responsables,
+        then to all L0 responsables if the user has no structure node assignment.
+        """
+        def _work(cursor):
+            # 1. Find user's structure node assignments
+            cursor.execute('''
+                SELECT sn.id AS node_id, sn.company_id
+                FROM structure_node_members snm
+                JOIN structure_nodes sn ON snm.node_id = sn.id
+                WHERE snm.user_id = %s
+                ORDER BY sn.level DESC
+            ''', (user_id,))
+            assignments = cursor.fetchall()
+
+            approver_ids = set()
+
+            if assignments:
+                for a in assignments:
+                    node_id = a['node_id'] if isinstance(a, dict) else a[0]
+                    cursor.execute('''
+                        WITH RECURSIVE ancestors AS (
+                            SELECT id, parent_id FROM structure_nodes WHERE id = %s
+                            UNION ALL
+                            SELECT sn.id, sn.parent_id
+                            FROM structure_nodes sn
+                            JOIN ancestors a ON sn.id = a.parent_id
+                        )
+                        SELECT DISTINCT snm.user_id
+                        FROM ancestors a
+                        JOIN structure_node_members snm ON snm.node_id = a.id
+                        WHERE snm.role = 'responsable'
+                          AND snm.user_id != %s
+                    ''', (node_id, user_id))
+                    for row in cursor.fetchall():
+                        approver_ids.add(row['user_id'] if isinstance(row, dict) else row[0])
+
+            # 2. Fallback: L0 company responsables
+            if not approver_ids:
+                cursor.execute('''
+                    SELECT DISTINCT cr.user_id
+                    FROM company_responsables cr
+                    JOIN structure_node_members snm ON snm.user_id = %s
+                    JOIN structure_nodes sn ON snm.node_id = sn.id
+                    WHERE cr.company_id = sn.company_id
+                      AND cr.user_id != %s
+                ''', (user_id, user_id))
+                for row in cursor.fetchall():
+                    approver_ids.add(row['user_id'] if isinstance(row, dict) else row[0])
+
+            # 3. If still empty, get all L0 responsables
+            if not approver_ids:
+                cursor.execute('''
+                    SELECT DISTINCT cr.user_id
+                    FROM company_responsables cr
+                    WHERE cr.user_id != %s
+                ''', (user_id,))
+                for row in cursor.fetchall():
+                    approver_ids.add(row['user_id'] if isinstance(row, dict) else row[0])
+
+            # 4. Fetch names
+            if not approver_ids:
+                return []
+            cursor.execute('''
+                SELECT id, name FROM users
+                WHERE id = ANY(%s)
+                ORDER BY name
+            ''', (list(approver_ids),))
+            return [
+                {'id': r['id'] if isinstance(r, dict) else r[0],
+                 'name': r['name'] if isinstance(r, dict) else r[1]}
+                for r in cursor.fetchall()
+            ]
+
+        return self.execute_many(_work)
+
     # ── Stats ──
 
     def get_stats(self):

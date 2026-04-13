@@ -9,7 +9,7 @@ from core.utils.logging_config import get_logger
 from core.organization.repositories import CompanyRepository as _CompanyRepo
 
 from ..config import InvoiceDirection
-from ..repositories import InvoiceRepository, SyncRepository
+from ..repositories import EFacturaInvoiceRepository, SyncRepository
 from ..models import Invoice, InvoiceExternalRef, InvoiceArtifact
 from .base import ServiceResult, MOCK_MODE
 
@@ -21,7 +21,7 @@ match_company_by_vat = _company_repo.match_by_vat
 
 class EFacturaSyncService:
     def __init__(self, anaf_client_factory: Optional[Callable] = None, efactura_service=None):
-        self.invoice_repo = InvoiceRepository()
+        self.invoice_repo = EFacturaInvoiceRepository()
         self.sync_repo = SyncRepository()
         self._efactura_service = efactura_service
         if anaf_client_factory is not None:

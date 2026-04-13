@@ -419,13 +419,7 @@ def api_profile_pontaje():
         service = BioStarSyncService()
 
         # Find BioStar employee mapped to current user
-        employee = service.repo.query_one(
-            '''SELECT be.*, u.name AS mapped_jarvis_user_name, u.email AS mapped_jarvis_user_email
-               FROM biostar_employees be
-               LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
-               WHERE be.mapped_jarvis_user_id = %s AND be.status = 'active'
-            ''', (current_user.id,)
-        )
+        employee = service.repo.get_employee_by_jarvis_user(current_user.id)
         if not employee:
             return jsonify({'success': True, 'mapped': False, 'employee': None,
                             'history': [], 'today_punches': []})
@@ -477,7 +471,6 @@ def api_profile_team_pontaje():
     try:
         from datetime import datetime, timedelta
         from core.organization.hr_utils import get_managed_employee_ids, is_manager, get_visible_tree
-        from database import get_db, get_cursor, release_db, dict_from_row
 
         if not is_manager(current_user.id):
             return jsonify({'success': True, 'is_manager': False, 'mode': 'daily',
@@ -538,20 +531,10 @@ def api_profile_team_pontaje():
                     bio_by_user[uid] = br
 
             # Get all managed users (including those without BioStar data)
-            conn = get_db()
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT u.id, u.name, u.company, u.department, u.position
-                FROM users u
-                WHERE u.id = ANY(%s) AND u.is_active = TRUE
-                ORDER BY u.name
-            ''', (managed_ids,))
-            team_rows = cursor.fetchall()
-            release_db(conn)
+            team_rows = _profile_repo.get_users_by_ids(managed_ids)
 
             summary = []
-            for r in team_rows:
-                row = dict_from_row(r)
+            for row in team_rows:
                 uid = row['id']
                 bio = bio_by_user.get(uid)
                 if bio:

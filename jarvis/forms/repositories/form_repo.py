@@ -213,12 +213,12 @@ class FormRepository(BaseRepository):
 
     def _generate_slug(self, cursor, name):
         """Generate a unique slug from the form name."""
+        import uuid
         base = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
         if not base:
             base = 'form'
         slug = base
-        counter = 1
-        while True:
+        for counter in range(1, 101):
             cursor.execute(
                 'SELECT 1 FROM forms WHERE slug = %s AND deleted_at IS NULL',
                 (slug,)
@@ -226,4 +226,4 @@ class FormRepository(BaseRepository):
             if not cursor.fetchone():
                 return slug
             slug = f'{base}-{counter}'
-            counter += 1
+        return f'{base}-{uuid.uuid4().hex[:8]}'

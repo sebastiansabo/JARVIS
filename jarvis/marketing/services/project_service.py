@@ -169,8 +169,8 @@ class ProjectService:
                 'webViewLink', f"https://drive.google.com/file/d/{drive_file['id']}/view"
             )
 
-            from marketing.repositories import FileRepository
-            file_repo = FileRepository()
+            from marketing.repositories import MarketingFileRepository
+            file_repo = MarketingFileRepository()
             file_id = file_repo.create(
                 project_id, filename, drive_link, user_id,
                 file_type=ext or None,

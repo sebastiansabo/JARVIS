@@ -148,90 +148,11 @@ def get_approvers():
     to collect all responsables above them. Falls back to L0 company
     responsables if the user has no structure node assignment.
     """
-    from database import get_db, get_cursor, release_db
-
-    conn = get_db()
-    cursor = get_cursor(conn)
     try:
-        uid = current_user.id
-
-        # 1. Find user's structure node assignments
-        cursor.execute('''
-            SELECT sn.id AS node_id, sn.company_id
-            FROM structure_node_members snm
-            JOIN structure_nodes sn ON snm.node_id = sn.id
-            WHERE snm.user_id = %s
-            ORDER BY sn.level DESC
-        ''', (uid,))
-        assignments = cursor.fetchall()
-
-        approver_ids = set()
-
-        if assignments:
-            for a in assignments:
-                node_id = a['node_id'] if isinstance(a, dict) else a[0]
-                # Walk UP parent chain collecting responsables
-                cursor.execute('''
-                    WITH RECURSIVE ancestors AS (
-                        SELECT id, parent_id FROM structure_nodes WHERE id = %s
-                        UNION ALL
-                        SELECT sn.id, sn.parent_id
-                        FROM structure_nodes sn
-                        JOIN ancestors a ON sn.id = a.parent_id
-                    )
-                    SELECT DISTINCT snm.user_id
-                    FROM ancestors a
-                    JOIN structure_node_members snm ON snm.node_id = a.id
-                    WHERE snm.role = 'responsable'
-                      AND snm.user_id != %s
-                ''', (node_id, uid))
-                for row in cursor.fetchall():
-                    rid = row['user_id'] if isinstance(row, dict) else row[0]
-                    approver_ids.add(rid)
-
-        # 2. Fallback: L0 company responsables
-        if not approver_ids:
-            cursor.execute('''
-                SELECT DISTINCT cr.user_id
-                FROM company_responsables cr
-                JOIN structure_node_members snm ON snm.user_id = %s
-                JOIN structure_nodes sn ON snm.node_id = sn.id
-                WHERE cr.company_id = sn.company_id
-                  AND cr.user_id != %s
-            ''', (uid, uid))
-            for row in cursor.fetchall():
-                rid = row['user_id'] if isinstance(row, dict) else row[0]
-                approver_ids.add(rid)
-
-        # 3. If still empty, get all L0 responsables for any company
-        if not approver_ids:
-            cursor.execute('''
-                SELECT DISTINCT cr.user_id
-                FROM company_responsables cr
-                WHERE cr.user_id != %s
-            ''', (uid,))
-            for row in cursor.fetchall():
-                rid = row['user_id'] if isinstance(row, dict) else row[0]
-                approver_ids.add(rid)
-
-        # 4. Fetch names
-        if approver_ids:
-            cursor.execute('''
-                SELECT id, name FROM users
-                WHERE id = ANY(%s)
-                ORDER BY name
-            ''', (list(approver_ids),))
-            approvers = [{'id': r['id'] if isinstance(r, dict) else r[0],
-                          'name': r['name'] if isinstance(r, dict) else r[1]}
-                         for r in cursor.fetchall()]
-        else:
-            approvers = []
-
+        approvers = service.repo.get_approvers_for_user(current_user.id)
         return jsonify({'success': True, 'data': approvers})
     except Exception as e:
         return safe_error_response(e)
-    finally:
-        release_db(conn)
 
 
 # ── Submissions (user-scoped) ──

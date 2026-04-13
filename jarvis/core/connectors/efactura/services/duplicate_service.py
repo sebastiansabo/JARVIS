@@ -4,7 +4,7 @@ Duplicate Detection Service - manual and AI-based invoice duplicate detection.
 from typing import List, Dict, Any
 
 from core.utils.logging_config import get_logger
-from ..repositories import InvoiceRepository
+from ..repositories import EFacturaInvoiceRepository
 from .base import ServiceResult
 
 logger = get_logger('jarvis.core.connectors.efactura.duplicate_service')
@@ -12,7 +12,7 @@ logger = get_logger('jarvis.core.connectors.efactura.duplicate_service')
 
 class DuplicateDetectionService:
     def __init__(self):
-        self.invoice_repo = InvoiceRepository()
+        self.invoice_repo = EFacturaInvoiceRepository()
 
     def detect_unallocated_duplicates(self) -> List[Dict[str, Any]]:
         """

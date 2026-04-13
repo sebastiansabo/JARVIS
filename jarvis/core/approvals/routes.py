@@ -10,7 +10,7 @@ from .engine import (
     ApprovalEngine, ApprovalError, NoMatchingFlowError, AlreadyPendingError,
     NotAuthorizedError, AlreadyDecidedError, InvalidStateError,
 )
-from .repositories import FlowRepository, AuditRepository, DelegationRepository
+from .repositories import FlowRepository, ApprovalAuditRepository, DelegationRepository
 from core.utils.api_helpers import safe_error_response, handle_api_errors
 from core.roles.repositories import PermissionRepository
 
@@ -18,7 +18,7 @@ logger = logging.getLogger('jarvis.core.approvals.routes')
 
 _engine = ApprovalEngine()
 _flow_repo = FlowRepository()
-_audit_repo = AuditRepository()
+_audit_repo = ApprovalAuditRepository()
 _delegation_repo = DelegationRepository()
 _perm_repo = PermissionRepository()
 

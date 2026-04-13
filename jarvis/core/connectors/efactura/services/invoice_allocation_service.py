@@ -9,7 +9,7 @@ from core.organization.repositories import CompanyRepository as _CompanyRepo
 from core.services.notification_service import notify_invoice_allocations, is_smtp_configured
 
 from ..config import InvoiceDirection
-from ..repositories import InvoiceRepository
+from ..repositories import EFacturaInvoiceRepository
 from ..models import Invoice
 from .base import ServiceResult
 from .invoice_service import InvoiceService
@@ -22,7 +22,7 @@ get_companies_with_vat = _company_repo.get_all_with_vat_and_brands
 
 class InvoiceAllocationService:
     def __init__(self):
-        self.invoice_repo = InvoiceRepository()
+        self.invoice_repo = EFacturaInvoiceRepository()
         self.invoice_service = InvoiceService()
 
     def list_unallocated_invoices(

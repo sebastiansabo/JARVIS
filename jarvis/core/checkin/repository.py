@@ -90,3 +90,23 @@ class CheckinRepository(BaseRepository):
              direction, raw_data_json),
             returning=True,
         )
+
+    # ── NFC Tags ──
+
+    def get_nfc_tag_by_tag_id(self, nfc_tag_id):
+        """Return {location_id, name} for an active NFC tag, or None."""
+        return self.query_one('''
+            SELECT nt.location_id, cl.name FROM checkin_nfc_tags nt
+            JOIN checkin_locations cl ON cl.id = nt.location_id
+            WHERE nt.tag_id = %s AND cl.is_active = true
+        ''', (nfc_tag_id,))
+
+    def get_all_nfc_tags(self):
+        """Return all active NFC tag–location mappings."""
+        return self.query_all('''
+            SELECT nt.id, nt.tag_id, cl.id AS location_id, cl.name AS location_name
+            FROM checkin_nfc_tags nt
+            JOIN checkin_locations cl ON cl.id = nt.location_id
+            WHERE cl.is_active = true
+            ORDER BY cl.name
+        ''')

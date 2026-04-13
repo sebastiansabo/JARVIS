@@ -20,7 +20,7 @@ from ..models import (
 logger = get_logger('jarvis.accounting.efactura.repo.invoice')
 
 
-class InvoiceRepository(BaseRepository):
+class EFacturaInvoiceRepository(BaseRepository):
     """Repository for Invoice and related entities."""
 
     def create(

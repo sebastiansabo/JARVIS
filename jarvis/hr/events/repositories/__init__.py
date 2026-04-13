@@ -3,13 +3,13 @@
 Data access layer for HR Events module.
 """
 from .employee_repository import EmployeeRepository
-from .event_repository import EventRepository
+from .event_repository import HREventRepository
 from .bonus_repository import BonusRepository
-from .structure_repository import StructureRepository
+from .structure_repository import HRStructureRepository
 
 __all__ = [
     'EmployeeRepository',
-    'EventRepository',
+    'HREventRepository',
     'BonusRepository',
-    'StructureRepository',
+    'HRStructureRepository',
 ]

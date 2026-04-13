@@ -2,7 +2,7 @@
 PDF Service - invoice PDF generation and export from XML.
 """
 from core.utils.logging_config import get_logger
-from ..repositories import InvoiceRepository
+from ..repositories import EFacturaInvoiceRepository
 from .base import ServiceResult
 
 logger = get_logger('jarvis.core.connectors.efactura.pdf_service')
@@ -10,7 +10,7 @@ logger = get_logger('jarvis.core.connectors.efactura.pdf_service')
 
 class PDFService:
     def __init__(self):
-        self.invoice_repo = InvoiceRepository()
+        self.invoice_repo = EFacturaInvoiceRepository()
 
     def get_invoice_pdf(self, invoice_id: int) -> ServiceResult:
         """

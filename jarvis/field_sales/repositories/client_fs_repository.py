@@ -10,6 +10,13 @@ logger = logging.getLogger('jarvis.field_sales.client_repo')
 
 class ClientFSRepository(BaseRepository):
 
+    def get_by_id(self, client_id):
+        """Return basic client info (id, display_name, company_name) or None."""
+        return self.query_one(
+            'SELECT id, display_name, company_name FROM crm_clients WHERE id = %s',
+            (client_id,)
+        )
+
     def get_or_create_profile(self, client_id):
         """Get client profile, creating a default one if it doesn't exist.
 

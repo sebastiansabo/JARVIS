@@ -19,7 +19,7 @@ get_companies_with_vat = _company_repo.get_all_with_vat_and_brands
 from ..config import InvoiceDirection, ArtifactType
 from ..repositories import (
     CompanyConnectionRepository,
-    InvoiceRepository,
+    EFacturaInvoiceRepository,
     SyncRepository,
 )
 from ..models import (
@@ -43,7 +43,7 @@ class EFacturaService:
 
     def __init__(self):
         self.connection_repo = CompanyConnectionRepository()
-        self.invoice_repo = InvoiceRepository()
+        self.invoice_repo = EFacturaInvoiceRepository()
         self.sync_repo = SyncRepository()
         self.invoice_service = InvoiceService()
 

@@ -7,10 +7,10 @@ from flask import request, jsonify
 from core.utils.api_helpers import safe_error_response, api_login_required
 from ._shared import efactura_bp, efactura_access_required, InvoiceDirection
 from ..services.invoice_allocation_service import InvoiceAllocationService
-from ..repositories.invoice_repo import InvoiceRepository
+from ..repositories.invoice_repo import EFacturaInvoiceRepository
 
 _alloc_service = InvoiceAllocationService()
-_invoice_repo = InvoiceRepository()
+_invoice_repo = EFacturaInvoiceRepository()
 
 
 # ============================================================

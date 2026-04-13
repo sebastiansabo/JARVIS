@@ -500,6 +500,17 @@ class ProfileRepository(BaseRepository):
             return [dict_from_row(dict(row)) for row in cursor.fetchall()]
         return self.execute_many(_work)
 
+    def get_users_by_ids(self, user_ids: list) -> list:
+        """Return basic user info for a list of user IDs."""
+        if not user_ids:
+            return []
+        return self.query_all('''
+            SELECT id, name, company, department, position
+            FROM users
+            WHERE id = ANY(%s) AND is_active = TRUE
+            ORDER BY name
+        ''', (user_ids,))
+
     def get_user_activity_count(self, user_id: int) -> int:
         """Count activity events for a user."""
         row = self.query_one('''

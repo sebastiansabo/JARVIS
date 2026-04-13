@@ -1,6 +1,7 @@
 """Approvals schema: data migrations, approval_*, notifications, smart_notification_state."""
 import psycopg2
 import psycopg2.errors
+from psycopg2 import sql as _sql
 
 
 def create_schema_approvals(conn, cursor):
@@ -28,7 +29,12 @@ def create_schema_approvals(conn, cursor):
     ]
     for table, column, new_type in _real_to_numeric_migrations:
         try:
-            cursor.execute(f'ALTER TABLE {table} ALTER COLUMN {column} TYPE {new_type} USING {column}::{new_type}')
+            cursor.execute(
+                _sql.SQL('ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::{}').format(
+                    _sql.Identifier(table), _sql.Identifier(column),
+                    _sql.SQL(new_type), _sql.Identifier(column), _sql.SQL(new_type)
+                )
+            )
             conn.commit()
         except Exception:
             conn.rollback()

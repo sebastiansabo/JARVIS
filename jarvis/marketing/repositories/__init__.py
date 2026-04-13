@@ -5,7 +5,7 @@ from .budget_repo import BudgetRepository
 from .kpi_repo import KpiRepository
 from .activity_repo import ActivityRepository
 from .comment_repo import CommentRepository
-from .file_repo import FileRepository
+from .file_repo import MarketingFileRepository
 from .event_repo import ProjectEventRepository
 from .okr_repo import OkrRepository
 from .dms_link_repo import ProjectDmsLinkRepository
@@ -13,7 +13,7 @@ from .client_link_repo import ProjectClientLinkRepository
 
 __all__ = [
     'ProjectRepository', 'MemberRepository', 'BudgetRepository',
-    'KpiRepository', 'ActivityRepository', 'CommentRepository', 'FileRepository',
+    'KpiRepository', 'ActivityRepository', 'CommentRepository', 'MarketingFileRepository',
     'ProjectEventRepository', 'OkrRepository', 'ProjectDmsLinkRepository',
     'ProjectClientLinkRepository',
 ]

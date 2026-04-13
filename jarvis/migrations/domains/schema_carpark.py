@@ -829,18 +829,19 @@ def create_schema_carpark(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_cpv_vehicle ON carpark_promotion_vehicles(vehicle_id)')
 
     # ── Permission column on roles table ──
+    from psycopg2 import sql as _sql
     for col_name in ['can_access_carpark', 'can_edit_carpark', 'can_delete_carpark',
                       'can_access_carpark_mobile']:
-        cursor.execute(f'''
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                              WHERE table_name = 'roles' AND column_name = '{col_name}') THEN
-                    ALTER TABLE roles ADD COLUMN {col_name} BOOLEAN DEFAULT FALSE;
-                    UPDATE roles SET {col_name} = TRUE WHERE name = 'Admin';
-                END IF;
-            END $$;
-        ''')
+        cursor.execute(
+            _sql.SQL('ALTER TABLE roles ADD COLUMN IF NOT EXISTS {} BOOLEAN DEFAULT FALSE').format(
+                _sql.Identifier(col_name)
+            )
+        )
+        cursor.execute(
+            _sql.SQL("UPDATE roles SET {} = TRUE WHERE name = 'Admin'").format(
+                _sql.Identifier(col_name)
+            )
+        )
 
     # ── Seed equipment categories ──
     cursor.execute('''

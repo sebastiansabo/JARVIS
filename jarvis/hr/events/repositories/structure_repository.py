@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from core.base_repository import BaseRepository
 
 
-class StructureRepository(BaseRepository):
+class HRStructureRepository(BaseRepository):
     """Repository for organizational structure data access operations."""
 
     # ============== Companies ==============

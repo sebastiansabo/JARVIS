@@ -14,9 +14,17 @@ from . import mobile_bp
 from core.auth.repositories import UserRepository
 from core.auth.models import User
 from core.utils.api_helpers import RateLimiter
+from core.connectors.push.repositories import DeviceRepository
+from core.mobile.repositories import MobileDashboardRepository
+from core.checkin.repository import CheckinRepository
+from core.signatures.repositories.signature_repo import SignatureRepository
 
 _user_repo = UserRepository()
 _auth_limiter = RateLimiter()
+_device_repo = DeviceRepository()
+_dashboard_repo = MobileDashboardRepository()
+_checkin_repo = CheckinRepository()
+_sig_repo = SignatureRepository()
 
 
 
@@ -271,7 +279,6 @@ def api_mobile_current_user():
 @jwt_required
 def api_register_device():
     """Register device push token for notifications."""
-    from database import get_db_connection
     data = request.get_json()
     if not data:
         return jsonify({'error': 'JSON body required'}), 400
@@ -284,17 +291,7 @@ def api_register_device():
         return jsonify({'error': 'push_token is required'}), 400
 
     user = _current_mobile_user()
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO mobile_devices (user_id, push_token, platform, device_id, updated_at)
-                VALUES (%s, %s, %s, %s, NOW())
-                ON CONFLICT (push_token) DO UPDATE
-                SET user_id = EXCLUDED.user_id, platform = EXCLUDED.platform,
-                    device_id = EXCLUDED.device_id, updated_at = NOW()
-            """, (user.id, push_token, platform, device_id))
-        conn.commit()
-
+    _device_repo.register(user.id, push_token, platform, device_id)
     return jsonify({'success': True})
 
 
@@ -302,18 +299,12 @@ def api_register_device():
 @jwt_required
 def api_unregister_device():
     """Unregister device push token."""
-    from database import get_db_connection
     data = request.get_json() or {}
     push_token = data.get('push_token')
     if not push_token:
         return jsonify({'error': 'push_token required'}), 400
 
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM mobile_devices WHERE push_token = %s AND user_id = %s",
-                        (push_token, _current_mobile_user().id))
-        conn.commit()
-
+    _device_repo.unregister(push_token, _current_mobile_user().id)
     return jsonify({'success': True})
 
 
@@ -325,105 +316,46 @@ def api_mobile_dashboard():
     """Aggregated dashboard data for mobile home screen — single request."""
     import logging
     logger = logging.getLogger(__name__)
-    from database import get_db_connection
     user = _current_mobile_user()
-    result = {'stats': {'invoices': 0, 'revenue': 0, 'pending_invoices': 0,
-                        'pending_approvals': 0, 'pending_signatures': 0, 'clients': 0},
-              'recent_invoices': [], 'recent_clients': [], 'upcoming_events': []}
 
-    def _safe_query(conn, sql, params=None):
-        """Run a query with savepoint so failures don't poison the transaction."""
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                return cur.fetchall(), [d[0] for d in cur.description] if cur.description else []
-        except Exception as e:
-            conn.rollback()
-            logger.warning('Dashboard query failed: %s — %s', sql[:80], e)
-            return [], []
+    try:
+        invoices, revenue, pending_invoices = _dashboard_repo.get_invoice_stats()
+        result = {
+            'stats': {
+                'invoices': invoices,
+                'revenue': revenue,
+                'pending_invoices': pending_invoices,
+                'pending_approvals': _dashboard_repo.get_pending_approvals_count(user.id),
+                'pending_signatures': _dashboard_repo.get_pending_signatures_count(user.id),
+                'clients': _dashboard_repo.get_client_count(),
+            },
+            'recent_invoices': [],
+            'recent_clients': [],
+            'upcoming_events': [],
+        }
 
-    with get_db_connection() as conn:
-        try:
-            # Stat cards — invoices
-            rows, _ = _safe_query(conn, """
-                SELECT COUNT(*), COALESCE(SUM(invoice_value), 0),
-                       COUNT(*) FILTER (WHERE status = 'pending')
-                FROM invoices WHERE deleted_at IS NULL
-            """)
-            if rows:
-                result['stats']['invoices'] = rows[0][0]
-                result['stats']['revenue'] = float(rows[0][1])
-                result['stats']['pending_invoices'] = rows[0][2]
+        recent_invoices = _dashboard_repo.get_recent_invoices()
+        for inv in recent_invoices:
+            if inv.get('date'):
+                inv['date'] = str(inv['date'])
+            if inv.get('amount'):
+                inv['amount'] = float(inv['amount'])
+        result['recent_invoices'] = recent_invoices
 
-            # Pending approvals
-            rows, _ = _safe_query(conn, """
-                SELECT COUNT(*) FROM approval_decisions ad
-                JOIN approval_requests ar ON ar.id = ad.request_id
-                WHERE ad.decided_by = %s AND ad.decision = 'pending' AND ar.status = 'pending'
-            """, (user.id,))
-            if rows:
-                result['stats']['pending_approvals'] = rows[0][0]
+        result['recent_clients'] = _dashboard_repo.get_recent_clients()
 
-            # Pending signatures
-            rows, _ = _safe_query(conn, """
-                SELECT COUNT(*) FROM document_signatures
-                WHERE signed_by = %s AND status = 'pending'
-            """, (user.id,))
-            if rows:
-                result['stats']['pending_signatures'] = rows[0][0]
+        upcoming = _dashboard_repo.get_upcoming_events()
+        for ev in upcoming:
+            if ev.get('date'):
+                ev['date'] = str(ev['date'])
+            if ev.get('end_date'):
+                ev['end_date'] = str(ev['end_date'])
+        result['upcoming_events'] = upcoming
 
-            # Client count
-            rows, _ = _safe_query(conn, "SELECT COUNT(*) FROM crm_clients WHERE is_blacklisted = false")
-            if rows:
-                result['stats']['clients'] = rows[0][0]
-
-            # Recent invoices (last 5)
-            rows, cols = _safe_query(conn, """
-                SELECT id, invoice_number, supplier, invoice_value as amount,
-                       currency, invoice_date as date, status
-                FROM invoices WHERE deleted_at IS NULL
-                ORDER BY created_at DESC LIMIT 5
-            """)
-            result['recent_invoices'] = [dict(zip(cols, r)) for r in rows]
-            for inv in result['recent_invoices']:
-                if inv.get('date'):
-                    inv['date'] = str(inv['date'])
-                if inv.get('amount'):
-                    inv['amount'] = float(inv['amount'])
-
-            # Recent clients (last 5)
-            rows, cols = _safe_query(conn, """
-                SELECT id, display_name as name, company_name as cui,
-                       '' as contact_person, phone, email, city, client_type as status
-                FROM crm_clients WHERE is_blacklisted = false
-                ORDER BY created_at DESC LIMIT 5
-            """)
-            result['recent_clients'] = [dict(zip(cols, r)) for r in rows]
-
-            # Upcoming events — check table exists first
-            rows, _ = _safe_query(conn, """
-                SELECT EXISTS (SELECT 1 FROM information_schema.tables
-                               WHERE table_schema = 'public' AND table_name = 'hr_events')
-            """)
-            if rows and rows[0][0]:
-                rows, cols = _safe_query(conn, """
-                    SELECT he.id, he.title, he.event_date as date, he.end_date,
-                           he.location, he.event_type as type, he.status,
-                           (SELECT COUNT(*) FROM hr_event_participants WHERE event_id = he.id) as participants_count
-                    FROM hr_events he WHERE he.event_date >= CURRENT_DATE
-                    ORDER BY he.event_date ASC LIMIT 3
-                """)
-                result['upcoming_events'] = [dict(zip(cols, r)) for r in rows]
-                for ev in result['upcoming_events']:
-                    if ev.get('date'):
-                        ev['date'] = str(ev['date'])
-                    if ev.get('end_date'):
-                        ev['end_date'] = str(ev['end_date'])
-
-            return jsonify(result)
-        except Exception as e:
-            logger.error('Dashboard endpoint error: %s', e)
-            return jsonify({'error': 'An internal error occurred', 'success': False}), 500
+        return jsonify(result)
+    except Exception as e:
+        logger.error('Dashboard endpoint error: %s', e)
+        return jsonify({'error': 'An internal error occurred', 'success': False}), 500
 
 
 # ============== WIDGET DATA (lightweight) ==============
@@ -432,7 +364,6 @@ def api_mobile_dashboard():
 @jwt_required
 def api_widget_data():
     """Minimal data payload for home screen widgets."""
-    from database import get_db_connection
     from core.checkin.service import CheckinService
     user = _current_mobile_user()
 
@@ -447,36 +378,8 @@ def api_widget_data():
         checked_in = last.get('direction') == 'IN'
         last_punch_time = last.get('event_datetime')
 
-    pending_count = 0
-    next_event = None
-    next_event_date = None
-
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            try:
-                cur.execute("""
-                    SELECT COUNT(*) FROM approval_step_decisions asd
-                    JOIN approval_request_steps ars ON ars.id = asd.step_id
-                    JOIN approval_requests ar ON ar.id = ars.request_id
-                    WHERE asd.approver_id = %s AND asd.decision = 'pending' AND ar.status = 'pending'
-                """, (user.id,))
-                row = cur.fetchone()
-                pending_count = row[0] if row else 0
-            except Exception:
-                conn.rollback()
-
-            try:
-                cur.execute("""
-                    SELECT title, event_date FROM hr_events
-                    WHERE event_date >= CURRENT_DATE
-                    ORDER BY event_date ASC LIMIT 1
-                """)
-                ev = cur.fetchone()
-                if ev:
-                    next_event = ev[0]
-                    next_event_date = str(ev[1])
-            except Exception:
-                conn.rollback()
+    pending_count = _dashboard_repo.get_pending_approvals_widget(user.id)
+    next_event, next_event_date = _dashboard_repo.get_next_event()
 
     return jsonify({
         'checked_in': checked_in,
@@ -493,7 +396,6 @@ def api_widget_data():
 @jwt_required
 def api_nfc_punch():
     """Check in/out via NFC tag — reuses existing CheckinService with QR token format."""
-    from database import get_db_connection
     data = request.get_json()
     if not data:
         return jsonify({'error': 'JSON body required'}), 400
@@ -503,22 +405,16 @@ def api_nfc_punch():
         return jsonify({'error': 'nfc_tag_id is required'}), 400
 
     user = _current_mobile_user()
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            # Look up NFC tag → location_id
-            cur.execute("""
-                SELECT nt.location_id, cl.name FROM checkin_nfc_tags nt
-                JOIN checkin_locations cl ON cl.id = nt.location_id
-                WHERE nt.tag_id = %s AND cl.is_active = true
-            """, (nfc_tag_id,))
-            tag = cur.fetchone()
-            if not tag:
-                return jsonify({'error': 'Unknown NFC tag'}), 404
+    tag = _checkin_repo.get_nfc_tag_by_tag_id(nfc_tag_id)
+    if not tag:
+        return jsonify({'error': 'Unknown NFC tag'}), 404
+
+    location_id = tag['location_id'] if isinstance(tag, dict) else tag[0]
 
     # Reuse existing punch logic via QR token format "checkin:<location_id>"
     from core.checkin.service import CheckinService
     svc = CheckinService()
-    qr_token = f'checkin:{tag[0]}'
+    qr_token = f'checkin:{location_id}'
     result = svc.punch(
         jarvis_user_id=user.id,
         qr_token=qr_token,
@@ -531,19 +427,8 @@ def api_nfc_punch():
 @jwt_required
 def api_nfc_tags():
     """List registered NFC tag-location mappings."""
-    from database import get_db_connection
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT nt.id, nt.tag_id, cl.id as location_id, cl.name as location_name
-                FROM checkin_nfc_tags nt
-                JOIN checkin_locations cl ON cl.id = nt.location_id
-                WHERE cl.is_active = true
-                ORDER BY cl.name
-            """)
-            cols = [d[0] for d in cur.description]
-            tags = [dict(zip(cols, r)) for r in cur.fetchall()]
-            return jsonify({'success': True, 'tags': tags})
+    tags = _checkin_repo.get_all_nfc_tags()
+    return jsonify({'success': True, 'tags': tags})
 
 
 # ============== MOBILE SIGNATURE ==============
@@ -552,7 +437,6 @@ def api_nfc_tags():
 @jwt_required
 def api_sign_mobile():
     """Sign a document from mobile — accepts base64 signature image."""
-    from database import get_db_connection
     data = request.get_json()
     if not data:
         return jsonify({'error': 'JSON body required'}), 400
@@ -564,28 +448,15 @@ def api_sign_mobile():
         return jsonify({'error': 'signature_id and signature_image are required'}), 400
 
     user = _current_mobile_user()
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            # Verify ownership
-            cur.execute("""
-                SELECT id, status FROM document_signatures
-                WHERE id = %s AND signed_by = %s
-            """, (signature_id, user.id))
-            sig = cur.fetchone()
-            if not sig:
-                return jsonify({'error': 'Signature request not found'}), 404
-            if sig[1] != 'pending':
-                return jsonify({'error': f'Signature already {sig[1]}'}), 400
+    sig = _sig_repo.get_for_user_verification(signature_id, user.id)
+    if not sig:
+        return jsonify({'error': 'Signature request not found'}), 404
+    status = sig['status'] if isinstance(sig, dict) else sig[1]
+    if status != 'pending':
+        return jsonify({'error': f'Signature already {status}'}), 400
 
-            # Save signature
-            cur.execute("""
-                UPDATE document_signatures
-                SET status = 'signed', signature_image = %s, signed_at = NOW()
-                WHERE id = %s
-            """, (signature_image, signature_id))
-            conn.commit()
-
-            return jsonify({'success': True, 'message': 'Document signed successfully'})
+    _sig_repo.sign_mobile(signature_id, signature_image)
+    return jsonify({'success': True, 'message': 'Document signed successfully'})
 
 
 # ============== APP VERSION CHECK ==============
@@ -612,7 +483,6 @@ def api_mobile_version():
 def api_notify_update():
     """Send push notification to ALL registered devices about a new app version.
     Requires admin/HR manager role."""
-    from database import get_db_connection
     from core.notifications.push_service import send_push_to_users
 
     user = _current_mobile_user()
@@ -623,10 +493,7 @@ def api_notify_update():
     version = data.get('version', _CURRENT_VERSION)
 
     # Get ALL user_ids with registered devices
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT user_id FROM mobile_devices")
-            user_ids = [row[0] for row in cur.fetchall()]
+    user_ids = _device_repo.get_all_user_ids()
 
     if not user_ids:
         return jsonify({'success': True, 'message': 'No devices registered', 'notified': 0})

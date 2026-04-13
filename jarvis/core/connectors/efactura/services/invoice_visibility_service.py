@@ -6,7 +6,7 @@ from datetime import date
 
 from core.utils.logging_config import get_logger
 from ..config import InvoiceDirection
-from ..repositories import InvoiceRepository
+from ..repositories import EFacturaInvoiceRepository
 from .base import ServiceResult, _iso
 
 logger = get_logger('jarvis.core.connectors.efactura.invoice_visibility_service')
@@ -14,7 +14,7 @@ logger = get_logger('jarvis.core.connectors.efactura.invoice_visibility_service'
 
 class InvoiceVisibilityService:
     def __init__(self):
-        self.invoice_repo = InvoiceRepository()
+        self.invoice_repo = EFacturaInvoiceRepository()
 
     def list_hidden_invoices(
         self,

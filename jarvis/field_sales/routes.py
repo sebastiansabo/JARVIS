@@ -214,9 +214,7 @@ def api_create_visit():
             return jsonify({'success': False, 'error': f'Invalid visit_type. Allowed: {", ".join(sorted(ALLOWED_VISIT_TYPES))}'}), 400
 
         # Verify client exists
-        client = _client_repo.query_one(
-            'SELECT id FROM crm_clients WHERE id = %s', (client_id,)
-        )
+        client = _client_repo.get_by_id(client_id)
         if not client:
             return jsonify({'success': False, 'error': 'Client not found'}), 404
 
@@ -233,9 +231,7 @@ def api_create_visit():
         visit_id = visit['id']
 
         # Fetch client name for notifications
-        client = _client_repo.query_one(
-            'SELECT display_name FROM crm_clients WHERE id = %s', (client_id,)
-        )
+        client = _client_repo.get_by_id(client_id)
         visit['client_name'] = client.get('display_name', 'Client') if client else 'Client'
 
         # Generate AI brief in background with proper app context
@@ -567,10 +563,7 @@ def api_client_enrich(client_id):
     try:
         data = request.get_json(silent=True) or {}
 
-        client = _client_repo.query_one(
-            'SELECT id, display_name, company_name FROM crm_clients WHERE id = %s',
-            (client_id,)
-        )
+        client = _client_repo.get_by_id(client_id)
         if not client:
             return jsonify({'success': False, 'error': 'Client not found'}), 404
 
@@ -657,9 +650,7 @@ def api_add_fleet_vehicle(client_id):
             return perm_err
 
         # Verify client exists
-        client = _client_repo.query_one(
-            'SELECT id FROM crm_clients WHERE id = %s', (client_id,)
-        )
+        client = _client_repo.get_by_id(client_id)
         if not client:
             return jsonify({'success': False, 'error': 'Client not found'}), 404
 

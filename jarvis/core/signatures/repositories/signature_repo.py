@@ -55,6 +55,21 @@ class SignatureRepository(BaseRepository):
             (status, sig_id),
         )
 
+    def get_for_user_verification(self, sig_id, user_id):
+        """Return {id, status} if the signature belongs to user, else None."""
+        return self.query_one(
+            'SELECT id, status FROM document_signatures WHERE id = %s AND signed_by = %s',
+            (sig_id, user_id)
+        )
+
+    def sign_mobile(self, sig_id, signature_image):
+        """Save mobile signature image and mark as signed."""
+        self.execute('''
+            UPDATE document_signatures
+            SET status = 'signed', signature_image = %s, signed_at = NOW()
+            WHERE id = %s
+        ''', (signature_image, sig_id))
+
     def save_signed(self, sig_id, signature_image, signed_pdf_path,
                     document_hash, ip_address):
         """Save completed signature data. Returns rowcount."""

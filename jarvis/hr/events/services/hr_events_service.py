@@ -8,9 +8,9 @@ from dataclasses import dataclass
 
 from ..repositories import (
     EmployeeRepository,
-    EventRepository,
+    HREventRepository,
     BonusRepository,
-    StructureRepository,
+    HRStructureRepository,
 )
 
 
@@ -30,9 +30,9 @@ class HREventsService:
 
     def __init__(self):
         self.employee_repo = EmployeeRepository()
-        self.event_repo = EventRepository()
+        self.event_repo = HREventRepository()
         self.bonus_repo = BonusRepository()
-        self.structure_repo = StructureRepository()
+        self.structure_repo = HRStructureRepository()
 
     # ============== Employees ==============
 
