@@ -14,6 +14,72 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _recompute_bilant_formula_values(cursor):
+    """Recompute all formula_rd values in bilant_results.
+
+    After OMF→B numbering migration, row numbers shifted but stored values
+    were stale. This recomputes formula_rd sums in dependency order and
+    updates verification strings with detailed row amounts.
+    """
+    cursor.execute("SELECT DISTINCT generation_id FROM bilant_results WHERE formula_rd IS NOT NULL")
+    gen_ids = [r['generation_id'] for r in cursor.fetchall()]
+    if not gen_ids:
+        return
+
+    updated = 0
+    for gen_id in gen_ids:
+        cursor.execute("""
+            SELECT id, nr_rd, value, formula_rd
+            FROM bilant_results WHERE generation_id = %s
+            ORDER BY CASE
+                WHEN nr_rd = '35a' THEN 35.5
+                WHEN nr_rd ~ '^[0-9]+$' THEN CAST(nr_rd AS FLOAT)
+                ELSE 999 END
+        """, (gen_id,))
+        all_rows = cursor.fetchall()
+        values = {r['nr_rd']: float(r['value'] or 0) for r in all_rows if r['nr_rd']}
+
+        for row in all_rows:
+            if not row['formula_rd']:
+                continue
+            expr = row['formula_rd']
+            total = 0.0
+            sign = 1
+            token = ''
+            parts = []
+            for ch in expr + '+':
+                if ch.isdigit() or ch.isalpha():
+                    token += ch
+                elif ch in '+-':
+                    if token:
+                        row_num = token.lstrip('0') or '0'
+                        val = values.get(row_num, 0)
+                        total += sign * val
+                        pfx = '+' if sign == 1 else '-'
+                        parts.append(f"{pfx} rd.{row_num} ({val:,.2f})")
+                        token = ''
+                    sign = 1 if ch == '+' else -1
+            if row['nr_rd']:
+                values[row['nr_rd']] = total
+            if parts and parts[0].startswith('+ '):
+                parts[0] = parts[0][2:]
+            verification = ' '.join(parts) + f" = {total:,.2f}"
+            old_val = float(row['value'] or 0)
+            if abs(total - old_val) > 0.001:
+                cursor.execute(
+                    "UPDATE bilant_results SET value = %s, verification = %s WHERE id = %s",
+                    (total, verification, row['id'])
+                )
+                updated += 1
+            else:
+                cursor.execute(
+                    "UPDATE bilant_results SET verification = %s WHERE id = %s",
+                    (verification, row['id'])
+                )
+    if updated:
+        logger.info('Recomputed %d stale formula_rd values across %d generation(s)', updated, len(gen_ids))
+
+
 def create_schema_incremental(conn, cursor):
     """Run all incremental column/index/table migrations.
 
