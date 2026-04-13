@@ -1441,80 +1441,23 @@ def api_get_organigram():
 @hr_required
 def api_get_employee_overview(user_id):
     """Get aggregated overview for Employee 360 page."""
-    from database import get_db, get_cursor, release_db, dict_from_row
     import traceback as _tb
+    from .repositories import EmployeeOverviewRepository
+
+    _overview_repo = EmployeeOverviewRepository()
 
     try:
         employee = get_hr_employee(user_id)
         if not employee:
             return jsonify({'success': False, 'error': 'Employee not found'}), 404
 
-        conn = get_db()
-        cursor = get_cursor(conn)
-
-        # BioStar mapping
-        cursor.execute('''
-            SELECT biostar_user_id, name AS user_name, email, phone, cnp,
-                   user_group_name, (status = 'active') AS is_active,
-                   lunch_break_minutes, working_hours,
-                   schedule_start::text, schedule_end::text,
-                   mapping_method, mapping_confidence
-            FROM biostar_employees
-            WHERE mapped_jarvis_user_id = %s
-            LIMIT 1
-        ''', (user_id,))
-        biostar_row = cursor.fetchone()
-        biostar = dict_from_row(biostar_row) if biostar_row else None
-
-        # Sincron mapping
-        cursor.execute('''
-            SELECT sincron_employee_id, company_name, nume, prenume, cnp,
-                   nr_contract, data_incepere_contract::text, mapping_method, mapping_confidence
-            FROM sincron_employees
-            WHERE mapped_jarvis_user_id = %s AND is_active = TRUE
-            LIMIT 1
-        ''', (user_id,))
-        sincron_row = cursor.fetchone()
-        sincron = dict_from_row(sincron_row) if sincron_row else None
-
-        # Connecteam mapping
-        cursor.execute('''
-            SELECT cu.connecteam_user_id, cu.connecteam_user_name,
-                   cu.connecteam_email, cu.mapping_method, cu.mapping_confidence,
-                   (SELECT COUNT(*) FROM connecteam_form_submissions cfs
-                    WHERE cfs.mapped_jarvis_user_id = %s) AS submission_count
-            FROM connecteam_users cu
-            WHERE cu.mapped_jarvis_user_id = %s AND cu.is_active = TRUE
-            LIMIT 1
-        ''', (user_id, user_id))
-        connecteam_row = cursor.fetchone()
-        connecteam = dict_from_row(connecteam_row) if connecteam_row else None
-
-        # Org path
-        cursor.execute('''
-            SELECT u.company, u.brand, u.department, u.subdepartment
-            FROM users u WHERE u.id = %s
-        ''', (user_id,))
-        org_row = cursor.fetchone()
-        org = dict_from_row(org_row) if org_row else {}
-
-        # Bonus count
-        cursor.execute('''
-            SELECT COUNT(*) AS bonus_count,
-                   COALESCE(SUM(bonus_days), 0) AS total_bonus_days,
-                   COALESCE(SUM(bonus_net), 0) AS total_bonus_net
-            FROM hr.event_bonuses WHERE user_id = %s
-        ''', (user_id,))
-        bonus_row = cursor.fetchone()
-        bonuses = dict_from_row(bonus_row) if bonus_row else {'bonus_count': 0, 'total_bonus_days': 0, 'total_bonus_net': 0}
-
-        # Form submissions count
-        cursor.execute('''
-            SELECT COUNT(*) AS submission_count
-            FROM form_submissions WHERE respondent_user_id = %s
-        ''', (user_id,))
-        forms_row = cursor.fetchone()
-        forms_count = forms_row['submission_count'] if forms_row else 0
+        biostar = _overview_repo.get_biostar_mapping(user_id)
+        sincron = _overview_repo.get_sincron_mapping(user_id)
+        connecteam = _overview_repo.get_connecteam_mapping(user_id)
+        org = _overview_repo.get_org_path(user_id) or {}
+        bonus_row = _overview_repo.get_bonus_summary(user_id)
+        bonuses = bonus_row if bonus_row else {'bonus_count': 0, 'total_bonus_days': 0, 'total_bonus_net': 0}
+        forms_count = _overview_repo.get_form_submissions_count(user_id)
 
         # ── Monthly work statistics (supports year/month query params) ──
         from datetime import date as _date
@@ -1522,101 +1465,33 @@ def api_get_employee_overview(user_id):
         _year = request.args.get('year', _today.year, type=int)
         _month = request.args.get('month', _today.month, type=int)
 
-        # BioStar attendance this month (days with punches + total hours)
+        # BioStar attendance this month
         attendance = {'days_present': 0, 'total_hours': 0.0, 'avg_daily_hours': 0.0}
+        lunch_h = 0.0
         if biostar:
-            cursor.execute('''
-                SELECT COUNT(DISTINCT event_datetime::date) AS days_present
-                FROM biostar_punch_logs
-                WHERE biostar_user_id = %s
-                  AND EXTRACT(YEAR FROM event_datetime) = %s
-                  AND EXTRACT(MONTH FROM event_datetime) = %s
-            ''', (biostar['biostar_user_id'], _year, _month))
-            att_row = cursor.fetchone()
-            attendance['days_present'] = att_row['days_present'] if att_row else 0
-
-            # Calculate total worked hours from first/last punch per day (subtract lunch break)
             lunch_h = float(biostar.get('lunch_break_minutes', 0)) / 60.0
-            cursor.execute('''
-                SELECT SUM(span_h) AS total_h, COUNT(*) AS day_count FROM (
-                    SELECT (EXTRACT(EPOCH FROM MAX(event_datetime) - MIN(event_datetime)) / 3600) AS span_h
-                    FROM biostar_punch_logs
-                    WHERE biostar_user_id = %s
-                      AND EXTRACT(YEAR FROM event_datetime) = %s
-                      AND EXTRACT(MONTH FROM event_datetime) = %s
-                    GROUP BY event_datetime::date
-                    HAVING COUNT(*) >= 2
-                ) sub
-            ''', (biostar['biostar_user_id'], _year, _month))
-            hours_row = cursor.fetchone()
-            raw_total_h = float(hours_row['total_h'] or 0) if hours_row else 0.0
-            days_with_punches = int(hours_row['day_count'] or 0) if hours_row else 0
+            attendance['days_present'] = _overview_repo.get_monthly_attendance_days(
+                biostar['biostar_user_id'], _year, _month)
+            raw_total_h, days_with_punches = _overview_repo.get_monthly_hours_aggregate(
+                biostar['biostar_user_id'], _year, _month)
             total_h = max(0, raw_total_h - (lunch_h * days_with_punches))
             attendance['total_hours'] = round(total_h, 1)
             if attendance['days_present'] > 0:
                 attendance['avg_daily_hours'] = round(total_h / attendance['days_present'], 1)
 
-        # Sincron timesheet summary for current month
-        timesheet_summary = {}
-        if sincron:
-            cursor.execute('''
-                SELECT short_code, unit, SUM(value) AS total
-                FROM sincron_timesheets
-                WHERE sincron_employee_id = %s AND company_name = %s
-                  AND year = %s AND month = %s
-                GROUP BY short_code, unit
-                ORDER BY short_code
-            ''', (sincron['sincron_employee_id'], sincron['company_name'], _year, _month))
-            for row in cursor.fetchall():
-                code = row['short_code'] if isinstance(row, dict) else row[0]
-                unit = row['unit'] if isinstance(row, dict) else row[1]
-                total = float(row['total'] if isinstance(row, dict) else row[2])
-                timesheet_summary[code] = {'value': total, 'unit': unit}
+        timesheet_summary = _overview_repo.get_monthly_sincron_summary(
+            sincron['sincron_employee_id'], sincron['company_name'], _year, _month
+        ) if sincron else {}
 
-        # Leave permits this month (Connecteam + JARVIS)
-        leave_stats = {'count': 0, 'total_hours': 0.0}
-        cursor.execute('''
-            SELECT COUNT(*) AS cnt, COALESCE(SUM(leave_hours), 0) AS total_h
-            FROM connecteam_form_submissions
-            WHERE mapped_jarvis_user_id = %s
-              AND EXTRACT(YEAR FROM leave_date) = %s
-              AND EXTRACT(MONTH FROM leave_date) = %s
-        ''', (user_id, _year, _month))
-        lp_row = cursor.fetchone()
-        if lp_row:
-            leave_stats['count'] = lp_row['cnt'] if isinstance(lp_row, dict) else lp_row[0]
-            leave_stats['total_hours'] = round(float(lp_row['total_h'] if isinstance(lp_row, dict) else lp_row[1]), 1)
+        lp_count, lp_hours = _overview_repo.get_monthly_leave_permits(user_id, _year, _month)
+        leave_stats = {'count': lp_count, 'total_hours': lp_hours}
 
-        # ── YTD leave balance from Sincron ──
-        ytd_leave = {}
-        if sincron:
-            cursor.execute('''
-                SELECT short_code, unit, SUM(value) AS total
-                FROM sincron_timesheets
-                WHERE sincron_employee_id = %s AND company_name = %s
-                  AND year = %s
-                  AND short_code IN ('CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG')
-                GROUP BY short_code, unit
-                ORDER BY short_code
-            ''', (sincron['sincron_employee_id'], sincron['company_name'], _year))
-            for row in cursor.fetchall():
-                code = row['short_code'] if isinstance(row, dict) else row[0]
-                unit = row['unit'] if isinstance(row, dict) else row[1]
-                total = float(row['total'] if isinstance(row, dict) else row[2])
-                ytd_leave[code] = {'value': total, 'unit': unit}
+        ytd_leave = _overview_repo.get_ytd_sincron_leave(
+            sincron['sincron_employee_id'], sincron['company_name'], _year
+        ) if sincron else {}
 
-        # YTD leave permits (Connecteam + JARVIS)
-        ytd_permits = {'count': 0, 'total_hours': 0.0}
-        cursor.execute('''
-            SELECT COUNT(*) AS cnt, COALESCE(SUM(leave_hours), 0) AS total_h
-            FROM connecteam_form_submissions
-            WHERE mapped_jarvis_user_id = %s
-              AND EXTRACT(YEAR FROM leave_date) = %s
-        ''', (user_id, _year))
-        ytp_row = cursor.fetchone()
-        if ytp_row:
-            ytd_permits['count'] = ytp_row['cnt'] if isinstance(ytp_row, dict) else ytp_row[0]
-            ytd_permits['total_hours'] = round(float(ytp_row['total_h'] if isinstance(ytp_row, dict) else ytp_row[1]), 1)
+        ytd_count, ytd_hours = _overview_repo.get_ytd_leave_permits(user_id, _year)
+        ytd_permits = {'count': ytd_count, 'total_hours': ytd_hours}
 
         # ── Daily attendance for bar chart ──
         import calendar
@@ -1625,27 +1500,16 @@ def api_get_employee_overview(user_id):
         working_h = float(biostar.get('working_hours', 8)) if biostar else 8.0
 
         if biostar:
-            cursor.execute('''
-                SELECT event_datetime::date AS day,
-                       EXTRACT(EPOCH FROM MAX(event_datetime) - MIN(event_datetime)) / 3600 AS span_h
-                FROM biostar_punch_logs
-                WHERE biostar_user_id = %s
-                  AND EXTRACT(YEAR FROM event_datetime) = %s
-                  AND EXTRACT(MONTH FROM event_datetime) = %s
-                GROUP BY event_datetime::date
-                HAVING COUNT(*) >= 2
-                ORDER BY day
-            ''', (biostar['biostar_user_id'], _year, _month))
+            daily_rows = _overview_repo.get_daily_punch_hours(biostar['biostar_user_id'], _year, _month)
             day_map = {}
-            for row in cursor.fetchall():
-                d = row['day'] if isinstance(row, dict) else row[0]
-                h = float(row['span_h'] if isinstance(row, dict) else row[1])
-                net_h = max(0, h - lunch_h) if h > 0 else 0  # subtract lunch break
+            for row in daily_rows:
+                d = row['day']
+                h = float(row['span_h'])
+                net_h = max(0, h - lunch_h) if h > 0 else 0
                 day_map[d.day if hasattr(d, 'day') else int(str(d).split('-')[2])] = round(net_h, 1)
-
             for d in range(1, days_in_month + 1):
                 dt = _date(_year, _month, d)
-                wd = dt.weekday()  # 0=Mon, 6=Sun
+                wd = dt.weekday()
                 daily_hours.append({
                     'day': d,
                     'date': dt.isoformat(),
@@ -1657,27 +1521,15 @@ def api_get_employee_overview(user_id):
         # Daily Sincron activity codes for timeline
         daily_codes = []
         if sincron:
-            cursor.execute('''
-                SELECT day, short_code, unit, value
-                FROM sincron_timesheets
-                WHERE sincron_employee_id = %s AND company_name = %s
-                  AND year = %s AND month = %s
-                  AND short_code != 'ZLS'
-                ORDER BY day, short_code
-            ''', (sincron['sincron_employee_id'], sincron['company_name'], _year, _month))
+            code_rows = _overview_repo.get_daily_sincron_codes(
+                sincron['sincron_employee_id'], sincron['company_name'], _year, _month)
             code_map: dict = {}
-            for row in cursor.fetchall():
-                day_num = int(row['day'] if isinstance(row, dict) else row[0])
-                code = row['short_code'] if isinstance(row, dict) else row[1]
-                val = float(row['value'] if isinstance(row, dict) else row[3])
-                if day_num not in code_map:
-                    code_map[day_num] = {}
-                code_map[day_num][code] = val
+            for row in code_rows:
+                day_num = int(row['day'])
+                code_map.setdefault(day_num, {})[row['short_code']] = float(row['value'])
             for d in range(1, days_in_month + 1):
                 if d in code_map:
                     daily_codes.append({'day': d, 'codes': code_map[d]})
-
-        release_db(conn)
 
         return jsonify({
             'success': True,

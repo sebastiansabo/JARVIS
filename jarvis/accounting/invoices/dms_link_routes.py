@@ -90,32 +90,15 @@ def api_upload_and_link(invoice_id):
     _folder_sync = FolderSyncService()
 
     # Get invoice info
-    inv = _dms_link_repo.query_one(
-        'SELECT id, invoice_number, supplier, invoice_date FROM invoices WHERE id = %s',
-        (invoice_id,)
-    )
+    inv = _dms_link_repo.get_invoice_basic(invoice_id)
     if not inv:
         return jsonify({'success': False, 'error': 'Invoice not found'}), 404
 
     # Resolve company_id from allocations (same pattern as store-to-dms)
-    company_id = None
-    alloc_row = _dms_link_repo.query_one(
-        'SELECT company FROM allocations WHERE invoice_id = %s LIMIT 1',
-        (invoice_id,)
-    )
-    if alloc_row and alloc_row.get('company'):
-        comp_row = _dms_link_repo.query_one(
-            'SELECT id FROM companies WHERE company = %s', (alloc_row['company'],)
-        )
-        if comp_row:
-            company_id = comp_row['id']
-    if not company_id:
-        company_id = current_user.company_id
+    company_id = _dms_link_repo.get_company_id_for_invoice(invoice_id) or current_user.company_id
 
     # Get "Facturi" category
-    cat_row = _dms_link_repo.query_one(
-        "SELECT id, name, icon, color FROM dms_categories WHERE slug = 'facturi'"
-    )
+    cat_row = _dms_link_repo.get_facturi_category()
     category_id = cat_row['id'] if cat_row else None
     category_name = cat_row['name'] if cat_row else 'Facturi'
     category_icon = cat_row['icon'] if cat_row else 'bi-folder'
@@ -137,12 +120,7 @@ def api_upload_and_link(invoice_id):
 
     # Auto-store invoice to DMS if not already stored
     stored_invoice_doc = None
-    existing_store = _dms_link_repo.query_one('''
-        SELECT l.document_id FROM invoice_dms_links l
-        JOIN dms_documents d ON d.id = l.document_id
-        WHERE l.invoice_id = %s AND d.deleted_at IS NULL
-          AND d.metadata->>'source' = 'store_to_dms'
-    ''', (invoice_id,))
+    existing_store = _dms_link_repo.get_stored_dms_doc(invoice_id)
 
     if not existing_store:
         try:

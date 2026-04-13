@@ -206,10 +206,7 @@ def api_set_single_permission_v2(permission_id, role_id):
             granted=granted,
         )
         # Sync module.access → roles table boolean
-        perm_info = _perm_repo.query_one(
-            'SELECT module_key, entity_key, action_key FROM permissions_v2 WHERE id = %s',
-            (permission_id,)
-        )
+        perm_info = _perm_repo.get_by_id(permission_id)
         if perm_info and perm_info['entity_key'] == 'module' and perm_info['action_key'] == 'access':
             col = MODULE_ACCESS_COLUMNS.get(perm_info['module_key'])
             if col:

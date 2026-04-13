@@ -458,11 +458,7 @@ def api_db_update_invoice(invoice_id):
     # Scope check: 'own' users can only edit their own invoices
     scope = _get_invoice_scope('edit')
     if scope == 'own':
-        row = _invoice_repo.query_one(
-            'SELECT 1 FROM allocations WHERE invoice_id = %s AND responsible_user_id = %s LIMIT 1',
-            (invoice_id, current_user.id)
-        )
-        if not row:
+        if not _allocation_repo.user_has_allocation(invoice_id, current_user.id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json()
@@ -484,11 +480,7 @@ def api_db_update_allocations(invoice_id):
     # Scope check: 'own' users can only edit allocations on their own invoices
     scope = _get_invoice_scope('edit')
     if scope == 'own':
-        row = _invoice_repo.query_one(
-            'SELECT 1 FROM allocations WHERE invoice_id = %s AND responsible_user_id = %s LIMIT 1',
-            (invoice_id, current_user.id)
-        )
-        if not row:
+        if not _allocation_repo.user_has_allocation(invoice_id, current_user.id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json()
@@ -705,12 +697,10 @@ def api_store_invoices_to_dms():
     if not invoice_ids:
         return jsonify({'success': False, 'error': 'invoice_ids required'}), 400
 
-    from core.base_repository import BaseRepository
     from dms.repositories import DocumentRepository, CategoryRepository
     from dms.services.folder_sync_service import FolderSyncService
     from core.tags.repositories.tag_repository import TagRepository
 
-    base_repo = BaseRepository()
     doc_repo = DocumentRepository()
     cat_repo = CategoryRepository()
     folder_sync = FolderSyncService()
@@ -718,13 +708,7 @@ def api_store_invoices_to_dms():
     dms_link_repo = InvoiceDmsLinkRepository()
 
     # Find "Facturi" category
-    facturi_cat = base_repo.query_one(
-        "SELECT id, name, icon, color FROM dms_categories WHERE slug = 'facturi' AND is_active = TRUE"
-    )
-    if not facturi_cat:
-        facturi_cat = base_repo.query_one(
-            "SELECT id, name, icon, color FROM dms_categories WHERE name ILIKE 'facturi' AND is_active = TRUE"
-        )
+    facturi_cat = dms_link_repo.get_facturi_category()
     category_id = facturi_cat['id'] if facturi_cat else None
     category_name = facturi_cat['name'] if facturi_cat else 'Facturi'
     category_icon = facturi_cat.get('icon', 'bi-folder') if facturi_cat else 'bi-folder'
@@ -743,30 +727,13 @@ def api_store_invoices_to_dms():
                 continue
 
             # Check if already stored (has a linked DMS doc with metadata.source = 'store_to_dms')
-            existing = base_repo.query_one('''
-                SELECT l.document_id FROM invoice_dms_links l
-                JOIN dms_documents d ON d.id = l.document_id
-                WHERE l.invoice_id = %s AND d.deleted_at IS NULL
-                  AND d.metadata->>'source' = 'store_to_dms'
-            ''', (inv_id,))
+            existing = dms_link_repo.get_stored_dms_doc(inv_id)
             if existing:
                 skipped.append({'id': inv_id, 'reason': 'already_stored', 'document_id': existing['document_id']})
                 continue
 
             # Resolve company from allocations or fallback to current user
-            company_name = None
-            if inv.get('allocations'):
-                company_name = inv['allocations'][0].get('company')
-
-            company_id = None
-            if company_name:
-                comp_row = base_repo.query_one(
-                    'SELECT id FROM companies WHERE company = %s', (company_name,))
-                if comp_row:
-                    company_id = comp_row['id']
-
-            if not company_id:
-                company_id = current_user.company_id
+            company_id = dms_link_repo.get_company_id_for_invoice(inv_id) or current_user.company_id
 
             if not company_id:
                 errors.append({'id': inv_id, 'error': 'Could not resolve company'})
@@ -793,9 +760,7 @@ def api_store_invoices_to_dms():
                 # Use first tag as subfolder under month (depth=4)
                 primary_tag = tags[0]
                 tag_names = [t['name'] for t in tags]
-                parent_path = base_repo.query_one(
-                    'SELECT path, depth FROM dms_folders WHERE id = %s', (folder_id,)
-                )
+                parent_path = dms_link_repo.get_folder_path(folder_id)
                 tag_subfolder = folder_sync._ensure_child(
                     parent_id=folder_id,
                     parent_path=parent_path['path'],
