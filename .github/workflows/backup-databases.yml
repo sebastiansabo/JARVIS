@@ -1,0 +1,45 @@
+name: Weekly Database Backup
+
+on:
+  schedule:
+    # Every Sunday at 02:00 UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Dump production database
+        env:
+          PROD_DB_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          echo "Backing up production DB ($DATE)..."
+          pg_dump "$PROD_DB_URL" --no-owner --no-acl -Fc -Z9 \
+            -f /tmp/jarvis_prod_${DATE}.dump
+          echo "Production dump size: $(du -sh /tmp/jarvis_prod_${DATE}.dump | cut -f1)"
+
+      - name: Dump staging database
+        env:
+          STAGING_DB_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          echo "Backing up staging DB ($DATE)..."
+          pg_dump "$STAGING_DB_URL" --no-owner --no-acl -Fc -Z9 \
+            -f /tmp/jarvis_staging_${DATE}.dump
+          echo "Staging dump size: $(du -sh /tmp/jarvis_staging_${DATE}.dump | cut -f1)"
+
+      - name: Upload backups as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backups-${{ github.run_id }}
+          path: /tmp/jarvis_*.dump
+          retention-days: 90
+          if-no-files-found: error
