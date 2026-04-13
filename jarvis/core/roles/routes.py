@@ -210,11 +210,7 @@ def api_set_single_permission_v2(permission_id, role_id):
         if perm_info and perm_info['entity_key'] == 'module' and perm_info['action_key'] == 'access':
             col = MODULE_ACCESS_COLUMNS.get(perm_info['module_key'])
             if col:
-                flag_value = scope != 'deny'
-                _role_repo.execute(
-                    f'UPDATE roles SET {col} = %s WHERE id = %s',
-                    (flag_value, role_id)
-                )
+                _role_repo.set_module_access_flag(role_id, col, scope != 'deny')
         return jsonify({'success': True})
     except Exception as e:
         return safe_error_response(e)

@@ -6,6 +6,7 @@ Handles all database operations for role management.
 import logging
 
 from core.base_repository import BaseRepository
+from psycopg2 import sql as _sql
 
 logger = logging.getLogger('jarvis.core.roles.role_repository')
 
@@ -115,3 +116,10 @@ class RoleRepository(BaseRepository):
             cursor.execute('DELETE FROM roles WHERE id = %s', (role_id,))
             return cursor.rowcount > 0
         return self.execute_many(_work)
+
+    def set_module_access_flag(self, role_id: int, column: str, value: bool):
+        """Update a boolean access-flag column on a role row."""
+        self.execute(
+            _sql.SQL('UPDATE roles SET {} = %s WHERE id = %s').format(_sql.Identifier(column)),
+            (value, role_id)
+        )

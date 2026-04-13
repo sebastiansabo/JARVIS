@@ -799,10 +799,7 @@ def api_store_invoices_to_dms():
 
             # Set folder_id on the document
             if target_folder_id:
-                base_repo.execute(
-                    'UPDATE dms_documents SET folder_id = %s WHERE id = %s',
-                    (target_folder_id, doc['id'])
-                )
+                dms_link_repo.set_document_folder(doc['id'], target_folder_id)
 
             # Auto-link the DMS document to the invoice
             dms_link_repo.link(inv_id, doc['id'], current_user.id)

@@ -133,3 +133,10 @@ class InvoiceDmsLinkRepository(BaseRepository):
         return self.query_one(
             'SELECT path, depth FROM dms_folders WHERE id = %s', (folder_id,)
         )
+
+    def set_document_folder(self, document_id, folder_id):
+        """Set the folder_id on a DMS document."""
+        self.execute(
+            'UPDATE dms_documents SET folder_id = %s WHERE id = %s',
+            (folder_id, document_id)
+        )

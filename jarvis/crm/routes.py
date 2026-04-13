@@ -1013,23 +1013,12 @@ def api_client_enrich(client_id):
 
         # Step 0: Local DB lookup — check if we already have a CUI for a similar company
         if not cui and search_name:
-            try:
-                local_match = _client_repo.query_one('''
-                    SELECT cp.cui, c.display_name
-                    FROM client_profiles cp
-                    JOIN crm_clients c ON c.id = cp.client_id
-                    WHERE cp.cui IS NOT NULL AND cp.cui != ''
-                      AND c.name_normalized % %s
-                    ORDER BY similarity(c.name_normalized, %s) DESC
-                    LIMIT 1
-                ''', (search_name.lower(), search_name.lower()))
-                if local_match and local_match.get('cui'):
-                    cui = str(local_match['cui']).strip()
-                    logger.info('Local DB found CUI %s for "%s" (matched: %s)',
-                                cui, search_name, local_match.get('display_name'))
-                    _fs_repo.update_profile(client_id, {'cui': cui})
-            except Exception:
-                pass  # trigram extension might not be available, skip
+            local_match = _client_repo.find_by_normalized_name(search_name.lower())
+            if local_match and local_match.get('cui'):
+                cui = str(local_match['cui']).strip()
+                logger.info('Local DB found CUI %s for "%s" (matched: %s)',
+                            cui, search_name, local_match.get('display_name'))
+                _fs_repo.update_profile(client_id, {'cui': cui})
 
         # Step 1: Search connectors by company name to find/verify CUI
         if search_name:
@@ -1229,25 +1218,14 @@ def api_client_lookup_cui(client_id):
 
     # Fallback: local DB lookup for CUI from already-enriched companies
     if not results:
-        try:
-            local_match = _client_repo.query_one('''
-                SELECT cp.cui, c.display_name, c.nr_reg
-                FROM client_profiles cp
-                JOIN crm_clients c ON c.id = cp.client_id
-                WHERE cp.cui IS NOT NULL AND cp.cui != ''
-                  AND c.name_normalized % %s
-                ORDER BY similarity(c.name_normalized, %s) DESC
-                LIMIT 1
-            ''', (query.lower(), query.lower()))
-            if local_match and local_match.get('cui'):
-                results = [{
-                    'cui': str(local_match['cui']),
-                    'name': local_match.get('display_name', ''),
-                    'nr_reg': local_match.get('nr_reg', ''),
-                    'source': 'local_db',
-                }]
-        except Exception:
-            pass
+        local_match = _client_repo.find_by_normalized_name(query.lower(), include_nr_reg=True)
+        if local_match and local_match.get('cui'):
+            results = [{
+                'cui': str(local_match['cui']),
+                'name': local_match.get('display_name', ''),
+                'nr_reg': local_match.get('nr_reg', ''),
+                'source': 'local_db',
+            }]
 
     # Also auto-detect company type
     detected_type = detect_company_type(client.get('display_name', ''))
