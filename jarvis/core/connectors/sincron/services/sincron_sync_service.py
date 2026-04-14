@@ -291,12 +291,10 @@ class SincronSyncService:
 
     def get_employee_timesheet(self, jarvis_user_id, year, month):
         """Get monthly timesheet for a JARVIS user."""
-        rows = self.repo.get_timesheet_by_jarvis_user(jarvis_user_id, year, month)
-        if not rows:
-            return {'days': {}, 'summary': [], 'employee': None}
-
-        # Get employee info
+        # Get employee info first — even if no timesheet data for this month
         employee = self.repo.get_employee_by_jarvis_id(jarvis_user_id)
+
+        rows = self.repo.get_timesheet_by_jarvis_user(jarvis_user_id, year, month)
 
         # Group by day
         days = {}

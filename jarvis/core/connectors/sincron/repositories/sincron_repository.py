@@ -64,6 +64,7 @@ class SincronRepository(BaseRepository):
             FROM sincron_employees se
             LEFT JOIN users u ON u.id = se.mapped_jarvis_user_id
             WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
+            ORDER BY se.id ASC
             LIMIT 1
         ''', (jarvis_user_id,))
 
