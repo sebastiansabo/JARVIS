@@ -451,7 +451,7 @@ def api_profile_pontaje():
             'mapped': True,
             'employee': {
                 'biostar_user_id': employee['biostar_user_id'],
-                'name': employee['name'],
+                'name': employee['user_name'],
                 'lunch_break_minutes': employee.get('lunch_break_minutes', 60),
                 'working_hours': employee.get('working_hours', 8),
                 'schedule_start': employee.get('schedule_start'),
