@@ -230,6 +230,9 @@ def _register_blueprints(flask_app: Flask):
     from carpark import carpark_bp
     flask_app.register_blueprint(carpark_bp)
 
+    from core.telemetry import telemetry_bp
+    flask_app.register_blueprint(telemetry_bp)
+
 
 def _register_hooks(flask_app: Flask):
     """Register before/after request hooks and approval notification handlers."""

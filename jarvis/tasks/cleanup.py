@@ -22,6 +22,7 @@ from tasks.biostar import sync_biostar_events, sync_biostar_users, auto_adjust_b
 from tasks.hr_attendance import check_missing_punches
 from tasks.carpark import cleanup_vin_cache
 from tasks.holidays import populate_holidays
+from tasks.telemetry import close_stale_sessions, cleanup_old_telemetry
 
 logger = get_logger('jarvis.tasks')
 
@@ -257,6 +258,29 @@ def start_scheduler():
         hour=3,
         minute=30,
         id='carpark_vin_cache_cleanup',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    # Telemetry — close stale sessions (every 2 minutes)
+    scheduler.add_job(
+        close_stale_sessions,
+        'interval',
+        minutes=2,
+        id='telemetry_close_stale_sessions',
+        replace_existing=True,
+        misfire_grace_time=60,
+        coalesce=True,
+    )
+
+    # Telemetry — cleanup old data (03:00 daily)
+    scheduler.add_job(
+        cleanup_old_telemetry,
+        'cron',
+        hour=3,
+        minute=0,
+        id='telemetry_cleanup_old_data',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,
