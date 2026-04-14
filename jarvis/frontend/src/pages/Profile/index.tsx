@@ -684,6 +684,7 @@ function QuickCheckinCard() {
 function PontajePanel() {
   const today = todayStr()
   const [chartView, setChartView] = useState<'week' | 'month' | '3m'>('month')
+  const [tableDays, setTableDays] = useState<7 | 14 | 30>(14)
 
   const { data, isLoading } = useQuery({
     queryKey: ['profile', 'pontaje'],
@@ -731,19 +732,28 @@ function PontajePanel() {
     return result
   }, [history, chartDays, chartView, employee?.working_hours])
 
-  const last7 = useMemo(() => {
-    const days: BioStarDayHistory[] = []
-    for (let i = 0; i < 7; i++) {
+  const recentDays = useMemo(() => {
+    const days: (BioStarDayHistory & { isWeekend?: boolean; isMissing?: boolean })[] = []
+    for (let i = 0; i < tableDays; i++) {
       const dateStr = daysAgo(i)
+      const d = new Date(dateStr + 'T00:00:00')
+      const dow = d.getDay()
+      const isWeekend = dow === 0 || dow === 6
       const found = history.find((h) => h.date === dateStr)
       if (found) {
-        days.push(found)
+        days.push({ ...found, isWeekend, isMissing: false })
       } else {
-        days.push({ date: dateStr, first_punch: '', last_punch: '', total_punches: 0, duration_seconds: null })
+        days.push({
+          date: dateStr, first_punch: '', last_punch: '', total_punches: 0, duration_seconds: null,
+          isWeekend,
+          isMissing: !isWeekend && dateStr < today,
+        })
       }
     }
     return days
-  }, [history])
+  }, [history, tableDays, today])
+
+  const missingCount = useMemo(() => recentDays.filter(d => d.isMissing).length, [recentDays])
 
   if (isLoading) {
     return (
@@ -782,7 +792,7 @@ function PontajePanel() {
         <StatCard title="Days Present (90d)" value={stats.daysPresent} icon={<Fingerprint className="h-4 w-4" />} />
         <StatCard title="Avg Hours/Day" value={stats.avgHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
         <StatCard title="Total Hours (90d)" value={stats.totalHours.toFixed(0)} icon={<Clock className="h-4 w-4" />} />
-        <StatCard title="Max Hours" value={stats.maxHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
+        <StatCard title={`Missing (${tableDays}d)`} value={missingCount} icon={<Clock className="h-4 w-4" />} className={missingCount > 0 ? 'border-amber-300 dark:border-amber-700' : ''} />
       </div>
 
       {/* Daily chart */}
@@ -814,10 +824,19 @@ function PontajePanel() {
         </CardContent>
       </Card>
 
-      {/* Last 7 days */}
+      {/* Recent days with missing punch detection */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Last 7 Days</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Attendance History</CardTitle>
+            <div className="flex gap-1">
+              {([7, 14, 30] as const).map((d) => (
+                <Button key={d} variant={tableDays === d ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setTableDays(d)}>
+                  {d}d
+                </Button>
+              ))}
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="rounded-md border">
@@ -828,11 +847,11 @@ function PontajePanel() {
                   <TableHead className="text-center">Check In</TableHead>
                   <TableHead className="text-center">Check Out</TableHead>
                   <TableHead className="text-center">Duration</TableHead>
-                  <TableHead className="text-center">Punches</TableHead>
+                  <TableHead className="text-center">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {last7.map((day) => {
+                {recentDays.map((day) => {
                   const isToday = day.date === today
                   const lunch = day.lunch_break_minutes ?? 60
                   const net = netSec(day.duration_seconds, lunch)
@@ -841,7 +860,11 @@ function PontajePanel() {
                   const isShort = netH > 0 && netH < expectedH
                   const isAbsent = day.total_punches === 0
                   return (
-                    <TableRow key={day.date} className={cn(isToday && 'bg-muted/30')}>
+                    <TableRow key={day.date} className={cn(
+                      isToday && 'bg-muted/30',
+                      day.isWeekend && 'bg-muted/20',
+                      day.isMissing && 'bg-amber-50 dark:bg-amber-950/20',
+                    )}>
                       <TableCell className="font-medium">
                         {fmtDate(day.date)}
                         {isToday && <Badge variant="secondary" className="ml-2 text-[10px]">Today</Badge>}
@@ -870,7 +893,7 @@ function PontajePanel() {
                       </TableCell>
                       <TableCell className="text-center">
                         {isAbsent ? (
-                          <Badge variant="outline" className="text-xs text-muted-foreground">Absent</Badge>
+                          <span className="text-sm text-muted-foreground">—</span>
                         ) : day.total_punches === 1 ? (
                           <span className="text-sm text-muted-foreground">—</span>
                         ) : (
@@ -880,10 +903,16 @@ function PontajePanel() {
                         )}
                       </TableCell>
                       <TableCell className="text-center">
-                        {isAbsent ? (
-                          <span className="text-sm text-muted-foreground">—</span>
+                        {day.isMissing ? (
+                          <Badge variant="outline" className="text-xs text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30">Missing punch</Badge>
+                        ) : day.isWeekend && isAbsent ? (
+                          <span className="text-xs text-muted-foreground">Weekend</span>
+                        ) : isAbsent ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : day.total_punches === 1 ? (
+                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
                         ) : (
-                          <Badge variant="secondary" className="text-xs">{day.total_punches}</Badge>
+                          <Badge variant="secondary" className="text-xs">{day.total_punches} punches</Badge>
                         )}
                       </TableCell>
                     </TableRow>
