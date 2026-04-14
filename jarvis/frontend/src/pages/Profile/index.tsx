@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTabParam } from '@/hooks/useTabParam'
 import {
@@ -1166,6 +1167,7 @@ function groupByCompany<T extends { jarvis_company?: string | null }>(data: T[])
 
 function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[]; isMobile: boolean; date: string }) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const navigate = useNavigate()
   const groups = useMemo(() => groupByCompany(data), [data])
   const hasMultipleCompanies = groups.length > 1
 
@@ -1198,7 +1200,7 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
     const netH = net / 3600
     const expectedH = Number(r.working_hours ?? 8)
     const isShort = netH > 0 && netH < expectedH
-    const isAbsent = r.total_punches === 0
+    const isAbsent = !r.total_punches
     const isExpanded = expandedId === r.biostar_user_id
     const hasAdjustment = !!r.adjustment_type
 
@@ -1206,7 +1208,7 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
       <>
         <TableRow
           key={r.biostar_user_id}
-          className={cn('cursor-pointer hover:bg-muted/50', isExpanded && 'bg-muted/30')}
+          className={cn(!isAbsent && 'cursor-pointer hover:bg-muted/50', isExpanded && 'bg-muted/30')}
           onClick={() => !isAbsent && toggle(r.biostar_user_id)}
         >
           <TableCell className="px-2">
@@ -1265,10 +1267,21 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
           <TableCell className="text-center text-sm text-muted-foreground">
             {r.schedule_start || '08:00'} - {r.schedule_end || '17:00'}
           </TableCell>
+          <TableCell className="text-center">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 w-6 p-0"
+              onClick={(e) => { e.stopPropagation(); navigate(`/hr/pontaje/${r.biostar_user_id}`) }}
+              title="View full pontaje"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Button>
+          </TableCell>
         </TableRow>
         {isExpanded && (
           <TableRow key={`${r.biostar_user_id}-detail`}>
-            <TableCell colSpan={8} className="p-0">
+            <TableCell colSpan={9} className="p-0">
               <PunchDetailRow biostarUserId={r.biostar_user_id} date={date} row={r} />
             </TableCell>
           </TableRow>
@@ -1290,6 +1303,7 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
             <TableHead className="text-center">Duration</TableHead>
             <TableHead className="text-center">Punches</TableHead>
             <TableHead className="text-center">Schedule</TableHead>
+            <TableHead className="w-10"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1297,7 +1311,7 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
             ? groups.map((g) => (
                 <>
                   <TableRow key={`company-${g.company}`} className="bg-muted/40 hover:bg-muted/40">
-                    <TableCell colSpan={8} className="py-1.5 px-4">
+                    <TableCell colSpan={9} className="py-1.5 px-4">
                       <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         <Building2 className="h-3 w-3" />
                         {g.company} <span className="font-normal">({g.rows.length})</span>

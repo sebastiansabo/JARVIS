@@ -110,7 +110,7 @@ export default function EmployeeProfile() {
   // Per-day adjustment mutation
   const adjustDayMut = useMutation({
     mutationFn: (day: BioStarDayHistory) => {
-      if (!employee || !day.first_punch) throw new Error('No data')
+      if (!employee) throw new Error('No data')
       const datePart = day.date
       const wh = employee.working_hours ?? 8
       const lunch = employee.lunch_break_minutes ?? 60
@@ -132,8 +132,8 @@ export default function EmployeeProfile() {
         date: datePart,
         adjusted_first_punch: fmtMins(startMin),
         adjusted_last_punch: fmtMins(endMin),
-        original_first_punch: day.first_punch,
-        original_last_punch: day.last_punch || day.first_punch,
+        original_first_punch: day.first_punch || '',
+        original_last_punch: day.last_punch || day.first_punch || '',
         schedule_start: schedStart,
         schedule_end: employee.schedule_end?.slice(0, 5),
         lunch_break_minutes: lunch,
@@ -520,6 +520,8 @@ export default function EmployeeProfile() {
                     <TableCell className="text-center">
                       {isAbsent && day.isHoliday ? (
                         <Badge variant="outline" className="text-xs text-blue-600 border-blue-300">Holiday</Badge>
+                      ) : isAbsent && day.adjusted_first_punch ? (
+                        <Badge variant="outline" className="text-xs text-green-600 border-green-300">Adjusted</Badge>
                       ) : isAbsent ? (
                         <Badge variant="outline" className="text-xs text-muted-foreground">Absent</Badge>
                       ) : day.total_punches === 1 ? (
@@ -539,7 +541,7 @@ export default function EmployeeProfile() {
                     </TableCell>
                     {canAdjust && (
                       <TableCell className="text-center">
-                        {!isAbsent && !isToday && (
+                        {!isToday && !day.isHoliday && (
                           day.adjusted_first_punch ? (
                             <Button
                               size="sm"

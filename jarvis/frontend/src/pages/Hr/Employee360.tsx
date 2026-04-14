@@ -722,7 +722,6 @@ function PontajPanel({
 
   const adjustDayMut = useMutation({
     mutationFn: (day: BioStarDayHistory) => {
-      if (!day.first_punch) throw new Error('No data')
       const datePart = day.date
       const wh = workingHours ?? 8
       const lunch = lunchBreak ?? 60
@@ -744,8 +743,8 @@ function PontajPanel({
         date: datePart,
         adjusted_first_punch: fmtMins(startMin),
         adjusted_last_punch: fmtMins(endMin),
-        original_first_punch: day.first_punch,
-        original_last_punch: day.last_punch || day.first_punch,
+        original_first_punch: day.first_punch || '',
+        original_last_punch: day.last_punch || day.first_punch || '',
         schedule_start: schedStart,
         schedule_end: scheduleEnd?.slice(0, 5),
         lunch_break_minutes: lunch,
@@ -901,6 +900,8 @@ function PontajPanel({
                         <TableCell className="text-right tabular-nums text-xs font-medium">
                           {isAbsent && isHoliday ? (
                             <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-300">Holiday</Badge>
+                          ) : isAbsent && d.adjusted_first_punch ? (
+                            <Badge variant="outline" className="text-[10px] text-green-600 border-green-300">Adjusted</Badge>
                           ) : isAbsent ? (
                             <Badge variant="outline" className="text-[10px] text-muted-foreground">Absent</Badge>
                           ) : notExited ? (
@@ -914,7 +915,7 @@ function PontajPanel({
                         </TableCell>
                         {canAdjust && (
                           <TableCell className="text-center">
-                            {!isAbsent && !isToday && (
+                            {!isToday && !isHoliday && (
                               d.adjusted_first_punch ? (
                                 <Button
                                   size="sm"

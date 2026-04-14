@@ -444,8 +444,7 @@ def adjust_employee():
     if not data:
         return jsonify({'success': False, 'error': 'No data provided'}), 400
 
-    required = ['biostar_user_id', 'date', 'adjusted_first_punch', 'adjusted_last_punch',
-                'original_first_punch', 'original_last_punch']
+    required = ['biostar_user_id', 'date', 'adjusted_first_punch', 'adjusted_last_punch']
     for key in required:
         if key not in data:
             return jsonify({'success': False, 'error': f'{key} required'}), 400
@@ -453,8 +452,8 @@ def adjust_employee():
     try:
         adj_first = datetime.fromisoformat(data['adjusted_first_punch'])
         adj_last = datetime.fromisoformat(data['adjusted_last_punch'])
-        orig_first = datetime.fromisoformat(data['original_first_punch'])
-        orig_last = datetime.fromisoformat(data['original_last_punch'])
+        orig_first = datetime.fromisoformat(data['original_first_punch']) if data.get('original_first_punch') else None
+        orig_last = datetime.fromisoformat(data['original_last_punch']) if data.get('original_last_punch') else None
     except (ValueError, TypeError) as e:
         return jsonify({'success': False, 'error': f'Invalid datetime: {e}'}), 400
 
