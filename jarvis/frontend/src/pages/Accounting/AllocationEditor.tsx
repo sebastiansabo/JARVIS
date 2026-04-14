@@ -422,12 +422,13 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
     }
   }, [hasBrands, deptsFetched, departments, row.brand, row.department, onUpdate])
 
-  // Auto-set department to brand when brand is selected but has no L2 departments
+  // Auto-set department to brand when brand is selected but has no L2 departments.
+  // Only fires for NEW rows (no existing department saved) to avoid overwriting legacy data.
   useEffect(() => {
-    if (hasBrands && row.brand && deptsFetched && departments.length === 0 && row.department !== row.brand) {
+    if (hasBrands && row.brand && deptsFetched && departments.length === 0 && !row.department) {
       onUpdate({ department: row.brand })
     }
-  }, [hasBrands, row.brand, deptsFetched, departments.length, row.department, row.brand, onUpdate])
+  }, [hasBrands, row.brand, deptsFetched, departments.length, row.department, onUpdate])
 
   // Cascade: L2 requires L1 selected; L3 requires L2 selected.
   // Also show L2 when a department is already saved (even if API list is empty/loading).
@@ -468,6 +469,9 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
                 <SelectValue placeholder="Select brand..." />
               </SelectTrigger>
               <SelectContent>
+                {row.brand && !brands.includes(row.brand) && (
+                  <SelectItem key={row.brand} value={row.brand}>{row.brand}</SelectItem>
+                )}
                 {brands.filter(Boolean).map((b) => (
                   <SelectItem key={b} value={b}>{b}</SelectItem>
                 ))}
