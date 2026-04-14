@@ -24,3 +24,8 @@ export function useIsMobile(): boolean {
 export function useIsTablet(): boolean {
   return useMediaQuery('(min-width: 768px) and (max-width: 1023px)')
 }
+
+/** True below 1280px — used to hide wide toolbar elements (brand filters etc.) */
+export function useIsNarrow(): boolean {
+  return useMediaQuery('(max-width: 1279px)')
+}
