@@ -1272,7 +1272,7 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
               size="sm"
               variant="ghost"
               className="h-6 w-6 p-0"
-              onClick={(e) => { e.stopPropagation(); navigate(`/hr/pontaje/${r.biostar_user_id}`) }}
+              onClick={(e) => { e.stopPropagation(); navigate(`/app/hr/pontaje/${r.biostar_user_id}`) }}
               title="View full pontaje"
             >
               <ExternalLink className="h-3.5 w-3.5" />
