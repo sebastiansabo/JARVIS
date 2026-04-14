@@ -1,4 +1,47 @@
 """Shared imports, blueprint reference, decorators, and helpers for HR Events routes."""
+
+__all__ = [
+    # stdlib / flask
+    'date', 'wraps',
+    'render_template', 'request', 'jsonify', 'redirect', 'url_for', 'flash',
+    'g', 'current_app', 'login_required', 'current_user',
+    # app imports
+    'events_bp', 'can_edit_bonus', 'get_lock_status',
+    'error_response', 'handle_api_errors',
+    'v2_permission_required', 'PermissionRepository', 'check_permission_v2',
+    # database functions
+    'get_all_hr_employees', 'get_hr_employee', 'save_hr_employee',
+    'update_hr_employee', 'delete_hr_employee', 'search_hr_employees',
+    'get_all_hr_events', 'get_hr_event', 'save_hr_event', 'update_hr_event',
+    'delete_hr_event', 'delete_hr_events_bulk',
+    'get_all_event_bonuses', 'get_event_bonus', 'save_event_bonus',
+    'save_event_bonuses_bulk', 'update_event_bonus', 'delete_event_bonus',
+    'delete_event_bonuses_bulk', 'delete_event_bonuses_by_employee',
+    'delete_event_bonuses_by_event',
+    'get_event_bonuses_summary', 'get_bonuses_by_month',
+    'get_bonuses_by_employee', 'get_bonuses_by_event',
+    'get_all_bonus_types', 'get_bonus_type', 'save_bonus_type',
+    'update_bonus_type', 'delete_bonus_type',
+    'can_access_bonus', 'can_access_employee',
+    'get_all_companies_with_brands', 'create_company', 'update_company', 'delete_company',
+    'get_all_company_brands', 'create_company_brand', 'update_company_brand', 'delete_company_brand',
+    'get_all_department_structures', 'create_department_structure',
+    'update_department_structure', 'delete_department_structure', 'get_name_by_id',
+    'get_all_master_brands', 'create_master_brand', 'update_master_brand', 'delete_master_brand',
+    'get_all_master_departments', 'create_master_department',
+    'update_master_department', 'delete_master_department',
+    'get_all_master_subdepartments', 'create_master_subdepartment',
+    'update_master_subdepartment', 'delete_master_subdepartment',
+    'get_managed_employee_ids', 'is_manager',
+    # models
+    'get_companies', 'get_brands_for_company', 'get_departments_for_company',
+    'clear_structure_cache',
+    # decorators & helpers
+    'hr_required', 'hr_manager_required', 'hr_permission_required',
+    'MONTH_NAMES',
+    '_compute_bonus_net',
+]
+
 from datetime import date
 from functools import wraps
 from flask import render_template, request, jsonify, redirect, url_for, flash, g, current_app

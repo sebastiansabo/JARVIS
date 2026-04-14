@@ -17,6 +17,24 @@ from core.roles.repositories.permission_repository import PermissionRepository
 
 logger = logging.getLogger('jarvis.statements.routes')
 
+__all__ = [
+    # stdlib / flask
+    're', 'logging', 'time', 'csv', 'io', 'defaultdict', 'wraps', 'date',
+    'request', 'jsonify', 'redirect', 'Response',
+    'login_required', 'current_user',
+    # app imports
+    'statements_bp', 'StatementsService', 'api_login_required', 'PermissionRepository',
+    'logger',
+    # singletons (private — exported explicitly)
+    '_perm_repo',
+    # constants & public helpers
+    'MAX_FILE_SIZE', 'MAX_TOTAL_SIZE', 'MAX_BULK_ITEMS', 'RATE_LIMIT_REQUESTS', 'RATE_LIMIT_WINDOW',
+    'RateLimiter', 'bulk_rate_limiter',
+    'statements_service',
+    'statements_access_required', 'rate_limit_bulk', 'validate_regex', 'get_json_or_error',
+    '_validate_upload_files',
+]
+
 # Initialize service
 statements_service = StatementsService()
 _perm_repo = PermissionRepository()

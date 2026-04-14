@@ -1,5 +1,25 @@
 """Shared imports, singletons, helpers, and decorators for field_sales routes."""
 
+__all__ = [
+    # stdlib / flask
+    'logging', 'threading', 'date', 'datetime', 'wraps',
+    'jsonify', 'request', 'g', 'current_app', 'current_user',
+    # app imports
+    'field_sales_bp', 'VisitRepository', 'ClientFSRepository',
+    'ai_service', 'segmentation_service',
+    'notify_visit_planned', 'notify_high_value_opportunity', 'notify_risk_flags',
+    'notify_high_renewal_score', 'notify_business_client_detected',
+    'PermissionRepository', 'logger',
+    # singletons (private — exported explicitly)
+    '_visit_repo', '_client_repo', '_perm_repo',
+    # helpers & decorators
+    '_get_current_user', 'jwt_or_login_required',
+    'ALLOWED_VISIT_TYPES', 'ALLOWED_OUTCOMES',
+    '_safe_error', '_has_permission', '_is_manager',
+    'field_sales_required', 'field_sales_manager_required',
+    '_require_fleet_permission', '_run_background',
+]
+
 import logging
 import threading
 from datetime import date, datetime

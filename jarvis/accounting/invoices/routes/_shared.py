@@ -16,6 +16,23 @@ from accounting.invoices.services.invoice_service import UserContext
 from core.utils.api_helpers import error_response, safe_error_response, handle_api_errors
 from core.roles.repositories.permission_repository import PermissionRepository
 
+__all__ = [
+    # stdlib / flask
+    'os', 'logging', 'jsonify', 'request', 'redirect', 'login_required', 'current_user',
+    # blueprint
+    'invoices_bp',
+    # repositories / services
+    'InvoiceRepository', 'AllocationRepository', 'SummaryRepository',
+    'InvoiceDmsLinkRepository', 'InvoiceService', 'UserContext',
+    'PermissionRepository',
+    # helpers
+    'error_response', 'safe_error_response', 'handle_api_errors',
+    'logger',
+    # private singletons & helpers (exported explicitly so import * works)
+    '_invoice_repo', '_allocation_repo', '_summary_repo', '_service', '_perm_repo',
+    '_LEGACY_FLAG', '_check_invoice_perm', '_get_invoice_scope', '_get_user_context',
+]
+
 logger = logging.getLogger('jarvis.invoices.routes')
 
 _invoice_repo = InvoiceRepository()

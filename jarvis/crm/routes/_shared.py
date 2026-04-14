@@ -1,5 +1,25 @@
 """Shared imports, blueprint reference, decorators, and helpers for CRM routes."""
 
+__all__ = [
+    # stdlib / flask
+    'io', 'csv', 'os', 'tempfile', 'logging', 'threading', 'wraps',
+    'jsonify', 'request', 'Response', 'send_file', 'g',
+    'login_required', 'current_user',
+    # app imports
+    'crm_bp', 'ClientRepository', 'DealRepository', 'ImportRepository',
+    'IMPORT_HANDLERS', 'PermissionRepository', 'logger',
+    # singletons (private — exported explicitly)
+    '_client_repo', '_deal_repo', '_import_repo', '_perm_repo',
+    '_enrichment_col_added',
+    # private helpers
+    '_ai_company_lookup', '_ensure_enrichment_column', '_parse_name_nr_reg',
+    '_auto_fix_client_on_load', '_parse_anaf_address',
+    '_extract_profile_from_connector', '_apply_connector_to_profile',
+    '_compute_business_value', '_csv_response',
+    # public decorator
+    'crm_required',
+]
+
 import io
 import csv
 import os
