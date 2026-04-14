@@ -290,6 +290,7 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
   const dailyData = ms?.daily_hours ?? []
   const missingPunchDays: string[] = ms?.missing_punch_days ?? []
   const missingPunchDayNums = new Set(missingPunchDays.map(d => parseInt(d.split('-')[2], 10)))
+  const holidayDayNums = new Set((ms?.holidays ?? []).map((h: { date: string }) => parseInt(h.date.split('-')[2], 10)))
 
   // Leave donut data — in hours
   const donutSlices = useMemo(() => {
@@ -376,7 +377,7 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
             <CardTitle className="text-sm font-medium">Daily Attendance — {monthName}</CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <AttendanceBarChart data={dailyData} missingDays={missingPunchDayNums} />
+            <AttendanceBarChart data={dailyData} missingDays={missingPunchDayNums} holidayDays={holidayDayNums} />
           </CardContent>
         </Card>
       )}
@@ -546,7 +547,7 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
 
 // ── Attendance Bar Chart (SVG) ──
 
-function AttendanceBarChart({ data, missingDays = new Set() }: { data: { day: number; date: string; hours: number; expected: number; weekend: boolean }[]; missingDays?: Set<number> }) {
+function AttendanceBarChart({ data, missingDays = new Set(), holidayDays = new Set() }: { data: { day: number; date: string; hours: number; expected: number; weekend: boolean; holiday?: boolean; holiday_name?: string | null }[]; missingDays?: Set<number>; holidayDays?: Set<number> }) {
   const maxHours = Math.max(...data.map(d => d.hours), ...data.map(d => d.expected), 1)
   const yMax = Math.ceil(maxHours + 1)
   const w = Math.max(700, data.length * 26)
@@ -586,24 +587,30 @@ function AttendanceBarChart({ data, missingDays = new Set() }: { data: { day: nu
           const x = pad.l + gap + i * (barWidth + gap)
           const barH = (d.hours / yMax) * ih
           const y = pad.t + ih - barH
-          const isMissing = missingDays.has(d.day)
-          const color = isMissing
-            ? 'hsl(0, 72%, 51%)'
-            : d.weekend && d.hours === 0
-              ? 'hsl(0, 0%, 90%)'
-              : d.hours === 0
-                ? 'hsl(0, 0%, 80%)'
-                : d.hours >= d.expected
-                  ? 'hsl(142, 76%, 36%)'
-                  : d.hours >= d.expected * 0.75
-                    ? 'hsl(38, 92%, 50%)'
-                    : 'hsl(0, 72%, 51%)'
+          const isHoliday = holidayDays.has(d.day) || d.holiday
+          const isMissing = missingDays.has(d.day) && !isHoliday
+          const color = isHoliday
+            ? 'hsl(217, 91%, 60%)'
+            : isMissing
+              ? 'hsl(0, 72%, 51%)'
+              : d.weekend && d.hours === 0
+                ? 'hsl(0, 0%, 90%)'
+                : d.hours === 0
+                  ? 'hsl(0, 0%, 80%)'
+                  : d.hours >= d.expected
+                    ? 'hsl(142, 76%, 36%)'
+                    : d.hours >= d.expected * 0.75
+                      ? 'hsl(38, 92%, 50%)'
+                      : 'hsl(0, 72%, 51%)'
           return (
             <g key={i}>
+              {isHoliday && d.hours === 0 && (
+                <rect x={x} y={pad.t + ih - 6} width={barWidth} height={6} rx={1} fill="hsl(217, 91%, 60%)" fillOpacity={0.6} />
+              )}
               {isMissing && d.hours === 0 && (
                 <rect x={x} y={pad.t + ih - 6} width={barWidth} height={6} rx={1} fill="hsl(0, 72%, 51%)" fillOpacity={0.7} />
               )}
-              {!isMissing && d.hours === 0 && (
+              {!isMissing && !isHoliday && d.hours === 0 && (
                 <rect x={x} y={pad.t + ih - 2} width={barWidth} height={2} rx={1} fill="currentColor" fillOpacity={d.weekend ? 0.03 : 0.1} />
               )}
               {d.hours > 0 && (
@@ -632,6 +639,7 @@ function AttendanceBarChart({ data, missingDays = new Set() }: { data: { day: nu
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(38, 92%, 50%)' }} />Below target</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(0, 72%, 51%)' }} />Undertime</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm border" style={{ background: 'transparent' }} />Absent</span>
+        {holidayDays.size > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(217, 91%, 60%)', opacity: 0.6 }} />Holiday</span>}
         {missingDays.size > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(0, 72%, 51%)', opacity: 0.7 }} />Missing punch</span>}
       </div>
     </div>

@@ -145,6 +145,7 @@ export interface ProfilePontajeResponse {
   employee: ProfilePontajeEmployee | null
   history: import('@/types/biostar').BioStarDayHistory[]
   today_punches: import('@/types/biostar').BioStarPunchLog[]
+  holidays?: string[]
 }
 
 export interface OrgTreeNode {

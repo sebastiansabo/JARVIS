@@ -201,6 +201,10 @@ class EmployeeOverviewRepository(BaseRepository):
                   AND (fs.answers->>'f_bi_leave_date') ~ '^\d{4}-\d{2}-\d{2}$'
                   AND EXTRACT(YEAR FROM (fs.answers->>'f_bi_leave_date')::date) = %(y)s
                   AND EXTRACT(MONTH FROM (fs.answers->>'f_bi_leave_date')::date) = %(m)s
+            ),
+            holidays AS (
+                SELECT date AS d FROM public_holidays
+                WHERE year = %(y)s AND EXTRACT(MONTH FROM date) = %(m)s
             )
             SELECT wd.d::text AS missing_date
             FROM weekdays wd
@@ -208,6 +212,7 @@ class EmployeeOverviewRepository(BaseRepository):
               AND wd.d NOT IN (SELECT d FROM sincron_leave)
               AND wd.d NOT IN (SELECT d FROM connecteam_leave)
               AND wd.d NOT IN (SELECT d FROM form_leave)
+              AND wd.d NOT IN (SELECT d FROM holidays)
               AND wd.d <= CURRENT_DATE
             ORDER BY wd.d
         ''', {
@@ -266,8 +271,11 @@ class EmployeeOverviewRepository(BaseRepository):
                     AND (fs.answers->>'f_bi_leave_date') ~ '^\d{4}-\d{2}-\d{2}$'
                     AND (fs.answers->>'f_bi_leave_date')::date = %s
               )
+              AND NOT EXISTS (
+                  SELECT 1 FROM public_holidays ph WHERE ph.date = %s
+              )
             ORDER BY be.mapped_jarvis_user_id
-        ''', (check_date, check_date, check_date, check_date, check_date, check_date))
+        ''', (check_date, check_date, check_date, check_date, check_date, check_date, check_date))
 
     def get_daily_sincron_codes(self, sincron_employee_id, company_name, year, month):
         """Return list of {day, short_code, unit, value} rows for timeline."""

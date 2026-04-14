@@ -96,6 +96,11 @@ def api_get_employee_overview(user_id):
         ytd_count, ytd_hours = _overview_repo.get_ytd_leave_permits(user_id, _year)
         ytd_permits = {'count': ytd_count, 'total_hours': ytd_hours}
 
+        # ── Public holidays for this month ──
+        from core.utils.holidays_repository import HolidayRepository
+        _holiday_repo = HolidayRepository()
+        _month_holidays = {h['date']: h['name'] for h in _holiday_repo.get_holidays_for_month(_year, _month)}
+
         # ── Daily attendance for bar chart ──
         import calendar
         daily_hours = []
@@ -113,12 +118,15 @@ def api_get_employee_overview(user_id):
             for d in range(1, days_in_month + 1):
                 dt = _date(_year, _month, d)
                 wd = dt.weekday()
+                is_holiday = dt in _month_holidays
                 daily_hours.append({
                     'day': d,
                     'date': dt.isoformat(),
                     'hours': day_map.get(d, 0),
-                    'expected': working_h if wd < 5 else 0,
+                    'expected': working_h if wd < 5 and not is_holiday else 0,
                     'weekend': wd >= 5,
+                    'holiday': is_holiday,
+                    'holiday_name': _month_holidays.get(dt),
                 })
 
         # Missing punch detection
@@ -168,6 +176,7 @@ def api_get_employee_overview(user_id):
                     'daily_hours': daily_hours,
                     'daily_codes': daily_codes,
                     'missing_punch_days': missing_punch_days,
+                    'holidays': [{'date': d.isoformat(), 'name': n} for d, n in sorted(_month_holidays.items())],
                 },
                 'leave_balance': {
                     'year': _year,

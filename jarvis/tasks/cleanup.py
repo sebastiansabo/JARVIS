@@ -21,6 +21,7 @@ from tasks.field_sales import field_sales_follow_up_reminders, field_sales_overd
 from tasks.biostar import sync_biostar_events, sync_biostar_users, auto_adjust_biostar_schedules
 from tasks.hr_attendance import check_missing_punches
 from tasks.carpark import cleanup_vin_cache
+from tasks.holidays import populate_holidays
 
 logger = get_logger('jarvis.tasks')
 
@@ -234,6 +235,18 @@ def start_scheduler():
         id='hr_missing_punch_check',
         replace_existing=True,
         misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # Holidays — auto-populate next year holidays (00:30 daily, idempotent)
+    scheduler.add_job(
+        populate_holidays,
+        'cron',
+        hour=0,
+        minute=30,
+        id='populate_holidays',
+        replace_existing=True,
+        misfire_grace_time=300,
         coalesce=True,
     )
 

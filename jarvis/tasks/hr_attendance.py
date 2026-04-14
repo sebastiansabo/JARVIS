@@ -31,6 +31,14 @@ def check_missing_punches():
         if friday not in days_to_check:
             days_to_check.append(friday)
 
+    # Filter out public holidays
+    try:
+        from core.utils.holidays_repository import HolidayRepository
+        _hol_repo = HolidayRepository()
+        days_to_check = [d for d in days_to_check if not _hol_repo.is_holiday(d)]
+    except Exception:
+        pass  # If holiday check fails, proceed with all days
+
     if not days_to_check:
         logger.debug("Skipping missing punch check — no weekdays to check")
         return

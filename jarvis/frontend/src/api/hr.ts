@@ -169,9 +169,10 @@ export const hrApi = {
         attendance: { days_present: number; total_hours: number; avg_daily_hours: number }
         timesheet: Record<string, { value: number; unit: string }>
         leave_permits: { count: number; total_hours: number }
-        daily_hours: { day: number; date: string; hours: number; expected: number; weekend: boolean }[]
+        daily_hours: { day: number; date: string; hours: number; expected: number; weekend: boolean; holiday?: boolean; holiday_name?: string | null }[]
         daily_codes: { day: number; codes: Record<string, number> }[]
         missing_punch_days: string[]
+        holidays: { date: string; name: string }[]
       }
       leave_balance: {
         year: number

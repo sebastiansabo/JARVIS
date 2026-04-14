@@ -695,6 +695,7 @@ function PontajePanel() {
   const employee = data?.employee
   const history: BioStarDayHistory[] = data?.history ?? []
   const todayPunches: BioStarPunchLog[] = data?.today_punches ?? []
+  const holidays: Set<string> = useMemo(() => new Set(data?.holidays ?? []), [data?.holidays])
 
   const stats = useMemo(() => {
     if (!history.length) return { daysPresent: 0, avgHours: 0, totalHours: 0, maxHours: 0 }
@@ -717,6 +718,7 @@ function PontajePanel() {
       const d = new Date(dateStr + 'T00:00:00')
       const dow = d.getDay()
       if (dow === 0 || dow === 6) continue
+      if (holidays.has(dateStr)) continue
       const found = history.find((h) => h.date === dateStr)
       const net = found ? netSec(found.duration_seconds, found.lunch_break_minutes ?? 60) : 0
       const expected = found?.working_hours ?? employee?.working_hours ?? 8
@@ -730,28 +732,30 @@ function PontajePanel() {
       })
     }
     return result
-  }, [history, chartDays, chartView, employee?.working_hours])
+  }, [history, chartDays, chartView, employee?.working_hours, holidays])
 
   const recentDays = useMemo(() => {
-    const days: (BioStarDayHistory & { isWeekend?: boolean; isMissing?: boolean })[] = []
+    const days: (BioStarDayHistory & { isWeekend?: boolean; isMissing?: boolean; isHoliday?: boolean })[] = []
     for (let i = 0; i < tableDays; i++) {
       const dateStr = daysAgo(i)
       const d = new Date(dateStr + 'T00:00:00')
       const dow = d.getDay()
       const isWeekend = dow === 0 || dow === 6
+      const isHoliday = holidays.has(dateStr)
       const found = history.find((h) => h.date === dateStr)
       if (found) {
-        days.push({ ...found, isWeekend, isMissing: false })
+        days.push({ ...found, isWeekend, isMissing: false, isHoliday })
       } else {
         days.push({
           date: dateStr, first_punch: '', last_punch: '', total_punches: 0, duration_seconds: null,
           isWeekend,
-          isMissing: !isWeekend && dateStr < today,
+          isMissing: !isWeekend && !isHoliday && dateStr < today,
+          isHoliday,
         })
       }
     }
     return days
-  }, [history, tableDays, today])
+  }, [history, tableDays, today, holidays])
 
   const missingCount = useMemo(() => recentDays.filter(d => d.isMissing).length, [recentDays])
 
@@ -863,6 +867,7 @@ function PontajePanel() {
                     <TableRow key={day.date} className={cn(
                       isToday && 'bg-muted/30',
                       day.isWeekend && 'bg-muted/20',
+                      day.isHoliday && 'bg-blue-50 dark:bg-blue-950/20',
                       day.isMissing && 'bg-amber-50 dark:bg-amber-950/20',
                     )}>
                       <TableCell className="font-medium">
@@ -903,7 +908,9 @@ function PontajePanel() {
                         )}
                       </TableCell>
                       <TableCell className="text-center">
-                        {day.isMissing ? (
+                        {day.isHoliday && isAbsent ? (
+                          <span className="text-xs text-blue-600 dark:text-blue-400">Holiday</span>
+                        ) : day.isMissing ? (
                           <Badge variant="outline" className="text-xs text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30">Missing punch</Badge>
                         ) : day.isWeekend && isAbsent ? (
                           <span className="text-xs text-muted-foreground">Weekend</span>

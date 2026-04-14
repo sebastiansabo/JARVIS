@@ -437,6 +437,15 @@ def api_profile_pontaje():
         history = service.get_employee_daily_history(biostar_id, start, end)
         today_punches = service.get_employee_punches(biostar_id, today)
 
+        # Load public holidays for the date range
+        from core.utils.holidays_repository import HolidayRepository
+        _hol_repo = HolidayRepository()
+        _holiday_dates = set()
+        for _yr in range(int(start[:4]), int(end[:4]) + 1):
+            for h in _hol_repo.get_holidays_for_year(_yr):
+                d = h['date']
+                _holiday_dates.add(d.isoformat() if hasattr(d, 'isoformat') else str(d))
+
         return jsonify({
             'success': True,
             'mapped': True,
@@ -451,6 +460,7 @@ def api_profile_pontaje():
             },
             'history': history,
             'today_punches': today_punches,
+            'holidays': sorted(_holiday_dates),
         })
     except Exception as e:
         return safe_error_response(e)
