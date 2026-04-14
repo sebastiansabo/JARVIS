@@ -948,6 +948,25 @@ function TimesheetPanel({ userId }: { userId: number }) {
     queryFn: () => sincronApi.getEmployeeTimesheet(userId, year, month),
   })
 
+  // Holidays for this month
+  const { data: holidayData } = useQuery({
+    queryKey: ['holidays', 'year', year],
+    queryFn: () => import('@/api/client').then(m => m.api.get<{ success: boolean; holidays: { date: string; name: string; type: string }[] }>(`/api/holidays/year/${year}`)),
+  })
+  const holidaySet: Set<string> = useMemo(() => {
+    const s = new Set<string>()
+    const prefix = `${year}-${String(month).padStart(2, '0')}`
+    for (const h of holidayData?.holidays ?? []) {
+      if (h.date.startsWith(prefix)) s.add(h.date)
+    }
+    return s
+  }, [holidayData, year, month])
+  const holidayNames: Record<string, string> = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const h of holidayData?.holidays ?? []) m[h.date] = h.name
+    return m
+  }, [holidayData])
+
   const ts: SincronTimesheetData | null = data?.data ?? null
   const days = ts?.days ?? {}
   const summary = ts?.summary ?? []
@@ -1028,13 +1047,19 @@ function TimesheetPanel({ userId }: { userId: number }) {
                     {sortedDays.map((day) => {
                       const d = new Date(day + 'T00:00:00')
                       const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                      const isHoliday = holidaySet.has(day)
                       const entries = days[day]
                       const byCode: Record<string, number> = {}
                       entries.forEach((e) => { byCode[e.short_code] = e.value })
 
                       return (
-                        <TableRow key={day} className={isWeekend ? 'bg-muted/40' : ''}>
-                          <TableCell className="tabular-nums text-xs">{day}</TableCell>
+                        <TableRow key={day} className={cn(isWeekend && 'bg-muted/40', isHoliday && 'bg-blue-50 dark:bg-blue-950/20')}>
+                          <TableCell className="tabular-nums text-xs">
+                            {day}
+                            {isHoliday && (
+                              <Badge variant="outline" className="ml-1.5 text-[9px] text-blue-600 border-blue-300 py-0">{holidayNames[day] ?? 'Holiday'}</Badge>
+                            )}
+                          </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {d.toLocaleDateString('ro-RO', { weekday: 'short' })}
                           </TableCell>

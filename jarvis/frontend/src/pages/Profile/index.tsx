@@ -65,6 +65,7 @@ import { usersApi } from '@/api/users'
 import { useAuth } from '@/hooks/useAuth'
 import { connecteamApi, type ConnecteamSubmission } from '@/api/connecteam'
 import { formsApi } from '@/api/forms'
+import { api } from '@/api/client'
 import { AllocationEditor, allocationsToRows, rowsToApiPayload } from '@/pages/Accounting/AllocationEditor'
 import { EditInvoiceDialog } from '@/pages/Accounting/EditInvoiceDialog'
 import { dedupeMergedAllocations } from '@/pages/Accounting/allocationUtils'
@@ -2286,6 +2287,25 @@ function SincronPanel() {
     queryFn: () => sincronApi.getMyTimesheet(year, month),
   })
 
+  // Holidays for this month
+  const { data: _holData } = useQuery({
+    queryKey: ['holidays', 'year', year],
+    queryFn: () => api.get<{ success: boolean; holidays: { date: string; name: string; type: string }[] }>(`/api/holidays/year/${year}`),
+  })
+  const _holSet: Set<string> = useMemo(() => {
+    const s = new Set<string>()
+    const prefix = `${year}-${String(month).padStart(2, '0')}`
+    for (const h of _holData?.holidays ?? []) {
+      if (h.date.startsWith(prefix)) s.add(h.date)
+    }
+    return s
+  }, [_holData, year, month])
+  const _holNames: Record<string, string> = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const h of _holData?.holidays ?? []) m[h.date] = h.name
+    return m
+  }, [_holData])
+
   const ts: SincronTimesheetData | null = data?.data ?? null
   const days = ts?.days ?? {}
   const summary = ts?.summary ?? []
@@ -2421,13 +2441,19 @@ function SincronPanel() {
                     const d = new Date(day + 'T00:00:00')
                     const dow = d.getDay()
                     const isWeekend = dow === 0 || dow === 6
+                    const _isHol = _holSet.has(day)
                     const entries = days[day]
                     const byCode: Record<string, number> = {}
                     entries.forEach((e) => { byCode[e.short_code] = e.value })
 
                     return (
-                      <TableRow key={day} className={isWeekend ? 'bg-muted/40' : ''}>
-                        <TableCell className="tabular-nums text-xs">{day}</TableCell>
+                      <TableRow key={day} className={cn(isWeekend && 'bg-muted/40', _isHol && 'bg-blue-50 dark:bg-blue-950/20')}>
+                        <TableCell className="tabular-nums text-xs">
+                          {day}
+                          {_isHol && (
+                            <Badge variant="outline" className="ml-1.5 text-[9px] text-blue-600 border-blue-300 py-0">{_holNames[day] ?? 'Holiday'}</Badge>
+                          )}
+                        </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {d.toLocaleDateString('ro-RO', { weekday: 'short' })}
                         </TableCell>

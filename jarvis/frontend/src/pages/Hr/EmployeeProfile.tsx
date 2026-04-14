@@ -87,6 +87,7 @@ export default function EmployeeProfile() {
     enabled: !!biostarUserId,
   })
   const history = _histResp?.history ?? []
+  const holidays: Set<string> = useMemo(() => new Set(_histResp?.holidays ?? []), [_histResp?.holidays])
 
   // Today's punches
   const { data: todayPunches = [] } = useQuery({
@@ -172,9 +173,10 @@ export default function EmployeeProfile() {
     // Count working days (Mon-Fri) in the period
     let workingDays = 0
     for (let i = chartDays - 1; i >= 0; i--) {
-      const d = new Date(daysAgo(i) + 'T00:00:00')
+      const ds = daysAgo(i)
+      const d = new Date(ds + 'T00:00:00')
       const dow = d.getDay()
-      if (dow !== 0 && dow !== 6) workingDays++
+      if (dow !== 0 && dow !== 6 && !holidays.has(ds)) workingDays++
     }
     if (!filtered.length) return { daysPresent: 0, workingDays, avgHours: 0, totalHours: 0, maxHours: 0 }
     const nets = filtered.map((d) => netSeconds(d.duration_seconds, d.lunch_break_minutes ?? 60))
@@ -188,7 +190,7 @@ export default function EmployeeProfile() {
       totalHours: totalSec / 3600,
       maxHours: maxSec / 3600,
     }
-  }, [history, chartDays])
+  }, [history, holidays, chartDays])
 
   const dailyChartData = useMemo(() => {
     const data: { date: string; label: string; hours: number; expected: number }[] = []
@@ -197,6 +199,7 @@ export default function EmployeeProfile() {
       const d = new Date(dateStr + 'T00:00:00')
       const dow = d.getDay()
       if (dow === 0 || dow === 6) continue // skip weekends
+      if (holidays.has(dateStr)) continue // skip holidays
       const found = history.find((h) => h.date === dateStr)
       const net = found ? netSeconds(found.duration_seconds, found.lunch_break_minutes ?? 60) : 0
       const expected = found?.working_hours ?? employee?.working_hours ?? 8
@@ -210,25 +213,26 @@ export default function EmployeeProfile() {
       })
     }
     return data
-  }, [history, chartDays, chartView, employee?.working_hours])
+  }, [history, holidays, chartDays, chartView, employee?.working_hours])
 
   // Days table filtered by selected period
   const periodDays = useMemo(() => {
-    const days: BioStarDayHistory[] = []
+    const days: (BioStarDayHistory & { isHoliday?: boolean })[] = []
     for (let i = 0; i < chartDays; i++) {
       const dateStr = daysAgo(i)
       const d = new Date(dateStr + 'T00:00:00')
       const dow = d.getDay()
       if (dow === 0 || dow === 6) continue // skip weekends
+      const isHoliday = holidays.has(dateStr)
       const found = history.find((h) => h.date === dateStr)
       if (found) {
-        days.push(found)
+        days.push({ ...found, isHoliday })
       } else {
-        days.push({ date: dateStr, first_punch: '', last_punch: '', total_punches: 0, duration_seconds: null })
+        days.push({ date: dateStr, first_punch: '', last_punch: '', total_punches: 0, duration_seconds: null, isHoliday })
       }
     }
     return days
-  }, [history, chartDays])
+  }, [history, holidays, chartDays])
 
   if (loadingProfile) {
     return (
@@ -472,7 +476,7 @@ export default function EmployeeProfile() {
                 const isShort = netH > 0 && netH < expectedH
                 const isAbsent = day.total_punches === 0
                 return (
-                  <TableRow key={day.date} className={cn(isToday && 'bg-muted/30')}>
+                  <TableRow key={day.date} className={cn(day.isHoliday && 'bg-blue-50 dark:bg-blue-950/20', isToday && 'bg-muted/30')}>
                     <TableCell className="font-medium">
                       {formatDate(day.date)}
                       {isToday && <Badge variant="secondary" className="ml-2 text-[10px]">Today</Badge>}
@@ -514,7 +518,9 @@ export default function EmployeeProfile() {
                       </>
                     )}
                     <TableCell className="text-center">
-                      {isAbsent ? (
+                      {isAbsent && day.isHoliday ? (
+                        <Badge variant="outline" className="text-xs text-blue-600 border-blue-300">Holiday</Badge>
+                      ) : isAbsent ? (
                         <Badge variant="outline" className="text-xs text-muted-foreground">Absent</Badge>
                       ) : day.total_punches === 1 ? (
                         <span className="text-sm text-muted-foreground">—</span>
