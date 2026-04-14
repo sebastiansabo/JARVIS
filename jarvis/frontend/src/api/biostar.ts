@@ -177,11 +177,11 @@ export const biostarApi = {
   },
 
   getEmployeeDailyHistory: async (biostarUserId: string, start: string, end: string) => {
-    const res = await api.get<{ success: boolean; data: BioStarDayHistory[] }>(
+    const res = await api.get<{ success: boolean; data: BioStarDayHistory[]; holidays?: string[] }>(
       `${BASE}/employees/${biostarUserId}/daily-history`,
       { start, end },
     )
-    return res.data
+    return { history: res.data, holidays: res.holidays ?? [] }
   },
 
   // ── Sync History ──

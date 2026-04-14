@@ -348,7 +348,22 @@ def get_employee_daily_history(biostar_user_id):
     if not start_date or not end_date:
         return jsonify({'success': False, 'error': 'start and end date parameters required'}), 400
     history = service.get_employee_daily_history(biostar_user_id, start_date, end_date)
-    return jsonify({'success': True, 'data': history})
+
+    # Include public holidays for the date range
+    holidays = []
+    try:
+        from core.utils.holidays_repository import HolidayRepository
+        _hol_repo = HolidayRepository()
+        _holiday_dates = set()
+        for _yr in range(int(start_date[:4]), int(end_date[:4]) + 1):
+            for h in _hol_repo.get_holidays_for_year(_yr):
+                d = h['date']
+                _holiday_dates.add(d.isoformat() if hasattr(d, 'isoformat') else str(d))
+        holidays = sorted(_holiday_dates)
+    except Exception:
+        pass
+
+    return jsonify({'success': True, 'data': history, 'holidays': holidays})
 
 
 @biostar_bp.route('/api/punch-logs/summary', methods=['GET'])

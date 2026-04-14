@@ -712,12 +712,13 @@ function PontajPanel({
   const endDate = now.toISOString().split('T')[0]
   const startDate = new Date(now.getTime() - days * 86400000).toISOString().split('T')[0]
 
-  const { data: historyData, isLoading } = useQuery({
+  const { data: _histResp, isLoading } = useQuery({
     queryKey: ['biostar', 'daily-history', biostarUserId, startDate, endDate],
     queryFn: () => biostarApi.getEmployeeDailyHistory(biostarUserId, startDate, endDate),
   })
 
-  const history = historyData ?? []
+  const history = _histResp?.history ?? []
+  const holidays: Set<string> = useMemo(() => new Set(_histResp?.holidays ?? []), [_histResp?.holidays])
 
   const adjustDayMut = useMutation({
     mutationFn: (day: BioStarDayHistory) => {
@@ -838,6 +839,7 @@ function PontajPanel({
                   {history.map((d) => {
                     const dt = new Date(d.date + 'T00:00:00')
                     const isWeekend = dt.getDay() === 0 || dt.getDay() === 6
+                    const isHoliday = holidays.has(d.date)
                     const isToday = d.date === today
                     const rawSec = d.duration_seconds ?? 0
                     const netSec = rawSec > lunchBreak * 60 ? rawSec - lunchBreak * 60 : rawSec
@@ -846,7 +848,7 @@ function PontajPanel({
                     const notExited = d.total_punches === 1
                     const isShort = netH > 0 && netH < workingHours
                     return (
-                      <TableRow key={d.date} className={cn(isWeekend && 'bg-muted/40', isToday && 'bg-muted/30')}>
+                      <TableRow key={d.date} className={cn(isWeekend && 'bg-muted/40', isHoliday && 'bg-blue-50 dark:bg-blue-950/20', isToday && 'bg-muted/30')}>
                         <TableCell className="tabular-nums text-xs">
                           {d.date}
                           {isToday && <Badge variant="secondary" className="ml-2 text-[10px]">Today</Badge>}
@@ -879,7 +881,9 @@ function PontajPanel({
                           </>
                         )}
                         <TableCell className="text-right tabular-nums text-xs font-medium">
-                          {isAbsent ? (
+                          {isAbsent && isHoliday ? (
+                            <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-300">Holiday</Badge>
+                          ) : isAbsent ? (
                             <Badge variant="outline" className="text-[10px] text-muted-foreground">Absent</Badge>
                           ) : notExited ? (
                             <span className="text-muted-foreground">—</span>

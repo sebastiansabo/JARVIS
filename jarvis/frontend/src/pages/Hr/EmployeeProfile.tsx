@@ -81,11 +81,12 @@ export default function EmployeeProfile() {
   // History for chart — fetch max(365, YTD) to cover all periods
   const ytdStart = `${new Date().getFullYear()}-01-01`
   const maxStart = ytdStart < daysAgo(90) ? ytdStart : daysAgo(90)
-  const { data: history = [], isLoading: loadingHistory } = useQuery({
+  const { data: _histResp, isLoading: loadingHistory } = useQuery({
     queryKey: ['biostar', 'employee-history', biostarUserId, maxStart, today],
     queryFn: () => biostarApi.getEmployeeDailyHistory(biostarUserId!, maxStart, today),
     enabled: !!biostarUserId,
   })
+  const history = _histResp?.history ?? []
 
   // Today's punches
   const { data: todayPunches = [] } = useQuery({

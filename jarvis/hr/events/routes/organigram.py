@@ -99,7 +99,12 @@ def api_get_employee_overview(user_id):
         # ── Public holidays for this month ──
         from core.utils.holidays_repository import HolidayRepository
         _holiday_repo = HolidayRepository()
-        _month_holidays = {h['date']: h['name'] for h in _holiday_repo.get_holidays_for_month(_year, _month)}
+        _month_holidays = {}
+        for _h in _holiday_repo.get_holidays_for_month(_year, _month):
+            _hd = _h['date']
+            if isinstance(_hd, str):
+                _hd = _date.fromisoformat(_hd)
+            _month_holidays[_hd] = _h['name']
 
         # ── Daily attendance for bar chart ──
         import calendar
