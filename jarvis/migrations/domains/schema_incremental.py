@@ -1675,4 +1675,52 @@ def create_schema_incremental(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_company_id ON users (company_id) WHERE is_active = TRUE')
 
+    # ── contract_status on users (active / suspended / closed) ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'contract_status') THEN
+                ALTER TABLE users ADD COLUMN contract_status VARCHAR(20) DEFAULT 'active';
+                UPDATE users SET contract_status = CASE WHEN is_active = TRUE THEN 'active' ELSE 'closed' END;
+            END IF;
+        END $$;
+    ''')
+    try:
+        cursor.execute('''
+            ALTER TABLE users ADD CONSTRAINT chk_users_contract_status
+            CHECK (contract_status IN ('active', 'suspended', 'closed'))
+        ''')
+    except Exception:
+        conn.rollback()
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_contract_status ON users(contract_status)')
+    cursor.execute('''
+        CREATE OR REPLACE FUNCTION sync_is_active_from_contract_status()
+        RETURNS TRIGGER AS $tr$
+        BEGIN
+            NEW.is_active = (NEW.contract_status = 'active');
+            RETURN NEW;
+        END;
+        $tr$ LANGUAGE plpgsql;
+    ''')
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_sync_is_active') THEN
+                CREATE TRIGGER trg_sync_is_active
+                    BEFORE INSERT OR UPDATE OF contract_status ON users
+                    FOR EACH ROW
+                    EXECUTE FUNCTION sync_is_active_from_contract_status();
+            END IF;
+        END $$;
+    ''')
+
+    # ── contract_status prep on sincron_employees ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'sincron_employees' AND column_name = 'contract_status') THEN
+                ALTER TABLE sincron_employees ADD COLUMN contract_status VARCHAR(20);
+            END IF;
+        END $$;
+    ''')
+
     conn.commit()
