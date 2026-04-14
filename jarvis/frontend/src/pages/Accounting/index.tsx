@@ -57,6 +57,7 @@ import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
 import { TagFilter } from '@/components/shared/TagFilter'
 import { invoicesApi } from '@/api/invoices'
 import { organizationApi } from '@/api/organization'
+import { ApiError } from '@/api/client'
 import { settingsApi } from '@/api/settings'
 import { tagsApi } from '@/api/tags'
 import { useAccountingStore, lockedColumns } from '@/stores/accountingStore'
@@ -147,7 +148,7 @@ export default function Accounting() {
     include_allocations: true,
   }
 
-  const { data: invoices = [], isLoading, isError: invoicesError, refetch: refetchInvoices } = useQuery({
+  const { data: invoices = [], isLoading, isError: invoicesError, error: invoicesErrorObj, refetch: refetchInvoices } = useQuery({
     queryKey: ['invoices', filters],
     queryFn: () => invoicesApi.getInvoices(apiFilters),
   })
@@ -665,7 +666,9 @@ export default function Accounting() {
 
       {/* Invoices table */}
       {invoicesError ? (
-        <QueryError message="Failed to load invoices" onRetry={refetchInvoices} />
+        invoicesErrorObj instanceof ApiError && invoicesErrorObj.status === 403
+          ? <QueryError message="You don't have permission to view invoices" />
+          : <QueryError message="Failed to load invoices" onRetry={refetchInvoices} />
       ) : (
         <InvoiceTable
           invoices={displayedInvoices}
