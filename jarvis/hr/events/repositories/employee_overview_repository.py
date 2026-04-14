@@ -177,7 +177,7 @@ class EmployeeOverviewRepository(BaseRepository):
                   AND event_datetime < (make_date(%(y)s, %(m)s, 1) + interval '1 month')::timestamp
             ),
             sincron_leave AS (
-                SELECT DISTINCT day AS d_num
+                SELECT DISTINCT day AS d
                 FROM sincron_timesheets
                 WHERE sincron_employee_id = %(sin_id)s AND company_name = %(sin_co)s
                   AND year = %(y)s AND month = %(m)s
@@ -203,7 +203,7 @@ class EmployeeOverviewRepository(BaseRepository):
             SELECT wd.d::text AS missing_date
             FROM weekdays wd
             WHERE wd.d NOT IN (SELECT d FROM punch_days)
-              AND EXTRACT(DAY FROM wd.d)::int NOT IN (SELECT d_num FROM sincron_leave)
+              AND wd.d NOT IN (SELECT d FROM sincron_leave)
               AND wd.d NOT IN (SELECT d FROM connecteam_leave)
               AND wd.d NOT IN (SELECT d FROM form_leave)
               AND wd.d <= CURRENT_DATE
@@ -242,7 +242,7 @@ class EmployeeOverviewRepository(BaseRepository):
                   WHERE se.mapped_jarvis_user_id = u.id
                     AND st.year = EXTRACT(YEAR FROM %s::date)
                     AND st.month = EXTRACT(MONTH FROM %s::date)
-                    AND st.day = EXTRACT(DAY FROM %s::date)
+                    AND st.day = %s::date
                     AND st.short_code IN ('CO','CM','CES','CIC','CMS','DLG')
               )
               AND NOT EXISTS (
