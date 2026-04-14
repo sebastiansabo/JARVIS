@@ -1651,4 +1651,19 @@ def create_schema_incremental(conn, cursor):
     ''')
 
 
+    # Add company_id FK to users — used by AI agent for company-scoped DMS isolation
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'company_id') THEN
+                ALTER TABLE users ADD COLUMN company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL;
+                UPDATE users u
+                SET company_id = c.id
+                FROM companies c
+                WHERE c.company = u.company;
+            END IF;
+        END $$;
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_company_id ON users (company_id) WHERE is_active = TRUE')
+
     conn.commit()
