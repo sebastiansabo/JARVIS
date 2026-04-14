@@ -177,7 +177,7 @@ class EmployeeOverviewRepository(BaseRepository):
                   AND event_datetime < (make_date(%(y)s, %(m)s, 1) + interval '1 month')::timestamp
             ),
             sincron_leave AS (
-                SELECT DISTINCT day_of_month AS d_num
+                SELECT DISTINCT day AS d_num
                 FROM sincron_timesheets
                 WHERE sincron_employee_id = %(sin_id)s AND company_name = %(sin_co)s
                   AND year = %(y)s AND month = %(m)s
@@ -242,7 +242,7 @@ class EmployeeOverviewRepository(BaseRepository):
                   WHERE se.mapped_jarvis_user_id = u.id
                     AND st.year = EXTRACT(YEAR FROM %s::date)
                     AND st.month = EXTRACT(MONTH FROM %s::date)
-                    AND st.day_of_month = EXTRACT(DAY FROM %s::date)
+                    AND st.day = EXTRACT(DAY FROM %s::date)
                     AND st.short_code IN ('CO','CM','CES','CIC','CMS','DLG')
               )
               AND NOT EXISTS (

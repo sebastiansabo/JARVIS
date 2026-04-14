@@ -83,20 +83,32 @@ def api_update_employee(employee_id):
 
     data = request.get_json()
 
-    update_hr_employee(
-        employee_id=employee_id,
-        name=data['name'],
-        department=data.get('departments'),  # frontend sends 'departments'
-        subdepartment=data.get('subdepartment'),
-        brand=data.get('brand'),
-        company=data.get('company'),
-        email=data.get('email'),
-        phone=data.get('phone'),
-        notify_on_allocation=data.get('notify_on_allocation', True),
-        is_active=data.get('is_active', True),
-        contract_status=data.get('contract_status'),
-        notify_missing_punch=data.get('notify_missing_punch'),
-    )
+    # Support partial updates (e.g. toggling only notify_missing_punch)
+    kwargs = {}
+    if 'name' in data:
+        kwargs['name'] = data['name']
+    if 'departments' in data:
+        kwargs['department'] = data['departments']
+    if 'subdepartment' in data:
+        kwargs['subdepartment'] = data['subdepartment']
+    if 'brand' in data:
+        kwargs['brand'] = data['brand']
+    if 'company' in data:
+        kwargs['company'] = data['company']
+    if 'email' in data:
+        kwargs['email'] = data['email']
+    if 'phone' in data:
+        kwargs['phone'] = data['phone']
+    if 'notify_on_allocation' in data:
+        kwargs['notify_on_allocation'] = data['notify_on_allocation']
+    if 'is_active' in data:
+        kwargs['is_active'] = data['is_active']
+    if 'contract_status' in data:
+        kwargs['contract_status'] = data['contract_status']
+    if 'notify_missing_punch' in data:
+        kwargs['notify_missing_punch'] = data['notify_missing_punch']
+
+    update_hr_employee(employee_id=employee_id, **kwargs)
 
     return jsonify({'success': True})
 

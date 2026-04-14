@@ -79,18 +79,25 @@ def save_hr_employee(name, department=None, subdepartment=None, brand=None, comp
 
     finally:
         release_db(conn)
-def update_hr_employee(employee_id, name, department=None, subdepartment=None, brand=None, company=None,
-                       email=None, phone=None, notify_on_allocation=True, is_active=True,
+def update_hr_employee(employee_id, name=None, department=None, subdepartment=None, brand=None, company=None,
+                       email=None, phone=None, notify_on_allocation=None, is_active=None,
                        contract_status=None, notify_missing_punch=None):
-    """Update an HR employee in users table."""
+    """Update an HR employee in users table. All fields use COALESCE for partial updates."""
     conn = get_db()
     try:
         cursor = get_cursor(conn)
         cursor.execute('''
             UPDATE users
-            SET name = %s, department = %s, subdepartment = %s, brand = %s, company = %s,
-                email = %s, phone = %s, notify_on_allocation = %s,
-                is_active = %s, contract_status = COALESCE(%s, contract_status),
+            SET name = COALESCE(%s, name),
+                department = COALESCE(%s, department),
+                subdepartment = COALESCE(%s, subdepartment),
+                brand = COALESCE(%s, brand),
+                company = COALESCE(%s, company),
+                email = COALESCE(%s, email),
+                phone = COALESCE(%s, phone),
+                notify_on_allocation = COALESCE(%s, notify_on_allocation),
+                is_active = COALESCE(%s, is_active),
+                contract_status = COALESCE(%s, contract_status),
                 notify_missing_punch = COALESCE(%s, notify_missing_punch),
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
