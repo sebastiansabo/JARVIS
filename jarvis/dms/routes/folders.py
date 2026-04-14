@@ -7,7 +7,8 @@ from dms import dms_bp
 from dms.repositories import FolderRepository, FolderAclRepository, AuditRepository
 from dms.services.folder_sync_service import FolderSyncService
 from dms.services.folder_drive_sync import FolderDriveSyncService
-from core.utils.api_helpers import safe_error_response, v2_permission_required
+from core.utils.api_helpers import safe_error_response
+from core.roles.decorators import v2_permission_required
 
 logger = logging.getLogger('jarvis.dms.routes.folders')
 

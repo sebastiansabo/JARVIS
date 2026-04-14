@@ -143,21 +143,32 @@ class AutoTagService:
         finally:
             release_db(conn)
 
-    def _fetch_all_entities(self, entity_type: str) -> list:
-        """Fetch all entities of a given type (for "Run Now")."""
+    def _fetch_all_entities(self, entity_type: str, batch_size: int = 500) -> list:
+        """Fetch all entities of a given type (for "Run Now") in batches of batch_size."""
         table = self._entity_table(entity_type)
         if not table:
             return []
-        conn = get_db()
-        try:
-            cursor = get_cursor(conn)
-            extra = ''
-            if entity_type in ('invoice', 'efactura_invoice', 'dms_document'):
-                extra = ' WHERE deleted_at IS NULL'
-            cursor.execute(f'SELECT * FROM {table}{extra}')
-            return [dict(row) for row in cursor.fetchall()]
-        finally:
-            release_db(conn)
+        extra = ''
+        if entity_type in ('invoice', 'efactura_invoice', 'dms_document'):
+            extra = ' WHERE deleted_at IS NULL'
+        results = []
+        offset = 0
+        while True:
+            conn = get_db()
+            try:
+                cursor = get_cursor(conn)
+                cursor.execute(
+                    f'SELECT * FROM {table}{extra} ORDER BY id LIMIT %s OFFSET %s',
+                    (batch_size, offset),
+                )
+                batch = [dict(row) for row in cursor.fetchall()]
+            finally:
+                release_db(conn)
+            results.extend(batch)
+            if len(batch) < batch_size:
+                break
+            offset += batch_size
+        return results
 
     @staticmethod
     def _entity_table(entity_type: str) -> str | None:

@@ -8,7 +8,8 @@ from flask_login import login_required, current_user
 from forms import forms_bp
 from forms.repositories import FormRepository
 from forms.services.form_service import FormService, UserContext
-from core.utils.api_helpers import get_json_or_error, handle_api_errors, v2_permission_required
+from core.utils.api_helpers import get_json_or_error, handle_api_errors
+from core.roles.decorators import v2_permission_required
 
 logger = logging.getLogger('jarvis.forms.routes.forms')
 

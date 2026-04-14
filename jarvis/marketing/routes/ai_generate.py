@@ -5,7 +5,7 @@ from flask import jsonify, request
 from flask_login import login_required, current_user
 
 from marketing import marketing_bp
-from marketing.routes.projects import mkt_permission_required
+from marketing.decorators import mkt_permission_required
 from core.utils.api_helpers import get_json_or_error
 
 logger = logging.getLogger('jarvis.marketing.routes.ai_generate')

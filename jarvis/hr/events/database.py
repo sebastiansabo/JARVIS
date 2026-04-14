@@ -1,8 +1,4 @@
 """HR Module Database Operations."""
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from database import get_db, get_cursor, release_db, dict_from_row
 from core.utils.scope_filter import apply_scope_filter
 
@@ -18,175 +14,198 @@ def get_all_hr_employees(active_only=True, scope='all', user_context=None):
         user_context: Dict with user_id, company, department for scope filtering
     """
     conn = get_db()
-    cursor = get_cursor(conn)
+    try:
+        cursor = get_cursor(conn)
 
-    query = '''
-        SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-               notify_on_allocation, is_active, created_at, updated_at
-        FROM users
-        WHERE 1=1
-    '''
-    params = []
+        query = '''
+            SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
+                   notify_on_allocation, is_active, created_at, updated_at
+            FROM users
+            WHERE 1=1
+        '''
+        params = []
 
-    if active_only:
-        query += ' AND is_active = TRUE'
+        if active_only:
+            query += ' AND is_active = TRUE'
 
-    scope_sql, scope_params = apply_scope_filter(scope, user_context)
-    query += scope_sql
-    params.extend(scope_params)
+        scope_sql, scope_params = apply_scope_filter(scope, user_context)
+        query += scope_sql
+        params.extend(scope_params)
 
-    query += ' ORDER BY name'
+        query += ' ORDER BY name'
 
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(row) for row in rows]
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [dict_from_row(row) for row in rows]
 
 
+    finally:
+        release_db(conn)
 def get_hr_employee(employee_id):
     """Get a single HR employee by ID from users table."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-               notify_on_allocation, is_active, created_at, updated_at
-        FROM users WHERE id = %s
-    ''', (employee_id,))
-    row = cursor.fetchone()
-    release_db(conn)
-    return dict_from_row(row) if row else None
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
+                   notify_on_allocation, is_active, created_at, updated_at
+            FROM users WHERE id = %s
+        ''', (employee_id,))
+        row = cursor.fetchone()
+        return dict_from_row(row) if row else None
 
 
+    finally:
+        release_db(conn)
 def save_hr_employee(name, department=None, subdepartment=None, brand=None, company=None,
                      email=None, phone=None, notify_on_allocation=True):
     """Create a new HR employee in users table."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        INSERT INTO users (name, department, subdepartment, brand, company, email, phone, notify_on_allocation)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id
-    ''', (name, department, subdepartment, brand, company, email, phone, notify_on_allocation))
-    employee_id = cursor.fetchone()['id']
-    conn.commit()
-    release_db(conn)
-    return employee_id
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            INSERT INTO users (name, department, subdepartment, brand, company, email, phone, notify_on_allocation)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        ''', (name, department, subdepartment, brand, company, email, phone, notify_on_allocation))
+        employee_id = cursor.fetchone()['id']
+        conn.commit()
+        return employee_id
 
 
+    finally:
+        release_db(conn)
 def update_hr_employee(employee_id, name, department=None, subdepartment=None, brand=None, company=None,
                        email=None, phone=None, notify_on_allocation=True, is_active=True):
     """Update an HR employee in users table."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        UPDATE users
-        SET name = %s, department = %s, subdepartment = %s, brand = %s, company = %s,
-            email = %s, phone = %s, notify_on_allocation = %s,
-            is_active = %s, updated_at = CURRENT_TIMESTAMP
-        WHERE id = %s
-    ''', (name, department, subdepartment, brand, company, email, phone, notify_on_allocation, is_active, employee_id))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            UPDATE users
+            SET name = %s, department = %s, subdepartment = %s, brand = %s, company = %s,
+                email = %s, phone = %s, notify_on_allocation = %s,
+                is_active = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        ''', (name, department, subdepartment, brand, company, email, phone, notify_on_allocation, is_active, employee_id))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def delete_hr_employee(employee_id):
     """Soft delete an HR employee (set is_active = FALSE)."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        UPDATE users SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s
-    ''', (employee_id,))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            UPDATE users SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s
+        ''', (employee_id,))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def search_hr_employees(query):
     """Search HR employees by name from users table."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-               notify_on_allocation, is_active, created_at, updated_at
-        FROM users
-        WHERE is_active = TRUE AND name ILIKE %s
-        ORDER BY name
-        LIMIT 20
-    ''', (f'%{query}%',))
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(row) for row in rows]
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
+                   notify_on_allocation, is_active, created_at, updated_at
+            FROM users
+            WHERE is_active = TRUE AND name ILIKE %s
+            ORDER BY name
+            LIMIT 20
+        ''', (f'%{query}%',))
+        rows = cursor.fetchall()
+        return [dict_from_row(row) for row in rows]
 
 
+    finally:
+        release_db(conn)
 # ============== HR Events ==============
 
-def get_all_hr_events():
-    """Get all HR events ordered by date."""
+def get_all_hr_events(limit=200, offset=0):
+    """Get HR events ordered by date, with optional pagination."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        SELECT e.*, u.name as created_by_name,
-               (SELECT COUNT(*) FROM hr.event_bonuses eb WHERE eb.event_id = e.id) AS participants_count
-        FROM hr.events e
-        LEFT JOIN public.users u ON e.created_by = u.id
-        ORDER BY e.start_date DESC
-    ''')
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(row) for row in rows]
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            SELECT e.*, u.name as created_by_name,
+                   (SELECT COUNT(*) FROM hr.event_bonuses eb WHERE eb.event_id = e.id) AS participants_count
+            FROM hr.events e
+            LEFT JOIN public.users u ON e.created_by = u.id
+            ORDER BY e.start_date DESC
+            LIMIT %s OFFSET %s
+        ''', (limit, offset))
+        rows = cursor.fetchall()
+        return [dict_from_row(row) for row in rows]
 
 
+    finally:
+        release_db(conn)
 def get_hr_event(event_id):
     """Get a single HR event by ID."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        SELECT e.*, u.name as created_by_name
-        FROM hr.events e
-        LEFT JOIN public.users u ON e.created_by = u.id
-        WHERE e.id = %s
-    ''', (event_id,))
-    row = cursor.fetchone()
-    release_db(conn)
-    return dict_from_row(row)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            SELECT e.*, u.name as created_by_name
+            FROM hr.events e
+            LEFT JOIN public.users u ON e.created_by = u.id
+            WHERE e.id = %s
+        ''', (event_id,))
+        row = cursor.fetchone()
+        return dict_from_row(row)
 
 
+    finally:
+        release_db(conn)
 def save_hr_event(name, start_date, end_date, company=None, brand=None, description=None, created_by=None):
     """Create a new HR event."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        INSERT INTO hr.events (name, start_date, end_date, company, brand, description, created_by)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        RETURNING id
-    ''', (name, start_date, end_date, company, brand, description, created_by))
-    event_id = cursor.fetchone()['id']
-    conn.commit()
-    release_db(conn)
-    return event_id
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            INSERT INTO hr.events (name, start_date, end_date, company, brand, description, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        ''', (name, start_date, end_date, company, brand, description, created_by))
+        event_id = cursor.fetchone()['id']
+        conn.commit()
+        return event_id
 
 
+    finally:
+        release_db(conn)
 def update_hr_event(event_id, name, start_date, end_date, company=None, brand=None, description=None):
     """Update an HR event."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        UPDATE hr.events
-        SET name = %s, start_date = %s, end_date = %s, company = %s, brand = %s, description = %s
-        WHERE id = %s
-    ''', (name, start_date, end_date, company, brand, description, event_id))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            UPDATE hr.events
+            SET name = %s, start_date = %s, end_date = %s, company = %s, brand = %s, description = %s
+            WHERE id = %s
+        ''', (name, start_date, end_date, company, brand, description, event_id))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def delete_hr_event(event_id):
     """Delete an HR event (cascades to bonuses)."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('DELETE FROM hr.events WHERE id = %s', (event_id,))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('DELETE FROM hr.events WHERE id = %s', (event_id,))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def delete_hr_events_bulk(event_ids):
     """Delete multiple HR events (cascades to bonuses).
 
@@ -200,15 +219,17 @@ def delete_hr_events_bulk(event_ids):
         return 0
 
     conn = get_db()
-    cursor = get_cursor(conn)
-    placeholders = ','.join(['%s'] * len(event_ids))
-    cursor.execute(f'DELETE FROM hr.events WHERE id IN ({placeholders})', tuple(event_ids))
-    deleted_count = cursor.rowcount
-    conn.commit()
-    release_db(conn)
-    return deleted_count
+    try:
+        cursor = get_cursor(conn)
+        placeholders = ','.join(['%s'] * len(event_ids))
+        cursor.execute(f'DELETE FROM hr.events WHERE id IN ({placeholders})', tuple(event_ids))
+        deleted_count = cursor.rowcount
+        conn.commit()
+        return deleted_count
 
 
+    finally:
+        release_db(conn)
 # ============== HR Events ==============
 
 def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None,
@@ -224,68 +245,72 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
         user_context: Dict with user_id, company, department for scope filtering
     """
     conn = get_db()
-    cursor = get_cursor(conn)
+    try:
+        cursor = get_cursor(conn)
 
-    # user_id references users.id directly
-    query = '''
-        SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
-               ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
-               creator.name as created_by_name,
-               b.user_id as effective_employee_id
-        FROM hr.event_bonuses b
-        LEFT JOIN public.users u ON u.id = b.user_id
-        JOIN hr.events ev ON b.event_id = ev.id
-        LEFT JOIN public.users creator ON b.created_by = creator.id
-        WHERE 1=1
-    '''
-    params = []
+        # user_id references users.id directly
+        query = '''
+            SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
+                   ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
+                   creator.name as created_by_name,
+                   b.user_id as effective_employee_id
+            FROM hr.event_bonuses b
+            LEFT JOIN public.users u ON u.id = b.user_id
+            JOIN hr.events ev ON b.event_id = ev.id
+            LEFT JOIN public.users creator ON b.created_by = creator.id
+            WHERE 1=1
+        '''
+        params = []
 
-    if year:
-        query += ' AND b.year = %s'
-        params.append(year)
-    if month:
-        query += ' AND b.month = %s'
-        params.append(month)
-    if employee_id:
-        query += ' AND b.user_id = %s'
-        params.append(employee_id)
-    if event_id:
-        query += ' AND b.event_id = %s'
-        params.append(event_id)
+        if year:
+            query += ' AND b.year = %s'
+            params.append(year)
+        if month:
+            query += ' AND b.month = %s'
+            params.append(month)
+        if employee_id:
+            query += ' AND b.user_id = %s'
+            params.append(employee_id)
+        if event_id:
+            query += ' AND b.event_id = %s'
+            params.append(event_id)
 
-    scope_sql, scope_params = apply_scope_filter(
-        scope, user_context,
-        user_id_col='b.user_id', dept_col='u.department', company_col='u.company',
-    )
-    query += scope_sql
-    params.extend(scope_params)
+        scope_sql, scope_params = apply_scope_filter(
+            scope, user_context,
+            user_id_col='b.user_id', dept_col='u.department', company_col='u.company',
+        )
+        query += scope_sql
+        params.extend(scope_params)
 
-    query += ' ORDER BY b.year DESC, b.month DESC, u.name'
+        query += ' ORDER BY b.year DESC, b.month DESC, u.name'
 
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(row) for row in rows]
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [dict_from_row(row) for row in rows]
 
 
+    finally:
+        release_db(conn)
 def get_event_bonus(bonus_id):
     """Get a single event bonus by ID."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
-               ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
-               b.user_id as effective_employee_id
-        FROM hr.event_bonuses b
-        LEFT JOIN public.users u ON u.id = b.user_id
-        JOIN hr.events ev ON b.event_id = ev.id
-        WHERE b.id = %s
-    ''', (bonus_id,))
-    row = cursor.fetchone()
-    release_db(conn)
-    return dict_from_row(row) if row else None
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
+                   ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
+                   b.user_id as effective_employee_id
+            FROM hr.event_bonuses b
+            LEFT JOIN public.users u ON u.id = b.user_id
+            JOIN hr.events ev ON b.event_id = ev.id
+            WHERE b.id = %s
+        ''', (bonus_id,))
+        row = cursor.fetchone()
+        return dict_from_row(row) if row else None
 
 
+    finally:
+        release_db(conn)
 def can_access_bonus(bonus_id, scope, user_context):
     """Check if user can access a bonus based on their scope.
 
@@ -351,73 +376,81 @@ def save_event_bonus(employee_id, event_id, year, month, participation_start=Non
                      bonus_net=None, details=None, allocation_month=None, created_by=None):
     """Create a new event bonus record using user_id (references users.id)."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        INSERT INTO hr.event_bonuses
-        (user_id, event_id, year, month, participation_start, participation_end,
-         bonus_days, hours_free, bonus_net, details, allocation_month, created_by)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id
-    ''', (employee_id, event_id, year, month, participation_start, participation_end,
-          bonus_days, hours_free, bonus_net, details, allocation_month, created_by))
-    bonus_id = cursor.fetchone()['id']
-    conn.commit()
-    release_db(conn)
-    return bonus_id
-
-
-def save_event_bonuses_bulk(bonuses, created_by=None):
-    """Bulk create event bonus records using user_id (references users.id)."""
-    conn = get_db()
-    cursor = get_cursor(conn)
-
-    created_ids = []
-    for b in bonuses:
+    try:
+        cursor = get_cursor(conn)
         cursor.execute('''
             INSERT INTO hr.event_bonuses
             (user_id, event_id, year, month, participation_start, participation_end,
              bonus_days, hours_free, bonus_net, details, allocation_month, created_by)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
-        ''', (b['employee_id'], b['event_id'], b['year'], b['month'],
-              b.get('participation_start'), b.get('participation_end'),
-              b.get('bonus_days'), b.get('hours_free'), b.get('bonus_net'),
-              b.get('details'), b.get('allocation_month'), created_by))
-        created_ids.append(cursor.fetchone()['id'])
-
-    conn.commit()
-    release_db(conn)
-    return created_ids
+        ''', (employee_id, event_id, year, month, participation_start, participation_end,
+              bonus_days, hours_free, bonus_net, details, allocation_month, created_by))
+        bonus_id = cursor.fetchone()['id']
+        conn.commit()
+        return bonus_id
 
 
+    finally:
+        release_db(conn)
+def save_event_bonuses_bulk(bonuses, created_by=None):
+    """Bulk create event bonus records using user_id (references users.id)."""
+    conn = get_db()
+    try:
+        cursor = get_cursor(conn)
+
+        created_ids = []
+        for b in bonuses:
+            cursor.execute('''
+                INSERT INTO hr.event_bonuses
+                (user_id, event_id, year, month, participation_start, participation_end,
+                 bonus_days, hours_free, bonus_net, details, allocation_month, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            ''', (b['employee_id'], b['event_id'], b['year'], b['month'],
+                  b.get('participation_start'), b.get('participation_end'),
+                  b.get('bonus_days'), b.get('hours_free'), b.get('bonus_net'),
+                  b.get('details'), b.get('allocation_month'), created_by))
+            created_ids.append(cursor.fetchone()['id'])
+
+        conn.commit()
+        return created_ids
+
+
+    finally:
+        release_db(conn)
 def update_event_bonus(bonus_id, employee_id, event_id, year, month, participation_start=None,
                        participation_end=None, bonus_days=None, hours_free=None,
                        bonus_net=None, details=None, allocation_month=None):
     """Update an event bonus record using user_id (references users.id)."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        UPDATE hr.event_bonuses
-        SET user_id = %s, event_id = %s, year = %s, month = %s,
-            participation_start = %s, participation_end = %s, bonus_days = %s,
-            hours_free = %s, bonus_net = %s, details = %s, allocation_month = %s,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = %s
-    ''', (employee_id, event_id, year, month, participation_start, participation_end,
-          bonus_days, hours_free, bonus_net, details, allocation_month, bonus_id))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            UPDATE hr.event_bonuses
+            SET user_id = %s, event_id = %s, year = %s, month = %s,
+                participation_start = %s, participation_end = %s, bonus_days = %s,
+                hours_free = %s, bonus_net = %s, details = %s, allocation_month = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        ''', (employee_id, event_id, year, month, participation_start, participation_end,
+              bonus_days, hours_free, bonus_net, details, allocation_month, bonus_id))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def delete_event_bonus(bonus_id):
     """Delete an event bonus record."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('DELETE FROM hr.event_bonuses WHERE id = %s', (bonus_id,))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('DELETE FROM hr.event_bonuses WHERE id = %s', (bonus_id,))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def delete_event_bonuses_bulk(bonus_ids):
     """Delete multiple event bonus records.
 
@@ -431,16 +464,18 @@ def delete_event_bonuses_bulk(bonus_ids):
         return 0
 
     conn = get_db()
-    cursor = get_cursor(conn)
-    # Use parameterized query with tuple expansion
-    placeholders = ','.join(['%s'] * len(bonus_ids))
-    cursor.execute(f'DELETE FROM hr.event_bonuses WHERE id IN ({placeholders})', tuple(bonus_ids))
-    deleted_count = cursor.rowcount
-    conn.commit()
-    release_db(conn)
-    return deleted_count
+    try:
+        cursor = get_cursor(conn)
+        # Use parameterized query with tuple expansion
+        placeholders = ','.join(['%s'] * len(bonus_ids))
+        cursor.execute(f'DELETE FROM hr.event_bonuses WHERE id IN ({placeholders})', tuple(bonus_ids))
+        deleted_count = cursor.rowcount
+        conn.commit()
+        return deleted_count
 
 
+    finally:
+        release_db(conn)
 def delete_event_bonuses_by_employee(employee_ids):
     """Delete all bonuses for the given employee (user) IDs.
 
@@ -454,15 +489,17 @@ def delete_event_bonuses_by_employee(employee_ids):
         return 0
 
     conn = get_db()
-    cursor = get_cursor(conn)
-    placeholders = ','.join(['%s'] * len(employee_ids))
-    cursor.execute(f'DELETE FROM hr.event_bonuses WHERE user_id IN ({placeholders})', tuple(employee_ids))
-    deleted_count = cursor.rowcount
-    conn.commit()
-    release_db(conn)
-    return deleted_count
+    try:
+        cursor = get_cursor(conn)
+        placeholders = ','.join(['%s'] * len(employee_ids))
+        cursor.execute(f'DELETE FROM hr.event_bonuses WHERE user_id IN ({placeholders})', tuple(employee_ids))
+        deleted_count = cursor.rowcount
+        conn.commit()
+        return deleted_count
 
 
+    finally:
+        release_db(conn)
 def delete_event_bonuses_by_event(selections):
     """Delete all bonuses for given event/year/month combinations.
 
@@ -476,243 +513,265 @@ def delete_event_bonuses_by_event(selections):
         return 0
 
     conn = get_db()
-    cursor = get_cursor(conn)
+    try:
+        cursor = get_cursor(conn)
 
-    total_deleted = 0
-    for sel in selections:
-        cursor.execute(
-            'DELETE FROM hr.event_bonuses WHERE event_id = %s AND year = %s AND month = %s',
-            (sel['event_id'], sel['year'], sel['month'])
-        )
-        total_deleted += cursor.rowcount
+        total_deleted = 0
+        for sel in selections:
+            cursor.execute(
+                'DELETE FROM hr.event_bonuses WHERE event_id = %s AND year = %s AND month = %s',
+                (sel['event_id'], sel['year'], sel['month'])
+            )
+            total_deleted += cursor.rowcount
 
-    conn.commit()
-    release_db(conn)
-    return total_deleted
+        conn.commit()
+        return total_deleted
 
 
+    finally:
+        release_db(conn)
 # ============== Summary/Stats ==============
 
 def get_event_bonuses_summary(year=None):
     """Get summary stats for event bonuses."""
     conn = get_db()
-    cursor = get_cursor(conn)
+    try:
+        cursor = get_cursor(conn)
 
-    query = '''
-        SELECT
-            COUNT(DISTINCT b.user_id) as total_employees,
-            COUNT(DISTINCT b.event_id) as total_events,
-            COUNT(*) as total_bonuses,
-            SUM(b.bonus_net) as total_bonus_amount,
-            SUM(b.hours_free) as total_hours,
-            SUM(b.bonus_days) as total_days
-        FROM hr.event_bonuses b
-    '''
-    params = []
-    if year:
-        query += ' WHERE b.year = %s'
-        params.append(year)
+        query = '''
+            SELECT
+                COUNT(DISTINCT b.user_id) as total_employees,
+                COUNT(DISTINCT b.event_id) as total_events,
+                COUNT(*) as total_bonuses,
+                SUM(b.bonus_net) as total_bonus_amount,
+                SUM(b.hours_free) as total_hours,
+                SUM(b.bonus_days) as total_days
+            FROM hr.event_bonuses b
+        '''
+        params = []
+        if year:
+            query += ' WHERE b.year = %s'
+            params.append(year)
 
-    cursor.execute(query, params)
-    row = cursor.fetchone()
-    release_db(conn)
-    return dict_from_row(row)
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        return dict_from_row(row)
 
 
+    finally:
+        release_db(conn)
 def get_bonuses_by_month(year):
     """Get bonus totals grouped by month for a year."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        SELECT month, COUNT(*) as count, SUM(bonus_net) as total
-        FROM hr.event_bonuses
-        WHERE year = %s
-        GROUP BY month
-        ORDER BY month
-    ''', (year,))
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(row) for row in rows]
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            SELECT month, COUNT(*) as count, SUM(bonus_net) as total
+            FROM hr.event_bonuses
+            WHERE year = %s
+            GROUP BY month
+            ORDER BY month
+        ''', (year,))
+        rows = cursor.fetchall()
+        return [dict_from_row(row) for row in rows]
 
 
+    finally:
+        release_db(conn)
 def get_bonuses_by_employee(year=None, month=None):
     """Get bonus totals grouped by employee from users table."""
     conn = get_db()
-    cursor = get_cursor(conn)
+    try:
+        cursor = get_cursor(conn)
 
-    query = '''
-        SELECT u.id, u.name, u.department, u.company, u.brand,
-               COUNT(*) as bonus_count,
-               COALESCE(SUM(b.bonus_days), 0) as total_days,
-               COALESCE(SUM(b.hours_free), 0) as total_hours,
-               COALESCE(SUM(b.bonus_net), 0) as total_bonus
-        FROM hr.event_bonuses b
-        LEFT JOIN public.users u ON u.id = b.user_id
-        WHERE 1=1
-    '''
-    params = []
-    if year:
-        query += ' AND b.year = %s'
-        params.append(year)
-    if month:
-        query += ' AND b.month = %s'
-        params.append(month)
+        query = '''
+            SELECT u.id, u.name, u.department, u.company, u.brand,
+                   COUNT(*) as bonus_count,
+                   COALESCE(SUM(b.bonus_days), 0) as total_days,
+                   COALESCE(SUM(b.hours_free), 0) as total_hours,
+                   COALESCE(SUM(b.bonus_net), 0) as total_bonus
+            FROM hr.event_bonuses b
+            LEFT JOIN public.users u ON u.id = b.user_id
+            WHERE 1=1
+        '''
+        params = []
+        if year:
+            query += ' AND b.year = %s'
+            params.append(year)
+        if month:
+            query += ' AND b.month = %s'
+            params.append(month)
 
-    query += ' GROUP BY u.id, u.name, u.department, u.company, u.brand ORDER BY total_bonus DESC'
+        query += ' GROUP BY u.id, u.name, u.department, u.company, u.brand ORDER BY total_bonus DESC'
 
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(row) for row in rows]
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [dict_from_row(row) for row in rows]
 
 
+    finally:
+        release_db(conn)
 def get_bonuses_by_event(year=None, month=None):
     """Get bonus totals grouped by event, year, and month."""
     conn = get_db()
-    cursor = get_cursor(conn)
+    try:
+        cursor = get_cursor(conn)
 
-    query = '''
-        SELECT e.id, e.name, e.start_date, e.end_date, e.company, e.brand,
-               b.year, b.month,
-               COUNT(*) as bonus_count,
-               COUNT(DISTINCT b.user_id) as employee_count,
-               COALESCE(SUM(b.bonus_days), 0) as total_days,
-               COALESCE(SUM(b.hours_free), 0) as total_hours,
-               COALESCE(SUM(b.bonus_net), 0) as total_bonus
-        FROM hr.event_bonuses b
-        JOIN hr.events e ON e.id = b.event_id
-        WHERE 1=1
-    '''
-    params = []
-    if year:
-        query += ' AND b.year = %s'
-        params.append(year)
-    if month:
-        query += ' AND b.month = %s'
-        params.append(month)
+        query = '''
+            SELECT e.id, e.name, e.start_date, e.end_date, e.company, e.brand,
+                   b.year, b.month,
+                   COUNT(*) as bonus_count,
+                   COUNT(DISTINCT b.user_id) as employee_count,
+                   COALESCE(SUM(b.bonus_days), 0) as total_days,
+                   COALESCE(SUM(b.hours_free), 0) as total_hours,
+                   COALESCE(SUM(b.bonus_net), 0) as total_bonus
+            FROM hr.event_bonuses b
+            JOIN hr.events e ON e.id = b.event_id
+            WHERE 1=1
+        '''
+        params = []
+        if year:
+            query += ' AND b.year = %s'
+            params.append(year)
+        if month:
+            query += ' AND b.month = %s'
+            params.append(month)
 
-    query += ' GROUP BY e.id, e.name, e.start_date, e.end_date, e.company, e.brand, b.year, b.month ORDER BY b.year DESC, b.month DESC, total_bonus DESC'
+        query += ' GROUP BY e.id, e.name, e.start_date, e.end_date, e.company, e.brand, b.year, b.month ORDER BY b.year DESC, b.month DESC, total_bonus DESC'
 
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(row) for row in rows]
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [dict_from_row(row) for row in rows]
 
 
+    finally:
+        release_db(conn)
 # ============== HR Bonus Types ==============
 
 def get_all_bonus_types(active_only=True):
     """Get all bonus types, including restricted employee name."""
     conn = get_db()
-    cursor = get_cursor(conn)
+    try:
+        cursor = get_cursor(conn)
 
-    query = '''
-        SELECT bt.*, u.name AS restricted_to_user_name
-        FROM hr.bonus_types bt
-        LEFT JOIN public.users u ON u.id = bt.restricted_to_user_id
-    '''
-    if active_only:
-        query += ' WHERE bt.is_active = TRUE'
-    query += ' ORDER BY bt.name'
+        query = '''
+            SELECT bt.*, u.name AS restricted_to_user_name
+            FROM hr.bonus_types bt
+            LEFT JOIN public.users u ON u.id = bt.restricted_to_user_id
+        '''
+        if active_only:
+            query += ' WHERE bt.is_active = TRUE'
+        query += ' ORDER BY bt.name'
 
-    cursor.execute(query)
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(row) for row in rows]
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        return [dict_from_row(row) for row in rows]
 
 
+    finally:
+        release_db(conn)
 def get_bonus_type(bonus_type_id):
     """Get a single bonus type by ID."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        SELECT bt.*, u.name AS restricted_to_user_name
-        FROM hr.bonus_types bt
-        LEFT JOIN public.users u ON u.id = bt.restricted_to_user_id
-        WHERE bt.id = %s
-    ''', (bonus_type_id,))
-    row = cursor.fetchone()
-    release_db(conn)
-    return dict_from_row(row)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            SELECT bt.*, u.name AS restricted_to_user_name
+            FROM hr.bonus_types bt
+            LEFT JOIN public.users u ON u.id = bt.restricted_to_user_id
+            WHERE bt.id = %s
+        ''', (bonus_type_id,))
+        row = cursor.fetchone()
+        return dict_from_row(row)
 
 
+    finally:
+        release_db(conn)
 def save_bonus_type(name, amount, days_per_amount=1, description=None, restricted_to_user_id=None):
     """Create a new bonus type."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        INSERT INTO hr.bonus_types (name, amount, days_per_amount, description, restricted_to_user_id)
-        VALUES (%s, %s, %s, %s, %s)
-        RETURNING id
-    ''', (name, amount, days_per_amount, description, restricted_to_user_id))
-    bonus_type_id = cursor.fetchone()['id']
-    conn.commit()
-    release_db(conn)
-    return bonus_type_id
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            INSERT INTO hr.bonus_types (name, amount, days_per_amount, description, restricted_to_user_id)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        ''', (name, amount, days_per_amount, description, restricted_to_user_id))
+        bonus_type_id = cursor.fetchone()['id']
+        conn.commit()
+        return bonus_type_id
 
 
+    finally:
+        release_db(conn)
 def update_bonus_type(bonus_type_id, name, amount, days_per_amount=1, description=None,
                       is_active=True, restricted_to_user_id=None):
     """Update a bonus type."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        UPDATE hr.bonus_types
-        SET name = %s, amount = %s, days_per_amount = %s, description = %s,
-            is_active = %s, restricted_to_user_id = %s
-        WHERE id = %s
-    ''', (name, amount, days_per_amount, description, is_active, restricted_to_user_id, bonus_type_id))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            UPDATE hr.bonus_types
+            SET name = %s, amount = %s, days_per_amount = %s, description = %s,
+                is_active = %s, restricted_to_user_id = %s
+            WHERE id = %s
+        ''', (name, amount, days_per_amount, description, is_active, restricted_to_user_id, bonus_type_id))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def delete_bonus_type(bonus_type_id):
     """Soft delete a bonus type (set is_active = FALSE)."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        UPDATE hr.bonus_types SET is_active = FALSE WHERE id = %s
-    ''', (bonus_type_id,))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('''
+            UPDATE hr.bonus_types SET is_active = FALSE WHERE id = %s
+        ''', (bonus_type_id,))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 # ============== Companies CRUD ==============
 
 def get_all_companies_with_brands():
     """Get all companies with their brands."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("""
-        SELECT id, company, vat, created_at, parent_company_id, display_order
-        FROM companies
-        ORDER BY display_order, company
-    """)
-    companies = [dict_from_row(row) for row in cursor.fetchall()]
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("""
+            SELECT id, company, vat, created_at, parent_company_id, display_order
+            FROM companies
+            ORDER BY display_order, company
+        """)
+        companies = [dict_from_row(row) for row in cursor.fetchall()]
 
-    # Get brands for each company
-    cursor.execute("""
-        SELECT cb.company_id, b.name AS brand
-        FROM company_brands cb
-        JOIN brands b ON b.id = cb.brand_id
-        WHERE cb.is_active = TRUE
-    """)
-    brand_rows = cursor.fetchall()
-    release_db(conn)
+        # Get brands for each company
+        cursor.execute("""
+            SELECT cb.company_id, b.name AS brand
+            FROM company_brands cb
+            JOIN brands b ON b.id = cb.brand_id
+            WHERE cb.is_active = TRUE
+        """)
+        brand_rows = cursor.fetchall()
 
-    brands_by_company = {}
-    for row in brand_rows:
-        cid = row['company_id']
-        if cid not in brands_by_company:
-            brands_by_company[cid] = []
-        brands_by_company[cid].append(row['brand'])
+        brands_by_company = {}
+        for row in brand_rows:
+            cid = row['company_id']
+            if cid not in brands_by_company:
+                brands_by_company[cid] = []
+            brands_by_company[cid].append(row['brand'])
 
-    for c in companies:
-        c['brands'] = brands_by_company.get(c['id'], [])
+        for c in companies:
+            c['brands'] = brands_by_company.get(c['id'], [])
 
-    return companies
+        return companies
 
 
+    finally:
+        release_db(conn)
 def _would_create_cycle(cursor, company_id, proposed_parent_id):
     """Walk up the parent chain from proposed_parent_id. If we reach company_id, it's a cycle."""
     if proposed_parent_id is None:
@@ -736,85 +795,94 @@ def _would_create_cycle(cursor, company_id, proposed_parent_id):
 def create_company(company_name, vat=None, parent_company_id=None):
     """Create a new company."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("""
-        INSERT INTO companies (company, vat, parent_company_id)
-        VALUES (%s, %s, %s)
-        RETURNING id
-    """, (company_name, vat, parent_company_id))
-    company_id = cursor.fetchone()['id']
-    conn.commit()
-    release_db(conn)
-    return company_id
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("""
+            INSERT INTO companies (company, vat, parent_company_id)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        """, (company_name, vat, parent_company_id))
+        company_id = cursor.fetchone()['id']
+        conn.commit()
+        return company_id
 
 
+    finally:
+        release_db(conn)
 def update_company(company_id, company_name, vat=None, parent_company_id=None):
     """Update a company."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    if _would_create_cycle(cursor, company_id, parent_company_id):
+    try:
+        cursor = get_cursor(conn)
+        if _would_create_cycle(cursor, company_id, parent_company_id):
+            raise ValueError("Cannot set parent: would create a circular reference")
+        cursor.execute("""
+            UPDATE companies
+            SET company = %s, vat = %s, parent_company_id = %s
+            WHERE id = %s
+        """, (company_name, vat, parent_company_id, company_id))
+        conn.commit()
+
+
+    finally:
         release_db(conn)
-        raise ValueError("Cannot set parent: would create a circular reference")
-    cursor.execute("""
-        UPDATE companies
-        SET company = %s, vat = %s, parent_company_id = %s
-        WHERE id = %s
-    """, (company_name, vat, parent_company_id, company_id))
-    conn.commit()
-    release_db(conn)
-
-
 def delete_company(company_id):
     """Delete a company. Detaches children to root level."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("UPDATE companies SET parent_company_id = NULL WHERE parent_company_id = %s", (company_id,))
-    cursor.execute("DELETE FROM companies WHERE id = %s", (company_id,))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("UPDATE companies SET parent_company_id = NULL WHERE parent_company_id = %s", (company_id,))
+        cursor.execute("DELETE FROM companies WHERE id = %s", (company_id,))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 # ============== Company Brands CRUD ==============
 
 def get_all_company_brands(company_id=None):
     """Get all company brands, optionally filtered by company."""
     conn = get_db()
-    cursor = get_cursor(conn)
+    try:
+        cursor = get_cursor(conn)
 
-    if company_id:
-        cursor.execute("""
-            SELECT cb.id, cb.company_id, c.company, b.name AS brand, cb.is_active, cb.created_at
-            FROM company_brands cb
-            JOIN companies c ON cb.company_id = c.id
-            JOIN brands b ON cb.brand_id = b.id
-            WHERE cb.company_id = %s AND cb.is_active = TRUE
-            ORDER BY b.name
-        """, (company_id,))
-    else:
-        cursor.execute("""
-            SELECT cb.id, cb.company_id, c.company, b.name AS brand, cb.is_active, cb.created_at
-            FROM company_brands cb
-            JOIN companies c ON cb.company_id = c.id
-            JOIN brands b ON cb.brand_id = b.id
-            WHERE cb.is_active = TRUE
-            ORDER BY c.company, b.name
-        """)
+        if company_id:
+            cursor.execute("""
+                SELECT cb.id, cb.company_id, c.company, b.name AS brand, cb.is_active, cb.created_at
+                FROM company_brands cb
+                JOIN companies c ON cb.company_id = c.id
+                JOIN brands b ON cb.brand_id = b.id
+                WHERE cb.company_id = %s AND cb.is_active = TRUE
+                ORDER BY b.name
+            """, (company_id,))
+        else:
+            cursor.execute("""
+                SELECT cb.id, cb.company_id, c.company, b.name AS brand, cb.is_active, cb.created_at
+                FROM company_brands cb
+                JOIN companies c ON cb.company_id = c.id
+                JOIN brands b ON cb.brand_id = b.id
+                WHERE cb.is_active = TRUE
+                ORDER BY c.company, b.name
+            """)
 
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(r) for r in rows]
+        rows = cursor.fetchall()
+        return [dict_from_row(r) for r in rows]
 
 
+    finally:
+        release_db(conn)
 def get_brand_id_by_name(brand_name):
     """Look up brand ID by name from master brands table."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("SELECT id FROM brands WHERE name = %s AND is_active = TRUE", (brand_name,))
-    row = cursor.fetchone()
-    release_db(conn)
-    return row['id'] if row else None
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("SELECT id FROM brands WHERE name = %s AND is_active = TRUE", (brand_name,))
+        row = cursor.fetchone()
+        return row['id'] if row else None
 
 
+    finally:
+        release_db(conn)
 def create_company_brand(company_id, brand):
     """Create a new company brand.
 
@@ -823,28 +891,29 @@ def create_company_brand(company_id, brand):
         brand: Either a brand ID (int) or brand name (str)
     """
     conn = get_db()
-    cursor = get_cursor(conn)
+    try:
+        cursor = get_cursor(conn)
 
-    # Handle both brand_id (int) and brand name (str)
-    if isinstance(brand, str):
-        brand_id = get_brand_id_by_name(brand)
-        if not brand_id:
-            release_db(conn)
-            raise ValueError(f"Brand '{brand}' not found in master brands table")
-    else:
-        brand_id = brand
+        # Handle both brand_id (int) and brand name (str)
+        if isinstance(brand, str):
+            brand_id = get_brand_id_by_name(brand)
+            if not brand_id:
+                raise ValueError(f"Brand '{brand}' not found in master brands table")
+        else:
+            brand_id = brand
 
-    cursor.execute("""
-        INSERT INTO company_brands (company_id, brand_id)
-        VALUES (%s, %s)
-        RETURNING id
-    """, (company_id, brand_id))
-    cb_id = cursor.fetchone()['id']
-    conn.commit()
-    release_db(conn)
-    return cb_id
+        cursor.execute("""
+            INSERT INTO company_brands (company_id, brand_id)
+            VALUES (%s, %s)
+            RETURNING id
+        """, (company_id, brand_id))
+        cb_id = cursor.fetchone()['id']
+        conn.commit()
+        return cb_id
 
 
+    finally:
+        release_db(conn)
 def update_company_brand(cb_id, company_id, brand, is_active=True):
     """Update a company brand.
 
@@ -855,282 +924,124 @@ def update_company_brand(cb_id, company_id, brand, is_active=True):
         is_active: Whether the brand is active
     """
     conn = get_db()
-    cursor = get_cursor(conn)
+    try:
+        cursor = get_cursor(conn)
 
-    # Handle both brand_id (int) and brand name (str)
-    if isinstance(brand, str):
-        brand_id = get_brand_id_by_name(brand)
-        if not brand_id:
-            release_db(conn)
-            raise ValueError(f"Brand '{brand}' not found in master brands table")
-    else:
-        brand_id = brand
+        # Handle both brand_id (int) and brand name (str)
+        if isinstance(brand, str):
+            brand_id = get_brand_id_by_name(brand)
+            if not brand_id:
+                raise ValueError(f"Brand '{brand}' not found in master brands table")
+        else:
+            brand_id = brand
 
-    if company_id is not None:
-        cursor.execute("""
-            UPDATE company_brands
-            SET company_id = %s, brand_id = %s, is_active = %s
-            WHERE id = %s
-        """, (company_id, brand_id, is_active, cb_id))
-    else:
-        cursor.execute("""
-            UPDATE company_brands
-            SET brand_id = %s, is_active = %s
-            WHERE id = %s
-        """, (brand_id, is_active, cb_id))
-    conn.commit()
-    release_db(conn)
+        if company_id is not None:
+            cursor.execute("""
+                UPDATE company_brands
+                SET company_id = %s, brand_id = %s, is_active = %s
+                WHERE id = %s
+            """, (company_id, brand_id, is_active, cb_id))
+        else:
+            cursor.execute("""
+                UPDATE company_brands
+                SET brand_id = %s, is_active = %s
+                WHERE id = %s
+            """, (brand_id, is_active, cb_id))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def delete_company_brand(brand_id):
     """Delete a company brand."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("DELETE FROM company_brands WHERE id = %s", (brand_id,))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("DELETE FROM company_brands WHERE id = %s", (brand_id,))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 # ============== Department Structure CRUD ==============
 
 def get_all_department_structures():
     """Get all department structure entries."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("""
-        SELECT ds.id, ds.company, ds.brand, ds.department, ds.subdepartment,
-               ds.manager, ds.company_id, ds.manager_ids, ds.cc_email
-        FROM department_structure ds
-        ORDER BY ds.company, ds.brand, ds.department
-    """)
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(r) for r in rows]
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("""
+            SELECT ds.id, ds.company, ds.brand, ds.department, ds.subdepartment,
+                   ds.manager, ds.company_id, ds.manager_ids, ds.cc_email
+            FROM department_structure ds
+            ORDER BY ds.company, ds.brand, ds.department
+        """)
+        rows = cursor.fetchall()
+        return [dict_from_row(r) for r in rows]
 
 
+    finally:
+        release_db(conn)
 def create_department_structure(company_id, manager, company, brand, department, subdepartment, manager_ids=None, cc_email=None):
     """Create a new department structure entry."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("""
-        INSERT INTO department_structure (company_id, manager, company, brand, department, subdepartment, manager_ids, cc_email)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id
-    """, (company_id, manager, company, brand, department, subdepartment, manager_ids, cc_email))
-    struct_id = cursor.fetchone()['id']
-    conn.commit()
-    release_db(conn)
-    return struct_id
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("""
+            INSERT INTO department_structure (company_id, manager, company, brand, department, subdepartment, manager_ids, cc_email)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (company_id, manager, company, brand, department, subdepartment, manager_ids, cc_email))
+        struct_id = cursor.fetchone()['id']
+        conn.commit()
+        return struct_id
 
 
+    finally:
+        release_db(conn)
 def update_department_structure(struct_id, company_id, manager, company, brand, department, subdepartment, manager_ids=None, cc_email=None):
     """Update a department structure entry."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("""
-        UPDATE department_structure
-        SET company_id = %s, manager = %s, company = %s, brand = %s,
-            department = %s, subdepartment = %s, manager_ids = %s, cc_email = %s
-        WHERE id = %s
-    """, (company_id, manager, company, brand, department, subdepartment, manager_ids, cc_email, struct_id))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("""
+            UPDATE department_structure
+            SET company_id = %s, manager = %s, company = %s, brand = %s,
+                department = %s, subdepartment = %s, manager_ids = %s, cc_email = %s
+            WHERE id = %s
+        """, (company_id, manager, company, brand, department, subdepartment, manager_ids, cc_email, struct_id))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def delete_department_structure(struct_id):
     """Delete a department structure entry."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("DELETE FROM department_structure WHERE id = %s", (struct_id,))
-    conn.commit()
-    release_db(conn)
-
-
-def get_managed_employee_ids(manager_user_id, node_id=None):
-    """Get all user IDs that are team members under this user in the organigram.
-
-    Hierarchical cascading visibility:
-      - L0 (company_responsables): sees ALL users in that company
-      - L1 responsable: sees team members on L1 and all descendant nodes (L2-L5)
-      - L2 responsable: sees team on L2 and descendants (L3-L5)
-      - ...and so on
-
-    If node_id is given, only returns team members under that specific node
-    (must be within the user's visibility scope).
-
-    Uses recursive CTE to walk DOWN the tree from the responsable's node(s).
-    """
-    conn = get_db()
-    cursor = get_cursor(conn)
-
-    if node_id:
-        # Filter to a specific node and its descendants
-        cursor.execute("""
-            WITH RECURSIVE descendants AS (
-                SELECT id FROM structure_nodes WHERE id = %s
-                UNION ALL
-                SELECT sn.id FROM structure_nodes sn JOIN descendants d ON sn.parent_id = d.id
-            )
-            SELECT DISTINCT snm.user_id
-            FROM descendants d
-            JOIN structure_node_members snm ON snm.node_id = d.id AND snm.role = 'team'
-            WHERE snm.user_id != %s
-        """, (node_id, manager_user_id))
-        ids = [r['user_id'] for r in cursor.fetchall()]
-        release_db(conn)
-        return ids
-
-    # No filter — return all visible employees
-
-    # 1) Check L0: company_responsables → all users in that company
-    #    PLUS all structure tree members (L1-L5) under those companies
-    l0_ids = []
     try:
-        cursor.execute("""
-            WITH RECURSIVE l0_companies AS (
-                SELECT cr.company_id
-                FROM company_responsables cr
-                WHERE cr.user_id = %s
-            ),
-            -- Users matched by company name
-            company_users AS (
-                SELECT DISTINCT u.id AS user_id
-                FROM l0_companies lc
-                JOIN companies c ON c.id = lc.company_id
-                JOIN users u ON u.company = c.company AND u.is_active = TRUE
-                WHERE u.id != %s
-            ),
-            -- Structure tree members under L0 companies (L1→L5 cascade)
-            company_nodes AS (
-                SELECT sn.id
-                FROM l0_companies lc
-                JOIN structure_nodes sn ON sn.company_id = lc.company_id
-            ),
-            tree_descendants AS (
-                SELECT id FROM company_nodes
-                UNION ALL
-                SELECT sn.id FROM structure_nodes sn JOIN tree_descendants td ON sn.parent_id = td.id
-            ),
-            structure_users AS (
-                SELECT DISTINCT snm.user_id
-                FROM tree_descendants td
-                JOIN structure_node_members snm ON snm.node_id = td.id AND snm.role = 'team'
-                WHERE snm.user_id != %s
-            )
-            SELECT user_id FROM company_users
-            UNION
-            SELECT user_id FROM structure_users
-        """, (manager_user_id, manager_user_id, manager_user_id))
-        l0_ids = [r['user_id'] for r in cursor.fetchall()]
-    except Exception:
-        # Table may not exist yet — skip L0
-        conn.rollback()
+        cursor = get_cursor(conn)
+        cursor.execute("DELETE FROM department_structure WHERE id = %s", (struct_id,))
+        conn.commit()
 
-    # 2) Recursive descent from responsable nodes → all descendant team members
-    cursor.execute("""
-        WITH RECURSIVE resp_nodes AS (
-            SELECT sn.id
-            FROM structure_node_members snm
-            JOIN structure_nodes sn ON sn.id = snm.node_id
-            WHERE snm.user_id = %s AND snm.role = 'responsable'
-        ),
-        descendants AS (
-            SELECT id FROM resp_nodes
-            UNION ALL
-            SELECT sn.id FROM structure_nodes sn JOIN descendants d ON sn.parent_id = d.id
-        )
-        SELECT DISTINCT snm.user_id
-        FROM descendants d
-        JOIN structure_node_members snm ON snm.node_id = d.id AND snm.role = 'team'
-        WHERE snm.user_id != %s
-    """, (manager_user_id, manager_user_id))
-    tree_ids = [r['user_id'] for r in cursor.fetchall()]
 
-    release_db(conn)
-    return list(set(l0_ids + tree_ids))
+    finally:
+        release_db(conn)
+def get_managed_employee_ids(manager_user_id, node_id=None):
+    """Get all user IDs that are team members under this user in the organigram."""
+    from core.organization.manager_utils import get_managed_employee_ids as _f
+    return _f(manager_user_id, node_id)
 
 
 def get_visible_tree(manager_user_id):
-    """Get the organigram tree visible to this manager for filtering.
-
-    Returns a flat list of nodes (with parent_id for building the tree in the frontend).
-    Includes:
-      - L0: companies (if user is in company_responsables)
-      - All nodes where user is responsable + their descendants
-    """
-    conn = get_db()
-    cursor = get_cursor(conn)
-
-    # L0 companies
-    l0_companies = []
-    try:
-        cursor.execute("""
-            SELECT c.id, c.company as name, 0 as level
-            FROM company_responsables cr
-            JOIN companies c ON c.id = cr.company_id
-            WHERE cr.user_id = %s
-        """, (manager_user_id,))
-        l0_companies = [{'id': f'company-{r["id"]}', 'name': r['name'], 'level': 0,
-                         'parent_id': None, 'company_id': r['id']}
-                        for r in cursor.fetchall()]
-    except Exception:
-        conn.rollback()
-
-    # Get all visible nodes via recursive descent
-    cursor.execute("""
-        WITH RECURSIVE resp_nodes AS (
-            SELECT sn.id
-            FROM structure_node_members snm
-            JOIN structure_nodes sn ON sn.id = snm.node_id
-            WHERE snm.user_id = %s AND snm.role = 'responsable'
-        ),
-        descendants AS (
-            SELECT id FROM resp_nodes
-            UNION ALL
-            SELECT sn.id FROM structure_nodes sn JOIN descendants d ON sn.parent_id = d.id
-        )
-        SELECT DISTINCT sn.id, sn.name, sn.level, sn.parent_id, sn.company_id
-        FROM descendants d
-        JOIN structure_nodes sn ON sn.id = d.id
-        ORDER BY sn.level, sn.name
-    """, (manager_user_id,))
-    nodes = [{'id': r['id'], 'name': r['name'], 'level': r['level'],
-              'parent_id': r['parent_id'], 'company_id': r['company_id']}
-             for r in cursor.fetchall()]
-
-    release_db(conn)
-    return {'companies': l0_companies, 'nodes': nodes}
+    """Get the organigram tree visible to this manager for filtering."""
+    from core.organization.manager_utils import get_visible_tree as _f
+    return _f(manager_user_id)
 
 
 def is_manager(user_id):
     """Check if a user is a responsable on any organigram node or company."""
-    conn = get_db()
-    cursor = get_cursor(conn)
-
-    # Check structure_node_members
-    cursor.execute("""
-        SELECT COUNT(*) AS cnt FROM structure_node_members
-        WHERE user_id = %s AND role = 'responsable'
-    """, (user_id,))
-    row = cursor.fetchone()
-    if row and row['cnt'] > 0:
-        release_db(conn)
-        return True
-
-    # Check company_responsables (L0)
-    try:
-        cursor.execute("""
-            SELECT COUNT(*) AS cnt FROM company_responsables
-            WHERE user_id = %s
-        """, (user_id,))
-        row = cursor.fetchone()
-        release_db(conn)
-        return row['cnt'] > 0 if row else False
-    except Exception:
-        release_db(conn)
-        return False
-
-
+    from core.organization.manager_utils import is_manager as _f
+    return _f(user_id)
 _ALLOWED_LOOKUP_TABLES = frozenset({
     'companies', 'brands', 'departments', 'subdepartments',
     'positions', 'locations', 'cost_centers',
@@ -1144,130 +1055,156 @@ def get_name_by_id(table, id_value):
     if table not in _ALLOWED_LOOKUP_TABLES:
         return None
     conn = get_db()
-    cursor = get_cursor(conn)
-    if table == 'companies':
-        cursor.execute("SELECT company as name FROM companies WHERE id = %s", (id_value,))
-    else:
-        cursor.execute(f"SELECT name FROM {table} WHERE id = %s", (id_value,))
-    row = cursor.fetchone()
-    release_db(conn)
-    return row['name'] if row else None
+    try:
+        cursor = get_cursor(conn)
+        if table == 'companies':
+            cursor.execute("SELECT company as name FROM companies WHERE id = %s", (id_value,))
+        else:
+            cursor.execute(f"SELECT name FROM {table} WHERE id = %s", (id_value,))
+        row = cursor.fetchone()
+        return row['name'] if row else None
 
 
+    finally:
+        release_db(conn)
 # ============== Master Tables CRUD (brands, departments, subdepartments) ==============
 
 def get_all_master_brands():
     """Get all master brands."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("SELECT id, name, is_active FROM brands WHERE is_active = TRUE ORDER BY name")
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(r) for r in rows]
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("SELECT id, name, is_active FROM brands WHERE is_active = TRUE ORDER BY name")
+        rows = cursor.fetchall()
+        return [dict_from_row(r) for r in rows]
 
 
+    finally:
+        release_db(conn)
 def create_master_brand(name):
     """Create a new master brand."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("INSERT INTO brands (name) VALUES (%s) RETURNING id", (name,))
-    brand_id = cursor.fetchone()['id']
-    conn.commit()
-    release_db(conn)
-    return brand_id
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("INSERT INTO brands (name) VALUES (%s) RETURNING id", (name,))
+        brand_id = cursor.fetchone()['id']
+        conn.commit()
+        return brand_id
 
 
+    finally:
+        release_db(conn)
 def update_master_brand(brand_id, name, is_active=True):
     """Update a master brand."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("UPDATE brands SET name = %s, is_active = %s WHERE id = %s", (name, is_active, brand_id))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("UPDATE brands SET name = %s, is_active = %s WHERE id = %s", (name, is_active, brand_id))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def delete_master_brand(brand_id):
     """Soft delete a master brand."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("UPDATE brands SET is_active = FALSE WHERE id = %s", (brand_id,))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("UPDATE brands SET is_active = FALSE WHERE id = %s", (brand_id,))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def get_all_master_departments():
     """Get all master departments."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("SELECT id, name, is_active FROM departments WHERE is_active = TRUE ORDER BY name")
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(r) for r in rows]
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("SELECT id, name, is_active FROM departments WHERE is_active = TRUE ORDER BY name")
+        rows = cursor.fetchall()
+        return [dict_from_row(r) for r in rows]
 
 
+    finally:
+        release_db(conn)
 def create_master_department(name):
     """Create a new master department."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("INSERT INTO departments (name) VALUES (%s) RETURNING id", (name,))
-    dept_id = cursor.fetchone()['id']
-    conn.commit()
-    release_db(conn)
-    return dept_id
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("INSERT INTO departments (name) VALUES (%s) RETURNING id", (name,))
+        dept_id = cursor.fetchone()['id']
+        conn.commit()
+        return dept_id
 
 
+    finally:
+        release_db(conn)
 def update_master_department(dept_id, name, is_active=True):
     """Update a master department."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("UPDATE departments SET name = %s, is_active = %s WHERE id = %s", (name, is_active, dept_id))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("UPDATE departments SET name = %s, is_active = %s WHERE id = %s", (name, is_active, dept_id))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def delete_master_department(dept_id):
     """Soft delete a master department."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("UPDATE departments SET is_active = FALSE WHERE id = %s", (dept_id,))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("UPDATE departments SET is_active = FALSE WHERE id = %s", (dept_id,))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def get_all_master_subdepartments():
     """Get all master subdepartments."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("SELECT id, name, is_active FROM subdepartments WHERE is_active = TRUE ORDER BY name")
-    rows = cursor.fetchall()
-    release_db(conn)
-    return [dict_from_row(r) for r in rows]
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("SELECT id, name, is_active FROM subdepartments WHERE is_active = TRUE ORDER BY name")
+        rows = cursor.fetchall()
+        return [dict_from_row(r) for r in rows]
 
 
+    finally:
+        release_db(conn)
 def create_master_subdepartment(name):
     """Create a new master subdepartment."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("INSERT INTO subdepartments (name) VALUES (%s) RETURNING id", (name,))
-    subdept_id = cursor.fetchone()['id']
-    conn.commit()
-    release_db(conn)
-    return subdept_id
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("INSERT INTO subdepartments (name) VALUES (%s) RETURNING id", (name,))
+        subdept_id = cursor.fetchone()['id']
+        conn.commit()
+        return subdept_id
 
 
+    finally:
+        release_db(conn)
 def update_master_subdepartment(subdept_id, name, is_active=True):
     """Update a master subdepartment."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("UPDATE subdepartments SET name = %s, is_active = %s WHERE id = %s", (name, is_active, subdept_id))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("UPDATE subdepartments SET name = %s, is_active = %s WHERE id = %s", (name, is_active, subdept_id))
+        conn.commit()
 
 
+    finally:
+        release_db(conn)
 def delete_master_subdepartment(subdept_id):
     """Soft delete a master subdepartment."""
     conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute("UPDATE subdepartments SET is_active = FALSE WHERE id = %s", (subdept_id,))
-    conn.commit()
-    release_db(conn)
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute("UPDATE subdepartments SET is_active = FALSE WHERE id = %s", (subdept_id,))
+        conn.commit()
+    finally:
+        release_db(conn)

@@ -10,7 +10,7 @@ import { useHrStore } from '@/stores/hrStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
-import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { cn } from '@/lib/utils'
 
@@ -37,6 +37,8 @@ function TabLoader() {
 export default function Hr() {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
+  const isSmall = isMobile || isTablet
   const isProfilePage = useMatch('/app/hr/pontaje/:biostarUserId')
   const isBonusesPage = useMatch('/app/hr/bonuses')
   const isAdjustmentsPage = useMatch('/app/hr/adjustments')
@@ -128,7 +130,7 @@ export default function Hr() {
             { label: 'Organigram' },
           ]}
           search={
-            <SearchInput value={search} onChange={setSearch} placeholder={isMobile ? 'Search...' : 'Search by name, node, company...'} className={isMobile ? 'w-40' : 'w-56'} />
+            <SearchInput value={search} onChange={setSearch} placeholder="Search..." className={isSmall ? undefined : 'w-56'} collapsible={isSmall} />
           }
         />
         {authLoading ? (
@@ -192,7 +194,8 @@ export default function Hr() {
             value={search}
             onChange={setSearch}
             placeholder={isBonusesPage ? 'Search employee, event...' : isAdjustmentsPage ? 'Search by name...' : 'Search by name, email, group...'}
-            className={isMobile ? 'w-40' : 'w-48'}
+            className={isSmall ? undefined : 'w-48'}
+            collapsible={isSmall}
           />
         }
         actions={

@@ -10,7 +10,7 @@ import { StatCard } from '@/components/shared/StatCard'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
-import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import { statementsApi } from '@/api/statements'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import type { TransactionFilters } from '@/types/statements'
@@ -39,6 +39,8 @@ export default function Statements() {
   const navigate = useNavigate()
   const location = useLocation()
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
+  const isSmall = isMobile || isTablet
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('statements_summary')
   const [filters] = useState<TransactionFilters>({})
   const [showStats, setShowStats] = useState(false)
@@ -78,8 +80,9 @@ export default function Statements() {
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder={isMobile ? 'Search...' : 'Search transaction...'}
-            className={isMobile ? 'w-40' : 'w-48'}
+            placeholder="Search..."
+            className={isSmall ? undefined : 'w-48'}
+            collapsible={isSmall}
           />
         ) : undefined}
         actions={

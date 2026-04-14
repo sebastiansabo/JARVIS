@@ -71,7 +71,7 @@ export default function Forms() {
         actions={
           <Button onClick={() => navigate('builder')} size="sm">
             <Plus className="h-4 w-4 mr-2" />
-            New Form
+            <span className="hidden lg:inline">New Form</span>
           </Button>
         }
       />

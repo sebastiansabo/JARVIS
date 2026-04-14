@@ -247,3 +247,11 @@ class AllocationRepository(BaseRepository):
                     ))
             return True
         return self.execute_many(_work)
+
+    def user_has_allocation(self, invoice_id, user_id):
+        """Return True if user_id has a responsible allocation on invoice_id."""
+        row = self.query_one(
+            'SELECT 1 FROM allocations WHERE invoice_id = %s AND responsible_user_id = %s LIMIT 1',
+            (invoice_id, user_id)
+        )
+        return row is not None

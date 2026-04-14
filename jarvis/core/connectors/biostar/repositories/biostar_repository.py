@@ -580,6 +580,19 @@ class BioStarRepository(BaseRepository):
                 total += result if isinstance(result, int) else 0
         return total
 
+    def get_employee_by_jarvis_user(self, jarvis_user_id):
+        """Return active BioStar employee mapped to a JARVIS user ID, or None."""
+        return self.query_one(
+            '''SELECT biostar_user_id, name AS user_name, user_group_name,
+                      (status = 'active') AS is_active,
+                      lunch_break_minutes, working_hours, schedule_start, schedule_end,
+                      mapped_jarvis_user_id
+               FROM biostar_employees
+               WHERE mapped_jarvis_user_id = %s AND status = 'active'
+               LIMIT 1''',
+            (jarvis_user_id,)
+        )
+
     # ── JARVIS Users (for mapping) ──
 
     def get_jarvis_users(self):

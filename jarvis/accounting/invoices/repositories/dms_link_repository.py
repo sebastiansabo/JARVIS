@@ -86,3 +86,57 @@ class InvoiceDmsLinkRepository(BaseRepository):
         sql += ' ORDER BY d.created_at DESC LIMIT %s'
         params.append(limit)
         return self.query_all(sql, params)
+
+    def get_invoice_basic(self, invoice_id):
+        """Return {id, invoice_number, supplier, invoice_date} for an invoice."""
+        return self.query_one(
+            'SELECT id, invoice_number, supplier, invoice_date FROM invoices WHERE id = %s',
+            (invoice_id,)
+        )
+
+    def get_company_id_for_invoice(self, invoice_id):
+        """Return company_id resolved from first allocation's company name, or None."""
+        alloc = self.query_one(
+            'SELECT company FROM allocations WHERE invoice_id = %s LIMIT 1',
+            (invoice_id,)
+        )
+        if alloc and alloc.get('company'):
+            comp = self.query_one(
+                'SELECT id FROM companies WHERE company = %s', (alloc['company'],)
+            )
+            if comp:
+                return comp['id']
+        return None
+
+    def get_facturi_category(self):
+        """Return {id, name, icon, color} for the 'Facturi' DMS category, or None."""
+        row = self.query_one(
+            "SELECT id, name, icon, color FROM dms_categories WHERE slug = 'facturi' AND is_active = TRUE"
+        )
+        if not row:
+            row = self.query_one(
+                "SELECT id, name, icon, color FROM dms_categories WHERE name ILIKE 'facturi' AND is_active = TRUE"
+            )
+        return row
+
+    def get_stored_dms_doc(self, invoice_id):
+        """Return document_id if invoice already has a store_to_dms DMS document, else None."""
+        return self.query_one('''
+            SELECT l.document_id FROM invoice_dms_links l
+            JOIN dms_documents d ON d.id = l.document_id
+            WHERE l.invoice_id = %s AND d.deleted_at IS NULL
+              AND d.metadata->>'source' = 'store_to_dms'
+        ''', (invoice_id,))
+
+    def get_folder_path(self, folder_id):
+        """Return {path, depth} for a DMS folder."""
+        return self.query_one(
+            'SELECT path, depth FROM dms_folders WHERE id = %s', (folder_id,)
+        )
+
+    def set_document_folder(self, document_id, folder_id):
+        """Set the folder_id on a DMS document."""
+        self.execute(
+            'UPDATE dms_documents SET folder_id = %s WHERE id = %s',
+            (folder_id, document_id)
+        )

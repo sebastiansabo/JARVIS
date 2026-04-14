@@ -11,7 +11,7 @@ from .condition_eval import ConditionEvaluator
 from . import hooks
 from .repositories import (
     FlowRepository, RequestRepository, DecisionRepository,
-    AuditRepository, DelegationRepository,
+    ApprovalAuditRepository, DelegationRepository,
 )
 
 logger = logging.getLogger('jarvis.core.approvals.engine')
@@ -47,7 +47,7 @@ class ApprovalEngine:
         self._flow_repo = FlowRepository()
         self._request_repo = RequestRepository()
         self._decision_repo = DecisionRepository()
-        self._audit_repo = AuditRepository()
+        self._audit_repo = ApprovalAuditRepository()
         self._delegation_repo = DelegationRepository()
 
     # ════════════════════════════════════════════

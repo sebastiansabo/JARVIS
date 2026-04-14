@@ -19,13 +19,13 @@ from io import BytesIO
 import PyPDF2
 import json
 
-from ai_agent.providers.base_provider import BaseProvider
-
 # AI parsing support
 try:
-    import anthropic
+    from ai_agent.providers.base_provider import BaseProvider
+    from ai_agent.services.llm_client import ask as _llm_ask
     AI_ENABLED = True
 except ImportError:
+    BaseProvider = None
     AI_ENABLED = False
 
 try:
@@ -726,8 +726,6 @@ def parse_invoice_with_ai(text: str, api_key: str = None) -> dict:
         return {'items': {}}
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-
         prompt = f"""Extract invoice data from this text. Return a JSON object with:
 - invoice_number: string (invoice/factura number)
 - invoice_date: string (date in format YYYY-MM-DD)
@@ -751,13 +749,7 @@ IMPORTANT: Return ONLY valid JSON, no explanations.
 Invoice text:
 {text[:8000]}"""  # Limit text to avoid token limits
 
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2048,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        response_text = response.content[0].text
+        response_text = _llm_ask(prompt, model="claude-sonnet-4-20250514", max_tokens=2048, api_key=api_key)
         result = BaseProvider._extract_json(response_text)
 
         # Ensure items dict exists

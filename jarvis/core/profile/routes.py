@@ -9,12 +9,10 @@ from flask_login import login_required, current_user
 from . import profile_bp
 from core.profile.repositories import ProfileRepository
 from core.auth.repositories.user_repository import UserRepository
-from accounting.invoices.repositories import InvoiceRepository
 from core.utils.api_helpers import safe_error_response
 
 _profile_repo = ProfileRepository()
 _user_repo = UserRepository()
-_invoice_repo = InvoiceRepository()
 
 
 # ============== Page Route ==============
@@ -64,7 +62,7 @@ def api_profile_summary():
         hr_events_summary = _profile_repo.get_user_event_bonuses_summary(current_user.id)
 
         # Check if user is an org responsable (L0-L5) for edit permissions
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
         is_org_responsable = is_manager(current_user.id)
 
         # Sincron timesheet mapping status
@@ -180,6 +178,8 @@ def api_profile_invoices():
 def api_profile_invoice_detail(invoice_id):
     """Get full invoice with allocations — uses same org-scope logic as the list."""
     try:
+        from accounting.invoices.repositories import InvoiceRepository
+        _invoice_repo = InvoiceRepository()
         invoice = _invoice_repo.get_with_allocations(invoice_id)
         if not invoice:
             return jsonify({'error': 'Invoice not found'}), 404
@@ -200,7 +200,7 @@ def api_profile_invoice_detail(invoice_id):
 def api_profile_update_allocations(invoice_id):
     """Update allocations for an invoice — allowed for org responsables within their scope."""
     try:
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
 
         # Must be an org responsable (L0-L5)
         if not is_manager(current_user.id):
@@ -246,7 +246,7 @@ PROFILE_EDITABLE_FIELDS = {'status', 'payment_status', 'comment', 'drive_link',
 def api_profile_update_invoice_metadata(invoice_id):
     """Update restricted invoice fields — allowed for org responsables within their scope."""
     try:
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
         if not is_manager(current_user.id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
         if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
@@ -284,7 +284,7 @@ def api_profile_update_invoice_metadata(invoice_id):
 def api_profile_get_invoice_dms_docs(invoice_id):
     """List DMS documents linked to an invoice — org-scope check."""
     try:
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
         if not is_manager(current_user.id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
         if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
@@ -302,7 +302,7 @@ def api_profile_get_invoice_dms_docs(invoice_id):
 def api_profile_link_invoice_dms_doc(invoice_id):
     """Link a DMS document to an invoice — org-scope check."""
     try:
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
         if not is_manager(current_user.id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
         if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
@@ -327,7 +327,7 @@ def api_profile_link_invoice_dms_doc(invoice_id):
 def api_profile_unlink_invoice_dms_doc(invoice_id, document_id):
     """Unlink a DMS document from an invoice — org-scope check."""
     try:
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
         if not is_manager(current_user.id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
         if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
@@ -346,7 +346,7 @@ def api_profile_unlink_invoice_dms_doc(invoice_id, document_id):
 def api_profile_search_dms_docs():
     """Search DMS documents for the linking picker — org manager check only."""
     try:
-        from hr.events.database import is_manager
+        from core.organization.hr_utils import is_manager
         if not is_manager(current_user.id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
@@ -419,13 +419,7 @@ def api_profile_pontaje():
         service = BioStarSyncService()
 
         # Find BioStar employee mapped to current user
-        employee = service.repo.query_one(
-            '''SELECT be.*, u.name AS mapped_jarvis_user_name, u.email AS mapped_jarvis_user_email
-               FROM biostar_employees be
-               LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
-               WHERE be.mapped_jarvis_user_id = %s AND be.status = 'active'
-            ''', (current_user.id,)
-        )
+        employee = service.repo.get_employee_by_jarvis_user(current_user.id)
         if not employee:
             return jsonify({'success': True, 'mapped': False, 'employee': None,
                             'history': [], 'today_punches': []})
@@ -476,8 +470,7 @@ def api_profile_team_pontaje():
     """
     try:
         from datetime import datetime, timedelta
-        from hr.events.database import get_managed_employee_ids, is_manager, get_visible_tree
-        from database import get_db, get_cursor, release_db, dict_from_row
+        from core.organization.hr_utils import get_managed_employee_ids, is_manager, get_visible_tree
 
         if not is_manager(current_user.id):
             return jsonify({'success': True, 'is_manager': False, 'mode': 'daily',
@@ -538,20 +531,10 @@ def api_profile_team_pontaje():
                     bio_by_user[uid] = br
 
             # Get all managed users (including those without BioStar data)
-            conn = get_db()
-            cursor = get_cursor(conn)
-            cursor.execute('''
-                SELECT u.id, u.name, u.company, u.department, u.position
-                FROM users u
-                WHERE u.id = ANY(%s) AND u.is_active = TRUE
-                ORDER BY u.name
-            ''', (managed_ids,))
-            team_rows = cursor.fetchall()
-            release_db(conn)
+            team_rows = _profile_repo.get_users_by_ids(managed_ids)
 
             summary = []
-            for r in team_rows:
-                row = dict_from_row(r)
+            for row in team_rows:
                 uid = row['id']
                 bio = bio_by_user.get(uid)
                 if bio:
@@ -596,7 +579,7 @@ def api_profile_team_pontaje():
 def api_profile_team_pontaje_punches():
     """Get individual punch logs for a team member on a specific date."""
     try:
-        from hr.events.database import get_managed_employee_ids, is_manager
+        from core.organization.hr_utils import get_managed_employee_ids, is_manager
         from core.connectors.biostar.services import BioStarSyncService
 
         biostar_user_id = request.args.get('biostar_user_id', '')

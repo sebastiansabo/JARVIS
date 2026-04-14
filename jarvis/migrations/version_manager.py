@@ -12,7 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Increment this when a non-idempotent migration is added to init_schema
-CURRENT_VERSION = 2
+CURRENT_VERSION = 3
 
 
 def ensure_version_table(cursor):

@@ -11,7 +11,8 @@ from marketing.repositories import (
     ActivityRepository,
 )
 from marketing.services.project_service import ProjectService, UserContext
-from core.utils.api_helpers import get_json_or_error, handle_api_errors, v2_permission_required
+from core.utils.api_helpers import get_json_or_error, handle_api_errors
+from marketing.decorators import mkt_permission_required  # noqa: F401 — re-exported
 
 logger = logging.getLogger('jarvis.marketing.routes.projects')
 
@@ -20,13 +21,6 @@ _member_repo = MemberRepository()
 _budget_repo = BudgetRepository()
 _activity_repo = ActivityRepository()
 _service = ProjectService()
-
-
-# ---- Permission decorator (thin wrapper around shared v2_permission_required) ----
-
-def mkt_permission_required(entity, action):
-    """Marketing V2 permission check. Delegates to v2_permission_required."""
-    return v2_permission_required('marketing', entity, action)
 
 
 # ---- Projects CRUD ----

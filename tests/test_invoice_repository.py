@@ -307,6 +307,7 @@ class TestGetWithAllocations:
         mock_cursor.fetchall.side_effect = [
             [alloc_row],  # allocations
             [],           # reinvoice destinations
+            [],           # observers
         ]
         mock_dict.side_effect = lambda r: dict(r)
 
@@ -354,6 +355,7 @@ class TestGetWithAllocations:
         mock_cursor.fetchall.side_effect = [
             [alloc_row],  # allocations
             [rd_row],     # reinvoice destinations
+            [],           # observers
         ]
         mock_dict.side_effect = lambda r: dict(r)
 

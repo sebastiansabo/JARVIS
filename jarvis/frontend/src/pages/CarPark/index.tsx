@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/pagination'
 import { useAuthStore } from '@/stores/authStore'
 import { useCarParkStore } from '@/stores/carParkStore'
-import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import { carparkApi } from '@/api/carpark'
 import {
   STATUS_LABELS,
@@ -94,6 +94,8 @@ function formatKm(km: number): string {
 // ── Catalog page ───────────────────────────────────────────
 export default function CarPark() {
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
+  const isSmall = isMobile || isTablet
   const user = useAuthStore((s) => s.user)
   const canEdit = user?.can_edit_carpark ?? false
 
@@ -256,7 +258,8 @@ export default function CarPark() {
             value={search}
             onChange={handleSearch}
             placeholder="VIN, brand, model..."
-            className="w-48 md:w-64"
+            className={isSmall ? undefined : 'w-48 md:w-64'}
+            collapsible={isSmall}
           />
         }
         actions={
@@ -278,7 +281,7 @@ export default function CarPark() {
               <Button size="sm" asChild>
                 <Link to="/app/carpark/new">
                   <Plus className="mr-1 h-4 w-4" />
-                  {!isMobile && 'Add Vehicle'}
+                  <span className="hidden lg:inline">Add Vehicle</span>
                 </Link>
               </Button>
             )}

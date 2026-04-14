@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, memo, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useIsMobile, useIsTablet, useIsNarrow } from '@/hooks/useMediaQuery'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
@@ -57,6 +57,7 @@ import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
 import { TagFilter } from '@/components/shared/TagFilter'
 import { invoicesApi } from '@/api/invoices'
 import { organizationApi } from '@/api/organization'
+import { ApiError } from '@/api/client'
 import { settingsApi } from '@/api/settings'
 import { tagsApi } from '@/api/tags'
 import { useAccountingStore, lockedColumns } from '@/stores/accountingStore'
@@ -100,6 +101,9 @@ function formatDate(dateStr: string) {
 export default function Accounting() {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
+  const isSmall = isMobile || isTablet
+  const isNarrow = useIsNarrow()  // < 1280px — hides wide toolbar elements
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('accounting_invoices')
   const [showBin, setShowBin] = useState(false)
   const [search, setSearch] = useState('')
@@ -144,7 +148,7 @@ export default function Accounting() {
     include_allocations: true,
   }
 
-  const { data: invoices = [], isLoading, isError: invoicesError, refetch: refetchInvoices } = useQuery({
+  const { data: invoices = [], isLoading, isError: invoicesError, error: invoicesErrorObj, refetch: refetchInvoices } = useQuery({
     queryKey: ['invoices', filters],
     queryFn: () => invoicesApi.getInvoices(apiFilters),
   })
@@ -463,13 +467,14 @@ export default function Accounting() {
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder={isMobile ? 'Search...' : 'Search supplier or invoice #...'}
-            className={isMobile ? 'w-40' : 'w-48'}
+            placeholder="Search supplier or invoice #..."
+            className={isSmall ? undefined : 'w-48'}
+            collapsible={isSmall}
           />
         }
         actions={
           <div className="flex items-center gap-2">
-            {!isMobile && (
+            {!isNarrow && (
               <BrandFilter
                 mode="company"
                 value={brandFilterKey}
@@ -661,7 +666,9 @@ export default function Accounting() {
 
       {/* Invoices table */}
       {invoicesError ? (
-        <QueryError message="Failed to load invoices" onRetry={refetchInvoices} />
+        invoicesErrorObj instanceof ApiError && invoicesErrorObj.status === 403
+          ? <QueryError message="You don't have permission to view invoices" />
+          : <QueryError message="Failed to load invoices" onRetry={refetchInvoices} />
       ) : (
         <InvoiceTable
           invoices={displayedInvoices}

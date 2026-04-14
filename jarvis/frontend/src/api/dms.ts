@@ -283,6 +283,13 @@ export const dmsApi = {
       }>;
     }>('/dms/api/dms/suppliers/sync-anaf-batch', {}),
 
+  autoFill: (supId: number) =>
+    api.post<{
+      success: boolean; error?: string;
+      updated_fields: string[]; anaf_name: string;
+      steps: string[]; supplier?: DmsSupplier;
+    }>(`/dms/api/dms/suppliers/${supId}/auto-fill`, {}),
+
   // ---- Party Roles ----
 
   listPartyRoles: (activeOnly = true) =>

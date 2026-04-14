@@ -260,6 +260,103 @@ def _parse_anaf_data(dg: dict) -> dict:
     }
 
 
+@dms_bp.route('/api/dms/suppliers/<int:sup_id>/auto-fill', methods=['POST'])
+@login_required
+@dms_permission_required('supplier', 'manage')
+def api_auto_fill_supplier(sup_id):
+    """Auto-fill supplier fields from e-Factura invoice data + ANAF.
+
+    Steps:
+    1. If CUI missing: search efactura_invoices and efactura_supplier_mappings
+       for a matching partner_name to discover the CUI.
+    2. If CUI found: run ANAF sync to fill address/phone/city/county/nr_reg_com.
+    Returns a summary of what was found and updated.
+    """
+    sup = _sup_repo.get_by_id(sup_id)
+    company_id = getattr(current_user, 'company_id', None)
+    if not sup or (company_id and sup.get('company_id') != company_id):
+        return jsonify({'success': False, 'error': 'Supplier not found'}), 404
+
+    steps = []
+    updates = {}
+
+    # ── Step 1: Discover CUI from e-Factura data if not already set ──
+    cui_raw = (sup.get('cui') or '').strip().replace('RO', '').replace('ro', '')
+    if not cui_raw or not cui_raw.isdigit():
+        # Try efactura_invoices first (partner_cif field)
+        row = _sup_repo.query_one('''
+            SELECT partner_cif, partner_name
+            FROM efactura_invoices
+            WHERE partner_cif IS NOT NULL AND partner_cif != ''
+              AND partner_name ILIKE %s
+            ORDER BY issue_date DESC
+            LIMIT 1
+        ''', (f'%{sup["name"]}%',))
+
+        if not row:
+            # Try efactura_supplier_mappings
+            row = _sup_repo.query_one('''
+                SELECT partner_cif, partner_name
+                FROM efactura_supplier_mappings
+                WHERE partner_cif IS NOT NULL AND partner_cif != ''
+                  AND (partner_name ILIKE %s OR supplier_name ILIKE %s)
+                LIMIT 1
+            ''', (f'%{sup["name"]}%', f'%{sup["name"]}%'))
+
+        if row and row.get('partner_cif'):
+            cif = row['partner_cif'].strip().lstrip('RO').lstrip('ro')
+            if cif.isdigit():
+                cui_raw = cif
+                updates['cui'] = row['partner_cif'].strip()
+                steps.append(f'CUI {cui_raw} found from e-Factura data (partner: {row["partner_name"]})')
+            else:
+                steps.append(f'Found partner_cif={row["partner_cif"]} but it is not numeric — skipped')
+        else:
+            steps.append('No CUI found in e-Factura data')
+
+    # ── Step 2: ANAF sync if CUI is known ──
+    anaf_name = ''
+    anaf_updated = []
+    if cui_raw and cui_raw.isdigit():
+        try:
+            anaf_data = _fetch_anaf([int(cui_raw)])
+            cui_int = int(cui_raw)
+            if cui_int in anaf_data:
+                parsed = _parse_anaf_data(anaf_data[cui_int])
+                anaf_name = parsed.pop('anaf_name', '')
+                # Merge: update ANAF fields only if currently empty
+                current = _sup_repo.get_by_id(sup_id)
+                for key in ('address', 'city', 'county', 'phone', 'j_number', 'nr_reg_com'):
+                    if not current.get(key) and not updates.get(key) and parsed.get(key):
+                        updates[key] = parsed[key]
+                        anaf_updated.append(key)
+                if anaf_updated:
+                    steps.append(f'ANAF filled: {", ".join(anaf_updated)}')
+                else:
+                    steps.append('ANAF: no new fields to fill')
+                if anaf_name:
+                    steps.append(f'ANAF name: {anaf_name}')
+            else:
+                steps.append(f'CUI {cui_raw} not found in ANAF')
+        except Exception as e:
+            logger.error('ANAF call failed during auto-fill for supplier %s: %s', sup_id, e)
+            steps.append(f'ANAF error: {str(e)}')
+    else:
+        steps.append('ANAF skipped — no valid CUI')
+
+    # ── Apply all discovered updates ──
+    if updates:
+        _sup_repo.update(sup_id, **updates)
+
+    return jsonify({
+        'success': True,
+        'updated_fields': list(updates.keys()),
+        'anaf_name': anaf_name,
+        'steps': steps,
+        'supplier': _sup_repo.get_by_id(sup_id),
+    })
+
+
 @dms_bp.route('/api/dms/suppliers/<int:sup_id>/sync-anaf', methods=['POST'])
 @login_required
 @dms_permission_required('supplier', 'manage')

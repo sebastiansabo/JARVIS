@@ -465,3 +465,23 @@ class ClientRepository(BaseRepository):
                            (keep_id, remove_id))
             return True
         return self.execute_many(_work)
+
+    def find_by_normalized_name(self, name_normalized, include_nr_reg=False):
+        """Fuzzy-match a company name against normalized names using trigram similarity.
+
+        Returns {cui, display_name} (or also nr_reg if include_nr_reg=True), or None.
+        Silently returns None if pg_trgm extension is unavailable.
+        """
+        extra_col = ', c.nr_reg' if include_nr_reg else ''
+        try:
+            return self.query_one(f'''
+                SELECT cp.cui, c.display_name{extra_col}
+                FROM client_profiles cp
+                JOIN crm_clients c ON c.id = cp.client_id
+                WHERE cp.cui IS NOT NULL AND cp.cui != ''
+                  AND c.name_normalized % %s
+                ORDER BY similarity(c.name_normalized, %s) DESC
+                LIMIT 1
+            ''', (name_normalized, name_normalized))
+        except Exception:
+            return None

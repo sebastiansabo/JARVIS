@@ -422,15 +422,19 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
     }
   }, [hasBrands, deptsFetched, departments, row.brand, row.department, onUpdate])
 
-  // Auto-set department to brand when brand is selected but has no L2 departments
+  // Auto-set department to brand when brand is selected but has no L2 departments.
+  // Only fires for NEW rows (no existing department saved) to avoid overwriting legacy data.
   useEffect(() => {
-    if (hasBrands && row.brand && deptsFetched && departments.length === 0 && row.department !== row.brand) {
+    if (hasBrands && row.brand && deptsFetched && departments.length === 0 && !row.department) {
       onUpdate({ department: row.brand })
     }
-  }, [hasBrands, row.brand, deptsFetched, departments.length, row.department, row.brand, onUpdate])
+  }, [hasBrands, row.brand, deptsFetched, departments.length, row.department, onUpdate])
 
-  // Cascade: L2 requires L1 selected; L3 requires L2 selected
-  const showL2 = hasBrands ? (!!row.brand && departments.length > 0) : departments.length > 0
+  // Cascade: L2 requires L1 selected; L3 requires L2 selected.
+  // Also show L2 when a department is already saved (even if API list is empty/loading).
+  const showL2 = hasBrands
+    ? (!!row.brand && (departments.length > 0 || !!row.department))
+    : (departments.length > 0 || !!row.department)
   const showL3 = showL2 && !!row.department && subdepartments.length > 0
 
   // Dynamic col spans so the grid always sums to 12
@@ -465,6 +469,9 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
                 <SelectValue placeholder="Select brand..." />
               </SelectTrigger>
               <SelectContent>
+                {row.brand && !brands.includes(row.brand) && (
+                  <SelectItem key={row.brand} value={row.brand}>{row.brand}</SelectItem>
+                )}
                 {brands.filter(Boolean).map((b) => (
                   <SelectItem key={b} value={b}>{b}</SelectItem>
                 ))}
@@ -483,6 +490,9 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">Select...</SelectItem>
+                {row.department && !departments.includes(row.department) && (
+                  <SelectItem key={row.department} value={row.department}>{row.department}</SelectItem>
+                )}
                 {departments.filter(Boolean).map((d) => (
                   <SelectItem key={d} value={d}>{d}</SelectItem>
                 ))}
@@ -501,6 +511,9 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">Select...</SelectItem>
+                {row.subdepartment && !subdepartments.includes(row.subdepartment) && (
+                  <SelectItem key={row.subdepartment} value={row.subdepartment}>{row.subdepartment}</SelectItem>
+                )}
                 {subdepartments.filter(Boolean).map((sd) => (
                   <SelectItem key={sd} value={sd}>{sd}</SelectItem>
                 ))}

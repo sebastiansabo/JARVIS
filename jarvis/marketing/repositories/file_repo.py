@@ -6,7 +6,7 @@ from core.base_repository import BaseRepository
 logger = logging.getLogger('jarvis.marketing.file_repo')
 
 
-class FileRepository(BaseRepository):
+class MarketingFileRepository(BaseRepository):
 
     def get_by_project(self, project_id):
         return self.query_all('''

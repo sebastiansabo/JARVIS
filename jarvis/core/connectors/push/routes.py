@@ -10,9 +10,11 @@ from core.connectors.repositories.connector_repository import ConnectorRepositor
 from flask_login import current_user
 
 from . import push_bp
+from .repositories import DeviceRepository
 
 logger = logging.getLogger('jarvis.push.routes')
 _connector_repo = ConnectorRepository()
+_device_repo = DeviceRepository()
 
 CONNECTOR_TYPE = 'firebase'
 SERVICE_ACCOUNT_PATH = os.path.normpath(
@@ -141,18 +143,8 @@ def save_config():
 @api_login_required
 def test_push():
     """Send a test push notification to the current user's devices."""
-    from database import get_db_connection
-
     user_id = current_user.id
-
-    # Check if user has registered devices
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                'SELECT COUNT(*) FROM mobile_devices WHERE user_id = %s',
-                (user_id,),
-            )
-            count = cur.fetchone()[0]
+    count = _device_repo.count_user_devices(user_id)
 
     if count == 0:
         return jsonify({
@@ -183,25 +175,12 @@ def test_push():
 @api_login_required
 def list_devices():
     """List all registered devices."""
-    from database import get_db_connection
-
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute('''
-                SELECT md.id, md.user_id, u.name as user_name, md.platform,
-                       md.device_id, md.created_at, md.updated_at,
-                       LEFT(md.push_token, 20) || '...' as token_preview
-                FROM mobile_devices md
-                JOIN users u ON u.id = md.user_id
-                ORDER BY md.updated_at DESC
-            ''')
-            cols = [d[0] for d in cur.description]
-            devices = [dict(zip(cols, r)) for r in cur.fetchall()]
-            for d in devices:
-                if d.get('created_at'):
-                    d['created_at'] = str(d['created_at'])
-                if d.get('updated_at'):
-                    d['updated_at'] = str(d['updated_at'])
+    devices = _device_repo.get_all()
+    for d in devices:
+        if d.get('created_at'):
+            d['created_at'] = str(d['created_at'])
+        if d.get('updated_at'):
+            d['updated_at'] = str(d['updated_at'])
 
     return jsonify({'success': True, 'data': devices, 'total': len(devices)})
 
@@ -210,11 +189,5 @@ def list_devices():
 @api_login_required
 def delete_device(device_id):
     """Remove a registered device."""
-    from database import get_db_connection
-
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute('DELETE FROM mobile_devices WHERE id = %s', (device_id,))
-        conn.commit()
-
+    _device_repo.delete(device_id)
     return jsonify({'success': True})

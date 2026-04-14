@@ -54,7 +54,7 @@ def _resolve_manager_filter():
 
 def _get_managed_ids_with_self():
     """Return organigram-managed employee IDs including the current user."""
-    from hr.events.database import get_managed_employee_ids
+    from core.organization.hr_utils import get_managed_employee_ids
     user_ids = get_managed_employee_ids(current_user.id) or []
     # Include self so manager also sees their own punches
     if current_user.id not in user_ids:
@@ -713,25 +713,10 @@ def get_jarvis_users():
 @api_login_required
 def get_employee_by_jarvis_user(user_id):
     """Look up BioStar employee by JARVIS user ID."""
-    from database import get_db, get_cursor, release_db, dict_from_row
-    conn = get_db()
-    cursor = get_cursor(conn)
-    cursor.execute('''
-        SELECT biostar_user_id, name AS user_name, user_group_name,
-               (status = 'active') AS is_active,
-               lunch_break_minutes, working_hours, schedule_start, schedule_end,
-               mapped_jarvis_user_id
-        FROM biostar_employees
-        WHERE mapped_jarvis_user_id = %s AND status = 'active'
-        LIMIT 1
-    ''', (user_id,))
-    row = cursor.fetchone()
-    release_db(conn)
-
-    if not row:
+    employee = service.repo.get_employee_by_jarvis_user(user_id)
+    if not employee:
         return jsonify({'success': True, 'data': None})
 
-    employee = dict_from_row(row)
     if employee.get('schedule_start') and hasattr(employee['schedule_start'], 'isoformat'):
         employee['schedule_start'] = str(employee['schedule_start'])
     if employee.get('schedule_end') and hasattr(employee['schedule_end'], 'isoformat'):

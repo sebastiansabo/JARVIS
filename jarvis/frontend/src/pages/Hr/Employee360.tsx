@@ -165,7 +165,7 @@ export default function Employee360() {
         </TabsList>
 
         <TabsContent value="overview">
-          <OverviewPanel overview={overview} />
+          <OverviewPanel overview={overview} userId={uid} />
         </TabsContent>
         {bio && (
           <TabsContent value="pontaj">
@@ -213,27 +213,86 @@ const TS_CODE_LABELS: Record<string, { label: string; color: string }> = {
   ZLS: { label: 'Sat/Sun Off', color: 'bg-slate-100 text-slate-600 dark:bg-slate-900/40 dark:text-slate-300' },
 }
 
-function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<typeof hrApi.getEmployeeOverview>>['data']> }) {
-  const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses, month_stats: ms } = overview
+function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<ReturnType<typeof hrApi.getEmployeeOverview>>['data']>; userId: number }) {
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+
+  // Fetch monthly data for selected month
+  const { data: monthRes, isLoading: monthLoading } = useQuery({
+    queryKey: ['hr', 'employee-overview', userId, year, month],
+    queryFn: () => hrApi.getEmployeeOverview(userId, year, month),
+    enabled: !!userId,
+  })
+
+  const md = monthRes?.data ?? overview
+  const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses, month_stats: ms, leave_balance: lb } = md
   const monthName = ms ? new Date(ms.year, ms.month - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : ''
 
-  // Compute Sincron totals
+  // Hours per day (norma) for day→hours conversion
+  const norm = bio?.working_hours ?? 8
+  const dToH = (days: number) => Math.round(days * norm * 10) / 10
+  const fmtH = (hours: number, days?: number) => {
+    const d = days ?? Math.round(hours / norm * 10) / 10
+    return d > 0 ? `${hours}h (${d}d)` : `${hours}h`
+  }
+
+  // Compute Sincron totals — normalise day-based codes to hours
   const tsEntries = ms ? Object.entries(ms.timesheet) : []
   const overtimeHours = ms?.timesheet?.OSW?.value ?? 0
-  const annualLeaveDays = ms?.timesheet?.CO?.value ?? 0
-  const sickLeaveDays = ms?.timesheet?.CM?.value ?? 0
-  const totalLeaveDays = tsEntries
+  const annualLeaveH = dToH(ms?.timesheet?.CO?.value ?? 0)
+  const sickLeaveH = dToH(ms?.timesheet?.CM?.value ?? 0)
+  const totalLeaveH = tsEntries
     .filter(([code]) => ['CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG'].includes(code))
-    .reduce((s, [, v]) => s + v.value, 0)
+    .reduce((s, [, v]) => s + (v.unit === 'hour' ? v.value : dToH(v.value)), 0)
+
+  // Leave balance — in hours
+  const lbUsedH = lb ? dToH(lb.annual_used) : 0
+  const lbEntH = lb ? dToH(lb.annual_entitlement) : 0
+  const lbRemH = lb ? dToH(lb.annual_remaining) : 0
+  const annualPct = lb ? Math.min(100, Math.round((lb.annual_used / lb.annual_entitlement) * 100)) : 0
+
+  // Daily chart data
+  const dailyData = ms?.daily_hours ?? []
+
+  // Leave donut data — in hours
+  const donutSlices = useMemo(() => {
+    if (!lb) return []
+    const items = [
+      { label: 'Used Annual', value: dToH(lb.annual_used), color: '#10b981' },
+      { label: 'Remaining', value: dToH(lb.annual_remaining), color: '#d1d5db' },
+      { label: 'Sick Leave', value: dToH(lb.sick_leave), color: '#ef4444' },
+      { label: 'Unpaid', value: dToH(lb.unpaid_leave), color: '#6b7280' },
+      { label: 'Child Care', value: dToH(lb.child_care), color: '#8b5cf6' },
+      { label: 'Delegation', value: dToH(lb.delegation), color: '#f59e0b' },
+    ].filter(s => s.value > 0)
+    return items
+  }, [lb, norm])
+
+  const prevMonth = () => {
+    if (month === 1) { setMonth(12); setYear(y => y - 1) }
+    else setMonth(m => m - 1)
+  }
+  const nextMonth = () => {
+    if (month === 12) { setMonth(1); setYear(y => y + 1) }
+    else setMonth(m => m + 1)
+  }
 
   return (
     <div className="space-y-4 pt-2">
-      {/* Monthly stats header */}
-      {ms && (
-        <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-          {monthName} — Monthly Summary
+      {/* Month navigation */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={prevMonth}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm font-medium capitalize w-44 text-center">{monthName}</span>
+          <Button variant="ghost" size="icon" onClick={nextMonth}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
-      )}
+        {monthLoading && <span className="text-xs text-muted-foreground animate-pulse">Loading...</span>}
+      </div>
 
       {/* Top stat cards — attendance & work time */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -247,19 +306,84 @@ function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard title="Leave Permits" value={ms?.leave_permits.count ?? 0} icon={<FileText className="h-4 w-4" />} />
         <StatCard title="Permit Hours" value={`${ms?.leave_permits.total_hours ?? 0}h`} icon={<Clock className="h-4 w-4" />} />
-        {sinc && <StatCard title="Annual Leave" value={`${annualLeaveDays}d`} icon={<CalendarDays className="h-4 w-4" />} />}
-        {sinc && <StatCard title="Sick Leave" value={`${sickLeaveDays}d`} icon={<CheckCircle2 className="h-4 w-4" />} />}
+        {sinc && <StatCard title="Annual Leave" value={fmtH(annualLeaveH)} icon={<CalendarDays className="h-4 w-4" />} />}
+        {sinc && <StatCard title="Sick Leave" value={fmtH(sickLeaveH)} icon={<CheckCircle2 className="h-4 w-4" />} />}
       </div>
 
       {/* Bonuses row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard title="Bonuses" value={bonuses.count} icon={<Award className="h-4 w-4" />} />
         <StatCard title="Bonus Days" value={bonuses.total_days} icon={<CalendarDays className="h-4 w-4" />} />
-        <StatCard title="Form Submissions" value={overview.forms_count} icon={<ClipboardList className="h-4 w-4" />} />
+        <StatCard title="Form Submissions" value={md.forms_count} icon={<ClipboardList className="h-4 w-4" />} />
         {sinc && <StatCard title="Overtime" value={`${overtimeHours}h`} icon={<Timer className="h-4 w-4" />} />}
       </div>
 
+      {/* Daily Attendance Chart */}
+      {bio && dailyData.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Daily Attendance — {monthName}</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <AttendanceBarChart data={dailyData} />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Leave Balance + Donut chart */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {lb && sinc && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">{lb.year} — Leave Balance (YTD)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-6">
+                {/* Donut */}
+                {donutSlices.length > 0 && (
+                  <LeaveDonut slices={donutSlices} centerLabel={`${lbEntH}h`} centerSub="entitlement" />
+                )}
+                {/* Legend */}
+                <div className="flex-1 space-y-1.5 min-w-0">
+                  {donutSlices.map((s, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                      <span className="truncate flex-1">{s.label}</span>
+                      <span className="tabular-nums font-medium shrink-0">{fmtH(s.value)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Annual Leave progress bar */}
+              <div>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">Annual Leave (CO)</span>
+                  <span className="font-medium tabular-nums">{lbUsedH}h / {lbEntH}h <span className="text-muted-foreground text-xs">({lb.annual_used}d / {lb.annual_entitlement}d)</span></span>
+                </div>
+                <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={cn(
+                      'h-full rounded-full transition-all',
+                      annualPct >= 90 ? 'bg-red-500' : annualPct >= 70 ? 'bg-amber-500' : 'bg-green-500',
+                    )}
+                    style={{ width: `${annualPct}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground mt-0.5">
+                  <span>{lbRemH}h remaining ({lb.annual_remaining}d)</span>
+                  <span>{annualPct}% used</span>
+                </div>
+              </div>
+              {lb.ytd_permits.count > 0 && (
+                <div className="flex items-center justify-between text-sm pt-1 border-t">
+                  <span className="text-muted-foreground">Leave Permits (YTD)</span>
+                  <span className="font-medium tabular-nums">{lb.ytd_permits.count} permits — {lb.ytd_permits.total_hours}h</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Sincron Timesheet Breakdown */}
         {sinc && tsEntries.length > 0 && (
           <Card>
@@ -278,21 +402,25 @@ function OverviewPanel({ overview }: { overview: NonNullable<Awaited<ReturnType<
                         <span className="text-muted-foreground">{meta.label}</span>
                       </div>
                       <span className="font-medium tabular-nums">
-                        {data.value}{data.unit === 'hour' ? 'h' : 'd'}
+                        {data.unit === 'hour'
+                          ? `${data.value}h`
+                          : fmtH(dToH(data.value), data.value)}
                       </span>
                     </div>
                   )
                 })}
-              {totalLeaveDays > 0 && (
+              {totalLeaveH > 0 && (
                 <div className="flex items-center justify-between pt-1 border-t text-xs">
-                  <span className="text-muted-foreground font-medium">Total Leave Days</span>
-                  <span className="font-bold">{totalLeaveDays}d</span>
+                  <span className="text-muted-foreground font-medium">Total Leave</span>
+                  <span className="font-bold">{fmtH(totalLeaveH)}</span>
                 </div>
               )}
             </CardContent>
           </Card>
         )}
+      </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Organization */}
         <Card>
           <CardHeader className="pb-2">
@@ -362,6 +490,133 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
       <span className="text-muted-foreground">{label}</span>
       <span className="font-medium">{value || '-'}</span>
     </div>
+  )
+}
+
+// ── Attendance Bar Chart (SVG) ──
+
+function AttendanceBarChart({ data }: { data: { day: number; date: string; hours: number; expected: number; weekend: boolean }[] }) {
+  const maxHours = Math.max(...data.map(d => d.hours), ...data.map(d => d.expected), 1)
+  const yMax = Math.ceil(maxHours + 1)
+  const w = Math.max(700, data.length * 26)
+  const h = 180
+  const pad = { t: 14, b: 28, l: 28, r: 8 }
+  const iw = w - pad.l - pad.r
+  const ih = h - pad.t - pad.b
+  const barWidth = Math.min(iw / data.length - 3, 18)
+  const gap = (iw - barWidth * data.length) / (data.length + 1)
+  const expectedLine = data.find(d => d.expected > 0)?.expected ?? 8
+  const ySteps = [0, Math.floor(yMax / 2), yMax]
+
+  return (
+    <div className="w-full overflow-x-auto">
+      <svg viewBox={`0 0 ${w} ${h}`} className="text-foreground w-full" style={{ minWidth: w }}>
+        {/* Grid */}
+        {ySteps.map((v, i) => {
+          const y = pad.t + ih - (v / yMax) * ih
+          return (
+            <g key={i}>
+              <line x1={pad.l} x2={w - pad.r} y1={y} y2={y} stroke="currentColor" strokeOpacity={0.08} />
+              <text x={pad.l - 4} y={y + 3} textAnchor="end" className="fill-muted-foreground" fontSize={8}>{v}h</text>
+            </g>
+          )
+        })}
+        {/* Expected hours reference */}
+        {expectedLine > 0 && (
+          <line
+            x1={pad.l} x2={w - pad.r}
+            y1={pad.t + ih - (expectedLine / yMax) * ih}
+            y2={pad.t + ih - (expectedLine / yMax) * ih}
+            stroke="hsl(142, 76%, 36%)" strokeOpacity={0.3} strokeDasharray="4 3"
+          />
+        )}
+        {/* Bars */}
+        {data.map((d, i) => {
+          const x = pad.l + gap + i * (barWidth + gap)
+          const barH = (d.hours / yMax) * ih
+          const y = pad.t + ih - barH
+          const color = d.weekend && d.hours === 0
+            ? 'hsl(0, 0%, 90%)'
+            : d.hours === 0
+              ? 'hsl(0, 0%, 80%)'
+              : d.hours >= d.expected
+                ? 'hsl(142, 76%, 36%)'
+                : d.hours >= d.expected * 0.75
+                  ? 'hsl(38, 92%, 50%)'
+                  : 'hsl(0, 72%, 51%)'
+          return (
+            <g key={i}>
+              {d.hours === 0 && (
+                <rect x={x} y={pad.t + ih - 2} width={barWidth} height={2} rx={1} fill="currentColor" fillOpacity={d.weekend ? 0.03 : 0.1} />
+              )}
+              {d.hours > 0 && (
+                <rect x={x} y={y} width={barWidth} height={Math.max(barH, 1)} rx={2} fill={color} fillOpacity={0.8} />
+              )}
+              {d.hours > 0 && (
+                <text x={x + barWidth / 2} y={y - 3} textAnchor="middle" className="fill-muted-foreground" fontSize={7}>
+                  {d.hours.toFixed(1)}
+                </text>
+              )}
+              <text
+                x={x + barWidth / 2} y={pad.t + ih + 14}
+                textAnchor="middle"
+                className={d.weekend ? 'fill-muted-foreground/50' : 'fill-muted-foreground'}
+                fontSize={8}
+              >
+                {d.day}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+      {/* Legend */}
+      <div className="flex items-center gap-4 text-[10px] text-muted-foreground mt-1 px-1">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(142, 76%, 36%)' }} />On target</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(38, 92%, 50%)' }} />Below target</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(0, 72%, 51%)' }} />Undertime</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm border" style={{ background: 'transparent' }} />Absent</span>
+      </div>
+    </div>
+  )
+}
+
+// ── Leave Donut Chart (SVG) ──
+
+function LeaveDonut({ slices, centerLabel, centerSub }: { slices: { label: string; value: number; color: string }[]; centerLabel: string; centerSub: string }) {
+  const total = slices.reduce((s, sl) => s + sl.value, 0)
+  if (total <= 0) return null
+
+  const size = 120
+  const cx = size / 2
+  const cy = size / 2
+  const r = 40
+  const strokeWidth = 18
+
+  let cumulative = 0
+  const arcs = slices.map((sl) => {
+    const pct = sl.value / total
+    const startAngle = cumulative * 2 * Math.PI - Math.PI / 2
+    cumulative += pct
+    const endAngle = cumulative * 2 * Math.PI - Math.PI / 2
+    const largeArc = pct > 0.5 ? 1 : 0
+    const x1 = cx + r * Math.cos(startAngle)
+    const y1 = cy + r * Math.sin(startAngle)
+    const x2 = cx + r * Math.cos(endAngle)
+    const y2 = cy + r * Math.sin(endAngle)
+    const d = pct >= 0.999
+      ? `M ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx + r - 0.001} ${cy}`
+      : `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`
+    return { ...sl, d }
+  })
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      {arcs.map((a, i) => (
+        <path key={i} d={a.d} fill="none" stroke={a.color} strokeWidth={strokeWidth} strokeLinecap="butt" />
+      ))}
+      <text x={cx} y={cy - 4} textAnchor="middle" className="fill-foreground text-sm font-bold">{centerLabel}</text>
+      <text x={cx} y={cy + 10} textAnchor="middle" className="fill-muted-foreground" fontSize={9}>{centerSub}</text>
+    </svg>
   )
 }
 

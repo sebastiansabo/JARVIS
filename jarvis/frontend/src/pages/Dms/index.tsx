@@ -11,7 +11,7 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
-import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { StatCard } from '@/components/shared/StatCard'
@@ -80,6 +80,8 @@ export default function Dms() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
+  const isSmall = isMobile || isTablet
   const { filters, updateFilter, clearFilters, selectedIds, toggleSelected, selectAll, clearSelected, visibleColumns, setVisibleColumns, selectedFolderId, setSelectedFolderId, folderTreeOpen, setFolderTreeOpen } = useDmsStore(
     useShallow((s) => ({ filters: s.filters, updateFilter: s.updateFilter, clearFilters: s.clearFilters, selectedIds: s.selectedIds, toggleSelected: s.toggleSelected, selectAll: s.selectAll, clearSelected: s.clearSelected, visibleColumns: s.visibleColumns, setVisibleColumns: s.setVisibleColumns, selectedFolderId: s.selectedFolderId, setSelectedFolderId: s.setSelectedFolderId, folderTreeOpen: s.folderTreeOpen, setFolderTreeOpen: s.setFolderTreeOpen }))
   )
@@ -391,13 +393,14 @@ export default function Dms() {
           <SearchInput
             value={search}
             onChange={(v) => { setSearch(v); setDebouncedSearch(v) }}
-            placeholder={isMobile ? 'Search...' : 'Search documents...'}
-            className={isMobile ? 'w-40' : 'w-48'}
+            placeholder="Search documents..."
+            className={isSmall ? undefined : 'w-48'}
+            collapsible={isSmall}
           />
         }
         actions={
           <div className="flex items-center gap-2">
-            {!isMobile && (
+            {!isSmall && (
               <>
                 <Select
                   value={filters.category_id?.toString() || 'all'}
@@ -436,7 +439,7 @@ export default function Dms() {
                 />
               </>
             )}
-            {!isMobile && (
+            {!isSmall && (
               <Button variant="ghost" size="icon" className={folderTreeOpen ? 'bg-muted' : ''} onClick={() => setFolderTreeOpen(!folderTreeOpen)} title="Toggle folder tree">
                 {folderTreeOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
               </Button>

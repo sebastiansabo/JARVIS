@@ -7,7 +7,7 @@ from flask_login import login_required
 from marketing import marketing_bp
 from marketing.repositories import KpiRepository
 from core.utils.api_helpers import admin_required, get_json_or_error, safe_error_response
-from marketing.routes.projects import mkt_permission_required
+from marketing.decorators import mkt_permission_required
 
 logger = logging.getLogger('jarvis.marketing.routes.admin')
 

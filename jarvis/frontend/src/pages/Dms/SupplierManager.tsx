@@ -2,7 +2,7 @@ import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, Link } from 'react-router-dom'
 import { useDebounce } from '@/lib/utils'
-import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import {
   Plus, Edit2, Trash2, Check, X, Building2, User, FileText, CheckSquare,
   ChevronRight, ChevronDown, Tags, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, RefreshCw,
@@ -381,6 +381,8 @@ function SupplierDocsDialog({ supId, supName, open, onClose }: { supId: number; 
 export default function SupplierManager({ companyId }: SupplierManagerProps) {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
+  const isSmall = isMobile || isTablet
   const [search, setSearch] = useState('')
   const [editSup, setEditSup] = useState<DmsSupplier | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -539,7 +541,7 @@ export default function SupplierManager({ companyId }: SupplierManagerProps) {
         ]}
         search={
           <div className="flex items-center gap-2">
-            <SearchInput value={search} onChange={setSearch} placeholder={isMobile ? 'Search...' : 'Search suppliers...'} className={isMobile ? 'w-40' : 'w-48'} />
+            <SearchInput value={search} onChange={setSearch} placeholder="Search..." className={isSmall ? undefined : 'w-48'} collapsible={isSmall} />
             <span className="text-xs text-muted-foreground whitespace-nowrap">{suppliers.length} suppliers</span>
           </div>
         }

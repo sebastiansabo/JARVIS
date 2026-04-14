@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 from core.base_repository import BaseRepository
 
 
-class EventRepository(BaseRepository):
+class HREventRepository(BaseRepository):
     """Repository for HR event data access operations."""
 
     def get_all(self) -> List[Dict[str, Any]]:

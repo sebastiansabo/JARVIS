@@ -7,7 +7,7 @@ from core.base_repository import BaseRepository
 logger = logging.getLogger('jarvis.core.approvals.audit_repo')
 
 
-class AuditRepository(BaseRepository):
+class ApprovalAuditRepository(BaseRepository):
 
     def log(self, request_id, action, actor_id=None, actor_type='user', details=None):
         """Append an entry to the audit log."""

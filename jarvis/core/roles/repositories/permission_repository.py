@@ -461,3 +461,10 @@ class PermissionRepository(BaseRepository):
             has_perm = row['scope'] != 'deny' or row['granted']
             return {'has_permission': has_perm, 'scope': row['scope'], 'has_explicit_entry': True}
         return {'has_permission': False, 'scope': 'deny', 'has_explicit_entry': False}
+
+    def get_by_id(self, permission_id: int) -> dict | None:
+        """Return {module_key, entity_key, action_key} for a permission, or None."""
+        return self.query_one(
+            'SELECT module_key, entity_key, action_key FROM permissions_v2 WHERE id = %s',
+            (permission_id,)
+        )

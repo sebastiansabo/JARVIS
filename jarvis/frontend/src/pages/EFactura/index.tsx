@@ -16,7 +16,7 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { efacturaApi } from '@/api/efactura'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
-import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { SyncDialog } from './SyncDialog'
 
@@ -41,6 +41,8 @@ function TabLoader() {
 export default function EFactura() {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
+  const isSmall = isMobile || isTablet
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('efactura_status')
   const [syncOpen, setSyncOpen] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
@@ -73,8 +75,9 @@ export default function EFactura() {
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder={isMobile ? 'Search...' : 'Search supplier, invoice#...'}
-            className={isMobile ? 'w-40' : 'w-48'}
+            placeholder="Search..."
+            className={isSmall ? undefined : 'w-48'}
+            collapsible={isSmall}
           />
         ) : undefined}
         actions={

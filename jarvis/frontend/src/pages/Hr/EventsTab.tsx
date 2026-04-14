@@ -1,7 +1,7 @@
 import { useState, useMemo, Fragment } from 'react'
 import { Routes, Route, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import {
   Plus,
@@ -129,6 +129,8 @@ function EventsList() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
+  const isSmall = isMobile || isTablet
   const user = useAuthStore((s) => s.user)
   const canAdd = user?.permissions?.['hr.events.add'] ?? true
   const [search, setSearch] = useState('')
@@ -267,7 +269,7 @@ function EventsList() {
         ]}
         search={
           <div className="flex items-center gap-2">
-            <SearchInput value={search} onChange={setSearch} placeholder={isMobile ? 'Search...' : 'Search events...'} className={isMobile ? 'w-40' : 'w-48'} />
+            <SearchInput value={search} onChange={setSearch} placeholder="Search..." className={isSmall ? undefined : 'w-48'} collapsible={isSmall} />
             <Select value={filterCompany} onValueChange={setFilterCompany}>
               <SelectTrigger className="h-8 w-[140px] text-xs">
                 <SelectValue placeholder="All companies" />
@@ -325,7 +327,7 @@ function EventsList() {
         <div className="flex flex-wrap items-center gap-2">
           <DateField value={filterFrom} onChange={setFilterFrom} placeholder="From" className="w-[130px]" />
           <DateField value={filterTo} onChange={setFilterTo} placeholder="To" className="w-[130px]" />
-          <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly={isMobile} />
+          <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly={isSmall} />
           <span className="text-xs text-muted-foreground">{displayedEvents.length} events</span>
         </div>
       )}

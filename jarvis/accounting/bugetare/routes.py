@@ -6,8 +6,7 @@ Routes for bulk invoice processing, export, and AI campaign matching.
 import json
 import re
 from datetime import datetime
-
-from flask import render_template, jsonify, request, redirect, url_for, flash, Response
+from flask import render_template, jsonify, request, redirect, url_for, flash, Response, stream_with_context
 from flask_login import login_required, current_user
 
 from . import bugetare_bp
@@ -157,7 +156,7 @@ def api_bulk_export_json():
 @bugetare_bp.route('/api/bulk/match-campaigns', methods=['POST'])
 @login_required
 def api_bulk_match_campaigns():
-    """Use AI to match campaign names between source and target invoices."""
+    """Use AI to match campaign names — SSE streaming to avoid blocking workers."""
     from accounting.bugetare.invoice_parser import match_campaigns_with_ai
 
     data = request.get_json()
@@ -170,24 +169,21 @@ def api_bulk_match_campaigns():
     if not source_campaigns or not target_campaigns:
         return jsonify({'success': False, 'error': 'Both source and target campaigns are required'}), 400
 
-    try:
-        mapping = match_campaigns_with_ai(source_campaigns, target_campaigns)
-        return jsonify({
-            'success': True,
-            'mapping': mapping
-        })
-    except Exception as e:
-        return safe_error_response(e)
+    def _generate():
+        yield 'data: {"status":"running"}\n\n'
+        try:
+            mapping = match_campaigns_with_ai(source_campaigns, target_campaigns)
+            yield f'data: {json.dumps({"success": True, "mapping": mapping})}\n\n'
+        except Exception as exc:
+            yield f'data: {json.dumps({"success": False, "error": str(exc)})}\n\n'
+
+    return Response(stream_with_context(_generate()), content_type='text/event-stream')
 
 
 @bugetare_bp.route('/api/bulk/group-similar-items', methods=['POST'])
 @login_required
 def api_bulk_group_similar_items():
-    """Use AI to group similar items that should be merged together.
-
-    Groups items by same item type (Leads, Traffic, etc.) AND same brand/product.
-    Items from different invoice positions can be grouped if they represent the same campaign type.
-    """
+    """Use AI to group similar items — SSE streaming to avoid blocking workers."""
     data = request.get_json()
     if not data:
         return jsonify({'success': False, 'error': 'No data provided'}), 400
@@ -196,61 +192,37 @@ def api_bulk_group_similar_items():
     if len(items) < 2:
         return jsonify({'success': True, 'groups': []})
 
-    try:
-        import anthropic
-        client = anthropic.Anthropic()
+    items_snapshot = list(items)
 
-        items_list = "\n".join([f"{i}: {item}" for i, item in enumerate(items)])
+    def _generate():
+        yield 'data: {"status":"running"}\n\n'
+        try:
+            from ai_agent.services.llm_client import ask
+            items_list = "\n".join([f"{i}: {item}" for i, item in enumerate(items_snapshot)])
+            prompt = (
+                "Analyze these campaign/item names and group together items that should be merged "
+                "because they represent the SAME type of campaign/service for the SAME brand/product.\n\n"
+                f"Items to analyze:\n{items_list}\n\n"
+                "GROUPING RULES:\n"
+                "1. Same item type (Traffic, Leads, etc.) AND same brand (Mazda, Volvo, etc.)\n"
+                "2. Items from different invoice positions CAN be grouped\n"
+                "3. Be conservative — only group items you are confident should be merged\n\n"
+                "Return ONLY a JSON array of groups, e.g. [[0,3],[1,4,7]]. "
+                "Only include groups with 2+ items."
+            )
+            result_text = ask(prompt, model="claude-sonnet-4-20250514", max_tokens=1024).strip()
+            json_match = re.search(r'\[[\s\S]*\]', result_text)
+            if json_match:
+                groups = json.loads(json_match.group())
+                valid_groups = [
+                    g for g in groups
+                    if isinstance(g, list) and len(g) >= 2
+                    and all(isinstance(idx, int) and 0 <= idx < len(items_snapshot) for idx in g)
+                ]
+                yield f'data: {json.dumps({"success": True, "groups": valid_groups})}\n\n'
+            else:
+                yield 'data: {"success":true,"groups":[]}\n\n'
+        except Exception as exc:
+            yield f'data: {json.dumps({"success": False, "error": str(exc)})}\n\n'
 
-        prompt = f"""Analyze these campaign/item names and group together items that should be merged because they represent the SAME type of campaign/service for the SAME brand/product.
-
-Items to analyze:
-{items_list}
-
-GROUPING RULES:
-1. Group items that have the SAME item type (e.g., "Traffic", "Leads", "Conversions", "Brand", etc.) AND the SAME brand/product (e.g., "Mazda", "Volvo", "MG", etc.)
-2. Items from different invoice line positions CAN be grouped together if they represent the same campaign type
-3. Examples of items that SHOULD be grouped together:
-   - "[CA] Traffic - Mazda CX60" and "[CA] Traffic - Mazda CX80" (same type: Traffic, same brand: Mazda)
-   - "[CA] Leads - Modele Volvo 0 km" and "[CA] Leads - Volvo EX30" (same type: Leads, same brand: Volvo)
-4. Examples of items that should NOT be grouped:
-   - "[CA] Leads - Mazda CX80" and "[CA] Traffic - Mazda CX60" (different types: Leads vs Traffic)
-   - "[CA] Leads - Mazda CX80" and "[CA] Leads - Volvo EX30" (different brands: Mazda vs Volvo)
-5. If an item has no clear brand/product match with others, leave it ungrouped
-6. Be conservative - only group items you are confident should be merged
-
-Return ONLY a JSON array of groups, where each group is an array of item indices that should be merged.
-Only include groups with 2+ items. Items that don't belong to any group should be omitted.
-
-Example response format:
-[[0, 3], [1, 4, 7]]
-
-This means: items 0 and 3 should be merged together, items 1, 4, and 7 should be merged together."""
-
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        result_text = response.content[0].text.strip()
-
-        # Extract JSON array from response (handle markdown code blocks)
-        json_match = re.search(r'\[[\s\S]*\]', result_text)
-        if json_match:
-            groups = json.loads(json_match.group())
-            valid_groups = []
-            for group in groups:
-                if isinstance(group, list) and len(group) >= 2:
-                    if all(isinstance(idx, int) and 0 <= idx < len(items) for idx in group):
-                        valid_groups.append(group)
-
-            return jsonify({
-                'success': True,
-                'groups': valid_groups
-            })
-        else:
-            return jsonify({'success': True, 'groups': []})
-
-    except Exception as e:
-        return safe_error_response(e)
+    return Response(stream_with_context(_generate()), content_type='text/event-stream')

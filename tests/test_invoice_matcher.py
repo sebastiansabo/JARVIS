@@ -526,15 +526,11 @@ class TestMatchWithAI:
         assert result['invoice_id'] is None
         assert 'No candidates' in result.get('reasoning', '')
 
-    @patch('anthropic.Anthropic')
-    def test_parses_ai_response(self, mock_anthropic_class):
+    @patch('ai_agent.services.llm_client.ask')
+    def test_parses_ai_response(self, mock_ask):
         from accounting.statements.invoice_matcher import match_with_ai
 
-        mock_client = MagicMock()
-        mock_anthropic_class.return_value = mock_client
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text='{"best_match_invoice_id": 1, "confidence": 0.95, "reasoning": "Test"}')]
-        mock_client.messages.create.return_value = mock_response
+        mock_ask.return_value = '{"best_match_invoice_id": 1, "confidence": 0.95, "reasoning": "Test"}'
 
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}):
             transaction = {'amount': -100, 'transaction_date': '2025-12-20'}

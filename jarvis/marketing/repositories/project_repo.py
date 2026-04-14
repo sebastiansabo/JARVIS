@@ -278,12 +278,12 @@ class ProjectRepository(BaseRepository):
         )
 
     def _generate_slug(self, cursor, name):
+        import uuid
         base = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')[:60]
         slug = base
-        counter = 1
-        while True:
+        for counter in range(1, 101):
             cursor.execute('SELECT 1 FROM mkt_projects WHERE slug = %s', (slug,))
             if not cursor.fetchone():
                 return slug
             slug = f'{base}-{counter}'
-            counter += 1
+        return f'{base}-{uuid.uuid4().hex[:8]}'

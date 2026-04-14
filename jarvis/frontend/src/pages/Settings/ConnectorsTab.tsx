@@ -161,7 +161,7 @@ function ConnectionCard({
           </div>
         )}
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {isAuthenticated ? (
             <>
               <Button size="sm" variant="outline" onClick={() => onRefreshToken(conn.cif)}>
@@ -180,8 +180,7 @@ function ConnectionCard({
       </div>
 
       {/* Actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
           {isAuthenticated && (
             <Button size="sm" variant="outline" onClick={() => onFetchMessages(conn)}>
               <Download className="mr-1 h-3 w-3" /> Fetch Messages
@@ -190,8 +189,7 @@ function ConnectionCard({
           <Button size="sm" variant="outline" onClick={() => onCleanup(conn)}>
             <Eraser className="mr-1 h-3 w-3" /> Clean Up
           </Button>
-        </div>
-        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => onDelete(conn.cif)}>
+        <Button size="sm" variant="ghost" className="text-destructive ml-auto" onClick={() => onDelete(conn.cif)}>
           <Trash2 className="mr-1 h-3 w-3" /> Remove
         </Button>
       </div>
@@ -1510,7 +1508,7 @@ function AutovitAccountCard({
         </p>
       )}
 
-      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+      <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
         <Button size="sm" variant="outline" onClick={onTest}>
           <Plug className="mr-1 h-3 w-3" /> Test
         </Button>
