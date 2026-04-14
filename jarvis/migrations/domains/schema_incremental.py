@@ -1661,6 +1661,15 @@ def create_schema_incremental(conn, cursor):
                 SET company_id = c.id
                 FROM companies c
                 WHERE c.company = u.company;
+                -- Backfill "AW *" aliases that don't match the full company name
+                UPDATE users SET company_id = 10 WHERE company = 'AW International' AND company_id IS NULL;
+                UPDATE users SET company_id = 12 WHERE company = 'AW Prestige'      AND company_id IS NULL;
+                UPDATE users SET company_id = 11 WHERE company = 'AW Premium'       AND company_id IS NULL;
+                UPDATE users SET company_id = 9  WHERE company = 'AW Plus'          AND company_id IS NULL;
+                UPDATE users SET company_id = 15 WHERE company = 'AW One'           AND company_id IS NULL;
+                UPDATE users SET company_id = 16 WHERE company = 'AW Holding'       AND company_id IS NULL;
+                UPDATE users SET company_id = 13 WHERE company = 'AW Next'          AND company_id IS NULL;
+                UPDATE users SET company_id = 14 WHERE company = 'AW Insurance'     AND company_id IS NULL;
             END IF;
         END $$;
     ''')
