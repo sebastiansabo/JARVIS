@@ -10,6 +10,12 @@ Usage (drop-in replacement for the old imports):
 import time
 import threading
 
+from core.organization.manager_utils import (
+    is_manager as _is_manager,
+    get_managed_employee_ids as _get_managed,
+    get_visible_tree as _get_visible_tree,
+)
+
 # ---------------------------------------------------------------------------
 # Simple TTL cache (per-worker, thread-safe)
 # ---------------------------------------------------------------------------
@@ -53,7 +59,6 @@ def is_manager(user_id: int) -> bool:
     if hit:
         return cached
 
-    from hr.events.database import is_manager as _is_manager
     result = _is_manager(user_id)
     _cache_set(key, result)
     return result
@@ -69,7 +74,6 @@ def get_managed_employee_ids(manager_user_id: int, node_id=None) -> list:
     if hit:
         return cached
 
-    from hr.events.database import get_managed_employee_ids as _get_managed
     result = _get_managed(manager_user_id, node_id)
     _cache_set(key, result)
     return result
@@ -85,7 +89,6 @@ def get_visible_tree(manager_user_id: int) -> dict:
     if hit:
         return cached
 
-    from hr.events.database import get_visible_tree as _get_visible_tree
     result = _get_visible_tree(manager_user_id)
     _cache_set(key, result)
     return result

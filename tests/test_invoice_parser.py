@@ -290,18 +290,13 @@ class TestExtractCustomerVatFromText:
 class TestParseInvoiceAI:
     """Tests for parse_invoice() function with mocked AI."""
 
-    @patch('accounting.bugetare.invoice_parser.anthropic')
+    @patch('accounting.bugetare.invoice_parser._llm_call')
     @patch('accounting.bugetare.invoice_parser.pdf_to_images')
-    def test_returns_parsed_data(self, mock_pdf, mock_anthropic):
+    def test_returns_parsed_data(self, mock_pdf, mock_llm_call):
         from accounting.bugetare.invoice_parser import parse_invoice
 
         mock_pdf.return_value = [('base64data', 'image/png')]
-
-        mock_client = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text='{"supplier": "Test Co", "invoice_number": "INV001", "invoice_value": 100.50, "currency": "RON"}')]
-        mock_client.messages.create.return_value = mock_response
+        mock_llm_call.return_value = '{"supplier": "Test Co", "invoice_number": "INV001", "invoice_value": 100.50, "currency": "RON"}'
 
         result = parse_invoice('/tmp/test.pdf', api_key='test-key')
 

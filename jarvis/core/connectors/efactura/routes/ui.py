@@ -25,7 +25,7 @@ def index():
 def migrate_junction_table():
     """One-time migration to create the supplier mapping types junction table."""
     try:
-        from ..repositories.invoice_repo import SupplierMappingRepository
+        from ..repositories.supplier_mapping_repository import SupplierMappingRepository
         repo = SupplierMappingRepository()
         count = repo.migrate_junction_table()
 

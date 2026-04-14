@@ -431,7 +431,7 @@ class TestInvoiceRepository:
             'created_at': datetime.now(), 'updated_at': datetime.now(),
         }
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         inv = repo.get_by_id(10)
         assert inv is not None
@@ -447,7 +447,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = None
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         inv = repo.get_by_id(999)
         assert inv is None
@@ -461,7 +461,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = {'?column?': 1}
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         from core.connectors.efactura.config import InvoiceDirection
         repo = InvoiceRepository()
         result = repo.exists_by_message_id('12345', InvoiceDirection.RECEIVED, 'MSG-1')
@@ -476,7 +476,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = None
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         from core.connectors.efactura.config import InvoiceDirection
         repo = InvoiceRepository()
         result = repo.exists_by_message_id('12345', InvoiceDirection.RECEIVED, 'MSG-X')
@@ -491,7 +491,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.rowcount = 1
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         result = repo.ignore_invoice(10, ignored=True)
         assert result is True
@@ -505,7 +505,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = {'jarvis_invoice_id': 42}
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         result = repo.is_allocated(10)
         assert result is True
@@ -519,7 +519,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = {'jarvis_invoice_id': None}
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         result = repo.is_allocated(10)
         assert result is False
@@ -533,7 +533,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.rowcount = 1
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         result = repo.delete_invoice(10)
         assert result is True
@@ -547,7 +547,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.rowcount = 1
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         result = repo.restore_from_bin(10)
         assert result is True
@@ -561,7 +561,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = {'total': 15}
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         result = repo.count_unallocated('12345678')
         assert result == 15
@@ -575,7 +575,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = {'total': 7}
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         result = repo.count_hidden()
         assert result == 7
@@ -589,7 +589,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = {'total': 3}
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         result = repo.count_deleted()
         assert result == 3
@@ -608,7 +608,7 @@ class TestInvoiceRepository:
             'raw_response_hash': None, 'created_at': datetime.now(),
         }
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         ref = repo.get_external_ref(10)
         assert ref is not None
@@ -632,7 +632,7 @@ class TestInvoiceRepository:
              'created_at': datetime.now()},
         ]
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         artifacts = repo.get_artifacts(10)
         assert len(artifacts) == 2
@@ -646,7 +646,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.rowcount = 1
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         result = repo.update_overrides(
             invoice_id=10,
@@ -664,7 +664,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.rowcount = 3
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         result = repo.bulk_delete([1, 2, 3])
         assert result == 3
@@ -678,7 +678,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.rowcount = 2
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         result = repo.bulk_restore_from_bin([5, 6])
         assert result == 2
@@ -692,7 +692,7 @@ class TestInvoiceRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.rowcount = 4
 
-        from core.connectors.efactura.repositories.invoice_repo import InvoiceRepository
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
         repo = InvoiceRepository()
         result = repo.bulk_hide([1, 2, 3, 4])
         assert result == 4
@@ -720,7 +720,7 @@ class TestSupplierTypeRepository:
              'created_at': datetime.now(), 'updated_at': datetime.now()},
         ]
 
-        from core.connectors.efactura.repositories.invoice_repo import SupplierTypeRepository
+        from core.connectors.efactura.repositories.supplier_type_repository import SupplierTypeRepository
         repo = SupplierTypeRepository()
         types = repo.get_all(active_only=True)
         assert len(types) == 2
@@ -735,7 +735,7 @@ class TestSupplierTypeRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = {'id': 3}
 
-        from core.connectors.efactura.repositories.invoice_repo import SupplierTypeRepository
+        from core.connectors.efactura.repositories.supplier_type_repository import SupplierTypeRepository
         repo = SupplierTypeRepository()
         type_id = repo.create(name='Equipment', description='Office equipment')
         assert type_id == 3
@@ -750,7 +750,7 @@ class TestSupplierTypeRepository:
         mock_get_cursor.return_value = mock_cursor
         mock_cursor.rowcount = 1
 
-        from core.connectors.efactura.repositories.invoice_repo import SupplierTypeRepository
+        from core.connectors.efactura.repositories.supplier_type_repository import SupplierTypeRepository
         repo = SupplierTypeRepository()
         result = repo.delete(1)
         assert result is True

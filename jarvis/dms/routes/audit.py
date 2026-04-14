@@ -5,7 +5,8 @@ from flask_login import login_required, current_user
 
 from dms import dms_bp
 from dms.repositories import AuditRepository
-from core.utils.api_helpers import safe_error_response, v2_permission_required
+from core.utils.api_helpers import safe_error_response
+from core.roles.decorators import v2_permission_required
 
 logger = logging.getLogger('jarvis.dms.routes.audit')
 

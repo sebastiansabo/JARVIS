@@ -377,12 +377,17 @@ class TestApprovalHandlerBaseUrl:
 
     def test_no_hardcoded_old_domain(self):
         """Ensure old mkt-app-922ou domain is not present anywhere in handlers."""
-        handlers_path = os.path.join(
-            os.path.dirname(__file__), '..', 'jarvis', 'core', 'approvals', 'handlers.py'
+        handlers_dir = os.path.join(
+            os.path.dirname(__file__), '..', 'jarvis', 'core', 'approvals', 'handlers'
         )
-        with open(handlers_path) as f:
-            content = f.read()
-        assert 'mkt-app-922ou' not in content, 'Old hardcoded domain still present in handlers.py'
+        for fname in os.listdir(handlers_dir):
+            if not fname.endswith('.py'):
+                continue
+            fpath = os.path.join(handlers_dir, fname)
+            with open(fpath) as f:
+                content = f.read()
+            assert 'mkt-app-922ou' not in content, \
+                f'Old hardcoded domain still present in handlers/{fname}'
 
 
 # ── buildQs contract (Python equivalent) ──────────────────────────────────

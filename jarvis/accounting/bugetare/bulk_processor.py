@@ -19,13 +19,13 @@ from io import BytesIO
 import PyPDF2
 import json
 
-from ai_agent.providers.base_provider import BaseProvider
-
 # AI parsing support
 try:
+    from ai_agent.providers.base_provider import BaseProvider
     from ai_agent.services.llm_client import ask as _llm_ask
     AI_ENABLED = True
 except ImportError:
+    BaseProvider = None
     AI_ENABLED = False
 
 try:

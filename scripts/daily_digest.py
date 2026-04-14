@@ -100,7 +100,8 @@ def load_dotenv(override: bool = False) -> None:
 load_dotenv()
 
 ROMANIA_TZ = ZoneInfo("Europe/Bucharest")
-RECIPIENT = "sebastian.sabo@gmail.com"
+_BASE_RECIPIENTS = "sebastian.sabo@gmail.com"
+_EXTENDED_RECIPIENTS = "sebastian.sabo@gmail.com, sebastian.sabo@autoworld.ro, boardaw@autoworld.ro"
 MODEL = "claude-opus-4-6"
 
 REPOS = [
@@ -119,6 +120,7 @@ PERIODS: dict[str, dict] = {
         "detail_level": "brief",
         "include_stats": False,
         "include_timesheet": False,
+        "recipients": _BASE_RECIPIENTS,
     },
     "weekly": {
         "title": "Digest Săptămânal Commit-uri",
@@ -130,6 +132,7 @@ PERIODS: dict[str, dict] = {
         "detail_level": "detailed",
         "include_stats": True,
         "include_timesheet": False,
+        "recipients": _EXTENDED_RECIPIENTS,
     },
     "monthly": {
         "title": "Raport Lunar & Digest Commit-uri",
@@ -141,6 +144,7 @@ PERIODS: dict[str, dict] = {
         "detail_level": "comprehensive",
         "include_stats": True,
         "include_timesheet": True,
+        "recipients": _EXTENDED_RECIPIENTS,
     },
 }
 
@@ -968,7 +972,7 @@ def markdown_to_html(md: str) -> str:
     )
 
 
-def send_email(subject: str, body_markdown: str) -> None:
+def send_email(subject: str, body_markdown: str, recipients: str = _BASE_RECIPIENTS) -> None:
     host = os.environ.get("SMTP_HOST", "smtp.office365.com")
     port = int(os.environ.get("SMTP_PORT", "587") or "587")
     username = os.environ["SMTP_USERNAME"]
@@ -979,7 +983,10 @@ def send_email(subject: str, body_markdown: str) -> None:
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = f"{from_name} <{from_email}>"
-    msg["To"] = RECIPIENT
+    override = os.getenv("DIGEST_RECIPIENTS")
+    effective = override if override else recipients
+    to_list = [r.strip() for r in effective.split(",") if r.strip()]
+    msg["To"] = ", ".join(to_list)
 
     msg.attach(MIMEText(body_markdown, "plain", "utf-8"))
     msg.attach(MIMEText(markdown_to_html(body_markdown), "html", "utf-8"))
@@ -1088,8 +1095,10 @@ def main() -> int:
         body = "\n".join(sections)
 
     subject = f"[JARVIS] {period_config['subject_prefix']} — {date_str} ({total})"
-    send_email(subject, body)
-    print(f"Sent {period} digest with {total} commits to {RECIPIENT}")
+    period_recipients = period_config.get("recipients", _BASE_RECIPIENTS)
+    send_email(subject, body, recipients=period_recipients)
+    effective = os.getenv("DIGEST_RECIPIENTS") or period_recipients
+    print(f"Sent {period} digest with {total} commits to {effective}")
     return 0
 
 

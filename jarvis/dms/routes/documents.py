@@ -7,7 +7,8 @@ from flask_login import login_required, current_user
 from dms import dms_bp
 from dms.repositories import DocumentRepository, FileRepository, RelTypeRepository
 from dms.services.document_service import DocumentService
-from core.utils.api_helpers import safe_error_response, get_json_or_error, v2_permission_required
+from core.utils.api_helpers import safe_error_response, get_json_or_error
+from core.roles.decorators import v2_permission_required
 
 logger = logging.getLogger('jarvis.dms.routes.documents')
 

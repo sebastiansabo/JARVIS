@@ -9,12 +9,10 @@ from flask_login import login_required, current_user
 from . import profile_bp
 from core.profile.repositories import ProfileRepository
 from core.auth.repositories.user_repository import UserRepository
-from accounting.invoices.repositories import InvoiceRepository
 from core.utils.api_helpers import safe_error_response
 
 _profile_repo = ProfileRepository()
 _user_repo = UserRepository()
-_invoice_repo = InvoiceRepository()
 
 
 # ============== Page Route ==============
@@ -180,6 +178,8 @@ def api_profile_invoices():
 def api_profile_invoice_detail(invoice_id):
     """Get full invoice with allocations — uses same org-scope logic as the list."""
     try:
+        from accounting.invoices.repositories import InvoiceRepository
+        _invoice_repo = InvoiceRepository()
         invoice = _invoice_repo.get_with_allocations(invoice_id)
         if not invoice:
             return jsonify({'error': 'Invoice not found'}), 404

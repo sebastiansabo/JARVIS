@@ -5,7 +5,8 @@ from flask import request, jsonify
 
 from core.utils.api_helpers import safe_error_response, api_login_required
 from ._shared import efactura_bp, efactura_access_required
-from ..repositories.invoice_repo import SupplierMappingRepository, SupplierTypeRepository
+from ..repositories.supplier_mapping_repository import SupplierMappingRepository
+from ..repositories.supplier_type_repository import SupplierTypeRepository
 
 supplier_mapping_repo = SupplierMappingRepository()
 supplier_type_repo = SupplierTypeRepository()

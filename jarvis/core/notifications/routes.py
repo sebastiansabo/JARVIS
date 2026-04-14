@@ -10,6 +10,7 @@ from flask_login import login_required, current_user
 from . import notifications_bp
 from .repositories import NotificationRepository, InAppNotificationRepository, PushCategoryRepository, PushRateLimitRepository
 from core.utils.api_helpers import safe_error_response
+from .push_service import _device_repo, get_push_settings_cache, send_push_to_users
 
 _notif_repo = NotificationRepository()
 _in_app_repo = InAppNotificationRepository()
@@ -194,7 +195,6 @@ def api_get_push_settings():
         categories = _cat_repo.get_all_with_stats()
         stats = _rate_repo.get_stats() or {}
 
-        from .push_service import _device_repo
         stats['active_devices'] = _device_repo.get_active_device_count()
 
         return jsonify({
@@ -222,7 +222,6 @@ def api_save_push_settings():
         if filtered:
             _notif_repo.save_settings_bulk(filtered)
             # Invalidate cache so changes take effect immediately
-            from .push_service import get_push_settings_cache
             get_push_settings_cache().invalidate()
         return jsonify({'success': True})
     except Exception as e:
@@ -264,7 +263,6 @@ def api_create_push_category():
             ttl_seconds=data.get('ttl_seconds'),
             android_channel_id=data.get('android_channel_id', 'default_notifications'),
         )
-        from .push_service import get_push_settings_cache
         get_push_settings_cache().invalidate()
         return jsonify({'success': True, 'category': cat})
     except Exception as e:
@@ -286,7 +284,6 @@ def api_update_push_category(category_id):
         return jsonify({'success': False, 'error': 'No valid fields to update'}), 400
     try:
         cat = _cat_repo.update(category_id, **fields)
-        from .push_service import get_push_settings_cache
         get_push_settings_cache().invalidate()
         return jsonify({'success': True, 'category': cat})
     except Exception as e:
@@ -304,7 +301,6 @@ def api_delete_push_category(category_id):
         count = _cat_repo.delete(category_id)
         if count == 0:
             return jsonify({'success': False, 'error': 'Category not found or is builtin'}), 404
-        from .push_service import get_push_settings_cache
         get_push_settings_cache().invalidate()
         return jsonify({'success': True})
     except Exception as e:
@@ -320,7 +316,6 @@ def api_get_push_stats():
         return err
     try:
         stats = _rate_repo.get_stats() or {}
-        from .push_service import _device_repo
         stats['active_devices'] = _device_repo.get_active_device_count()
         return jsonify(stats)
     except Exception as e:
@@ -335,7 +330,6 @@ def api_test_push():
     if err:
         return err
     try:
-        from .push_service import send_push_to_users
         send_push_to_users(
             [current_user.id], 'JARVIS Test',
             'Push notifications are working!',

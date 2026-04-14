@@ -8,8 +8,15 @@ from typing import Optional
 import json
 import tempfile
 
-from ai_agent.providers.base_provider import BaseProvider
-from ai_agent.services.llm_client import call as _llm_call, ask as _llm_ask
+try:
+    from ai_agent.providers.base_provider import BaseProvider
+    from ai_agent.services.llm_client import call as _llm_call, ask as _llm_ask
+    _AI_ENABLED = True
+except ImportError:
+    BaseProvider = None
+    _llm_call = None
+    _llm_ask = None
+    _AI_ENABLED = False
 
 
 def normalize_vat_number(vat: str) -> str:

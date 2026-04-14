@@ -15,66 +15,82 @@ from core.organization.repositories import CompanyRepository, StructureRepositor
 from core.notifications.repositories import NotificationRepository
 from core.settings.dropdowns.repositories import DropdownRepository
 
-_user = UserRepository()
-_event = EventRepository()
-_role = RoleRepository()
-_perm = PermissionRepository()
-_company = CompanyRepository()
-_struct = StructureRepository()
-_notif = NotificationRepository()
-_dd = DropdownRepository()
+class _Lazy:
+    """Defers repository instantiation until first attribute access."""
+    def __init__(self, factory):
+        self._factory = factory
+        self._inst = None
 
-# Function aliases (preserve call sites)
-get_all_users = _user.get_all
-get_user = _user.get_by_id
-get_user_by_email = _user.get_by_email
-save_user = _user.save
-update_user = _user.update
-delete_user = _user.delete
-set_user_password = _user.update_password
-update_user_last_login = _user.update_last_login
-update_user_last_seen = _user.update_last_seen
-set_default_password_for_users = _user.set_default_passwords
-get_all_roles = _role.get_all
-get_role = _role.get
-save_role = _role.save
-update_role = _role.update
-delete_role = _role.delete
-get_all_permissions = _perm.get_all
-get_permissions_flat = _perm.get_flat
-get_role_permissions = _perm.get_role_permissions
-get_role_permissions_list = _perm.get_role_permissions_list
-set_role_permissions = _perm.set_role_permissions
-get_all_companies = _company.get_all
-get_company = _company.get
-save_company = _company.save
-update_company = _company.update
-delete_company_db = _company.delete
-get_all_department_structures = _struct.get_all
-get_department_structure = _struct.get
-save_department_structure = _struct.save
-update_department_structure = _struct.update
-delete_department_structure = _struct.delete
-get_unique_departments = _struct.get_unique_departments
-get_unique_brands = _struct.get_unique_brands
-get_all_responsables = _user.get_all
-get_responsable = _user.get_by_id
-get_vat_rates = _dd.get_vat_rates
-add_vat_rate = _dd.add_vat_rate
-update_vat_rate = _dd.update_vat_rate
-delete_vat_rate = _dd.delete_vat_rate
-get_notification_settings = _notif.get_settings
-save_notification_settings_bulk = _notif.save_settings_bulk
-save_notification_setting = _notif.save_setting
-get_notification_logs = _notif.get_logs
-get_dropdown_options = _dd.get_options
-get_dropdown_option = _dd.get_option
-add_dropdown_option = _dd.add_option
-update_dropdown_option = _dd.update_option
-delete_dropdown_option = _dd.delete_option
-log_user_event = _event.log_event
-get_user_events = _event.get_events
-get_event_types = _event.get_event_types
+    def _get(self):
+        if self._inst is None:
+            self._inst = self._factory()
+        return self._inst
+
+    def __getattr__(self, name):
+        return getattr(self._get(), name)
+
+
+_user    = _Lazy(UserRepository)
+_event   = _Lazy(EventRepository)
+_role    = _Lazy(RoleRepository)
+_perm    = _Lazy(PermissionRepository)
+_company = _Lazy(CompanyRepository)
+_struct  = _Lazy(StructureRepository)
+_notif   = _Lazy(NotificationRepository)
+_dd      = _Lazy(DropdownRepository)
+
+
+# Function wrappers (deferred — do not bind repo methods at import time)
+def get_all_users(*a, **kw): return _user.get_all(*a, **kw)
+def get_user(*a, **kw): return _user.get_by_id(*a, **kw)
+def get_user_by_email(*a, **kw): return _user.get_by_email(*a, **kw)
+def save_user(*a, **kw): return _user.save(*a, **kw)
+def update_user(*a, **kw): return _user.update(*a, **kw)
+def delete_user(*a, **kw): return _user.delete(*a, **kw)
+def set_user_password(*a, **kw): return _user.update_password(*a, **kw)
+def update_user_last_login(*a, **kw): return _user.update_last_login(*a, **kw)
+def update_user_last_seen(*a, **kw): return _user.update_last_seen(*a, **kw)
+def set_default_password_for_users(*a, **kw): return _user.set_default_passwords(*a, **kw)
+def get_all_roles(*a, **kw): return _role.get_all(*a, **kw)
+def get_role(*a, **kw): return _role.get(*a, **kw)
+def save_role(*a, **kw): return _role.save(*a, **kw)
+def update_role(*a, **kw): return _role.update(*a, **kw)
+def delete_role(*a, **kw): return _role.delete(*a, **kw)
+def get_all_permissions(*a, **kw): return _perm.get_all(*a, **kw)
+def get_permissions_flat(*a, **kw): return _perm.get_flat(*a, **kw)
+def get_role_permissions(*a, **kw): return _perm.get_role_permissions(*a, **kw)
+def get_role_permissions_list(*a, **kw): return _perm.get_role_permissions_list(*a, **kw)
+def set_role_permissions(*a, **kw): return _perm.set_role_permissions(*a, **kw)
+def get_all_companies(*a, **kw): return _company.get_all(*a, **kw)
+def get_company(*a, **kw): return _company.get(*a, **kw)
+def save_company(*a, **kw): return _company.save(*a, **kw)
+def update_company(*a, **kw): return _company.update(*a, **kw)
+def delete_company_db(*a, **kw): return _company.delete(*a, **kw)
+def get_all_department_structures(*a, **kw): return _struct.get_all(*a, **kw)
+def get_department_structure(*a, **kw): return _struct.get(*a, **kw)
+def save_department_structure(*a, **kw): return _struct.save(*a, **kw)
+def update_department_structure(*a, **kw): return _struct.update(*a, **kw)
+def delete_department_structure(*a, **kw): return _struct.delete(*a, **kw)
+def get_unique_departments(*a, **kw): return _struct.get_unique_departments(*a, **kw)
+def get_unique_brands(*a, **kw): return _struct.get_unique_brands(*a, **kw)
+def get_all_responsables(*a, **kw): return _user.get_all(*a, **kw)
+def get_responsable(*a, **kw): return _user.get_by_id(*a, **kw)
+def get_vat_rates(*a, **kw): return _dd.get_vat_rates(*a, **kw)
+def add_vat_rate(*a, **kw): return _dd.add_vat_rate(*a, **kw)
+def update_vat_rate(*a, **kw): return _dd.update_vat_rate(*a, **kw)
+def delete_vat_rate(*a, **kw): return _dd.delete_vat_rate(*a, **kw)
+def get_notification_settings(*a, **kw): return _notif.get_settings(*a, **kw)
+def save_notification_settings_bulk(*a, **kw): return _notif.save_settings_bulk(*a, **kw)
+def save_notification_setting(*a, **kw): return _notif.save_setting(*a, **kw)
+def get_notification_logs(*a, **kw): return _notif.get_logs(*a, **kw)
+def get_dropdown_options(*a, **kw): return _dd.get_options(*a, **kw)
+def get_dropdown_option(*a, **kw): return _dd.get_option(*a, **kw)
+def add_dropdown_option(*a, **kw): return _dd.add_option(*a, **kw)
+def update_dropdown_option(*a, **kw): return _dd.update_option(*a, **kw)
+def delete_dropdown_option(*a, **kw): return _dd.delete_option(*a, **kw)
+def log_user_event(*a, **kw): return _event.log_event(*a, **kw)
+def get_user_events(*a, **kw): return _event.get_events(*a, **kw)
+def get_event_types(*a, **kw): return _event.get_event_types(*a, **kw)
 
 logger = get_logger('jarvis.core.services.settings')
 

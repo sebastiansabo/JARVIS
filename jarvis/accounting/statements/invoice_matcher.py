@@ -12,7 +12,12 @@ import os
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 
-from ai_agent.providers.base_provider import BaseProvider
+try:
+    from ai_agent.providers.base_provider import BaseProvider
+    _AI_ENABLED = True
+except ImportError:
+    BaseProvider = None
+    _AI_ENABLED = False
 
 logger = logging.getLogger('jarvis.statements.invoice_matcher')
 

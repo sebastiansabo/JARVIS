@@ -8,7 +8,12 @@ Uses Anthropic API (claude-sonnet-4-5-20250514) for:
 import json
 import logging
 
-from ai_agent.services.llm_client import ask
+try:
+    from ai_agent.services.llm_client import ask
+    _AI_AVAILABLE = True
+except ImportError:
+    ask = None
+    _AI_AVAILABLE = False
 
 logger = logging.getLogger('jarvis.field_sales.ai')
 
@@ -27,6 +32,8 @@ def structure_visit_note(raw_note, client_context=None):
     """
     if not raw_note or not raw_note.strip():
         return {'error': 'empty_note', 'raw': ''}
+    if not _AI_AVAILABLE:
+        return {'error': 'ai_unavailable', 'raw': ''}
 
     context_block = ''
     if client_context:
@@ -113,6 +120,8 @@ def generate_visit_brief(client_360):
         str: Briefing text, or empty string on error.
     """
     if not client_360:
+        return ''
+    if not _AI_AVAILABLE:
         return ''
 
     # Build context from 360 data

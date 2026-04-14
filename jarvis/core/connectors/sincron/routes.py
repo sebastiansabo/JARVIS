@@ -7,7 +7,8 @@ from flask_login import current_user
 
 from . import sincron_bp
 from .services import SincronSyncService
-from core.utils.api_helpers import api_login_required, admin_required, safe_error_response, v2_permission_required
+from core.utils.api_helpers import api_login_required, admin_required, safe_error_response
+from core.roles.decorators import v2_permission_required
 
 logger = logging.getLogger('jarvis.sincron.routes')
 service = SincronSyncService()

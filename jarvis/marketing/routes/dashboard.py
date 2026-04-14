@@ -6,7 +6,7 @@ from flask_login import login_required
 
 from database import get_db, get_cursor, release_db
 from marketing import marketing_bp
-from marketing.routes.projects import mkt_permission_required
+from marketing.decorators import mkt_permission_required
 
 logger = logging.getLogger('jarvis.marketing.routes.dashboard')
 
