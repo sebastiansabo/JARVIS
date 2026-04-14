@@ -65,6 +65,8 @@ export const hrApi = {
   updateEmployee: (id: number, data: Partial<HrEmployee>) =>
     api.put<{ success: boolean }>(`${BASE}/employees/${id}`, data),
   deleteEmployee: (id: number) => api.delete<{ success: boolean }>(`${BASE}/employees/${id}`),
+  bulkToggleMissingPunch: (userIds: number[] | undefined, enabled: boolean) =>
+    api.post<{ success: boolean; updated: number }>(`${BASE}/employees/bulk-toggle-missing-punch`, { user_ids: userIds, enabled }),
 
   // Bonus Types
   getBonusTypes: (activeOnly = false) =>
@@ -169,6 +171,7 @@ export const hrApi = {
         leave_permits: { count: number; total_hours: number }
         daily_hours: { day: number; date: string; hours: number; expected: number; weekend: boolean }[]
         daily_codes: { day: number; codes: Record<string, number> }[]
+        missing_punch_days: string[]
       }
       leave_balance: {
         year: number

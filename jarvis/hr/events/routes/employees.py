@@ -95,9 +95,26 @@ def api_update_employee(employee_id):
         notify_on_allocation=data.get('notify_on_allocation', True),
         is_active=data.get('is_active', True),
         contract_status=data.get('contract_status'),
+        notify_missing_punch=data.get('notify_missing_punch'),
     )
 
     return jsonify({'success': True})
+
+
+@events_bp.route('/api/employees/bulk-toggle-missing-punch', methods=['POST'])
+@login_required
+@hr_permission_required('employees', 'edit')
+def api_bulk_toggle_missing_punch():
+    """API: Bulk toggle notify_missing_punch for employees."""
+    data = request.get_json()
+    enabled = data.get('enabled', True)
+    user_ids = data.get('user_ids')  # None means all active employees
+
+    from hr.events.repositories.employee_repository import EmployeeRepository
+    repo = EmployeeRepository()
+    updated = repo.bulk_toggle_missing_punch(user_ids=user_ids, enabled=enabled)
+
+    return jsonify({'success': True, 'updated': updated})
 
 
 @events_bp.route('/api/employees/<int:employee_id>', methods=['DELETE'])

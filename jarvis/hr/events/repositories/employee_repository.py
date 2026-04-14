@@ -17,7 +17,7 @@ class EmployeeRepository(BaseRepository):
         """Get all HR employees from users table with scope-based filtering."""
         query = '''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, is_active, contract_status, created_at, updated_at
+                   notify_on_allocation, notify_missing_punch, is_active, contract_status, created_at, updated_at
             FROM users
             WHERE 1=1
         '''
@@ -40,7 +40,7 @@ class EmployeeRepository(BaseRepository):
         """Get a single HR employee by ID."""
         return self.query_one('''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, is_active, contract_status, created_at, updated_at
+                   notify_on_allocation, notify_missing_punch, is_active, contract_status, created_at, updated_at
             FROM users WHERE id = %s
         ''', (employee_id,))
 
@@ -73,17 +73,19 @@ class EmployeeRepository(BaseRepository):
     def update(self, employee_id: int, name: str, department: str = None,
                subdepartment: str = None, brand: str = None, company: str = None,
                email: str = None, phone: str = None, notify_on_allocation: bool = True,
-               is_active: bool = True, contract_status: str = None) -> bool:
+               is_active: bool = True, contract_status: str = None,
+               notify_missing_punch: bool = None) -> bool:
         """Update an HR employee."""
         self.execute('''
             UPDATE users
             SET name = %s, department = %s, subdepartment = %s, brand = %s, company = %s,
                 email = %s, phone = %s, notify_on_allocation = %s,
                 is_active = %s, contract_status = COALESCE(%s, contract_status),
+                notify_missing_punch = COALESCE(%s, notify_missing_punch),
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
         ''', (name, department, subdepartment, brand, company, email, phone,
-              notify_on_allocation, is_active, contract_status, employee_id))
+              notify_on_allocation, is_active, contract_status, notify_missing_punch, employee_id))
         return True
 
     def delete(self, employee_id: int) -> bool:
@@ -93,11 +95,26 @@ class EmployeeRepository(BaseRepository):
         ''', (employee_id,))
         return True
 
+    def bulk_toggle_missing_punch(self, user_ids: List[int] = None, enabled: bool = True) -> int:
+        """Toggle notify_missing_punch for given user IDs, or all active users if user_ids is None."""
+        if user_ids:
+            placeholders = ','.join(['%s'] * len(user_ids))
+            result = self.execute(f'''
+                UPDATE users SET notify_missing_punch = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id IN ({placeholders})
+            ''', [enabled] + list(user_ids))
+        else:
+            result = self.execute('''
+                UPDATE users SET notify_missing_punch = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE COALESCE(contract_status, 'active') = 'active'
+            ''', (enabled,))
+        return result.get('rowcount', 0) if isinstance(result, dict) else 0
+
     def search(self, query: str) -> List[Dict[str, Any]]:
         """Search HR employees by name (active + suspended only)."""
         return self.query_all('''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, is_active, contract_status, created_at, updated_at
+                   notify_on_allocation, notify_missing_punch, is_active, contract_status, created_at, updated_at
             FROM users
             WHERE is_active = TRUE AND name ILIKE %s
             ORDER BY name

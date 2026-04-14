@@ -19,6 +19,7 @@ from tasks.notifications import cleanup_old_notifications, run_smart_notificatio
 from tasks.marketing import sync_marketing_kpis
 from tasks.field_sales import field_sales_follow_up_reminders, field_sales_overdue_visit_alerts
 from tasks.biostar import sync_biostar_events, sync_biostar_users, auto_adjust_biostar_schedules
+from tasks.hr_attendance import check_missing_punches
 from tasks.carpark import cleanup_vin_cache
 
 logger = get_logger('jarvis.tasks')
@@ -223,6 +224,18 @@ def start_scheduler():
                 misfire_grace_time=300,
                 coalesce=True,
             )
+
+    # HR — missing punch check (10:00 daily, after BioStar sync completes)
+    scheduler.add_job(
+        check_missing_punches,
+        'cron',
+        hour=10,
+        minute=0,
+        id='hr_missing_punch_check',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
 
     # CarPark — VIN cache cleanup (03:30 daily)
     scheduler.add_job(

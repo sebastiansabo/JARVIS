@@ -1,6 +1,7 @@
 import { useState, useMemo, Fragment } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/hooks/useAuth'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { hrApi } from '@/api/hr'
 import { StatCard } from '@/components/shared/StatCard'
@@ -13,11 +14,13 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import {
   Users, Building2, ArrowUpDown, Briefcase, ChevronDown, ChevronRight,
   Mail, Phone, Fingerprint, FileSpreadsheet, ExternalLink,
-  UserCheck, UserMinus, Archive,
+  UserCheck, UserMinus, Archive, Bell, BellOff,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { HrEmployee, ContractStatus, StructureCompany } from '@/types/hr'
 
@@ -31,6 +34,9 @@ type SortDir = 'asc' | 'desc'
 export default function EmployeesTab({ search }: Props) {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const canEditEmployee = user?.permissions?.['hr.employees.edit'] ?? false
   const [statusTab, setStatusTab] = useState<ContractStatus>('active')
   const [companyFilter, setCompanyFilter] = useState<string>('all')
   const [sortField, setSortField] = useState<SortField>('name')
@@ -46,6 +52,22 @@ export default function EmployeesTab({ search }: Props) {
   const { data: companiesData } = useQuery({
     queryKey: ['hr', 'companies-full'],
     queryFn: () => hrApi.getCompaniesFull(),
+  })
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ employeeId, enabled }: { employeeId: number; enabled: boolean }) =>
+      hrApi.updateEmployee(employeeId, { notify_missing_punch: enabled } as Partial<HrEmployee>),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['hr', 'employees'] }),
+  })
+
+  const bulkToggleMutation = useMutation({
+    mutationFn: ({ userIds, enabled }: { userIds?: number[]; enabled: boolean }) =>
+      hrApi.bulkToggleMissingPunch(userIds, enabled),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hr', 'employees'] })
+      toast.success('Missing punch notifications updated')
+    },
+    onError: () => toast.error('Failed to update notifications'),
   })
 
   const allEmployees: HrEmployee[] = employeesData ?? []
@@ -192,6 +214,30 @@ export default function EmployeesTab({ search }: Props) {
         <span className="text-xs text-muted-foreground">
           {filtered.length} of {stats.total} employees
         </span>
+        {canEditEmployee && statusTab === 'active' && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs h-7 gap-1"
+              disabled={bulkToggleMutation.isPending}
+              onClick={() => bulkToggleMutation.mutate({ enabled: true })}
+            >
+              <Bell className="h-3 w-3" />
+              All On
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs h-7 gap-1"
+              disabled={bulkToggleMutation.isPending}
+              onClick={() => bulkToggleMutation.mutate({ enabled: false })}
+            >
+              <BellOff className="h-3 w-3" />
+              All Off
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Stats */}
@@ -240,6 +286,7 @@ export default function EmployeesTab({ search }: Props) {
                     </TableHead>
                     <TableHead>Brand</TableHead>
                     <TableHead className="text-center">Status</TableHead>
+                    {canEditEmployee && <TableHead className="text-center w-20">Punch Alert</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -269,10 +316,22 @@ export default function EmployeesTab({ search }: Props) {
                               {e.contract_status === 'active' ? 'Active' : e.contract_status === 'suspended' ? 'Suspended' : 'Closed'}
                             </Badge>
                           </TableCell>
+                          {canEditEmployee && (
+                            <TableCell className="text-center">
+                              <Switch
+                                checked={e.notify_missing_punch ?? true}
+                                onCheckedChange={(checked) => {
+                                  toggleMutation.mutate({ employeeId: e.id, enabled: checked })
+                                }}
+                                onClick={(ev) => ev.stopPropagation()}
+                                className="scale-75"
+                              />
+                            </TableCell>
+                          )}
                         </TableRow>
                         {isExpanded && (
                           <TableRow>
-                            <TableCell colSpan={6} className="p-0">
+                            <TableCell colSpan={canEditEmployee ? 7 : 6} className="p-0">
                               <ExpandedEmployeeRow employee={e} onNavigate={() => navigate(`/app/hr/employees/${e.id}`)} />
                             </TableCell>
                           </TableRow>

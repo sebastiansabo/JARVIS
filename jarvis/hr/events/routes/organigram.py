@@ -121,6 +121,17 @@ def api_get_employee_overview(user_id):
                     'weekend': wd >= 5,
                 })
 
+        # Missing punch detection
+        missing_punch_days = []
+        if biostar:
+            missing_punch_days = _overview_repo.get_missing_punch_days(
+                user_id=user_id,
+                biostar_user_id=biostar['biostar_user_id'],
+                sincron_employee_id=sincron['sincron_employee_id'] if sincron else None,
+                sincron_company=sincron['company_name'] if sincron else None,
+                year=_year, month=_month,
+            )
+
         # Daily Sincron activity codes for timeline
         daily_codes = []
         if sincron:
@@ -156,6 +167,7 @@ def api_get_employee_overview(user_id):
                     'leave_permits': leave_stats,
                     'daily_hours': daily_hours,
                     'daily_codes': daily_codes,
+                    'missing_punch_days': missing_punch_days,
                 },
                 'leave_balance': {
                     'year': _year,

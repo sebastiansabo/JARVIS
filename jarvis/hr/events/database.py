@@ -20,7 +20,7 @@ def get_all_hr_employees(active_only=True, scope='all', user_context=None, contr
 
         query = '''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, is_active, contract_status, created_at, updated_at
+                   notify_on_allocation, notify_missing_punch, is_active, contract_status, created_at, updated_at
             FROM users
             WHERE 1=1
         '''
@@ -52,7 +52,7 @@ def get_hr_employee(employee_id):
         cursor = get_cursor(conn)
         cursor.execute('''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, is_active, contract_status, created_at, updated_at
+                   notify_on_allocation, notify_missing_punch, is_active, contract_status, created_at, updated_at
             FROM users WHERE id = %s
         ''', (employee_id,))
         row = cursor.fetchone()
@@ -81,7 +81,7 @@ def save_hr_employee(name, department=None, subdepartment=None, brand=None, comp
         release_db(conn)
 def update_hr_employee(employee_id, name, department=None, subdepartment=None, brand=None, company=None,
                        email=None, phone=None, notify_on_allocation=True, is_active=True,
-                       contract_status=None):
+                       contract_status=None, notify_missing_punch=None):
     """Update an HR employee in users table."""
     conn = get_db()
     try:
@@ -91,10 +91,11 @@ def update_hr_employee(employee_id, name, department=None, subdepartment=None, b
             SET name = %s, department = %s, subdepartment = %s, brand = %s, company = %s,
                 email = %s, phone = %s, notify_on_allocation = %s,
                 is_active = %s, contract_status = COALESCE(%s, contract_status),
+                notify_missing_punch = COALESCE(%s, notify_missing_punch),
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
         ''', (name, department, subdepartment, brand, company, email, phone, notify_on_allocation,
-              is_active, contract_status, employee_id))
+              is_active, contract_status, notify_missing_punch, employee_id))
         conn.commit()
 
 
@@ -120,7 +121,7 @@ def search_hr_employees(query):
         cursor = get_cursor(conn)
         cursor.execute('''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, is_active, contract_status, created_at, updated_at
+                   notify_on_allocation, notify_missing_punch, is_active, contract_status, created_at, updated_at
             FROM users
             WHERE is_active = TRUE AND name ILIKE %s
             ORDER BY name

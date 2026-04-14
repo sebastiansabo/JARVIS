@@ -48,6 +48,7 @@ export interface HrEmployee {
   is_active: boolean
   contract_status: ContractStatus
   notify_on_allocation: boolean
+  notify_missing_punch: boolean
 }
 
 export interface BonusType {

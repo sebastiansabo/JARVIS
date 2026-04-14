@@ -288,6 +288,8 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
 
   // Daily chart data
   const dailyData = ms?.daily_hours ?? []
+  const missingPunchDays: string[] = ms?.missing_punch_days ?? []
+  const missingPunchDayNums = new Set(missingPunchDays.map(d => new Date(d).getDate()))
 
   // Leave donut data — in hours
   const donutSlices = useMemo(() => {
@@ -352,6 +354,18 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
         {sinc && <StatCard title="Overtime" value={`${overtimeHours}h`} icon={<Timer className="h-4 w-4" />} />}
       </div>
 
+      {/* Missing Punch Alert */}
+      {missingPunchDays.length > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-4 py-3 flex items-start gap-2">
+          <Clock className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+          <div className="text-sm text-amber-800 dark:text-amber-200">
+            <span className="font-medium">{missingPunchDays.length} missing punch {missingPunchDays.length === 1 ? 'day' : 'days'}</span>
+            {' — '}
+            {missingPunchDays.map(d => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })).join(', ')}
+          </div>
+        </div>
+      )}
+
       {/* Daily Attendance Chart */}
       {bio && dailyData.length > 0 && (
         <Card>
@@ -359,7 +373,7 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
             <CardTitle className="text-sm font-medium">Daily Attendance — {monthName}</CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <AttendanceBarChart data={dailyData} />
+            <AttendanceBarChart data={dailyData} missingDays={missingPunchDayNums} />
           </CardContent>
         </Card>
       )}
@@ -529,7 +543,7 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
 
 // ── Attendance Bar Chart (SVG) ──
 
-function AttendanceBarChart({ data }: { data: { day: number; date: string; hours: number; expected: number; weekend: boolean }[] }) {
+function AttendanceBarChart({ data, missingDays = new Set() }: { data: { day: number; date: string; hours: number; expected: number; weekend: boolean }[]; missingDays?: Set<number> }) {
   const maxHours = Math.max(...data.map(d => d.hours), ...data.map(d => d.expected), 1)
   const yMax = Math.ceil(maxHours + 1)
   const w = Math.max(700, data.length * 26)
@@ -569,18 +583,24 @@ function AttendanceBarChart({ data }: { data: { day: number; date: string; hours
           const x = pad.l + gap + i * (barWidth + gap)
           const barH = (d.hours / yMax) * ih
           const y = pad.t + ih - barH
-          const color = d.weekend && d.hours === 0
-            ? 'hsl(0, 0%, 90%)'
-            : d.hours === 0
-              ? 'hsl(0, 0%, 80%)'
-              : d.hours >= d.expected
-                ? 'hsl(142, 76%, 36%)'
-                : d.hours >= d.expected * 0.75
-                  ? 'hsl(38, 92%, 50%)'
-                  : 'hsl(0, 72%, 51%)'
+          const isMissing = missingDays.has(d.day)
+          const color = isMissing
+            ? 'hsl(0, 72%, 51%)'
+            : d.weekend && d.hours === 0
+              ? 'hsl(0, 0%, 90%)'
+              : d.hours === 0
+                ? 'hsl(0, 0%, 80%)'
+                : d.hours >= d.expected
+                  ? 'hsl(142, 76%, 36%)'
+                  : d.hours >= d.expected * 0.75
+                    ? 'hsl(38, 92%, 50%)'
+                    : 'hsl(0, 72%, 51%)'
           return (
             <g key={i}>
-              {d.hours === 0 && (
+              {isMissing && d.hours === 0 && (
+                <rect x={x} y={pad.t + ih - 6} width={barWidth} height={6} rx={1} fill="hsl(0, 72%, 51%)" fillOpacity={0.7} />
+              )}
+              {!isMissing && d.hours === 0 && (
                 <rect x={x} y={pad.t + ih - 2} width={barWidth} height={2} rx={1} fill="currentColor" fillOpacity={d.weekend ? 0.03 : 0.1} />
               )}
               {d.hours > 0 && (
@@ -609,6 +629,7 @@ function AttendanceBarChart({ data }: { data: { day: number; date: string; hours
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(38, 92%, 50%)' }} />Below target</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(0, 72%, 51%)' }} />Undertime</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm border" style={{ background: 'transparent' }} />Absent</span>
+        {missingDays.size > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(0, 72%, 51%)', opacity: 0.7 }} />Missing punch</span>}
       </div>
     </div>
   )

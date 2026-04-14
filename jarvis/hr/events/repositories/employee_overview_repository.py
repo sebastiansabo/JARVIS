@@ -155,6 +155,111 @@ class EmployeeOverviewRepository(BaseRepository):
             ORDER BY day
         ''', (biostar_user_id, year, month))
 
+    def get_missing_punch_days(self, user_id, biostar_user_id, sincron_employee_id,
+                               sincron_company, year, month):
+        """Return list of date strings for weekdays with no punch and no leave."""
+        rows = self.query_all('''
+            WITH month_days AS (
+                SELECT generate_series(
+                    make_date(%(y)s, %(m)s, 1),
+                    (make_date(%(y)s, %(m)s, 1) + interval '1 month' - interval '1 day')::date,
+                    '1 day'
+                )::date AS d
+            ),
+            weekdays AS (
+                SELECT d FROM month_days WHERE EXTRACT(DOW FROM d) BETWEEN 1 AND 5
+            ),
+            punch_days AS (
+                SELECT DISTINCT event_datetime::date AS d
+                FROM biostar_punch_logs
+                WHERE biostar_user_id = %(bio_id)s
+                  AND event_datetime >= make_date(%(y)s, %(m)s, 1)::timestamp
+                  AND event_datetime < (make_date(%(y)s, %(m)s, 1) + interval '1 month')::timestamp
+            ),
+            sincron_leave AS (
+                SELECT DISTINCT day_of_month AS d_num
+                FROM sincron_timesheets
+                WHERE sincron_employee_id = %(sin_id)s AND company_name = %(sin_co)s
+                  AND year = %(y)s AND month = %(m)s
+                  AND short_code IN ('CO','CM','CES','CIC','CMS','DLG')
+            ),
+            connecteam_leave AS (
+                SELECT DISTINCT leave_date::date AS d
+                FROM connecteam_form_submissions
+                WHERE mapped_jarvis_user_id = %(uid)s
+                  AND EXTRACT(YEAR FROM leave_date) = %(y)s
+                  AND EXTRACT(MONTH FROM leave_date) = %(m)s
+            ),
+            form_leave AS (
+                SELECT DISTINCT (fs.answers->>'f_bi_leave_date')::date AS d
+                FROM form_submissions fs
+                JOIN forms f ON f.id = fs.form_id
+                WHERE fs.respondent_user_id = %(uid)s
+                  AND f.slug = 'bilet-de-invoire'
+                  AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
+                  AND EXTRACT(YEAR FROM (fs.answers->>'f_bi_leave_date')::date) = %(y)s
+                  AND EXTRACT(MONTH FROM (fs.answers->>'f_bi_leave_date')::date) = %(m)s
+            )
+            SELECT wd.d::text AS missing_date
+            FROM weekdays wd
+            WHERE wd.d NOT IN (SELECT d FROM punch_days)
+              AND EXTRACT(DAY FROM wd.d)::int NOT IN (SELECT d_num FROM sincron_leave)
+              AND wd.d NOT IN (SELECT d FROM connecteam_leave)
+              AND wd.d NOT IN (SELECT d FROM form_leave)
+              AND wd.d <= CURRENT_DATE
+            ORDER BY wd.d
+        ''', {
+            'uid': user_id, 'bio_id': biostar_user_id,
+            'sin_id': sincron_employee_id, 'sin_co': sincron_company,
+            'y': year, 'm': month,
+        })
+        return [r['missing_date'] for r in rows]
+
+    def get_all_missing_punches_for_date(self, check_date):
+        """Return all active BioStar-mapped employees with no punch and no leave on a date."""
+        return self.query_all('''
+            SELECT be.mapped_jarvis_user_id AS user_id, u.name AS user_name,
+                   u.company, be.biostar_user_id,
+                   snm.node_id
+            FROM biostar_employees be
+            JOIN users u ON u.id = be.mapped_jarvis_user_id
+            LEFT JOIN structure_node_members snm ON snm.user_id = u.id
+            WHERE be.status = 'active'
+              AND be.mapped_jarvis_user_id IS NOT NULL
+              AND be.working_hours > 0
+              AND be.schedule_start IS NOT NULL
+              AND COALESCE(u.contract_status, 'active') = 'active'
+              AND COALESCE(u.notify_missing_punch, TRUE) = TRUE
+              AND NOT EXISTS (
+                  SELECT 1 FROM biostar_punch_logs pl
+                  WHERE pl.biostar_user_id = be.biostar_user_id
+                    AND pl.event_datetime::date = %s
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM sincron_timesheets st
+                  JOIN sincron_employees se ON se.sincron_employee_id = st.sincron_employee_id
+                    AND se.company_name = st.company_name
+                  WHERE se.mapped_jarvis_user_id = u.id
+                    AND st.year = EXTRACT(YEAR FROM %s::date)
+                    AND st.month = EXTRACT(MONTH FROM %s::date)
+                    AND st.day_of_month = EXTRACT(DAY FROM %s::date)
+                    AND st.short_code IN ('CO','CM','CES','CIC','CMS','DLG')
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM connecteam_form_submissions cfs
+                  WHERE cfs.mapped_jarvis_user_id = u.id
+                    AND cfs.leave_date::date = %s
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM form_submissions fs
+                  JOIN forms f ON f.id = fs.form_id
+                  WHERE fs.respondent_user_id = u.id
+                    AND f.slug = 'bilet-de-invoire'
+                    AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
+                    AND (fs.answers->>'f_bi_leave_date')::date = %s
+              )
+        ''', (check_date, check_date, check_date, check_date, check_date, check_date))
+
     def get_daily_sincron_codes(self, sincron_employee_id, company_name, year, month):
         """Return list of {day, short_code, unit, value} rows for timeline."""
         return self.query_all('''

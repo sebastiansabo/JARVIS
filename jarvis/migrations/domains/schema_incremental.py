@@ -1723,4 +1723,14 @@ def create_schema_incremental(conn, cursor):
         END $$;
     ''')
 
+    # ── notify_missing_punch toggle on users ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'notify_missing_punch') THEN
+                ALTER TABLE users ADD COLUMN notify_missing_punch BOOLEAN DEFAULT TRUE;
+            END IF;
+        END $$;
+    ''')
+
     conn.commit()
