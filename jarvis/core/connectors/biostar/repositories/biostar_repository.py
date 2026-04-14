@@ -387,7 +387,7 @@ class BioStarRepository(BaseRepository):
         params = [date_str]
         extra_where = ''
         if jarvis_user_ids:
-            extra_where = ' AND be.mapped_jarvis_user_id = ANY(%s)'
+            extra_where = ' AND be2.mapped_jarvis_user_id = ANY(%s)'
             params.append(jarvis_user_ids)
         # date_str used a second time for the adjustment JOIN
         params.append(date_str)
