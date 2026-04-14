@@ -167,14 +167,14 @@ class UserRepository(BaseRepository):
     def save(self, name: str, email: str = None, phone: str = None,
              role_id: int = None, is_active: bool = True, company: str = None,
              brand: str = None, department: str = None, subdepartment: str = None,
-             notify_on_allocation: bool = True) -> int:
+             notify_on_allocation: bool = True, contract_status: str = 'active') -> int:
         """Save a new user. Returns user ID."""
         try:
             result = self.execute('''
-                INSERT INTO users (name, email, phone, role_id, is_active, company, brand, department, subdepartment, notify_on_allocation)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO users (name, email, phone, role_id, is_active, company, brand, department, subdepartment, notify_on_allocation, contract_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            ''', (name, email, phone, role_id, is_active, company, brand, department, subdepartment, notify_on_allocation),
+            ''', (name, email, phone, role_id, is_active, company, brand, department, subdepartment, notify_on_allocation, contract_status),
                 returning=True)
             return result['id']
         except Exception as e:
@@ -187,7 +187,7 @@ class UserRepository(BaseRepository):
                company: str = None, brand: str = None, department: str = None,
                subdepartment: str = None, notify_on_allocation: bool = None,
                cnp: str = None, birthdate=None, position: str = None,
-               contract_work_date=None) -> bool:
+               contract_work_date=None, contract_status: str = None) -> bool:
         """Update a user. Returns True if updated."""
         updates = []
         params = []
@@ -233,6 +233,9 @@ class UserRepository(BaseRepository):
         if contract_work_date is not None:
             updates.append('contract_work_date = %s')
             params.append(contract_work_date)
+        if contract_status is not None:
+            updates.append('contract_status = %s')
+            params.append(contract_status)
         if not updates:
             return False
         updates.append('updated_at = CURRENT_TIMESTAMP')

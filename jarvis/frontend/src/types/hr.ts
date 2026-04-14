@@ -34,6 +34,8 @@ export interface HrEvent {
   created_at: string
 }
 
+export type ContractStatus = 'active' | 'suspended' | 'closed'
+
 export interface HrEmployee {
   id: number
   name: string
@@ -44,6 +46,7 @@ export interface HrEmployee {
   company: string | null
   brand: string | null
   is_active: boolean
+  contract_status: ContractStatus
   notify_on_allocation: boolean
 }
 

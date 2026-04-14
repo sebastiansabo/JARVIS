@@ -56,8 +56,8 @@ export const hrApi = {
     api.post<{ success: boolean; deleted: number }>(`${BASE}/events/bulk-delete`, { ids }),
 
   // Employees
-  getEmployees: (activeOnly = true) =>
-    api.get<HrEmployee[]>(`${BASE}/employees${activeOnly ? '?active_only=true' : ''}`),
+  getEmployees: (activeOnly = true, contractStatus?: string) =>
+    api.get<HrEmployee[]>(`${BASE}/employees${qs({ active_only: activeOnly, contract_status: contractStatus })}`),
   searchEmployees: (query: string) =>
     api.get<HrEmployee[]>(`${BASE}/employees/search?q=${encodeURIComponent(query)}`),
   createEmployee: (data: Partial<HrEmployee>) => api.post<{ success: boolean; id: number }>(`${BASE}/employees`, data),

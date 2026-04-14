@@ -363,6 +363,7 @@ def api_update_user(user_id):
             birthdate=data.get('birthdate'),
             position=data.get('position'),
             contract_work_date=data.get('contract_work_date'),
+            contract_status=data.get('contract_status'),
         )
         if updated:
             password = data.get('password', '').strip() if data.get('password') else ''
@@ -505,7 +506,8 @@ def api_update_employee(employee_id):
             company=data.get('company'),
             brand=data.get('brand'),
             notify_on_allocation=data.get('notify_on_allocation'),
-            is_active=data.get('is_active')
+            is_active=data.get('is_active'),
+            contract_status=data.get('contract_status'),
         )
         if updated:
             return jsonify({'success': True})

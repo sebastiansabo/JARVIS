@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   User, Building2, Mail, Phone, Fingerprint, FileSpreadsheet, FileText,
@@ -48,6 +49,9 @@ export default function Employee360() {
   const { userId } = useParams<{ userId: string }>()
   const navigate = useNavigate()
   const uid = Number(userId)
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const canEditEmployee = user?.permissions?.['hr.employees.edit'] ?? false
 
   const { data: overviewRes, isLoading } = useQuery({
     queryKey: ['hr', 'employee-overview', uid],
@@ -56,6 +60,16 @@ export default function Employee360() {
   })
 
   const overview = overviewRes?.data ?? null
+
+  const statusMutation = useMutation({
+    mutationFn: (status: string) => hrApi.updateEmployee(uid, { contract_status: status } as Partial<import('@/types/hr').HrEmployee>),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hr', 'employee-overview', uid] })
+      queryClient.invalidateQueries({ queryKey: ['hr', 'employees'] })
+      toast.success('Contract status updated')
+    },
+    onError: () => toast.error('Failed to update contract status'),
+  })
 
   if (isLoading) {
     return (
@@ -116,6 +130,26 @@ export default function Employee360() {
             <div className="flex-1 min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg font-semibold">{emp.name}</h2>
+                {canEditEmployee ? (
+                  <Select
+                    value={emp.contract_status ?? 'active'}
+                    onValueChange={(v) => statusMutation.mutate(v)}
+                    disabled={statusMutation.isPending}
+                  >
+                    <SelectTrigger className="h-6 w-[120px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="suspended">Suspended</SelectItem>
+                      <SelectItem value="closed">Closed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Badge className={cn('text-xs', emp.contract_status === 'suspended' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' : emp.contract_status === 'closed' ? 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200' : '')}>
+                    {emp.contract_status === 'active' ? 'Active' : emp.contract_status === 'suspended' ? 'Suspended' : 'Closed'}
+                  </Badge>
+                )}
                 {bio && <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-950"><Fingerprint className="h-3 w-3 mr-1" />BioStar</Badge>}
                 {sinc && <Badge variant="outline" className="text-xs bg-green-50 dark:bg-green-950"><FileSpreadsheet className="h-3 w-3 mr-1" />Sincron</Badge>}
                 {ct && <Badge variant="outline" className="text-xs bg-indigo-50 dark:bg-indigo-950"><FileText className="h-3 w-3 mr-1" />Connecteam</Badge>}

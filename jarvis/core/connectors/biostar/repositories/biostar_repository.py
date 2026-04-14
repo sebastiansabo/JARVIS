@@ -216,7 +216,7 @@ class BioStarRepository(BaseRepository):
               AND be.status = 'active'
               AND be.cnp IS NOT NULL
               AND u.cnp IS NOT NULL
-              AND u.is_active = TRUE
+              AND COALESCE(u.contract_status, 'active') != 'closed'
               AND LOWER(TRIM(be.cnp)) = LOWER(TRIM(u.cnp))
         ''')
 
@@ -235,7 +235,7 @@ class BioStarRepository(BaseRepository):
               AND be.email <> ''
               AND u.email IS NOT NULL
               AND u.email <> ''
-              AND u.is_active = TRUE
+              AND COALESCE(u.contract_status, 'active') != 'closed'
               AND LOWER(TRIM(be.email)) = LOWER(TRIM(u.email))
         ''')
 
@@ -254,7 +254,7 @@ class BioStarRepository(BaseRepository):
               AND be.name <> ''
               AND u.name IS NOT NULL
               AND u.name <> ''
-              AND u.is_active = TRUE
+              AND COALESCE(u.contract_status, 'active') != 'closed'
               AND LOWER(TRIM(be.name)) = LOWER(TRIM(u.name))
         ''')
 
@@ -278,7 +278,7 @@ class BioStarRepository(BaseRepository):
               AND be.status = 'active'
               AND se.mapped_jarvis_user_id IS NOT NULL
               AND se.is_active = TRUE
-              AND u.is_active = TRUE
+              AND COALESCE(u.contract_status, 'active') != 'closed'
               AND (
                     (be.email IS NOT NULL AND be.email <> ''
                      AND u.email IS NOT NULL AND u.email <> ''

@@ -112,7 +112,7 @@ class SincronRepository(BaseRepository):
                   AND se.cnp IS NOT NULL
                   AND u.cnp IS NOT NULL
                   AND REPLACE(se.cnp, 'x', '') != ''
-                  AND u.is_active = TRUE
+                  AND COALESCE(u.contract_status, 'active') != 'closed'
                   AND LOWER(TRIM(u.cnp)) = LOWER(TRIM(se.cnp))
             ''')
             return cursor.rowcount
@@ -130,7 +130,7 @@ class SincronRepository(BaseRepository):
                 FROM users u
                 WHERE se.mapped_jarvis_user_id IS NULL
                   AND se.is_active = TRUE
-                  AND u.is_active = TRUE
+                  AND COALESCE(u.contract_status, 'active') != 'closed'
                   AND LOWER(TRIM(u.name)) = LOWER(TRIM(se.nume || ' ' || se.prenume))
             ''')
             name_mapped = cursor.rowcount
@@ -144,7 +144,7 @@ class SincronRepository(BaseRepository):
                 FROM users u
                 WHERE se.mapped_jarvis_user_id IS NULL
                   AND se.is_active = TRUE
-                  AND u.is_active = TRUE
+                  AND COALESCE(u.contract_status, 'active') != 'closed'
                   AND LOWER(TRIM(u.name)) = LOWER(TRIM(se.prenume || ' ' || se.nume))
             ''')
             return name_mapped + cursor.rowcount

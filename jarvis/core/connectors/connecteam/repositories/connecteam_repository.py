@@ -76,7 +76,7 @@ class ConnecteamRepository(BaseRepository):
             WHERE LOWER(TRIM(cu.connecteam_user_name)) = LOWER(TRIM(u.name))
               AND cu.mapped_jarvis_user_id IS NULL
               AND cu.connecteam_user_name IS NOT NULL
-              AND u.is_active = TRUE
+              AND COALESCE(u.contract_status, 'active') != 'closed'
         ''')
 
     # ── Submission operations ──

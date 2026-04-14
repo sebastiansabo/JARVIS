@@ -123,5 +123,16 @@ def create_schema_sincron(conn, cursor):
         except Exception:
             conn.rollback()  # constraint already exists — safe to skip
 
+    # ── Add contract_status to sincron_employees (prep for future Sincron API status field) ──
+    cursor.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'sincron_employees' AND column_name = 'contract_status') THEN
+                ALTER TABLE sincron_employees ADD COLUMN contract_status VARCHAR(20);
+            END IF;
+        END $$;
+    """)
+
     conn.commit()
     logger.info('Sincron schema created/verified')

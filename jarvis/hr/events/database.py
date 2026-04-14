@@ -5,13 +5,14 @@ from core.utils.scope_filter import apply_scope_filter
 
 # ============== HR Employees (now using users table) ==============
 
-def get_all_hr_employees(active_only=True, scope='all', user_context=None):
+def get_all_hr_employees(active_only=True, scope='all', user_context=None, contract_status=None):
     """Get all HR employees from users table with scope-based filtering.
 
     Args:
         active_only: If True, only return active employees
         scope: Permission scope ('own', 'department', 'all')
         user_context: Dict with user_id, company, department for scope filtering
+        contract_status: Filter by contract status ('active', 'suspended', 'closed')
     """
     conn = get_db()
     try:
@@ -19,13 +20,16 @@ def get_all_hr_employees(active_only=True, scope='all', user_context=None):
 
         query = '''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, is_active, created_at, updated_at
+                   notify_on_allocation, is_active, contract_status, created_at, updated_at
             FROM users
             WHERE 1=1
         '''
         params = []
 
-        if active_only:
+        if contract_status:
+            query += ' AND contract_status = %s'
+            params.append(contract_status)
+        elif active_only:
             query += ' AND is_active = TRUE'
 
         scope_sql, scope_params = apply_scope_filter(scope, user_context)
@@ -48,7 +52,7 @@ def get_hr_employee(employee_id):
         cursor = get_cursor(conn)
         cursor.execute('''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, is_active, created_at, updated_at
+                   notify_on_allocation, is_active, contract_status, created_at, updated_at
             FROM users WHERE id = %s
         ''', (employee_id,))
         row = cursor.fetchone()
@@ -76,7 +80,8 @@ def save_hr_employee(name, department=None, subdepartment=None, brand=None, comp
     finally:
         release_db(conn)
 def update_hr_employee(employee_id, name, department=None, subdepartment=None, brand=None, company=None,
-                       email=None, phone=None, notify_on_allocation=True, is_active=True):
+                       email=None, phone=None, notify_on_allocation=True, is_active=True,
+                       contract_status=None):
     """Update an HR employee in users table."""
     conn = get_db()
     try:
@@ -85,21 +90,23 @@ def update_hr_employee(employee_id, name, department=None, subdepartment=None, b
             UPDATE users
             SET name = %s, department = %s, subdepartment = %s, brand = %s, company = %s,
                 email = %s, phone = %s, notify_on_allocation = %s,
-                is_active = %s, updated_at = CURRENT_TIMESTAMP
+                is_active = %s, contract_status = COALESCE(%s, contract_status),
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
-        ''', (name, department, subdepartment, brand, company, email, phone, notify_on_allocation, is_active, employee_id))
+        ''', (name, department, subdepartment, brand, company, email, phone, notify_on_allocation,
+              is_active, contract_status, employee_id))
         conn.commit()
 
 
     finally:
         release_db(conn)
 def delete_hr_employee(employee_id):
-    """Soft delete an HR employee (set is_active = FALSE)."""
+    """Soft delete an HR employee (set contract_status = 'closed', trigger syncs is_active)."""
     conn = get_db()
     try:
         cursor = get_cursor(conn)
         cursor.execute('''
-            UPDATE users SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s
+            UPDATE users SET contract_status = 'closed', updated_at = CURRENT_TIMESTAMP WHERE id = %s
         ''', (employee_id,))
         conn.commit()
 
@@ -107,13 +114,13 @@ def delete_hr_employee(employee_id):
     finally:
         release_db(conn)
 def search_hr_employees(query):
-    """Search HR employees by name from users table."""
+    """Search HR employees by name from users table (active + suspended)."""
     conn = get_db()
     try:
         cursor = get_cursor(conn)
         cursor.execute('''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, is_active, created_at, updated_at
+                   notify_on_allocation, is_active, contract_status, created_at, updated_at
             FROM users
             WHERE is_active = TRUE AND name ILIKE %s
             ORDER BY name

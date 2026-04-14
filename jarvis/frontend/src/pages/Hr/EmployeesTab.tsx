@@ -9,15 +9,17 @@ import { MobileCardList, type MobileCardField } from '@/components/shared/Mobile
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import {
   Users, Building2, ArrowUpDown, Briefcase, ChevronDown, ChevronRight,
   Mail, Phone, Fingerprint, FileSpreadsheet, ExternalLink,
+  UserCheck, UserMinus, Archive,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { HrEmployee, StructureCompany } from '@/types/hr'
+import type { HrEmployee, ContractStatus, StructureCompany } from '@/types/hr'
 
 interface Props {
   search: string
@@ -29,14 +31,16 @@ type SortDir = 'asc' | 'desc'
 export default function EmployeesTab({ search }: Props) {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
+  const [statusTab, setStatusTab] = useState<ContractStatus>('active')
   const [companyFilter, setCompanyFilter] = useState<string>('all')
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
 
+  // Fetch all employees (not just active) to populate all tabs
   const { data: employeesData, isLoading: loadingEmployees } = useQuery({
-    queryKey: ['hr', 'employees', 'all'],
-    queryFn: () => hrApi.getEmployees(true),
+    queryKey: ['hr', 'employees', 'all-statuses'],
+    queryFn: () => hrApi.getEmployees(false),
   })
 
   const { data: companiesData } = useQuery({
@@ -44,8 +48,21 @@ export default function EmployeesTab({ search }: Props) {
     queryFn: () => hrApi.getCompaniesFull(),
   })
 
-  const employees: HrEmployee[] = employeesData ?? []
+  const allEmployees: HrEmployee[] = employeesData ?? []
   const companies: StructureCompany[] = companiesData ?? []
+
+  // Split by contract_status
+  const statusCounts = useMemo(() => ({
+    active: allEmployees.filter((e) => e.contract_status === 'active').length,
+    suspended: allEmployees.filter((e) => e.contract_status === 'suspended').length,
+    closed: allEmployees.filter((e) => e.contract_status === 'closed').length,
+  }), [allEmployees])
+
+  // Employees for current tab
+  const employees = useMemo(
+    () => allEmployees.filter((e) => e.contract_status === statusTab),
+    [allEmployees, statusTab],
+  )
 
   // Filter + search + sort
   const filtered = useMemo(() => {
@@ -136,6 +153,27 @@ export default function EmployeesTab({ search }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Contract status tabs */}
+      <Tabs value={statusTab} onValueChange={(v) => { setStatusTab(v as ContractStatus); setExpandedRow(null) }}>
+        <TabsList>
+          <TabsTrigger value="active" className="gap-1.5">
+            <UserCheck className="h-3.5 w-3.5" />
+            Active
+            <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-0.5">{statusCounts.active}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="suspended" className="gap-1.5">
+            <UserMinus className="h-3.5 w-3.5" />
+            Suspended
+            <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-0.5">{statusCounts.suspended}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="closed" className="gap-1.5">
+            <Archive className="h-3.5 w-3.5" />
+            Closed
+            <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-0.5">{statusCounts.closed}</Badge>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {/* Company filter */}
       <div className="flex items-center gap-2">
         <Select value={companyFilter} onValueChange={setCompanyFilter}>
@@ -224,8 +262,11 @@ export default function EmployeesTab({ search }: Props) {
                           <TableCell className="text-xs">{e.departments ?? '-'}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{e.brand ?? '-'}</TableCell>
                           <TableCell className="text-center">
-                            <Badge variant={e.is_active ? 'default' : 'secondary'} className="text-xs">
-                              {e.is_active ? 'Active' : 'Inactive'}
+                            <Badge
+                              variant={e.contract_status === 'active' ? 'default' : e.contract_status === 'suspended' ? 'outline' : 'secondary'}
+                              className={cn('text-xs', e.contract_status === 'suspended' && 'border-amber-500 text-amber-600')}
+                            >
+                              {e.contract_status === 'active' ? 'Active' : e.contract_status === 'suspended' ? 'Suspended' : 'Closed'}
                             </Badge>
                           </TableCell>
                         </TableRow>

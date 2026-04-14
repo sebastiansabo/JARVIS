@@ -11,6 +11,7 @@ from ._shared import *
 def api_get_employees():
     """API: Get all employees with scope-based access control."""
     active_only = request.args.get('active_only', 'true').lower() == 'true'
+    contract_status = request.args.get('contract_status')  # 'active', 'suspended', 'closed'
 
     # Get scope from decorator
     scope = getattr(g, 'permission_scope', 'all')
@@ -18,7 +19,8 @@ def api_get_employees():
 
     employees = get_all_hr_employees(
         active_only=active_only,
-        scope=scope, user_context=user_context
+        scope=scope, user_context=user_context,
+        contract_status=contract_status,
     )
     return jsonify(employees)
 
@@ -91,7 +93,8 @@ def api_update_employee(employee_id):
         email=data.get('email'),
         phone=data.get('phone'),
         notify_on_allocation=data.get('notify_on_allocation', True),
-        is_active=data.get('is_active', True)
+        is_active=data.get('is_active', True),
+        contract_status=data.get('contract_status'),
     )
 
     return jsonify({'success': True})
