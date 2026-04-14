@@ -71,7 +71,7 @@ const baseTabs = [
   { path: 'connectors', label: 'Connectors', icon: Plug },
   // AI
   { path: 'ai', label: 'AI Agent', icon: Bot },
-] as const
+] satisfies Array<{ path: string; label: string; icon: typeof Users }>
 
 function TabSkeleton() {
   return (
