@@ -316,7 +316,7 @@ function MappingFormDialog({
           {/* L1 — Brand (only shown when company has brands) */}
           {company && brands.length > 0 && (
           <div className="space-y-1">
-            <Label className="text-xs">Brand (L1)</Label>
+            <Label className="text-xs">Allocation (L1)</Label>
             <Select
               value={form.brand || '__none__'}
               onValueChange={(v) => { set('brand', v === '__none__' ? '' : v); set('department', ''); set('subdepartment', '') }}
@@ -337,7 +337,7 @@ function MappingFormDialog({
           {/* L2 — Department (shown when company selected; requires brand selected if brands exist) */}
           {company && (brands.length === 0 || !!form.brand) && (
           <div className="space-y-1">
-            <Label className="text-xs">Department (L2)</Label>
+            <Label className="text-xs">Allocation (L2)</Label>
             {departments.length > 0 ? (
               <Select
                 value={form.department || '__none__'}
@@ -362,7 +362,7 @@ function MappingFormDialog({
           {/* L3 — Subdepartment (only shown when department selected and L3 options exist) */}
           {company && !!form.department && subdepartments.length > 0 && (
           <div className="space-y-1">
-            <Label className="text-xs">Subdepartment (L3)</Label>
+            <Label className="text-xs">Allocation (L3)</Label>
             <Select
               value={form.subdepartment || '__none__'}
               onValueChange={(v) => set('subdepartment', v === '__none__' ? '' : v)}
