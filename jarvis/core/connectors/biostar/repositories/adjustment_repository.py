@@ -19,9 +19,18 @@ class AdjustmentRepository(BaseRepository):
         - Excludes employees already adjusted for that date
         """
         return self.query_all('''
-            WITH daily AS (
+            WITH deduped AS (
+                SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
+                    pl.biostar_user_id, pl.event_datetime
+                FROM biostar_punch_logs pl
+                LEFT JOIN biostar_employees be2 ON be2.biostar_user_id = pl.biostar_user_id
+                WHERE pl.event_datetime::date = %s::date
+                  AND be2.status = 'active'
+                ORDER BY pl.biostar_user_id, date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+            ),
+            daily AS (
                 SELECT
-                    pl.biostar_user_id,
+                    d.biostar_user_id,
                     be.name,
                     be.email,
                     be.user_group_name,
@@ -31,16 +40,14 @@ class AdjustmentRepository(BaseRepository):
                     be.working_hours,
                     be.mapped_jarvis_user_id,
                     u.name AS mapped_jarvis_user_name,
-                    MIN(pl.event_datetime) AS first_punch,
-                    MAX(pl.event_datetime) AS last_punch,
+                    MIN(d.event_datetime) AS first_punch,
+                    MAX(d.event_datetime) AS last_punch,
                     COUNT(*) AS total_punches,
-                    EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds
-                FROM biostar_punch_logs pl
-                LEFT JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
+                    EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds
+                FROM deduped d
+                LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
                 LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
-                WHERE pl.event_datetime::date = %s::date
-                  AND be.status = 'active'
-                GROUP BY pl.biostar_user_id, be.name, be.email, be.user_group_name,
+                GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
                          be.schedule_start, be.schedule_end, be.lunch_break_minutes,
                          be.working_hours, be.mapped_jarvis_user_id, u.name
             ),

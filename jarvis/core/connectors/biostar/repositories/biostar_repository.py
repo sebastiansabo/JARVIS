@@ -392,9 +392,20 @@ class BioStarRepository(BaseRepository):
         # date_str used a second time for the adjustment JOIN
         params.append(date_str)
         return self.query_all(f'''
-            WITH punches AS (
+            WITH deduped AS (
+                -- Collapse same-minute punches from the same user (BioStar zone
+                -- terminals register one badge across multiple devices simultaneously)
+                SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
+                    pl.biostar_user_id, pl.event_datetime
+                FROM biostar_punch_logs pl
+                LEFT JOIN biostar_employees be2 ON be2.biostar_user_id = pl.biostar_user_id
+                WHERE pl.event_datetime::date = %s::date
+                  AND (be2.is_blacklisted IS NULL OR be2.is_blacklisted = FALSE){extra_where}
+                ORDER BY pl.biostar_user_id, date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+            ),
+            punches AS (
                 SELECT
-                    pl.biostar_user_id,
+                    d.biostar_user_id,
                     be.name,
                     be.email,
                     be.user_group_name,
@@ -406,16 +417,14 @@ class BioStarRepository(BaseRepository):
                     be.working_hours,
                     be.schedule_start,
                     be.schedule_end,
-                    MIN(pl.event_datetime) AS first_punch,
-                    MAX(pl.event_datetime) AS last_punch,
+                    MIN(d.event_datetime) AS first_punch,
+                    MAX(d.event_datetime) AS last_punch,
                     COUNT(*) AS total_punches,
-                    EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds
-                FROM biostar_punch_logs pl
-                LEFT JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
+                    EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds
+                FROM deduped d
+                LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
                 LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
-                WHERE pl.event_datetime::date = %s::date
-                  AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE){extra_where}
-                GROUP BY pl.biostar_user_id, be.name, be.email, be.user_group_name,
+                GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
                          be.mapped_jarvis_user_id, u.name, u.company, u.department,
                          be.lunch_break_minutes, be.working_hours,
                          be.schedule_start, be.schedule_end
@@ -438,19 +447,25 @@ class BioStarRepository(BaseRepository):
             extra_where = ' AND be.mapped_jarvis_user_id = ANY(%s)'
             params.append(jarvis_user_ids)
         return self.query_all(f'''
-            WITH daily AS (
-                SELECT
-                    pl.biostar_user_id,
-                    pl.event_datetime::date AS day,
-                    MIN(pl.event_datetime) AS first_punch,
-                    MAX(pl.event_datetime) AS last_punch,
-                    COUNT(*) AS punches,
-                    EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds
+            WITH deduped AS (
+                SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
+                    pl.biostar_user_id, pl.event_datetime
                 FROM biostar_punch_logs pl
                 LEFT JOIN biostar_employees be2 ON be2.biostar_user_id = pl.biostar_user_id
                 WHERE pl.event_datetime::date BETWEEN %s::date AND %s::date
                   AND (be2.is_blacklisted IS NULL OR be2.is_blacklisted = FALSE)
-                GROUP BY pl.biostar_user_id, pl.event_datetime::date
+                ORDER BY pl.biostar_user_id, date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+            ),
+            daily AS (
+                SELECT
+                    d.biostar_user_id,
+                    d.event_datetime::date AS day,
+                    MIN(d.event_datetime) AS first_punch,
+                    MAX(d.event_datetime) AS last_punch,
+                    COUNT(*) AS punches,
+                    EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds
+                FROM deduped d
+                GROUP BY d.biostar_user_id, d.event_datetime::date
             )
             SELECT
                 d.biostar_user_id,
@@ -504,22 +519,29 @@ class BioStarRepository(BaseRepository):
         Also returns adjusted punch times from biostar_daily_adjustments if they exist.
         """
         return self.query_all('''
-            WITH daily AS (
+            WITH deduped AS (
+                SELECT DISTINCT ON (date_trunc('minute', pl.event_datetime))
+                    pl.event_datetime
+                FROM biostar_punch_logs pl
+                WHERE pl.biostar_user_id = %s
+                  AND pl.event_datetime::date BETWEEN %s::date AND %s::date
+                ORDER BY date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+            ),
+            daily AS (
                 SELECT
-                    pl.event_datetime::date AS date,
-                    MIN(pl.event_datetime) AS first_punch,
-                    MAX(pl.event_datetime) AS last_punch,
+                    d.event_datetime::date AS date,
+                    MIN(d.event_datetime) AS first_punch,
+                    MAX(d.event_datetime) AS last_punch,
                     COUNT(*) AS total_punches,
-                    EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds,
+                    EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds,
                     be.lunch_break_minutes,
                     be.working_hours,
                     be.schedule_start,
                     be.schedule_end
-                FROM biostar_punch_logs pl
-                LEFT JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
-                WHERE pl.biostar_user_id = %s
-                  AND pl.event_datetime::date BETWEEN %s::date AND %s::date
-                GROUP BY pl.event_datetime::date, be.lunch_break_minutes, be.working_hours,
+                FROM deduped d
+                CROSS JOIN biostar_employees be
+                WHERE be.biostar_user_id = %s
+                GROUP BY d.event_datetime::date, be.lunch_break_minutes, be.working_hours,
                          be.schedule_start, be.schedule_end
             )
             SELECT d.*,
@@ -530,7 +552,7 @@ class BioStarRepository(BaseRepository):
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = %s AND adj.date = d.date
             ORDER BY d.date DESC
-        ''', (biostar_user_id, start_date, end_date, biostar_user_id))
+        ''', (biostar_user_id, start_date, end_date, biostar_user_id, biostar_user_id))
 
     def get_employee_with_mapping(self, biostar_user_id):
         """Get employee details with JARVIS mapping info."""
