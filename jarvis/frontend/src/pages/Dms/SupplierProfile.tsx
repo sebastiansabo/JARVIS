@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Building2, User, Pencil, Save, X, ExternalLink, UserCircle, Briefcase,
-  FileText, Receipt, Mail, Phone, MapPin, Landmark, Hash, Shield, RefreshCw, BarChart3,
+  FileText, Receipt, Mail, Phone, MapPin, Landmark, Hash, Shield, RefreshCw, BarChart3, Wand2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -112,6 +112,29 @@ export default function SupplierProfile() {
     },
     onError: (err: Error & { response?: { data?: { error?: string } } }) => {
       const msg = err?.response?.data?.error || 'ANAF sync failed'
+      toast.error(msg)
+    },
+  })
+
+  const autoFillMutation = useMutation({
+    mutationFn: () => dmsApi.autoFill(id),
+    onSuccess: (res) => {
+      const fields = res.updated_fields || []
+      if (fields.length > 0) {
+        toast.success(`Auto-filled: ${fields.join(', ')}`)
+      } else {
+        toast.info('No new data found to fill')
+      }
+      res.steps?.forEach((step) => {
+        if (step.startsWith('ANAF name:') || step.startsWith('CUI') || step.startsWith('No CUI')) {
+          toast.info(step, { duration: 4000 })
+        }
+      })
+      queryClient.invalidateQueries({ queryKey: ['dms-supplier', id] })
+      queryClient.invalidateQueries({ queryKey: ['dms-suppliers'] })
+    },
+    onError: (err: Error & { response?: { data?: { error?: string } } }) => {
+      const msg = err?.response?.data?.error || 'Auto-fill failed'
       toast.error(msg)
     },
   })
@@ -247,6 +270,16 @@ export default function SupplierProfile() {
               >
                 <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${anafMutation.isPending ? 'animate-spin' : ''}`} />
                 Sync ANAF
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => autoFillMutation.mutate()}
+                disabled={autoFillMutation.isPending}
+                title="Auto-fill from e-Factura invoice data + ANAF"
+              >
+                <Wand2 className={`mr-1.5 h-3.5 w-3.5 ${autoFillMutation.isPending ? 'animate-spin' : ''}`} />
+                Auto-fill
               </Button>
               <Button variant="outline" size="sm" onClick={startEdit}>
                 <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit

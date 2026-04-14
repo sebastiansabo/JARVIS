@@ -429,8 +429,11 @@ export const AllocationRowComponent = memo(function AllocationRowComponent({
     }
   }, [hasBrands, row.brand, deptsFetched, departments.length, row.department, row.brand, onUpdate])
 
-  // Cascade: L2 requires L1 selected; L3 requires L2 selected
-  const showL2 = hasBrands ? (!!row.brand && departments.length > 0) : departments.length > 0
+  // Cascade: L2 requires L1 selected; L3 requires L2 selected.
+  // Also show L2 when a department is already saved (even if API list is empty/loading).
+  const showL2 = hasBrands
+    ? (!!row.brand && (departments.length > 0 || !!row.department))
+    : (departments.length > 0 || !!row.department)
   const showL3 = showL2 && !!row.department && subdepartments.length > 0
 
   // Dynamic col spans so the grid always sums to 12
