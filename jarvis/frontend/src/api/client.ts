@@ -1,3 +1,5 @@
+import { telemetry } from '@/lib/telemetry'
+
 const BASE_URL = ''
 
 interface ApiOptions extends RequestInit {
@@ -14,8 +16,16 @@ class ApiError extends Error {
   }
 }
 
+function extractMsg(data: unknown): string {
+  if (data && typeof data === 'object' && 'error' in data) {
+    return String((data as { error: unknown }).error)
+  }
+  return 'Unknown error'
+}
+
 async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const { params, ...fetchOptions } = options
+  const method = (fetchOptions.method || 'GET').toUpperCase()
 
   let url = `${BASE_URL}${path}`
   if (params) {
@@ -28,14 +38,21 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
     ? {} // Let browser set Content-Type with boundary for FormData
     : { 'Content-Type': 'application/json' }
 
-  const response = await fetch(url, {
-    ...fetchOptions,
-    headers: {
-      ...headers,
-      ...fetchOptions.headers,
-    },
-    credentials: 'same-origin',
-  })
+  let response: Response
+  try {
+    response = await fetch(url, {
+      ...fetchOptions,
+      headers: {
+        ...headers,
+        ...fetchOptions.headers,
+      },
+      credentials: 'same-origin',
+    })
+  } catch (err) {
+    // Network error (offline, DNS failure, CORS, etc.)
+    telemetry.trackApiError(path, method, 0, err instanceof Error ? err.message : 'Network error')
+    throw err
+  }
 
   if (response.status === 401) {
     window.location.href = '/login'
@@ -47,12 +64,15 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
     data = await response.json()
   } catch {
     if (!response.ok) {
-      throw new ApiError(response.status, { error: `Server error (${response.status})` })
+      const apiErr = new ApiError(response.status, { error: `Server error (${response.status})` })
+      telemetry.trackApiError(path, method, response.status, `Server error (${response.status})`)
+      throw apiErr
     }
     throw new ApiError(response.status, { error: 'Invalid response from server' })
   }
 
   if (!response.ok) {
+    telemetry.trackApiError(path, method, response.status, extractMsg(data))
     throw new ApiError(response.status, data)
   }
 

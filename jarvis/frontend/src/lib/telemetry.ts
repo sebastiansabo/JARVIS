@@ -72,6 +72,8 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 let isInitialized = false
 let _onVisibilityChange: (() => void) | null = null
 let _onBeforeUnload: (() => void) | null = null
+let _onError: OnErrorEventHandler | null = null
+let _onUnhandledRejection: ((e: PromiseRejectionEvent) => void) | null = null
 
 function createEvent(eventName: string, properties: Properties = {}): TelemetryEvent {
   return {
@@ -123,6 +125,25 @@ function sendHeartbeat() {
   }
 }
 
+// ── Error deduplication ──────────────────────────────────────────
+
+const recentErrors = new Map<string, number>()
+const ERROR_DEDUP_MS = 10_000
+
+function shouldTrackError(key: string): boolean {
+  const now = Date.now()
+  const last = recentErrors.get(key)
+  if (last && now - last < ERROR_DEDUP_MS) return false
+  recentErrors.set(key, now)
+  // Prune old entries
+  if (recentErrors.size > 50) {
+    for (const [k, t] of recentErrors) {
+      if (now - t > ERROR_DEDUP_MS) recentErrors.delete(k)
+    }
+  }
+  return true
+}
+
 // ── Lifecycle ───────────────────────────────────────────────────
 
 function init() {
@@ -148,6 +169,36 @@ function init() {
   }
   window.addEventListener('beforeunload', _onBeforeUnload)
 
+  // Global JS error handler
+  _onError = (message, source, lineno, colno, error) => {
+    const msg = typeof message === 'string' ? message : 'Unknown error'
+    const key = `${msg}:${source}:${lineno}`
+    if (!shouldTrackError(key)) return
+    track('Error Occurred', {
+      error_type: 'js_error',
+      error_message: msg.slice(0, 500),
+      error_source: typeof source === 'string' ? source : undefined,
+      error_line: lineno,
+      error_column: colno,
+      error_stack: error?.stack?.slice(0, 1000),
+    })
+  }
+  window.onerror = _onError
+
+  // Unhandled promise rejection handler
+  _onUnhandledRejection = (e: PromiseRejectionEvent) => {
+    const reason = e.reason
+    const msg = reason instanceof Error ? reason.message : String(reason ?? 'Unknown rejection')
+    const key = `rejection:${msg}`
+    if (!shouldTrackError(key)) return
+    track('Error Occurred', {
+      error_type: 'unhandled_rejection',
+      error_message: msg.slice(0, 500),
+      error_stack: reason instanceof Error ? reason.stack?.slice(0, 1000) : undefined,
+    })
+  }
+  window.addEventListener('unhandledrejection', _onUnhandledRejection)
+
   // Session start
   track('Session Started', {
     entry_page: window.location.pathname,
@@ -159,8 +210,12 @@ function destroy() {
   if (heartbeatTimer) clearInterval(heartbeatTimer)
   if (_onVisibilityChange) document.removeEventListener('visibilitychange', _onVisibilityChange)
   if (_onBeforeUnload) window.removeEventListener('beforeunload', _onBeforeUnload)
+  if (_onUnhandledRejection) window.removeEventListener('unhandledrejection', _onUnhandledRejection)
+  if (_onError) window.onerror = null
   _onVisibilityChange = null
   _onBeforeUnload = null
+  _onError = null
+  _onUnhandledRejection = null
   flush()
   isInitialized = false
 }
@@ -189,11 +244,36 @@ function pageView(pagePath: string, pageTitle: string, previousPage: string | nu
   track('Page Viewed', props)
 }
 
+function trackError(error: Error, componentStack?: string) {
+  const key = `component:${error.message}`
+  if (!shouldTrackError(key)) return
+  track('Error Occurred', {
+    error_type: 'react_crash',
+    error_message: error.message.slice(0, 500),
+    error_stack: error.stack?.slice(0, 1000),
+    component_stack: componentStack?.slice(0, 1000),
+  })
+}
+
+function trackApiError(endpoint: string, method: string, status: number, errorMessage: string) {
+  const key = `api:${method}:${endpoint}:${status}`
+  if (!shouldTrackError(key)) return
+  track('API Error', {
+    error_type: 'api_error',
+    api_endpoint: endpoint,
+    api_method: method,
+    api_status: status,
+    error_message: errorMessage.slice(0, 500),
+  })
+}
+
 export const telemetry = {
   init,
   destroy,
   track,
   pageView,
+  trackError,
+  trackApiError,
   flush,
   getSessionId,
 }
