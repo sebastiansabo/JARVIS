@@ -783,6 +783,25 @@ function PontajPanel({
     return { daysPresent, totalHours, avgHours }
   }, [history, lunchBreak])
 
+  // Build full list of weekdays in the period (including absent days)
+  const periodDays = useMemo(() => {
+    const result: (BioStarDayHistory & { isHoliday?: boolean })[] = []
+    for (let i = 0; i < days; i++) {
+      const d = new Date(now.getTime() - i * 86400000)
+      const dateStr = d.toISOString().split('T')[0]
+      const dow = d.getDay()
+      if (dow === 0 || dow === 6) continue // skip weekends
+      const isHol = holidays.has(dateStr)
+      const found = history.find((h) => h.date === dateStr)
+      if (found) {
+        result.push({ ...found, isHoliday: isHol })
+      } else {
+        result.push({ date: dateStr, first_punch: '', last_punch: '', total_punches: 0, duration_seconds: null, isHoliday: isHol })
+      }
+    }
+    return result
+  }, [history, holidays, days])
+
   const fmtTime = (t: string | null) => t ? new Date(t).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : '—'
   const fmtDur = (sec: number) => {
     if (sec <= 0) return '—'
@@ -811,8 +830,8 @@ function PontajPanel({
 
       {isLoading ? (
         <Skeleton className="h-64 w-full" />
-      ) : history.length === 0 ? (
-        <EmptyState icon={<Fingerprint className="h-8 w-8" />} title="No Attendance Data" description="No BioStar records for this period." />
+      ) : periodDays.length === 0 ? (
+        <EmptyState icon={<Fingerprint className="h-8 w-8" />} title="No Attendance Data" description="No working days in this period." />
       ) : (
         <Card>
           <CardContent className="p-0">
@@ -836,10 +855,9 @@ function PontajPanel({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {history.map((d) => {
+                  {periodDays.map((d) => {
                     const dt = new Date(d.date + 'T00:00:00')
-                    const isWeekend = dt.getDay() === 0 || dt.getDay() === 6
-                    const isHoliday = holidays.has(d.date)
+                    const isHoliday = d.isHoliday ?? false
                     const isToday = d.date === today
                     const rawSec = d.duration_seconds ?? 0
                     const netSec = rawSec > lunchBreak * 60 ? rawSec - lunchBreak * 60 : rawSec
@@ -848,7 +866,7 @@ function PontajPanel({
                     const notExited = d.total_punches === 1
                     const isShort = netH > 0 && netH < workingHours
                     return (
-                      <TableRow key={d.date} className={cn(isWeekend && 'bg-muted/40', isHoliday && 'bg-blue-50 dark:bg-blue-950/20', isToday && 'bg-muted/30')}>
+                      <TableRow key={d.date} className={cn(isHoliday && 'bg-blue-50 dark:bg-blue-950/20', isToday && 'bg-muted/30')}>
                         <TableCell className="tabular-nums text-xs">
                           {d.date}
                           {isToday && <Badge variant="secondary" className="ml-2 text-[10px]">Today</Badge>}
