@@ -122,9 +122,15 @@ def api_bulk_toggle_missing_punch():
     enabled = data.get('enabled', True)
     user_ids = data.get('user_ids')  # None means all active employees
 
+    scope = getattr(g, 'permission_scope', 'all')
+    user_context = getattr(g, 'user_context', None)
+
     from hr.events.repositories.employee_repository import EmployeeRepository
     repo = EmployeeRepository()
-    updated = repo.bulk_toggle_missing_punch(user_ids=user_ids, enabled=enabled)
+    updated = repo.bulk_toggle_missing_punch(
+        user_ids=user_ids, enabled=enabled,
+        scope=scope, user_context=user_context,
+    )
 
     return jsonify({'success': True, 'updated': updated})
 

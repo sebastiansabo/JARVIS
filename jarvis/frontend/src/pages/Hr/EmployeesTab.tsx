@@ -58,6 +58,7 @@ export default function EmployeesTab({ search }: Props) {
     mutationFn: ({ employeeId, enabled }: { employeeId: number; enabled: boolean }) =>
       hrApi.updateEmployee(employeeId, { notify_missing_punch: enabled } as Partial<HrEmployee>),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['hr', 'employees'] }),
+    onError: () => toast.error('Failed to toggle notification'),
   })
 
   const bulkToggleMutation = useMutation({
@@ -221,7 +222,10 @@ export default function EmployeesTab({ search }: Props) {
               variant="outline"
               className="text-xs h-7 gap-1"
               disabled={bulkToggleMutation.isPending}
-              onClick={() => bulkToggleMutation.mutate({ enabled: true })}
+              onClick={() => {
+                if (window.confirm(`Turn ON missing punch alerts for ${filtered.length} employees?`))
+                  bulkToggleMutation.mutate({ userIds: filtered.map(e => e.id), enabled: true })
+              }}
             >
               <Bell className="h-3 w-3" />
               All On
@@ -231,7 +235,10 @@ export default function EmployeesTab({ search }: Props) {
               variant="outline"
               className="text-xs h-7 gap-1"
               disabled={bulkToggleMutation.isPending}
-              onClick={() => bulkToggleMutation.mutate({ enabled: false })}
+              onClick={() => {
+                if (window.confirm(`Turn OFF missing punch alerts for ${filtered.length} employees?`))
+                  bulkToggleMutation.mutate({ userIds: filtered.map(e => e.id), enabled: false })
+              }}
             >
               <BellOff className="h-3 w-3" />
               All Off
@@ -320,6 +327,8 @@ export default function EmployeesTab({ search }: Props) {
                             <TableCell className="text-center">
                               <Switch
                                 checked={e.notify_missing_punch ?? true}
+                                disabled={toggleMutation.isPending}
+                                aria-label={`Toggle missing punch alert for ${e.name}`}
                                 onCheckedChange={(checked) => {
                                   toggleMutation.mutate({ employeeId: e.id, enabled: checked })
                                 }}

@@ -233,7 +233,7 @@ def start_scheduler():
         minute=0,
         id='hr_missing_punch_check',
         replace_existing=True,
-        misfire_grace_time=300,
+        misfire_grace_time=3600,
         coalesce=True,
     )
 

@@ -189,6 +189,7 @@ class EmployeeOverviewRepository(BaseRepository):
                 WHERE mapped_jarvis_user_id = %(uid)s
                   AND EXTRACT(YEAR FROM leave_date) = %(y)s
                   AND EXTRACT(MONTH FROM leave_date) = %(m)s
+                  AND COALESCE(status, 'submitted') NOT IN ('rejected', 'cancelled')
             ),
             form_leave AS (
                 SELECT DISTINCT (fs.answers->>'f_bi_leave_date')::date AS d
@@ -197,6 +198,7 @@ class EmployeeOverviewRepository(BaseRepository):
                 WHERE fs.respondent_user_id = %(uid)s
                   AND f.slug = 'bilet-de-invoire'
                   AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
+                  AND (fs.answers->>'f_bi_leave_date') ~ '^\d{4}-\d{2}-\d{2}$'
                   AND EXTRACT(YEAR FROM (fs.answers->>'f_bi_leave_date')::date) = %(y)s
                   AND EXTRACT(MONTH FROM (fs.answers->>'f_bi_leave_date')::date) = %(m)s
             )
@@ -216,9 +218,13 @@ class EmployeeOverviewRepository(BaseRepository):
         return [r['missing_date'] for r in rows]
 
     def get_all_missing_punches_for_date(self, check_date):
-        """Return all active BioStar-mapped employees with no punch and no leave on a date."""
+        """Return all active BioStar-mapped employees with no punch and no leave on a date.
+
+        Uses DISTINCT ON to avoid duplicate rows when an employee belongs to multiple structure nodes.
+        """
         return self.query_all('''
-            SELECT be.mapped_jarvis_user_id AS user_id, u.name AS user_name,
+            SELECT DISTINCT ON (be.mapped_jarvis_user_id)
+                   be.mapped_jarvis_user_id AS user_id, u.name AS user_name,
                    u.company, be.biostar_user_id,
                    snm.node_id
             FROM biostar_employees be
@@ -249,6 +255,7 @@ class EmployeeOverviewRepository(BaseRepository):
                   SELECT 1 FROM connecteam_form_submissions cfs
                   WHERE cfs.mapped_jarvis_user_id = u.id
                     AND cfs.leave_date::date = %s
+                    AND COALESCE(cfs.status, 'submitted') NOT IN ('rejected', 'cancelled')
               )
               AND NOT EXISTS (
                   SELECT 1 FROM form_submissions fs
@@ -256,8 +263,10 @@ class EmployeeOverviewRepository(BaseRepository):
                   WHERE fs.respondent_user_id = u.id
                     AND f.slug = 'bilet-de-invoire'
                     AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
+                    AND (fs.answers->>'f_bi_leave_date') ~ '^\d{4}-\d{2}-\d{2}$'
                     AND (fs.answers->>'f_bi_leave_date')::date = %s
               )
+            ORDER BY be.mapped_jarvis_user_id
         ''', (check_date, check_date, check_date, check_date, check_date, check_date))
 
     def get_daily_sincron_codes(self, sincron_employee_id, company_name, year, month):

@@ -185,7 +185,7 @@ def api_get_employee_overview(user_id):
         })
     except Exception as exc:
         current_app.logger.error('Employee overview error for user %s: %s\n%s', user_id, exc, _tb.format_exc())
-        return jsonify({'success': False, 'error': str(exc)}), 500
+        return jsonify({'success': False, 'error': 'Failed to load employee overview'}), 500
 
 
 @events_bp.route('/bonuses/new')

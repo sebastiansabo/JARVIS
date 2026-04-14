@@ -95,20 +95,31 @@ class EmployeeRepository(BaseRepository):
         ''', (employee_id,))
         return True
 
-    def bulk_toggle_missing_punch(self, user_ids: List[int] = None, enabled: bool = True) -> int:
-        """Toggle notify_missing_punch for given user IDs, or all active users if user_ids is None."""
+    def bulk_toggle_missing_punch(self, user_ids: List[int] = None, enabled: bool = True,
+                                   scope: str = 'all', user_context: Dict[str, Any] = None) -> int:
+        """Toggle notify_missing_punch for given user IDs, or scoped active users if user_ids is None."""
         if user_ids:
             placeholders = ','.join(['%s'] * len(user_ids))
-            result = self.execute(f'''
+            query = f'''
                 UPDATE users SET notify_missing_punch = %s, updated_at = CURRENT_TIMESTAMP
                 WHERE id IN ({placeholders})
-            ''', [enabled] + list(user_ids))
+            '''
+            params = [enabled] + list(user_ids)
         else:
-            result = self.execute('''
+            query = '''
                 UPDATE users SET notify_missing_punch = %s, updated_at = CURRENT_TIMESTAMP
                 WHERE COALESCE(contract_status, 'active') = 'active'
-            ''', (enabled,))
-        return result.get('rowcount', 0) if isinstance(result, dict) else 0
+            '''
+            params = [enabled]
+
+        # Apply scope filter so non-admin users only affect their scope
+        if scope != 'all' and user_context:
+            scope_sql, scope_params = apply_scope_filter(scope, user_context)
+            query += scope_sql
+            params.extend(scope_params)
+
+        result = self.execute(query, params)
+        return result if isinstance(result, int) else 0
 
     def search(self, query: str) -> List[Dict[str, Any]]:
         """Search HR employees by name (active + suspended only)."""

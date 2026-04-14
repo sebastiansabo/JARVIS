@@ -284,12 +284,12 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
   const lbUsedH = lb ? dToH(lb.annual_used) : 0
   const lbEntH = lb ? dToH(lb.annual_entitlement) : 0
   const lbRemH = lb ? dToH(lb.annual_remaining) : 0
-  const annualPct = lb ? Math.min(100, Math.round((lb.annual_used / lb.annual_entitlement) * 100)) : 0
+  const annualPct = lb && lb.annual_entitlement > 0 ? Math.min(100, Math.round((lb.annual_used / lb.annual_entitlement) * 100)) : 0
 
   // Daily chart data
   const dailyData = ms?.daily_hours ?? []
   const missingPunchDays: string[] = ms?.missing_punch_days ?? []
-  const missingPunchDayNums = new Set(missingPunchDays.map(d => new Date(d).getDate()))
+  const missingPunchDayNums = new Set(missingPunchDays.map(d => parseInt(d.split('-')[2], 10)))
 
   // Leave donut data — in hours
   const donutSlices = useMemo(() => {
@@ -361,7 +361,10 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
           <div className="text-sm text-amber-800 dark:text-amber-200">
             <span className="font-medium">{missingPunchDays.length} missing punch {missingPunchDays.length === 1 ? 'day' : 'days'}</span>
             {' — '}
-            {missingPunchDays.map(d => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })).join(', ')}
+            {missingPunchDays.map(d => {
+              const [y, m, day] = d.split('-').map(Number)
+              return new Date(y, m - 1, day).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+            }).join(', ')}
           </div>
         </div>
       )}
