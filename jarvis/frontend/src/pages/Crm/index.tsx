@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { StatCard } from '@/components/shared/StatCard'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
-import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import { crmApi, type CrmStats } from '@/api/crm'
 import DealsTab from './DealsTab'
 import StatisticsTab from './StatisticsTab'
@@ -19,6 +19,8 @@ import SanitizeTab from './SanitizeTab'
 
 export default function Crm() {
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
+  const isSmall = isMobile || isTablet
   const [searchParams, setSearchParams] = useSearchParams()
   const [tab, setTab] = useState(searchParams.get('tab') || 'dashboard')
   const [search, setSearch] = useState(searchParams.get('q') || '')
@@ -47,7 +49,8 @@ export default function Crm() {
               value={search}
               onChange={setSearch}
               placeholder={tab === 'deals' ? 'Search model...' : 'Search name...'}
-              className={isMobile ? 'w-40' : 'w-48'}
+              className={isSmall ? undefined : 'w-48'}
+              collapsible={isSmall}
             />
           ) : undefined}
           actions={

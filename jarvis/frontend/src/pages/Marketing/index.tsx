@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import { useTabParam } from '@/hooks/useTabParam'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -290,6 +290,8 @@ export default function Marketing() {
   const canCreate = user?.permissions?.['marketing.project.create'] ?? false
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('marketing_summary')
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
+  const isSmall = isMobile || isTablet
   const { filters, updateFilter, clearFilters, viewMode, setViewMode } = useMarketingStore(
     useShallow((s) => ({ filters: s.filters, updateFilter: s.updateFilter, clearFilters: s.clearFilters, viewMode: s.viewMode, setViewMode: s.setViewMode }))
   )
@@ -350,8 +352,9 @@ export default function Marketing() {
           <SearchInput
             value={filters.search ?? ''}
             onChange={(v) => updateFilter('search', v || undefined)}
-            placeholder={isMobile ? 'Search...' : 'Search projects...'}
-            className={isMobile ? 'w-40' : 'w-48'}
+            placeholder="Search..."
+            className={isSmall ? undefined : 'w-48'}
+            collapsible={isSmall}
           />
         }
         actions={

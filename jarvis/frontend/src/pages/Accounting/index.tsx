@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, memo, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
@@ -100,6 +100,8 @@ function formatDate(dateStr: string) {
 export default function Accounting() {
   const queryClient = useQueryClient()
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
+  const isSmall = isMobile || isTablet
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('accounting_invoices')
   const [showBin, setShowBin] = useState(false)
   const [search, setSearch] = useState('')
@@ -463,13 +465,14 @@ export default function Accounting() {
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder={isMobile ? 'Search...' : 'Search supplier or invoice #...'}
-            className={isMobile ? 'w-40' : 'w-48'}
+            placeholder="Search supplier or invoice #..."
+            className={isSmall ? undefined : 'w-48'}
+            collapsible={isSmall}
           />
         }
         actions={
           <div className="flex items-center gap-2">
-            {!isMobile && (
+            {!isSmall && (
               <BrandFilter
                 mode="company"
                 value={brandFilterKey}
