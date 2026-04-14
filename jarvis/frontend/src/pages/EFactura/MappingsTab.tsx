@@ -313,40 +313,35 @@ function MappingFormDialog({
             <p className="text-[11px] text-muted-foreground">No company = applies to all invoices. Select a company to scope this mapping.</p>
           </div>
 
-          {/* Department */}
+          {/* L1 — Brand (only shown when company has brands) */}
+          {company && brands.length > 0 && (
           <div className="space-y-1">
-            <Label className="text-xs">Department</Label>
-            {company && brands.length > 0 ? (
-              <Select
-                value={form.brand || '__none__'}
-                onValueChange={(v) => { set('brand', v === '__none__' ? '' : v); set('department', ''); set('subdepartment', '') }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">-- None --</SelectItem>
-                  {brands.map((b) => (
-                    <SelectItem key={b} value={b}>{b}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input value={form.brand} onChange={(e) => set('brand', e.target.value)} placeholder={company ? 'No brands found' : 'Select company first'} />
-            )}
+            <Label className="text-xs">Brand (L1)</Label>
+            <Select
+              value={form.brand || '__none__'}
+              onValueChange={(v) => { set('brand', v === '__none__' ? '' : v); set('department', ''); set('subdepartment', '') }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">-- None --</SelectItem>
+                {brands.map((b) => (
+                  <SelectItem key={b} value={b}>{b}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+          )}
 
-          {/* Subdivision — only show if no brands OR brand selected */}
-          {(!company || brands.length === 0 || !!form.brand) && (
+          {/* L2 — Department (shown when company selected; requires brand selected if brands exist) */}
+          {company && (brands.length === 0 || !!form.brand) && (
           <div className="space-y-1">
-            <Label className="text-xs">Subdivision</Label>
-            {company && departments.length > 0 ? (
+            <Label className="text-xs">Department (L2)</Label>
+            {departments.length > 0 ? (
               <Select
                 value={form.department || '__none__'}
-                onValueChange={(v) => {
-                  set('department', v === '__none__' ? '' : v)
-                  set('subdepartment', '')
-                }}
+                onValueChange={(v) => { set('department', v === '__none__' ? '' : v); set('subdepartment', '') }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -359,33 +354,29 @@ function MappingFormDialog({
                 </SelectContent>
               </Select>
             ) : (
-              <Input value={form.department} onChange={(e) => set('department', e.target.value)} placeholder={company ? 'No departments found' : 'Select company first'} />
+              <Input value={form.department} onChange={(e) => { set('department', e.target.value); set('subdepartment', '') }} placeholder="No departments found" />
             )}
           </div>
           )}
 
-          {/* Detail — only show when department selected and subdepartments exist */}
-          {company && !!form.department && (subdepartments.length > 0 || form.subdepartment) && (
+          {/* L3 — Subdepartment (only shown when department selected and L3 options exist) */}
+          {company && !!form.department && subdepartments.length > 0 && (
           <div className="space-y-1">
-            <Label className="text-xs">Detail</Label>
-            {subdepartments.length > 0 ? (
-              <Select
-                value={form.subdepartment || '__none__'}
-                onValueChange={(v) => set('subdepartment', v === '__none__' ? '' : v)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">-- None --</SelectItem>
-                  {subdepartments.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input value={form.subdepartment} onChange={(e) => set('subdepartment', e.target.value)} placeholder="Detail..." />
-            )}
+            <Label className="text-xs">Subdepartment (L3)</Label>
+            <Select
+              value={form.subdepartment || '__none__'}
+              onValueChange={(v) => set('subdepartment', v === '__none__' ? '' : v)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">-- None --</SelectItem>
+                {subdepartments.map((s) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           )}
 
