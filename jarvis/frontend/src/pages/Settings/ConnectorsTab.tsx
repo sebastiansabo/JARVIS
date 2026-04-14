@@ -28,6 +28,9 @@ import {
   EyeOff,
   Car,
   Pencil,
+  CalendarDays,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -540,7 +543,7 @@ function BioStarConnectionSection() {
                   Incremental
                 </Button>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <DateField value={syncDateRange.start} onChange={(v) => setSyncDateRange({ ...syncDateRange, start: v })} className="h-8" />
                 <span className="text-xs text-muted-foreground">to</span>
                 <DateField value={syncDateRange.end} onChange={(v) => setSyncDateRange({ ...syncDateRange, end: v })} className="h-8" />
@@ -1942,6 +1945,141 @@ function ConnecteamSection() {
 }
 
 // ════════════════════════════════════════════════
+// Romanian Public Holidays Section
+// ════════════════════════════════════════════════
+
+function HolidaysSection() {
+  const qc = useQueryClient()
+  const [expanded, setExpanded] = useState(false)
+  const [viewYear, setViewYear] = useState<number | null>(null)
+
+  const { data: status } = useQuery({
+    queryKey: ['holidays', 'status'],
+    queryFn: () => api.get<{ success: boolean; years: { year: number; count: number }[]; total: number }>('/api/holidays/status'),
+  })
+
+  const { data: yearData, isLoading: loadingYear } = useQuery({
+    queryKey: ['holidays', 'year', viewYear],
+    queryFn: () => api.get<{ success: boolean; holidays: { date: string; name: string; type: string }[] }>(`/api/holidays/year/${viewYear}`),
+    enabled: viewYear !== null,
+  })
+
+  const populateMut = useMutation({
+    mutationFn: () => api.post<{ success: boolean; populated_years: number[] }>('/api/holidays/populate'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['holidays'] })
+      toast.success('Holidays populated')
+    },
+    onError: () => toast.error('Failed to populate holidays'),
+  })
+
+  const years = status?.years ?? []
+  const total = status?.total ?? 0
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <CalendarDays className="h-5 w-5 text-blue-600" />
+          <h3 className="text-lg font-semibold">Romanian Public Holidays</h3>
+        </div>
+        <StatusBadge status={total > 0 ? 'active' : 'inactive'} />
+      </div>
+      <p className="text-sm text-muted-foreground mb-3">
+        Pre-computed Romanian public holidays (12 fixed + 5 Orthodox Easter-based). Used to exclude holidays from missing punch detection.
+      </p>
+
+      {total > 0 ? (
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
+            <div>
+              <span className="text-muted-foreground">Total Holidays:</span>
+              <p className="font-medium">{total}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Years Populated:</span>
+              <p className="font-medium">{years.map(y => y.year).join(', ')}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Per Year:</span>
+              <p className="font-medium">17 holidays (12 fixed + 5 movable)</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => populateMut.mutate()} disabled={populateMut.isPending}>
+              {populateMut.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+              Refresh
+            </Button>
+            {years.map(y => (
+              <Button
+                key={y.year}
+                size="sm"
+                variant={viewYear === y.year ? 'default' : 'ghost'}
+                className="h-7 text-xs"
+                onClick={() => setViewYear(viewYear === y.year ? null : y.year)}
+              >
+                {y.year} ({y.count})
+              </Button>
+            ))}
+            <Button size="sm" variant="ghost" className="h-7 text-xs ml-auto" onClick={() => setExpanded(!expanded)}>
+              {expanded ? <ChevronUp className="mr-1 h-3 w-3" /> : <ChevronDown className="mr-1 h-3 w-3" />}
+              {expanded ? 'Collapse' : 'Details'}
+            </Button>
+          </div>
+
+          {viewYear !== null && expanded && (
+            <div className="rounded border p-3 bg-muted/30">
+              <h4 className="text-sm font-medium mb-2">Holidays for {viewYear}</h4>
+              {loadingYear ? (
+                <p className="text-xs text-muted-foreground">Loading...</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Type</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(yearData?.holidays ?? []).map(h => (
+                      <TableRow key={h.date}>
+                        <TableCell className="text-xs tabular-nums">{h.date}</TableCell>
+                        <TableCell className="text-xs">{h.name}</TableCell>
+                        <TableCell>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${h.type === 'fixed' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'}`}>
+                            {h.type}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-lg border p-4">
+          <EmptyState
+            icon={<CalendarDays className="h-8 w-8" />}
+            title="No Holidays Loaded"
+            description="Click populate to generate Romanian public holidays."
+          />
+          <div className="flex justify-center mt-3">
+            <Button size="sm" onClick={() => populateMut.mutate()} disabled={populateMut.isPending}>
+              {populateMut.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1 h-3.5 w-3.5" />}
+              Populate Holidays
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════
 // Main Export
 // ════════════════════════════════════════════════
 
@@ -1959,6 +2097,8 @@ export default function ConnectorsTab() {
       <AutovitSection />
       <hr className="border-border" />
       <PushNotificationSection />
+      <hr className="border-border" />
+      <HolidaysSection />
       <hr className="border-border" />
       <BusinessDataSection />
     </div>

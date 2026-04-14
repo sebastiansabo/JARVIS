@@ -336,3 +336,54 @@ def api_delete_dropdown_option(option_id):
     if _dropdown_repo.delete_option(option_id):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Option not found'}), 404
+
+
+# ============== PUBLIC HOLIDAYS ENDPOINTS ==============
+
+@settings_bp.route('/api/holidays/status', methods=['GET'])
+@login_required
+def api_holidays_status():
+    """Get public holidays status — years populated and counts."""
+    from core.utils.holidays_repository import HolidayRepository
+    repo = HolidayRepository()
+    rows = repo.query_all(
+        'SELECT year, COUNT(*) AS cnt FROM public_holidays GROUP BY year ORDER BY year'
+    )
+    years = [{'year': int(r['year']), 'count': int(r['cnt'])} for r in rows]
+    total = sum(y['count'] for y in years)
+    return jsonify({'success': True, 'years': years, 'total': total})
+
+
+@settings_bp.route('/api/holidays/year/<int:year>', methods=['GET'])
+@login_required
+def api_holidays_for_year(year):
+    """Get all holidays for a specific year."""
+    from core.utils.holidays_repository import HolidayRepository
+    repo = HolidayRepository()
+    holidays = repo.get_holidays_for_year(year)
+    result = []
+    for h in holidays:
+        d = h['date']
+        result.append({
+            'date': d.isoformat() if hasattr(d, 'isoformat') else str(d),
+            'name': h['name'],
+            'type': h['holiday_type'],
+        })
+    return jsonify({'success': True, 'holidays': result})
+
+
+@settings_bp.route('/api/holidays/populate', methods=['POST'])
+@login_required
+def api_holidays_populate():
+    """Manually trigger holiday population for current + next year."""
+    if not current_user.can_access_settings:
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    from core.utils.holidays_repository import HolidayRepository
+    from datetime import date
+    repo = HolidayRepository()
+    current_year = date.today().year
+    populated = []
+    for yr in [current_year, current_year + 1]:
+        repo.ensure_year_populated(yr)
+        populated.append(yr)
+    return jsonify({'success': True, 'populated_years': populated})
