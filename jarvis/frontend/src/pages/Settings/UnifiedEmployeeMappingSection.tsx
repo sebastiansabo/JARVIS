@@ -397,12 +397,25 @@ export function UnifiedEmployeeMappingSection() {
         toast.error('Failed to save some mappings')
       }
     } else if (dialog.mode === 'mapBiostarForUser') {
-      if (!dialogSelection) return
-      setMappingMut.mutate({
-        userId: dialog.userId,
-        source: 'biostar',
-        external_id: dialogSelection,
-      })
+      if (dialogMultiSelection.size === 0) return
+      const promises = Array.from(dialogMultiSelection).map((extId) =>
+        identityApi.setMapping(dialog.userId, {
+          source: 'biostar',
+          external_id: extId,
+        }),
+      )
+      try {
+        await Promise.all(promises)
+        qc.invalidateQueries({ queryKey: ['identity'] })
+        qc.invalidateQueries({ queryKey: ['biostar'] })
+        toast.success(`Mapped ${dialogMultiSelection.size} BioStar record(s)`)
+        setDialog({ mode: 'closed' })
+        setDialogSelection('')
+        setDialogMultiSelection(new Set())
+        setDialogSearch('')
+      } catch {
+        toast.error('Failed to save some mappings')
+      }
     } else if (dialog.mode === 'mapConnecteam') {
       if (!dialogSelection) return
       const userId = Number(dialogSelection)
@@ -872,7 +885,7 @@ export function UnifiedEmployeeMappingSection() {
                 <>Select one or more Sincron records to link to <strong>{dialog.userName}</strong></>
               )}
               {dialog.mode === 'mapBiostarForUser' && (
-                <>Select an unmatched BioStar record to link to <strong>{dialog.userName}</strong></>
+                <>Select one or more BioStar records to link to <strong>{dialog.userName}</strong></>
               )}
               {dialog.mode === 'mapConnecteamForUser' && (
                 <>Select an unmatched Connecteam user to link to <strong>{dialog.userName}</strong></>
@@ -955,26 +968,41 @@ export function UnifiedEmployeeMappingSection() {
                 )
               })}
             {dialog.mode === 'mapBiostarForUser' &&
-              filteredOrphanBiostarForDialog.map((e) => (
-                <button
-                  key={e.biostar_user_id}
-                  type="button"
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors ${
-                    dialogSelection === e.biostar_user_id ? 'bg-accent font-medium' : ''
-                  }`}
-                  onClick={() => setDialogSelection(e.biostar_user_id)}
-                >
-                  {e.name ?? e.biostar_user_id}
-                  {e.email && (
-                    <span className="ml-1 text-xs text-muted-foreground">({e.email})</span>
-                  )}
-                  {e.user_group_name && (
-                    <span className="ml-1 text-xs text-muted-foreground">
-                      · {e.user_group_name}
+              filteredOrphanBiostarForDialog.map((e) => {
+                const val = e.biostar_user_id
+                const checked = dialogMultiSelection.has(val)
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2 ${
+                      checked ? 'bg-accent/60' : ''
+                    }`}
+                    onClick={() => toggleMultiSelection(val)}
+                  >
+                    <span
+                      className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
+                        checked
+                          ? 'bg-primary border-primary text-primary-foreground'
+                          : 'border-muted-foreground/40'
+                      }`}
+                    >
+                      {checked && '✓'}
                     </span>
-                  )}
-                </button>
-              ))}
+                    <span>
+                      {e.name ?? e.biostar_user_id}
+                      {e.email && (
+                        <span className="ml-1 text-xs text-muted-foreground">({e.email})</span>
+                      )}
+                      {e.user_group_name && (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          · {e.user_group_name}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                )
+              })}
             {dialog.mode === 'mapConnecteamForUser' &&
               filteredOrphanConnecteamForDialog.map((e) => (
                 <button
@@ -1014,7 +1042,7 @@ export function UnifiedEmployeeMappingSection() {
             <Button
               onClick={confirmDialogMapping}
               disabled={
-                dialog.mode === 'mapSincronForUser'
+                dialog.mode === 'mapSincronForUser' || dialog.mode === 'mapBiostarForUser'
                   ? dialogMultiSelection.size === 0
                   : !dialogSelection || setMappingMut.isPending
               }
@@ -1022,7 +1050,7 @@ export function UnifiedEmployeeMappingSection() {
               {setMappingMut.isPending && (
                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
               )}
-              {dialog.mode === 'mapSincronForUser' && dialogMultiSelection.size > 0
+              {(dialog.mode === 'mapSincronForUser' || dialog.mode === 'mapBiostarForUser') && dialogMultiSelection.size > 0
                 ? `Save ${dialogMultiSelection.size} mapping(s)`
                 : 'Save mapping'}
             </Button>
