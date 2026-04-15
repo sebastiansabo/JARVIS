@@ -57,6 +57,7 @@ export interface EmployeeWorkStats {
   variance_minutes: number
   productivity_score: number
   days_present: number
+  single_punch_days: number
   working_days: number
   expected_hours: number
   hours_per_day: number

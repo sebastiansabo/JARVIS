@@ -191,23 +191,24 @@ export default function EmployeesTab({ search }: Props) {
     let netHours = 0, netExpected = 0, netEmpCount = 0, netScoreSum = 0, netScoreCount = 0
     let grossScoreSum = 0, grossScoreCount = 0
     let varianceSum = 0, varianceCount = 0
-    let totalWorkedDays = 0, totalPotentialDays = 0, motivatedAbsenceDays = 0
+    let workedDaysNet = 0, workedDaysGross = 0, totalEffectiveDays = 0, totalWorkingDays = 0, grossExpectedHours = 0
     filtered.forEach((e) => {
       const s = ws[e.id]
       if (!s) return
       totalHours += s.total_hours
       totalExpected += s.expected_hours
-      totalWorkedDays += s.days_present
-      totalPotentialDays += s.working_days
+      workedDaysNet += s.days_present
+      workedDaysGross += s.days_present + (s.single_punch_days || 0)
+      totalEffectiveDays += s.effective_days
+      totalWorkingDays += s.working_days
+      grossExpectedHours += s.hours_per_day * s.working_days
       empWithStats++
       grossScoreSum += s.productivity_score; grossScoreCount++
       if (s.days_present >= 2) { varianceSum += s.variance_minutes; varianceCount++ }
       // Net: exclude motivated absences (Sincron leave OR Connecteam permits) with no presence
       // Unmotivated absences (no leave, no permits, days_present=0) stay in Net with 0h
       const isMotivatedLeave = (s.leave_days > 0 || s.permit_count > 0) && s.days_present === 0
-      if (isMotivatedLeave) {
-        motivatedAbsenceDays += s.leave_days
-      } else {
+      if (!isMotivatedLeave) {
         netHours += s.total_hours
         netExpected += s.expected_hours
         netEmpCount++
@@ -216,16 +217,13 @@ export default function EmployeesTab({ search }: Props) {
     })
     // Gross averages (includes all: leave + unmotivated absences)
     const grossAvgScore = grossScoreCount > 0 ? Math.round(grossScoreSum / grossScoreCount) : 0
-    const grossAvgProductivity = totalExpected > 0 ? Math.min(Math.round(totalHours / totalExpected * 100), 100) : 0
+    const grossAvgProductivity = grossExpectedHours > 0 ? Math.min(Math.round(totalHours / grossExpectedHours * 100), 100) : 0
     const grossAvgHoursPerMan = empWithStats > 0 ? Math.round(totalHours / empWithStats * 10) / 10 : 0
     // Net averages (excludes motivated leave, keeps unmotivated absences at 0h)
     const netAvgScore = netScoreCount > 0 ? Math.round(netScoreSum / netScoreCount) : 0
     const netAvgProductivity = netExpected > 0 ? Math.min(Math.round(netHours / netExpected * 100), 100) : 0
     const netAvgHoursPerMan = netEmpCount > 0 ? Math.round(netHours / netEmpCount * 10) / 10 : 0
     const avgVariance = varianceCount > 0 ? Math.round(varianceSum / varianceCount) : 0
-    const grossPresence = totalPotentialDays > 0 ? Math.round(totalWorkedDays / totalPotentialDays * 100) : 0
-    const netPotentialDays = totalPotentialDays - motivatedAbsenceDays
-    const netPresence = netPotentialDays > 0 ? Math.round(totalWorkedDays / netPotentialDays * 100) : 0
     return {
       total: employees.length,
       companies: byCompany.size,
@@ -233,8 +231,8 @@ export default function EmployeesTab({ search }: Props) {
       totalHours: Math.round(totalHours),
       totalExpectedHours: Math.round(totalExpected),
       netExpectedHours: Math.round(netExpected),
-      totalWorkedDays, totalPotentialDays, grossPresence,
-      netPotentialDays, netPresence, motivatedAbsenceDays,
+      workedDaysNet, workedDaysGross, totalEffectiveDays, totalWorkingDays,
+      grossExpectedHours: Math.round(grossExpectedHours),
       netAvgScore, grossAvgScore,
       netAvgProductivity, grossAvgProductivity,
       netAvgHoursPerMan, grossAvgHoursPerMan,
@@ -688,30 +686,26 @@ export default function EmployeesTab({ search }: Props) {
                     <div className="text-muted-foreground"><Clock className="h-3 w-3" /></div>
                   </div>
                   <p className={cn('text-base font-semibold leading-snug', stats.netAvgProductivity >= 90 ? 'text-green-600' : stats.netAvgProductivity >= 70 ? 'text-yellow-600' : 'text-red-600')}>
-                    {stats.totalWorkedDays} / {stats.netPotentialDays} days
+                    {stats.netAvgProductivity}% net
                   </p>
-                  <p className="text-[11px] text-muted-foreground">{stats.totalHours}h / {stats.netExpectedHours}h · {stats.netAvgProductivity}%</p>
+                  <p className="text-[11px] text-muted-foreground">{stats.grossAvgProductivity}% gross</p>
                 </CardContent>
               </Card>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-[320px] text-xs space-y-1.5">
-              <p className="font-semibold">Presence</p>
-              <p className="text-muted-foreground">Total days punched in ÷ (potential working days − motivated absences).</p>
+            <TooltipContent side="bottom" className="max-w-[340px] text-xs space-y-1.5">
+              <p className="font-semibold">Presence Rate</p>
+              <p className="text-muted-foreground">total_hours ÷ expected_hours × 100</p>
               <div className="border-t pt-1.5 space-y-0.5">
-                <p><span className="font-medium">Worked:</span> {stats.totalWorkedDays} days · {stats.totalHours}h</p>
-                <p><span className="font-medium">Potential:</span> {stats.totalPotentialDays} − {stats.motivatedAbsenceDays} motivated = {stats.netPotentialDays} days · {stats.netExpectedHours}h</p>
-                <p><span className="font-medium">Presence:</span> {stats.totalWorkedDays} / {stats.netPotentialDays} = {stats.netPresence}%</p>
+                <p className="font-medium">Net: {stats.netAvgProductivity}%</p>
+                <p>Worked: {stats.workedDaysNet} days · {stats.totalHours}h</p>
+                <p>Potential: {stats.totalEffectiveDays} days · {stats.netExpectedHours}h</p>
+                <p className="text-muted-foreground text-[10px]">Potential = weekdays − holidays − Sincron leave − Connecteam/JARVIS permit hours</p>
               </div>
               <div className="border-t pt-1.5 space-y-0.5">
-                <p className="font-medium">Motivated absences deducted:</p>
-                <p className="text-muted-foreground text-[10px]">Sincron leave (CO, CM, CIC, CES, DLG, ZLS, CMS) — full days</p>
-                <p className="text-muted-foreground text-[10px]">Connecteam permits + JARVIS Bilet de Invoire — partial hours</p>
-              </div>
-              <div className="border-t pt-1.5 space-y-0.5">
-                <p><span className="font-medium">Gross:</span> {stats.totalWorkedDays} / {stats.totalPotentialDays} = {stats.grossPresence}% (no exclusions, {stats.empWithStats} employees)</p>
-              </div>
-              <div className="border-t pt-1.5">
-                <p className="text-muted-foreground text-[10px]">Single-punch days (1 punch, no in/out pair) excluded from worked days</p>
+                <p className="font-medium">Gross: {stats.grossAvgProductivity}%</p>
+                <p>Worked: {stats.workedDaysGross} days (incl. single-punch) · {stats.totalHours}h</p>
+                <p>Potential: {stats.totalWorkingDays} days · {stats.grossExpectedHours}h</p>
+                <p className="text-muted-foreground text-[10px]">Potential = weekdays − holidays only (no leave/permits deducted)</p>
               </div>
             </TooltipContent>
           </Tooltip>
