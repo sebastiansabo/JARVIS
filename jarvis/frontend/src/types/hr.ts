@@ -59,6 +59,13 @@ export interface EmployeeWorkStats {
   days_present: number
   working_days: number
   expected_hours: number
+  hours_per_day: number
+  lunch_break_minutes: number
+  effective_days: number
+  leave_days: number
+  leave_types: string
+  permit_count: number
+  permit_hours: number
 }
 
 export interface BonusType {

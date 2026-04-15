@@ -192,6 +192,13 @@ class SincronSyncService:
         if connector:
             self.connector_repo.update(connector['id'], last_sync=datetime.now())
 
+        # Backfill BioStar employee schedules from Sincron combined norms
+        biostar_updated = 0
+        try:
+            biostar_updated = self._sync_biostar_schedules()
+        except Exception as e:
+            logger.error(f'BioStar schedule backfill failed: {e}')
+
         return {
             'success': True,
             'year': year,
@@ -199,35 +206,71 @@ class SincronSyncService:
             'total_employees': total_employees,
             'total_records': total_records,
             'total_deactivated': total_deactivated,
+            'biostar_schedules_updated': biostar_updated,
             'companies': company_results,
         }
 
-    def _deactivate_missing_employees(self, company_name, synced_ids):
-        """Mark employees not in the API response as inactive.
+    def _sync_biostar_schedules(self):
+        """Backfill BioStar employee schedules from Sincron combined norms.
 
-        Also closes the JARVIS user contract for mapped employees.
-        Returns the number of employees deactivated.
+        For multi-company employees: SUM hours, MIN start, MAX end, SUM breaks.
+        Uses existing biostar_repository.update_schedule() per employee.
+        Returns the number of BioStar employees updated.
+        """
+        from core.connectors.biostar.repositories.biostar_repository import BioStarRepository
+        biostar_repo = BioStarRepository()
+
+        combined = self.repo.get_combined_schedules_for_biostar()
+        if not combined:
+            return 0
+
+        # Get BioStar employees mapped to JARVIS users for lookup
+        biostar_employees = biostar_repo.query_all('''
+            SELECT biostar_user_id, mapped_jarvis_user_id
+            FROM biostar_employees
+            WHERE mapped_jarvis_user_id IS NOT NULL AND status = 'active'
+        ''')
+        jarvis_to_biostar = {
+            row['mapped_jarvis_user_id']: row['biostar_user_id']
+            for row in biostar_employees
+        }
+
+        updated = 0
+        for row in combined:
+            jarvis_id = row['mapped_jarvis_user_id']
+            biostar_id = jarvis_to_biostar.get(jarvis_id)
+            if not biostar_id:
+                continue
+
+            start_str = str(row['combined_start'])[:5] if row.get('combined_start') else None
+            end_str = str(row['combined_end'])[:5] if row.get('combined_end') else None
+
+            biostar_repo.update_schedule(
+                biostar_user_id=biostar_id,
+                lunch_break_minutes=int(row['total_lunch'] or 0),
+                working_hours=float(row['total_working_hours'] or 8),
+                schedule_start=start_str,
+                schedule_end=end_str,
+            )
+            updated += 1
+
+        logger.info(f'BioStar schedule backfill: {updated} employees updated from Sincron norms')
+        return updated
+
+    def _deactivate_missing_employees(self, company_name, synced_ids):
+        """DISABLED — was incorrectly closing contracts for multi-company employees.
+
+        Previously marked employees not in the API response as inactive and
+        closed JARVIS user contracts. Disabled to prevent accidental deactivation.
         """
         db_active_ids = self.repo.get_active_employee_ids(company_name)
         missing_ids = db_active_ids - synced_ids
 
-        if not missing_ids:
-            return 0
+        if missing_ids:
+            logger.info(f'{company_name}: {len(missing_ids)} employees not in Sincron API '
+                         f'response (deactivation DISABLED): {missing_ids}')
 
-        logger.info(f'{company_name}: deactivating {len(missing_ids)} employees '
-                     f'no longer in Sincron API: {missing_ids}')
-
-        jarvis_user_ids = self.repo.deactivate_employees(company_name, missing_ids)
-
-        # Close JARVIS user contracts (trigger auto-sets is_active=FALSE)
-        for uid in jarvis_user_ids:
-            try:
-                self.user_repo.update(uid, contract_status='closed')
-                logger.info(f'Closed JARVIS user #{uid} contract (Sincron employee left {company_name})')
-            except Exception as e:
-                logger.error(f'Failed to close contract for JARVIS user #{uid}: {e}')
-
-        return len(missing_ids)
+        return 0
 
     def _sync_company_timesheets(self, company_name, token, year, month):
         """Sync timesheets for a single company."""
@@ -253,7 +296,35 @@ class SincronSyncService:
             if contract_date in ('0000-00-00', '', None):
                 contract_date = None
 
-            # Upsert employee
+            # Extract employee-level schedule from first OZ activity
+            norma_lucru = emp.get('norma_lucru')
+            norma_lucru_time = emp.get('norma_lucru_time')
+            emp_schedule_in = None
+            emp_schedule_out = None
+            emp_break = None
+            for _day_acts in emp.get('days', {}).values():
+                for _a in _day_acts:
+                    if _a.get('short_code') == 'OZ' and _a.get('program', {}).get('in'):
+                        emp_schedule_in = _a['program']['in']
+                        emp_schedule_out = _a['program'].get('out')
+                        emp_break = _a['program'].get('pauza_masa')
+                        break
+                if emp_schedule_in:
+                    break
+
+            # Parse norma_lucru to numeric
+            try:
+                norma_val = float(norma_lucru) if norma_lucru else None
+            except (ValueError, TypeError):
+                norma_val = None
+
+            # Parse break to int
+            try:
+                break_val = int(emp_break) if emp_break else None
+            except (ValueError, TypeError):
+                break_val = None
+
+            # Upsert employee (with schedule fields)
             self.repo.upsert_employee(
                 sincron_employee_id=sincron_id,
                 company_name=company_name,
@@ -263,6 +334,11 @@ class SincronSyncService:
                 id_contract=str(emp.get('id_contract', '')),
                 nr_contract=str(emp.get('nr_contract', '')),
                 data_incepere_contract=contract_date,
+                norma_lucru=norma_val,
+                norma_lucru_time=norma_lucru_time,
+                schedule_start=emp_schedule_in,
+                schedule_end=emp_schedule_out,
+                lunch_break_minutes=break_val,
             )
             employees_synced += 1
 
@@ -286,6 +362,15 @@ class SincronSyncService:
                     except (ValueError, TypeError):
                         value = 0
 
+                    # Extract per-activity program schedule
+                    prog = activity.get('program', {})
+                    prog_in = prog.get('in') if prog else None
+                    prog_out = prog.get('out') if prog else None
+                    try:
+                        prog_break = int(prog.get('pauza_masa')) if prog and prog.get('pauza_masa') else None
+                    except (ValueError, TypeError):
+                        prog_break = None
+
                     self.repo.upsert_timesheet_day(
                         sincron_employee_id=sincron_id,
                         company_name=company_name,
@@ -296,6 +381,9 @@ class SincronSyncService:
                         short_code_en=short_code_en,
                         unit=unit,
                         value=value,
+                        program_in=prog_in,
+                        program_out=prog_out,
+                        program_break=prog_break,
                     )
                     records_created += 1
                     discovered_codes.add((short_code, short_code_en))

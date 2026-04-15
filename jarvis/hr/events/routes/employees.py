@@ -82,6 +82,40 @@ def api_employee_work_stats():
     bio_repo = BioStarRepository()
     range_data = bio_repo.get_range_summary(start.isoformat(), end.isoformat())
 
+    # Bulk fetch motivated absences from all sources
+    from core.base_repository import BaseRepository
+    _base = BaseRepository()
+
+    # 1. Sincron timesheets — full-day leave codes
+    LEAVE_CODES = ('CO', 'CIC', 'CES', 'CM', 'CMS', 'DLG', 'ZLS')
+    sincron_leave = _base.query_all('''
+        SELECT se.mapped_jarvis_user_id,
+               COUNT(DISTINCT st.day) AS leave_days,
+               STRING_AGG(DISTINCT st.short_code, ', ' ORDER BY st.short_code) AS leave_types
+        FROM sincron_timesheets st
+        JOIN sincron_employees se
+          ON se.sincron_employee_id = st.sincron_employee_id
+          AND se.company_name = st.company_name
+        WHERE se.mapped_jarvis_user_id IS NOT NULL
+          AND st.short_code = ANY(%s)
+          AND st.day BETWEEN %s AND %s
+        GROUP BY se.mapped_jarvis_user_id
+    ''', (list(LEAVE_CODES), start.isoformat(), end.isoformat()))
+    sincron_map = {r['mapped_jarvis_user_id']: r for r in sincron_leave}
+
+    # 2. Connecteam — leave permits (partial-day, in hours)
+    connecteam_leave = _base.query_all('''
+        SELECT mapped_jarvis_user_id,
+               COUNT(*) AS permit_count,
+               COALESCE(SUM(leave_hours), 0) AS permit_hours
+        FROM connecteam_form_submissions
+        WHERE mapped_jarvis_user_id IS NOT NULL
+          AND leave_date BETWEEN %s AND %s
+          AND COALESCE(status, 'submitted') NOT IN ('rejected', 'cancelled')
+        GROUP BY mapped_jarvis_user_id
+    ''', (start.isoformat(), end.isoformat()))
+    connecteam_map = {r['mapped_jarvis_user_id']: r for r in connecteam_leave}
+
     result = {}
     for row in range_data:
         uid = row.get('mapped_jarvis_user_id')
@@ -107,10 +141,22 @@ def api_employee_work_stats():
         avg_stddev = ((stddev_in + stddev_out) / count) if count > 0 else 0
         variance_minutes = round(avg_stddev / 60)
 
-        # Productivity score (100-point scale)
-        expected_hours = working_h * working_days
+        # Motivated absences reduce working potential
+        s_leave = sincron_map.get(uid, {})
+        c_leave = connecteam_map.get(uid, {})
+        sincron_leave_days = int(s_leave.get('leave_days', 0))
+        sincron_leave_types = s_leave.get('leave_types', '')
+        permit_count = int(c_leave.get('permit_count', 0))
+        permit_hours = round(float(c_leave.get('permit_hours', 0)), 1)
+        # Sincron = full days, Connecteam = hours (convert to fractional days)
+        leave_days = sincron_leave_days
+        leave_hours = permit_hours
+        effective_days = max(1, working_days - leave_days)
+
+        # Productivity score (100-point scale) — based on effective working days
+        expected_hours = working_h * effective_days
         utilization = min((total_hours / expected_hours * 100), 100) if expected_hours > 0 else 0
-        attendance = min((days_present / working_days * 100), 100) if working_days > 0 else 0
+        attendance = min((days_present / effective_days * 100), 100) if effective_days > 0 else 0
         punctuality = max(0, 100 - (variance_minutes * 2))
 
         score = round(utilization * 0.4 + attendance * 0.3 + punctuality * 0.3, 1)
@@ -122,7 +168,14 @@ def api_employee_work_stats():
             'productivity_score': score,
             'days_present': days_present,
             'working_days': working_days,
+            'effective_days': effective_days,
             'expected_hours': round(expected_hours, 1),
+            'hours_per_day': round(working_h, 1),
+            'lunch_break_minutes': lunch_mins,
+            'leave_days': leave_days,
+            'leave_types': sincron_leave_types,
+            'permit_count': permit_count,
+            'permit_hours': permit_hours,
         }
 
     return jsonify(result)
