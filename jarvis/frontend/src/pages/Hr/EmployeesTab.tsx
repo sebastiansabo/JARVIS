@@ -185,27 +185,45 @@ export default function EmployeesTab({ search }: Props) {
       byCompany.set(c, (byCompany.get(c) ?? 0) + 1)
     })
     // Aggregate work stats for visible employees
+    // Gross = all employees with stats; Net = only employees who actually worked (days_present > 0)
     const ws = workStats ?? {} as Record<number, EmployeeWorkStats>
-    let totalHours = 0, scoreSum = 0, scoreCount = 0, totalExpected = 0, empWithStats = 0
+    let totalHours = 0, totalExpected = 0, empWithStats = 0
+    let netExpected = 0, netEmpCount = 0, netScoreSum = 0, netScoreCount = 0
+    let grossScoreSum = 0, grossScoreCount = 0
+    let varianceSum = 0, varianceCount = 0
     filtered.forEach((e) => {
       const s = ws[e.id]
       if (!s) return
       totalHours += s.total_hours
       totalExpected += s.expected_hours
       empWithStats++
-      if (s.productivity_score > 0) { scoreSum += s.productivity_score; scoreCount++ }
+      grossScoreSum += s.productivity_score; grossScoreCount++
+      if (s.days_present >= 2) { varianceSum += s.variance_minutes; varianceCount++ }
+      // Net: only employees who actually punched in
+      if (s.days_present > 0) {
+        netExpected += s.expected_hours
+        netEmpCount++
+        netScoreSum += s.productivity_score; netScoreCount++
+      }
     })
-    const avgScore = scoreCount > 0 ? Math.round(scoreSum / scoreCount) : 0
-    const avgProductivity = totalExpected > 0 ? Math.min(Math.round(totalHours / totalExpected * 100), 100) : 0
-    const avgHoursPerMan = empWithStats > 0 ? Math.round(totalHours / empWithStats * 10) / 10 : 0
+    // Gross averages (includes 0-hour absent employees)
+    const grossAvgScore = grossScoreCount > 0 ? Math.round(grossScoreSum / grossScoreCount) : 0
+    const grossAvgProductivity = totalExpected > 0 ? Math.min(Math.round(totalHours / totalExpected * 100), 100) : 0
+    const grossAvgHoursPerMan = empWithStats > 0 ? Math.round(totalHours / empWithStats * 10) / 10 : 0
+    // Net averages (only employees who actually worked)
+    const netAvgScore = netScoreCount > 0 ? Math.round(netScoreSum / netScoreCount) : 0
+    const netAvgProductivity = netExpected > 0 ? Math.min(Math.round(totalHours / netExpected * 100), 100) : 0
+    const netAvgHoursPerMan = netEmpCount > 0 ? Math.round(totalHours / netEmpCount * 10) / 10 : 0
+    const avgVariance = varianceCount > 0 ? Math.round(varianceSum / varianceCount) : 0
     return {
       total: employees.length,
       companies: byCompany.size,
       filtered: filtered.length,
       totalHours: Math.round(totalHours),
-      avgScore,
-      avgProductivity,
-      avgHoursPerMan,
+      netAvgScore, grossAvgScore,
+      netAvgProductivity, grossAvgProductivity,
+      netAvgHoursPerMan, grossAvgHoursPerMan,
+      avgVariance,
     }
   }, [employees, filtered, workStats])
 
@@ -297,7 +315,7 @@ export default function EmployeesTab({ search }: Props) {
         key: 'variance', label: 'Variance', className: 'text-center text-xs',
         render: (e) => {
           const s = ws[e.id]
-          if (!s || s.days_present < 2) return <span className="text-muted-foreground">—</span>
+          if (!s || s.days_present === 0) return <span className="text-muted-foreground">—</span>
           const v = s.variance_minutes
           // Bar width: clamp 0-60min range to 0-100%
           const barPct = Math.min(v / 60 * 100, 100)
@@ -373,10 +391,10 @@ export default function EmployeesTab({ search }: Props) {
             <TooltipProvider delayDuration={200}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Badge variant="outline" className={cn('text-[10px] tabular-nums cursor-help', color)}>{score}</Badge>
+                  <Badge variant="outline" className={cn('text-[10px] tabular-nums cursor-help', color)}>{score}%</Badge>
                 </TooltipTrigger>
                 <TooltipContent side="left" avoidCollisions className="max-w-[320px] text-xs leading-snug">
-                  <p className="font-semibold mb-1">Efficiency: {score}/100</p>
+                  <p className="font-semibold mb-1">Efficiency: {score}%</p>
                   {(s.leave_days > 0 || s.permit_count > 0) && (
                     <p className="mb-1 text-blue-500 dark:text-blue-400">
                       {s.leave_days > 0 && <>{s.leave_days}d leave ({s.leave_types})</>}
@@ -569,7 +587,7 @@ export default function EmployeesTab({ search }: Props) {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-8">
         <StatCard title="Employees" value={`${filtered.length} / ${stats.total}`} icon={<Users className="h-4 w-4" />} />
         {statusTab === 'active' && (
           <StatCard
@@ -588,19 +606,55 @@ export default function EmployeesTab({ search }: Props) {
           />
         )}
         <StatCard title="Total Hours" value={`${stats.totalHours}h`} icon={<Clock className="h-4 w-4" />} />
-        <StatCard title="Avg Hours/Man" value={`${stats.avgHoursPerMan}h`} icon={<Clock className="h-4 w-4" />} />
+        <StatCard
+          title="Avg Hours/Man"
+          value={`${stats.netAvgHoursPerMan}h`}
+          description={`Gross: ${stats.grossAvgHoursPerMan}h`}
+          icon={<Clock className="h-4 w-4" />}
+        />
         <StatCard
           title="Avg Productivity"
-          value={`${stats.avgProductivity}%`}
+          value={`${stats.netAvgProductivity}%`}
+          description={`Gross: ${stats.grossAvgProductivity}%`}
           icon={<TrendingUp className="h-4 w-4" />}
-          className={stats.avgProductivity >= 90 ? '[&_p.text-base]:text-green-600' : stats.avgProductivity >= 70 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
+          className={stats.netAvgProductivity >= 90 ? '[&_p.text-base]:text-green-600' : stats.netAvgProductivity >= 70 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
         />
         <StatCard
           title="Avg Efficiency"
-          value={stats.avgScore}
+          value={`${stats.netAvgScore}%`}
+          description={`Gross: ${stats.grossAvgScore}%`}
           icon={<TrendingUp className="h-4 w-4" />}
-          className={stats.avgScore >= 80 ? '[&_p.text-base]:text-green-600' : stats.avgScore >= 60 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
+          className={stats.netAvgScore >= 80 ? '[&_p.text-base]:text-green-600' : stats.netAvgScore >= 60 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
         />
+        {/* Avg Variance — graphical card with bar + hover tooltip */}
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card className="gap-0 py-0 cursor-help">
+                <CardContent className="px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-muted-foreground">Avg Variance</p>
+                    <div className="text-muted-foreground"><Clock className="h-3 w-3" /></div>
+                  </div>
+                  <p className={cn('text-base font-semibold leading-snug', stats.avgVariance <= 10 ? 'text-green-600' : stats.avgVariance <= 25 ? 'text-yellow-600' : 'text-red-600')}>
+                    {`\u00B1${stats.avgVariance}min`}
+                  </p>
+                  <div className={cn('h-1.5 rounded-full mt-1', stats.avgVariance <= 10 ? 'bg-green-100 dark:bg-green-950/40' : stats.avgVariance <= 25 ? 'bg-yellow-100 dark:bg-yellow-950/40' : 'bg-red-100 dark:bg-red-950/40')}>
+                    <div
+                      className={cn('h-full rounded-full transition-all', stats.avgVariance <= 10 ? 'bg-green-500' : stats.avgVariance <= 25 ? 'bg-yellow-500' : 'bg-red-500')}
+                      style={{ width: `${Math.min(stats.avgVariance / 60 * 100, 100)}%` }}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[240px] text-xs">
+              <p className="font-semibold mb-0.5">Schedule Variance</p>
+              <p className="text-muted-foreground">Average deviation from usual check-in/out times across all employees. Lower = more consistent schedules.</p>
+              <p className="mt-1">{stats.avgVariance <= 10 ? 'Very consistent' : stats.avgVariance <= 25 ? 'Moderate variation' : 'High variation'}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       {/* Data */}

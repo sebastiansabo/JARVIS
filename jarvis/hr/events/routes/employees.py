@@ -203,7 +203,7 @@ def api_employee_work_stats():
         if leave_days >= working_days:
             continue
 
-        score = round(0 * 0.5 + 0 * 0.3 + 100 * 0.2, 1)  # 0 util, 0 attend, 100 punct (unknown)
+        score = 0  # Absent without motive: 0 utilization, 0 attendance, 0 punctuality
 
         result[uid] = {
             'total_hours': 0,
