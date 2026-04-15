@@ -89,8 +89,8 @@ export default function EmployeesTab({ search }: Props) {
   })
 
   const { data: absentData } = useQuery({
-    queryKey: ['hr', 'employees', 'absent-today'],
-    queryFn: () => hrApi.getAbsentToday(),
+    queryKey: ['hr', 'employees', 'absent-today', dateTo],
+    queryFn: () => hrApi.getAbsentToday(dateTo),
     refetchInterval: 5 * 60 * 1000,
   })
 
@@ -191,11 +191,14 @@ export default function EmployeesTab({ search }: Props) {
     let netHours = 0, netExpected = 0, netEmpCount = 0, netScoreSum = 0, netScoreCount = 0
     let grossScoreSum = 0, grossScoreCount = 0
     let varianceSum = 0, varianceCount = 0
+    let totalWorkedDays = 0, totalPotentialDays = 0
     filtered.forEach((e) => {
       const s = ws[e.id]
       if (!s) return
       totalHours += s.total_hours
       totalExpected += s.expected_hours
+      totalWorkedDays += s.days_present
+      totalPotentialDays += s.working_days
       empWithStats++
       grossScoreSum += s.productivity_score; grossScoreCount++
       if (s.days_present >= 2) { varianceSum += s.variance_minutes; varianceCount++ }
@@ -218,11 +221,13 @@ export default function EmployeesTab({ search }: Props) {
     const netAvgProductivity = netExpected > 0 ? Math.min(Math.round(netHours / netExpected * 100), 100) : 0
     const netAvgHoursPerMan = netEmpCount > 0 ? Math.round(netHours / netEmpCount * 10) / 10 : 0
     const avgVariance = varianceCount > 0 ? Math.round(varianceSum / varianceCount) : 0
+    const presenceRate = totalPotentialDays > 0 ? Math.round(totalWorkedDays / totalPotentialDays * 100) : 0
     return {
       total: employees.length,
       companies: byCompany.size,
       filtered: filtered.length,
       totalHours: Math.round(totalHours),
+      totalWorkedDays, totalPotentialDays, presenceRate,
       netAvgScore, grossAvgScore,
       netAvgProductivity, grossAvgProductivity,
       netAvgHoursPerMan, grossAvgHoursPerMan,
@@ -393,7 +398,7 @@ export default function EmployeesTab({ search }: Props) {
         },
       },
       {
-        key: 'today', label: 'Today', className: 'text-center',
+        key: 'today', label: dateTo === defaults.end ? 'Today' : new Date(dateTo + 'T00:00').toLocaleDateString('ro-RO', { day: '2-digit', month: 'short' }), className: 'text-center',
         render: (e) => <AbsenceBadge status={absentData?.[e.id]} />,
       },
       {
@@ -456,7 +461,7 @@ export default function EmployeesTab({ search }: Props) {
       })
     }
     return cols
-  }, [workStats, absentData, canEditEmployee, toggleMutation])
+  }, [workStats, absentData, canEditEmployee, toggleMutation, dateTo, defaults.end])
 
   // Column visibility
   const defaultVisible = useMemo(
@@ -614,7 +619,7 @@ export default function EmployeesTab({ search }: Props) {
         <StatCard title="Employees" value={`${filtered.length} / ${stats.total}`} icon={<Users className="h-4 w-4" />} />
         {statusTab === 'active' && (
           <StatCard
-            title="Present Today"
+            title={dateTo === defaults.end ? 'Present Today' : `Present ${new Date(dateTo + 'T00:00').toLocaleDateString('ro-RO', { day: '2-digit', month: 'short' })}`}
             value={`${absenceCounts.present} / ${filtered.length}`}
             icon={<UserCheck className="h-4 w-4" />}
             className={absenceCounts.present >= filtered.length * 0.9 ? '[&_p.text-base]:text-green-600' : absenceCounts.present >= filtered.length * 0.7 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
@@ -628,7 +633,13 @@ export default function EmployeesTab({ search }: Props) {
             className={(absenceCounts.absent + absenceCounts.onLeave) === 0 ? '[&_p.text-base]:text-green-600' : (absenceCounts.absent + absenceCounts.onLeave) <= 10 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
           />
         )}
-        <StatCard title="Total Hours" value={`${stats.totalHours}h`} icon={<Clock className="h-4 w-4" />} />
+        <StatCard
+          title="Worked / Potential"
+          value={`${stats.totalWorkedDays} / ${stats.totalPotentialDays}`}
+          description={`${stats.presenceRate}% presence`}
+          icon={<Clock className="h-4 w-4" />}
+          className={stats.presenceRate >= 90 ? '[&_p.text-base]:text-green-600' : stats.presenceRate >= 70 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
+        />
         <StatCard
           title="Avg Hours/Man"
           value={`${stats.netAvgHoursPerMan}h`}
@@ -739,13 +750,40 @@ export default function EmployeesTab({ search }: Props) {
                             return <TableCell key={key} className={col.className}>{col.render(e)}</TableCell>
                           })}
                         </TableRow>
-                        {isExpanded && (
-                          <TableRow>
-                            <TableCell colSpan={activeVisibleColumns.length + 1} className="p-0">
-                              <ExpandedEmployeeRow employee={e} workStats={workStats?.[e.id]} onNavigate={() => navigate(`/app/hr/employees/${e.id}`)} />
-                            </TableCell>
-                          </TableRow>
-                        )}
+                        {isExpanded && (() => {
+                          const companies = (workStats?.[e.id]?.schedule_companies || []) as Array<{ company: string; norma: number; start: string; end: string; lunch: number }>
+                          return (
+                            <>
+                              {/* Company schedule sub-rows */}
+                              {companies.length > 1 && companies.map((comp, idx) => (
+                                <TableRow key={`${e.id}-co-${idx}`} className="bg-muted/20 hover:bg-muted/30">
+                                  <TableCell className="w-8 px-2" />
+                                  {activeVisibleColumns.map((key) => {
+                                    const cellCls = columnDefs.find((c) => c.key === key)?.className
+                                    if (key === 'name') return (
+                                      <TableCell key={key} className="pl-6 text-xs text-muted-foreground">
+                                        <span className="inline-flex items-center gap-1.5">
+                                          <span className="w-1 h-1 rounded-full bg-primary/40 shrink-0" />
+                                          {comp.company.replace(' S.R.L.', '')}
+                                        </span>
+                                      </TableCell>
+                                    )
+                                    if (key === 'norm') return <TableCell key={key} className={cellCls}>{comp.norma}h/day</TableCell>
+                                    if (key === 'lunch') return <TableCell key={key} className={cellCls}>{comp.lunch > 0 ? `${comp.lunch}min` : '—'}</TableCell>
+                                    if (key === 'schedule') return <TableCell key={key} className={cellCls}>{comp.start && comp.end ? `${comp.start}–${comp.end}` : '—'}</TableCell>
+                                    return <TableCell key={key} className={cellCls} />
+                                  })}
+                                </TableRow>
+                              ))}
+                              {/* Expanded detail panel */}
+                              <TableRow>
+                                <TableCell colSpan={activeVisibleColumns.length + 1} className="p-0">
+                                  <ExpandedEmployeeRow employee={e} workStats={workStats?.[e.id]} onNavigate={() => navigate(`/app/hr/employees/${e.id}`)} />
+                                </TableCell>
+                              </TableRow>
+                            </>
+                          )
+                        })()}
                       </Fragment>
                     )
                   })}

@@ -29,10 +29,12 @@ def api_get_employees():
 @login_required
 @hr_required
 def api_absent_today():
-    """API: Get today's absence status for all active employees."""
-    from datetime import date
+    """API: Get absence status for all active employees on a given date."""
+    from datetime import date as dt_date
     from ..repositories import EmployeeOverviewRepository
-    rows = EmployeeOverviewRepository().get_absence_status_for_date(date.today())
+    date_str = request.args.get('date')
+    check_date = dt_date.fromisoformat(date_str) if date_str else dt_date.today()
+    rows = EmployeeOverviewRepository().get_absence_status_for_date(check_date)
     result = {}
     for r in rows:
         result[r['user_id']] = {
@@ -140,16 +142,19 @@ def api_employee_work_stats():
         if not uid:
             continue
 
-        days_present = int(row.get('days_present') or 0)
+        raw_days_present = int(row.get('days_present') or 0)
+        single_punch_days = int(row.get('single_punch_days') or 0)
+        # Single-punch days don't count as present for stats (no measurable work time)
+        days_present = raw_days_present - single_punch_days
         adjusted_total = float(row.get('adjusted_total_duration_seconds') or 0)
         lunch_mins = int(row.get('lunch_break_minutes') or 0)
         working_h = float(row.get('working_hours') or 8)
 
-        # Total hours: adjusted duration minus lunch for each present day
+        # Total hours: adjusted duration minus lunch for each REAL present day
         total_hours = max(0, (adjusted_total - (lunch_mins * 60 * days_present)) / 3600)
         total_hours = round(total_hours, 1)
 
-        # Avg daily hours (only days they punched in)
+        # Avg daily hours (only days with proper in/out)
         avg_daily = round(total_hours / days_present, 1) if days_present > 0 else 0
 
         # Schedule variance (STDDEV of check-in/out times → average → minutes)
